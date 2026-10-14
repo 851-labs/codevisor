@@ -1,7 +1,5 @@
 import { spawn } from "node:child_process"
 
-// The resource owner has its own process group. Its stdin pipe closes even
-// when the calling shell or this launcher receives SIGKILL.
 export function runOwnedTask(script, args) {
   const child = spawn(process.execPath, [script, ...args], {
     detached: true,

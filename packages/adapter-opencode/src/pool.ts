@@ -1,19 +1,12 @@
 import type { OpenCodeServer } from "./server.js"
 
-/// Control servers shared by everything that needs OpenCode's API for one
-/// profile (its catalog, sign-in attempts, credentials): starting one costs
-/// a process launch, so a burst of account clicks reuses it, and it stops
-/// once nothing has used it for a while.
-
 export interface OpenCodeServerLease {
   readonly server: OpenCodeServer
-  /// Hands the server back; the last release starts its idle countdown.
   readonly release: () => void
 }
 
 export interface OpenCodeServerPoolOptions {
   readonly idleMs?: number
-  /// Runs `run` after `ms` and returns a cancel; injected for tests.
   readonly schedule?: (ms: number, run: () => Promise<void>) => () => void
 }
 
@@ -45,7 +38,6 @@ export const makeOpenCodeServerPool = (options: OpenCodeServerPoolOptions = {}) 
   }
 
   return {
-    /// The running server for `key`, starting it with `start` if none is.
     acquire: async (
       key: string,
       start: () => Promise<OpenCodeServer>
@@ -71,13 +63,10 @@ export const makeOpenCodeServerPool = (options: OpenCodeServerPoolOptions = {}) 
           }
         }
       } catch (cause) {
-        // A server that failed to start is never reused; the next acquire
-        // starts a fresh one.
         if (entries.get(key) === held) entries.delete(key)
         throw cause
       }
     },
-    /// Stops every server, for shutdown.
     close: async () => {
       const running = [...entries.values()]
       entries.clear()

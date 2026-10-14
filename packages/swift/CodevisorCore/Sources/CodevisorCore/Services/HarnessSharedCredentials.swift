@@ -1,8 +1,6 @@
 import ACPKit
 import Foundation
 
-/// The same static credential surfaces handled by the server's credential ferry.
-/// Account profiles and OAuth sessions are deliberately outside this model.
 public enum HarnessSharedCredentials: String, Sendable {
   case opencode, pi, codex, devin
 
@@ -53,8 +51,6 @@ public enum HarnessSharedCredentials: String, Sendable {
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
-  /// Merge into the latest document at Save time, preserving other providers
-  /// and metadata instead of writing a stale snapshot from the editor.
   public func replacingKey(in content: String?, providerId: String, key: String) throws -> String {
     let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
     let id = providerId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -77,8 +73,6 @@ public enum HarnessSharedCredentials: String, Sendable {
     return try encode(fields)
   }
 
-  /// Empty provider maps must remain live documents so removals reach peers.
-  /// Whole-file sources use the ferry's explicit deletion path.
   public func removing(from content: String?, providerId: String) throws -> String? {
     guard hasProviders else { return nil }
     var fields = try document(content)

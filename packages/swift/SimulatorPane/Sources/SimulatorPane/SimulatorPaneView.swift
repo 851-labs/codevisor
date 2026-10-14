@@ -1,11 +1,8 @@
 import CodevisorClient
 import SwiftUI
 
-/// A Simulator pane: the chosen device front and center. Its controls live in the toolbar
-/// (`SimulatorPaneToolbar`), which the hosting app shows while this pane is active.
 public struct SimulatorPaneView: View {
   let model: SimulatorPaneModel
-  /// Saves or shares a screenshot (PNG) from the Mac's action bar.
   let onScreenshot: (Data, String) -> Void
 
   public init(model: SimulatorPaneModel, onScreenshot: @escaping (Data, String) -> Void = { _, _ in }) {
@@ -20,8 +17,6 @@ public struct SimulatorPaneView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     #if os(macOS)
-      // The device's controls sit in the bottom safe area, as the chat composer does, so the
-      // device fits above them. An iPhone or iPad uses its bottom toolbar instead.
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if let device = model.runningDevice {
           SimulatorActionBar(model: model, device: device, onScreenshot: onScreenshot)
@@ -33,7 +28,6 @@ public struct SimulatorPaneView: View {
     .sheet(isPresented: $model.managingSimulators) {
       SimulatorManagerSheet(model: model) { model.managingSimulators = false }
     }
-    // Settings belong to the running device they were opened for.
     .onChange(of: model.udid) { model.showsSettings = false }
     .onChange(of: model.device?.isBooted) { _, booted in
       if booted != true { model.showsSettings = false }
@@ -67,8 +61,6 @@ public struct SimulatorPaneView: View {
     } else if let device = model.device {
       deviceContent(device)
         #if os(iOS)
-          // The device is the screen's title (see the workspace screen); tapping it switches
-          // devices. Only while there's a device, so a pane on its chooser keeps a plain title.
           .toolbarTitleMenu { SimulatorDeviceMenuItems(model: model) }
         #endif
     } else if model.activity != nil {
@@ -91,7 +83,6 @@ public struct SimulatorPaneView: View {
           Button("Start") { model.perform(.boot) }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            // Not on a Mac, where Return would start it from a chat beside it.
             .deviceShortcut(.defaultAction)
         } else {
           ProgressView("\(device.state)…").controlSize(.small)
@@ -101,7 +92,6 @@ public struct SimulatorPaneView: View {
   }
 }
 
-/// A device that isn't running: its silhouette, name and what to do next.
 struct SimulatorStatusView<Accessory: View>: View {
   let device: ServerSimulatorDevice
   let model: SimulatorPaneModel

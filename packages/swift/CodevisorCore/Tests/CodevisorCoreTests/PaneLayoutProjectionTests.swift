@@ -12,7 +12,6 @@ struct PaneLayoutProjectionTests {
     PaneGroupState(panes: [pane], selectedPaneId: pane.id)
   }
 
-  /// A macOS-style workspace: one split tab (chat | terminal) and one plain tab.
   private func fixture() -> (
     Workspace, chat: PaneDescriptorState, terminal: PaneDescriptorState, browser: PaneDescriptorState
   ) {
@@ -106,14 +105,12 @@ struct PaneLayoutProjectionTests {
   @Test("A draft adopting a session replaces the workspace's seeded chat pane, keeping the draft's id")
   func draftReplacesSeededChatPane() {
     let sessionId = UUID()
-    // What `ensureWorkspace` mints for a first send: a chat pane with its own id.
     var workspace = Workspace(
       name: "Project", rootDirectory: "/fixture", serverId: "machine", projectId: UUID(),
       centerTabs: [WorkspaceTab(root: .leaf(.centerInitial(sessionId: sessionId)))],
       createdAt: Date(timeIntervalSince1970: 0)
     )
     let seeded = workspace.centerTabs[0].root.allGroups[0].state.panes[0]
-    // The draft pane, whose id the mounted transcript is keyed on.
     let draftPaneId = UUID()
     var draft = PaneGroupState.centerInitial(sessionId: UUID(), paneId: draftPaneId)
     draft.panes[0].chatSessionId = sessionId

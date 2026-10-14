@@ -51,9 +51,6 @@ final class TranscriptContentHostingController: NSHostingController<AnyView> {
     layoutObserver.invalidate()
   }
 
-  /// Reuse the cached frame without a second sizing pass. The first placed
-  /// layout still verifies that height, and subsequent geometry changes
-  /// always report even when they occur inside an unchanged SwiftUI root.
   func useKnownContentHeight(_ height: CGFloat) {
     lastReportedHeight = height
   }

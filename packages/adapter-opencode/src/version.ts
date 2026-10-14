@@ -3,10 +3,6 @@ import { promisify } from "node:util"
 
 import { binaryIdentity } from "@codevisor/agent-runtime"
 
-/// OpenCode's major version, from `opencode --version`: "opencode v2.0.24"
-/// on OpenCode 2, a bare "1.18.34" on OpenCode 1. Cached per binary until it
-/// changes, so an upgrade in place is noticed.
-
 export interface OpenCodeVersionProbeDeps {
   readonly run?: (command: string) => Promise<string>
   readonly identity?: (command: string) => string | undefined
@@ -30,7 +26,6 @@ export const makeOpenCodeVersionProbe = (deps: OpenCodeVersionProbeDeps = {}) =>
   return async (command: string): Promise<number | undefined> => {
     const current = identity(command)
     const cached = cache.get(command)
-    // A command that can't be stat'd (a bare name) is asked every time.
     if (cached !== undefined && current !== undefined && cached.identity === current) {
       return cached.major
     }

@@ -3,8 +3,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Media over the Codevisor tunnel only changes which remote candidate the
-/// viewer's WebRTC dials; these pin that rewrite.
 struct ScreenSharingTunnelSDPTests {
   private let offer = [
     "v=0",

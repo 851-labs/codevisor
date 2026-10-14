@@ -1,10 +1,3 @@
-// Codevisor plugin bridge v1 (frozen surface):
-//   window.codevisor.getContext() -> { workspaceId, cwd, paneId, themeMode }
-//   window.codevisor.openUrl(url)
-//   window.codevisor.setTitle(title)
-//   :root --codevisor-* CSS custom properties
-//   "codevisor:themechange" event on window (detail: { themeMode })
-// Injected by the host at document start; everything else is bridge v2.
 (function () {
   "use strict";
   if (window.codevisor) {
@@ -18,7 +11,6 @@
         value: String(value == null ? "" : value)
       });
     } catch (error) {
-      // Outside a Codevisor webview the bridge is inert.
     }
   }
   window.codevisor = Object.freeze({

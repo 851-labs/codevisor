@@ -26,9 +26,6 @@ public struct PluginSafetyButton: View {
   }
 }
 
-/// Reporting a plugin, presented either from the row button above or from a
-/// list's row menu. A menu item cannot own a sheet — the menu closes and
-/// takes the anchor with it — so the page presents this directly.
 public struct PluginReportSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss

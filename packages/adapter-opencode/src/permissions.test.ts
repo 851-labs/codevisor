@@ -28,7 +28,6 @@ describe("OpenCode full-access permissions", () => {
     const toolGateway = { bearerToken: "t", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
     const denied = { "built-in-browser": "deny", "chrome-browser": "deny", "computer-use": "deny" }
     expect(config(withOpenCodePermissions({}, { toolGateway })).permission.skill).toEqual(denied)
-    // The user's own skill rules stay, a bare action as OpenCode's catch-all.
     for (const [skill, kept] of [
       [{ review: "ask" }, { review: "ask" }],
       ["ask", { "*": "ask" }]

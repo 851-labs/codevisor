@@ -8,9 +8,6 @@ nonisolated struct RunTargetPickerRoleKey: LayoutValueKey {
   static let defaultValue = RunTargetPickerRole.project
 }
 
-/// Allocate measured widths before SwiftUI lays out the labels. The machine
-/// yields space first; the location can become an icon without hiding the
-/// project. Large text (or an unusually narrow container) gets separate rows.
 struct RunTargetPickerLayout: Layout {
   var stacksVertically: Bool
   var minimumMachineWidth: CGFloat
@@ -53,7 +50,6 @@ struct RunTargetPickerLayout: Layout {
       var y: CGFloat = 0
       return zip(subviews, roles).map { subview, role in
         if role == .divider {
-          // Dividers retain their identity but disappear between stacked controls.
           return CGRect(x: 0, y: y, width: 0, height: 0)
         }
         let height = subview.sizeThatFits(ProposedViewSize(width: available, height: nil)).height
@@ -71,7 +67,6 @@ struct RunTargetPickerLayout: Layout {
         widths[location] = minimums[location]
       }
     }
-    // Keep the project's useful width before spending space on a long machine name.
     for role in [RunTargetPickerRole.machine, .project] {
       guard let index = roles.firstIndex(of: role) else { continue }
       let overflow = max(0, widths.reduce(0, +) - available)

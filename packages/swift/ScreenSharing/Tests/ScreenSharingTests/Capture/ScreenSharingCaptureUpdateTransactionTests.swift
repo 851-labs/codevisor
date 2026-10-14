@@ -4,9 +4,6 @@
 
   @testable import ScreenSharing
 
-  /// Exercises the transaction called by ScreenSharingCapture.update. Only the
-  /// SCK operation and generation observation are replaced; validation, await,
-  /// stale-result rejection, stored request and metric writes are production code.
   @Suite @MainActor struct ScreenSharingCaptureUpdateTransactionTests {
     private enum Failure: Error { case streamUpdate }
 

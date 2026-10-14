@@ -20,8 +20,6 @@ const ERROR_NAMES = [
 
 const ERROR_PREFIXES = ERROR_NAMES.map((name) => `Error: ${name}:`)
 
-/// Cursor's ACP bridge serializes its typed CLI errors as assistant text. Hold
-/// only a possible leading sentinel; ordinary response text streams at once.
 export const couldBeCursorTerminalError = (text: string): boolean => {
   const candidate = text.trimStart()
   return ERROR_PREFIXES.some(

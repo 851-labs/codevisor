@@ -1,6 +1,3 @@
-// Pure-SwiftUI fallback retained for non-AppKit platforms and portable
-// previews. Native iOS transcript prose uses the UIKit/TextKit renderer;
-// portable tables still reuse `portableInlineText` for their cells.
 #if !canImport(AppKit)
   import SwiftUI
 
@@ -49,8 +46,6 @@
           }
         }
       default:
-        // Code blocks, quotes, tables, and rules are dispatched to their
-        // own views by MarkdownBlockView before reaching a text run.
         EmptyView()
       }
     }

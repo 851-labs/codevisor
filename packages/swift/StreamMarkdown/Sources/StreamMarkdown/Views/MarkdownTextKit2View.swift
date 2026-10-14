@@ -2,16 +2,9 @@
   import AppKit
   import QuickLookUI
 
-  /// A settled Markdown text surface backed exclusively by TextKit 2.
-  ///
-  /// Unlike ``SelectableTextKitView``, this view never asks for the legacy
-  /// `layoutManager` property. That keeps viewport-based, noncontiguous text
-  /// layout enabled for the lifetime of the surface.
   @MainActor
   final class MarkdownTextKit2View: TranscriptSurfaceTextView, NSTextViewDelegate {
     private lazy var markdownLayoutDelegate = MarkdownTextLayoutDelegate()
-    /// NSTextLayoutManager keeps a weak reference to its content manager;
-    /// the view owns the TextKit 2 root for the lifetime of the surface.
     private let markdownContentStorage: NSTextContentStorage
     private var representedText: NSAttributedString?
     private var measuredWidth: CGFloat = -1
@@ -54,17 +47,7 @@
         .cursor: NSCursor.pointingHand,
       ]
       textContainer?.lineFragmentPadding = 0
-      // A text container supplied to NSTextView does not automatically
-      // track the view's width. Transcript virtualization repeatedly
-      // detaches and remounts these views; without this contract AppKit
-      // can restore the container's original 1pt width while leaving the
-      // NSTextView itself full-width, wrapping every character.
       textContainer?.widthTracksTextView = true
-      // TextKit 1's transcript renderer advances by ascender/descender
-      // plus paragraph line spacing. TextKit 2 includes font leading by
-      // default, producing a visible line-height jump when streaming
-      // content settles. Disabling it preserves the established metrics
-      // to the nearest display pixel while retaining TextKit 2 layout.
       textLayoutManager?.usesFontLeading = false
       textLayoutManager?.delegate = markdownLayoutDelegate
       delegate = self
@@ -139,10 +122,6 @@
       measuredWidth = -1
     }
 
-    /// A link click makes this text view first responder, and `NSTextView`
-    /// would then claim the shared Quick Look panel to preview the link's
-    /// raw value — the workspace path shown as an Internet Location card.
-    /// The host's preview controller presents the fetched file instead.
     override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
       false
     }
@@ -152,9 +131,6 @@
       return handleMarkdownLink(link, isImage: isImage, action: linkAction, in: textView, at: index)
     }
 
-    /// TextKit 2 delegates link interaction through `.link`. The existing
-    /// renderer keeps server-file links in a host-owned custom attribute,
-    /// so mirror that value into `.link` only for this native surface.
     private static func textKit2Links(in text: NSAttributedString) -> NSAttributedString {
       let result = NSMutableAttributedString(attributedString: text)
       var links: [(value: Any, range: NSRange)] = []
@@ -182,9 +158,6 @@
     }
   }
 
-  /// TextKit 2 equivalent of the old custom layout manager's decorations.
-  /// The glyph layout remains entirely owned by TextKit 2; this subclass only
-  /// paints quote bars and rounded inline-code fills before the standard text.
   private final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
       drawQuoteBars(at: point, in: context)
@@ -196,10 +169,6 @@
       (textElement as? NSTextParagraph)?.attributedString
     }
 
-    /// A layout fragment is one paragraph, and a quote decorates whole
-    /// paragraphs (including the spacing runs between them), so the bar
-    /// covers the fragment's full frame. Fragments tile the container, so
-    /// consecutive quoted paragraphs join into one rule with no seam.
     private func drawQuoteBars(at point: CGPoint, in context: CGContext) {
       guard let decoration = quoteDecoration else { return }
       let origin = CGPoint(x: point.x - layoutFragmentFrame.minX, y: point.y)
@@ -212,12 +181,6 @@
       }
     }
 
-    /// The bars sit at the container's left edge, outside the indented
-    /// paragraph frame — and a spacing run between quoted paragraphs has a
-    /// zero-width frame. TextKit 2 culls and invalidates fragments by these
-    /// bounds, so without the bars declared here the spacers are never
-    /// drawn (gaps) and partial redraws re-composite the translucent bar
-    /// over itself (darker bands).
     override var renderingSurfaceBounds: CGRect {
       var bounds = super.renderingSurfaceBounds
       guard let decoration = quoteDecoration else { return bounds }
@@ -236,7 +199,6 @@
       ) as? TextKitQuoteDecoration
     }
 
-    /// Bar rects in container coordinates for this fragment's vertical span.
     private func quoteBarRects(_ decoration: TextKitQuoteDecoration) -> [CGRect] {
       decoration.barOffsets.map { offset in
         CGRect(
@@ -253,8 +215,6 @@
       for line in textLineFragments {
         let lineRange = validRange(line.characterRange, in: attributedText)
         guard lineRange.length > 0 else { continue }
-        // Join matching backgrounds across link and foreground-color runs,
-        // including the unlinked padding on either side of inline code.
         attributedText.enumerateAttribute(
           .streamMarkdownRoundedBackground,
           in: lineRange,

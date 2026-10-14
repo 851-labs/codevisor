@@ -1,14 +1,5 @@
 import Foundation
 
-/// What the home screen shows at launch and whether to show a sync indicator,
-/// decided from what the device already knows rather than from the network.
-///
-/// The rules the user sees:
-/// - anything cached for any machine shows immediately, with an indicator
-///   while machines catch up;
-/// - a spinner only when there is nothing cached at all and a machine is
-///   still being reached;
-/// - "No Workspaces" only when every machine that answered said so.
 public enum NavigationPresentation {
   public struct Machine: Equatable, Sendable {
     public var name: String
@@ -29,11 +20,8 @@ public enum NavigationPresentation {
     }
   }
 
-  /// Whether the list of cloud machines is known yet.
   public enum RosterStatus: Equatable, Sendable {
-    /// No cloud account: the machine list is whatever is on this device.
     case none
-    /// A cached list is showing but hasn't been confirmed this launch.
     case unverified
     case verified
   }
@@ -53,7 +41,6 @@ public enum NavigationPresentation {
 
     public var isVisible: Bool { isSyncing || !unreachableMachineNames.isEmpty }
 
-    /// One short line for a toolbar or sidebar footer.
     public var label: String? {
       if !unreachableMachineNames.isEmpty {
         return "Can't reach \(ListFormatter.localizedString(byJoining: unreachableMachineNames))"
@@ -67,20 +54,14 @@ public enum NavigationPresentation {
   ) -> Launch {
     if hasVisibleContent { return .content }
     if machines.isEmpty { return roster == .unverified ? .loading : .onboarding }
-    // Certain only once every machine has answered with an empty list, or
-    // can't be reached and was empty when it last answered.
     let everyMachineAnswered = machines.allSatisfy { machine in
       machine.syncState == .current || (machine.isUnreachable && machine.hasCache)
     }
     if everyMachineAnswered, machines.allSatisfy(\.cacheIsEmpty) { return .empty }
-    // Nothing more will arrive: every machine is unreachable. Showing the
-    // empty state (with the indicator naming them) beats spinning forever.
     if machines.allSatisfy({ $0.isUnreachable || $0.syncState == .current }) { return .empty }
     return .loading
   }
 
-  /// The quiet "Syncing…" line only accompanies content already on screen:
-  /// with nothing shown yet, the launch spinner is the one loading state.
   public static func indicator(machines: [Machine], hasVisibleContent: Bool = true) -> SyncIndicator {
     SyncIndicator(
       isSyncing: hasVisibleContent

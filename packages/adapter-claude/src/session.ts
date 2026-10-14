@@ -18,11 +18,6 @@ import type { ClaudeSkillCall } from "./skill-tool.js"
 import type { ClaudeSkills } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
-/// A prompt accepted while another turn was still active. It is NOT bound to
-/// `pendingPrompt` (the active turn's terminal event would resolve it before
-/// the prompt ever ran) and its message is NOT pushed to the SDK yet (the SDK
-/// would fold it into the live turn). It dispatches as its own user turn when
-/// the active turn finishes.
 export interface DeferredClaudePrompt {
   readonly input: string | PromptInput
   readonly pending: Deferred<{ stopReason: string }>
@@ -54,9 +49,6 @@ export type ClaudeQueryFn = (input: {
   options: ClaudeOptions
 }) => Query
 
-/// Push-based AsyncIterable used as the SDK's streaming prompt input; keeping
-/// it open keeps the Claude process alive across turns, which is what lets
-/// between-turn/background output flow.
 export class InputQueue implements AsyncIterable<SDKUserMessage> {
   private buffer: Array<SDKUserMessage> = []
   private waiting: ((value: IteratorResult<SDKUserMessage>) => void) | undefined
@@ -100,22 +92,15 @@ export class InputQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-/// Accumulates the streamed partial JSON of one tool_use input so edit tools
-/// can report running added/removed line counts while the model is typing.
 export interface ToolInputAccumulator {
   readonly toolName: string
   json: string
   lastEmit: number
   lastStats: string
-  /// The file path streamed so far, once extractable — drives live titles.
   titledPath: string | undefined
-  /// For Write: the pre-edit file content, read once.
   oldContent: string | null | undefined
 }
 
-/// One in-flight background task (backgrounded shell, subagent, ...) tracked
-/// from the SDK's `task_*` system messages. Emitted to clients as a full
-/// snapshot on every change so the UI can show what the agent is waiting on.
 export interface BackgroundTaskEntry {
   readonly id: string
   description: string
@@ -124,15 +109,12 @@ export interface BackgroundTaskEntry {
   readonly toolUseId?: string
 }
 
-/// A forked slash command's subagent (see `forked-commands.ts`), described
-/// by its `task_started` when one was seen.
 export interface ForkedCommand {
   readonly description: string
   readonly prompt: string | undefined
   readonly subagentType: string | undefined
   readonly taskId: string | undefined
   failed: boolean
-  /// Live mirroring of the fork's transcript, when its start was seen.
   mirror: ForkedCommandMirror | undefined
 }
 
@@ -140,10 +122,7 @@ export interface ForkedCommandMirror {
   readonly show: (message: SDKMessage) => void
   path: string | undefined
   offset: number
-  /// At least one transcript message was shown, so the CLI's end-of-run copy
-  /// of the thread is redundant.
   shown: boolean
-  /// Set while the transcript is still being read.
   timer: ReturnType<typeof setInterval> | undefined
 }
 
@@ -151,10 +130,6 @@ export type ClaudeToolDecision =
   | { behavior: "allow"; updatedInput: Record<string, unknown> }
   | { behavior: "deny"; message: string }
 
-/// One blocking canUseTool ask (AskUserQuestion or a permission approval)
-/// awaiting the human's answer. `resolve` settles the SDK's canUseTool
-/// promise; `respond` builds the source-specific decision from the wire
-/// answer (including dismissals).
 export interface PendingClaudeQuestion {
   readonly questions: ReadonlyArray<QuestionSpec>
   readonly resolve: (result: ClaudeToolDecision) => void
@@ -162,14 +137,9 @@ export interface PendingClaudeQuestion {
 }
 
 export interface ClaudeSession {
-  /// The id the runtime and server know this session by (== SDK session id
-  /// for new sessions; the requested id for resumed ones).
   readonly key: string
   readonly sdkSessionId: string
   readonly cwd: string
-  /// The live SDK query and its input queue. Replaced together when the
-  /// stream dies mid-turn and the session resumes on a fresh query (see
-  /// `start-session.ts`); everything else reads them through the session.
   q: Query
   input: InputQueue
   readonly emit: RuntimeEmit
@@ -180,110 +150,44 @@ export interface ClaudeSession {
   turnId: string
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
-  /// Prompts that arrived while a turn (typically an agent-initiated
-  /// task-notification follow-up) was active. Drained FIFO by
-  /// `finishActiveTurn`, each as its own user-initiated turn.
   readonly deferredPrompts: Array<DeferredClaudePrompt>
-  /// Resolves only after the current turn's terminal event has passed through
-  /// the ordered runtime sink. Retained after turnActive clears so a racing
-  /// cancel can still wait for durable completion.
   turnCompletion: Deferred<void> | undefined
   cancelInFlight: Promise<CancelResult> | undefined
   retired: boolean
   streamEnded: boolean
-  /// Slash commands injected on the user's behalf (currently `/goal`) do not
-  /// have a blocking `pendingPrompt`, but their turns still belong to the
-  /// user's attention epoch rather than to autonomous background activity.
   pendingUserCommands: number
   interruptRequested: boolean
-  /// Silent output-token-truncation continuations in the current turn (capped by
-  /// MAX_TRUNCATION_CONTINUATIONS). Reset when a new turn starts.
   truncationCount: number
-  /// Visible transient retries (529 overload / rate-limit / server error) in the
-  /// current turn (capped by MAX_TRANSIENT_RETRIES). Reset when a new turn starts.
   transientRetries: number
-  /// Invisible stream resumptions in the current turn: the SDK stream ended
-  /// (CLI crashed, pipe closed) with no `result`, and the session was resumed
-  /// on a fresh query with a continue nudge. Capped by
-  /// MAX_STREAM_RECOVERIES; reset when a new turn starts.
   streamRecoveries: number
-  /// The most recent SDK assistant-message `error` (overloaded/rate_limit/
-  /// authentication_failed/…) seen since the last `result`. Lets `handleResult`
-  /// tell a transient failure (retry) from a permanent one (surface). Consumed
-  /// and cleared on each `result`.
   lastAssistantError: string | undefined
-  /// The human-readable API error text (e.g. "API Error: 529 Overloaded …") from
-  /// a transient failure that arrived as plain text rather than a structured
-  /// error. Shown in the answer slot (red) if all retries are exhausted.
   lastErrorText: string | undefined
-  /// Claude's own user-facing explanation for a genuinely exhausted usage
-  /// allowance (for example "You've hit your limit · resets 8pm"). Unlike a
-  /// temporary 429, this is terminal and must never trigger an outer retry.
   lastUsageLimitText: string | undefined
-  /// Latest claude.ai subscription-limit state observed since the previous
-  /// result. A rejected state is a structured fallback when the result omits
-  /// Claude's richer limit text.
   latestRateLimitInfo:
     | Extract<SDKMessage, { type: "rate_limit_event" }>["rate_limit_info"]
     | undefined
-  /// Context occupancy from the latest top-level assistant request. Claude's
-  /// result usage is cumulative; the per-message input + cache buckets are the
-  /// authoritative current-context count.
   latestContextUsage: { model: string | undefined; used: number } | undefined
-  /// Stable identity for the latest context-compaction lifecycle. Claude's
-  /// status messages do not provide one, so the provider assigns it when
-  /// compaction starts and reuses it for the matching result.
   activeContextCompactionId: string | undefined
   currentMessageId: string | undefined
-  /// True once top-level text has streamed for `currentMessageId`. A tool_use
-  /// block starting afterwards in the same message proves that text was
-  /// preamble, not the final answer — the Anthropic stream has no upfront
-  /// finality marker, so this is the earliest demotion signal available.
   currentMessageTextStreamed: boolean
   currentModel: string
-  /// The CLI permission mode Codevisor last put the session in. Starts in
-  /// bypassPermissions (full access) and follows setMode; canUseTool consults
-  /// it to auto-allow checks the CLI escalates despite bypass.
   currentModeId: string
   currentEffort: string
   currentSpeed: "standard" | "fast"
   models: ReadonlyArray<ClaudeModel>
-  /// The session's slash commands and the skills among them.
   readonly skills: ClaudeSkills
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
-  /// Authoritative Task* inputs keyed by tool_use id, retained until the
-  /// matching result confirms whether the mutation succeeded.
   readonly taskToolUses: Map<string, ClaudeTaskToolUse>
-  /// Claude Code `Skill` calls this turn, keyed by tool_use id, until their
-  /// instructions arrive (see skill-tool.ts).
   readonly skillCalls: Map<string, ClaudeSkillCall>
-  /// Cross-turn checklist state built from Task* mutations and task hooks.
   readonly tasks: ClaudeTaskState
-  /// Current message id per streaming subagent, keyed by the subagent's
-  /// parent tool_use id — keeps subagent text spans stable across replay
-  /// without touching the main agent's `currentMessageId`.
   readonly subagentMessageIds: Map<string, string>
-  /// The prose of each subagent's latest message that had any, keyed by its
-  /// parent tool_use id: its hand-back is shown only when it isn't this.
   readonly subagentLastTexts: Map<string, string>
-  /// Open forked commands, keyed by the parent id their thread names.
   readonly forkedCommands: Map<string, ForkedCommand>
-  /// A forked command reported back this turn; Claude answers with its report
-  /// before the turn ends.
   forkedCommandReplyPending: boolean
-  /// The account's subagent transcripts, which mirror a running fork.
   readonly subagentTranscripts: SubagentTranscripts
-  /// Cross-turn: background tasks legitimately outlive the turn that spawned
-  /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
-  /// SDK housekeeping tasks marked `skip_transcript` are absent from the UI
-  /// even when the authoritative level snapshot includes their ids.
   readonly hiddenBackgroundTaskIds: Set<string>
-  /// question id → held AskUserQuestion canUseTool promise.
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
-  /// Client-side goal snapshot. Claude Code's goal mode is driven through the
-  /// CLI's `/goal` slash command (the SDK has no goal API yet), so Codevisor
-  /// tracks the last state it set — the CLI gives no structured feedback.
   currentGoal: SessionGoal | undefined
 }

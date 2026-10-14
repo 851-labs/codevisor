@@ -95,9 +95,6 @@ const listProjects = async (
   serverId: string,
   response: ServerResponse
 ): Promise<boolean> => {
-  // Each list refreshes this machine's view of every folder's remote
-  // (memoized), so a remote added after the project was — or a project
-  // recorded before remotes were tracked — links up without a restart.
   const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
   const projects = await reconcileProjectRepoUrls(
     services.db,
@@ -121,8 +118,6 @@ const createProject = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateProjectRequestSchema)
-  // A folder-added project is born with its remote, so it groups with
-  // its siblings on other machines from the first list.
   const repoUrl =
     payload.repoUrl ??
     (existingDirectory(payload.folderPath) === undefined
@@ -144,9 +139,6 @@ const createProject = async (
 
 const allocateScratchWorkspaceFolder = (config: CodevisorServerConfig): string => {
   mkdirSync(scratchWorkspacesRoot(), { recursive: true })
-  // Folder allocation doubles as the name reservation: a plain (non
-  // recursive) mkdir fails on a name already claimed by any other server or
-  // an earlier crash, so the loop simply draws again.
   const taken = new Set(readdirSync(scratchWorkspacesRoot()))
   let name: string | undefined
   for (let attempt = 0; attempt < 100 && name === undefined; attempt += 1) {
@@ -158,11 +150,11 @@ const allocateScratchWorkspaceFolder = (config: CodevisorServerConfig): string =
       mkdirSync(scratchWorkspacePath(candidate))
       name = candidate
     } catch {
-      /* v8 ignore next -- requires another process to claim the random candidate between the directory scan and mkdir. */
+      /* v8 ignore next */
       taken.add(candidate)
     }
   }
-  /* v8 ignore next 3 -- 100 straight collisions needs an exhausted name pool; the loop bound is a backstop. */
+  /* v8 ignore next 3 */
   if (name === undefined) {
     throw new HttpFailure(500, "Could not allocate a scratch workspace folder")
   }
@@ -194,8 +186,6 @@ const createScratchProject = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateScratchProjectRequestSchema)
-  // Idempotency: re-posting a client-supplied id returns the existing
-  // project instead of allocating a second folder for the same workspace.
   const requestedId = payload.id
   if (requestedId !== undefined) {
     if (await writeExistingScratchProject(services, serverId, requestedId, response)) return true
@@ -231,9 +221,7 @@ const updateProject = async (
 const retireEmptyScratchFolder = (folderPath: string): void => {
   try {
     rmdirSync(folderPath)
-  } catch {
-    // Non-empty or already gone: leave it.
-  }
+  } catch {}
 }
 
 const deleteProjectFolder = async (
@@ -251,16 +239,12 @@ const deleteProjectFolder = async (
     url.searchParams.get("deleteFiles") === "true" &&
     isDeletableProjectFolder(folderPath)
   ) {
-    // "Delete Project and Files": the checkout itself goes too.
     const trashed = await trashDirectory(folderPath, {
       trashRoot: worktreeTrashRoot(),
       id: `project-${projectId}`
     })
     archiveJobs(services).track(trashed.purged)
   } else if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
-    // Deleting a scratch project retires its workspace folder too — but
-    // only when the folder is still empty. Anything the user put there
-    // stays on disk rather than vanishing with the row.
     retireEmptyScratchFolder(folderPath)
   }
 }
@@ -277,10 +261,6 @@ const deleteProject = async (
   const targets = (await run(services.db.listProjects)).filter(
     (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
   )
-  // Deleting a project is permanent and takes its chats with it, so the
-  // files it owns must go too. Row deletion cascades; the filesystem does
-  // not, and every worktree directory, branch and snapshot ref would
-  // otherwise stay behind with nothing left to name it.
   for (const target of targets) await discardProjectWorktrees(services, config.id, target)
   await run(services.db.deleteProject(projectId))
   await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
@@ -308,10 +288,6 @@ const listProjectBranches = async (
   return true
 }
 
-/// A project folder the server may delete along with its project. Never the
-/// filesystem root, the home folder, or anything that contains them or
-/// Codevisor's own worktree root: a project registered at such a path would
-/// otherwise take far more than its checkout with it.
 export const isDeletableProjectFolder = (folderPath: string): boolean => {
   if (!isAbsolute(folderPath)) return false
   const folder = resolve(folderPath)

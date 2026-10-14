@@ -24,7 +24,6 @@ extension ComposerBar {
       onManageProject: { managedProject = liveProject },
       onProjectDeleted: projectDeleted
     )
-    // Keep 44-point controls while drawing a slimmer pill behind them.
     .padding(.vertical, -6)
     .composerGlassSurface(
       shape: cardStyle.shape, id: .newChatConfiguration, in: glassNamespace
@@ -33,15 +32,12 @@ extension ComposerBar {
     .disabled(controller.isSubmitting || controller.hasAcceptedFirstSend)
   }
 
-  /// Follow the server's current git probe, rather than the draft's snapshot.
   private var liveProject: Project {
     environment.projectList.fleetActiveProjects.first {
       $0.serverId == controller.project.serverId && $0.id == controller.project.id
     } ?? controller.project
   }
 
-  /// Keep the linked checkout and location when possible, matching macOS.
-  /// Otherwise restore the destination's remembered project, or No project.
   func selectTargetMachine(_ machine: CodevisorMachine) {
     let current = controller.project
     guard machine.id != current.serverId,
@@ -64,7 +60,6 @@ extension ComposerBar {
     }
   }
 
-  /// Re-points the draft in place, keeping its text and staged attachments.
   func applyRunTarget(_ project: Project, wantsWorktree: Bool) {
     runTargetSelectionRevision &+= 1
     let revision = runTargetSelectionRevision
@@ -82,8 +77,6 @@ extension ComposerBar {
     }
     Task {
       guard revision == runTargetSelectionRevision else { return }
-      // Set this before awaiting preparation so the independent location
-      // picker reflects the new target immediately and remains editable.
       controller.wantsNewWorktree = effectiveWorktree
       if project.serverId != controller.project.serverId {
         await controller.retarget(
@@ -103,7 +96,6 @@ extension ComposerBar {
   }
 
   func selectTargetProject(_ project: Project, wantsWorktree: Bool? = nil) {
-    // Selecting the checked row should preserve the draft's own location.
     guard project.serverId != controller.project.serverId || project.id != controller.project.id
     else { return }
     let prefersWorktree = wantsWorktree ?? environment.prefersNewWorktree(for: project)
@@ -116,7 +108,6 @@ extension ComposerBar {
     controller.wantsNewWorktree = newWorktree
   }
 
-  /// Settings deleted a project; a draft aimed at it falls back to no project.
   func projectDeleted(_ group: ProjectGroup) {
     guard group.contains(controller.project) else { return }
     selectTargetProject(.runTargetPlaceholder(serverId: controller.project.serverId))

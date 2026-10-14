@@ -1,7 +1,6 @@
 import ScreenSharingDiagnostics
 import ScreenSharing
 
-/// Per-second interval means; never present percentiles of these as per-frame p95.
 struct ProbeTransportTimeline {
   struct Sample: Encodable {
     let elapsedSeconds: Double

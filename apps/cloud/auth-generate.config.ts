@@ -1,7 +1,3 @@
-/// Generator-only Better Auth config: `bun run db:schema` points the CLI here
-/// to emit src/db/schema.ts. It must mirror the plugin list in src/auth.ts
-/// (that's what determines the tables) but must not import the generated
-/// schema itself. Never imported by Worker code.
 import { apiKey } from "@better-auth/api-key"
 import { drizzleAdapter } from "@better-auth/drizzle-adapter"
 import { betterAuth } from "better-auth"

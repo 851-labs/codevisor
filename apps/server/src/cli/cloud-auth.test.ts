@@ -83,7 +83,6 @@ const instanceBody = {
   authProviders: ["dev"]
 }
 
-/// Scripted fetch: responses consumed per-endpoint in order (last repeats).
 const scriptedFetch = (script: Record<string, Response[]>): FetchLike => {
   const counts = new Map<string, number>()
   return (input) => {
@@ -127,7 +126,6 @@ describe("authLoginCommand", () => {
     expect(world.logs.join("\n")).toContain("✓ Connected as hetzner-1")
     expect(world.logs.join("\n")).not.toContain("Scan to log in")
 
-    // Without --name the server picks the name; a refused or missing answer fails cleanly.
     const unnamed = makeWorld()
     expect(await authLoginCommand(unnamed.deps, { inviteCode: code, fetchImpl: noFetch })).toBe(0)
     expect(unnamed.httpCalls.find((call) => call.url.endsWith("/connect"))?.body).toEqual({
@@ -199,8 +197,6 @@ describe("authLoginCommand", () => {
     const output = world.logs.join("\n")
     expect(output).toContain("  https://cloud.example/device?user_code=AB12-CD34")
     expect(output).toContain("  Code: AB12-CD34")
-    // The same URL is printed as a QR code for the phone app, above the
-    // link so the link stays visible in a short terminal.
     expect(output).toContain("Scan to log in with the Codevisor app on your phone:")
     expect(output.lastIndexOf("▄")).toBeLessThan(output.indexOf("Or log in from a browser:"))
     expect(output).toContain("Connected as dev-vps")
@@ -232,7 +228,6 @@ describe("authLoginCommand", () => {
       machineName: "named-by-flag"
     })
     expect(code).toBe(0)
-    // A bare verification uri still resolves absolute, with the code filled in.
     expect(world.logs.join("\n")).toContain("  https://cloud.example/device?user_code=AB12-CD34")
     expect(world.logs.join("\n")).toContain("Connected as named-by-flag")
   })

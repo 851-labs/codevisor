@@ -6,9 +6,6 @@ import SwiftUI
   import AppKit
 #endif
 
-/// A harness's brand glyph from the app's `harness-<id>` asset (the bundled
-/// lobe-icons set), template-rendered so it follows the foreground style;
-/// an SF Symbol when the harness has no bundled icon.
 public struct HarnessGlyph: View {
   let harnessId: String?
   let fallbackSymbolName: String

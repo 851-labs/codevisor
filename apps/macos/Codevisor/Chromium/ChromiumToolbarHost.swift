@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// CEF may consume key equivalents before the SwiftUI menu sees them. Scope
-/// browser shortcuts to the active toolbar's key window, including page focus.
 final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
   var focusAddress: (() -> Void)?
   var reload: ((Bool) -> Void)?
@@ -49,7 +47,6 @@ final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
 
   private var toolbarHasFocus: Bool {
     if let responder = window?.firstResponder as? NSView, responder.isDescendant(of: self) { return true }
-    // NSTextField uses the window's shared field editor as first responder.
     let editor = window?.firstResponder as? NSTextView
     return (editor?.delegate as? NSView)?.isDescendant(of: self) == true
   }

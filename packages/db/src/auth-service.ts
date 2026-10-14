@@ -49,9 +49,6 @@ export const makeAuthService = (
         .prepare("select value from instance_meta where key = 'connection-token'")
         .get() as { readonly value: string } | undefined
       if (row !== undefined) return row.value
-      // Stable across restarts and updates: the plaintext lives in
-      // instance_meta so it can be shown again, and its hash goes in
-      // auth_tokens so verifyBearerToken accepts it like any pairing token.
       const token = `hm_${randomBytes(24).toString("base64url")}`
       const create = sqlite.transaction(() => {
         sqlite
@@ -73,7 +70,6 @@ export const makeAuthService = (
       const token = `hm_${randomBytes(24).toString("base64url")}`
       const rotate = sqlite.transaction(() => {
         if (existing !== undefined) {
-          // Retire the old token so previously paired clients must re-pair.
           sqlite
             .prepare("delete from auth_tokens where token_hash = ?")
             .run(hashToken(existing.value))

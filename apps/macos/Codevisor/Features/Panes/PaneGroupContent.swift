@@ -1,8 +1,6 @@
 import SwiftUI
 import CodevisorCore
 
-/// Selection presents its shell before constructing cold native content.
-/// Each pane then owns its loading state; readiness never gates navigation.
 struct PaneGroupContent: View {
   var group: PaneGroupModel
 

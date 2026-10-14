@@ -7,8 +7,6 @@
   import ScreenSharingDiagnostics
   import ScreenSharingRigKit
 
-  /// Keeps the session's Metal view exactly on its bounds through every resize
-  /// (the renderer scales to fit and letterboxes); the HUD anchors itself.
   final class RigViewerSurfaceView: NSView {
     override func layout() {
       super.layout()
@@ -60,7 +58,6 @@
       let peer = try await ScreenSharingReceiver(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: UUID().uuidString.lowercased(), peer: peer, metrics: metrics)
       self.session = session
-      // The host's sound (851-2379), silent here: the rig measures it, it doesn't play it.
       peer.audioVolume = 0
       peer.setAudioEnabled(true)
       peer.onConnectionChanged = { [weak self, weak session] state in
@@ -75,7 +72,6 @@
         maximumDrawableCount: tuning.maximumDrawableCount, offMainPreparation: tuning.offMainPreparation)
       view.onFrameSize = { [weak session] size in Task { @MainActor in session?.frameSize = size } }
       view.onFramePresented = { [weak self] presented in
-        // Delivered on the main actor by the coordinator's hop; the offset is read at that moment.
         MainActor.assumeIsolated {
           guard let self, let offset = self.clockOffset, let source = presented.sourceTimestampNs else { return }
           let age = offset.imageAgeSeconds(
@@ -93,8 +89,6 @@
         }
       }
       session.metalView = view
-      // HDR (851-2380) only when the config asks for it ("hdr": true), off by default as in the app
-      // (851-2480): a bench must not measure the 10-bit path by accident of where the window sits.
       let highDynamicRange = configuration.highDynamicRange
       view.onScreenHighDynamicRangeChanged = { [weak peer] in
         peer?.setDisplayHighDynamicRange($0 && highDynamicRange)
@@ -129,8 +123,6 @@
       return session
     }
 
-    /// Calibrates `host - viewer` from 25 bracketed `/clock` exchanges, now and every 60 s, keeping the
-    /// tightest interval. Image age is only shown while an offset exists.
     func startClockCalibration(base: URL) {
       clockTask?.cancel()
       clockTask = Task { @MainActor [weak self] in
@@ -262,8 +254,6 @@
       }
     }
 
-    /// The view the session's Metal view and the HUD live in; the shell embeds it in
-    /// the Native session scenario. Created once, by whichever side asks first.
     func viewerSurface() -> NSView {
       if let container { return container }
       let content = RigViewerSurfaceView(frame: NSRect(x: 0, y: 0, width: 960, height: 540))
@@ -273,8 +263,6 @@
       container = content
       self.hud = hud
       keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        // Only while the surface is on screen and no text field has the keyboard: the shell's
-        // other scenarios share this window.
         guard let self, let window = self.container?.window, event.window === window,
           !(window.firstResponder is NSTextView), event.charactersIgnoringModifiers?.lowercased() == "h",
           event.modifierFlags.intersection([.command, .control, .option]).isEmpty

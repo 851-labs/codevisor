@@ -2,8 +2,6 @@ import CodevisorClient
 import Foundation
 import Network
 
-/// Suggestions follow the workspace's authenticated proxy, just like page
-/// requests. The ephemeral session has no website cookies or shared URL cache.
 @MainActor
 public final class BrowserSearchProvider {
   private var session: URLSession?

@@ -1,6 +1,5 @@
 import Foundation
 
-/// A project suggestion derived from the user's existing harness sessions.
 public struct ProjectRecommendation: Equatable, Sendable, Identifiable {
   public var folderURL: URL
   public var name: String
@@ -17,19 +16,10 @@ public struct ProjectRecommendation: Equatable, Sendable, Identifiable {
   }
 }
 
-/// Turns sessions discovered across harnesses (`session/list`) into a list of
-/// suggested project folders, most recently active first.
-///
-/// Sessions in linked Git worktrees are attributed to the primary checkout
-/// when it still exists. This keeps short-lived worktree names out of the list
-/// without throwing away the activity that makes their root project useful.
 public enum ProjectRecommender {
   public static func recommend(
     from sessions: [ImportedSession],
     limit: Int = 12,
-    // NSHomeDirectory (not homeDirectoryForCurrentUser) so this compiles
-    // on iOS too; there it resolves to the sandbox home, which is fine —
-    // recommendations only ever describe paths on the paired machine.
     managedWorktreesRoot: URL = URL(fileURLWithPath: NSHomeDirectory())
       .appendingPathComponent("codevisor", isDirectory: true),
     temporaryDirectory: URL = FileManager.default.temporaryDirectory,
@@ -72,11 +62,7 @@ public enum ProjectRecommender {
       let resolvedRoot = linkedWorktreeRoot(sessionPath).map {
         URL(fileURLWithPath: $0).standardizedFileURL.path
       }
-      // An unresolvable linked checkout is still temporary; do not
-      // regress to suggesting its short-lived worktree folder.
       guard !isLinkedWorktreePath || resolvedRoot != nil else { continue }
-      // Anything under Codevisor's worktree storage is temporary. Keep
-      // it only when Git metadata can lead us back to a real checkout.
       guard !isManagedWorktreePath || resolvedRoot != nil else { continue }
 
       let path = resolvedRoot ?? sessionPath
@@ -132,10 +118,6 @@ public enum ProjectRecommender {
       .map { $0 }
   }
 
-  /// Internal state and temporary working directories can appear in agent
-  /// session metadata, but neither is a useful project. Match `.codevisor`
-  /// as a complete path component so an unrelated folder such as
-  /// `my.codevisor.example` remains eligible.
   private static func isExcludedSuggestionPath(_ path: String, temporaryDirectory: URL) -> Bool {
     let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
     if URL(fileURLWithPath: standardizedPath).pathComponents.contains(".codevisor") {
@@ -153,9 +135,6 @@ public enum ProjectRecommender {
       return true
     }
 
-    // A paired Mac can have a different per-user temp root from this
-    // process. Recognize Darwin's /var/folders/<bucket>/<token>/T layout
-    // as well as the local FileManager-provided path above.
     let components = URL(fileURLWithPath: standardizedPath).pathComponents
     let varIndex: Int? =
       if components.starts(with: ["/", "var", "folders"]) {
@@ -188,11 +167,6 @@ public enum ProjectRecommender {
       && !isDirectory.boolValue
   }
 
-  /// Resolves the primary checkout from the metadata Git writes into a
-  /// linked worktree's `.git` file. A normal checkout has a `.git` directory
-  /// and returns nil. Submodules and bare repositories intentionally return
-  /// nil because their common Git directory does not identify an existing
-  /// primary working tree.
   @usableFromInline
   static func linkedWorktreeRoot(at path: String) -> String? {
     let fileManager = FileManager.default
@@ -230,8 +204,6 @@ public enum ProjectRecommender {
   }
 
   private static func primaryCheckoutPath(_ fileManager: FileManager, commonDirURL: URL) -> String? {
-    // Standard non-bare primary checkouts keep their common Git directory
-    // at `<root>/.git`. Other layouts do not provide a safe root mapping.
     guard commonDirURL.lastPathComponent == ".git" else { return nil }
     let rootURL = commonDirURL.deletingLastPathComponent().standardizedFileURL
     var rootIsDirectory: ObjCBool = false

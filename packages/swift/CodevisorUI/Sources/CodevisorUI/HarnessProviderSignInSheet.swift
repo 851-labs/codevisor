@@ -7,9 +7,6 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Adds a provider or replaces its credential, for every harness that signs
-/// in per provider: choose the provider and how to sign in, then follow its
-/// page, code or questions until it's done.
 struct HarnessProviderSignInSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
@@ -38,8 +35,6 @@ struct HarnessProviderSignInSheet: View {
   var body: some View {
     NavigationStack {
       #if os(macOS)
-        // Picking a provider needs no title; the list gets the room. A
-        // sign-in in progress is titled with its provider.
         if draft.signIn != nil {
           content.navigationTitle(title)
         } else {
@@ -158,7 +153,6 @@ struct HarnessProviderSignInSheet: View {
     }
   }
 
-  /// How to sign in to the chosen provider, and anything it asks first.
   @ViewBuilder
   private var authentication: some View {
     if let provider = draft.provider, provider.methods.count > 1 {
@@ -182,7 +176,6 @@ struct HarnessProviderSignInSheet: View {
     }
   }
 
-  /// The running sign-in: its page, its code, and what it's waiting for.
   @ViewBuilder
   private func progress(_ signIn: HarnessProviderSignIn) -> some View {
     if let instructions = signIn.instructions {

@@ -2,7 +2,6 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// One native-style tab segment in the workspace tab strip.
 struct PaneTab: View {
   @Environment(\.theme) private var theme
   let name: String
@@ -87,15 +86,10 @@ struct PaneTab: View {
       .contentShape(Rectangle())
       .onTapGesture(perform: onSelect)
       .onHover { isHovered = $0 }
-      // Tap-to-select and the hover-only close button are invisible to
-      // accessibility. Expose them as actions so assistive tech and
-      // background computer use can manage tabs without hovering or focusing
-      // the window.
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(name)
       .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
       .accessibilityAction(.default, onSelect)
-      // Plain-title buttons: SwiftUI drops Label-built ones here.
       .accessibilityActions {
         if let onRename { Button("Rename", action: onRename) }
         if canClose { Button("Close", action: onClose) }
@@ -143,24 +137,16 @@ struct PaneTab: View {
   }
 }
 
-/// A tab's leading glyph. A chat tab borrows the chat's live status icon and
-/// a terminal running an agent shows the working indicator while it works;
-/// everything else shows its kind (or its page's or plugin's own artwork).
 struct PaneTabIcon: View {
   let kind: PaneKind
   var browserFavicon: NSImage? = nil
-  /// A plugin pane's identity, so the tab shows the plugin's own artwork
-  /// (fetched through `pluginIconClient`) instead of the generic glyph.
   var pluginId: String? = nil
   var pluginPaneType: String? = nil
   var pluginIconClient: (any CodevisorServerClienting)? = nil
   var pluginIconCacheNamespace = "preview"
-  /// The chat a chat tab shows, when it is still known to the session list.
   var chatSession: ChatSession? = nil
   var terminalStatus: AgentPaneStatus? = nil
-  /// A subagent tab's harness (its chat's), for the harness icon.
   var subagentHarnessId: String? = nil
-  /// A document tab's path, for its file-type icon.
   var documentPath: String? = nil
   var store: SessionStore? = nil
 

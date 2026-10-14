@@ -5,9 +5,6 @@
 #include <map>
 #include <memory>
 
-/// Owns the CEF process, its message pump, and browser shutdown accounting.
-/// Browser and DevTools clients report lifecycle events without exposing the
-/// registry or the timer that keeps Chromium work on the main run loop.
 class ChromiumRuntime final {
  public:
   static ChromiumRuntime& Shared();

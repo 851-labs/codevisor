@@ -47,7 +47,6 @@ describe("workspace ordering over HTTP", () => {
         payload: expect.objectContaining({ sidebarPosition: position, sidebarOrderRevision: 2 })
       })
     ])
-    // The drag's next step, sent before its sender saw the first land.
     const latest = initialWorkspacePosition(50, first.id)
     const stale = await jsonRequest(server, "/v1/workspaces/first", {
       method: "PATCH",

@@ -15,10 +15,6 @@ export const EventKind = Schema.Literals([
   "session.created",
   "session.updated",
   "session.attention.updated",
-  /// Legacy, never emitted: chats stopped carrying archive state when the
-  /// workspace became the only thing that can be archived. Both kinds remain
-  /// decodable because the `events` table still holds rows recorded under
-  /// them, and replaying that history must not fail.
   "session.archived",
   "session.unarchived",
   "session.deleted",
@@ -29,44 +25,21 @@ export const EventKind = Schema.Literals([
   "harness.auth.updated",
   "harness.account.updated",
   "harness.authFlow.updated",
-  /// Install/update lifecycle for one harness (subjectId = harness id).
-  /// Payload: { harnessId, lifecycle: HarnessLifecycleState, updateInfo? }.
   "harness.lifecycle.updated",
-  /// A session's prompts are held while its harness updates (subjectId =
-  /// session id). Payload: { state: "waiting" | "released", harnessId,
-  /// harnessName }. Replaceable: the latest event wins.
   "session.updateGate.updated",
-  /// Plugin runtime state transition (subjectId = plugin id). Payload:
-  /// PluginSummary. Replaceable: the latest event wins.
   "plugin.state.updated",
-  /// The plugin's code/install changed (restart, re-import, link) — clients
-  /// reload the plugin's open panes (subjectId = plugin id). Payload:
-  /// PluginSummary. Deliberately distinct from `plugin.state.updated` so a
-  /// routine process-state transition never reloads pane content.
   "plugin.updated",
   "terminal.output",
   "terminal.exit",
   "update.changed",
-  /// A managed MCP server's visible state changed on this machine
-  /// (definition, enabled wish, connection state, tool count) or it was
-  /// removed (subjectId = MCP server id). Payload: { id }. Clients refetch
-  /// the machine's server list; the event carries no state of its own.
   "mcp.updated",
-  /// A replicated config document changed on this server (subjectId =
-  /// namespace). Payload: { namespace, entries } with only the entries the
-  /// merge actually changed. Merging is idempotent, so replays are safe.
   "sync.changed"
 ])
 export type EventKind = typeof EventKind.Type
 
 export const EventEnvelope = Schema.Struct({
   id: Schema.Number,
-  /// Global shell-log cursor when this event also changes project/session
-  /// metadata. Chat-only events intentionally omit it.
   globalEventId: Schema.optional(Schema.Number),
-  /// Monotonic sequence within `subjectId`. Session-scoped streams use this
-  /// cursor so an unrelated project/session event can never invalidate a
-  /// chat's resume position.
   subjectRevision: Schema.optional(Schema.Number),
   serverId: Schema.String,
   kind: EventKind,
@@ -76,9 +49,6 @@ export const EventEnvelope = Schema.Struct({
 })
 export type EventEnvelope = typeof EventEnvelope.Type
 
-/** Durable cursor for the global shell event log. Capture this before a
- * navigation snapshot, then replay events after it to close the snapshot-to-
- * stream race without replaying the entire log. */
 export const EventCursorResponse = Schema.Struct({
   cursor: Schema.Number
 })

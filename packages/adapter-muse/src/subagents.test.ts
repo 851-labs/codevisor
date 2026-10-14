@@ -6,7 +6,6 @@ import { makeMuseSubagents, type ViewPage } from "./subagents.js"
 
 const CHILD = "child-1"
 
-// The subagent row in the chat, as Muse 1.4.7 reports it.
 const agent = (fields: Partial<MuseItem> = {}): MuseItem => ({
   itemId: "agent-1",
   kind: "subagent",
@@ -17,7 +16,6 @@ const agent = (fields: Partial<MuseItem> = {}): MuseItem => ({
   ...fields
 })
 
-// One event of the child session's view, as `view/page` serves it.
 const event = (cursor: number, method: string, params: Record<string, unknown> = {}) => ({
   method,
   params: { sessionId: CHILD, viewCursor: `v:${CHILD}:${cursor}`, ...params }
@@ -34,7 +32,6 @@ const read = (cursor: number, status: string, itemId = "r1") =>
     }
   })
 
-/// A child session whose view grows as the test appends to it.
 const setup = (intervalMs = 1000) => {
   const views = new Map<string, Array<ReturnType<typeof event>>>()
   const calls: Array<{ sessionId: string; cursor: string | undefined }> = []
@@ -48,7 +45,6 @@ const setup = (intervalMs = 1000) => {
     const all = views.get(sessionId) ?? []
     const start =
       cursor === undefined ? 0 : all.findIndex((entry) => entry.params.viewCursor === cursor) + 1
-    // Two events a page, so longer views take several.
     const events = all.slice(start, start + 2)
     return {
       events,
@@ -115,7 +111,6 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     f.subagents.observe(agent({ revision: 3 }))
     await vi.advanceTimersByTimeAsync(1000)
-    // The prompt echo and lifecycle stay out of the thread; its work nests under the row.
     expect(f.threads()).toEqual([["tool_call", "agent-1", "in_progress"]])
     expect(f.calls).toEqual([
       { sessionId: CHILD, cursor: undefined },
@@ -133,7 +128,6 @@ describe("Muse subagents", () => {
       ["agent_message_chunk", "agent-1", undefined],
       ["tool_call_update", "agent-1", "completed"]
     ])
-    // A compaction is the child session's own; an event without a cursor keeps the last one.
     f.append(
       CHILD,
       event(7, "item/started", {
@@ -151,7 +145,6 @@ describe("Muse subagents", () => {
     )
     await vi.advanceTimersByTimeAsync(1000)
     expect(f.sent).toHaveLength(3)
-    // Nothing new: nothing sent.
     await vi.advanceTimersByTimeAsync(1000)
     expect(f.sent).toHaveLength(3)
   })
@@ -164,7 +157,6 @@ describe("Muse subagents", () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(f.threads()).toEqual([["tool_call", "agent-1", "in_progress"]])
     const calls = f.calls.length
-    // Muse restating the answer reads nothing more.
     f.subagents.observe(agent({ revision: 4, controlStatus: "resultReady" }))
     await vi.advanceTimersByTimeAsync(5000)
     expect(f.calls).toHaveLength(calls)
@@ -176,7 +168,6 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     const release = f.hold()
     await vi.advanceTimersByTimeAsync(1000)
-    // The subagent answers while the tick's read waits on Muse.
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "closed" }))
     release()
@@ -193,10 +184,7 @@ describe("Muse subagents", () => {
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "resultReady" }))
     await vi.advanceTimersByTimeAsync(0)
-    // A later turn messages it: Muse runs it again in the same child session,
-    // and the chat gives that run a chip of its own.
     f.subagents.observe(agent({ revision: 4 }), () => "agent-1:2")
-    // Another subagent starting meanwhile shares the same interval.
     f.subagents.observe(agent({ itemId: "agent-2", childSessionId: "child-2" }))
     f.append(CHILD, read(3, "inProgress", "r2"))
     const calls = f.calls.length
@@ -255,7 +243,6 @@ describe("Muse subagents", () => {
       ["tool_call", "agent-1", "in_progress"],
       ["tool_call", "agent-2", "in_progress"]
     ])
-    // Its id is scoped to the child session it was spawned in.
     expect(f.sent[0]!.payload._meta).toEqual({
       codevisorSubagent: { taskId: `${CHILD}:subagent-1` }
     })
@@ -293,7 +280,6 @@ describe("Muse subagents", () => {
     f.subagents.stop()
     await vi.advanceTimersByTimeAsync(2000)
     expect(f.calls).toEqual([])
-    // The default interval follows a child too.
     const slow = makeMuseSubagents({
       page: async () => ({ events: [] }),
       send: () => undefined

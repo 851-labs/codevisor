@@ -25,7 +25,6 @@ it("asks a binary for its version once, and again after it changes", async () =>
   identity = "b"
   output = "opencode v2.0.24\n"
   expect(await probe("/bin/opencode")).toBe(2)
-  // One it can't stat (a bare command name) is asked every time.
   expect([await probe("/missing"), await probe("/missing")]).toEqual([undefined, undefined])
   expect(runs).toEqual(["/bin/opencode", "/bin/opencode", "/missing", "/missing"])
 })

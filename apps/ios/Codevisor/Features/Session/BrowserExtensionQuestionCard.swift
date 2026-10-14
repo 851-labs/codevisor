@@ -3,10 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Chrome setup must happen from Codevisor on the computer running the chat.
-/// iOS keeps the durable question visible as a handoff: opening the same chat
-/// on that computer exposes the installer, and the server resolves this card
-/// everywhere when Chrome connects.
 struct BrowserExtensionQuestionCard: View {
   @Bindable var controller: SessionController
   let question: QuestionSpec

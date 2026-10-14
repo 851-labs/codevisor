@@ -2,13 +2,6 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-/// Plain text for rows the virtualizer has unmounted, in the same surface
-/// order a mounted row presents, so a transcript-wide selection can be
-/// copied without mounting every row it spans.
-///
-/// Prose, code, tables, and user prompts are covered — the bulk of any
-/// transcript. Rows whose text only exists inside SwiftUI content (tool call
-/// output, diffs) contribute while mounted and are skipped once unmounted.
 enum TranscriptRowTextProjection {
   static func surfaceTexts(for row: TranscriptVirtualRow, theme: MarkdownTheme) -> [String] {
     switch row.content {

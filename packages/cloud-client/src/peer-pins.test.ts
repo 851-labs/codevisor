@@ -39,8 +39,6 @@ describe("makePeerKeyPinStore", () => {
     expect(store.get("app-2")).toBe("fresh")
     expect(persisted).toEqual([{ "app-1": "original", "app-2": "fresh" }])
 
-    // set() is TOFU: re-pinning is a no-op, not an update — and nothing is
-    // re-persisted for it.
     store.set("app-1", "attacker")
     expect(store.get("app-1")).toBe("original")
     expect(persisted).toHaveLength(1)

@@ -7,10 +7,6 @@ import { elicitationFields } from "./elicitation-schema.js"
 import { isRecord } from "./internal.js"
 import type { CodexSession, PendingCodexQuestion } from "./session.js"
 
-/// Routes codex's server→client requests: questions, MCP elicitations, and
-/// approvals block on the human's answer. The signal aborts when the codex
-/// connection dies with the ask still open — the process that would receive
-/// the answer is gone, so the ask is retracted instead of held forever.
 export const serverRequestResponse = (
   session: CodexSession,
   method: string,
@@ -25,19 +21,12 @@ export const serverRequestResponse = (
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
-      // Approvals only arrive in modes with approvalPolicy on-request (Agent /
-      // Read-only). Full-access and Plan modes never ask.
       return holdApprovalRequest(session, method, isRecord(params) ? params : {}, signal)
     default:
       return Promise.reject(new Error(`Unsupported approval request: ${method}`))
   }
 }
 
-/// Connection death retracts a held ask: settle the JSON-RPC promise via
-/// the source-specific dismissal and emit the resolution so clients drop
-/// the picker. Idempotent with the other cancellation paths (turn
-/// interrupt/completion, session close) — whichever runs first removes the
-/// map entry, and the rest find nothing to do.
 const dismissQuestionOnAbort = (
   session: CodexSession,
   questionId: string,
@@ -57,9 +46,6 @@ const dismissQuestionOnAbort = (
   )
 }
 
-/// Surfaces a codex approval request as a blocking question: Allow/Deny (plus
-/// "Allow for session" on commands) mapping onto the wire decisions. Cancel
-/// and turn interrupts answer `cancel`.
 const holdApprovalRequest = (
   session: CodexSession,
   method: string,
@@ -120,12 +106,6 @@ const holdApprovalRequest = (
   })
 }
 
-// MARK: questions
-
-/// Emits the question to the client and holds codex's JSON-RPC request open
-/// until the human answers (or the auto-resolution window elapses — codex
-/// marks such asks non-blocking, so we mirror its TUI and submit empty
-/// answers to let the turn continue).
 const holdQuestionRequest = (
   session: CodexSession,
   params: Record<string, unknown>,
@@ -185,11 +165,6 @@ const holdQuestionRequest = (
   })
 }
 
-/// Emits an MCP server's elicitation as a question and holds the request
-/// open. Form fields map onto question specs (enums → options, booleans →
-/// Yes/No, string/number → free text); the reply is the structured
-/// `{action, content}` MCP expects, with values coerced back to field types.
-/// URL-mode elicitations are declined — there is no browser hand-off UX yet.
 const holdElicitationRequest = (
   session: CodexSession,
   params: Record<string, unknown>,
@@ -238,7 +213,6 @@ const holdElicitationRequest = (
   })
 }
 
-/// Lenient mapping from codex question objects to the wire QuestionSpec.
 const questionSpecsFrom = (value: unknown): Array<QuestionSpec> => {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
@@ -289,11 +263,6 @@ const emitQuestionResolved = (
     subjectId: session.key
   })
 
-/// Resolves the human's answer back into the held request via the pending
-/// entry's source-specific builder. Cancel either sends the source's
-/// dismissal reply (MCP elicitations expect `{action: "cancel"}`) or rejects
-/// the JSON-RPC request (requestUserInput — codex tells the model the ask
-/// was cancelled).
 export const answerCodexQuestion = async (
   session: CodexSession,
   questionId: string,
@@ -323,9 +292,6 @@ const dismissPendingQuestion = (pending: PendingCodexQuestion, reason: string): 
   }
 }
 
-/// Turn interrupts, turn completion, and process close all invalidate any
-/// still-pending questions: dismiss them at the source and emit the
-/// resolution so clients drop the picker instead of hanging on it.
 export const cancelPendingQuestions = (session: CodexSession): void => {
   for (const [questionId, pending] of Array.from(session.pendingQuestions)) {
     session.pendingQuestions.delete(questionId)

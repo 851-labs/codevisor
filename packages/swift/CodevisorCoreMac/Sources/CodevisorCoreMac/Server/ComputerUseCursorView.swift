@@ -8,9 +8,6 @@ final class ComputerUseCursorPanel: NSPanel {
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
 
-  /// The transparent glow may extend beyond a screen edge. Returning the
-  /// requested frame prevents AppKit from moving the cursor hotspot away
-  /// from the event coordinate when the panel is ordered onscreen.
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
     frameRect
   }
@@ -25,9 +22,6 @@ struct ComputerUsePointerArtwork {
   }
 }
 
-/// The supplied 24×24 SVG path, converted from SVG's top-left coordinate
-/// system to AppKit and rotated left around its real tip. Keeping the tip as a
-/// first-class point lets the overlay place it exactly on the click target.
 func computerUsePointerArtwork(
   size: CGSize,
   rotation: CGFloat = ComputerUseCursorMetrics.artworkRotation
@@ -154,40 +148,11 @@ func computerUsePointerPath(
   return NSBezierPath(cgPath: artwork.cgPath.copy(using: &placement) ?? artwork.cgPath)
 }
 
-/*
- The procedural cursor proportions and general motion approach above and below are
- adapted from open-codex-computer-use (https://github.com/iFurySt/open-codex-computer-use),
- commit 460d281c0597ab83e703d0215affd9d89978c506.
-
- MIT License
-
- Copyright (c) 2026 Leo
-
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
-
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
-
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
-*/
 final class ComputerUseCursorView: NSView {
   var rotation: CGFloat = 0
   var rotationAroundCenter = false
   var bodyOffset: CGVector = .zero
   var clickProgress: CGFloat = 0
-  /// Per-agent accent. The pointer body and glow derive from this color so
-  /// concurrent sessions are visually distinguishable at a glance.
   var tint: NSColor = .black {
     didSet { needsDisplay = true }
   }
@@ -206,8 +171,6 @@ final class ComputerUseCursorView: NSView {
       y: bounds.midY + bodyOffset.dy * 0.15
     )
     let radius: CGFloat = 28 + clickProgress * 1.0
-    // Soften the accent toward the original neutral fog so the glow reads
-    // as a subtle halo in the agent's color rather than a saturated blob.
     let fog =
       tint.blended(withFraction: 0.55, of: NSColor(calibratedWhite: 0.42, alpha: 1))
       ?? tint

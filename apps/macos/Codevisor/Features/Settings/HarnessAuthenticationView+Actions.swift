@@ -3,8 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-// MARK: - Actions
-
 extension HarnessAuthenticationView {
   func load() async {
     methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
@@ -101,8 +99,6 @@ extension HarnessAuthenticationView {
   }
 
   func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
-    // Fleet credentials (OpenCode, Pi) sign in through a machine; fleet
-    // account rows sign in right here.
     if isShared, !HarnessRegistry.descriptor(for: harness.id).usesFleetAccountRows, method.kind != "apiKey" {
       machineSignIn?(HarnessMachineSignIn())
       return
@@ -114,7 +110,6 @@ extension HarnessAuthenticationView {
     }
   }
 
-  /// Completes a pasteCode flow; returns an error message for the sheet.
   func submitPastedCode(_ code: String) async -> String? {
     guard let flow else { return "This sign-in attempt has expired — start again." }
     do {
@@ -136,7 +131,6 @@ extension HarnessAuthenticationView {
     }
   }
 
-  /// Runs an API-key login; returns an error message for the sheet.
   func submitApiKey(
     account: ServerHarnessAccount,
     method: ServerHarnessAuthMethod,
@@ -198,8 +192,6 @@ extension HarnessAuthenticationView {
         return
       }
       if account.authState == "error" {
-        // Friendly text only — `detail` carries the probe's technical
-        // cause (up to a crashed CLI's stderr) and never reaches the UI.
         let message = "Couldn't verify sign-in."
         pollingTask = nil
         await cancelFlow()

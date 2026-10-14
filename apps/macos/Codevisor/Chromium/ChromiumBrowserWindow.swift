@@ -2,8 +2,6 @@ import AppKit
 import CodevisorUI
 import SwiftUI
 
-/// A detached workspace browser pane. Selecting its sidebar tab returns the
-/// same live page to the workspace; closing the window closes that pane.
 @MainActor
 final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
   private let model: ChromiumBrowserModel
@@ -87,7 +85,6 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
       ])
       host.setFrameSize(NSSize(width: 650, height: 32))
       item.view = host
-      // The hosted address bar already draws its own glass capsule.
       item.isBordered = false
       item.visibilityPriority = .high
     } else {

@@ -9,15 +9,6 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-/// Config-plane reconciliation for MCP definitions and the harness-account
-/// roster. Same three-way shape as skills-sync: a private dot-named
-/// "applied" namespace records what this machine last published or applied,
-/// distinguishing a local edit from replica lag. Since Phase 10, STATIC
-/// secrets travel with the definition — bearer token, headers, and stdio
-/// env replicate so a key-based server works on a fresh machine with zero
-/// re-entry (same-owner fleet trust). OAuth material
-/// never syncs: its tokens rotate, and concurrent refreshes would
-/// invalidate each other (Phase 11 owns that with a refresh owner).
 export const MCPS_SYNC_NAMESPACE = "mcps"
 const MCPS_APPLIED_NAMESPACE = "local.mcps-applied"
 export const ACCOUNTS_SYNC_NAMESPACE = "harness-accounts"
@@ -28,8 +19,6 @@ export interface McpSyncStatus {
   readonly published: ReadonlyArray<string>
   readonly applied: ReadonlyArray<string>
   readonly removed: ReadonlyArray<string>
-  /// First-contact collisions: a never-synced local definition whose name
-  /// the replica already held with different content moved aside to `to`.
   readonly renamed: ReadonlyArray<{ readonly from: string; readonly to: string }>
 }
 
@@ -48,10 +37,6 @@ interface SyncedMcpValue {
   readonly oauth?: SyncedOAuthEnvelope | undefined
 }
 
-/// A server's OAuth material under refresh ownership: exactly one machine
-/// (owner) rotates the tokens and republishes; mirrors adopt the material
-/// verbatim and never refresh — the one design that cannot race a rotating
-/// token family. A fresh authorize anywhere takes ownership.
 interface SyncedOAuthEnvelope {
   readonly owner: string
   readonly rotatedAtMs: number
@@ -77,7 +62,6 @@ interface StaticMcpSecrets {
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 
-/// Sorted keys so fingerprints compare equal regardless of author.
 const sortedRecord = (
   value: Readonly<Record<string, string>> | undefined
 ): Record<string, string> | undefined => {
@@ -142,8 +126,6 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
   ) {
     return undefined
   }
-  // Wrong-transport junk from a replica must never poison an apply:
-  // headers and bearer tokens belong to http servers, env to stdio ones.
   const isHttp = candidate.transport === "http"
   const headers = isHttp ? stringRecord(candidate.headers) : undefined
   const env = isHttp ? undefined : stringRecord(candidate.env)
@@ -181,9 +163,6 @@ export interface McpSyncResult {
   readonly changedEntries: ReadonlyArray<SyncEntryRecord>
 }
 
-/// Reconciles this machine's MANAGED MCP definitions against the replica.
-/// Keys are the definition names — the one identity that survives each
-/// machine minting its own record ids.
 export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> => {
   const now = deps.now ?? Date.now
   const locals = (await deps.mcp.list()).filter((server) => server.kind === "managed")
@@ -209,17 +188,9 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     return clock
   }
 
-  // Local creations and edits publish. First contact is the exception:
-  // when the replica already holds a name this machine never applied, an
-  // identical definition is adopted in place and a different one is
-  // renamed aside — a join never silently overwrites either side (the
-  // fleet definition applies under the original name below).
   for (const [name, server] of Array.from(localByName)) {
     const existing = replicaByKey.get(name)
     const wanted = existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
-    // OAuth material: only the refresh owner publishes its own envelope;
-    // mirrors graft the replica's verbatim, so their fingerprints match
-    // without ever publishing (or racing) tokens they do not own.
     const oauthState =
       server.authType === "oauth" ? await deps.mcp.oauthSyncState(server.id) : undefined
     const ownedOAuth =
@@ -252,7 +223,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     appliedByKey.set(key, fingerprint(value))
     published.push(key)
   }
-  // Local deletions publish tombstones.
   for (const [name] of appliedByKey) {
     if (localByName.has(name)) continue
     if (replicaByKey.get(name)?.deleted === true) continue
@@ -267,7 +237,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       : []
   const merged = await run(deps.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
 
-  // Replica entries apply into the manager.
   for (const entry of merged) {
     const name = entry.key
     const local = localByName.get(name)
@@ -286,10 +255,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     }
     const wanted = parseSyncedValue(entry.value)
     if (wanted === undefined) continue
-    // OAuth material imports BEFORE the fingerprint skip: the mirror's
-    // publish loop grafts the envelope into its applied fingerprint, so
-    // fp equality cannot mean the material itself was adopted. The import
-    // is a no-op for identical material and for the owner.
     if (wanted.oauth !== undefined && wanted.oauth.owner !== deps.serverId) {
       const holder = localByName.get(name)
       if (holder !== undefined) {
@@ -297,8 +262,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       }
     }
     const wantedFingerprint = fingerprint(wanted)
-    // The publish loop above already recorded every local definition, so a
-    // matching applied fingerprint covers "already ours" too.
     if (appliedByKey.get(name) === wantedFingerprint) continue
     if (local === undefined) {
       const created = await deps.mcp.create({
@@ -318,10 +281,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
         await deps.mcp.importOAuthMaterial(created.id, wanted.oauth)
       }
     } else {
-      // Definition fields plus static secrets converge exactly — absent
-      // synced headers/env are removed, an absent bearer clears (empty
-      // string normalizes back to absent). OAuth material was imported
-      // above, before the fingerprint skip.
       const wantedHeaders = wanted.headers ?? {}
       const wantedEnv = wanted.env ?? {}
       await deps.mcp.update(local.id, {
@@ -336,14 +295,14 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
           ? {
               bearerToken: wanted.bearerToken ?? "",
               ...(wanted.headers === undefined ? {} : { headers: wanted.headers }),
-              /* v8 ignore next 2 -- list() always carries headerNames on a live server. */
+              /* v8 ignore next 2 */
               removeHeaders: (local.headerNames ?? []).filter(
                 (header) => wantedHeaders[header] === undefined
               )
             }
           : {
               ...(wanted.env === undefined ? {} : { env: wanted.env }),
-              /* v8 ignore next 2 -- list() always carries environmentNames on a live server. */
+              /* v8 ignore next 2 */
               removeEnv: (local.environmentNames ?? []).filter(
                 (variable) => wantedEnv[variable] === undefined
               )
@@ -368,20 +327,13 @@ export interface AccountsRosterDeps {
   readonly now?: () => number
 }
 
-/// Publishes this machine's harness-account roster (metadata ONLY — no
-/// credential material) under its own machine key. Each machine writes only
-/// its own entry: single-writer, so the roster can never conflict. Purely
-/// informational groundwork for fleet-wide account views.
 export const HARNESS_READINESS_NAMESPACE = "harness-readiness"
 
 export interface HarnessReadinessRow {
   readonly id: string
-  /// Display identity, so clients can list a machine's harnesses (the "Add
-  /// Harness" picker) from synced config alone.
   readonly name: string
   readonly symbolName: string
   readonly installed?: boolean
-  /// False only when the harness needs no sign-in at all.
   readonly authRequired: boolean
   readonly state:
     | "ready"
@@ -392,24 +344,15 @@ export interface HarnessReadinessRow {
     | "installing"
     | "uninstalling"
   readonly reason?: string | undefined
-  /// The installed CLI's version, so clients can tell major versions apart
-  /// across the fleet (OpenCode 1 and 2 need different account handling).
   readonly version?: string
 }
 
-/// The one readiness publisher every plane shares: one single-writer entry
-/// keyed by this machine's server id, change-detected so a settled machine
-/// republishes nothing. Callers derive the plane-specific value (they need
-/// the live manager state); this layer owns only the merge.
 export const publishMachineReadiness = async (deps: {
   readonly db: CodevisorDatabaseService
   readonly namespace: string
   readonly serverId: string
   readonly value: object
   readonly now?: () => number
-  /// Changes this report answers (sign-ins that arrived from another
-  /// machine): it is published even when unchanged, stamped after them, so
-  /// the fleet can tell this machine has caught up with them.
   readonly answers?: ReadonlyArray<SyncEntryRecord>
 }): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
   const now = deps.now ?? Date.now

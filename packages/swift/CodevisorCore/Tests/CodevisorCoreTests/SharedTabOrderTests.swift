@@ -5,7 +5,6 @@ import Testing
 @testable import CodevisorClient
 @testable import CodevisorCore
 
-/// Tab order is shared across devices; splits stay per device.
 @MainActor
 struct SharedTabOrderTests {
   private let first = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
@@ -14,7 +13,6 @@ struct SharedTabOrderTests {
 
   @Test("Midpoint keys match the server's digit for digit")
   func positionsMatchServer() {
-    // The same vectors are asserted in packages/api/src/workspace-position.test.ts.
     let lower = WorkspacePosition.initial(createdAt: Date(timeIntervalSince1970: 0.2), id: first)
     let upper = WorkspacePosition.initial(createdAt: Date(timeIntervalSince1970: 0.1), id: second)
     #expect(lower == "ffffffffff378000000000000000000000000000000018")
@@ -54,7 +52,6 @@ struct SharedTabOrderTests {
     let moves = SharedTabOrder.moves(for: [split, tabs[0]], positions: positions)
     #expect(Set(moves.map(\.paneId)) == [panes[1], panes[2]])
     for move in moves { positions[move.paneId] = move.position }
-    // The device without the split sorts the three panes as tabs.
     #expect(SharedTabOrder.sorted(tabs, positions: positions).map(\.id) == [tabs[1].id, tabs[2].id, tabs[0].id])
   }
 

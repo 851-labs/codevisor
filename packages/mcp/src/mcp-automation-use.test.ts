@@ -39,7 +39,6 @@ describe("automation use", () => {
     expect(browser.calls).toEqual(["invoke:tabs", "invoke:click", "invoke:tabs", "invoke:scroll"])
     expect(computer.calls).toEqual(["invoke:computer.js"])
 
-    // A late subscriber hears the current tool straight away.
     const late: Array<AutomationTool> = []
     const unsubscribeLate = use.subscribe("chat", (tool) => late.push(tool))
     expect(late).toEqual(["browser"])
@@ -49,7 +48,6 @@ describe("automation use", () => {
     await trackedComputer.invoke({ sessionId: "chat" }, "computer.js", {})
     expect(seen).toEqual(["browser", "computer", "browser"])
 
-    // A repeated unsubscribe doesn't drop a newer subscriber.
     const newer: Array<AutomationTool> = []
     use.subscribe("chat", (tool) => newer.push(tool))
     unsubscribe()

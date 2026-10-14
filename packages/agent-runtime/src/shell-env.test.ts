@@ -33,7 +33,6 @@ vi.mock("node:os", async (importOriginal) => {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  // Module-factory vi.fn mocks keep their implementations after restoreAllMocks.
   vi.resetAllMocks()
 })
 
@@ -111,12 +110,10 @@ describe("resolveShellEnv", () => {
 
     expect(invocations).toEqual([["/bin/fish", ["-ilc", "/usr/bin/env"], 5000]])
     const directories = (resolved.PATH ?? "").split(":")
-    // Probed ordering wins; duplicates from base/fallbacks collapse.
     expect(directories.slice(0, 3)).toEqual(["/probe-first", "/usr/bin", "/opt/homebrew/bin"])
     expect(directories).toContain("/base-only")
     expect(directories).toContain("/Users/tester/.local/bin")
     expect(directories.filter((directory) => directory === "/usr/bin")).toHaveLength(1)
-    // Non-PATH keys pass through untouched.
     expect(resolved.SHELL).toBe("/bin/fish")
   })
 
@@ -184,7 +181,6 @@ describe("resolveShellEnv", () => {
       userShell: () => "/etc/shells/fish",
       executableExists: (path) => path === "/etc/shells/fish"
     })
-    // $SHELL set but not installed: skip it in favor of the platform default.
     await resolveShellEnv({
       base: { SHELL: "/gone" },
       platform: "linux",
@@ -251,8 +247,6 @@ describe("resolveShellEnv", () => {
         return Promise.resolve(envOutput("/probed"))
       }
     })
-    // Default accessSync check rejects the missing $SHELL and accepts the
-    // platform default, which every supported host ships.
     expect(shells).toEqual(["/bin/bash"])
   })
 
@@ -277,9 +271,6 @@ describe("resolveShellEnv", () => {
   })
 
   it("uses the real shell runner by default, degrading when the shell is missing", async () => {
-    // SHELL points at a binary that cannot exist, so the default execFile
-    // runner fails fast — covering the default-runner path without ever
-    // spawning a real login shell in tests.
     const resolved = await resolveShellEnv({
       base: { PATH: "/base-only", SHELL: missingPath() },
       platform: "linux",
@@ -293,8 +284,6 @@ describe("resolveShellEnv", () => {
   })
 
   it("defaults base/platform/homedir from the process without probing a login shell", async () => {
-    // Only inject runShell: base=process.env, platform=process.platform,
-    // homedir=os.homedir() — the merge must still include the fallback dirs.
     const resolved = await resolveShellEnv({
       runShell: () => Promise.resolve(envOutput("/probed-default"))
     })
@@ -318,7 +307,6 @@ describe("runShellCommand", () => {
   })
 
   it("resolves stdout from a real process", async () => {
-    // /bin/sh -c is not a login shell — no user rc files run in tests.
     await expect(runShellCommand("/bin/sh", ["-c", "printf 'PATH=/x\\n'"], 5000)).resolves.toBe(
       "PATH=/x\n"
     )
@@ -354,7 +342,6 @@ describe("nvmBinDirectories", () => {
 
   it("returns nothing when nvm is absent or holds no versions", () => {
     expect(nvmBinDirectories("/h", () => [])).toEqual([])
-    // Default lister tolerates a missing directory.
     expect(nvmBinDirectories(missingPath())).toEqual([])
   })
 })

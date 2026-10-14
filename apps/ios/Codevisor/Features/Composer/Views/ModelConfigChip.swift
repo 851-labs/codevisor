@@ -3,8 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Separate model and parameter controls, matching the macOS composer.
-/// Models use a searchable sheet; parameters use a native menu to its right.
 struct ModelConfigChip: View {
   @Environment(AppEnvironment.self) private var environment
   @Bindable var controller: SessionController
@@ -14,7 +12,6 @@ struct ModelConfigChip: View {
     controller.hasModelMenu || controller.canChooseHarness
   }
 
-  /// The chip's text when no model list is on offer at all.
   private var noModelsLabel: String {
     let needsSignIn = !environment.configCache
       .signInRequired(forServer: controller.project.serverId).isEmpty
@@ -24,7 +21,6 @@ struct ModelConfigChip: View {
     return "Select a model"
   }
 
-  /// The controller's in-flight pick, in the sheet's vocabulary.
   private var pendingSelection: PendingModelSelection? {
     controller.pendingModelPick.map {
       PendingModelSelection(groupId: $0.harnessId, modelValue: $0.value, modelName: $0.name)
@@ -34,7 +30,6 @@ struct ModelConfigChip: View {
   var body: some View {
     let presentation = controller.modelPickerPresentation
     Group {
-      // One spinner at most across both chips (see ModelPickerPresentation).
       if presentation.modelChip == .loading {
         ProgressView()
           .controlSize(.small)
@@ -50,20 +45,12 @@ struct ModelConfigChip: View {
         }
       }
     }
-    // Keep the presenter mounted while the catalog changes. A conditional
-    // presenter caused the sheet to dismiss as soon as an auth-only result
-    // removed the last model menu.
-    // A popover anchored to the chip on iPad; compact width adapts it to
-    // the same half-height sheet as before.
     .popover(isPresented: $showsPicker) {
       ModelPickerSheet(controller: controller, pending: pendingSelection, onChoose: choose)
         .frame(idealWidth: 400, idealHeight: 560)
     }
   }
 
-  /// Picking a model under another harness selects that harness first (new
-  /// chats only), then applies the model. The sheet is already gone by the
-  /// time this runs; the controller names the pick on the chip meanwhile.
   private func choose(_ model: SessionConfigSelectOption, in groupId: String) {
     Task {
       await controller.chooseModel(model.value, name: model.name, harnessId: groupId)
@@ -106,8 +93,6 @@ struct ModelConfigChip: View {
       + controller.pickerOptions
   }
 
-  /// The chip's text. While settings are loading with nothing to name yet,
-  /// the spinner alone is the label.
   private func parameterSummary(_ presentation: ModelPickerPresentation) -> String? {
     let summary = settingsOptions.filter { option in
       let isSpeed = option.category == SessionConfigOption.Category.speed || option.id == "speed"
@@ -147,8 +132,6 @@ struct ModelConfigChip: View {
     .buttonStyle(.plain)
     .pointerHighlight(Capsule())
     .layoutPriority(1)
-    // Picks made while the harness connects are staged, not dropped, and
-    // an in-flight model pick must not lock the menu.
     .accessibilityLabel("Model parameters")
     .accessibilityValue(
       settingsOptions.map { "\($0.name), \($0.currentName)" }.joined(separator: ", ")
@@ -160,7 +143,6 @@ struct ModelConfigChip: View {
     Binding(
       get: { (controller.configOptions.first { $0.id == option.id }?.currentValue ?? option.currentValue) == value },
       set: { isSelected in
-        // Each section is single-select; tapping its checked item keeps it selected.
         guard isSelected else { return }
         Task { await controller.setConfigOption(option.id, value) }
       }
@@ -168,9 +150,6 @@ struct ModelConfigChip: View {
   }
 }
 
-/// A model pick that has been handed to the controller but not confirmed by
-/// the harness yet. Shared by the chip (label + spinner) and the sheet (the
-/// row's checkmark slot) so both agree on what "current" means meanwhile.
 struct PendingModelSelection: Equatable {
   let groupId: String
   let modelValue: String

@@ -6,11 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 import os
 
-/// Device-local chat attention settings. The master switch controls both
-/// background banners and foreground sounds; subordinate switches let people
-/// tune either presentation without duplicating macOS-wide Focus controls.
 struct NotificationsSettingsView: View {
-  /// A failed custom-sound action (import/delete), pending display in an alert.
   private struct SoundActionError: Identifiable {
     let id = UUID()
     let title: String
@@ -23,8 +19,6 @@ struct NotificationsSettingsView: View {
   @State private var soundChoices: [SystemSoundChoice] = []
   @State private var testMessage: String?
   @State private var showingSoundImporter = false
-  /// Which sound row opened the importer, so the imported sound is
-  /// auto-assigned there; nil when importing from the Custom Sounds list.
   @State private var soundImportTarget: ChatAttentionKind?
   @State private var soundError: SoundActionError?
 
@@ -334,8 +328,6 @@ struct NotificationsSettingsView: View {
       case nil:
         break
       }
-      // Audition the converted sound right away, so a bad pick is
-      // obvious while the user is still in Settings.
       ChatNotificationManager.shared.playSample(at: imported.path)
     } catch {
       Log.attachments.error("Importing custom sound failed: \(String(describing: error), privacy: .public)")
@@ -359,8 +351,6 @@ struct NotificationsSettingsView: View {
       )
       return
     }
-    // A notification kind pointing at the deleted file falls back to the
-    // default system sound instead of silently beeping later.
     if settings.chatFinishedSoundPath == sound.path {
       environment.settings.setChatFinishedSoundPath(AppSettings.defaultNotificationSoundPath)
     }

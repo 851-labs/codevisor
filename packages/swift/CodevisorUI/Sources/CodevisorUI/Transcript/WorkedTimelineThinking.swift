@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The last line of a live worked section's timeline while the harness
-/// reports the model reasoning. The note or tool that follows takes its
-/// place.
 struct WorkedTimelineThinking: View {
   let isFirst: Bool
 

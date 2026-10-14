@@ -39,8 +39,6 @@ describe("hub presence", () => {
     const listed = app.welcome.machines.find((m) => m.deviceId === machine.deviceId)
     expect(listed).toMatchObject({ name: "vps-1", online: true, publicKey: machine.keys.publicKey })
 
-    // Disconnect → the offline broadcast is DEFERRED by the resume grace
-    // window; it fires only when nobody resumes before expiry.
     await disconnect(token, machine.socket, "bye")
     await expireResumeGrace(token)
     const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
@@ -73,7 +71,6 @@ describe("hub presence", () => {
     })
     expect(removed.status).toBe(200)
     expect((await list()).some((m) => m.deviceId === machine.deviceId)).toBe(false)
-    // The machine's credential is revoked with it.
     expect(
       (
         await SELF.fetch(`${BASE}/connect`, {
@@ -113,7 +110,6 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "relay-vps")
     const app = await connectApp(token)
 
-    // App opens a terminal channel, E2E encrypted to the machine's static key.
     const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
     const openPayload = {
       channelType: "terminal",
@@ -131,11 +127,8 @@ describe("hub relay", () => {
     const opened = await machine.reader.nextEnvelope()
     const openHeader = opened.header as HubToMachineRelayHeader
     expect(openHeader.peerPublicKey).toBe(app.keys.publicKey)
-    // The opener's stable device id rides along so the machine can TOFU-pin
-    // the key under it.
     expect(openHeader.peerDeviceId).toBe(app.deviceId)
     const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
-    // Machine authenticates the opener and decrypts the channel intent.
     const responder = acceptChannel(
       machine.keys.secretKey,
       openHeader.peerPublicKey!,
@@ -145,7 +138,6 @@ describe("hub relay", () => {
       openPayload
     )
 
-    // Machine answers with sealed terminal output.
     sendRelay(
       machine.socket,
       { peerId: openHeader.peerId, frame: { t: "data", channelId: "ch-1", seq: 0 } },
@@ -164,7 +156,6 @@ describe("hub relay", () => {
       data: "hello from the machine"
     })
 
-    // Credit + close flow through untouched (empty payloads; header-only).
     sendRelay(app.socket, {
       machineId: machine.deviceId,
       frame: { t: "credit", channelId: "ch-1", seq: 1, bytes: 65536 }
@@ -188,8 +179,6 @@ describe("hub relay", () => {
     const app = await connectApp(token)
     const before = machine.reader.binaryMessages
 
-    // Three envelopes for the same machine in ONE binary message — the hub
-    // must forward them as one message, preserving order.
     app.socket.send(
       encodeRelayEnvelopes([
         {
@@ -267,8 +256,6 @@ describe("hub relay", () => {
       bytes: request.payload.byteLength
     })
 
-    // Protocol pings are answered by the WebSocket auto-response pair used
-    // by the hibernation API; the byte stream remains routable afterwards.
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
     const responseBytes = new Uint8Array([9, 8, 7, 0, 255])
@@ -288,7 +275,6 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "http-vps")
     const app = await connectApp(token)
 
-    // The machine's stub local server, standing in for the real loopback API.
     const localServer = (method: string, path: string) => {
       expect(method).toBe("GET")
       expect(path).toBe("/v1/info")
@@ -299,7 +285,6 @@ describe("hub relay", () => {
       }
     }
 
-    // App opens an http channel and ends its (empty) request body.
     const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
     const openPayload = {
       channelType: "http",
@@ -319,8 +304,6 @@ describe("hub relay", () => {
       sealJson(channel.cipher, "http-1", "opener-to-responder", 1, { kind: "end" })
     )
 
-    // Machine side: accept the channel, decrypt the request, answer per the
-    // http contract — head, one chunk, end, close("done").
     const opened = await machine.reader.nextEnvelope()
     const openHeader = opened.header as HubToMachineRelayHeader
     const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
@@ -353,7 +336,6 @@ describe("hub relay", () => {
       frame: { t: "close", channelId: "http-1", seq: 3, reason: "done" }
     })
 
-    // App decrypts the full choreography back out of the relay.
     const read = async (seq: number): Promise<unknown> => {
       const relayed = await app.reader.nextEnvelope()
       return openJson(channel.cipher, "http-1", "responder-to-opener", seq, relayed.payload)
@@ -380,11 +362,8 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "flaky-vps")
     const app = await connectApp(token)
     await disconnect(token, machine.socket, "gone")
-    // Nothing is announced until the resume grace expires unresumed.
     await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
-    // The proactive broadcast: receive-only streams can never provoke the
-    // reactive error below, so the hub reports the loss unprompted.
     const broadcast = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(broadcast).toMatchObject({
       t: "error",
@@ -410,12 +389,8 @@ describe("hub relay", () => {
     const superseded = new Promise<number>((resolve) =>
       machine.socket.addEventListener("close", (event) => resolve(event.code))
     )
-    // The same device reconnects while its previous socket lingers half-open.
     const reborn = await connectMachine(token, "reconnect-vps", machine.deviceId)
 
-    // Welcome is the handoff boundary: a relay sent immediately afterward
-    // must reach the new generation even if the old socket's close callback
-    // has not arrived yet.
     sendRelay(
       app.socket,
       { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-fresh", seq: 0 } },
@@ -426,11 +401,7 @@ describe("hub relay", () => {
       channelId: "ch-fresh"
     })
 
-    // The zombie is closed with the non-fatal supersede code so it cannot
-    // black-hole routed frames or suppress a later offline broadcast.
     expect(await superseded).toBe(4003)
-    // Apps are told to drop dead channels before the machine turns online, so
-    // re-opens park briefly and then dispatch to the fresh socket.
     const reset = (await app.reader.next()) as Extract<HubToApp, { t: "machine-reset" }>
     expect(reset).toMatchObject({ t: "machine-reset", machineId: machine.deviceId })
     const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
@@ -442,7 +413,6 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "peer-vps")
     const app = await connectApp(token)
     await disconnect(token, app.socket, "app quit")
-    // Deferred: the peer-gone arrives only after the grace expires unresumed.
     await expireResumeGrace(token)
     const gone = (await machine.reader.next()) as Extract<HubToMachine, { t: "peer-gone" }>
     expect(gone).toMatchObject({ t: "peer-gone", peerId: app.welcome.connectionId })
@@ -454,9 +424,6 @@ describe("hub relay", () => {
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
 
-    // Machine heartbeats use the same hibernation-safe auto-response. This is
-    // the liveness contract that lets a machine detect a half-open socket
-    // without periodically waking the account's Durable Object.
     const machine = await connectMachine(token, "heartbeat-vps")
     expect((await app.reader.next()).t).toBe("machine-reset")
     expect((await app.reader.next()).t).toBe("presence")
@@ -467,12 +434,10 @@ describe("hub relay", () => {
     const notJson = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(notJson.code).toBe("invalid-frame")
 
-    // Truncated binary relay messages are refused the same way.
     app.socket.send(new Uint8Array([0, 0, 0, 99]).buffer)
     const truncated = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(truncated.code).toBe("invalid-frame")
 
-    // Well-formed envelope, malformed header.
     app.socket.send(encodeRelayEnvelopes([{ header: { nope: true }, payload: new Uint8Array(0) }]))
     const badHeader = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(badHeader.code).toBe("invalid-frame")

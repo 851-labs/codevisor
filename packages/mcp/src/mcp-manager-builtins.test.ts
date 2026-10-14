@@ -70,7 +70,6 @@ describe("MCP manager built-in providers and suppression", () => {
       managedAvailable: false
     })
     expect(errors).toHaveBeenCalledWith("Browser Use unavailable: extension archive is unreadable")
-    // Without a browser there is nothing to preview: the card never appears.
     const statuses: Array<unknown> = []
     const preview = manager.subscribeBrowserPreview("chat", {
       status: (status) => statuses.push(status),
@@ -91,7 +90,6 @@ describe("MCP manager built-in providers and suppression", () => {
     })
     preview.close()
     expect(statuses).toEqual([{ state: "inactive", title: "", url: "" }])
-    // No tool has been touched yet, so nothing is reported.
     const tools: Array<unknown> = []
     manager.subscribeAutomationUse("chat", (tool) => tools.push(tool))()
     expect(tools).toEqual([])
@@ -110,25 +108,19 @@ describe("MCP manager built-in providers and suppression", () => {
     expect(created.connectionState).toBe("connected")
 
     await manager.setLocalSuppression(new Set(["Suppressible"]))
-    // Sessions never see it, while the fleet definition stays enabled.
     expect((await manager.resolved()).some((server) => server.name === "Suppressible")).toBe(false)
     const listed = (await manager.list()).find((server) => server.name === "Suppressible")
     expect(listed?.enabled).toBe(true)
     expect(listed?.connectionState).toBe("disconnected")
     await expect(manager.connect(created.id)).rejects.toThrow("disabled on this machine")
-    // Idempotent re-application with no live connection left to close.
     await manager.setLocalSuppression(new Set(["Suppressible"]))
 
-    // Lifting the suppression restores resolution and connectability.
     await manager.setLocalSuppression(new Set())
     expect((await manager.resolved()).some((server) => server.name === "Suppressible")).toBe(true)
     expect((await manager.connect(created.id)).connectionState).toBe("connected")
   })
 
   it("hides a suppressed built-in provider's tools from the catalog", async () => {
-    // Built-ins never pass through connectUpstream, so without an explicit
-    // catalog check a machine-disabled Computer Use would keep advertising
-    // its tools to every session.
     const { manager } = await testManager()
     const computer = (await manager.list()).find((server) => server.kind === "computerUse")
     if (computer === undefined) throw new Error("computer use provider missing")

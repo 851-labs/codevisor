@@ -1,7 +1,6 @@
 import CodevisorUI
 import Foundation
 
-/// The toolbar and pane resolve the same presentation state across navigation.
 @MainActor
 final class FilePaneCache {
   static let shared = FilePaneCache()

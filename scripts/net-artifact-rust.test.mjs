@@ -24,7 +24,6 @@ test("rustup is looked for in its installer's and Homebrew's locations, the inst
 test("the first directory with both rustup and its cargo proxy wins; a lone cargo doesn't count", async () => {
   const root = mkdtempSync(join(tmpdir(), "net-rustup-"))
   try {
-    // Homebrew's standalone `rust` has cargo but no rustup: never picked.
     const standalone = directory(root, "rust", ["cargo", "rustc"])
     const homebrew = directory(root, "rustup", ["rustup", "cargo", "rustc"])
     const installer = directory(root, "cargo-bin", ["rustup", "cargo"])

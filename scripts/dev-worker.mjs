@@ -51,15 +51,8 @@ const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArg
   allowedArguments: ["--no-ios", "--reuse-macos-build"]
 })
 const reuseMacOSBuild = requestsMacOSBuildReuse(arguments_)
-// Both apps by default — `dev` means the whole rig. `--no-ios` backs the
-// dev:macos script; it is plumbing, not a user-facing option (the public
-// surface is dev / dev:macos / dev:ios plus the container flags; dev:macos
-// also permits explicit reuse of its already-built, signed application).
 const includesIOS = !arguments_.includes("--no-ios")
 const simulator = includesIOS ? await requireIOSSimulator(repoRoot) : undefined
-// A containerized dev remote is the default: a real Linux machine makes
-// cross-machine sync honest. --no-containers opts out; a missing engine
-// falls back to same-host processes with a warning either way.
 sanitizeAmbientEnvironment(process.env)
 const instance = await resolveDevelopmentInstance(repoRoot, process.env)
 const {
@@ -84,8 +77,6 @@ const {
   wwwPort
 } = instance
 const { capture, run } = makeCommandRunner(repoRoot)
-// Fail before claiming a runner or starting services. Do not silently
-// rebuild an app whose ad-hoc identity was just granted OS permissions.
 if (reuseMacOSBuild) {
   await verifyReusableMacOSApp({
     appBundle,
@@ -118,26 +109,11 @@ console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
 if (includesIOS) console.log(`  targets:  macOS + iOS (${simulator.name})`)
 
-// Install once, then run the independent preparation tracks concurrently.
-// Cold, each is bound by a different resource — the SwiftPM clone by the
-// network, the Chromium wrapper build by CPU, the Linux container install by
-// both — so they overlap almost entirely instead of queueing.
 await bootstrapDevelopment(repoRoot, { environment: process.env })
 const macOSProject = ["-project", "apps/macos/Codevisor.xcodeproj", "-scheme", "Codevisor"]
 const prepareServers = async () => {
   await run("bun", ["run", "--cwd", "apps/server", "build"])
-  // The local cloud instance: real Workers runtime (workerd) with local D1 and
-  // Durable Objects, persisted under tmp/ like all other dev state. Started
-  // before the app build so it is healthy — and the dev session is signed in —
-  // by the time the servers spawn and need CODEVISOR_DEV_CLOUD_TOKEN.
-  // cwd apps/cloud so bunx resolves the workspace's wrangler version — a
-  // stray/global wrangler brings its own (older) workerd, which cannot read
-  // local D1/DO state written by the workspace version. Failures fall through
-  // to prepareCloudSession's "continuing without it" path instead of crashing.
   await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
-  // Containerized dev remote: Dev Cloud runs as a real Linux machine so
-  // config-plane sync is tested across genuinely separate filesystems. Falls back to same-host processes when no engine
-  // is available — never boots a stopped Docker daemon.
   const containerEngine = wantsContainers
     ? await resolveContainerEngine(containerEnginePreference)
     : undefined
@@ -163,8 +139,6 @@ const [containerContext] = await Promise.all([
       })
 ])
 
-// Local tunnel relays: same binary and config
-// renderer as production, per-worktree ports and dev CA.
 const net = await prepareDevNet({
   instanceHash,
   netRoot: join(layout.tmpRoot, "net"),
@@ -244,22 +218,13 @@ const sharedEnvironment = {
   CODEVISOR_DEV_EXTENSION_ICON_DIR: developmentBrowserIconDirectory,
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
-  // The local cloud instance (auth + relay). The token is a dev-user session
-  // filled in once the cloud is healthy, so clients can sign in without any
-  // GitHub OAuth setup.
   CODEVISOR_DEV_CLOUD_URL: cloudUrl,
-  // Vite only exposes VITE_-prefixed vars to app code (import.meta.env);
-  // the www plugin directory uses these to hit the dev cloud registry and to
-  // deeplink into this instance's app (not some other worktree's).
   VITE_CODEVISOR_DEV_CLOUD_URL: cloudUrl,
   CODEVISOR_DEV_URL_SCHEME: urlScheme,
   VITE_CODEVISOR_DEV_URL_SCHEME: urlScheme,
   CODEVISOR_DEV_CLOUD_TOKEN: "",
   ...(await devNetEnvironment(net))
 }
-/// Everything except the dev-cloud session token. Only the Dev Cloud
-/// container is pre-signed-in (the "machine somewhere else"); every other
-/// process authenticates exactly as it would in production.
 const withoutCloudToken = (environment) => {
   const copy = { ...environment }
   delete copy.CODEVISOR_DEV_CLOUD_TOKEN
@@ -267,8 +232,6 @@ const withoutCloudToken = (environment) => {
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
-// Sign into the dev cloud BEFORE spawning servers, so their environment
-// carries a real session token and they auto-provision into the hub.
 await prepareCloudSession({ cloudProcess: cloud, cloudUrl, sharedEnvironment })
 
 const server = spawn(
@@ -291,9 +254,6 @@ const server = spawn(
     "--upgrade-status",
     upgradeStatusPath
   ],
-  // No session token: in production the Mac App's server joins the cloud
-  // when the user signs into the app, which then registers it. The dev
-  // cloud URL stays so that sign-in targets the local cloud instance.
   { cwd: repoRoot, env: withoutCloudToken(sharedEnvironment), stdio: "inherit" }
 )
 
@@ -303,10 +263,6 @@ const www = spawn(
   { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
 )
 
-// Dev Cloud: a standalone server fully isolated from the local instance (its
-// own data dir, worktrees, and managed repos) that signs into the dev cloud
-// and is reached through the relay — the hub's realistic "machine somewhere
-// else".
 const cloudRemoteServer = await launchDevRemoteServer({
   containerContext,
   repoRoot,
@@ -320,7 +276,6 @@ const cloudRemoteServer = await launchDevRemoteServer({
     CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
     CODEVISOR_DEV_CLOUD_URL: cloudUrl,
     CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN,
-    // Always-relayed machine: exercises the relay path on every dev run.
     CODEVISOR_NET_PATH_POLICY: "relay-only",
     ...(await devNetEnvironment(net, { inline: true }))
   }
@@ -376,13 +331,9 @@ void waitForExit(cloud).then((result) => {
 
 try {
   await waitForHealth(port, server)
-  // First container boots install Linux node_modules; allow minutes, not 30s.
   const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
   console.log(`\n${cloudRemoteName} is ready; it appears after signing into the dev cloud.\n`)
-  // The apps sign into the dev cloud the production way (device-code
-  // flow against CODEVISOR_DEV_CLOUD_URL); the session token never reaches
-  // them, so cloud machines appear on a client only after a real sign-in.
   const launchEnvironment = Object.entries(withoutCloudToken(sharedEnvironment)).filter(
     ([key]) =>
       key === "TMPDIR" ||
@@ -396,9 +347,6 @@ try {
     ...launchEnvironment.flatMap(([key, value]) => ["--env", `${key}=${value}`]),
     appBundle
   ]
-  // LaunchServices gives the app its own macOS responsibility identity. A
-  // direct child executable inherits the invoking terminal/agent identity,
-  // making an enabled Accessibility toggle appear denied after an update.
   app = spawn("/usr/bin/open", openArguments, {
     cwd: repoRoot,
     env: process.env,

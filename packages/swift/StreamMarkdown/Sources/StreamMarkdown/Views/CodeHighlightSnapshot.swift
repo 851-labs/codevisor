@@ -1,8 +1,5 @@
 import Foundation
 
-/// A highlight result belongs to exact source and theme. An append can keep
-/// its colored prefix, but must expose the new suffix immediately while the
-/// next highlight is pending. Replacements never reuse stale characters.
 struct CodeHighlightSnapshot {
   let source: String
   let language: String?

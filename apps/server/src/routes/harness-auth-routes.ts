@@ -22,9 +22,6 @@ import type { CodevisorServerServices } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
 import { routeSharedHarnessAccounts } from "./shared-harness-accounts.js"
 
-/// Harness authentication routes: OpenCode and Pi provider flows, auth
-/// refresh, and per-harness account management.
-
 export const routeHarnessAuth = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -178,8 +175,6 @@ export const routeHarnessAuth = async (
       throw new HttpFailure(501, "Harness authentication unavailable")
     const harnessId = url.searchParams.get("harnessId")?.trim() || undefined
     await services.auth.refresh(harnessId)
-    // Settings consumes this — keep lifecycle fields so a sign-in doesn't
-    // wipe the row's update state.
     writeJson(
       response,
       200,

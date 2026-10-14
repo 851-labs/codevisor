@@ -1,6 +1,5 @@
 import UIKit
 
-/// Shares a simulator screenshot through the system share sheet, from the frontmost window.
 @MainActor
 enum SimulatorScreenshotSharing {
   static func share(_ data: Data, deviceName: String) {

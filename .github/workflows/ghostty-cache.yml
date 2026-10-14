@@ -1,21 +1,7 @@
-# Weekly insurance for the GhosttyKit and Xcode caches. Every main push now
-# warms these through build.yml, so a second push-triggered build
-# would only duplicate the signed Alpha build.
-#
-# GitHub Actions cache scoping means a cache saved during a tag-triggered
-# release run is only visible to that same tag ref — every new release tag
-# starts cold and would rebuild GhosttyKit from source (~20 minutes). Caches
-# saved from the default branch, however, are visible to ALL refs, so this
-# workflow builds and saves the cache from main and release runs restore it.
-#
-# The main-push Build workflow owns normal cache writes; this schedule only keeps
-# them alive during quiet weeks.
 name: Maintain macOS Build Caches
 
 on:
   schedule:
-    # Caches are evicted after 7 days without access; rebuild weekly as
-    # insurance for quiet stretches between releases.
     - cron: "23 7 * * 1"
   workflow_dispatch:
 
@@ -30,10 +16,9 @@ jobs:
   build:
     runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: true
-          # Native self-hosted runners own their checkouts; no global trust entry is needed.
           set-safe-directory: false
       - name: Select full Xcode
         shell: bash
@@ -44,32 +29,26 @@ jobs:
           DEVELOPER_DIR="$developer_dir" xcrun swift --version
       - name: Check GhosttyKit cache
         id: ghosttykit-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        # Downloads the pinned, checksum-verified libghostty-spm release and
-        # repackages it; no Ghostty source, Zig, or Metal toolchain needed.
         run: apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Resolve Xcode cache version
         id: xcode-cache-version
         shell: bash
-        # DerivedData embeds absolute paths, and each self-hosted runner has its
-        # own workspace ($HOME differs per runner account). Keying on the
-        # workspace keeps one runner from restoring another's DerivedData,
-        # which fails with "There is no XCFramework found at /Users/<other>/…".
         run: echo "value=$({ xcodebuild -version; echo "$GITHUB_WORKSPACE"; } | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Restore Xcode DerivedData cache
         id: xcode-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
@@ -80,7 +59,7 @@ jobs:
         run: scripts/release/build-macos-xcode.sh dist/release/DerivedData
       - name: Save Xcode DerivedData cache
         if: steps.xcode-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}

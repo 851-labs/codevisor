@@ -1,25 +1,15 @@
 import Foundation
 
-/// The "/token" or "$token" being typed at the composer's caret. Shared by
-/// the macOS and iOS palettes so both open on exactly the same text.
 public struct ComposerSlashToken: Equatable, Sendable {
   public enum Trigger: Character, Sendable {
     case slash = "/"
-    /// Codex invokes skills with "$"; people used to it type that instead.
     case dollar = "$"
   }
 
-  /// The trigger character through the caret, in UTF-16 offsets (the
-  /// coordinate space of NSTextView and UITextView selections).
   public let range: NSRange
   public let trigger: Trigger
-  /// The text after the trigger, lowercased for matching.
   public let query: String
 
-  /// The token at a collapsed caret, anywhere in the message: the nearest
-  /// trigger before the caret with no whitespace in between, itself preceded
-  /// by whitespace or the start of the text. Paths, URLs, and prices
-  /// ("src/foo", "$HOME/x", "US$5") therefore never open the palette.
   public init?(in text: String, selection: NSRange) {
     guard selection.length == 0 else { return nil }
     let text = text as NSString

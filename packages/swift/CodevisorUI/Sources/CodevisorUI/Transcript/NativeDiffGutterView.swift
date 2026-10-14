@@ -3,9 +3,6 @@
   import SwiftUI
   import TranscriptKit
 
-  /// The pinned gutter: old and new line numbers and the change marker,
-  /// over row tints a shade stronger than the code's so changed lines read
-  /// at a glance. The scroll view keeps it at the visible left edge.
   @MainActor
   final class NativeDiffGutterView: NSView {
     weak var textView: NativeDiffTextView?
@@ -22,7 +19,6 @@
       needsDisplay = true
     }
 
-    // Numbers and markers are chrome: clicks fall through to the text.
     override func hitTest(_: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -36,7 +32,6 @@
         colors.gutterBackground.setFill()
         band.fill(using: .sourceOver)
         if let tint = tint(for: row.kind) {
-          // Twice the code's tint: the gutter marks the change.
           tint.setFill()
           band.fill(using: .sourceOver)
           band.fill(using: .sourceOver)

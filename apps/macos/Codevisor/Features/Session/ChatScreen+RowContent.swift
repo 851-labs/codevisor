@@ -5,8 +5,6 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-// MARK: - RowContent
-
 extension ChatScreen {
   var rowLeaves: TranscriptRowLeaves {
     .macOS(errorRow: { AnyView(errorBanner($0)) })

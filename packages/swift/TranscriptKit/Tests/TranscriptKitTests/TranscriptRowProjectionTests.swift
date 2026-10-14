@@ -59,7 +59,6 @@ struct TranscriptRowProjectionTests {
     #expect(chunks.map(\.ordinal) == [0])
     #expect(chunks.map { $0.blocks.count } == [3])
     #expect(chunks.allSatisfy { $0.lifecycle == .settled })
-    // An answer-only turn keeps its "Worked for" header above the answer.
     #expect(rows.first?.id == .assistantWorkedHeader(message.id, .planning))
     #expect(rows.dropLast().map(\.spacingAfter) == [12, 14])
     #expect(rows.last?.id == .assistantChrome(message.id, .epilogue))
@@ -218,8 +217,6 @@ struct TranscriptRowProjectionTests {
 
     #expect(activePlanRows.count == 2)
     #expect(activePlanRows.map(\.layoutKey) == settledPlanRows.map(\.layoutKey))
-    // The card's rows sit flush; its last row leaves ordinary transcript
-    // spacing so a following user message never touches the card.
     #expect(activePlanRows.dropLast().allSatisfy { $0.spacingAfter == 0 })
     #expect(activePlanRows.last?.spacingAfter == nil)
     #expect(settledPlanRows.last?.spacingAfter == nil)
@@ -244,10 +241,7 @@ struct TranscriptRowProjectionTests {
       }
     }
 
-    // A plan that ended the turn (codex) has only the work before it.
     #expect(try headers(turn) == [.assistantWorkedHeader(id, .planning)])
-    // Answered and resumed (claude): the work after the plan keeps its own
-    // section below the card, as it did while live.
     turn.planResumedAt = Date()
     #expect(
       try headers(turn) == [
@@ -406,8 +400,6 @@ struct TranscriptRowProjectionTests {
       .user(UserMessage(text: "Newer")),
     ])
 
-    // The revision key, not the input, identifies a snapshot: an unchanged
-    // key is a cache hit, and a bumped revision projects the new input.
     let hit = try await cache.rows(for: key, input: changedInput, options: options)
     let revised = try await cache.rows(
       for: TranscriptProjectionKey(sessionID: sessionID, controllerRevision: 1, modelRevision: 3),
@@ -472,10 +464,6 @@ extension TranscriptRowProjectionTests {
     }
   }
 
-  /// Every token of a streaming answer must project its prose and list into
-  /// the same row. A list that moved into a row of its own when a new `- `
-  /// marker arrived and merged back a token later replayed the whole list's
-  /// reveal animation on every item.
   @Test func streamingListStaysInTheProseRowAcrossItemBoundaries() throws {
     let prefix = "This repo is Codevisor.\n\nIts main pieces are:\n\n"
     let sources = [

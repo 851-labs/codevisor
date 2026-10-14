@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// `bun run vnc:tophat`: VNC validation layer L4. Builds the
-// rig, launches it in the background (no focus stolen), drives it through the
-// Accessibility API (apps/screen-sharing-rig/scripts/vnc-tophat/rig-ax.swift), captures only the rig's
-// window, and writes tmp/vnc-tophat/<time>/summary.json with the screenshots.
-// Exit 0 only if every step passed. The terminal running it needs
-// Accessibility permission (System Settings → Privacy & Security).
 import { spawnSync, type SpawnSyncOptions } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -56,7 +50,6 @@ const output = join(
 )
 mkdirSync(output, { recursive: true })
 
-// The AX helper, compiled once per source revision.
 const helperSource = join(root, "apps/screen-sharing-rig/scripts/vnc-tophat/rig-ax.swift")
 const helperHash = createHash("sha256")
   .update(readFileSync(helperSource))
@@ -109,7 +102,6 @@ const capture = (name: string) => {
   if (result.status !== 0) throw new Error(`screencapture failed: ${result.stderr}`)
   return file
 }
-/// Two window captures a moment apart differ when the content is moving.
 const moving = (name: string): Check => {
   const first = readFileSync(capture(`${name}-a`))
   pause(700)
@@ -120,7 +112,6 @@ const moving = (name: string): Check => {
   }
 }
 
-// One rig instance from this build, launched without taking focus.
 run("pkill", ["-f", executable])
 run("open", ["-g", "-n", bundle])
 for (let attempt = 0; attempt < 40 && !pid; attempt += 1) {
@@ -156,7 +147,6 @@ process.exit(verdict.ok ? 0 : 1)
 function loopbackFlow() {
   axStep("open Loopback VNC server", "select", "Loopback VNC server")
   step("choose the scroll scene (and confirm the picker shows it)", () => {
-    // A menu item pressed before its menu is fully open doesn't select; open, choose, check, retry.
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       pause(400)
       ax("press", "Animated desktop")
@@ -204,7 +194,6 @@ function loopbackFlow() {
     }
   })
   step("the remote desktop follows the window (ExtendedDesktopSize)", () => {
-    // The Loopback server starts at 1280 × 800; after the resize and the viewer's debounce it follows the pane.
     for (let attempt = 0; attempt < 12; attempt += 1) {
       pause(500)
       ax("press", "Connection Details")
@@ -221,13 +210,7 @@ function loopbackFlow() {
   axStep("stop the server", "press", "Stop")
 }
 
-/// Sends a unique text through the product's clipboard menu and finds it in
-/// the reference server's input log; the user's clipboard is restored. The
-/// shared clipboard (on by default) sends only while the video has focus in a
-/// key window, which a rig in the background never has, so this turns it off
-/// and uses Send Clipboard, the path that remains when it's off.
 function clipboardStep() {
-  // pbcopy/pbpaste read and write text in the locale's encoding.
   const utf8 = { env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" } }
   const saved = run("pbpaste", [], utf8).stdout
   const token = clipboardToken(Date.now())
@@ -237,7 +220,6 @@ function clipboardStep() {
     axStep("turn off Use Shared Clipboard", "press", "Use Shared Clipboard")
     axStep("open the Clipboard menu again", "press", "Clipboard")
     axStep("Send Clipboard", "press", "Send Clipboard")
-    // Leaving the machine closes its connection, so wait for the product to confirm the transfer.
     axStep("the viewer confirms the transfer", "wait", "Text sent to the host", "10")
     axStep("open the server's input log", "select", "Loopback VNC server")
     axStep("the server received the clipboard text", "wait", `clipboard: ${token}`, "5")
@@ -247,9 +229,7 @@ function clipboardStep() {
   }
 }
 
-/// The video size Connection Details reports, e.g. { width: 1227, height: 754 }.
 function videoSize(): { width: number; height: number } | undefined {
-  // Mid-reconnect there is no Connection Details button: don't toggle the popover out of step.
   if (ax("press", "Connection Details").status !== 0) return undefined
   const line = ax("texts")
     .stdout.split("\n")
@@ -260,11 +240,8 @@ function videoSize(): { width: number; height: number } | undefined {
   return { width, height }
 }
 
-/// The window capture shows a picture, not a blank frame; the first picture follows connecting within seconds.
 function desktopOnScreen(name: string, file: string) {
   step(name, () => {
-    // A picture: many colours, and neither the right nor the bottom half all black (what a desktop that
-    // hasn't repainted after growing looks like; a black terminal window doesn't fill a half).
     let colours = 0
     let black = 1
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -292,7 +269,6 @@ function contaboFlow() {
       pause(500)
     }
     const shown = ax("wait", "VNC · WebSocket", "10")
-    // The route line names the transport, update mode and quality (e.g. "VNC · WebSocket · continuous · JPEG 4").
     const route =
       ax("texts")
         .stdout.split("\n")
@@ -301,8 +277,6 @@ function contaboFlow() {
     return { ok: shown.status === 0, detail: route.trim() }
   })
   desktopOnScreen("the Contabo desktop is on screen", "contabo")
-  // 851-2340: Dynamic Resolution (on by default) makes the desktop follow the window; off, it
-  // keeps its size. Checked by resizing the rig window both ways; always switched back on.
   const start = window()
   type Size = { width: number; height: number }
   const settle = (predicate: (size: Size) => boolean, what: string) => {
@@ -320,7 +294,7 @@ function contaboFlow() {
     step("off: the desktop keeps its size when the window changes", () => {
       if (ax("resize", String(start.width - 200), String(start.height - 120)).status !== 0)
         return { ok: false, detail: "resize refused" }
-      pause(3000) // longer than the viewer's 400 ms debounce and a round trip
+      pause(3000)
       const size = videoSize()
       return {
         ok: Boolean(fixed && size && size.width === fixed.width && size.height === fixed.height),
@@ -339,7 +313,6 @@ function contaboFlow() {
     return settle((size: Size) => Math.abs(size.width - fixedWidth) <= 2, "never grew back")
   })
   {
-    // After a while of streaming the quality policy has seen the link (851-2329): report what it chose.
     step("the route after streaming", () => {
       pause(20000)
       if (ax("press", "Connection Details").status !== 0)

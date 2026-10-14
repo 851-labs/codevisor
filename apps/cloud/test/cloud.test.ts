@@ -71,10 +71,8 @@ describe("auth", () => {
     }
     const year = SESSION_LIFETIME_SECONDS * 1000
     expect(await expiry()).toBe(Date.now() + year)
-    // Well past the old 7-day lifetime, a use slides the expiry forward.
     vi.setSystemTime(Date.now() + 200 * 24 * 60 * 60 * 1000)
     expect(await expiry()).toBe(Date.now() + year)
-    // Unused for over a year, it does expire.
     vi.setSystemTime(Date.now() + year + 1000)
     expect(await expiry()).toBeUndefined()
   })
@@ -93,7 +91,6 @@ describe("auth", () => {
     }
     expect(grant.verification_uri).toContain("/device")
 
-    // Polling before approval → authorization_pending.
     const pending = await SELF.fetch(`${BASE}/api/auth/device/token`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -106,8 +103,6 @@ describe("auth", () => {
     expect(pending.status).toBe(400)
     expect(((await pending.json()) as { error: string }).error).toBe("authorization_pending")
 
-    // User approves in the browser (session-authenticated): the verification
-    // page first claims the code for this session, then approves it.
     const token = await devLogin()
     const claimed = await SELF.fetch(
       `${BASE}/api/auth/device?user_code=${encodeURIComponent(grant.user_code)}`,
@@ -121,7 +116,6 @@ describe("auth", () => {
     })
     expect(approved.status).toBe(200)
 
-    // Machine polls again → session token.
     const granted = await SELF.fetch(`${BASE}/api/auth/device/token`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -181,7 +175,6 @@ describe("direct GitHub sign-in", () => {
     const location = response.headers.get("location") ?? ""
     expect(location).toContain("github.com/login/oauth/authorize")
     expect(location).toContain("client_id=Iv23test")
-    // Better Auth's state/PKCE cookie must ride along into the browser.
     expect(response.headers.getSetCookie().join(";")).toContain("state")
   })
 
@@ -246,7 +239,6 @@ describe("machine self-removal", () => {
     const removeSelf = (headers: Record<string, string>) =>
       SELF.fetch(`${BASE}/api/machine/self`, { method: "DELETE", headers })
 
-    // No key, a bogus key, and a user session are all refused.
     expect((await removeSelf({})).status).toBe(401)
     expect((await removeSelf({ "x-api-key": "not-a-key" })).status).toBe(401)
     expect((await removeSelf(authed(token))).status).toBe(401)
@@ -255,15 +247,12 @@ describe("machine self-removal", () => {
     const removed = await removeSelf({ "x-api-key": machine.apiKey })
     expect(removed.status).toBe(200)
     expect(await listed()).not.toContain(machine.deviceId)
-    // Only this machine left: its sibling keeps its place and its credential.
     expect(await listed()).toContain(sibling.deviceId)
     const probe = (apiKey: string) =>
       SELF.fetch(`${BASE}/api/machine/credential`, { headers: { "x-api-key": apiKey } })
     expect((await probe(machine.apiKey)).status).toBe(401)
     expect((await probe(sibling.apiKey)).status).toBe(200)
-    // The revoked key cannot remove anything again.
     expect((await removeSelf({ "x-api-key": machine.apiKey })).status).toBe(401)
-    // An app removing the already-removed machine afterwards is a clean 404.
     const appRemoval = await SELF.fetch(`${BASE}/api/machines/${machine.deviceId}`, {
       method: "DELETE",
       headers: authed(token)

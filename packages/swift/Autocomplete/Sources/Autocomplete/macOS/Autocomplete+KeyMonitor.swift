@@ -3,9 +3,6 @@
   import SwiftUI
 
   extension Autocomplete {
-    /// Scoped shortcuts and Control-key navigation, with a focused-row fallback.
-    /// Other field-editor commands go through NSSearchFieldDelegate after
-    /// native text-input processing.
     struct KeyMonitor: NSViewRepresentable {
       let host: Host
       func makeCoordinator() -> Coordinator { Coordinator(host: host) }

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Bounded collection of per-presentation image ages for one telemetry interval.
 public struct RigImageAge: Sendable {
   public struct Summary: Codable, Equatable, Sendable {
     public let count: Int
@@ -20,7 +19,6 @@ public struct RigImageAge: Sendable {
     if agesMilliseconds.count < capacity { agesMilliseconds.append(ageSeconds * 1000) } else { dropped += 1 }
   }
 
-  /// Summarises and clears the interval; nil when nothing was recorded.
   public mutating func take() -> Summary? {
     defer {
       agesMilliseconds.removeAll(keepingCapacity: true)

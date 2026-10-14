@@ -5,14 +5,9 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// Model picker ownership: New Chat defaults belong to unsent composers, an
-/// existing chat's configuration is its own, and the picker never shows
-/// more than one spinner.
 @MainActor
 @Suite("Model selection")
 struct ModelSelectionTests {
-  // MARK: - Presentation
-
   @Test("The model controls never show more than one spinner")
   func presentationHasAtMostOneSpinner() {
     for bits in 0..<16 {
@@ -28,7 +23,6 @@ struct ModelSelectionTests {
 
   @Test("Presentation states follow the picker rules")
   func presentationStates() {
-    // Unknown list: a single spinner, no parameters chip.
     let unknown = ModelPickerPresentation(
       isModelListKnown: false, selectedModelName: "Opus",
       hasSettings: true, isResolvingSettings: true
@@ -37,7 +31,6 @@ struct ModelSelectionTests {
     #expect(!unknown.showsSettingsChip)
     #expect(unknown.spinnerCount == 1)
 
-    // Known list without a pick.
     let unselected = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: nil,
       hasSettings: false, isResolvingSettings: false
@@ -45,7 +38,6 @@ struct ModelSelectionTests {
     #expect(unselected.modelChipTitle == "Select a model")
     #expect(unselected.spinnerCount == 0)
 
-    // Settings already on screen stay put while fresher ones load.
     let refreshing = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: "Opus",
       hasSettings: true, isResolvingSettings: true
@@ -54,8 +46,6 @@ struct ModelSelectionTests {
     #expect(refreshing.showsSettingsChip)
     #expect(refreshing.spinnerCount == 0)
 
-    // A pick with no settings to show yet: the name shows at once and the
-    // parameters chip is the only spinner.
     let picked = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: "Sonnet",
       hasSettings: false, isResolvingSettings: true
@@ -65,8 +55,6 @@ struct ModelSelectionTests {
     #expect(picked.showsSettingsSpinner)
     #expect(picked.spinnerCount == 1)
   }
-
-  // MARK: - Existing chats
 
   @Test("An existing chat never reads or writes New Chat defaults")
   func existingChatIsIsolatedFromDefaults() async {
@@ -78,19 +66,14 @@ struct ModelSelectionTests {
       configValues: ["model": "gpt-5.6"]
     )
     let cache = ConfigOptionCache(store: InMemoryStore())
-    // The catalog's own current value is a fresh-session default.
     cache.store([catalog(currentModel: "gpt-5.6")], forServer: "machine-a")
     let chat = session(configSelections: ["model": "gpt-5.5"])
     let controller = controller(for: chat, cache: cache, defaults: defaults)
 
-    // Binding, reconciling, or seeding defaults never paints New Chat
-    // values over the chat's own.
     controller.applyComposerDefaults()
     controller.reconcileExistingSession(chat)
     #expect(controller.modelOption?.currentValue == "gpt-5.5")
 
-    // A pick while the runtime is still connecting is staged, not
-    // dropped, and stays out of New Chat defaults.
     #expect(controller.isConnectingToHarness)
     await controller.setConfigOption("model", "gpt-5.7")
     #expect(controller.modelOption?.currentValue == "gpt-5.7")
@@ -105,15 +88,12 @@ struct ModelSelectionTests {
     let defaults = rememberedDefaults(model: "gpt-5.6")
     let cache = ConfigOptionCache(store: InMemoryStore())
     cache.store([catalog(currentModel: "gpt-5.6")], forServer: "machine-a")
-    // An empty chat record (another device opened a new chat) is still a
-    // draft here, so it takes this device's New Chat defaults.
     var empty = session(configSelections: nil)
     empty.agentSessionId = ""
     let controller = controller(for: empty, cache: cache, defaults: defaults)
     controller.applyComposerDefaults()
     #expect(controller.modelOption?.currentValue == "gpt-5.6")
 
-    // The other device sends the first prompt with its own model.
     var started = empty
     started.agentSessionId = "agent-1"
     started.configSelections = ["model": "gpt-5.5"]
@@ -155,8 +135,6 @@ struct ModelSelectionTests {
     #expect(!controller.requiresModelSelection)
   }
 
-  // MARK: - Drafts
-
   @Test("A draft with no model pick asks for one instead of showing the harness default")
   func draftWithoutPickAsksForModel() async {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
@@ -172,8 +150,6 @@ struct ModelSelectionTests {
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(controller.requiresModelSelection)
 
-    // Changing a setting before picking a model must not record the
-    // harness default as the user's model.
     await controller.setConfigOption("effort", "high")
     #expect(
       defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))["model"]
@@ -194,8 +170,6 @@ struct ModelSelectionTests {
       harnessId: "codex",
       configValues: ["model": "gpt-5.5", "effort": "high"]
     )
-    // Like Claude before its first turn: no current model, so the catalog
-    // carries no model-specific settings.
     var generic = catalog(currentModel: "")
     generic.configOptions.removeAll { $0.id == "effort" }
     let client = SyncFakeServerClient(projects: [], sessions: [])
@@ -231,12 +205,10 @@ struct ModelSelectionTests {
 
     await controller.prepare()
 
-    // Neither the catalog's current value nor its first option stands in.
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(
       controller.modelUnavailableMessage == "gpt-5.4 is no longer available. Select another model.")
 
-    // Dismissing hides only the notice: the chip still asks for a model.
     controller.dismissModelUnavailableNotice()
     #expect(controller.modelUnavailableMessage == nil)
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
@@ -246,7 +218,6 @@ struct ModelSelectionTests {
 
     #expect(controller.modelUnavailableMessage == nil)
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "GPT-5.5"))
-    // The explicit pick is the machine's new default.
     #expect(
       defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))["model"]
         == "gpt-5.5")
@@ -262,10 +233,8 @@ struct ModelSelectionTests {
     let controller = draft(defaults: defaults, client: client)
     controller.configOptionsByHarness["codex"] = catalog(currentModel: "gpt-5.6").configOptions
     controller.seedRememberedConfig()
-    // The draft started checking its remembered model with the server...
     #expect(controller.modelPickerPresentation.modelChip == .loading)
 
-    // ...and then became an existing chat with its own saved model.
     controller.configureExistingSession(session(configSelections: ["model": "gpt-5.5"]))
 
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "GPT-5.5"))
@@ -295,8 +264,6 @@ struct ModelSelectionTests {
         == "gpt-5.5")
   }
 
-  // MARK: - Runtime races
-
   @Test("A config update older than an in-flight pick does not roll it back")
   func staleConfigUpdateKeepsInFlightPick() async {
     let sessionId = UUID()
@@ -311,7 +278,6 @@ struct ModelSelectionTests {
 
     let pick = Task { await model.setConfigOption(configId: "model", value: "gpt-5.6") }
     await awaitObserved { !client.configUpdates.isEmpty }
-    // The runtime's snapshot from before the pick arrives mid-flight.
     model.apply(.update(.configOptionUpdate(catalog(currentModel: "gpt-5.5").configOptions)))
     #expect(model.configOptions.first?.currentValue == "gpt-5.6")
 
@@ -319,7 +285,6 @@ struct ModelSelectionTests {
     release.finish()
     #expect(await pick.value)
 
-    // Once settled, runtime updates apply normally again.
     model.apply(.update(.configOptionUpdate(catalog(currentModel: "gpt-5.7").configOptions)))
     #expect(model.configOptions.first?.currentValue == "gpt-5.7")
   }
@@ -342,7 +307,6 @@ struct ModelSelectionTests {
 
     let apply = Task { await controller.pendingConfiguration.apply(to: model) }
     await awaitObserved { client.configUpdates.count == 1 }
-    // The runtime is still validating, so this pick is staged.
     #expect(controller.isConnectingToHarness)
     await controller.setConfigOption("effort", "low")
     release.yield()
@@ -353,8 +317,6 @@ struct ModelSelectionTests {
     #expect(client.configUpdates.map(\.1) == ["gpt-5.6", "low"])
     #expect(controller.pendingConfiguration.values(for: "codex") == nil)
   }
-
-  // MARK: - Fixtures
 
   private func controller(
     for chat: ChatSession,

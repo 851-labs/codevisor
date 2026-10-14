@@ -37,14 +37,10 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    // Settling while still held is a no-op (a raced timer, a stale recovery).
     expect(await run(db.settleSessionAttention(session.id))).toEqual({ settled: false })
 
-    // The hold releases (deadline armed), then a new subagent appears before
-    // any turn starts: the deadline disarms and the finish stays parked.
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
     expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
-    // Events inside the grace window leave the armed deadline untouched.
     await run(db.appendEvent("session.output", session.id, { role: "assistant", text: "late" }))
     expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
     await run(db.appendEvent("session.updated", session.id, subagentSnapshot))
@@ -83,8 +79,6 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    // Hold release arms the grace; the projection itself converges on the
-    // next inbound event even if the server-side timer never fires.
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
     vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS - 1)
     await run(db.appendEvent("session.output", session.id, { role: "assistant", text: "early" }))
@@ -106,8 +100,6 @@ describe("@codevisor/db", () => {
 
     await run(db.appendEvent("session.updated", session.id, { runtimeState: "running" }))
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
-    // Unknown future runtime values degrade to idle instead of pinning the
-    // sidebar in progress forever.
     await run(db.appendEvent("session.updated", session.id, { runtimeState: "future-state" }))
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("idle")
     await Effect.runPromise(db.close)
@@ -218,8 +210,6 @@ describe("@codevisor/db", () => {
         sessionUpdate: "question"
       })
     )
-    // A parked finish in a second session survives the restart for the
-    // settle scheduler's recovery pass to drain.
     const held = await run(first.createSession({ projectId: project.id, harnessId: "claude-code" }))
     await run(
       first.appendEvent("session.updated", held.id, {
@@ -259,8 +249,6 @@ describe("@codevisor/db", () => {
     expect(await run(reopened.listPendingAttentionSettles)).toEqual([
       { sessionId: held.id, dueAt: null }
     ])
-    // Startup reconciliation clears the stale subagent snapshot, then
-    // recovery settles the stranded finish once its grace elapses.
     await run(reopened.appendEvent("session.updated", held.id, { backgroundTasks: [] }))
     expect((await run(reopened.settleSessionAttention(held.id))).settled).toBe(false)
     vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)
@@ -301,8 +289,6 @@ describe("@codevisor/db", () => {
       })
     )
 
-    // Approval is blocking state, not unread: the user's answer settles the
-    // turn they are already looking at.
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       actionRequired: true,
       actionRequiredKind: "planApproval",
@@ -360,7 +346,6 @@ describe("@codevisor/db", () => {
     })
     expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toEqual(question)
     expect(await run(db.getSessionPendingQuestion(session.id))).toEqual(question)
-    // Unknown sessions have no blocking question rather than failing.
     expect(
       await run(db.getSessionPendingQuestion("00000000-0000-4000-8000-000000000000"))
     ).toBeUndefined()
@@ -378,7 +363,6 @@ describe("@codevisor/db", () => {
       backgroundTasks
     })
     expect((await run(db.getSessionDetail(session.id))).backgroundTasks).toEqual(backgroundTasks)
-    // A stale resolution must not release a newer pending continuation.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "question_resolved",
@@ -402,8 +386,6 @@ describe("@codevisor/db", () => {
     expect(
       (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
     ).toBeUndefined()
-    // Resolution delivery is idempotent even after the blocking snapshot has
-    // already been cleared.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "question_resolved",

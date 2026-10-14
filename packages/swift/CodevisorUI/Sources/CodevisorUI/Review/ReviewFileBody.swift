@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Header rows take the platform's comfortable tap height; expand rows stay
-/// short, like GitHub's, so folds don't dominate the diff.
 enum ReviewMetrics {
   #if os(iOS)
     static let minimumTapHeight: CGFloat = 44
@@ -13,16 +11,12 @@ enum ReviewMetrics {
   #endif
 }
 
-/// A changed file's header: disclosure, path, change kind, and line totals.
-/// Pinned while its diff scrolls past, so the reader always knows the file.
 struct ReviewFileHeader: View {
   let diff: ReviewFileDiff
   let isCollapsed: Bool
   let isViewed: Bool
   let toggle: () -> Void
   let toggleViewed: () -> Void
-  /// Counts the reader's own taps on the viewed circle, so the haptic
-  /// answers a tap and never a mark that synced in or lapsed on its own.
   @State private var viewedTaps = 0
 
   var body: some View {
@@ -61,8 +55,6 @@ struct ReviewFileHeader: View {
     .help(diff.file.oldPath.map { "\($0) → \(diff.file.path)" } ?? diff.file.path)
   }
 
-  /// GitHub's "Viewed" circle: marking folds the file away, and the mark
-  /// lapses by itself once the file changes again.
   private var viewedButton: some View {
     Button {
       viewedTaps += 1
@@ -86,8 +78,6 @@ struct ReviewFileHeader: View {
     .help(isViewed ? "Mark as Not Viewed" : "Mark as Viewed")
   }
 
-  /// Directory dimmed, file name emphasized; long paths truncate in the
-  /// middle so both ends stay readable.
   private var pathLabel: some View {
     let path = diff.file.path
     let name = (path as NSString).lastPathComponent
@@ -98,7 +88,6 @@ struct ReviewFileHeader: View {
       .truncationMode(.middle)
   }
 
-  /// Spoken only: the header stays visually quiet.
   private var statusDescription: String? {
     switch diff.file.status {
     case .added: "Added"
@@ -119,18 +108,10 @@ struct ReviewFileHeader: View {
   }
 }
 
-/// A file's diff with unchanged runs folded. Hunks render through the same
-/// native TextKit surface as transcript edit cards, grown to full height so
-/// the pane's scroll view owns vertical scrolling.
 struct ReviewFileBody: View {
   let diff: ReviewFileDiff
   @State private var expansions: [Int: ReviewGapExpansion] = [:]
-  /// The file's hunks scroll sideways as one.
   @State private var scrollSync = DiffScrollSync()
-  /// Syntax colors, tagged with the exact content (`highlightKey`) they
-  /// were computed for. Highlights are keyed by row position and carry
-  /// their own text, so a set computed for older content must never paint
-  /// newer rows: it would show the old lines.
   @State private var highlighted: (key: String, rows: [Int: AttributedString])?
   @Environment(\.theme) private var theme
   @Environment(\.codeHighlightTheme) private var highlightTheme
@@ -180,7 +161,6 @@ struct ReviewFileBody: View {
     }
   }
 
-  /// Highlights for the content on screen, or none until they catch up.
   private var currentHighlights: [Int: AttributedString] {
     highlighted?.key == highlightKey ? highlighted?.rows ?? [:] : [:]
   }
@@ -189,8 +169,6 @@ struct ReviewFileBody: View {
     "\(highlightTheme?.key ?? "")|\(diff.file.path)|\(diff.revision)"
   }
 
-  /// Every hunk reserves the gutter for the file's largest line number so
-  /// columns line up across folds.
   private var lineNumberDigits: Int {
     max(2, String(diff.maxLineNumber).count)
   }
@@ -198,7 +176,6 @@ struct ReviewFileBody: View {
   @ViewBuilder
   private func hunk(_ rows: [LineDiff.Row], id: Int) -> some View {
     let highlights = currentHighlights
-    // Redraw when the content or the highlight set that applies changes.
     let revision = "\(diff.revision)|\(id)|\(rows.count)|\(highlights.isEmpty ? "plain" : "colored")"
     #if canImport(AppKit)
       NativeDiffView(
@@ -215,9 +192,6 @@ struct ReviewFileBody: View {
     #endif
   }
 
-  /// A fold offers GitHub's two ways in: "Show next lines" continues below
-  /// the hunk above, and the next hunk's `@@` header expands upward. Each
-  /// opens a step; a fold no bigger than a step opens whole.
   @ViewBuilder
   private func gap(_ gap: ReviewDiffSegment.Gap) -> some View {
     let step = ReviewDiffSegment.expandStep

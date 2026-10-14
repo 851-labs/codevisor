@@ -1,11 +1,6 @@
 import CoreGraphics
 import SwiftUI
 
-/// The agent pointer as drawn on screen by `ComputerUseCursorView`, without
-/// the glow, for SwiftUI surfaces such as the live preview card.
-///
-/// Place it with `.position(_:)` at the point the pointer should touch: the
-/// glyph offsets itself so its tip, not its centre, lands there.
 public struct ComputerUseCursorGlyph: View {
   let tint: Color
   let scale: CGFloat
@@ -33,8 +28,6 @@ public struct ComputerUseCursorGlyph: View {
   }
 }
 
-/// The shared pointer artwork in SwiftUI's top-left coordinate space, filling
-/// whatever rect it is given.
 struct ComputerUseCursorGlyphShape: Shape {
   static func size(scale: CGFloat) -> CGSize {
     CGSize(
@@ -43,7 +36,6 @@ struct ComputerUseCursorGlyphShape: Shape {
     )
   }
 
-  /// The pointer tip within a glyph drawn at `scale`, y-down.
   static func tip(scale: CGFloat) -> CGPoint {
     let size = size(scale: scale)
     let artwork = computerUsePointerArtwork(size: size)
@@ -52,7 +44,6 @@ struct ComputerUseCursorGlyphShape: Shape {
 
   func path(in rect: CGRect) -> Path {
     let artwork = computerUsePointerArtwork(size: rect.size)
-    // The artwork is built for AppKit's y-up space; flip it into the rect.
     var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: rect.minX, ty: rect.maxY)
     return Path(artwork.cgPath.copy(using: &flip) ?? artwork.cgPath)
   }

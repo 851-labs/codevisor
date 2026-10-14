@@ -64,14 +64,10 @@ describe("archived chats and update turn accounting", () => {
       method: "PATCH"
     })
 
-    // The fake's "slow prompt" stays in flight until released, and closing
-    // its runtime does not settle it — like a turn waiting on a question.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
     })
-    // The turn is claimed before the prompt reaches the agent; archive only
-    // once the agent holds it, which is the unsettled prompt under test.
     await waitFor(() => agents.prompts.some(([, input]) => input === "slow prompt"))
     expect(turns).toEqual(["start codex"])
 
@@ -81,7 +77,6 @@ describe("archived chats and update turn accounting", () => {
     })
     expect(turns).toEqual(["start codex", "end codex"])
 
-    // The prompt settling late must not end the turn a second time.
     agents.releasePrompt()
     await waitFor(async () => (await run(services.db.listPromptQueue(session.id))).length === 0)
     expect(turns).toEqual(["start codex", "end codex"])
@@ -114,8 +109,6 @@ describe("archived chats and update turn accounting", () => {
       body: JSON.stringify({ workspaceId: "background" }),
       method: "PATCH"
     })
-    // The harness's event pipe, held the way an in-flight event holds it
-    // while the archive tears the runtime down.
     const sink = agents.sinks.get(session.agentSessionId)
     expect(sink).toBeDefined()
 
@@ -123,8 +116,6 @@ describe("archived chats and update turn accounting", () => {
       body: JSON.stringify({ isArchived: true }),
       method: "PATCH"
     })
-    // A background task finishing wakes the agent just after the archive.
-    // Its runtime is closing, so this turn's end event never arrives.
     await sink?.({
       kind: "session.updated",
       subjectId: session.agentSessionId,

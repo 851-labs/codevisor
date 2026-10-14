@@ -1,8 +1,6 @@
 import ScreenSharing
 import Foundation
 
-/// W3C cumulative seconds/count pairs become weighted interval means, not
-/// per-frame percentiles. Baseline each stream independently across resets.
 package struct ScreenSharingRTCIntervalMetrics: Sendable {
   private var previous: [String: String] = [:]
   package init() {}

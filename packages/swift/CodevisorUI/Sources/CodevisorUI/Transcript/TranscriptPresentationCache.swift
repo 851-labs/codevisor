@@ -1,8 +1,5 @@
 import Foundation
 
-/// A bounded cache of native presentations. Active owners are protected;
-/// detached entries are discarded in least-recently-used order. Platforms
-/// decide when to trim so deallocation stays outside navigation updates.
 @MainActor
 public final class TranscriptPresentationCache<Key: Hashable, Value: AnyObject> {
   private var values: [Key: Value] = [:]

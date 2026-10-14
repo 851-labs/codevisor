@@ -10,8 +10,6 @@ struct BrowserProtocolMessageTests {
   }
 
   @Test func sessionRepliesForwardOnlyTheirResultUnderTheClientId() throws {
-    // Chromium appends the child session after the result. CEF's own
-    // OnDevToolsMethodResult splitter would include it in the "result".
     let reply = Data(#"{"id":1000000007,"result":{"data":"iVBORw0K\"}\\"},"sessionId":"7F1C"}"#.utf8)
     let result = try BrowserProtocolMessage.result(ofReply: reply)
     let response = BrowserProtocolMessage.response(id: Data(#""client-3""#.utf8), result: result)

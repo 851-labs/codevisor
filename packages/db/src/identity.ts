@@ -2,11 +2,6 @@ import { randomUUID } from "node:crypto"
 
 import Database from "better-sqlite3"
 
-/// Reads (or mints) the database's persisted machine identity before the full
-/// service opens. Remote servers derive their server id from this so a fleet
-/// never sees two machines colliding on the default "local" id — the value is
-/// the same `instance_meta` row `getOrCreateInstanceId` serves later, created
-/// here with the identical shape migrations use.
 export const resolveServerIdentity = (filename: string): string => {
   const sqlite = new Database(filename)
   try {

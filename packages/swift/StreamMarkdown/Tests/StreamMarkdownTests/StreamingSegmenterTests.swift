@@ -3,14 +3,11 @@ import Foundation
 import Testing
 @testable import StreamMarkdown
 
-/// Every streaming snapshot is a complete MD4C parse. These tests protect the
-/// segment shaping and prefix-reconciliation layer around that parse.
 @MainActor
 @Suite("StreamingSegmenter")
 struct StreamingSegmenterTests {
   private let parser = MarkdownParser()
 
-  /// Blocks rendered by a segment list (unwraps both segment shapes).
   private func blocks(of segments: [MarkdownSegment]) -> [MarkdownBlock] {
     segments.flatMap { segment -> [MarkdownBlock] in
       switch segment {
@@ -20,9 +17,6 @@ struct StreamingSegmenterTests {
     }
   }
 
-  /// Streams `document` into a fresh segmenter in fixed-size character
-  /// chunks, asserting block-level equivalence with a full parse at every
-  /// step, and identical block segmentation after the finalize flip.
   private func assertStreamingEquivalence(_ document: String, chunkSize: Int) {
     let segmenter = StreamingSegmenter()
     var streamed = ""
@@ -78,9 +72,6 @@ struct StreamingSegmenterTests {
 
   @Test("A line that stops looking like a heading rejoins the paragraph")
   func headingTrapEquivalence() {
-    // "#" alone parses as an empty heading; once it grows into "#not a
-    // heading" the line is paragraph content and must merge back into
-    // the preceding paragraph, proving every snapshot is parsed in full.
     assertStreamingEquivalence("intro text\n#not a heading, actually", chunkSize: 11)
   }
 
@@ -148,14 +139,9 @@ struct StreamingSegmenterTests {
   @Test("Settled segments keep their instances across flushes")
   func pointerStability() {
     let segmenter = StreamingSegmenter()
-    // Long enough to be heap-allocated: small strings store their bytes
-    // inline, so only heap strings have a stable base address to compare
-    // (they are also the only case where stability matters).
     let settled = "a settled paragraph long enough for heap string storage"
     let first = segmenter.segments(for: settled + "\n\nbeta", isComplete: false)
     let second = segmenter.segments(for: settled + "\n\nbeta grows", isComplete: false)
-    // Equal values, and the settled prefix must be the same instances the
-    // previous flush returned (SwiftUI diffs String storage pointers).
     #expect(first.first == second.first)
     if case let .textRun(oldBlocks) = first[0], case let .textRun(newBlocks) = second[0],
       case let .paragraph(oldText) = oldBlocks[0], case let .paragraph(newText) = newBlocks[0],

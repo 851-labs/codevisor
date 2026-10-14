@@ -1,7 +1,5 @@
 import type { SessionConfigOption } from "@codevisor/api"
 
-/// Pi's models and thinking levels as Codevisor config options.
-
 export interface PiModel {
   readonly id: string
   readonly name?: string
@@ -13,7 +11,6 @@ export interface PiModel {
 export const MODEL_OPTION_ID = "model"
 export const THINKING_OPTION_ID = "thought_level"
 
-/// `provider/id`: unique across providers, and how Pi names a model.
 export const modelValue = (model: Pick<PiModel, "id" | "provider">): string =>
   `${model.provider}/${model.id}`
 
@@ -35,7 +32,6 @@ const words: Record<string, string> = {
   xai: "xAI"
 }
 
-/// A readable provider name from Pi's provider id ("openai-codex" → "OpenAI Codex").
 export const providerName = (provider: string): string =>
   provider
     .split(/[-_]/)

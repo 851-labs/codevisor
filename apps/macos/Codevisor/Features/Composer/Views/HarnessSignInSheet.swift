@@ -2,11 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The in-flow sign-in surface: presents the full harness authentication
-/// experience (browser, device-code, or API-key flows) for ONE harness on
-/// ONE machine when an auth-dead chat needs it. Reuses the
-/// settings/onboarding authentication view verbatim, pinned to the target
-/// machine.
 struct HarnessSignInSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -14,7 +9,6 @@ struct HarnessSignInSheet: View {
 
   let serverId: String
   let harnessId: String
-  /// Lands in the sign-in flow rather than the account list.
   var startsSignIn = false
   @State private var harness: ServerHarness?
   @State private var loadFailed = false
@@ -41,8 +35,6 @@ struct HarnessSignInSheet: View {
       loadFailed = harness == nil
     }
     .onDisappear {
-      // Whatever happened in the flow, the machine's catalog is now
-      // suspect — the revision bump refreshes any mounted composer.
       environment.harnessCatalogDidChange(onServer: serverId)
     }
   }
@@ -83,17 +75,12 @@ struct HarnessSignInSheet: View {
   }
 }
 
-/// Sheet-item wrappers: ServerHarness itself is not Identifiable.
 struct HarnessSignInTarget: Identifiable {
   let harnessId: String
   var id: String { harnessId }
 }
 
 extension View {
-  /// Presents sign-in for an optional harness id (auth-dead chats know only
-  /// the id and the machine they ran on). Fleet-shared harnesses land on the
-  /// fleet's accounts sheet with that machine as the preferred host; only
-  /// harnesses whose accounts truly live on one machine get its flow.
   func harnessSignInSheet(harnessId: Binding<String?>, serverId: String) -> some View {
     modifier(HarnessSignInSheetModifier(harnessId: harnessId, serverId: serverId))
   }

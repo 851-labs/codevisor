@@ -3,7 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// One sign-in attempt presented as a compact, platform-standard form.
 enum HarnessLoginStep: Identifiable {
   case flow(ServerHarnessAuthFlow)
   case apiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod)
@@ -19,7 +18,6 @@ enum HarnessLoginStep: Identifiable {
 struct HarnessLoginStepScreen: View {
   let harness: ServerHarness
   let step: HarnessLoginStep
-  /// Returns an error message to display, or nil when accepted.
   let submitCode: (String) async -> String?
   let submitApiKey: (ServerHarnessAccount, ServerHarnessAuthMethod, String) async -> String?
   let cancel: () -> Void
@@ -52,16 +50,10 @@ struct HarnessLoginStepScreen: View {
             .disabled(isSubmitting)
         }
 
-        // Mutually exclusive with the confirm item below: `browserURL` is
-        // nil for exactly the steps that submit input, so the sheet never
-        // shows two confirmation actions. Text, and prominent, because on a
-        // device-code step this *is* the action that advances the task —
-        // the same role its macOS counterpart has in the footer.
         if let browserURL {
           SheetConfirmToolbarItem("Open Browser", isEnabled: !isSubmitting) { openURL(browserURL) }
         }
         if needsSubmit {
-          // Text, never a bare checkmark. Progress is the status bar's job.
           SheetConfirmToolbarItem(
             "Continue", isEnabled: !trimmedInput.isEmpty && !isSubmitting
           ) {
@@ -139,11 +131,6 @@ struct HarnessLoginStepScreen: View {
     }
   }
 
-  /// The port of macOS `HarnessLoginStepSheet.footerStatus`, same wording:
-  /// every in-progress indicator in this family renders in chrome, the
-  /// browser wait included. The body of a device-code step already carries
-  /// the code and its copy action; a spinner among them is status about a
-  /// background poll, not content.
   private var statusLabel: String? {
     if isSubmitting { return "Verifying…" }
     return waitsForBrowser ? "Waiting for sign-in…" : nil
@@ -160,8 +147,6 @@ struct HarnessLoginStepScreen: View {
     }
   }
 
-  /// Device-code and plain browser steps poll in the background; a
-  /// paste-code step waits on input here instead.
   private var waitsForBrowser: Bool {
     guard case .flow(let flow) = step else { return false }
     return flow.kind != "pasteCode"

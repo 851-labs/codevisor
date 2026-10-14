@@ -2,9 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One plugin pane the New Tab page can open: a row per (plugin, pane type)
-/// offered by the machine's installed plugins — the iOS twin of macOS's
-/// New Tab plugin cards.
 struct PluginNewTabOption: Identifiable, Equatable {
   var pluginId: String
   var paneType: String
@@ -14,8 +11,6 @@ struct PluginNewTabOption: Identifiable, Equatable {
   var id: String { "\(pluginId)|\(paneType)" }
 }
 
-/// The iOS take on macOS's new-tab page: pick what this tab becomes. The
-/// placeholder converts in place, so the tab keeps its slot in the grid.
 struct NewTabPaneView: View {
   let onNewChat: () -> Void
   let onNewTerminal: () -> Void
@@ -23,10 +18,7 @@ struct NewTabPaneView: View {
   var onOpenFiles: () -> Void = {}
   var onReviewChanges: () -> Void = {}
   var onNewSimulator: () -> Void = {}
-  /// The machine is a Mac with Xcode whose app streams its simulators.
   var supportsSimulator = false
-  /// The machine's API client, for the machine-scoped plugin pane rows.
-  /// Nil (previews) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
   var onOpenPlugin: (PluginNewTabOption) -> Void = { _ in }
@@ -34,8 +26,6 @@ struct NewTabPaneView: View {
   @State private var pluginOptions: [PluginNewTabOption] = []
 
   var body: some View {
-    // Centered while the options fit; scrolls when plugin rows outgrow
-    // the pane (same pattern as macOS's NewTabPageView).
     GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 14) {
@@ -96,9 +86,6 @@ struct NewTabPaneView: View {
     }
   }
 
-  /// Machine-scoped plugin pane rows. Errors (older servers without the
-  /// plugins feature, unreachable machines) just leave the rows hidden —
-  /// the page's built-in options never depend on the request.
   private func loadPluginOptions() async {
     guard let client else { return }
     guard let plugins = try? await client.listPlugins() else { return }

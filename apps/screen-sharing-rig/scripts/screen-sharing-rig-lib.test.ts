@@ -70,7 +70,7 @@ test("rig configuration validates roles, tokens, peers and capture", () => {
     }
   )
   assert.throws(() => rigConfiguration({ role: "viewer", token }), /host address/)
-  // @ts-expect-error -- rig.json and CLI input are untyped at runtime; the role check still guards it.
+  // @ts-expect-error
   assert.throws(() => rigConfiguration({ role: "admin", token }), /role/)
   assert.throws(() => rigConfiguration({ role: "host", token: "short" }), /token/)
   assert.throws(() => rigConfiguration({ role: "host", token, capture: "tab:3" }), /capture/)

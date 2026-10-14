@@ -2,9 +2,6 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-/// A decoded `project.setup` event envelope: progress the server publishes
-/// while it clones a git remote into a project (subjectId = the project id
-/// supplied by the client with the clone request).
 public enum ProjectSetupEvent: Equatable, Sendable {
   case started
   case log(stream: String, line: String)
@@ -38,12 +35,7 @@ public enum ProjectSetupEvent: Equatable, Sendable {
   }
 }
 
-/// How a clone-from-git ended, as the machine's event stream reports it.
-/// The machine finishes a clone even when the HTTP request that started it
-/// is cut off (a relay deadline, a suspended app), so a client that lost the
-/// response can still learn the outcome here.
 public enum ProjectCloneOutcome: Equatable, Sendable {
-  /// The project row exists; the client can adopt it.
   case created
   case failed(message: String, code: String?)
 

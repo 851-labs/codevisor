@@ -219,9 +219,6 @@ export const ensureAssistantChatItem = (
   }
   const current = chatState(sqlite, sessionId).current_item_id
   if (current !== null) {
-    // Dispatch can create the waiting row before the provider allocates a turn
-    // id. Bind that id to the same row when startup finishes, including routing
-    // late terminal events after another turn has become current.
     if (turnId !== undefined) {
       const bound = sqlite
         .prepare("update chat_items set turn_id = ? where id = ? and turn_id is null")
@@ -281,7 +278,6 @@ const readAssistantAnswerRow = (
   sqlite: Database.Database,
   itemId: string
 ): AssistantAnswerRow | undefined => {
-  // Indexed state lookup; no provider log scan, including while a turn streams.
   return sqlite
     .prepare(
       `select entry_key, payload, phase, revision, position from transcript_entries
@@ -372,7 +368,6 @@ export const finishAssistantChatItem = (
     )
 }
 
-/** Imports and user messages have no token stream to materialize them. */
 export const seedStandaloneText = (
   db: Database.Database,
   itemId: string,

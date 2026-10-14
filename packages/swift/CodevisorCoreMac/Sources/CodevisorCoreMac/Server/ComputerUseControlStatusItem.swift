@@ -4,10 +4,6 @@ import CoreGraphics
 import Foundation
 import QuartzCore
 
-/// ChatGPT's app-icons-plus-pointer control is a custom status item owned by
-/// its Computer Use helper, not a ScreenCaptureKit-provided view. Keep our
-/// native sharing stream for the purple system treatment and present the same
-/// compact, actionable status affordance here.
 @MainActor
 private final class ComputerUseStatusView: NSView {
   var icons: [NSImage] = [] {
@@ -16,8 +12,6 @@ private final class ComputerUseStatusView: NSView {
   var isActive = false {
     didSet { needsDisplay = true }
   }
-  /// Matches the single active agent's cursor color; neutral when several
-  /// agents share the chip.
   var cursorColor = NSColor(calibratedWhite: 0.94, alpha: 1) {
     didSet { needsDisplay = true }
   }
@@ -122,8 +116,6 @@ final class ComputerUseControlStatusItem: NSObject {
     refresh()
   }
 
-  /// Backstop against stale rows: a pid with no live process can never be
-  /// controlled again, so its entries must not survive in the menu bar.
   private func pruneTerminatedApps() {
     let deadPIDs = Set(entries.keys.map(\.pid)).filter { pid in
       guard let app = NSRunningApplication(processIdentifier: pid) else { return true }
@@ -186,8 +178,6 @@ final class ComputerUseControlStatusItem: NSObject {
     guard let statusView else { return }
     let menu = NSMenu()
     menu.autoenablesItems = false
-    // One row per agent/app pairing so stopping one agent's control never
-    // tears down another agent that shares the same app.
     for (key, entry) in sortedEntries() {
       let title =
         "Stop Using \(entry.appName)"
@@ -263,8 +253,6 @@ final class ComputerUseControlStatusItem: NSObject {
 
 }
 
-/// NSMenuItem.representedObject round-trips through Objective-C, so the value
-/// key is carried in a small reference box rather than a bare Swift struct.
 private final class ComputerUseShareKeyBox: NSObject {
   let key: ComputerUseShareKey
   init(key: ComputerUseShareKey) { self.key = key }

@@ -34,7 +34,6 @@ struct ThemeManagerTests {
     manager.setThemeId("pierre:pierre-dark", for: .dark)
     manager.setThemeId("shiki:github-light", for: .light)
 
-    // A fresh settings model from the same store sees the selection.
     let reloaded = AppSettingsModel(store: store)
     #expect(reloaded.settings.themeMode == .dark)
     #expect(reloaded.settings.darkThemeId == "pierre:pierre-dark")
@@ -58,7 +57,6 @@ struct ThemeManagerTests {
     let manager = makeManager(settings: settings)
     #expect(manager.themeId(for: .dark) == ThemeCatalog.systemDarkID)
     #expect(manager.palette(for: .dark) == nil)
-    // The stored id is preserved.
     #expect(settings.settings.darkThemeId == "custom:deleted-long-ago")
   }
 

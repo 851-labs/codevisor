@@ -11,12 +11,10 @@ struct AppSettingsQuitConfirmationTests {
     let model = AppSettingsModel(store: store)
     #expect(model.confirmBeforeQuitting)
 
-    // The alert's "Do not ask me again" checkbox.
     model.setConfirmBeforeQuitting(false)
     #expect(model.confirmBeforeQuitting == false)
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting == false)
 
-    // Settings can turn it back on.
     model.setConfirmBeforeQuitting(true)
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting)
   }
@@ -26,8 +24,6 @@ struct AppSettingsQuitConfirmationTests {
   func onboardingSkipsConfirmation() {
     let model = AppSettingsModel(store: InMemoryStore())
     #expect(model.confirmBeforeQuitting)
-    // System Settings' "Quit & Reopen" after a permission grant must
-    // succeed mid-onboarding, where relaunching is expected.
     #expect(model.shouldConfirmBeforeQuitting == false)
 
     model.completeOnboarding(importExternalSessions: false)
@@ -51,7 +47,6 @@ struct AppSettingsQuitConfirmationTests {
     let model = AppSettingsModel(store: store)
     #expect(model.confirmBeforeClosingWorkingChat)
 
-    // The close alert's "Do not ask me again" is independent of ⌘Q's.
     model.setConfirmBeforeClosingWorkingChat(false)
     #expect(AppSettingsModel(store: store).confirmBeforeClosingWorkingChat == false)
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting)

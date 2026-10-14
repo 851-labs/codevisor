@@ -3,8 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-// MARK: - Connection
-
 extension WorkspaceScreen {
   func prepare() async {
     IOSNavigationDiagnostics.record(
@@ -43,12 +41,9 @@ extension WorkspaceScreen {
         }
       }
       if let preferredPaneId {
-        // A pane sync already removed falls back to the last selection.
         state.selectPane(id: preferredPaneId)
       }
       paneState = state
-      // A no-op when the route asked for the pane the workspace already
-      // shows, so the push animation isn't racing a save.
       persistCompactPaneState(state)
       if let explicitlyOpenedPane {
         publishPane(explicitlyOpenedPane)
@@ -83,11 +78,6 @@ extension WorkspaceScreen {
     )
   }
 
-  // MARK: - The draft (a new chat, before its first send)
-
-  /// Binds the app-wide retained draft controller and wires what its first
-  /// send should do. Idempotent: re-runs harmlessly as the project list
-  /// arrives.
   func setUpDraftIfNeeded() {
     guard isDraft, draftController == nil else { return }
     guard !environment.machines.allMachines.isEmpty else {
@@ -98,8 +88,6 @@ extension WorkspaceScreen {
     let project =
       draftProjectCandidate
       ?? .runTargetPlaceholder(serverId: resolvedServerId)
-    // Every draft, including No Project, has one durable controller. Picker
-    // changes retarget it in place, preserving attachments and configuration.
     let controller = ChatControllerCache.shared.draftController(
       preferredProject: project,
       environment: environment
@@ -118,10 +106,6 @@ extension WorkspaceScreen {
     draftController = controller
   }
 
-  /// The draft's first send: create the session and become its workspace,
-  /// in place. The pane keeps its id and the transcript keeps its controller,
-  /// so the chat view is never rebuilt — the run pickers simply collapse and
-  /// the sent message rides its lift up into the history.
   private func adoptSession(
     for controller: SessionController,
     submittedText: String
@@ -163,10 +147,7 @@ extension WorkspaceScreen {
       legacyGroups: environment.paneGroups
     )
     controller.hostWorkspaceId = workspace.id
-    // Sending never writes model defaults: only explicit picks do.
     environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
-      // A scratch folder is single-use; remember the CHOICE of no
-      // project rather than the folder it happened to get.
       environment.composerDefaults.rememberNewWorkspaceProject(
         serverId: project.serverId,
         projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
@@ -175,9 +156,6 @@ extension WorkspaceScreen {
         environment.rememberSentRunLocation(newWorktree: controller.wantsNewWorktree, for: project)
       }
     }
-    // Save the draft pane under the real session before Home mounts the
-    // normal workspace route. Both containers resolve the same cached
-    // controller and pane identity during the covered handoff.
     var state = panes
     if let index = state.panes.firstIndex(where: { $0.kind == .chat }) {
       state.panes[index].chatSessionId = session.id
@@ -186,14 +164,9 @@ extension WorkspaceScreen {
     Self.applyCompactPaneState(state, to: &paneWorkspace)
     environment.workspaces.save(paneWorkspace)
     if isNewChatPresentation {
-      // Home drives the live sheet's chrome with its promotion phase.
-      // Preserve this pane identity until the canonical route takes over
-      // so the active transcript and first responder are not remounted.
       onDraftStarted?(session.id)
       return
     }
-    // A draft pane inside a workspace transitions in place like any first
-    // send: the run pickers collapse and the chrome swaps, live.
     controllers[session.id] = controller
     self.project = project
     startedSessionId = session.id
@@ -255,8 +228,6 @@ extension WorkspaceScreen {
       )
       return
     }
-    // App-wide cache: revisiting a chat rebinds the SAME controller, so a
-    // stream that kept flowing while we were away renders immediately.
     let controller = ChatControllerCache.shared.controller(
       for: session,
       project: project,
@@ -276,8 +247,6 @@ extension WorkspaceScreen {
       return
     }
     if session.agentSessionId?.isEmpty != false {
-      // A fresh chat: no agent exists yet. Load harness capabilities so
-      // the composer validates; the agent spawns on the first send.
       await controller.prepare()
       controller.applyComposerDefaults()
     }

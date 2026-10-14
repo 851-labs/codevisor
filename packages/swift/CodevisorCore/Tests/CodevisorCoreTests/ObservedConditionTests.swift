@@ -18,8 +18,6 @@ struct ObservedConditionTests {
       let ready = state.ready
       reads += 1
       if reads == 1 {
-        // Force the same ordering as a background fixture write arriving after
-        // the read but before withObservationTracking installs its observer.
         state.ready = true
       }
       return ready

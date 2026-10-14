@@ -3,9 +3,6 @@ import StreamMarkdown
 import TranscriptKit
 
 extension TranscriptPresentationRow {
-  /// The Markdown find in chat searches in this row: final response text,
-  /// including a proposed plan. Worked sections (tool calls, interim
-  /// narration) and user prompts are left out.
   public var findableBlocks: [MarkdownBlock]? {
     guard case let .markdownChunk(chunk) = content, chunk.container != .assistantWorked else {
       return nil
@@ -14,16 +11,7 @@ extension TranscriptPresentationRow {
   }
 }
 
-/// Counts find-in-chat matches for a whole transcript away from the main
-/// actor.
-///
-/// Rendering every row's plain text and scanning it is far too slow for the
-/// main thread in a long chat, so it happens here, split across cores, and
-/// stays cached per row: a new query rescans cached text, and a streaming
-/// update recounts only the rows whose content changed. Callers cancel the
-/// task awaiting a stale query; cancellation is checked between rows.
 actor TranscriptFindIndex {
-  /// One searchable row's count, with its position in the rows searched.
   struct RowCount: Sendable {
     let rowIndex: Int
     let count: TranscriptFindRowCount
@@ -54,8 +42,6 @@ actor TranscriptFindIndex {
   private var entries: [String: Entry] = [:]
   private var themeFingerprint: Int?
 
-  /// Match counts for every searchable row in `rows`, in document order.
-  /// An empty query only builds and caches the rows' text.
   func counts(
     of query: String,
     in rows: [TranscriptPresentationRow],
@@ -73,8 +59,6 @@ actor TranscriptFindIndex {
       guard let blocks = row.findableBlocks else { continue }
       let key = row.layoutKey
       let position = result.count
-      // Unchanged rows share their projected block storage, so this
-      // comparison is an identity check for everything but a streaming row.
       if let entry = entries[key], entry.blocks == blocks {
         if entry.query == query {
           result.append(RowCount(rowIndex: rowIndex, count: .init(rowKey: key, count: entry.count)))
@@ -88,8 +72,6 @@ actor TranscriptFindIndex {
     }
 
     let counted = try await Self.count(work, query: query, theme: theme)
-    // A concurrent call may have switched themes while this one was counting;
-    // its results still answer this call but must not seed the new cache.
     let cacheable = themeFingerprint == fingerprint
     for item in counted {
       result[item.position] = RowCount(
@@ -111,8 +93,6 @@ actor TranscriptFindIndex {
     entries = [:]
   }
 
-  /// Renders missing text and counts matches for `work`, split into one
-  /// chunk per core.
   private static func count(
     _ work: [Work],
     query: String,

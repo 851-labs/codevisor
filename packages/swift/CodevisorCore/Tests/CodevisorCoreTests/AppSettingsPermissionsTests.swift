@@ -25,12 +25,9 @@ struct AppSettingsPermissionsTests {
     let model = AppSettingsModel(store: store)
     #expect(model.onboardingStep == nil)
 
-    // Granting Screen Recording restarts the app from the permissions
-    // step; the position has to survive the relaunch.
     model.setOnboardingStep(2)
     #expect(AppSettingsModel(store: store).onboardingStep == 2)
 
-    // Finishing clears it so a later reset starts at the beginning.
     model.completeOnboarding(importExternalSessions: false)
     let reloaded = AppSettingsModel(store: store)
     #expect(reloaded.hasCompletedOnboarding)

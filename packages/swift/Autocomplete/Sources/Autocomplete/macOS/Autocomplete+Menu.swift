@@ -2,8 +2,6 @@
   import SwiftUI
 
   public extension Autocomplete {
-    /// A searchable menu including its trigger, presentation, and dismissal.
-    /// Compose commands and independently selection-bound Picker groups.
     struct Menu<Label: View>: View {
       let entries: [Entry]
       let label: Label
@@ -37,8 +35,6 @@
       }
     }
 
-    /// An inline search field and results. The host can bind its query, hand
-    /// over focus explicitly, and receive an otherwise unhandled Return.
     struct Suggestions: View {
       let entries: [Entry]
       let query: Binding<String>?

@@ -5,13 +5,6 @@ import { dirname, join } from "node:path"
 import { ANTIGRAVITY_HARNESS_ID, antigravityGeminiDir } from "./antigravity-profile.js"
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 
-/// Antigravity credentials Codevisor can share. A Codevisor-managed account's
-/// agy keeps its Google sign-in in a file under the account's own data root
-/// (`antigravity-oauth-token`: an OAuth token, `auth_method` and the ID
-/// token). Google doesn't rotate the refresh token, so every machine's agy
-/// refreshes its own access token from the same grant: the vault carries the
-/// document sealed and never refreshes it itself.
-
 export const antigravityAuthPath = (profile: string): string =>
   join(antigravityGeminiDir(profile), "antigravity-cli", "antigravity-oauth-token")
 
@@ -22,7 +15,6 @@ const object = (value: unknown): Record<string, unknown> =>
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
-/// The signed-in Google account, from the ID token's (unverified) claims.
 const idTokenEmail = (idToken: string | undefined): string | undefined => {
   const payload = idToken?.split(".")[1]
   if (payload === undefined) return undefined
@@ -33,8 +25,6 @@ const idTokenEmail = (idToken: string | undefined): string | undefined => {
   }
 }
 
-/// A token document as a vault bundle. The whole document rides along sealed
-/// so another machine can write it back exactly.
 export const parseAntigravityAuth = (
   document: unknown,
   ownership: SharedTokenBundle["ownership"]
@@ -45,11 +35,9 @@ export const parseAntigravityAuth = (
   const email = idTokenEmail(string(object(document).id_token))
   return {
     harnessId: ANTIGRAVITY_HARNESS_ID,
-    // The same Google account signed in twice is one shared account.
     subject: `google:${createHash("sha256")
       .update(email?.toLowerCase() ?? refreshToken)
       .digest("hex")}`,
-    // The grant itself; agy turns it into access tokens on each machine.
     accessToken: refreshToken,
     expiresAt: Number.MAX_SAFE_INTEGER,
     ownership,
@@ -66,9 +54,6 @@ const readDocument = async (path: string): Promise<Record<string, unknown> | und
   }
 }
 
-/// Writes a shared sign-in as the account's token file, readable by this user
-/// only and replaced atomically. A file already holding the same grant stays:
-/// agy may have refreshed its access token since.
 export const writeAntigravityAuth = async (
   profile: string,
   bundle: SharedTokenBundle

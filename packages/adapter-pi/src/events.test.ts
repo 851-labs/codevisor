@@ -30,7 +30,6 @@ describe("Pi event mapping", () => {
         }
       }
     ])
-    // Reasoning shows from its start, before (or without) any text.
     expect(map(update({ type: "thinking_start", contentIndex: 1 }))).toEqual([
       {
         kind: "session.output",
@@ -62,7 +61,6 @@ describe("Pi event mapping", () => {
       }
     ])
     expect(mapper.outcome()).toEqual({ stopReason: "stop" })
-    // A second response is a new message, and usage keeps a running total.
     map({ type: "message_start", message: { role: "assistant" } })
     expect(
       map(update({ type: "text_delta", contentIndex: 0, delta: "Done" }))[0]?.payload
@@ -165,7 +163,6 @@ describe("Pi event mapping", () => {
       exitCode: 0,
       rawOutput: { output: "2 notes.txt\n", exit_code: 0 }
     })
-    // Calls Pi reports without an id are ignored.
     expect(mapper.map(update({ type: "toolcall_start", toolName: "bash" }))).toEqual([])
     expect(mapper.map(update({ type: "toolcall_end", toolCall: {} }))).toEqual([])
   })
@@ -214,7 +211,6 @@ describe("Pi event mapping", () => {
         rawOutput: null
       }
     )
-    // No diff: a failed edit, an edit Pi reported no patch for, one with an empty patch, no path.
     expect(
       run("edit", { path: "a" }, { content: [{ type: "text", text: "no match" }] }, true)
     ).toMatchObject({
@@ -226,7 +222,6 @@ describe("Pi event mapping", () => {
       "diffStats"
     )
     expect(run("write", {}, {})).not.toHaveProperty("diffStats")
-    // A result for a call Pi never announced still lands.
     expect(
       mapper.map({
         type: "tool_execution_end",

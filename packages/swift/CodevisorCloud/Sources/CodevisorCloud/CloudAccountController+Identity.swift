@@ -15,7 +15,6 @@ public enum CloudSignInProvider: String, CaseIterable, Sendable {
 }
 
 extension CloudAccountController {
-  /// Starts browser OAuth with an app-specific, single-use session handoff.
   public func signInURL(scheme: String, provider: CloudSignInProvider = .github) -> URL {
     let base =
       serverURL.absoluteString.hasSuffix("/")
@@ -28,9 +27,6 @@ extension CloudAccountController {
     return URL(string: "\(base)/login/\(provider.rawValue)?redirect=\(encoded)") ?? serverURL
   }
 
-  /// Establish the browser session from this app's account, even when the
-  /// browser currently has another Cloud account signed in. The URL contains
-  /// only a short-lived single-use token, never the stored session credential.
   public func connectAccountURL(provider: CloudSignInProvider, scheme: String) async -> URL? {
     guard state.isSignedIn, let token = storedToken else { return nil }
     let server = serverURL

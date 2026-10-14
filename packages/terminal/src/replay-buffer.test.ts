@@ -17,11 +17,9 @@ describe("ReplayBuffer", () => {
     expect(buffer.since(1).map((frame) => frame.seq)).toEqual([2])
     expect(buffer.since(2)).toEqual([])
 
-    // Multi-byte text is measured in UTF-8 bytes: "éé" is 4 bytes.
     buffer.push(output(3, "éé"))
     expect(buffer.firstSeq).toBe(2)
     expect(buffer.bytes).toBe(8)
-    // A cursor older than the retained window returns everything retained.
     expect(buffer.since(0).map((frame) => frame.seq)).toEqual([2, 3])
   })
 

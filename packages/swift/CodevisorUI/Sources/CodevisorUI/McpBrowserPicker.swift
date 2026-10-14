@@ -1,11 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Browser Use's browser choice, on the machine row it belongs to. The
-/// preference is stored per machine and never syncs, so putting it on the
-/// server's row (as the per-machine pages used to) read like a property of
-/// the server. Here it reads correctly: this Mac uses the extension, that
-/// one uses Chromium.
 struct McpBrowserPicker: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme

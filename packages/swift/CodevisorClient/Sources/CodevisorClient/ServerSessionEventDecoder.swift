@@ -3,7 +3,6 @@ import CodevisorProtocol
 import Foundation
 import TranscriptKit
 
-/// Converts server envelopes to ordered session events for live and stored work.
 enum ServerSessionEventDecoder {
   static func decode(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
     if let events = synchronizationEvents(from: event) { return events }
@@ -133,11 +132,6 @@ enum ServerSessionEventDecoder {
     return nil
   }
 
-  /// Shared coders for the `JSONValue` → typed-model bridge below. These
-  /// run per streamed event — one per token chunk on the hot path — and a
-  /// fresh `JSONEncoder`/`JSONDecoder` allocation per call is measurable
-  /// under several concurrent streams. Sharing is safe: both types create
-  /// all mutable state per `encode`/`decode` call.
   private static let bridgeEncoder = JSONEncoder()
   private static let bridgeDecoder = JSONDecoder()
 
@@ -204,8 +198,6 @@ enum ServerSessionEventDecoder {
     }
   }
 
-  /// Both model ids are required: a notice that cannot name what was swapped
-  /// for what is not worth showing, so a malformed payload is skipped.
   private static func modelFallback(from payload: JSONValue) -> SessionModelFallback? {
     guard let value = payload["modelFallback"],
       let originalModel = value["originalModel"]?.stringValue,
@@ -240,8 +232,6 @@ enum ServerSessionEventDecoder {
       let data = try bridgeEncoder.encode(value)
       return try bridgeDecoder.decode(SessionGoal.self, from: data)
     } catch {
-      // Lenient like the other decoders: an unknown status or malformed
-      // snapshot degrades to skipping the update.
       Log.session.error(
         "Failed to decode goal payload: \(String(describing: error), privacy: .public)"
       )

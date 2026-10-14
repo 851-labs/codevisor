@@ -209,9 +209,9 @@ describe("adaptDirectSocket", () => {
     const adapted = adaptDirectSocket(socket)
     const seen: (string | Uint8Array)[] = []
     const closes: number[] = []
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     adapted.onmessage = (data) => seen.push(data)
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     adapted.onclose = (code) => closes.push(code)
 
     emitter.emit("message", Buffer.from("hello"), false)
@@ -238,7 +238,7 @@ describe("adaptDirectSocket", () => {
       close: (code?: number, reason?: string) => closes.push({ code, reason })
     }) as unknown as WebSocket
     const adapted = adaptDirectSocket(socket)
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     adapted.onmessage = () => {
       throw new Error("handler bug")
     }

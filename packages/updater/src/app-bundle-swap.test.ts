@@ -8,8 +8,6 @@ import {
   type AppBundleSwapOps
 } from "./app-bundle-swap.js"
 
-/// Real Ed25519 material: Sparkle's SUPublicEDKey is the raw 32-byte public
-/// key in base64, which is the tail of the SPKI DER export.
 const keyPair = generateKeyPairSync("ed25519")
 const rawPublicKey = keyPair.publicKey
   .export({ format: "der", type: "spki" })
@@ -109,12 +107,10 @@ describe("applyAppBundleSwap", () => {
       `rename ${bundlePath} -> ${bundlePath}.codevisor-old`,
       expect.stringContaining(`-> ${bundlePath}`)
     ])
-    // Verification strictly precedes any mutation of the installed bundle.
     const firstRename = calls.findIndex((call) => call.startsWith("rename"))
     expect(calls.slice(0, firstRename)).toEqual(
       expect.arrayContaining(["codesign --verify", "ditto -x"])
     )
-    // The old bundle is discarded only after the swap.
     expect(calls.filter((call) => call === `remove ${bundlePath}.codevisor-old`)).toHaveLength(2)
   })
 
@@ -136,7 +132,6 @@ describe("applyAppBundleSwap", () => {
       ...ops,
       execFile: async (command, args) => {
         if (command === "codesign" && args[0] === "-dv") {
-          // Ad-hoc/unsigned bundles report no TeamIdentifier line.
           return { stderr: "Signature=adhoc\n", stdout: "" }
         }
         return ops.execFile(command, args)
@@ -156,7 +151,6 @@ describe("applyAppBundleSwap", () => {
     await expect(applyAppBundleSwap({ appcastXml: versionless, bundlePath, ops })).rejects.toThrow(
       /no usable release/
     )
-    // As does a feed with no items at all.
     await expect(applyAppBundleSwap({ appcastXml: "<rss/>", bundlePath, ops })).rejects.toThrow(
       /no usable release/
     )

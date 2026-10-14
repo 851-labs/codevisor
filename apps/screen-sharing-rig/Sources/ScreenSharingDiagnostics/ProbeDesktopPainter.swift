@@ -3,14 +3,9 @@ import CoreImage
 import CoreText
 import Foundation
 
-/// Immutable drawing resources shared by the visible desktop target and the
-/// synthetic source. Each owner draws on its own serial queue.
 package final class ProbeDesktopPainter: @unchecked Sendable {
   package let pattern: CGImage
   package let fps: Int
-  // Use a concrete, retained CTFont like the source pattern. Repeated AppKit
-  // system-font resolution in NSString.draw raised a CoreText exception on
-  // the macOS 26 host during an extended workload run.
   private let textAttributes: [NSAttributedString.Key: Any] = [
     NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Menlo" as CFString, 20, nil),
     NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1),
@@ -43,8 +38,6 @@ package final class ProbeDesktopPainter: @unchecked Sendable {
     drawText("Codevisor benchmark · frame \(sequence) · responses \(responses)", x: 24, y: height - 40, in: context)
     drawText(
       "Click or press Space · time-driven frame code below · \(fps) fps requested", x: 24, y: height - 70, in: context)
-    // 18 bits, MSB first, fit the full one-hour / 60 fps CLI range. A white
-    // reference cell precedes the data; a black cell follows it.
     for bit in 0..<20 {
       let on = bit == 0 || (bit < 19 && (sequence & (1 << (18 - bit))) != 0)
       context.setFillColor(CGColor(gray: on ? 1 : 0, alpha: 1))

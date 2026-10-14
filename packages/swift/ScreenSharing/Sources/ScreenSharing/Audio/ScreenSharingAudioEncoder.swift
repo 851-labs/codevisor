@@ -1,8 +1,5 @@
 import AVFoundation
 
-/// The host's side: PCM in, whatever format ScreenCaptureKit delivers, 20 ms Opus packets out,
-/// each stamped with its first sample's capture time. Called from the capture queue; not
-/// reentrant.
 public final class ScreenSharingAudioEncoder: @unchecked Sendable {
   private let encoder: AVAudioConverter
   private var resampler: AVAudioConverter?
@@ -23,7 +20,6 @@ public final class ScreenSharingAudioEncoder: @unchecked Sendable {
     self.onPacket = onPacket
   }
 
-  /// Captured PCM starting at `timestampNs`, in any PCM format (resampled to 48 kHz stereo first).
   public func append(_ buffer: AVAudioPCMBuffer, timestampNs: Int64) {
     let pcm: AVAudioPCMBuffer
     if buffer.format == ScreenSharingAudioFormat.pcm {
@@ -52,7 +48,6 @@ public final class ScreenSharingAudioEncoder: @unchecked Sendable {
   }
 
   #if os(macOS)
-    /// A ScreenCaptureKit audio sample buffer.
     public func append(sampleBuffer: CMSampleBuffer) {
       guard sampleBuffer.isValid, let description = sampleBuffer.formatDescription,
         let streamDescription = description.audioStreamBasicDescription

@@ -9,7 +9,6 @@ import type { ClonePluginSourceResult } from "./plugin-source.js"
 import { MANAGED_PLUGIN_MARKER, scanPlugins } from "./plugin-store.js"
 import { exampleManifest, makeDir, writePlugin } from "./test-support.js"
 
-/// Nothing here touches the network: the "clone" copies a local fixture.
 const copyClone = async (
   url: string,
   _ref: string | undefined,
@@ -71,8 +70,6 @@ describe("link", () => {
     const { installer, root } = makeInstaller()
     await installer.link({ path: fixture })
     await expect(installer.link({ path: fixture })).rejects.toThrow(/already installed/)
-    // A destination entry the scan does not recognize (no manifest) still
-    // blocks the link.
     const other = makeFixture({ ...exampleManifest, id: "owner.other" })
     mkdirSync(join(root, "owner.other"))
     await expect(installer.link({ path: other })).rejects.toThrow(/already exists/)
@@ -88,7 +85,6 @@ describe("unlink", () => {
     await installer.unlink("owner.example")
 
     expect(existsSync(join(root, "owner.example"))).toBe(false)
-    // The whole point: the target survives, manifest and all.
     expect(existsSync(join(fixture, "codevisor-plugin.json"))).toBe(true)
     expect(scanPlugins(root).plugins).toHaveLength(0)
   })

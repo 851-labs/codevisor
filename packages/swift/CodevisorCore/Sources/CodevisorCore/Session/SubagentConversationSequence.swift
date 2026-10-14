@@ -1,6 +1,5 @@
 import TranscriptKit
 
-/// Orders parent pieces and groups the agent’s instructions and work into runs.
 @MainActor
 enum SubagentConversationSequence {
   struct Run {
@@ -10,7 +9,6 @@ enum SubagentConversationSequence {
     var lastRunId: String?
   }
   enum Step {
-    /// A message to the agent; with no text to show, it only separates runs.
     case instruction(key: String, text: String?)
     case run(Run)
   }

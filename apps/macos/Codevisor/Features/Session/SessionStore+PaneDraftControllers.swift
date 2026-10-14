@@ -3,11 +3,7 @@ import Observation
 import CodevisorCore
 import ACPKit
 
-// MARK: - PaneDraftControllers
-
 extension SessionStore {
-  /// Resolves an eagerly-created unsent session back to the pane that owns
-  /// its draft controller.
   func paneDraftLocation(
     for session: ChatSession
   ) -> (workspaceId: UUID, paneId: UUID)? {
@@ -20,10 +16,6 @@ extension SessionStore {
     return paneId.map { (workspaceId, $0) }
   }
 
-  /// The draft controller behind an in-workspace draft chat pane (created
-  /// on first use), mirrored to disk per PANE — an unsent in-workspace
-  /// composer (text, attachments, settings) survives relaunches and app
-  /// updates just like the per-server page draft does.
   func paneDraft(
     paneId: UUID,
     project: Project,
@@ -34,7 +26,6 @@ extension SessionStore {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
-      // New tabs and splits start from the machine's New Chat defaults.
       composerDefaults: environment.composerDefaults,
       hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: project.serverId),
@@ -51,17 +42,12 @@ extension SessionStore {
     return controller
   }
 
-  /// First send bound the pane's session; the controller now lives in the
-  /// session cache and the pane's disk draft is spent.
   func removePaneDraft(paneId: UUID) {
     paneDrafts[paneId]?.onDraftChange = nil
     paneDrafts[paneId] = nil
     environment.composerDrafts.clearPaneDraft(forPane: paneId)
   }
 
-  /// First-send setup failed, but its durable session/workspace remains.
-  /// Reattach the exact same controller to the pane's original draft slot
-  /// so all composer state keeps using the established persistence path.
   func restorePaneDraftPersistence(
     _ controller: SessionController,
     paneId: UUID

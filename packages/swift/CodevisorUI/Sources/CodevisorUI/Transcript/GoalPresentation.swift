@@ -1,8 +1,6 @@
 import ACPKit
 import Foundation
 
-/// Platform-neutral goal copy and compact metric formatting shared by the
-/// keyboard-oriented macOS banner and touch-oriented iOS management flow.
 public enum GoalPresentation {
   public static func statusText(for status: GoalStatus) -> String {
     switch status {
@@ -34,7 +32,6 @@ public enum GoalPresentation {
       .replacingOccurrences(of: ".0M", with: "M")
   }
 
-  /// Compact elapsed format matching the CLI: "59s", "1h 30m", "1d 2h 3m".
   public static func elapsed(_ seconds: Double) -> String {
     let wholeSeconds = max(0, Int(seconds.rounded(.down)))
     if wholeSeconds < 60 { return "\(wholeSeconds)s" }

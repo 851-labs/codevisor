@@ -34,7 +34,6 @@
         }
       }
       if request.method == "GET", request.path == "/clock" {
-        // Both stamps are this process's CACurrentMediaTime, the clock capture timestamps use.
         let received = request.receivedAtSeconds
         return .json(200, RigClockReply(receivedAtSeconds: received, sentAtSeconds: CACurrentMediaTime()))
       }
@@ -50,8 +49,6 @@
       return await handleSharedRequest(request) ?? .error(404, "unknown route \(request.method) \(request.path)")
     }
 
-    /// Replaces the source on the live session (or just the default for the next one). The peer,
-    /// its negotiated size and the viewer are untouched, so two sources compare on one session.
     func switchSource(to capture: RigConfiguration.CaptureSource) async throws -> RigSourceResponse {
       let previous = activeCapture
       activeCapture = capture
@@ -74,7 +71,6 @@
       return RigSourceResponse(capture: capture.description, previous: previous.description, live: true)
     }
 
-    /// Latest offer wins: a new viewer replaces the current session outright.
     func startHostSession(_ offer: RigOfferRequest) async throws -> RigAnswerResponse {
       if let existing = session {
         log("replacing session \(existing.id) with \(offer.sessionID) from \(offer.name)")
@@ -116,9 +112,6 @@
       return RigAnswerResponse(sessionID: offer.sessionID, answer: answer, build: build, name: name)
     }
 
-    /// Starts the active source; a start that a wedged `replayd` leaves waiting is recovered by
-    /// restarting the daemon, as the product host does (851-2385). A retry first releases what the
-    /// hung attempt made (its capture, virtual display, workload window).
     func startSource(in session: RigSession) async throws {
       let source = activeCapture
       var attempts = 0
@@ -189,9 +182,7 @@
           try await capture.stop()
         }
         session.workload = workload
-        // Cover the virtual display's menu bar so the captured raster is only the workload.
         workload.window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-        // On a display nobody else uses, the workload may take clicks and keys: its Response counter proves injection.
         workload.window.ignoresMouseEvents = false
         workload.window.acceptsKeys = true
         let sender = session.frameSender
@@ -266,7 +257,6 @@
       await applyDynamicRange(in: session)
     }
 
-    /// The product host's audio stream (851-2379) for every captured source.
     func installAudioStream(in session: RigSession) {
       guard let peer = session.peer as? ScreenSharingSender else { return }
       let channel = peer.audioChannel
@@ -292,7 +282,6 @@
       }
     }
 
-    /// Points the current capture's audio at the encoder (a new source has a new capture).
     func applyAudioStream(in session: RigSession) async {
       guard let capture = session.capture else { return }
       if let encoder = session.audioEncoder {
@@ -304,8 +293,6 @@
       }
     }
 
-    /// The product host's cursor stream (851-2377): once the viewer subscribes, a display-backed
-    /// source leaves the pointer out of the video and the publisher sends it; other sources keep it.
     func installCursorStream(in session: RigSession) {
       guard let peer = session.peer as? ScreenSharingSender else { return }
       let channel = peer.cursorChannel
@@ -336,9 +323,6 @@
       try? await session.capture?.setShowsCursor(session.controlDisplayID == nil)
     }
 
-    /// ScreenCaptureKit stops a stream with an error when the displays sleep or the target
-    /// disappears, and never restarts it. The capture records the error in a label; when it
-    /// appears, re-apply the active source, at most every 5 s while the error persists.
     func recoverFromCaptureError(in session: RigSession) async {
       guard session.sourceStarted else { return }
       let error = session.metrics.snapshot().labels["captureError"] ?? ""
@@ -357,14 +341,10 @@
         session.metrics.label("sourceStall", "")
         log("source restarted after the capture error")
       } catch {
-        // Displays may still be asleep; keep the flag and try again on a later tick.
         log("source restart failed: \(error); retrying")
       }
     }
 
-    /// A source that starts and then delivers nothing is what an exhausted capture daemon looks
-    /// like: the product host's recovery (851-2385) restarts the source, then `replayd`, and the
-    /// label says what happened instead of a silent "— fps".
     func watchForStall(in session: RigSession, baseline: Int) async {
       session.metrics.label("sourceStall", "")
       let source = activeCapture
@@ -395,9 +375,6 @@
       }
     }
 
-    /// Non-owned capture needs the Screen Recording grant. When it is missing, ask once so the rig
-    /// appears in System Settings → Privacy & Security → Screen & System Audio Recording, then fail
-    /// clearly; the viewer keeps retrying and picks the grant up on the next session.
     func requireScreenRecording(for purpose: String) throws {
       guard !CGPreflightScreenCaptureAccess() else { return }
       if !screenRecordingRequested {
@@ -409,9 +386,6 @@
       )
     }
 
-    /// The product's control lease and CGEvent injector, bound to the captured display. Only display-backed
-    /// sources accept control; a request is answered with the reason otherwise. Accessibility is asked for
-    /// once so the rig appears in System Settings on a Mac where prompts do not show.
     func installHostControl(in session: RigSession, displayID: CGDirectDisplayID) {
       session.controlDisplayID = displayID
       let injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(displayID))
@@ -423,7 +397,7 @@
           guard AXIsProcessTrusted() else {
             if let self, !self.accessibilityRequested {
               self.accessibilityRequested = true
-              let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary  // kAXTrustedCheckOptionPrompt
+              let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
               _ = AXIsProcessTrustedWithOptions(options)
             }
             return
@@ -437,8 +411,6 @@
       control.onChanged = { [weak self, weak session] active in
         self?.log("control \(active ? "granted" : "released") on display \(displayID)")
         session?.metrics.label("controlActive", active ? "true" : "false")
-        // Injected key events go to the frontmost app's key window: for the lease's duration, that is the
-        // workload on the virtual display. Focus returns to whatever was active on release.
         guard let window = session?.workload?.window, window.acceptsKeys else { return }
         if active {
           NSApplication.shared.activate()
@@ -458,11 +430,9 @@
       }
     }
 
-    /// Creates the 1:1 virtual display for a WxH-pixel video and waits for AppKit to attach it.
     func createVirtualDisplay(
       width: Int, height: Int, fps: Int, in session: RigSession
     ) async throws -> (display: RigVirtualDisplay, screen: NSScreen) {
-      // The display's pixel raster equals the video raster: WxH pixels is (W/2)x(H/2) points at 2x.
       let virtualDisplay = try RigVirtualDisplay(width: width / 2, height: height / 2, framesPerSecond: fps) {
         [weak self] in
         Task { @MainActor in

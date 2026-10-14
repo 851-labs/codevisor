@@ -3,9 +3,6 @@ import Foundation
 import StreamMarkdown
 import TranscriptKit
 
-/// What an image drawn inline in a reply does: activation previews it in
-/// Quick Look (a text link to the same file opens a document tab instead),
-/// and its menu can open that tab or copy the original bytes.
 @MainActor
 public enum TranscriptMarkdownImageOpener {
   public static func actions(
@@ -26,8 +23,6 @@ public enum TranscriptMarkdownImageOpener {
       })
   }
 
-  /// The workspace file or attachment an image source points at; nil for
-  /// web images, which have no local bytes to preview or copy.
   public static func previewFile(_ url: URL) -> PreviewFile? {
     markdownImagePreviewFile(url.relativeString)
   }

@@ -1,8 +1,6 @@
 import CodevisorCore
 import UIKit
 
-/// Keeps recent terminals alive across pane switches, bounded so hidden
-/// terminals don't accumulate sockets and scrollback.
 @MainActor
 final class TerminalSessionCache {
   static let shared = TerminalSessionCache()
@@ -14,7 +12,6 @@ final class TerminalSessionCache {
 
   private static let budget = 8
   private var sessions: [Key: TerminalSession] = [:]
-  /// Least recently shown first.
   private var order: [Key] = []
   private var memoryWarning: NSObjectProtocol?
 
@@ -30,8 +27,6 @@ final class TerminalSessionCache {
     terminalKey: String, cwd: String, config: CodevisorServerConfig
   ) -> TerminalSession {
     let key = Key(server: config.baseURL.absoluteString, terminalKey: terminalKey)
-    // An ended shell stays up while it's on screen, showing its exit; the
-    // next visit starts a new one.
     if let existing = sessions[key], !existing.hasExited || existing.isVisible {
       touch(key)
       return existing
@@ -51,18 +46,15 @@ final class TerminalSessionCache {
     return session
   }
 
-  /// The pane left the screen: an ended shell has nothing more to show.
   func didHide(_ session: TerminalSession) {
     guard session.hasExited, let key = sessions.first(where: { $0.value === session })?.key else { return }
     evict(key)
   }
 
-  /// Foreground / network recovery: every kept terminal replaces its socket.
   func reconnectAll() {
     for session in sessions.values { session.reconnect() }
   }
 
-  /// The terminal's tab was closed on this device.
   func remove(terminalKey: String) {
     for key in sessions.keys where key.terminalKey == terminalKey { evict(key) }
   }

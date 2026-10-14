@@ -12,11 +12,8 @@ struct PersistenceStoreTests {
 
     let store = FileSystemStore(directory: directory)
     try store.saveData(Data([1, 2, 3]), forKey: "sessions")
-    // Writes land on a background queue (they must not block the main
-    // thread in the app); drain before reading through a fresh store.
     store.flushPendingWrites()
 
-    // A fresh store reading the same directory sees the data.
     #expect(FileSystemStore(directory: directory).loadData(forKey: "sessions") == Data([1, 2, 3]))
   }
 

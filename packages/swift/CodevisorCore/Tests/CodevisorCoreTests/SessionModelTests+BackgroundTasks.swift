@@ -14,14 +14,11 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    // Echoed prompt finishes the turn, so the session is idle.
     await model.send("run tests in the background")
     await settleUntil { !model.isSending }
     #expect(model.isSending == false)
     #expect(model.isWaitingOnBackgroundTasks == false)
 
-    // The prompt echo consumed envelope ids 1-2; manual emits continue
-    // the monotonic sequence from 3.
     client.emit(
       ServerEventEnvelope(
         id: 3,
@@ -54,8 +51,6 @@ extension SessionModelTests {
       ])
     #expect(model.isWaitingOnBackgroundTasks)
 
-    // A watcher with no terminal (Claude's `Monitor`, a `tail -f` that may
-    // never fire) is not pending work: the turn is done for the user.
     client.emit(
       ServerEventEnvelope(
         id: 4,
@@ -79,7 +74,6 @@ extension SessionModelTests {
     #expect(model.waitingBackgroundTasks.isEmpty)
     #expect(model.isWaitingOnBackgroundTasks == false)
 
-    // The empty replace-on-update snapshot clears the indicator.
     client.emit(
       ServerEventEnvelope(
         id: 6,
@@ -137,8 +131,6 @@ extension SessionModelTests {
     await settleUntil { model.isSending == false }
     let countAfterFinish = model.conversation.count
 
-    // The child's settle arrives after the turn ended, without parent
-    // attribution — it must merge by id lookup, not open a new bubble.
     client.emit(
       ServerEventEnvelope(
         id: 4, serverId: "local", kind: "session.output",
@@ -181,7 +173,6 @@ extension SessionModelTests {
     )
 
     await model.send("spawn a background agent")
-    // The Agent tool call returns "launched" immediately and the turn ends.
     client.emit(
       ServerEventEnvelope(
         id: 1, serverId: "local", kind: "session.output",
@@ -203,8 +194,6 @@ extension SessionModelTests {
     await settleUntil { model.isSending == false }
     let bubblesAfterFinish = model.conversation.count
 
-    // The subagent keeps streaming after the turn ended: prose and a
-    // child tool call, both parented to the settled Agent call.
     client.emit(
       ServerEventEnvelope(
         id: 3, serverId: "local", kind: "session.output",
@@ -235,8 +224,6 @@ extension SessionModelTests {
       return false
     }
 
-    // No new bubble, the session stayed idle, and the owning bubble's
-    // bucket holds both the prose and the child tool call.
     #expect(model.conversation.count == bubblesAfterFinish)
     #expect(model.isSending == false)
     guard case let .assistant(message) = model.conversation.last else {
@@ -296,7 +283,6 @@ extension SessionModelTests {
       }
       #expect(message.turn.entries.map(\.id) == ["tool:task-1"])
       #expect(message.turn.subagents["task-1"]?.entries == [.text(id: "acp:msg-sub", markdown: "child prose")])
-      // Turn is settled, background work pending: waiting indicator on.
       #expect(model.isSending == false)
       #expect(model.backgroundTasks.map(\.id) == ["bg-9"])
       #expect(model.isWaitingOnBackgroundTasks)

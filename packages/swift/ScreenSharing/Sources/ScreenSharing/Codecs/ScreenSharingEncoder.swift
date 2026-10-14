@@ -2,9 +2,6 @@ import CoreMedia
 import Foundation
 import VideoToolbox
 
-/// WebRTC calls encode/rate/release serially. VT output arrives on its own
-/// queue; callback and pending metadata are protected by the lock. Stop drains
-/// VT before releasing its bounded callback metadata.
 public final class ScreenSharingEncoder: @unchecked Sendable {
   private final class Pending: Sendable {
     let timestampNs: Int64
@@ -14,8 +11,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     let startedNs = ScreenSharingMetrics.nowNs
     init(frame: ScreenSharingVideoFrame, keyframeAttempt: ScreenSharingKeyframeRequest.Attempt?) {
       timestampNs = frame.timestampNs
-      // Direct codec users (standalone probes) identify content by their own
-      // input timestamp; the transport adapter always supplies buffer identity.
       sourceTimestampNs = frame.sourceTimestampNs ?? frame.timestampNs
       rtpTimestamp = frame.rtpTimestamp
       self.keyframeAttempt = keyframeAttempt
@@ -31,8 +26,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var output: (@Sendable (ScreenSharingEncodedFrame) -> Void)?
   private let configuration: ScreenSharingVideoConfiguration
   private let codec: ScreenSharingVideoCodec
-  /// Standard: 8-bit, BT.709 primaries, sRGB transfer. High (851-2380): 10-bit Main 4:4:4 in
-  /// Display P3 with the PQ transfer, as ScreenCaptureKit's HDR capture delivers it.
   public let dynamicRange: ScreenSharingDynamicRange
   private let maximumPendingFrames: Int
   private let completeEachFrame: Bool
@@ -40,12 +33,8 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var currentFPS: Int
   public let metrics: ScreenSharingMetrics
 
-  /// The largest frame the low-latency rate control keeps up with at 60 fps: past 1440p its
-  /// per-frame encode time climbs (4K HEVC: 36 ms p50, ~43 fps, over 100 drops in 10 s on an
-  /// M4 Max), while standard rate control encodes 4K60 in 18 ms without drops (851-2373).
   public static let lowLatencyMaximumPixels = 2560 * 1440
 
-  /// Whether a frame size gets low-latency rate control when it's requested.
   public static func usesLowLatencyRateControl(requested: Bool, width: Int, height: Int) -> Bool {
     requested && width * height <= lowLatencyMaximumPixels
   }
@@ -142,8 +131,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       try property(
         kVTCompressionPropertyKey_MaxKeyFrameInterval,
         (configuration.framesPerSecond * keyframeIntervalSeconds) as CFNumber)
-      // Tagged as what the capture is, so nothing converts it on the way: sRGB (851-2398), or
-      // ScreenCaptureKit's HDR output, Display P3 PQ with a BT.709 matrix (851-2380).
       if dynamicRange == .high {
         try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_P3_D65)
         try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ)
@@ -165,8 +152,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       } else if hardwareStatus != kVTPropertyNotSupportedErr {
         try check(hardwareStatus, "Query encoder hardware")
       }
-      // Some low-latency VT implementations omit this diagnostic property.
-      // RequireHardwareAcceleratedVideoEncoder still forbids software fallback.
       metrics.label("encoderHardware", hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
       metrics.label("encoder", "VideoToolbox \(codec.rawValue) hardware, no frame reordering")
       metrics.label(
@@ -281,7 +266,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     }
   }
 
-  /// Frames admitted and not yet completed by VideoToolbox (diagnostic).
   public var pendingCount: Int { lock.withLock { pending.count } }
 
   private func didEncode(metadata: Pending, status: OSStatus, flags: VTEncodeInfoFlags, buffer: CMSampleBuffer?) {
@@ -302,8 +286,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       return
     }
     if metadata.keyframeAttempt != nil, lock.withLock({ dropCheck })?.consume() == true {
-      // Discard a real forced output at the same completion boundary where VT
-      // can report a drop. Keep injected loss distinct from hardware drop counts.
       metrics.increment("injectedEncoderKeyframeDrops")
       metrics.trace("encoderOutput", "\(callbackStarted) ts=\(metadata.timestampNs) result=discarded")
       return
@@ -350,7 +332,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
           if let pointer { data.append(contentsOf: [0, 0, 0, 1]); data.append(pointer, count: length) }
         }
       }
-      // Content identity for the viewer's idle delivery audit; precedes the slices.
       data.append(contentsOf: [0, 0, 0, 1])
       data.append(ScreenSharingSourceMarker.nalUnit(timestampNs: metadata.sourceTimestampNs, codec: codec))
       data.append(try NALUnitBitstream.annexB(bytes, lengthSize: Int(lengthSize)))

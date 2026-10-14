@@ -2,9 +2,6 @@ import CodevisorCore
 import Observation
 import SwiftUI
 
-/// Directory listings and filename search for one workspace root. The
-/// platform browsers (a quick-open picker on Mac, folder pages on iPhone)
-/// read listings from here and search on the machine that owns the files.
 @MainActor @Observable
 final class FileExplorerModel {
   let root: String

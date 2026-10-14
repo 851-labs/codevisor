@@ -65,7 +65,6 @@ extension ComputerUseBridge {
         options: arguments
       )
     }
-    // Validate foreground intent before permissions, app lookup or activation.
     _ = try deliveryMode(arguments, windowID: nil)
     try requireAccessibility(prompt: true)
     let app = try resolveApp(appName, launchIfNeeded: false)
@@ -81,8 +80,6 @@ extension ComputerUseBridge {
         requestedWindowID: requestedWindowID
       )
     }
-    // Keyboard input addresses the process, so it stays available when the
-    // app has no window — which is the only way to reopen one (⌘N).
     let addressesProcess = tool == "press_key" || tool == "type_text"
     let resolvedWindow: (element: AXUIElement, windowID: CGWindowID?)?
     do {
@@ -118,7 +115,6 @@ extension ComputerUseBridge {
     )
   }
 
-  /// Keyboard input can reopen a window and respects the requested focus mode.
   private func handleWindowlessKeyboardTool(
     tool: String,
     arguments: [String: Any],

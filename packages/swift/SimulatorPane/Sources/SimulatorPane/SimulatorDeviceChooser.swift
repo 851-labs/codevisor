@@ -5,12 +5,9 @@
 import CodevisorClient
 import SwiftUI
 
-/// Kinds of device, in the order lists show them.
 enum SimulatorFamilies {
   static let order = ["iPhone", "iPad", "Apple Watch", "Apple TV", "Apple Vision"]
 
-  /// One list without per-kind sections: iPhones first, then iPads and so on, each kind in the
-  /// order simctl lists it.
   static func sorted(_ devices: [ServerSimulatorDevice]) -> [ServerSimulatorDevice] {
     let rank = { (family: String) in order.firstIndex(of: family) ?? order.count }
     return devices.enumerated()
@@ -22,9 +19,6 @@ enum SimulatorFamilies {
   }
 }
 
-/// A pane with no device yet: the Mac's simulators to choose from. On a Mac it's the title's
-/// device picker, centered on the pane as an empty File pane shows its file picker; on an iPhone or
-/// iPad it's an inset grouped list, as the File pane's browser is there.
 struct SimulatorDeviceChooser: View {
   let model: SimulatorPaneModel
 
@@ -36,7 +30,6 @@ struct SimulatorDeviceChooser: View {
     @State private var focus = Autocomplete.InputFocus()
 
     private var chooser: some View {
-      // Centered while it fits, scrolling when the pane is shorter (as MacFileOpenPage).
       GeometryReader { geometry in
         ScrollView {
           Autocomplete.Suggestions(query: $query, focus: focus) {
@@ -52,8 +45,6 @@ struct SimulatorDeviceChooser: View {
         }
       }
       .background(theme.paneBackground)
-      // Initially too: a pane opened before its simulators load mounts the chooser after the
-      // host's focus request.
       .onChange(of: model.chooserFocusRequests, initial: true) { _, requests in
         guard requests > 0 else { return }
         focus.focus(ifCurrent: model.canFocusChooser)
@@ -76,8 +67,6 @@ struct SimulatorDeviceChooser: View {
             Button {
               model.choose(device.udid)
             } label: {
-              // Choosing opens the device, so it reads as a drill-in row (as the File browser's
-              // folders do).
               HStack {
                 SimulatorManagerRow(device: device, deleting: model.deleting.contains(device.udid))
                 Image(systemName: "chevron.right")
@@ -111,7 +100,6 @@ struct SimulatorDeviceChooser: View {
   #endif
 }
 
-/// Name, device type and OS for a new simulator.
 struct SimulatorCreateSheet: View {
   let model: SimulatorPaneModel
   let done: () -> Void

@@ -2,10 +2,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// A replacement the editor applies as one undo step of its own, so undo
-/// restores exactly what was replaced. A plain `text` write bypasses undo and
-/// strands the typing steps already on the stack against text that no longer
-/// matches them.
 struct ComposerTextEdit: Equatable {
   let id = UUID()
   let range: NSRange
@@ -15,7 +11,6 @@ struct ComposerTextEdit: Equatable {
 struct ComposerTextView: UIViewRepresentable {
   @Binding var text: String
   @Binding var selection: NSRange
-  /// Applied once; `text` and `selection` already describe its result.
   var pendingEdit: ComposerTextEdit? = nil
   let handoffID: UUID?
   let handoffRole: ComposerTextEditorHandoffRole
@@ -23,15 +18,12 @@ struct ComposerTextView: UIViewRepresentable {
   var focusRequest: UUID?
   var onFocusRequestFulfilled: ((UUID) -> Void)?
   var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
-  /// Decides which scroll edge hands a drag over to resizing the card.
   var isComposerExpanded: Bool
   @Binding var contentHeight: CGFloat
-  /// First-responder changes, deferred past the SwiftUI update.
   var onFocusChange: (Bool) -> Void
   var onResizePanChanged: (CGFloat) -> Void
   var onResizePanEnded: (CGFloat, CGFloat) -> Void
   var onResizePanCancelled: () -> Void
-  /// A hardware keyboard's Return. Nil leaves Return as a line break.
   var onHardwareReturn: (() -> Void)?
 
   func makeUIView(context: Context) -> ComposerTextViewContainer {
@@ -63,10 +55,6 @@ struct ComposerTextView: UIViewRepresentable {
       let view: HeightReportingTextView?
       switch handoffRole {
       case .none:
-        // The canonical route outlives NewChatFlow. If SwiftUI updates
-        // this representable before the coordinator's synchronous
-        // settle hook, adopt the existing editor instead of stacking
-        // a second local UITextView over it.
         view =
           container.localEditor
           ?? ComposerTextViewHandoffRegistry.retirePromotionEditor(
@@ -109,16 +97,10 @@ struct ComposerTextView: UIViewRepresentable {
     view.backgroundColor = .clear
     view.font = .preferredFont(forTextStyle: .body)
     view.adjustsFontForContentSizeCategory = true
-    // The top inset includes the card padding the editor's frame bleeds
-    // into; see `ComposerBar.editorTopBleed`.
     view.textContainerInset = UIEdgeInsets(
       top: 4 + ComposerBar.editorTopBleed, left: 0, bottom: 4, right: 0)
     view.textContainer.lineFragmentPadding = 0
-    // Prompts are code-adjacent — no auto-capitalized first letters.
     view.autocapitalizationType = .none
-    // A plain UITextView implicitly accepts only strings. Declare the two
-    // attachment representations as pasteable too, then let the paste
-    // delegate consume them without inserting rich text into the prompt.
     view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
       UTType.plainText.identifier,
       UTType.fileURL.identifier,
@@ -126,10 +108,6 @@ struct ComposerTextView: UIViewRepresentable {
     ])
     view.setContentHuggingPriority(.defaultLow, for: .horizontal)
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    // Height flows from the view's own layout, not from updateUIView: a
-    // freshly (re)mounted composer has zero width until UIKit lays it
-    // out, so measuring during the SwiftUI update reported nothing and a
-    // restored draft sat at the minimum height until the next keystroke.
     return view
   }
 
@@ -139,7 +117,6 @@ struct ComposerTextView: UIViewRepresentable {
     view.delegate = coordinator
     view.pasteDelegate = coordinator
     view.onContentHeightChange = { [binding = $contentHeight] height in
-      // Defer: layout can run inside a view update.
       Task { @MainActor in
         binding.wrappedValue = height
       }
@@ -149,13 +126,8 @@ struct ComposerTextView: UIViewRepresentable {
       coordinator.appliedEditID = edit.id
       applyUndoably(edit, to: view)
     }
-    // Only push text the view doesn't already have (a restored draft, a
-    // send clearing the field) — and never while the keyboard holds an
-    // active composition, which a programmatic set would tear down.
     if view.text != text, view.markedTextRange == nil {
       view.text = text
-      // The callback defers its binding write, so reporting here —
-      // inside a view update — is safe.
       view.reportContentHeight()
     }
     let textLength = (view.text as NSString).length
@@ -171,15 +143,12 @@ struct ComposerTextView: UIViewRepresentable {
     view.onFocusRequestFulfilled = onFocusRequestFulfilled
     coordinator.onPasteAttachmentEvent = onPasteAttachmentEvent
     view.onFocusChange = onFocusChange
-    // A promoted editor arrives already focused; its new owner learns that
-    // here rather than from a responder transition it never saw.
     if coordinator.reportedFocus != view.isFirstResponder {
       coordinator.reportedFocus = view.isFirstResponder
       view.reportFocus()
     }
     view.requestInitialFocus(focusRequest)
     view.isComposerExpanded = isComposerExpanded
-    // Closure reassignment never touches keyboard or layout state.
     view.onResizePanChanged = onResizePanChanged
     view.onResizePanEnded = onResizePanEnded
     view.onResizePanCancelled = onResizePanCancelled
@@ -192,7 +161,6 @@ struct ComposerTextView: UIViewRepresentable {
       let end = view.position(from: start, offset: edit.range.length),
       let range = view.textRange(from: start, to: end)
     else { return }
-    // Its own undo group, apart from the typing that led up to it.
     view.undoManager?.beginUndoGrouping()
     view.replace(range, withText: edit.replacement)
     view.undoManager?.endUndoGrouping()
@@ -225,15 +193,12 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     func textViewDidChange(_ textView: UITextView) {
-      // A pending edit's result is already in the bindings.
       guard !isApplyingSwiftUIUpdate else { return }
       text.wrappedValue = textView.text
       selection.wrappedValue = textView.selectedRange
       (textView as? HeightReportingTextView)?.reportContentHeight()
     }
 
-    /// A drag that ended while resizing the card must not fling the text
-    /// on release; its momentum belongs to the card's settle animation.
     func scrollViewWillEndDragging(
       _ scrollView: UIScrollView,
       withVelocity _: CGPoint,
@@ -249,10 +214,6 @@ struct ComposerTextView: UIViewRepresentable {
       selection.wrappedValue = textView.selectedRange
     }
 
-    /// UIKit supplies item providers only after the user invokes Paste,
-    /// preserving the system's paste privacy behavior. Files win over
-    /// image previews, matching the macOS composer; plain text delegates
-    /// back to UITextView's standard transformation.
     func textPasteConfigurationSupporting(
       _ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting,
       transform item: any UITextPasteItem
@@ -267,9 +228,6 @@ struct ComposerTextView: UIViewRepresentable {
         from: provider,
         onEvent: onPasteAttachmentEvent,
         onCompletion: { success in
-          // Apple permits completing UITextPasteItem from the
-          // provider's asynchronous callback. Do not publish a
-          // cached no-result before we know we consumed the item.
           if success {
             item.setNoResult()
           } else {

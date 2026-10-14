@@ -25,16 +25,10 @@ interface Connection {
   lastActiveAt?: string
 }
 
-/// How long `clients.list` waits for each window's context before listing it
-/// without one.
 export const CLIENT_LIST_CONTEXT_TIMEOUT_MS = 1_500
 
 export type ClientUnavailablePhase = "before-send" | "in-flight"
 
-/// The addressed window is not attached (`before-send`), or it went away
-/// while a command awaited its acknowledgement (`in-flight`, outcome
-/// unknown). Serialized with code `client_unavailable` so gateway scripts can
-/// raise a typed `ClientUnavailableError`.
 const clientUnavailable = (
   status: number,
   message: string,
@@ -48,8 +42,6 @@ const clientUnavailable = (
     phase
   })
 
-/// Ephemeral, explicitly addressed native windows. Commands are never stored
-/// or replayed after reconnect: a timed-out navigation has an unknown outcome.
 export class ClientControlBroker {
   private readonly connections = new Map<string, Connection>()
 
@@ -61,9 +53,6 @@ export class ClientControlBroker {
     )
   }
 
-  /// Every attached window with what it is viewing. Contexts are requested in
-  /// parallel; a window that does not answer within `contextTimeoutMs` is
-  /// still listed (it stays attached), just without `viewing`.
   async describe(
     machine: { readonly id: string; readonly name: string },
     originClientId: string | null,
@@ -132,9 +121,6 @@ export class ClientControlBroker {
     })
   }
 
-  /// Sends one command. `keepOnTimeout` is for read-only probes: a window
-  /// that is merely slow stays attached, whereas an unacknowledged mutation
-  /// detaches it because its outcome is unknown.
   request(
     clientId: string,
     command: Omit<ClientControlCommand, "requestId">,
@@ -181,7 +167,6 @@ export class ClientControlBroker {
           503,
           "Client disconnected before acknowledging the command; its outcome is unknown.",
           clientId,
-          // Only acknowledged windows (past hello) ever have pending commands.
           connection.hello!.name,
           "in-flight"
         )
@@ -198,9 +183,6 @@ export class ClientControlBroker {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/// Native clients report Foundation UUIDs in uppercase; the server's ids are
-/// lowercase. Normalize id fields so agents can compare a window's context
-/// with session and workspace ids directly.
 const lowercaseIds = <T>(value: T, key = ""): T => {
   if (Array.isArray(value)) return value.map((item) => lowercaseIds(item, key)) as T
   if (value !== null && typeof value === "object") {

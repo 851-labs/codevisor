@@ -26,7 +26,6 @@ import {
   type NativeMcpManagerConfig
 } from "./native-mcp-types.js"
 
-// Shared by editor instances: two harness aliases can target the same file.
 const fileEdits = new Map<string, Promise<void>>()
 const withNativeEdit = <T>(path: string, edit: () => Promise<T>): Promise<T> => {
   const result = (fileEdits.get(path) ?? Promise.resolve()).then(edit)
@@ -67,14 +66,12 @@ const refuseUnsupported = <A>(operation: () => A): A => {
   try {
     return operation()
   } catch (cause) {
-    /* v8 ignore next -- the surgical editors only throw NativeConfigUnsupportedError. */
+    /* v8 ignore next */
     if (!(cause instanceof NativeConfigUnsupportedError)) throw cause
     throw new NativeMcpError(cause.message, "unsupported")
   }
 }
 
-// listRemovals excludes restored entries and fresh removals are never
-// restored, so restoredAt is always absent on records passing through here.
 const publicRemoval = (record: NativeMcpRemovalRecord): NativeMcpRemoval => ({
   configPath: record.configPath,
   harnessId: record.harnessId,
@@ -83,8 +80,6 @@ const publicRemoval = (record: NativeMcpRemovalRecord): NativeMcpRemoval => ({
   serverName: record.serverName
 })
 
-/// The destructive native-config operations: every edit re-reads the file
-/// immediately beforehand, takes a one-time backup, and writes atomically.
 export const makeNativeMcpEditor = (
   config: NativeMcpManagerConfig,
   environment: NativeMcpEnvironment,
@@ -92,8 +87,6 @@ export const makeNativeMcpEditor = (
 ): NativeMcpEditor => {
   const { env, fs, home } = environment
 
-  /// Catalog definition whose native config Codevisor may edit. All the
-  /// destructive operations funnel through this gate.
   const writableDefinition = (
     harnessId: string
   ): { readonly definition: HarnessDefinition; readonly spec: NativeMcpSpec } => {
@@ -111,9 +104,6 @@ export const makeNativeMcpEditor = (
     return { definition, spec }
   }
 
-  /// Read the global config for editing. The read happens immediately before
-  /// each edit to shrink the race window against the harness rewriting its
-  /// own file (Claude Code does so constantly).
   const readForEdit = async (
     spec: NativeMcpSpec
   ): Promise<{ readonly configPath: string; readonly content: string }> => {
@@ -135,8 +125,6 @@ export const makeNativeMcpEditor = (
     await fs.writeFileAtomic(path, after, { content: before })
   }
 
-  /// One-time pre-mutation snapshot: taken from the exact content about to
-  /// be edited, recorded first-write-wins, never overwritten afterwards.
   const ensureBackup = async (configPath: string, content: string): Promise<void> => {
     const existing = await run(config.db.getNativeConfigBackup(configPath))
     if (existing !== undefined) return
@@ -229,7 +217,7 @@ export const makeNativeMcpEditor = (
         "unsupported"
       )
     }
-    /* v8 ignore next 6 -- catalog invariant: every disableField harness is JSON today; the guard protects future TOML additions. */
+    /* v8 ignore next 6 */
     if (spec.format !== "json") {
       throw new NativeMcpError(
         `${definition.name}'s enable flag can't be edited safely yet`,
@@ -240,8 +228,6 @@ export const makeNativeMcpEditor = (
     if (entryFor(spec, content, serverName) === undefined) {
       throw new NativeMcpError(`No server named ${serverName} in ${configPath}`, "notFound")
     }
-    // enabledWhen describes which flag value means "enabled": opencode's
-    // {enabled: true} vs cline's {disabled: false}.
     const flagValue = disableField.enabledWhen ? enabled : !enabled
     const edited = setJsonConfigValue(
       content,

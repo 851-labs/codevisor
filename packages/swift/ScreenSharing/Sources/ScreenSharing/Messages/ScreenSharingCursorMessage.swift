@@ -3,22 +3,11 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// The host's pointer as its own stream (851-2377), on the `codevisor.cursor.v1`
-/// channel: the viewer draws it, so it moves as fast as the channel instead of
-/// the video, and while controlling it's the local pointer itself. A viewer
-/// that can draw it says so (`subscribe`); only then does the host take the
-/// pointer out of the video and start sending it. A peer that predates the
-/// channel never opens it and keeps the pointer in the video.
 public enum ScreenSharingCursorMessage: Codable, Sendable, Equatable {
-  /// Viewer → host: draw the pointer here, not into the video.
   case subscribe
-  /// Host → viewer: the pointer's image.
   case shape(ScreenSharingCursorImage)
-  /// Host → viewer: where the pointer is, normalized in the captured display
-  /// (origin top left); nil while it's on another display or hidden.
   case position(ScreenSharingPointer?)
 
-  /// A 2× cursor PNG with room to spare; the largest accessibility cursor sizes are sent at 1×.
   public static let maximumBytes = 32 * 1024
 
   public func encoded() throws -> Data {
@@ -39,15 +28,10 @@ public enum ScreenSharingCursorMessage: Codable, Sendable, Equatable {
   private struct Envelope: Codable { let version: Int; let message: ScreenSharingCursorMessage }
 }
 
-/// A pointer image: a PNG at whatever pixel density the host has, its hotspot
-/// in the PNG's pixels, and its size as a share of the captured display's, so
-/// the viewer draws it in proportion to the video at any video resolution and
-/// still sharp.
 public struct ScreenSharingCursorImage: Codable, Sendable, Equatable {
   public var png: Data
   public var hotspotX: Int
   public var hotspotY: Int
-  /// The image's width and height as fractions of the display's.
   public var width: Double
   public var height: Double
 
@@ -55,7 +39,6 @@ public struct ScreenSharingCursorImage: Codable, Sendable, Equatable {
     self.png = png; self.hotspotX = hotspotX; self.hotspotY = hotspotY; self.width = width; self.height = height
   }
 
-  /// Encodes a pointer image drawn by `draw` into a `pixelWidth` × `pixelHeight` premultiplied context.
   public static func png(pixelWidth: Int, pixelHeight: Int, draw: (CGContext) -> Void) -> Data? {
     guard pixelWidth > 0, pixelHeight > 0,
       let context = CGContext(
@@ -72,8 +55,6 @@ public struct ScreenSharingCursorImage: Codable, Sendable, Equatable {
     return CGImageDestinationFinalize(destination) ? data as Data : nil
   }
 
-  /// The image as the viewer's cursor shape (premultiplied BGRA), or nil when the PNG
-  /// doesn't decode, is larger than `RFBCursorShape.maximumDimension` or the hotspot is outside it.
   public func shape() -> RFBCursorShape? {
     guard let source = CGImageSourceCreateWithData(png as CFData, nil),
       let image = CGImageSourceCreateImageAtIndex(source, 0, nil)

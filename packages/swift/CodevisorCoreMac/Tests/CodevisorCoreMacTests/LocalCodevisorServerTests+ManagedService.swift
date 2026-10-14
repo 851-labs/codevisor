@@ -3,9 +3,6 @@ import Testing
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
 
-/// The platform-managed (launchd) server path: adoption, failure reporting
-/// without any child-process fallback, launchd liveness probing, and the
-/// production ownership policy.
 @MainActor
 extension LocalCodevisorServerTests {
   @Test("Starts and adopts the platform-managed server")
@@ -49,8 +46,6 @@ extension LocalCodevisorServerTests {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
     let client = FakeLocalServerClient(healthResults: [
       .failure(TestError()),
-      // A process answering with the wrong bundled identity is just as
-      // unusable as an agent script that exited before binding.
       .success(.ready),
     ])
     var starts = 0
@@ -86,8 +81,6 @@ extension LocalCodevisorServerTests {
     }
     #expect(message.contains("does not match this Codevisor build"))
     #expect(starts == 1)
-    // The job is left for the log and the next attempt; nothing is torn
-    // down and no app-owned server is launched in its place.
     #expect(stops == 0)
     #expect(directLaunches == 0)
     #expect(terminatedPorts.isEmpty)
@@ -152,7 +145,6 @@ extension LocalCodevisorServerTests {
     }
     #expect(message.contains("exited before becoming ready"))
     #expect(stops == 1)
-    // Three "no process" probes, eight attempts apart, not 400 attempts.
     #expect(client.healthCallCount < 60)
   }
 

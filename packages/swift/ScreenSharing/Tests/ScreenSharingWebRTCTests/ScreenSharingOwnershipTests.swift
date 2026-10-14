@@ -6,9 +6,6 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// Buffer lifetime at the boundaries this package owns. Weak references to
-/// the CoreVideo buffers observe actual release; a nil refresh result alone
-/// would not distinguish the cache's owner from WebRTC or VideoToolbox owners.
 struct ScreenSharingOwnershipTests {
   private func makeBuffer(width: Int = 64) throws -> CVPixelBuffer {
     var pixel: CVPixelBuffer?
@@ -29,11 +26,9 @@ struct ScreenSharingOwnershipTests {
     try autoreleasepool {
       let b = try makeBuffer()
       weakB = b
-      // Replacing the cached frame releases A while B stays owned by the store.
       #expect(store.capture(.init(pixelBuffer: b, timestampNs: 20)) != nil)
     }
     #expect(weakA == nil && weakB != nil)
-    // A refresh hands out a new reference to the cached buffer without transferring ownership.
     try autoreleasepool {
       let refreshed = store.refresh(nowNs: 30)
       let handed = try #require(refreshed)
@@ -42,7 +37,6 @@ struct ScreenSharingOwnershipTests {
     #expect(weakB != nil)
     store.clear()
     #expect(weakB == nil && !store.isHolding)
-    // Ordering state survives the release: older captures stay rejected, newer ones submit later.
     #expect(store.capture(.init(pixelBuffer: try makeBuffer(), timestampNs: 20)) == nil)
     #expect(store.capture(.init(pixelBuffer: try makeBuffer(), timestampNs: 21))?.timestampNs == 31)
   }
@@ -62,7 +56,6 @@ struct ScreenSharingOwnershipTests {
       weakB = b
       mailbox.put(.init(pixelBuffer: b, timestampNs: 2))
     }
-    // A slow consumer keeps only the newest frame; the replaced one is released.
     #expect(weakA == nil && weakB != nil)
     try autoreleasepool {
       let taken = try #require(mailbox.take())
@@ -80,7 +73,6 @@ struct ScreenSharingOwnershipTests {
   }
 
   @Test @MainActor func senderReleasesCacheOnConfigurationAndRejectsFramesAfterStop() throws {
-    // Same boundary as production: trials are pinned before this bare factory exists.
     ScreenSharingFieldTrials.process.ensureInstalled()
     let factory = RTCPeerConnectionFactory()
     let source = factory.videoSource(forScreenCast: true)
@@ -96,13 +88,11 @@ struct ScreenSharingOwnershipTests {
       weakOld = old
       sender.push(.init(pixelBuffer: old, timestampNs: 10))
     }
-    // No sink is attached to the unnegotiated source, so only the cache owns the buffer.
     #expect(weakOld != nil && sender.isHoldingCachedFrame)
     #expect(metrics.snapshot().counters["capturedFrames"] == 1)
     #expect(
       metrics.snapshot().counters["refreshCacheFills"] == 1
         && metrics.snapshot().counters["refreshCacheReplacements"] == nil)
-    // A configuration transition releases cached content before accepting the new size.
     sender.configure(try ScreenSharingVideoConfiguration(width: 64, height: 64))
     #expect(weakOld == nil && !sender.isHoldingCachedFrame)
     #expect(metrics.snapshot().counters["refreshCacheReleases"] == 1)
@@ -111,7 +101,6 @@ struct ScreenSharingOwnershipTests {
       weakLate = stale
       sender.push(.init(pixelBuffer: stale, timestampNs: 20))
     }
-    // An old-size frame arriving after the transition is neither submitted nor retained.
     #expect(weakLate == nil && metrics.snapshot().counters["captureTransitionDrops"] == 1)
     try autoreleasepool {
       let fresh = try makeBuffer(width: 64)
@@ -146,7 +135,6 @@ struct ScreenSharingOwnershipTests {
     #expect(weakCached != nil && peer.frameSender.isHoldingCachedFrame)
     peer.close()
     peer.close()
-    // Owned work is cancelled and the cache released; the buffer has no remaining owner.
     #expect(weakCached == nil && !peer.frameSender.isHoldingCachedFrame)
     weak var weakLate: CVPixelBuffer?
     try autoreleasepool {
@@ -164,11 +152,6 @@ struct ScreenSharingOwnershipTests {
     let peer = try await ScreenSharingSender(
       configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics)
     #expect(await peer.awaitClosed() == nil)
-    // This peer-level check only establishes the boundary's shape on an
-    // unnegotiated peer: nil before close, one identical answer for concurrent
-    // waiters, idempotent afterwards. Activation crosses a main-actor hop, so
-    // the count here may be zero; the pending-handle join itself is proved
-    // through the peer's owned-work seam in the next test.
     peer.frameSender.push(.init(pixelBuffer: try makeBuffer(), timestampNs: 10))
     #expect(metrics.snapshot().counters["capturedFrames"] == 1)
     peer.close()
@@ -180,9 +163,6 @@ struct ScreenSharingOwnershipTests {
   }
 
   @Test @MainActor func ownedWorkJoinIsSharedByConcurrentWaitersWhileAHandleIsStillPending() async {
-    // The seam ScreenSharingPeer.awaitClosed() delegates to. An early-clear
-    // implementation would answer one waiter with the handle count and the
-    // other with zero under every interleaving; both must answer the same.
     let work = ScreenSharingOwnedWork()
     #expect(await work.join() == nil)
     let gate = TestSignal()
@@ -192,7 +172,7 @@ struct ScreenSharingOwnershipTests {
       released.signal()
     }
     work.close(with: [pending])
-    work.close(with: [])  // a repeated close keeps the first handles
+    work.close(with: [])
     let entered = TestSignal()
     let finished = TestSignal()
     async let first: Int? = {
@@ -207,8 +187,6 @@ struct ScreenSharingOwnershipTests {
       finished.signal()
       return count
     }()
-    // Both waiters have called join() while the gate is still closed, so the
-    // join is suspended on the held handle: nothing has finished or released.
     await entered.wait(for: 2)
     #expect(finished.value == 0)
     #expect(released.value == 0)

@@ -15,13 +15,9 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
   public var pendingPlanApproval: Bool
   public var backgroundTasks: [BackgroundTaskInfo]?
   public var goal: SessionGoal?
-  /// The session's latest skills snapshot. Its own field rather than a state
-  /// update: clients that predate skills reject unknown state updates.
   public var skills: SessionSkills?
   public var sessionPlan: Plan?
   public var usage: ServerSessionUsage?
-  /// The gate holding this session's prompts at this page's cursor; nil when
-  /// nothing is held (and on servers that predate the field).
   public var updateGate: ServerSessionUpdateGate?
 
   public init(

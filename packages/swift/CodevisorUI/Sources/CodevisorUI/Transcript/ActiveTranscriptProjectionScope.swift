@@ -2,12 +2,6 @@ import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
-/// Observes only the token-level active slot, parses it away from MainActor,
-/// and leaves the cached settled projection untouched.
-/// The content closure receives the active rows, their version, whether a
-/// newer projection than the published one is in flight, and whether no
-/// projection has been published yet for the current active item, and the
-/// restoration identity belonging to those published rows.
 public struct ActiveTranscriptProjectionScope<Content: View>: View {
   private let controller: SessionController
   private let projectedRows: [TranscriptPresentationRow]
@@ -35,12 +29,6 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     let isActiveProjectionPending =
       projectedItem != nil
       && publishedProjectionKey != projectionKey
-    // `isActiveProjectionPending` lags by design on a steady stream: the
-    // model advances every frame just before the rows prepared for the
-    // previous frame publish, so exact key equality is rarely true while
-    // tokens flow. Gates that only need the active slot to have *some*
-    // precise geometry (initial presentation, warm reattachment) must not
-    // wait for that; they wait for the first publication for this item.
     let isAwaitingFirstActiveProjection =
       projectedItem != nil
       && publishedProjectionKey?.projectedID != projectedItem?.id
@@ -105,11 +93,6 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     let projectedID: UUID?
     let waitingDescription: String?
 
-    /// A projection prepared for the current assistant remains safe to
-    /// present when a newer token batch lands on the same display frame.
-    /// Requiring exact revision equality starves publication on a steady
-    /// stream: every frame advances the model just before SwiftUI gets to
-    /// publish the rows prepared for the preceding frame.
     func canPublish(over current: Self) -> Bool {
       projectedID == current.projectedID
         && waitingDescription == current.waitingDescription

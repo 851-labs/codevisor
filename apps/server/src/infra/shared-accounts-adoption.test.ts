@@ -10,10 +10,6 @@ afterEach(() => vi.useRealTimers())
 
 describe("adopting an existing terminal login", () => {
   it("offers a freshly adopted native login as signed in on the first catalog read", async () => {
-    // Onboarding's first `GET /v1/harnesses` runs discovery and then reads the
-    // stored snapshot without waiting for a probe. A grant adopted from a live
-    // token must already read as authenticated, or the row sits on
-    // "Checking sign-in…" and the harness stays disabled.
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(100_000)
     const a = await fleet().machine("a", native("alice"))
@@ -75,10 +71,6 @@ describe("adopting an existing terminal login", () => {
 
 describe("signing out on one machine", () => {
   it("keeps the catalog quiet: reconcile must not flip sign-out availability back", async () => {
-    // A machine sign-out keeps the shared grant. `reconcile()` re-saves every
-    // shared row on each catalog read; if it recomputed `canLogout` from the
-    // grant, the following probe would flip it back and announce a change
-    // every time — and listening clients would refetch forever.
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(100_000)
     const a = await fleet().machine("a", native("alice"))

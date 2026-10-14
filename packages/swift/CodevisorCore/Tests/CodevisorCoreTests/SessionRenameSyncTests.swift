@@ -15,8 +15,6 @@ struct SessionRenameSyncTests {
       workspaceId: fixture.workspace.id, tabId: tab.id,
       chatSessionId: explicitChat ? fixture.chat.id : nil, to: "  Shared title  "
     )
-    // Shown at once, and still shown after the server accepted it while
-    // this device's cache hasn't caught up with the server's journal.
     #expect(fixture.title == "Shared title")
     fixture.fake.emit(kind: "test.journal", subjectId: "")
     await fixture.navigation.flush()
@@ -31,8 +29,6 @@ struct SessionRenameSyncTests {
     #expect(updated.customTitle == nil)
     #expect(updated.root == tab.root)
 
-    // A second client receives the authoritative event with its own stale
-    // tab alias still on disk. That alias must not hide the shared title.
     let reader = NavigationFixture()
     await reader.install(projects: [fixture.project], sessions: [fixture.chat], workspaces: [fixture.workspace])
     var renamed = fixture.chat
@@ -78,7 +74,6 @@ struct SessionRenameSyncTests {
     #expect(fixture.title == "New title")
     #expect(fixture.navigation.store.pendingIntents.count == 1)
 
-    // The machine is back: resending is safe even if the first one landed.
     fake.sessionRenameHandler = nil
     await fixture.navigation.sync(with: fake)
     #expect(fake.sessionRenameNames == ["New title", "New title"])
@@ -168,7 +163,6 @@ private struct ChatRenameFixture {
     let fake = SyncFakeServerClient(
       projects: server.projects, sessions: server.sessions, workspaces: server.workspaces, panes: server.panes)
     let navigation = NavigationFixture()
-    // Cursor 0 is where the fake's journal starts.
     await navigation.install(projects: [project], sessions: [chat], workspaces: [workspace], cursor: 0)
     return ChatRenameFixture(project: project, chat: chat, workspace: workspace, fake: fake, navigation: navigation)
   }

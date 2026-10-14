@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-/// Owns upload tasks, keeping cancellation and waiting out of composer state.
 @MainActor
 final class AttachmentUploads {
   private var tasks: [UUID: Task<Void, Never>] = [:]

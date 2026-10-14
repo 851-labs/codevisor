@@ -6,12 +6,8 @@ import CodevisorProtocol
 import CodevisorTestSupport
 @testable import CodevisorCloud
 
-/// Proves the transport seam: the HTTP tunnel runs unchanged over a transport
-/// with no hub connection behind it at all — the contract the planned direct
-/// LAN/tailnet pipe implements.
 @Suite("CloudChannelTransport")
 struct CloudChannelTransportTests {
-  /// Channel host that hands every client frame to a scripted responder.
   private actor StubChannelHost: CloudChannelHosting {
     var onClientFrame: (@Sendable (String, Data) -> Void)?
     private(set) var closes: [(channelId: String, reason: CloudChannelCloseReason)] = []
@@ -40,8 +36,6 @@ struct CloudChannelTransportTests {
     }
   }
 
-  /// A hub-free transport: opening a channel wires the test's responder to
-  /// the channel callbacks directly.
   private final class StubTransport: CloudChannelTransport, @unchecked Sendable {
     let machineDeviceId = "stub-machine"
     let host = StubChannelHost()
@@ -93,7 +87,6 @@ struct CloudChannelTransportTests {
           onClosed
         )
       }
-      // A generous window up front, like a live machine handler would.
       onCredit(1_000_000)
       defer { opened.signal() }
       return CloudRelayChannel(id: UUID().uuidString, host: host)
@@ -123,7 +116,6 @@ struct CloudChannelTransportTests {
 
     #expect(response.statusCode == 204)
     #expect(data.isEmpty)
-    // The open advertised the request metadata like any transport would.
     #expect(stub.openParams.count == 1)
     #expect(await stub.host.unanswered.isEmpty)
   }
@@ -142,7 +134,6 @@ struct CloudChannelTransportTests {
     let unanswered = await stub.host.unanswered
     let closed = await stub.host.closes.map(\.channelId)
     #expect(unanswered.count == 1)
-    // Reported before the close, while the host still knows the channel.
     #expect(closed == unanswered)
   }
 

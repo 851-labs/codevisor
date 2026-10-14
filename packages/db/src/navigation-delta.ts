@@ -11,9 +11,6 @@ import type { ProjectRow, SessionRow, WorkspaceRow, WorkspacePaneRow } from "./r
 import type { ServiceContext } from "./service-context.js"
 import type { SyncBatch } from "./sync-journal.js"
 
-/** Coalesce transactionally recorded entity invalidations into current rows.
- * Reads share the journal's transaction, so delayed route notifications cannot
- * restore an older value over a newer snapshot. */
 export const materializeNavigationDelta = (
   context: ServiceContext,
   batch: SyncBatch

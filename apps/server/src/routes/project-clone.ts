@@ -22,9 +22,6 @@ import {
 import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
 import { probeProject } from "./project-probe.js"
 
-/// POST /v1/projects/from-git: clone a remote into the machine's managed
-/// repos directory and register the checkout as a project, streaming the
-/// clone as project.setup events.
 export const routeProjectFromGit = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -71,17 +68,16 @@ export const routeProjectFromGit = async (
     )
     await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
   } catch (cause) {
-    /* v8 ignore next -- cloneRepository always throws CloneError; the fallback guards mkdir failures. */
+    /* v8 ignore next */
     const code = cause instanceof CloneError ? cause.code : undefined
     await publishSetup({
       state: "failed",
       message: failureMessage(cause),
-      /* v8 ignore next -- spawn-level clone failures carry no classification; exercised directly in git.test.ts. */
+      /* v8 ignore next */
       ...(code === undefined ? {} : { code }),
       durationMs: Date.now() - startedAt
     })
-    // Never leave a partial checkout behind: the name must be retryable.
-    /* v8 ignore next -- best-effort cleanup; a second fault still surfaces the git error. */
+    /* v8 ignore next */
     rmSync(destination, { force: true, recursive: true })
     throw cause
   }
@@ -98,9 +94,6 @@ export const routeProjectFromGit = async (
   writeJson(response, 201, await probeProject(serverId, project))
 }
 
-/// Serialized project.setup progress for clone-from-git, mirroring the
-/// worktree.setup pattern: clients follow the client-supplied project id on
-/// the event stream while the HTTP request is still in flight.
 const makeProjectSetupPublisher = (
   db: CodevisorDatabaseService,
   fanout: EventFanout,
@@ -119,7 +112,7 @@ const makeProjectSetupPublisher = (
     const next = chain.then(async () => {
       await appendAndPublish(db, fanout, "project.setup", projectId, update)
     })
-    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
+    /* v8 ignore next */
     chain = next.catch(() => undefined)
     return next
   }

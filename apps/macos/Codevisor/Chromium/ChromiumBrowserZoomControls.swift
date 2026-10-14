@@ -25,7 +25,6 @@ struct ChromiumBrowserZoomControls: View {
       zoomButton("Zoom In (⌘+)", symbol: "plus", command: .zoomIn)
         .disabled(!model.canZoomIn)
     }
-    // Native toolbar groups are 36pt tall, with 30pt hover targets inset 3pt.
     .padding(3)
     .fixedSize()
     .glassEffect(.regular.interactive(), in: .capsule)

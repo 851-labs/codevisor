@@ -1,22 +1,13 @@
 import Foundation
 
-/// The plugin-major read of the desired-vs-reported matrix: for one plugin,
-/// what every machine says about it. The fleet toggle is the only control on
-/// the entry; machines converge on their own, so a machine row is a status —
-/// never a place to install.
 public extension PluginFleet {
-  /// One plugin on one machine, reduced to the single word the row shows.
   enum MachineStatus: Equatable, Sendable {
     case ready
-    /// The fleet turned it off; the machine has applied that.
     case off
-    /// Reported as not installed; the machine's next pass installs it.
     case installing
     case blocked(reason: String)
-    /// A linked/dev or local-path plugin: it lives only here and never syncs.
     case localOnly
     case unreachable
-    /// No report yet: the machine hasn't been probed, or hasn't learned this plugin.
     case syncing
 
     public var label: String {
@@ -31,10 +22,6 @@ public extension PluginFleet {
       }
     }
 
-    /// The plugin is present and expected to be running here, so restarting
-    /// it on this machine is a meaningful thing to offer. A machine-bound
-    /// plugin reports `machineOnly` rather than `ready` — it is running all
-    /// the same, and the old per-machine page let you restart it.
     public var isRunningHere: Bool {
       switch self {
       case .ready, .localOnly: true
@@ -65,7 +52,6 @@ public extension PluginFleet {
     }
   }
 
-  /// The one mapping from a server's reported state string.
   nonisolated static func machineStatus(state: String, reason: String?) -> MachineStatus {
     switch state {
     case "ready": .ready
@@ -77,11 +63,6 @@ public extension PluginFleet {
     }
   }
 
-  /// Machines keep their list order regardless of state, so rows don't jump
-  /// while a fleet converges. An unreachable machine's last report is stale
-  /// by definition and never outranks the fact that it is offline.
-  /// A machine still reporting "off" while the fleet wants the plugin on
-  /// hasn't caught up with a flip yet, so it reads as syncing.
   nonisolated static func machineRows(
     pluginId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachineInfo],
     wantsOn: Bool = false

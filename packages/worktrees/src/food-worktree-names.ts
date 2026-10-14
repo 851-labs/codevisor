@@ -1,7 +1,3 @@
-// Development worktrees use a visibly different namespace from production's
-// single food words. The curated phrases stay recognizable in window titles,
-// while the variants give development more than 500 memorable choices before
-// the four-digit uniqueness suffix is applied.
 const foodNameBases = [
   "apple-pie",
   "avocado-toast",
@@ -149,9 +145,6 @@ const randomFoodIndex = (random: () => number): number =>
 
 const defaultFourDigits = (): string => String(Math.floor(Math.random() * 10_000)).padStart(4, "0")
 
-/// Development names always use a food base plus four digits. Random retries
-/// handle normal allocation; the bounded scan guarantees progress even under
-/// a deterministic or adversarial random source.
 export const availableDevelopmentWorktreeName = (
   existing: ReadonlySet<string>,
   random: () => number = Math.random,
@@ -174,6 +167,6 @@ export const availableDevelopmentWorktreeName = (
       if (!existing.has(candidate)) return candidate
     }
   }
-  /* v8 ignore next -- reaching this requires all 5M+ generated names to exist simultaneously. */
+  /* v8 ignore next */
   throw new Error("Unable to allocate a unique development worktree name")
 }

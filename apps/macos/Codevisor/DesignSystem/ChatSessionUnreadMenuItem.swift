@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The read/unread action shared by chat sidebar rows and pane menus.
 struct ChatSessionUnreadMenuItem: View {
   let session: ChatSession
   let store: SessionStore?

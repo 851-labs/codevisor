@@ -5,17 +5,10 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// The first byte of a packet the test decoder refuses, standing in for any
-/// malformed frame the remote could put on the wire.
 private let poisonByte: UInt8 = 0xFF
 
-/// The negotiated data channel over its real SCTP carrier. An extra channel is
-/// added to the loopback pair so the carrier's framing and its failure handling
-/// can be exercised with payloads the protocol channels cannot express.
 @MainActor
 struct ScreenSharingDataChannelTests {
-  /// Both ends of one extra negotiated channel, wired before negotiation and
-  /// observed entirely through its own callbacks.
   @MainActor
   final class Pair {
     let harness: ScreenSharingPeerLoopbackTests.Harness
@@ -38,7 +31,6 @@ struct ScreenSharingDataChannelTests {
         }
         return data
       }
-      // Created on each peer's transport queue, as the peer creates its own channels.
       host = try await harness.sender.transport.perform { connection in
         try ScreenSharingDataChannel<Data>(
           connection: connection, id: 30, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
@@ -61,8 +53,6 @@ struct ScreenSharingDataChannelTests {
       }
     }
 
-    /// Returns once both ends have published their opening, so later
-    /// availability sequences start from a known point.
     func open() async throws {
       try await harness.negotiate()
       await opened.wait(for: 2)
@@ -81,8 +71,6 @@ struct ScreenSharingDataChannelTests {
     let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
-    // Distinct lengths, including one that spans more than a single SCTP chunk:
-    // a fused or split delivery would change the sequence, not just its timing.
     let payloads = [Data([1]), Data([2, 3]), Data(repeating: 7, count: 1_000), Data([4])]
     for payload in payloads { #expect(pair.host.send(payload)) }
     await pair.delivered.wait(for: payloads.count)
@@ -90,13 +78,10 @@ struct ScreenSharingDataChannelTests {
     #expect(pair.viewerAvailability == [true])
 
     pair.close()
-    // Teardown is idempotent and publishes exactly one availability change.
     #expect(pair.viewerAvailability == [true, false])
     #expect(!pair.viewer.send(Data([9])) && !pair.host.send(Data([9])))
   }
 
-  /// The host's audio sends from the capture's queue: `send` is safe from any thread, and the
-  /// channel's queue keeps the order sends were made in.
   @Test func sendsFromAnotherThreadArriveInTheOrderTheyWereMade() async throws {
     let pair = try await Pair()
     defer { pair.close() }
@@ -113,8 +98,6 @@ struct ScreenSharingDataChannelTests {
     #expect(pair.received == payloads)
   }
 
-  /// The viewer's audio is taken on the channel's queue and never waits for the main actor;
-  /// everything else on the channel still reaches `onMessage` on main, in order.
   @Test func aConsumerTakesItsMessagesOffMainAndTheRestReachMainInOrder() async throws {
     let pair = try await Pair()
     defer { pair.close() }
@@ -145,8 +128,6 @@ struct ScreenSharingDataChannelTests {
     #expect(pair.host.send(Data([1])))
     await pair.delivered.wait()
 
-    // Both sends reach the carrier before decoding the bad packet can close it;
-    // the trailing good packet must still never be delivered.
     #expect(pair.host.send(Data([poisonByte, 1])))
     #expect(pair.host.send(Data([2])))
     await withCheckedContinuation { continuation in
@@ -182,15 +163,12 @@ struct ScreenSharingDataChannelTests {
     try await pair.open()
     #expect(!pair.host.send(Data(repeating: 1, count: 16 * 1_024 + 1)))
     await pair.hostClosed.wait()
-    // The send budget is a transport failure, not a dropped message: the
-    // channel gives up rather than carrying an unbounded backlog.
     #expect(!pair.host.isAvailable && pair.hostAvailability == [true, false])
     #expect(pair.received.isEmpty)
     #expect(!pair.host.send(Data([1])))
   }
 }
 
-/// What a consumer took on the channel's queue, and whether any of it ran on the main thread.
 private final class OffMainLog: @unchecked Sendable {
   private let lock = NSLock()
   private var taken: [Data] = []

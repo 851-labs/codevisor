@@ -5,8 +5,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Workspace changes from other devices arrive on a machine's event stream as
-/// `navigation.changed` deltas and move this device's cached copy forward.
 @MainActor
 @Suite("MachineController workspace events", .timeLimit(.minutes(1)))
 struct MachineControllerWorkspaceEventTests {
@@ -27,7 +25,6 @@ struct MachineControllerWorkspaceEventTests {
         kind: "workspace.updated", subjectId: fixture.workspace.id.uuidString.lowercased(),
         payload: fixture.payload(isArchived: archived, name: "Renamed on Mac")
       )
-      // The next event's callback acknowledges completion of the workspace event.
       fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
       await handled.wait(for: index + 1)
 
@@ -110,7 +107,6 @@ struct MachineControllerWorkspaceEventTests {
     #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id)?.isArchived == true)
     #expect(fixture.repository.workspace(id: fixture.workspace.id) == before)
     #expect(fixture.store.eventCursor(for: fixture.serverId) == 0)
-    // A machine this device has no cache for asks for a snapshot instead.
     #expect(!(await fixture.store.apply(.fixture(cursor: 1, workspaces: [record]), machineId: "unknown-mac")))
   }
 }

@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The persistence queue holds the database lock while it writes large
-/// navigation snapshots; preferences are read and written from views on the
-/// main thread and must never wait for it.
 @MainActor
 @Suite("ClientPreferences")
 struct ClientPreferencesTests {
@@ -18,9 +15,6 @@ struct ClientPreferencesTests {
     return (database, directory)
   }
 
-  /// Holds the database's lock on another thread, as a long write on the
-  /// persistence queue does. `release()` returns false when the main thread
-  /// was stuck behind the lock until the holder's deadlock guard gave up.
   private func holdDatabaseLock(_ database: ClientDatabase) async -> DatabaseLockHolder {
     let holder = DatabaseLockHolder(database)
     await holder.held.wait()
@@ -37,8 +31,6 @@ struct ClientPreferencesTests {
     PersistenceEncoding.drain()
 
     let holder = await holdDatabaseLock(database)
-    // Before writes went through the persistence queue, each of these
-    // blocked on the lock held above.
     preferences.set("dark", forKey: "theme")
     preferences.removeValue(forKey: "sidebar")
     #expect(preferences.value(forKey: "theme", default: "") == "dark")
@@ -60,8 +52,6 @@ struct ClientPreferencesTests {
 
     preferences.removeAll()
     preferences.set(2, forKey: "new")
-    // The cleared row is still in SQLite until the batch lands; reads must
-    // not resurrect it.
     #expect(preferences.valueIfPresent(forKey: "old", as: Int.self) == nil)
     #expect(preferences.value(forKey: "new", default: 0) == 2)
 
@@ -95,7 +85,6 @@ private final class DatabaseLockHolder: @unchecked Sendable {
     Thread.detachNewThread { [self] in
       database.lock.lock()
       held.signal()
-      // Deadlock guard only: a caller that never blocks releases first.
       let result = releaseSignal.wait(timeout: .now() + .seconds(30))
       lock.withLock { gaveUp = result == .timedOut }
       database.lock.unlock()
@@ -103,7 +92,6 @@ private final class DatabaseLockHolder: @unchecked Sendable {
     }
   }
 
-  /// Releases the lock; true when the caller got here before the guard.
   func release() async -> Bool {
     releaseSignal.signal()
     await finished.wait()

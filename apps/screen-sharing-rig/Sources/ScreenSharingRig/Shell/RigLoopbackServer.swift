@@ -4,9 +4,6 @@
   import ScreenSharingTesting
   import SwiftUI
 
-  /// The in-process reference VNC server from the tests, started and stopped
-  /// from the window: the animated desktop the `vnc-server` subcommand paints,
-  /// or one of the deterministic scenes the tests and `vnc-bench` play.
   @MainActor
   @Observable
   final class RigLoopbackServerModel {
@@ -16,12 +13,8 @@
     var framesPerSecond = 10
     var encoding: RFBEncoding = .zrle
     var animated = true
-    /// nil: the animated desktop; otherwise a reference scene (seed 1).
     var scene: RFBLoopbackScene.Kind?
-    /// Answer pointer events with the reference server's echo marker.
     var echoPointer = false
-    /// Let the viewer resize the desktop (ExtendedDesktopSize); off behaves like macOS
-    /// Screen Sharing, whose desktop keeps its size (851-2368).
     var resizable = true
     private(set) var port: UInt16?
     private(set) var status = "Stopped"
@@ -41,13 +34,12 @@
       configuration.name = "Codevisor rig \(width)×\(height)"
       configuration.encoding = encoding
       configuration.echoPointer = echoPointer
-      configuration.cursor = .referenceArrow  // drawn locally by the viewer while controlling (851-2311)
-      configuration.continuousUpdates = true  // pushed updates, paced by fences (851-2312)
+      configuration.cursor = .referenceArrow
+      configuration.continuousUpdates = true
       configuration.fences = true
-      // The desktop follows the viewer's window (851-2314), unless it's set to behave like macOS.
       configuration.desktopResize = resizable ? .accept : .unsupported
-      configuration.extendedClipboard = true  // UTF-8 clipboard (851-2316)
-      configuration.negotiateEncoding = true  // Tight when the viewer prefers it (851-2313)
+      configuration.extendedClipboard = true
+      configuration.negotiateEncoding = true
       status = "Starting…"
       Task { [weak self] in
         do {
@@ -77,7 +69,6 @@
         while !Task.isCancelled {
           try? await Task.sleep(for: .milliseconds(1000 / max(1, fps)))
           guard let self else { return }
-          // The viewer may have resized the desktop (ExtendedDesktopSize, 851-2314): paint the size it is now.
           let size = (server.framebuffer.width, server.framebuffer.height)
           if (painter.width, painter.height) != size {
             painter = VNCServerCommand.Painter(width: size.0, height: size.1)
@@ -87,14 +78,12 @@
           if first || self.animated {
             try? server.paint(full, pixels: painter.nextFrame())
             first = false
-            // Continuous updates (851-2312) never leave a request pending: ask the server instead.
             if server.wantsUpdate { server.enqueue([encoding == .zrle ? .zrle(full) : .raw(full)]) }
           }
         }
       }
     }
 
-    /// One scene frame per tick; a frame the client hasn't taken yet holds the scene back.
     private func play(server: RFBLoopbackServer, scene kind: RFBLoopbackScene.Kind, fps: Int) {
       painting = Task { [weak self] in
         var scene = RFBLoopbackScene(kind: kind, seed: 1)
@@ -134,7 +123,6 @@
 
   struct RigLoopbackServerView: View {
     let model: RigLoopbackServerModel
-    /// Selects the "Loopback server" machine the sidebar lists while it serves.
     let view: () -> Void
 
     var body: some View {
@@ -154,7 +142,6 @@
               Text("Scene: \(kind.rawValue)").tag(Optional(kind))
             }
           }
-          // Labelled for Accessibility too: `bun run vnc:tophat` presses them by name.
           Toggle("Animate (off: one frame, like a static desktop)", isOn: Bindable(model).animated)
             .accessibilityLabel("Animate")
           Toggle("Echo pointer input as a marker", isOn: Bindable(model).echoPointer)

@@ -4,9 +4,6 @@ import { describe, expect, it } from "vitest"
 
 import { makeLiveChannel, type LiveChannel } from "./incoming-channel.js"
 
-/// Edge behavior of the credit-gated live channel against a scripted port —
-/// the pipe-level suites (direct host, machine connection) cover the happy
-/// paths through the full receiver.
 describe("makeLiveChannel", () => {
   const makeGated = (ready: () => boolean) => {
     const machineKeys = generateDeviceKeyPair()
@@ -42,11 +39,10 @@ describe("makeLiveChannel", () => {
     let ready = true
     const { live, sent } = makeGated(() => ready)
     live.channel.send({ n: 1 })
-    expect(sent).toHaveLength(0) // gated: no credit yet
+    expect(sent).toHaveLength(0)
 
     ready = false
     expect(live.receiveCredit(10_000)).toBe(true)
-    // Credit was booked, but nothing can flush onto a detached socket.
     expect(sent).toHaveLength(0)
     expect(live.channel.queuedOutboundBytes()).toBeGreaterThan(0)
   })

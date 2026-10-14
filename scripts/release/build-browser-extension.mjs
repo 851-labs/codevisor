@@ -94,8 +94,6 @@ try {
   manifest.version = version
   manifest.description = "Control Chrome with Codevisor."
   delete manifest.version_name
-  // The Store owns the production item identity. The public key remains in
-  // source only so an unpacked development installation can use the same ID.
   delete manifest.key
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
@@ -133,8 +131,6 @@ try {
     execFileSync(process.execPath, ["--check", file], { stdio: "inherit" })
   }
 
-  // ZIP stores DOS timestamps, whose minimum representable year is 1980.
-  // Normalizing mtimes and entry ordering keeps the artifact reproducible.
   const fixedTimestamp = new Date("1980-01-01T00:00:00.000Z")
   for (const file of files) {
     utimesSync(file, fixedTimestamp, fixedTimestamp)

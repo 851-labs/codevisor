@@ -3,7 +3,6 @@ import type Database from "better-sqlite3"
 import { payloadText, type JsonRecord } from "./event-payloads.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
-// Small, appendable blocks keep streaming writes independent of answer length.
 export const transcriptTextBlockSize = 8192
 const prefix = (text: string, count: number): string => {
   const end = Math.min(count, text.length)
@@ -127,8 +126,6 @@ const makeTranscriptEventPatch = (
   const final = payload.sessionUpdate === "assistant_message_finalized"
   const rawText = final ? String(payload.markdown ?? "") : (payloadText(payload) ?? "")
   const offset = final ? 0 : row.text_length - rawText.length
-  // Bound each delivery, not the lifetime of the message. Ordinary deltas
-  // continue streaming after 24K; oversized individual updates carry a resource.
   const text = prefix(rawText, 24_000)
   return {
     ...metadata,

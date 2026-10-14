@@ -1,12 +1,7 @@
 import CodevisorCore
 import Foundation
 
-/// Unfinished or opt-in client features, toggled in Settings ▸ Developer.
-/// Per device; every flag is off by default, so clients keep the shipped
-/// experience until someone opts in.
 enum FeatureFlag: String, CaseIterable, Identifiable {
-  /// The workspace tab strip above the content, and a sidebar of one row
-  /// per workspace with grouping, pinning, an archive, and PR badges.
   case sidebarRefresh
 
   var id: String { rawValue }
@@ -27,8 +22,6 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
 
   private var preferenceKey: String { "featureFlags.\(rawValue)" }
 
-  /// Read from views and commands alike; preferences are observable, so a
-  /// toggle takes effect at once.
   var isEnabled: Bool {
     get { ClientPreferences.shared.value(forKey: preferenceKey, default: false) }
     nonmutating set { ClientPreferences.shared.set(newValue, forKey: preferenceKey) }

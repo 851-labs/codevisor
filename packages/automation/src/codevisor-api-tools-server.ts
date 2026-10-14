@@ -22,7 +22,6 @@ import {
   type CodevisorApiToolSpec
 } from "./codevisor-api-tool-spec.js"
 
-/// Server, machine, settings, filesystem, project, worktree, and workspace tools.
 export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool("server.health", "Check the current Codevisor server's health.", "GET", "/v1/health"),
   apiTool(

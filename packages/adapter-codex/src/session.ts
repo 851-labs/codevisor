@@ -10,18 +10,10 @@ export interface CodexModel {
   readonly name: string
   readonly efforts: ReadonlyArray<string>
   readonly defaultEffort: string
-  /// Whether the model's service tiers include the fast ("priority") tier.
   readonly supportsFast: boolean
-  /// Whether the model's catalog default service tier is the fast tier.
   readonly defaultsToFast: boolean
 }
 
-/// One blocking server→client ask awaiting the human's answer — either the
-/// model's `item/tool/requestUserInput` or an MCP server's
-/// `mcpServer/elicitation/request`. `resolve`/`reject` settle the held
-/// JSON-RPC handler promise; `respond` builds the source-specific reply from
-/// the wire answers; `cancelResponse` is the source-specific dismissal reply
-/// (undefined = reject the JSON-RPC request instead).
 export interface PendingCodexQuestion {
   readonly questions: ReadonlyArray<QuestionSpec>
   readonly resolve: (response: unknown) => void
@@ -45,44 +37,19 @@ export interface CodexSession {
   titleGenerator?: CodexTitleGenerator
   currentModel: string
   currentEffort: string | undefined
-  /// Set once the account rejects reasoning summaries (OpenAI requires a
-  /// verified organization for them on API keys); later turns stop asking.
   reasoningSummariesRejected?: boolean
-  /// Undefined until the user picks a speed — the model's default tier applies.
   currentSpeed: "standard" | "fast" | undefined
   currentModeId: string
-  /// True once a Plan-mode turn has run. Codex's collaboration mode is sticky
-  /// server-side, so after engaging Plan we keep sending an explicit
-  /// collaboration mode every turn ("default" leaves Plan) instead of omitting
-  /// it — otherwise the model stays in Plan mode after the toggle flips off.
   collaborationEngaged: boolean
   models: ReadonlyArray<CodexModel>
-  /// The thread directory's skills, once `skills/list` has answered.
   skills: ReadonlyArray<CodexSkill> | undefined
-  /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
-  /// agentMessage item id → wire phase ("commentary" | "final"), captured from
-  /// `item/started` so every streamed delta carries the message's finality.
-  /// Codex tags items with `phase: "commentary" | "final_answer"` when the
-  /// model emits harmony channels; untagged items stay unknown and clients
-  /// fall back to optimistic (last-text-wins) rendering.
   readonly messagePhases: Map<string, "commentary" | "final">
-  /// Collab (sub)agent thread id → the spawnAgent tool call id that created
-  /// it. Items arriving on those threads are tagged with that parent so
-  /// clients can nest them; the main thread's id is `threadId`.
   readonly collabThreads: Map<string, string>
-  /// Multi-agent v2 thread id → the turn whose chip its current run streams
-  /// under, so a message in a later turn starts a new chip there.
   readonly collabRunTurns: Map<string, string>
-  /// item id → human-readable title, so approval prompts can say WHAT is
-  /// being approved (approval params carry only the item id).
   readonly itemTitles: Map<string, string>
-  /// Goal-snapshot throttle state: the last snapshot broadcast to the wire,
-  /// when it went out, and the freshest one held back by the rate limit
-  /// (flushed at turn end so final totals always persist).
   lastEmittedGoal: SessionGoal | undefined
   lastGoalEmitAtMs: number
   pendingGoalSnapshot: SessionGoal | undefined
-  /// question id (= codex item id) → held requestUserInput handler.
   readonly pendingQuestions: Map<string, PendingCodexQuestion>
 }

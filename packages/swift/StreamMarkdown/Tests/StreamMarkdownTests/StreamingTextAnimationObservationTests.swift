@@ -25,8 +25,6 @@ struct StreamingTextAnimationObservationTests {
 
     registry.prepareForPresentation()
     registry.observeProjectedStreams(["response"], animatesNewStreams: true)
-    // SwiftUI must reevaluate even when text and animation activity have not
-    // changed. Otherwise the next live append becomes the baseline render.
     try #require(invalidated.value == 1)
     let baseline = mount.resolve(streamID: "response", presentation: registry.presentation)
     #expect(!baseline.animatesInitialContent)

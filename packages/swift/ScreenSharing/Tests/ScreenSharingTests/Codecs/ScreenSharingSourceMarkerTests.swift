@@ -16,7 +16,6 @@ struct ScreenSharingSourceMarkerTests {
         #expect(unit.count == (codec == .h264 ? 30 : 31))
         let type = codec == .h264 ? Int(unit[0] & 0x1f) : Int((unit[0] >> 1) & 0x3f)
         #expect(type == (codec == .h264 ? 6 : 39))
-        // Neither decoder filter (slices, parameter sets) may select the marker.
         #expect(!(codec == .h264 ? 1...5 : 0...31).contains(type) && ![7, 8, 32, 33, 34].contains(type))
         #expect(codec == .h264 || (unit[0] & 0x80 == 0 && unit[1] & 7 != 0))
         #expect(ScreenSharingSourceMarker.isMarker(unit, codec: codec))
@@ -74,11 +73,9 @@ struct ScreenSharingSourceMarkerTests {
     #expect(CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_32BGRA, nil, &pixel) == kCVReturnSuccess)
     let buffer = try #require(pixel)
     #expect(ScreenSharingFrameIdentity.sourceTimestampNs(of: buffer) == nil)
-    // Non-microsecond capture time; WebRTC would truncate and translate it.
     ScreenSharingFrameIdentity.attach(sourceTimestampNs: 1_726_100_000_123_456_789, to: buffer)
     let translated = ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: 1_726_100_000_130_000_000)
     #expect(ScreenSharingFrameIdentity.sourceTimestampNs(of: translated.pixelBuffer) == 1_726_100_000_123_456_789)
-    // A recycled buffer receives the new capture's identity.
     ScreenSharingFrameIdentity.attach(sourceTimestampNs: 7, to: buffer)
     #expect(ScreenSharingFrameIdentity.sourceTimestampNs(of: buffer) == 7)
   }

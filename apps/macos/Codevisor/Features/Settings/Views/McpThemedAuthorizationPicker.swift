@@ -1,9 +1,6 @@
 import SwiftUI
 import CodevisorUI
 
-/// A theme-token-backed macOS pop-up button for the short authorization list.
-/// Menu items retain the familiar checkmark selection while the collapsed
-/// control uses the same surface and border language as the themed form.
 struct McpThemedAuthorizationPicker: View {
   private struct Option: Identifiable {
     let id: String

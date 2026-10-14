@@ -14,12 +14,6 @@ import { readSessionSkills } from "./session-skills.js"
 import { sessionSetupState } from "./setup-state.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
-// Turn-boundary events can legitimately leave behind completed item shells
-// when a harness emits no user payload or assistant output. They are useful to
-// the event projector, but they are not transcript rows: returning them makes
-// virtualized clients reserve estimated height for content that cannot render.
-// Keep streaming shells (the live "waiting for the agent" row) and every form
-// of semantic content supported by the transcript API.
 const renderableChatItemPredicate = `(
   chat_items.status = 'streaming'
   or chat_items.has_details = 1
@@ -33,10 +27,6 @@ const renderableChatItemPredicate = `(
   )
 )`
 
-// A row count is not a render-cost bound: one assistant item can contain a
-// 20k-character essay. Keep reverse pages small enough for clients to parse
-// and lay out without a visible hitch, while always returning at least the
-// newest row so a single oversized answer can still be reached.
 const maxInitialTranscriptPageCharacters = 24_000
 const maxOlderTranscriptPageCharacters = 64_000
 
@@ -211,8 +201,6 @@ const makeTranscriptPage = (
   const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
   const sessionPlan = sessionPlanFromRaw(state.session_plan)
   const goal = sessionGoalSnapshot(sqlite, sessionId)
-  // Not a state update: clients that predate skills fail to decode a page
-  // whose `stateUpdates` carries a kind they don't know.
   const skills = readSessionSkills(sqlite, sessionId)
   return {
     items,

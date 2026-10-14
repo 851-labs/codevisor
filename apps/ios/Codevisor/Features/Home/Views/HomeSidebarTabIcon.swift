@@ -2,18 +2,12 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A tab's identity glyph: a chat's live status replaces its harness icon
-/// (error → attention → working → unread), everything else shows its kind.
-/// Shared by every sidebar layout so tabs look the same wherever they list.
 struct HomeSidebarTabIcon: View {
   @Environment(AppEnvironment.self) private var environment
-  /// On the sidebar's accent-filled selection glyphs turn white, as the
-  /// title does; secondary gray would be unreadable on the accent.
   @Environment(\.backgroundProminence) private var backgroundProminence
 
   let row: HomeSidebarTabRow
   let serverId: String
-  /// Point size of the kind glyphs and harness artwork.
   var size: CGFloat = 18
 
   var body: some View {
@@ -38,7 +32,6 @@ struct HomeSidebarTabIcon: View {
           symbol("globe")
         }
       case let .plugin(pluginId, paneType):
-        // Plugin artwork comes from its machine; a fixture row has none.
         if environment.machines.machine(for: serverId) != nil {
           PluginIconView(
             pluginId: pluginId,
@@ -77,7 +70,6 @@ struct HomeSidebarTabIcon: View {
 }
 
 extension HomeSessionStatus {
-  /// A one-word caption for status pills and inbox buckets.
   var caption: String {
     switch self {
     case .error: "Error"

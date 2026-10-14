@@ -25,7 +25,6 @@ const forkMessage = (type: "assistant" | "user", content: Array<unknown>): SDKMe
     type
   }) as never
 
-// A reply the CLI writes itself: never streamed, so no `message_start`.
 const syntheticReply = (text: string): SDKMessage =>
   ({
     message: {
@@ -58,8 +57,6 @@ const forkStarted = systemMessage("task_started", {
 const forkEnded = (status: "completed" | "failed"): SDKMessage =>
   systemMessage("task_notification", { status, summary: "/code-review", task_id: "task-1" })
 
-// What Claude Code 2.1.293 sends once the fork has ended: its whole thread
-// (tool calls only), then the report as a reply it writes itself.
 const endOfRunCopy = (report: string): Array<SDKMessage> => [
   forkMessage("user", [{ text: SKILL_PROMPT, type: "text" }]),
   forkMessage("assistant", [BASH_CALL]),
@@ -73,7 +70,6 @@ const codeReview = (status: "completed" | "failed", report: string): Array<SDKMe
   ...endOfRunCopy(report)
 ]
 
-// A transcript the CLI appends to while the fork runs.
 const liveTranscript = () => {
   const lines: Array<string> = []
   const transcripts: SubagentTranscripts = {
@@ -124,7 +120,6 @@ const promptTurn = async (messages: Array<SDKMessage>): Promise<Array<Record<str
   return payloads()
 }
 
-// Claude's streamed answer to the nudge sent once a forked command reports.
 const CLAUDE_REPLY = "The review found nothing to fix."
 const claudeReply: Array<SDKMessage> = [
   streamEvent({ message: { id: "msg-reply" }, type: "message_start" }),
@@ -147,7 +142,6 @@ const claudeReply: Array<SDKMessage> = [
   resultMessage()
 ]
 
-// The forked command's turn ends; Claude is asked to answer and does.
 const answerReport = async (fake: FakeQuery): Promise<void> => {
   fake.push(resultMessage())
   await fake.nextPrompt()
@@ -179,7 +173,6 @@ describe("a forked command", () => {
     await turn
     const payloads = read()
 
-    // The nudge to answer goes to Claude, not the transcript.
     expect(fake.userMessages).toHaveLength(2)
     expect(JSON.stringify(fake.userMessages[1]?.message.content)).toContain(
       "finished in a subagent"
@@ -201,14 +194,12 @@ describe("a forked command", () => {
       },
       { sessionUpdate: "tool_call_update", status: "completed", toolCallId: FORK }
     ])
-    // Its task names the row, so clients know the agent is running.
     expect(payloads).toContainEqual({
       backgroundTasks: [expect.objectContaining({ id: "task-1", toolUseId: FORK })]
     })
     expect(payloads).toContainEqual(
       expect.objectContaining({ parentToolCallId: FORK, toolCallId: "tool-1" })
     )
-    // The report ends the fork's thread; Claude's answer is the turn's.
     expect(textUnder(payloads, FORK)).toEqual(["No findings."])
     expect(mainText(payloads)).toEqual([CLAUDE_REPLY])
     expect(payloads.filter((payload) => payload.turnState === "ended")).toHaveLength(1)
@@ -244,7 +235,6 @@ describe("a forked command", () => {
 
     await vi.advanceTimersByTimeAsync(500)
 
-    // The CLI has sent nothing of the thread yet.
     expect(payloads()).toContainEqual(
       expect.objectContaining({
         parentToolCallId: FORK,

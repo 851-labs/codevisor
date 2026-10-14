@@ -10,7 +10,7 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 
-/* v8 ignore start -- browser setup routes are exercised by native app integration tests. */
+/* v8 ignore start */
 export const routeBrowserUse = async (
   services: CodevisorServerServices,
   request: IncomingMessage,

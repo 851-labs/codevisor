@@ -11,7 +11,6 @@ import { appendAndPublish, makeEventFanout } from "../server-context.js"
 import { run, tempDirs } from "../test-support.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
-/// @codevisor/db's grace between a released hold and the unread flip.
 const ATTENTION_SETTLE_GRACE_MS = 12_000
 
 const makeAttentionDb = async () => {
@@ -57,11 +56,9 @@ describe("@codevisor/server attention settle", () => {
         turnId: "turn-1",
         turnState: "ended"
       })
-      // Still held: nothing may flip to unread while the subagent runs.
       expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
       await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-      // The hold released; the scheduler owns the grace deadline from here.
       await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS - 1)
       expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
       await vi.advanceTimersByTimeAsync(1)
@@ -109,8 +106,6 @@ describe("@codevisor/server attention settle", () => {
         turnState: "ended"
       })
       await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-      // The harness re-invokes before the deadline: the parked finish must ride
-      // through the continuation without settling.
       await appendAndPublish(db, fanout, "session.updated", session.id, {
         initiatedBy: "agent",
         turnId: "turn-2",
@@ -123,7 +118,6 @@ describe("@codevisor/server attention settle", () => {
         sidebarState: "inProgress"
       })
 
-      // The chain finally ends clean with nothing held: settles once.
       await appendAndPublish(db, fanout, "session.updated", session.id, {
         initiatedBy: "agent",
         stopReason: "end_turn",
@@ -145,8 +139,6 @@ describe("@codevisor/server attention settle", () => {
     const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
 
-    // The previous process died between the hold release and the settle:
-    // no scheduler heard these events.
     const project = await run(db.createProject({ folderPath: "/tmp/attention-recover" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
     await run(
@@ -173,14 +165,10 @@ describe("@codevisor/server attention settle", () => {
     )
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
-    // Recovery with the subagent snapshot still stale (no deadline recorded):
-    // settling is refused while held, nothing flips early.
     const scheduler = makeAttentionSettleScheduler(db, fanout)
     await scheduler.recover()
     expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
 
-    // Startup reconciliation then publishes the empty snapshot; the live loop
-    // arms the grace deadline and settles it.
     await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
     await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
@@ -224,8 +212,6 @@ describe("@codevisor/server attention settle", () => {
 
     const scheduler = makeAttentionSettleScheduler(db, fanout)
     await scheduler.recover()
-    // The far-future deadline is armed; closing tears the timer down without
-    // settling anything.
     scheduler.close()
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 0,
@@ -263,16 +249,12 @@ describe("@codevisor/server attention settle", () => {
       })
     )
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    // The revision-counter migration backfills stuck epochs as parked
-    // finishes with no deadline; reproduce that exact durable state.
     const sqlite = new Database(filename)
     sqlite
       .prepare("update session_attention set settle_due_at = null where session_id = ?")
       .run(session.id)
     sqlite.close()
 
-    // Recovery settles it: the grace is armed in-transaction and the
-    // returned deadline schedules the flip.
     const scheduler = makeAttentionSettleScheduler(db, fanout)
     await scheduler.recover()
     await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)

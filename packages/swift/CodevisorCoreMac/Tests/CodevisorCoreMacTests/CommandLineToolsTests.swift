@@ -6,7 +6,6 @@ import Testing
 struct CommandLineToolsTests {
   private let fileManager = FileManager.default
 
-  /// A throwaway root with a fake app-bundle runtime and an empty bin dir.
   private func makeFixture() throws -> (root: URL, runtime: URL, bin: URL) {
     let root = fileManager.temporaryDirectory
       .appendingPathComponent("cli-tools-\(UUID().uuidString)", isDirectory: true)
@@ -100,7 +99,6 @@ struct CommandLineToolsTests {
     let (root, runtime, bin) = try makeFixture()
     defer { try? fileManager.removeItem(at: root) }
     try fileManager.createDirectory(at: bin, withIntermediateDirectories: true)
-    // Stands in for a Homebrew-formula or user-managed link.
     try fileManager.createSymbolicLink(
       at: bin.appendingPathComponent("codevisor"),
       withDestinationURL: URL(fileURLWithPath: "/usr/bin/true")

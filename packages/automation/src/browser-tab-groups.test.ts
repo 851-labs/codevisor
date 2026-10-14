@@ -83,7 +83,6 @@ describe("tab_groups", () => {
 
   it("ensure reuses a same-titled group and only creates when none exists", async () => {
     const { call, sent } = harness()
-    // "Research" exists with tab 11: add the missing tab and restyle, do not create.
     const listed = { groups: [{ id: 7, title: "Research", tabIds: ["11"] }] }
     const first = harness()
     first.runtime.connection.send = (async (method: string, params: unknown) => {
@@ -105,7 +104,6 @@ describe("tab_groups", () => {
       ["Codevisor.tabGroups.update", { groupId: 7, color: "green" }]
     ])
 
-    // No such title: create it.
     expect(await call({ action: "ensure", tabIds: ["12"], title: "Scratch" })).toMatchObject({
       group: { id: 7 },
       created: true
@@ -140,9 +138,7 @@ describe("tab_groups", () => {
     expect(
       text(await invoke(context, runtime, "tabs", { action: "list", scope: "session" }))
     ).toMatchObject({ tabs: [{ id: "11", origin: "kept" }] })
-    // A per-tab call after finalize re-selects the tab; it stays "kept", not re-claimed.
     await invoke(context, runtime, "tabs", { action: "select", id: "11" })
-    // A later finalize that keeps nothing must not close a tab already handed to the user.
     expect(
       text(await invoke(context, runtime, "finalizeTabs", { native: true, keepIds: [] }))
     ).toEqual({ finalized: true, kept: ["11"], closed: [], released: [] })

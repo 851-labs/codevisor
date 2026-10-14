@@ -1,6 +1,5 @@
 import Foundation
 
-/// Local, bounded address-bar history, isolated by workspace machine/profile.
 @MainActor
 public final class BrowserHistory {
   public struct Visit: Codable, Equatable, Sendable {

@@ -65,7 +65,6 @@ describe("browser cleanup at turn completion", () => {
       release.resolve()
       await waitFor(() => agents.prompts.length === 1)
       await services.mcp.setBrowserPreference("builtin")
-      // The sending window's control id rides the queued prompt to the turn.
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         method: "POST",
         body: JSON.stringify({ text: "next response", clientId: "window-1" })

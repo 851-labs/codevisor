@@ -5,8 +5,6 @@ extension EnvironmentValues {
   @Entry public var openFileDocument: OpenFileDocumentAction?
 }
 
-/// Opens a file target (a path, optionally with a line) in the owning
-/// workspace's document pane. Returns whether the target was handled.
 public struct OpenFileDocumentAction: Sendable {
   private let handler: @MainActor @Sendable (_ target: String) -> Bool
 
@@ -15,7 +13,6 @@ public struct OpenFileDocumentAction: Sendable {
   @MainActor @discardableResult public func callAsFunction(_ target: String) -> Bool { handler(target) }
 }
 
-/// Content only. The owning workspace supplies the native toolbar.
 public struct FilePaneView: View {
   @Bindable private var model: FilePaneModel
   @Environment(\.theme) private var theme
@@ -48,8 +45,6 @@ public struct FilePaneView: View {
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    // Same surface rule as every other pane: system themes reveal the
-    // native window backdrop; custom palettes paint their editor color.
     .background(theme.contentBackground)
     .task(id: model.path) {
       guard !model.isBrowsing else { return }
@@ -77,7 +72,6 @@ public struct FilePaneView: View {
       Button("Cancel", role: .cancel) {}
     }
     #if !canImport(AppKit)
-      // On Mac the picker is a popover from the title (see FilePaneToolbar).
       .sheet(isPresented: $model.showsExplorer) {
         FileBrowserSheet(model: model)
         .buttonStyle(.automatic)

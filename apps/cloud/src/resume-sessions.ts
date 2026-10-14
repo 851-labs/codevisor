@@ -1,23 +1,5 @@
-/// Session resume for the hub — the mosh idea applied to the relay: a
-/// connection's identity (its connectionId, which is also the peerId machines
-/// route by) survives socket churn. On disconnect a session enters a grace
-/// window instead of announcing death; frames addressed to it are buffered
-/// (bounded); a reconnect presenting the session's resume token adopts the
-/// old identity and replays the buffer, so channels on both peers never
-/// notice a subway blip or a worker deploy. Grace expiry degrades to exactly
-/// the old behavior (peer-gone / machine-offline + cursor replay).
-///
-/// Everything durable lives in the DO's SQLite (never socket attachments,
-/// which die with their socket — surviving deploys is the point). The resume
-/// token is 32 random bytes (base64url), rotated on every welcome; only its
-/// SHA-256 is stored. Its format is frozen independently of the protocol
-/// version: it must parse across deploy boundaries.
-
 export const DEFAULT_RESUME_GRACE_MS = 60_000
 
-/// Total buffered relay bytes per disconnected session. Overflow abandons the
-/// session (frames already dropped → seq gaps would kill the channels anyway)
-/// and falls back to the immediate-teardown path.
 export const RESUME_BUFFER_CAP_BYTES = 256 * 1024
 
 export interface ResumeSessionRow extends Record<string, SqlStorageValue> {
@@ -26,7 +8,6 @@ export interface ResumeSessionRow extends Record<string, SqlStorageValue> {
   device_id: string
   public_key: string | null
   resume_token_hash: string
-  /// NULL while connected; ms epoch deadline while in the grace window.
   expires_at: number | null
 }
 
@@ -47,9 +28,6 @@ export class ResumeSessions {
     private readonly graceMs: number
   ) {}
 
-  /// Registers (or refreshes) the session for a freshly welcomed connection
-  /// and returns its new resume token. Rotated on every welcome so a token
-  /// only ever resumes the connection generation it was issued to.
   async register(
     connectionId: string,
     kind: "app" | "machine",
@@ -76,11 +54,6 @@ export class ResumeSessions {
     return token
   }
 
-  /// Adopts a resumable session's identity when the hello carries a valid
-  /// token (the caller supersedes any half-open zombie socket still holding
-  /// it), or registers a fresh session under `connectionId`. Returns the
-  /// (possibly restored) connection id, the rotated token, and whether the
-  /// identity carried over.
   async adoptOrRegister(
     connectionId: string,
     kind: "app" | "machine",
@@ -92,8 +65,6 @@ export class ResumeSessions {
       if (session !== undefined && session.device_id === device.deviceId) {
         const token = encodeToken(crypto.getRandomValues(new Uint8Array(32)))
         const hash = await sha256Hex(token)
-        // Consume the observed token and publish its successor in the same
-        // conditional write. Another hello may have rotated it while hashing.
         const claimed = this.sql
           .exec<ResumeSessionRow>(
             `UPDATE sessions SET resume_token_hash = ?, public_key = ?, expires_at = NULL
@@ -117,9 +88,6 @@ export class ResumeSessions {
     return { connectionId, token, resumed: false }
   }
 
-  /// Looks up a resumable session for a presented token. Resumable = same
-  /// kind, and either still marked connected (the old socket is a half-open
-  /// zombie the caller supersedes) or within its grace window.
   async tryResume(kind: "app" | "machine", token: string, now: number) {
     const hash = await sha256Hex(token)
     const row = this.sql
@@ -134,9 +102,6 @@ export class ResumeSessions {
     return row
   }
 
-  /// Starts the grace window for a disconnected connection. Repeated
-  /// close/error callbacks return the existing deadline, keeping teardown
-  /// idempotent; undefined means the connection has no resumable session.
   markDisconnected(connectionId: string, now: number): number | undefined {
     const deadline = now + this.graceMs
     const updated = this.sql.exec(
@@ -156,10 +121,6 @@ export class ResumeSessions {
     this.sql.exec("DELETE FROM session_buffers WHERE connection_id = ?", connectionId)
   }
 
-  /// Drops every session for a machine device (except `keep`, the connection
-  /// doing a fresh hello) — a machine restart or account-level removal makes
-  /// their grace state moot.
-  /// Returns the deleted connection ids.
   deleteForMachineDevice(deviceId: string, keep?: string): string[] {
     const rows = this.sql
       .exec<ResumeSessionRow>(
@@ -176,7 +137,6 @@ export class ResumeSessions {
     return deleted
   }
 
-  /// Sessions whose grace expired: the deferred death notices are due.
   expired(now: number): ResumeSessionRow[] {
     return this.sql
       .exec<ResumeSessionRow>(
@@ -186,7 +146,6 @@ export class ResumeSessions {
       .toArray()
   }
 
-  /// The next pending grace deadline, for alarm scheduling.
   nextExpiry(): number | undefined {
     const row = this.sql
       .exec<{ next: number | null } & Record<string, SqlStorageValue>>(
@@ -196,8 +155,6 @@ export class ResumeSessions {
     return row?.next ?? undefined
   }
 
-  /// Machine device ids currently in grace — counted as online: their
-  /// disconnect has not been announced, and resume would make it moot.
   machineDeviceIdsInGrace(now: number): Set<string> {
     return new Set(
       this.sql
@@ -210,7 +167,6 @@ export class ResumeSessions {
     )
   }
 
-  /// The in-grace session for a machine device (routing buffers under it).
   machineGraceSession(deviceId: string, now: number): ResumeSessionRow | undefined {
     return this.sql
       .exec<ResumeSessionRow>(
@@ -223,8 +179,6 @@ export class ResumeSessions {
       .toArray()[0]
   }
 
-  /// The in-grace session for a channel opener's connection id — an app, or
-  /// a machine for the channels it opened toward other machines.
   openerGraceSession(peerId: string, now: number): ResumeSessionRow | undefined {
     return this.sql
       .exec<ResumeSessionRow>(
@@ -236,9 +190,6 @@ export class ResumeSessions {
       .toArray()[0]
   }
 
-  /// Buffers one relay message for a disconnected session. False = the cap
-  /// was hit: frames are being dropped, so resume can no longer be seamless —
-  /// the caller abandons the session and reports the peer gone/offline.
   buffer(connectionId: string, message: Uint8Array): boolean {
     const used = this.sql
       .exec<{ total: number | null } & Record<string, SqlStorageValue>>(
@@ -257,14 +208,11 @@ export class ResumeSessions {
       "INSERT INTO session_buffers (connection_id, seq, message) VALUES (?, ?, ?)",
       connectionId,
       (next?.next ?? 0) + 1,
-      // Copy: a subarray view would serialize its whole backing buffer.
       new Uint8Array(message).buffer
     )
     return true
   }
 
-  /// Removes and returns the buffered messages for a resumed session, in
-  /// arrival order.
   drainBuffers(connectionId: string): Uint8Array[] {
     const rows = this.sql
       .exec<{ message: ArrayBuffer } & Record<string, SqlStorageValue>>(

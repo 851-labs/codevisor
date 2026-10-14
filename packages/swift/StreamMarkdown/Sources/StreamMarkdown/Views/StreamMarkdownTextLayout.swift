@@ -5,9 +5,6 @@ private struct StreamMarkdownTextLayoutWidthKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-  /// The concrete width owned by the surrounding native row host. TextKit
-  /// consumes this before its first paint instead of waiting for a later
-  /// SwiftUI measurement proposal to repair wrapping.
   public var streamMarkdownTextLayoutWidth: CGFloat? {
     get { self[StreamMarkdownTextLayoutWidthKey.self] }
     set { self[StreamMarkdownTextLayoutWidthKey.self] = newValue }

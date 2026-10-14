@@ -206,8 +206,6 @@ describe("Codex title generation", () => {
     generator.close()
     await generation
     gate.resolve()
-    // Resumes after the generator's own late-start handler has run; reading
-    // the missing thread id there used to be an unhandled rejection.
     await client.threadStart
     expect(client.requests.map((r) => r.method)).toEqual(["config/read", "thread/start"])
   })

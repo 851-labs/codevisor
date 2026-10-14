@@ -32,9 +32,6 @@ struct TranscriptContentLayoutTests {
       let initial = try #require(heights.values.last)
       content.text = String(repeating: "A growing transcript sentence. ", count: 40)
       controller.invalidateContentSize(forceReport: true)
-      // The native callback can precede SwiftUI's observed-content update.
-      // The old sizing probe consumed its invalidation here and kept 16pt
-      // even after the actual text grew to hundreds of points.
       controller.viewDidLayout()
       controller.view.layoutSubtreeIfNeeded()
 
@@ -103,7 +100,6 @@ struct TranscriptContentLayoutTests {
     #expect((heights.last ?? 0) > 16)
     #expect(host.isPresentationReady)
     let reports = heights.count
-    // Reusing the same prepared layout must not cause another height commit.
     host.setContent(chunk, streamID: "response", style: style, linkAction: nil, knownHeight: heights.last)
     #expect(heights.count == reports)
   }

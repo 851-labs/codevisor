@@ -22,7 +22,6 @@ struct CloudDirectPathRaceTests {
       controller.reconcile(machines: [presence])
       await settle(controller)
       oldDown()
-      // The serial executor runs the queued disconnect before this actor read.
       let observed = Task { controller.machineIds.contains("m1") }
       #expect(await observed.value)
       #expect(script.probes == ["m1", "m1"])

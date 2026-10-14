@@ -1,14 +1,8 @@
 import Compression
 import Foundation
 
-/// Raw DEFLATE (RFC 1951, no zlib header) for negotiated-compression relay
-/// channels — byte-compatible with node's deflateRaw/inflateRaw, which the
-/// machine side uses. Apple's COMPRESSION_ZLIB is raw DEFLATE despite the
-/// name.
 enum CloudDeflate {
-  /// Framing byte on negotiated channels: the body follows as-is.
   static let framingRaw: UInt8 = 0
-  /// Framing byte on negotiated channels: the body is raw DEFLATE.
   static let framingDeflate: UInt8 = 1
 
   static func inflate(_ data: Data) throws -> Data {
@@ -51,8 +45,6 @@ enum CloudDeflate {
         case COMPRESSION_STATUS_OK, COMPRESSION_STATUS_END:
           output.append(buffer, count: bufferSize - streamPointer.pointee.dst_size)
           if status == COMPRESSION_STATUS_END { return }
-        // OK just means "more output pending" — loop for the next
-        // buffer-full. Invalid input reports ERROR, never a livelock.
         case COMPRESSION_STATUS_ERROR:
           throw CloudDeflateError.corruptInput
         default:

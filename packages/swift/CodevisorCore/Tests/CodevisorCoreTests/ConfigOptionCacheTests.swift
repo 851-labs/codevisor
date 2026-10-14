@@ -51,8 +51,6 @@ struct ConfigOptionCacheTests {
       configOptions: [option("gpt-5.6")]
     )
     let cache = ConfigOptionCache(store: store)
-    // Opening a chat stores its harness catalog on the main actor: readers
-    // see it at once, while encoding and writing it wait for the queue.
     store.recordingMainThreadSaves { cache.store([capability], forServer: "local") }
     #expect(store.keysSavedOnMainThread == [])
     #expect(cache.capabilities(forServer: "local") == [capability])
@@ -271,7 +269,6 @@ struct ConfigOptionCacheTests {
     #expect(cache.skills(forHarness: "codex", onServer: "remote", cwd: "/project-a") == nil)
     #expect(cache.capabilities(forServer: "local").allSatisfy { $0.skills == nil })
 
-    // An inspection that reports no list keeps the directory's last one.
     let unlisted = [capability(model: "fresh")]
     _ = try await cache.revalidateCapabilities(
       forServer: "local", cwd: "/project-a", force: true, fetch: { unlisted })
@@ -288,7 +285,6 @@ struct ConfigOptionCacheTests {
     let draftSkills = [ServerComposerSkill(name: "deploy")]
     let chatSkills = [ServerComposerSkill(name: "browser-use", builtin: true), ServerComposerSkill(name: "deploy")]
 
-    // All calls run before the main actor can start the first request.
     let first = cache.refreshCodevisorSkills(for: draft) {
       await counter.increment()
       return draftSkills
@@ -310,7 +306,6 @@ struct ConfigOptionCacheTests {
     let otherMachine = ConfigOptionCache.CodevisorSkillsScope(
       serverId: "remote", projectId: draft.projectId, sessionId: nil)
     #expect(cache.codevisorSkills(for: otherMachine).isEmpty)
-    // A chat its draft just became borrows the project's list until its own loads.
     let justSent = ConfigOptionCache.CodevisorSkillsScope(
       serverId: "local", projectId: draft.projectId, sessionId: UUID())
     #expect(cache.codevisorSkills(for: justSent) == draftSkills)
@@ -360,13 +355,11 @@ struct ConfigOptionCacheTests {
     #expect(merged?.map(\.harness.id) == ["codex"])
     #expect(cache.capabilities(forServer: "remote-a").map(\.harness.id) == ["codex"])
     #expect(cache.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
-    // Machine-scoped and persisted, like everything else here.
     #expect(cache.signInRequired(forServer: "remote-b").isEmpty)
     PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
 
-    // A machine that signs everything in clears its pending list.
     let signedIn = ServerHarnessCapability(
       harness: harness("claude-code", enabled: true), configOptions: [option("opus")])
     _ = try await cache.revalidateCapabilities(
@@ -384,7 +377,6 @@ private actor CapabilityRefreshCounter {
   }
 }
 
-/// Records keys saved on the main thread while a call is being recorded.
 private final class MainThreadSaveRecordingStore: PersistenceStore, @unchecked Sendable {
   private let base = InMemoryStore()
   private let lock = NSLock()
@@ -393,8 +385,6 @@ private final class MainThreadSaveRecordingStore: PersistenceStore, @unchecked S
 
   var keysSavedOnMainThread: [String] { lock.withLock { mainThreadSaves } }
 
-  /// The call runs on the main thread, so a save recorded on the main thread
-  /// while it runs was made synchronously by the call itself.
   func recordingMainThreadSaves(_ body: () -> Void) {
     lock.withLock { isRecording = true }
     defer { lock.withLock { isRecording = false } }

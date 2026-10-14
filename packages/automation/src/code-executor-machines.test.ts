@@ -20,7 +20,6 @@ const context: ExecuteCodeOptions["context"] = {
   originClientId: "window-2"
 }
 
-/// Runs `code` against a scripted host: `respond` answers each call.
 const execute = async (
   code: string,
   respond: (call: CodeToolCall) => unknown,
@@ -74,7 +73,6 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
         'No machine matches "nope". Machines: Mac Studio (studio), MacBook Pro (mbp-1), MacBook Air (mbp-2)'
       ],
       currentIsTools: true,
-      // Handles serialize to their facts; tools and clients stay attached.
       current: { id: "studio", name: "Mac Studio", isCurrent: true },
       listed: roster.machines
     })
@@ -83,8 +81,6 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
       args: { scheme: "App" },
       target: { machine: "mbp-1", machineName: "MacBook Pro" }
     })
-    // Lookups machines.get makes for the script are marked internal and stay
-    // on this machine; the script's own machines.list() is a plain call.
     expect(
       calls.filter((call) => call.path === "codevisor.machines.list").map((call) => call.target)
     ).toEqual([
@@ -202,7 +198,6 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
       },
       local: { items: [{ path: "local.build", score: 10 }], total: 1 }
     })
-    // The scope never reaches a host search, and offline machines are skipped.
     expect(
       calls.filter((call) => call.path === "search").map(({ args, target }) => [args, target])
     ).toEqual([

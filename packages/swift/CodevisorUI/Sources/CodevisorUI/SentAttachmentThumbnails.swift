@@ -8,18 +8,12 @@ import TranscriptKit
   import UIKit
 #endif
 
-/// Thumbnails of images the user just sent, decoded from the composer's
-/// small staged-image previews the moment Send is pressed. A sent message's attachment
-/// thumbnails read this synchronously, so the bubble flying out of the
-/// composer shows its photos from its first frame instead of a placeholder
-/// while the server copy loads.
 @MainActor
 public enum SentAttachmentThumbnails {
   private static let capacity = 16
   nonisolated private static let maxPixelSize = 480
   private static var images: [(fileId: String, image: OSImage)] = []
 
-  /// Decodes each uploaded image attachment off the main thread.
   public static func prepare(_ attachments: [ComposerAttachment]) {
     for attachment in attachments where attachment.isImage {
       guard case let .uploaded(ref) = attachment.state,

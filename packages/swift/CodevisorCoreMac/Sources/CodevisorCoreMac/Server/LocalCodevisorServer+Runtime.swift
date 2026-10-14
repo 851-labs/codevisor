@@ -44,9 +44,6 @@ extension LocalCodevisorServer {
         "--host", request.host,
         "--port", String(request.port),
         "--db", request.databasePath,
-        // Network binds require a token from remote clients (loopback is
-        // exempt), and --kind keeps the server identifying as this
-        // machine's local server despite the 0.0.0.0 bind.
         "--auth", "token",
         "--kind", "local",
         "--name", request.name,
@@ -108,9 +105,6 @@ extension LocalCodevisorServer {
     fileManager: FileManager = .default,
     resourcesURL: URL? = Bundle.main.resourceURL
   ) -> URL? {
-    // Plain path arithmetic, not `Bundle.url(forResource:)`: that API
-    // returns nil for resource directories in release bundles, which left
-    // production installs unable to find the runtime at all.
     guard let resourcesURL else { return nil }
     let candidates = [
       resourcesURL.appendingPathComponent("server/\(bundledServerTarget)", isDirectory: true),
@@ -124,7 +118,6 @@ extension LocalCodevisorServer {
     }
   }
 
-  /// The app ships for Apple silicon only, so it bundles one server runtime.
   nonisolated private static let bundledServerTarget = "darwin-arm64"
 
   nonisolated private static func bundledNodeExecutable(
@@ -140,9 +133,6 @@ extension LocalCodevisorServer {
   public static func defaultServerEnvironment() async -> [String: String] {
     let probe = EnvironmentProbe()
     let path = await probe.resolvedPath()
-    // Finder-launched production apps inherit a minimal PATH, so the Node
-    // server must receive the same login-shell PATH that local ACP discovery
-    // used before discovery moved server-side.
     return probe.resolvedEnvironment(path: path)
   }
 
@@ -164,12 +154,6 @@ extension LocalCodevisorServer {
       .appendingPathComponent("app-update-request.json")
   }
 
-  /// One-time move of server state from the pre-canonical Application
-  /// Support location into ~/.codevisor, the layout shared with standalone
-  /// installs. Only ever invoked right before launching a server against the
-  /// default paths — never while a server may still be serving the old
-  /// location. The database moves last so an interrupted migration resumes
-  /// on the next launch instead of stranding sidecar files.
   static func migrateLegacyServerData(
     from legacyDirectory: URL = CodevisorAppVariant.applicationSupportURL(),
     toData dataDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL(),

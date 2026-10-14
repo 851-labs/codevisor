@@ -6,8 +6,6 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-// MARK: - Overlays
-
 extension ChatScreen {
   @ViewBuilder
   var initialLoadingOverlay: some View {
@@ -19,8 +17,6 @@ extension ChatScreen {
     }
   }
 
-  /// The find-in-chat bar, floating at the top trailing corner like a
-  /// browser's.
   @ViewBuilder
   var findBarOverlay: some View {
     let model = presentationSurface.findModel
@@ -33,9 +29,6 @@ extension ChatScreen {
     }
   }
 
-  /// The live view of what this chat's agent is using: the app it controls
-  /// through Computer Use or the tab it drives through Browser Use,
-  /// whichever it touched last, on this Mac or the chat's host machine.
   @ViewBuilder
   var livePreviewPiPOverlay: some View {
     let serverId = controller.project.serverId
@@ -51,7 +44,6 @@ extension ChatScreen {
         isTurnRunning: controller.isSending,
         composerHeight: composerHeight
       )
-      // The model is adopted once: rebuild it when a tool becomes available.
       .id("\(chatSessionID)/\(computerSource != nil)/\(supportsBrowser)")
     }
   }
@@ -67,8 +59,6 @@ extension ChatScreen {
     return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane)
   }
 
-  /// One container and namespace coordinate every Liquid Glass shape in the
-  /// bottom functional layer, including the system-styled scroll button.
   var bottomChromeOverlay: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       ZStack(alignment: .bottom) {

@@ -1,16 +1,9 @@
 import CodevisorClient
 import Foundation
 
-/// One coordinator per machine/profile, shared by every pane using that store.
-///
-/// Only the engine reads and writes (`read`/`apply`) and the bookkeeping that
-/// owns this state run on the main actor. Keying the engine's cookie list,
-/// diffing it against the baseline, and classifying the server's reply run on
-/// the concurrent executor, and a steady-state poll reads the engine once.
 @MainActor
 public final class BrowserCookieSync {
   public static let visiblePollInterval: Duration = .seconds(2)
-  /// Pane entry and every completed navigation still synchronize immediately.
   public static let hiddenPollInterval: Duration = .seconds(30)
 
   private typealias Cookies = [String: BrowserCookie]
@@ -38,7 +31,6 @@ public final class BrowserCookieSync {
   }
   public func stop() { timer?.cancel(); timer = nil }
 
-  /// Polls less often while no page using this profile is on screen.
   public func setVisible(_ visible: Bool) {
     let interval = visible ? Self.visiblePollInterval : Self.hiddenPollInterval
     guard interval != pollInterval else { return }
@@ -79,7 +71,6 @@ public final class BrowserCookieSync {
 
   private func exchange() async throws -> Bool {
     let local = try await readLocal()
-    // Bootstrap pulls tombstones first. Only previously unknown cookies can be adopted.
     if baseline == nil {
       let snapshot = try await client.exchangeBrowserCookies([])
       revisions = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.key, $0.revision) })
@@ -102,7 +93,6 @@ public final class BrowserCookieSync {
         let normalized = try await readLocal()
         for key in appliedKeys { baseline?[key] = normalized[key] }
       }
-      // Unknown cookies and page changes during bootstrap are published next.
       return try await exchange()
     }
     let baseline = self.baseline ?? [:]
@@ -116,12 +106,9 @@ public final class BrowserCookieSync {
       let now = try await readLocal()
       for index in plan.candidates {
         let entry = snapshot.entries[index]
-        // A page may set another cookie while the server is replying. Publish that
-        // change on the next exchange instead of overwriting it with this reply.
         guard now[entry.key] == local[entry.key] else { continue }
         if now[entry.key] != entry.cookie {
           do { try await apply(entry.cookie, now[entry.key]) } catch {
-            // Later server revisions were not applied; consider them again next time.
             for earlier in snapshot.entries[...index] { revisions[earlier.key] = earlier.revision }
             throw error
           }
@@ -132,7 +119,6 @@ public final class BrowserCookieSync {
       }
     }
     revisions = plan.revisions
-    // Engines normalize expiry and SameSite; remember their representation.
     if !appliedKeys.isEmpty {
       let applied = try await readLocal()
       for key in appliedKeys { nextBaseline[key] = applied[key] }
@@ -160,8 +146,6 @@ public final class BrowserCookieSync {
     }
   }
 
-  /// Records every server revision and selects the entries that may need to be
-  /// applied locally, in reply order.
   @concurrent
   private nonisolated static func plan(
     _ entries: [BrowserCookieEntry], local: Cookies, baseline: Cookies, revisions: [String: Int]
@@ -171,9 +155,6 @@ public final class BrowserCookieSync {
     for (index, entry) in entries.enumerated() {
       let serverChanged = revisions[entry.key] != entry.revision
       revisions[entry.key] = entry.revision
-      // The engine may round expiry or normalize SameSite on import. An
-      // unchanged server revision already corresponds to our normalized
-      // baseline; reapplying it would invalidate every cached tab on each poll.
       if serverChanged || local[entry.key] != baseline[entry.key] { candidates.append(index) }
     }
     return (revisions, candidates)

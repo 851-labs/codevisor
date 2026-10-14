@@ -8,7 +8,6 @@ const fakeServer = (url: string) => {
   return { url, request: vi.fn(), stop } satisfies OpenCodeServer
 }
 
-/// Idle countdowns the test fires by hand.
 const manualTimers = () => {
   const pending: Array<{ ms: number; run: () => Promise<void>; cancelled: boolean }> = []
   return {
@@ -20,7 +19,6 @@ const manualTimers = () => {
         timer.cancelled = true
       }
     },
-    /// Fires every live countdown and waits for what it started.
     fire: () =>
       Promise.all(pending.splice(0).flatMap((timer) => (timer.cancelled ? [] : [timer.run()])))
   }
@@ -43,7 +41,6 @@ describe("OpenCode server pool", () => {
     second.release()
     expect(timers.pending.map((timer) => timer.ms)).toEqual([5_000])
 
-    // Used again before the countdown ends: the countdown is cancelled.
     const third = await pool.acquire("a", start)
     await timers.fire()
     expect(server.stop).not.toHaveBeenCalled()

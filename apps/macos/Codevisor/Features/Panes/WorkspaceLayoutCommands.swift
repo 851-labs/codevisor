@@ -37,8 +37,6 @@ extension FocusedValues {
   }
 }
 
-/// Tab switching alone, for a workspace shown without its layout actions
-/// (an archived one, read-only): ⌥⌘← / ⌥⌘→ still move between its tabs.
 struct WorkspaceTabCycling: Equatable {
   let workspaceId: UUID
   let tabIds: [UUID]
@@ -54,9 +52,6 @@ private struct WorkspaceTabCyclingKey: FocusedValueKey {
   typealias Value = WorkspaceTabCycling
 }
 
-/// The workspace's split layout under View, and tab cycling under Window,
-/// where Mac apps keep them. The tab items that create and close things live
-/// in File, alongside New Chat and Close (see `NewTabMenuItem`).
 struct WorkspaceLayoutCommands: Commands {
   @FocusedValue(\.workspaceLayoutActions) private var actions
   @FocusedValue(\.workspaceTabCycling) private var tabCycling
@@ -97,14 +92,10 @@ struct WorkspaceLayoutCommands: Commands {
     }
 
     CommandGroup(before: .windowArrangement) {
-      // The sidebar owns the order across workspaces, so these work from
-      // the New Chat page too.
       ShortcutButton(.previousTab) { stepTab(-1) }
         .disabled(actions == nil && sidebarActions == nil)
       ShortcutButton(.nextTab) { stepTab(1) }
         .disabled(actions == nil && sidebarActions == nil)
-      // The refreshed sidebar's own commands; absent rather than disabled
-      // without it, so their keys stay free for split focus.
       if FeatureFlag.sidebarRefresh.isEnabled {
         ShortcutButton(.previousTabInWorkspace) {
           if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
@@ -129,8 +120,6 @@ struct WorkspaceLayoutCommands: Commands {
     if let actions {
       if offset < 0 { actions.previousTab() } else { actions.nextTab() }
     } else {
-      // The standalone New Chat page has no tabs; it steps the sidebar
-      // (workspaces in the refresh, tab rows in the classic sidebar).
       if let stepWorkspace = sidebarActions?.stepWorkspace {
         stepWorkspace(offset)
       } else {
@@ -140,7 +129,6 @@ struct WorkspaceLayoutCommands: Commands {
   }
 }
 
-/// File > New Tab.
 struct NewTabMenuItem: View {
   @FocusedValue(\.workspaceLayoutActions) private var actions
 
@@ -150,8 +138,6 @@ struct NewTabMenuItem: View {
   }
 }
 
-/// File > Close Tab and Reopen Closed Pane. Close Split is File > Close
-/// itself (see `CloseWindowMenuItem`).
 struct CloseTabMenuItems: View {
   @FocusedValue(\.workspaceLayoutActions) private var actions
 

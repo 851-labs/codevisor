@@ -1,5 +1,3 @@
-// Run with osascript -l JavaScript. Keep the AX window object alive until EOF;
-// neither window titles, frontmost-window positions, nor recycled IDs own it.
 function ownXcodeWindow(system) {
   var before = system.snapshot()
   var owned
@@ -76,10 +74,8 @@ function readXcodeAttribute(system, name) {
       result.status === -25212 ||
       (name === "AXDocument" && result.status === -25205)
     )
-      return null // Destroyed element, no value, or a window without a document.
+      return null
     if (result.status === -25204 && system.now() < deadline) {
-      // Xcode can briefly stop answering AX requests as a workspace closes.
-      // Retry reads within the original budget; never interpret failure as absence.
       system.pause()
       if (system.now() < deadline) continue
     }
@@ -88,12 +84,10 @@ function readXcodeAttribute(system, name) {
 }
 
 function run(argv) {
-  // Codevisor's task stop signals the whole tree. Only the parent's pipe owns
-  // our lifetime: let its EOF finish cleanup even if we also receive SIGTERM.
   ObjC.bindFunction("signal", ["long", ["int", "long"]])
   ;[1, 2, 13, 15].forEach(function (signal) {
     $.signal(signal, 1)
-  }) // SIG_IGN
+  })
   ObjC.import("Cocoa")
   ObjC.bindFunction("AXIsProcessTrusted", ["bool", []])
   ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]])
@@ -212,8 +206,6 @@ function run(argv) {
       )
         throw new Error("Xcode window owner lost its parent before readiness.")
     },
-    // The simulator owner holds this pipe. EOF also arrives if that owner is
-    // SIGKILLed. This helper has its own process group and survives that kill.
     waitForShutdown: function () {
       $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile
     },
@@ -225,7 +217,6 @@ function run(argv) {
       if (!button) throw new Error("The owned Xcode window has no close button.")
       $.AXUIElementSetMessagingTimeout(button, 1)
       var result = $.AXUIElementPerformAction(button, $("AXPress"))
-      // A synchronous close can time out while Xcode shows its task-stop alert.
       if (result !== 0 && result !== -25204)
         throw new Error("Could not close the owned Xcode window (AX error " + result + ").")
       var deadline = now() + 8000

@@ -5,16 +5,10 @@ import type { CdpConnection } from "./browser-cdp.js"
 import { browserResultValue } from "./browser-repl.js"
 import { makeBrowserToolInvoker, type BrowserToolSessionState } from "./browser-use-invoke.js"
 
-/// Tab ownership and turn-end cleanup are our bookkeeping over Chrome's
-/// target list, so a stateful fake of that list proves them without a real
-/// browser. Page behavior (DOM, accessibility, trusted input, frames) stays
-/// in the *.chrome.test.ts suite.
 const harness = () => {
   const context = { projectId: "project", sessionId: "session" }
   const targets: Array<{ targetId: string; type: string; title: string; url: string }> = []
   const sent: Array<{ method: string; params: Readonly<Record<string, unknown>> }> = []
-  /// Failure injection: tabs whose close errors (the user already closed
-  /// them), and a create that opens its tab and then fails (a timeout).
   const failClose = new Set<string>()
   let failCreate = false
   let created = 0
@@ -142,7 +136,6 @@ describe("Browser tab lifecycle", () => {
       failed: [gone]
     })
     expect(targets.map((target) => target.targetId)).toEqual([gone])
-    // Nothing stays tracked, so the next turn's cleanup has nothing to fail on.
     expect(await call("finalizeTabs", { native: true })).toEqual({
       finalized: true,
       kept: [],

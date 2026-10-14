@@ -92,7 +92,6 @@ describe("native client control", () => {
           {
             id: "806ad5f8-3c5c-444a-916d-230d5501e9e2",
             projectId: "cd36b326-e564-4e7a-b842-3737988458e2",
-            // Only UUID-shaped id fields change; names and other ids keep their case.
             name: "ABCDEF01-2345-6789-ABCD-EF0123456789",
             tabId: "tab-One",
             tabs: []
@@ -120,7 +119,6 @@ describe("native client control", () => {
     expect(broker.list()).toMatchObject([{ name: "window", platform: "macos" }])
     const disconnected = broker.request("window", { method: "context" })
     replacement.close()
-    // Typed for gateway scripts: the window went away mid-command.
     await expect(disconnected).rejects.toMatchObject({
       status: 503,
       code: "client_unavailable",
@@ -209,7 +207,6 @@ describe("native client control", () => {
         online: true
       }
     ])
-    // A slow answer to a read-only probe is not a lost command.
     expect(broker.list().map((client) => client.clientId)).toEqual(["focused", "slow"])
     broker.close()
   })

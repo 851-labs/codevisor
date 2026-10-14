@@ -1,9 +1,6 @@
 import Foundation
 import Observation
 
-/// Keychain is durable storage, not part of machine lookup or view rendering.
-/// Refresh prepares this snapshot before publishing machines. Explicit pin
-/// changes write through so every transport sees the same trusted keys.
 @MainActor
 @Observable
 final class CloudMachineKeyPinCache {
@@ -47,7 +44,6 @@ final class CloudMachineKeyPinCache {
   }
 
   func save(_ pins: [String: String]) throws {
-    // A failed write must never turn an unpersisted key into a trusted key.
     try store.savePinnedMachineKeys(pins)
     invalidate()
     self.pins = pins

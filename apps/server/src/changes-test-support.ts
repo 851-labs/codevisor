@@ -3,7 +3,6 @@ import { EventEmitter } from "node:events"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
-// Test fixtures publish actual state changes; waiters never poll the clock.
 const changes = new EventEmitter()
 export const fixtureChanged = (): void => {
   changes.emit("change")

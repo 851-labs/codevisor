@@ -5,12 +5,8 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-/// The row views whose rendering differs between AppKit and UIKit. Each
-/// platform supplies these once; `TranscriptRowContentView` owns the row
-/// dispatch itself so the 25-case switch has exactly one implementation.
 @MainActor
 public struct TranscriptRowLeaves {
-  /// A settled conversation item: a user bubble or a complete assistant turn.
   public var conversationItem:
     (
       _ item: ConversationItem,
@@ -18,8 +14,6 @@ public struct TranscriptRowLeaves {
       _ waitingOnBackgroundTask: String?,
       _ goalActivity: GoalActivity?
     ) -> AnyView
-  /// The live active item. Platforms may refresh environment values here
-  /// that are otherwise frozen behind the active row's observation boundary.
   public var activeConversationItem:
     (
       _ item: ConversationItem,
@@ -28,7 +22,6 @@ public struct TranscriptRowLeaves {
       _ goalActivity: GoalActivity?,
       _ controller: SessionController
     ) -> AnyView
-  /// One slice of a settled assistant turn.
   public var assistantTurn:
     (
       _ message: AssistantMessage,
@@ -36,9 +29,7 @@ public struct TranscriptRowLeaves {
       _ waitingOnBackgroundTask: String?,
       _ presentation: AssistantTurnPresentation
     ) -> AnyView
-  /// An optimistic (not yet acknowledged) user message bubble.
   public var userMessage: (_ message: UserMessage) -> AnyView
-  /// One worked item rendered inside a settled or active worked section.
   public var workedItem:
     (
       _ item: WorkedItem,
@@ -48,11 +39,8 @@ public struct TranscriptRowLeaves {
       _ animationPresentation: StreamingTextAnimationPresentation,
       _ animationEnabled: Bool
     ) -> AnyView
-  /// An inline attachment thumbnail produced by the assistant.
   public var attachmentThumbnail: (_ file: PreviewFile) -> AnyView
-  /// The session setup progress rows.
   public var setup: (_ phases: [SessionSetupPhase]) -> AnyView
-  /// A session or status error row with its platform action.
   public var errorRow: (_ message: String, _ rowID: TranscriptPresentationRow.ID) -> AnyView
 
   public init(
@@ -78,7 +66,6 @@ public struct TranscriptRowLeaves {
   }
 }
 
-/// One projected transcript row, dispatched to the shared row views.
 public struct TranscriptRowContentView: View {
   let row: TranscriptPresentationRow
   let controller: SessionController
@@ -148,8 +135,6 @@ public struct TranscriptRowContentView: View {
         leaves.userMessage(message)
       }
     case .startingAgent:
-      // The header the turn shows before its first provider event, so the
-      // model's real bubble replaces this one seamlessly.
       TranscriptStartingWorkedHeader(startedAt: controller.pendingSendStartedAt ?? Date())
         .suppressedDuringStreamingTextEntrance()
     case let .backgroundTask(description):
@@ -172,13 +157,6 @@ public struct TranscriptRowContentView: View {
   }
 }
 
-/// The one transcript row that re-renders on token flushes. Deliberately the
-/// ONLY view whose body reads `controller.activeItem`: Observation scopes
-/// invalidation to the body that read the property, so streaming updates
-/// re-evaluate this subtree alone while the settled rows stay inert. Folding
-/// this read into the transcript container's body would put every row back
-/// on the per-flush AttributeGraph diff — the O(transcript) cost that made
-/// streaming degrade with conversation length.
 public struct TranscriptActiveItemRow: View {
   let controller: SessionController
   let projectedItem: ConversationItem
@@ -205,11 +183,6 @@ public struct TranscriptActiveItemRow: View {
     leaves.activeConversationItem(
       item, controller.pendingQuestion != nil, waitingOnBackgroundTask, goalActivity, controller
     )
-    // The active row is hosted behind the transcript's observation
-    // isolation boundary, so environment values injected by the outer
-    // row factory are otherwise frozen until this row is remounted. Read
-    // and inject subagent activity here so a newly active child starts
-    // shimmering while its parent is still generating.
     .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
     .environment(\.runningSubagentRunToolCallIds, controller.runningSubagentRunToolCallIds)
     .id(item.id)

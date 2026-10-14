@@ -1,23 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Keeps a presenting sheet's own drags (swipe to dismiss, the zoom
-/// transition's interactive dismiss) from reacting to touches that begin
-/// inside the composer card. The composer's drags scroll its text and
-/// resize the card; the sheet should only follow drags that start outside it.
-///
-/// While a touch that began inside the card is down, the sheet's drag
-/// recognizers are switched off and `onTouchingChange` reports it, so the
-/// sheet can also disable interactive dismissal (see
-/// `ComposerBlocksSheetDismissPreferenceKey`). Both are needed: a sheet
-/// also dismisses by tracking the scroll view under the finger, and the
-/// editor is a scroll view whose downward drag on an expanded card (which
-/// collapses it) starts at its top edge. Disabling cancels the sheet's
-/// recognizers outright rather than leaving them pending: UIKit makes a
-/// scroll view at its top edge wait for the sheet's dismiss drag to fail,
-/// so a failure dependency would deadlock the editor's own downward drag.
-/// Touches elsewhere are ignored, so the sheet behaves normally everywhere
-/// outside the card. Outside a sheet it does nothing.
 struct SheetGestureShield: UIViewRepresentable {
   var onTouchingChange: (Bool) -> Void = { _ in }
 
@@ -85,8 +68,6 @@ final class SheetGestureShieldView: UIView, UIGestureRecognizerDelegate {
     super.didMoveToWindow()
     uninstall()
     guard let window else { return }
-    // The hosting controller joins its presentation after its views
-    // reach the window; look for the sheet on the next turn.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.window === window, self.suppressor.view == nil,
         self.presentedRoot() != nil
@@ -100,11 +81,6 @@ final class SheetGestureShieldView: UIView, UIGestureRecognizerDelegate {
     restoreSheet()
   }
 
-  /// The drags UIKit attaches to the sheet's presentation: the sheet's own
-  /// pan on its shadow view, and — for a zoom-transition sheet — the
-  /// content swipe-to-dismiss and transform gestures on the presented root
-  /// view. SwiftUI's own recognizers (bridged `UIKit…` types) and hover
-  /// recognizers on that root view are content, and are left alone.
   private func presentingSheetDrags(of root: UIViewController) -> [UIGestureRecognizer] {
     guard let container = root.sheetPresentationController?.containerView else { return [] }
     var drags: [UIGestureRecognizer] = []
@@ -117,7 +93,6 @@ final class SheetGestureShieldView: UIView, UIGestureRecognizerDelegate {
     return drags
   }
 
-  /// The root controller of the sheet presentation this view lives in.
   private func presentedRoot() -> UIViewController? {
     var responder: UIResponder? = self
     var controller: UIViewController?
@@ -150,8 +125,6 @@ final class SheetGestureShieldView: UIView, UIGestureRecognizerDelegate {
   }
 }
 
-/// Never recognizes. It only watches touch sequences: one that begins
-/// inside the card calls `onBegin`, and `onEnd` once all its touches end.
 final class SheetDragSuppressor: UIGestureRecognizer {
   var beginsInside: (UITouch) -> Bool = { _ in false }
   var onBegin: () -> Void = {}
@@ -204,10 +177,6 @@ final class SheetDragSuppressor: UIGestureRecognizer {
   }
 }
 
-/// True while a composer in a sheet needs the sheet to stay put: a touch
-/// that began on the card is down, or the card is dragged fully open (its
-/// editor then owns downward drags, which collapse it). The New Chat sheet
-/// disables interactive dismissal while any composer reports it.
 struct ComposerBlocksSheetDismissPreferenceKey: PreferenceKey {
   static let defaultValue = false
 

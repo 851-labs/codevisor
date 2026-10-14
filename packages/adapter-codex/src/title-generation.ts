@@ -1,11 +1,6 @@
 import type { CodexClient } from "./client.js"
 import { isRecord } from "./internal.js"
 
-// Adapted from agentclientprotocol/codex-acp's TitleGenerator.ts at 4823131.
-// Copyright 2025 JetBrains s.r.o. Licensed under Apache-2.0; see ../LICENSE.codex-acp.
-// Modified for Codevisor's event routing, bounded execution, and cleanup.
-// The temporary thread shares the main session's authenticated
-// connection; its events never enter the user's transcript.
 const TITLE_MODEL = "gpt-5.6-luna"
 const TITLE_TIMEOUT_MS = 30_000
 const TITLE_INSTRUCTIONS =
@@ -82,7 +77,6 @@ export class CodexTitleGenerator {
     const stopped = new Promise<never>((_, reject) => {
       this.abort = () => reject(new Error("Title generation stopped"))
     })
-    // The timeout also covers config reads, thread creation, and persistence.
     const timer = setTimeout(() => this.close(), TITLE_TIMEOUT_MS)
     const request = async <T>(method: string, params: unknown): Promise<T> => {
       if (this.stopped) throw new Error("Title generation stopped")
@@ -124,10 +118,6 @@ export class CodexTitleGenerator {
           )
         }
       })
-      // If thread/start completes after timeout/close, detach that late thread too.
-      // Nothing awaits this branch, so it must not throw: a malformed reply
-      // would be an unhandled rejection, which exits the server. The awaited
-      // path below turns the same reply into a best-effort failure.
       void start.then(
         (result: unknown) => {
           const threadId =
@@ -159,7 +149,6 @@ export class CodexTitleGenerator {
       this.turnId = undefined
       const title = parseGeneratedTitle(response)
       if (title === undefined || this.named) return
-      // Read again so names changed by another Codex client also win.
       const current = await request<{ thread?: { name?: unknown } }>("thread/read", {
         threadId: this.threadId,
         includeTurns: false
@@ -168,7 +157,6 @@ export class CodexTitleGenerator {
       if (this.named) return
       await request("thread/name/set", { threadId: this.threadId, name: title })
     } catch {
-      // Naming is best effort. Keep the first-message fallback on failure.
     } finally {
       clearTimeout(timer)
       this.abort = undefined

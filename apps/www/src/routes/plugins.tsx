@@ -5,19 +5,6 @@ import { createServerFn } from "@tanstack/react-start"
 import { PluginAvatar, registryBaseUrl } from "../components/plugin-directory"
 import { SiteNav } from "../components/site-nav"
 
-/// codevisor.dev/plugins — the public face of the plugin registry. Renders
-/// the same index.json the in-app Browse sheet consumes, fetched server-side
-/// in the route loader (SSR on the worker, hydrated on the client). The
-/// registry lists every public GitHub repo tagged `codevisor-plugin` whose
-/// manifest passes validation; entries always show the real repo owner.
-///
-/// The list stays scannable — artwork, name, one-line description, Install —
-/// and each row links to /plugins/<id> for the full story (panes, tools,
-/// repo facts, CLI install).
-
-/// Exactly what the rows render, and nothing more — the loader payload must
-/// be serializable, and the full registry entry carries opaque tool
-/// inputSchema values that are not.
 interface DirectoryEntry {
   readonly id: string
   readonly name: string
@@ -27,8 +14,6 @@ interface DirectoryEntry {
 }
 
 interface DirectoryData {
-  /// Null when the registry was unreachable — distinct from an empty index,
-  /// which is an honest "nothing published yet".
   readonly entries: ReadonlyArray<DirectoryEntry> | null
 }
 
@@ -112,9 +97,6 @@ function EmptyDirectory() {
   )
 }
 
-/// One glanceable row per plugin: artwork, name, and what it does.
-/// Everything else (version, repo, stars, capabilities) lives on the detail
-/// page behind the row.
 function PluginRow({ entry }: { entry: DirectoryEntry }) {
   return (
     <li className="flex items-center gap-4 rounded-xl border border-hairline bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]">

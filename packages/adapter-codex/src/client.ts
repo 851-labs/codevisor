@@ -9,20 +9,10 @@ import {
   trackProcessTree
 } from "@codevisor/processes"
 
-/// Minimal JSON-RPC 2.0 client over newline-delimited JSON, the codex
-/// app-server's stdio transport (the `jsonrpc` header is omitted on the wire).
 export interface CodexClient {
   request: <T>(method: string, params?: unknown) => Promise<T>
   notify: (method: string, params?: unknown) => void
   onNotification: (handler: (method: string, params: unknown) => void) => void
-  /// Server→client requests (approvals, user-input questions). The handler's
-  /// resolved value is sent back as the JSON-RPC result. The signal aborts
-  /// when the connection dies with the request still unsettled: these
-  /// requests block on HUMAN answers, so they routinely outlive the process
-  /// (codex crashes mid-question, the session closes mid-approval) — the
-  /// handler uses the signal to retract the ask instead of holding it
-  /// forever, and whatever it eventually settles with is discarded rather
-  /// than written to a dead pipe.
   onRequest: (
     handler: (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>
   ) => void
@@ -44,14 +34,8 @@ interface Pending {
   readonly reject: (error: Error) => void
 }
 
-/* v8 ignore start -- spawning is exercised against a live codex binary; tests drive wireCodexClient over fake endpoints. */
+/* v8 ignore start */
 export const spawnCodexClient: CodexConnector = async (request) => {
-  // apply_patch_streaming_events unlocks item/fileChange/patchUpdated — the
-  // realtime patch stream while the model generates an edit.
-  // default_mode_request_user_input lets the model ask the user questions
-  // (item/tool/requestUserInput) in the default collaboration mode.
-  // Both are off by default upstream (under development); unknown keys only
-  // produce a warning on older builds.
   const child = spawn(
     request.command,
     [
@@ -84,8 +68,6 @@ export const spawnCodexClient: CodexConnector = async (request) => {
   let closing: Promise<void> | undefined
   const closeAndWait = (): Promise<void> => {
     closing ??= (async () => {
-      // Codex's own command teardown uses SIGKILL. Let scripts finish their
-      // shutdown handlers before closing the app-server transport.
       try {
         await tree.stop({ includeRoot: false })
       } finally {
@@ -108,10 +90,6 @@ export const spawnCodexClient: CodexConnector = async (request) => {
 export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
   let nextId = 1
   const pending = new Map<number, Pending>()
-  /// In-flight server→client requests, tracked symmetrically with `pending`:
-  /// their handlers settle on human timescales (a person answering a
-  /// question), so connection death must abort them — and gate their late
-  /// replies — exactly as it rejects outstanding outbound requests.
   const inbound = new Map<number, AbortController>()
   let notificationHandler: ((method: string, params: unknown) => void) | undefined
   let requestHandler:
@@ -120,13 +98,6 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
   const closeHandlers: Array<(error: Error) => void> = []
   let closed = false
 
-  /// The single teardown path: rejects outbound requests, aborts inbound
-  /// obligations, and (for failures only) notifies close handlers.
-  /// `notifyClose` is false for EXPECTED teardown (session close, agent
-  /// replacement after a cwd change, short-lived listing/usage clients) so
-  /// routine closes never masquerade as crashes — without this, every
-  /// routine close published a "codex app-server exited" session error that
-  /// clients flash before the replacement connects.
   const settle = (error: Error, notifyClose: boolean): void => {
     if (closed) return
     closed = true
@@ -134,9 +105,6 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
       entry.reject(error)
     }
     pending.clear()
-    // Abort BEFORE notifying close handlers: abort listeners retract the
-    // asks (dismiss question UIs) so the coarser close-time cancellation
-    // that follows finds nothing left to do.
     for (const controller of inbound.values()) {
       controller.abort(error)
     }
@@ -168,7 +136,6 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
     const method = message.method
     if (typeof method !== "string") return
     if (typeof id === "number") {
-      // Server→client request (approvals, user-input questions).
       const handler = requestHandler
       if (handler === undefined) {
         transport.send({ error: { code: -32601, message: `No handler for ${method}` }, id })
@@ -177,17 +144,10 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
       const controller = new AbortController()
       inbound.set(id, controller)
       const respond = (payload: Record<string, unknown>): void => {
-        // A reply is only meaningful while its request is still live: after
-        // an abort (the connection died first) the settled value is
-        // discarded here — the transport's own write gate is the backstop,
-        // not the primary defense.
         if (inbound.get(id) !== controller) return
         inbound.delete(id)
         transport.send(payload)
       }
-      // A handler that throws before returning its promise fails this one
-      // request, like a rejection; it must not escape into the transport's
-      // stream listener, where it would exit the whole server.
       let reply: Promise<unknown>
       try {
         reply = handler(method, message.params, controller.signal)
@@ -207,10 +167,6 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
         )
       return
     }
-    // Notifications run synchronously inside the transport's stream
-    // listener, so a mapping bug here would be an uncaught exception that
-    // exits the server and every other session. One bad notification is
-    // logged and skipped, as the ACP SDK does for its notification handlers.
     try {
       notificationHandler?.(method, message.params)
     } catch (error) {

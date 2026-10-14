@@ -16,8 +16,6 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-/// A control over a stored credential and a scripted cloud. Disconnect only
-/// touches the credential file, the log, and the cloud REST transport.
 const storedControl = (respond: FetchLike) => {
   const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))
   dirs.push(dir)
@@ -57,7 +55,6 @@ describe("cloud disconnect", () => {
       method: "DELETE",
       headers: { "x-api-key": "machine-key" }
     })
-    // Bounded: logout never hangs on an unresponsive cloud.
     expect(calls[0]?.init?.signal).toBeInstanceOf(AbortSignal)
     expect(existsSync(credentialsPath)).toBe(false)
   })

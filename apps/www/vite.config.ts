@@ -13,14 +13,9 @@ export default defineConfig({
     viteReact(),
     tailwindcss()
   ],
-  // Workspace packages export their TypeScript source under the
-  // "@codevisor/source" condition (see packages/api/package.json), so the site
-  // bundles @codevisor/api from src without a build step or a path alias.
   resolve: {
     conditions: ["@codevisor/source", ...defaultClientConditions]
   },
-  // The Worker environment keeps the Cloudflare plugin's workerd conditions;
-  // Vite appends this one to them.
   environments: {
     ssr: { resolve: { conditions: ["@codevisor/source"] } }
   },

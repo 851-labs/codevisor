@@ -240,10 +240,6 @@ export const pluginConsents = sqliteTable(
   (table) => [primaryKey({ columns: [table.userId, table.pluginId, table.consentKey] })]
 )
 
-/// Tunnel endpoint ids (Ed25519, hex) registered by authenticated devices on
-/// `/connect`. Our relays ask `POST /api/relay/authorize` whether an endpoint
-/// may use them; only registered endpoints of live accounts may.
-/// Rows cascade with the user.
 export const tunnelEndpoint = sqliteTable(
   "tunnel_endpoint",
   {
@@ -258,10 +254,6 @@ export const tunnelEndpoint = sqliteTable(
   (table) => [index("tunnel_endpoint_user_device").on(table.userId, table.deviceId)]
 )
 
-/// One-time invites a machine mints so a new machine can join the account
-/// without a human approval (`codevisor machines invite`). Only the SHA-256
-/// of the secret is stored; redemption is a single conditional UPDATE, so an
-/// invite can never register two machines. Rows cascade with the user.
 export const machineInvite = sqliteTable(
   "machine_invite",
   {

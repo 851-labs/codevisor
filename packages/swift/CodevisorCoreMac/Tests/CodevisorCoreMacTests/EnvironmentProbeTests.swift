@@ -29,12 +29,10 @@ struct EnvironmentProbeTests {
     let probe = makeProbe(runner: runner, basePath: "/base/only:/usr/bin")
     let path = await probe.resolvedPath()
     let directories = path.split(separator: ":").map(String.init)
-    // Probed ordering wins, base PATH follows, fallbacks appended, deduped.
     #expect(Array(directories.prefix(2)) == ["/custom/bin", "/usr/bin"])
     #expect(directories.contains("/base/only"))
     #expect(directories.contains("/Users/test/.local/bin"))
     #expect(directories.filter { $0 == "/usr/bin" }.count == 1)
-    // It probed the login shell for the real environment (fish-safe).
     #expect(runner.invocations.first?.1 == ["-ilc", "/usr/bin/env"])
   }
 
@@ -81,8 +79,6 @@ struct EnvironmentProbeTests {
 
   @Test("userLoginShell returns a usable shell path")
   func loginShell() {
-    // The password database always has a shell for the current user; the
-    // env fallback path is exercised with an injected empty environment.
     let shell = EnvironmentProbe.userLoginShell(environment: [:])
     #expect(shell.path.hasPrefix("/"))
     #expect(!shell.path.isEmpty)

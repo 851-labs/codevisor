@@ -252,9 +252,6 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
           const event = withSession((sessionId) => map(params, sessionId))
           if (event !== undefined) emit(event)
         }
-        // Cursor 2026.07 sends these through `extMethod` (a request whose
-        // response it ignores), while the public contract calls them
-        // notifications. Accept both forms so either transport is lossless.
         app.onRequest<unknown, Record<string, never>>(
           method,
           (params) => params,
@@ -294,7 +291,6 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
         ) as unknown as acp.SessionNotification["update"]
       }
       const update = notification.update as unknown as Record<string, unknown>
-      // A subagent's own session streams into its agent's thread.
       if (subagents.isChildSession(notification.sessionId)) {
         return subagents.isThreadUpdate(update)
           ? subagents.childEvents(
@@ -306,8 +302,6 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
       if (update.sessionUpdate !== "config_option_update" || !Array.isArray(update.configOptions)) {
         return normalizer.mapSessionNotification(notification)
       }
-      // ACP label canonicalization happens in runtimeEventFromNotification;
-      // Cursor then remaps its native `fast` toggle onto the speed chip.
       const event = runtimeEventFromNotification(notification)
       const payload = event.payload as Record<string, unknown>
       if (!Array.isArray(payload.configOptions)) return [event]
@@ -326,9 +320,6 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
     sdkConnectionCustomization: {
       customizeSessionMetadata: (sessionId, _response, metadata) => {
         activeSessionId = sessionId
-        // `session/load` replays notifications before returning its metadata;
-        // this closes the final historical turn when no following user echo
-        // exists to provide that boundary.
         emitAll(emit, normalizer.completeTurn(sessionId))
         return cursorSessionMetadata(metadata)
       },

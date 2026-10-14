@@ -177,11 +177,6 @@ const admittedModels = (response: unknown): object | undefined => {
   return models
 }
 
-/// Reads the optional ACP model-selection extension off a `session/new` (or
-/// `session/load`) response. The field is not part of the SDK's typed schema,
-/// so it arrives untyped — the SDK forwards the raw JSON-RPC result unparsed —
-/// hence the defensive shape checks. Returns undefined when absent or malformed
-/// so agents without the extension are left untouched (no empty picker).
 export const extractAcpModelState = (response: unknown): AcpModelState | undefined => {
   const models = admittedModels(response)
   if (models === undefined) {

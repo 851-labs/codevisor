@@ -22,16 +22,9 @@ export interface GatewayCatalogDeps {
   readonly automationProviders: Map<string, AutomationToolProvider>
   readonly config: McpManagerConfig
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
-  /// Machine-local suppression (the per-machine disable overlay). The
-  /// catalog consults it everywhere it consults `enabled`: a suppressed
-  /// server is not advertised, not listed, and not callable — including
-  /// built-in automation providers, which never pass through
-  /// `connectUpstream` and would otherwise leak their tools.
   readonly isSuppressed: (name: string) => boolean
 }
 
-/// What each enabled built-in lets the agent do, phrased as abilities rather
-/// than as rules for when to use them, so the model can match any task to them.
 const BUILTIN_CAPABILITIES: Record<string, string> = {
   browser:
     "Browser: a real web browser. Open any site, sign in, click, fill in forms, read live pages.",
@@ -40,13 +33,8 @@ const BUILTIN_CAPABILITIES: Record<string, string> = {
     "Codevisor: start other agents, use the user's other machines, control the Codevisor app."
 }
 
-/// Integration names listed before the line is cut short, so the whole
-/// description stays within Claude Code's 2,048-character limit.
 const INTEGRATION_LIMIT = 40
 
-/// Short on purpose: hosts truncate long tool descriptions (Claude Code at
-/// 2,048 characters) or hide them behind tool search, so this names what the
-/// tool reaches and points at the `skills` tool for everything else.
 export const executeToolDescription = (inventory: string): string =>
   [
     `Sandboxed TypeScript runtime for using tools like:\n${inventory}`,
@@ -84,9 +72,6 @@ const catalogSearchItem = (server: CatalogServer, tool: Tool, score: number) => 
   }
 }
 
-/// The discovery half of the gateway, split out of mcp-gateway: what tools
-/// exist (MCP servers, automation providers, plugin tools), how they are
-/// advertised (the inventory string), and how paths resolve to definitions.
 export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const { automationProviders, config, connectUpstream, isSuppressed } = deps
 
@@ -107,7 +92,6 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       ...enabled
         .filter((server) => !(server.id in BUILTIN_CAPABILITIES))
         .map((server) => server.name.trim()),
-      // Plugin tools are named `<pluginId>.<tool>`; list each plugin once.
       ...(await listPluginTools()).map((tool) => tool.name.slice(0, tool.name.lastIndexOf(".")))
     ]
       .filter((name, index, all) => name.length > 0 && all.indexOf(name) === index)
@@ -135,7 +119,6 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     )
   ]
 
-  /// The skills a session can read through the `skills` tool.
   const sessionSkills = async (
     projectId?: string,
     sessionId?: string

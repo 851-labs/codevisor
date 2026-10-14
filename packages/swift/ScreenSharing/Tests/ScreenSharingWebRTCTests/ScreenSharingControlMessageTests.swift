@@ -23,8 +23,6 @@ struct ScreenSharingControlMessageTests {
     #expect(!ScreenSharingInputEvent.text(String(repeating: "x", count: 1025)).isValid)
   }
 
-  /// 851-2469: Apps, Mission Control and Desktop travel as the Mac's own keys; other codes above
-  /// the keyboard range stay invalid.
   @Test func systemKeysAreValidInputAndOtherHighCodesAreNot() {
     for key in ScreenSharingSystemKey.allCases {
       #expect(ScreenSharingInputEvent.key(code: key.rawValue, down: true, repeatKey: false, modifiers: 0).isValid)
@@ -73,7 +71,6 @@ struct ScreenSharingControlMessageTests {
     #expect(bytes.drain().1)
   }
 
-  /// The cursor channel admits pointer images (851-2377): a full-size message, and several in one drain.
   @Test func theCursorChannelAdmitsImagesTheControlChannelWouldRefuse() {
     var cursor = ScreenSharingControlInbox(limits: .cursor)
     let image = Data(repeating: 7, count: ScreenSharingCursorMessage.maximumBytes)
@@ -90,25 +87,18 @@ struct ScreenSharingControlMessageTests {
 
   @Test func packetsAreBatchedInArrivalOrderAndOnlyTheFirstOfABatchSchedulesADrain() {
     var inbox = ScreenSharingControlInbox()
-    // Only the arrival that finds no drain outstanding asks for one; the rest
-    // of the batch rides along with it.
     #expect(inbox.enqueue(Data([1])) == true)
     #expect(inbox.enqueue(Data([2])) == false)
     #expect(inbox.enqueue(Data([3])) == false)
     let batch = inbox.drain()
     #expect(batch.0 == [Data([1]), Data([2]), Data([3])] && !batch.1)
     #expect(inbox.drain().0.isEmpty)
-    // Finishing a drain with nothing new releases the schedule, so the next
-    // arrival asks for a new one rather than waiting for a drain that will never come.
     let released = inbox.finish()
     #expect(!released)
     #expect(inbox.enqueue(Data([4])) == true)
     #expect(inbox.drain().0 == [Data([4])])
   }
 
-  /// A drain stays outstanding until its batch was delivered (on the main actor, for most
-  /// channels): what arrives meanwhile waits within the limits instead of scheduling a second
-  /// delivery, and finishing reports it so the same drain takes it next.
   @Test func arrivalsWhileABatchIsBeingDeliveredWaitForTheSameDrain() {
     var inbox = ScreenSharingControlInbox()
     #expect(inbox.enqueue(Data([1])) == true)
@@ -121,7 +111,6 @@ struct ScreenSharingControlMessageTests {
     let released = inbox.finish()
     #expect(!released)
     #expect(inbox.enqueue(Data([4])) == true)
-    // A stalled delivery bounds the backlog exactly as before: 256 messages, then failure.
     for _ in 0..<256 { _ = inbox.enqueue(Data()) }
     let overflow = inbox.drain()
     #expect(overflow.1 && overflow.0.count == 256)
@@ -133,8 +122,6 @@ struct ScreenSharingControlMessageTests {
     for _ in 0..<16 { _ = inbox.enqueue(full) }
     let first = inbox.drain()
     #expect(first.0.count == 16 && !first.1)
-    // A second batch of the same size still fits, so the budget went out with
-    // the packets instead of accumulating across drains.
     for _ in 0..<16 { _ = inbox.enqueue(full) }
     let second = inbox.drain()
     #expect(second.0.count == 16 && !second.1)
@@ -144,9 +131,6 @@ struct ScreenSharingControlMessageTests {
     #expect(inbox.enqueue(Data(repeating: 9, count: ScreenSharingControlMessage.maximumBytes + 1)) == true)
     let failure = inbox.drain()
     #expect(failure.0.isEmpty && failure.1)
-    // The failure latches, because the channel is torn down on it: nothing
-    // after it is admitted, finishing never releases the drain, and every
-    // later drain keeps reporting it.
     let pending = inbox.finish()
     #expect(pending)
     #expect(inbox.enqueue(Data([1])) == false)

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Bounded exponential backoff for the viewer's reconnect loop. Deterministic:
-/// the caller supplies the sleep; this only decides how long.
 public struct RigReconnectPolicy: Equatable, Sendable {
   public let initialSeconds: Double
   public let maximumSeconds: Double
@@ -12,7 +10,6 @@ public struct RigReconnectPolicy: Equatable, Sendable {
     self.maximumSeconds = maximumSeconds
   }
 
-  /// Records a failed attempt and returns how long to wait before the next one.
   public mutating func failed() -> Double {
     let delay = min(maximumSeconds, initialSeconds * pow(2, Double(consecutiveFailures)))
     consecutiveFailures += 1

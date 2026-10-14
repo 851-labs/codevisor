@@ -1,13 +1,9 @@
-// Pure helpers for `bun run vnc:bench` (apps/screen-sharing-rig/scripts/vnc-bench.ts).
-
-/// "Mac16,6" → "Mac16_6": the baseline file for this machine.
 export function baselineName(model: string): string {
   const safe = model.trim().replaceAll(/[^A-Za-z0-9]+/g, "_")
   if (!safe) throw new Error("empty machine model")
   return `baseline-${safe}.json`
 }
 
-/// Splits wrapper flags from the ones passed through to `screen-sharing-rig vnc-bench`.
 export interface BenchOptions {
   saveBaseline: boolean
   compare: boolean
@@ -37,7 +33,6 @@ export function parseBenchArguments(argv: string[]): BenchOptions {
   return options
 }
 
-/// `git describe`-like build label: short hash, "+dirty" with local changes.
 export function buildLabel(hash: string, dirty: boolean): string {
   return `${hash.trim().slice(0, 12)}${dirty ? "+dirty" : ""}`
 }

@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import CodevisorClient
 
-/// 851-2339: `setScale` and the display's scale fields, as codevisor-server sends and reads them.
 struct ServerScreenSharingScaleTests {
   @Test func setScaleEncodesItsOperationAndScale() throws {
     let request = ServerScreenSharingRequest(
@@ -21,7 +20,6 @@ struct ServerScreenSharingScaleTests {
           .utf8))
     let display = try #require(reply.displays.first)
     #expect(display.scales == [1, 2] && display.defaultWidth == 1440 && display.defaultHeight == 900)
-    // An older server's reply, without them, still decodes.
     let old = try JSONDecoder().decode(
       ServerScreenSharingReply.self,
       from: Data(

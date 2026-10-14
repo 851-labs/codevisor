@@ -42,11 +42,9 @@ func computerUseRecordingSize(_ size: CGSize, maximumDimension: Int) throws -> C
 }
 
 func computerUseRecordingFileSize(_ url: URL) -> Int {
-  // URL resource values can cache the size from before the writer flushed.
   (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
 }
 
-/// SDK callbacks complete on their own queues. Only bridge workers wait here.
 final class ComputerUseRecordingResult<Value>: @unchecked Sendable {
   private let condition = NSCondition()
   private var result: Result<Value, Error>?

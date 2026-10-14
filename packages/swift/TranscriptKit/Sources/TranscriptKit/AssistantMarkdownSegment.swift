@@ -12,8 +12,6 @@ private let assistantLinkExpression = try! NSRegularExpression(
 
 private let attachmentOrigin = "https://attachments.codevisor.invalid/"
 
-/// Named attachment links retain ordinary link presentation while opening the
-/// immutable file through the same native preview as a local path.
 public func markdownAttachmentFile(_ target: String) -> PreviewFile? {
   guard target.hasPrefix(attachmentOrigin),
     let components = URLComponents(string: target),
@@ -66,8 +64,6 @@ private func markdownLines(_ markdown: NSString) -> [MarkdownLine] {
   return result
 }
 
-/// Removes block-quote markers while retaining indentation that belongs to
-/// the quoted content. Fences inside quotes are code just like top-level ones.
 private func markdownContainerContent(_ line: String) -> (String, Int) {
   var index = line.startIndex
   var quoteDepth = 0
@@ -191,13 +187,8 @@ private func markdownCodeRanges(_ markdown: String) -> [NSRange] {
   )
 }
 
-/// Returns the session-server path represented by a scheme-less or `file:`
-/// Markdown destination. Callers use this for link activation as well as image
-/// previews so both paths agree on what "local" means.
 public func markdownLocalFilePath(_ target: String) -> String? {
   guard !target.hasPrefix("#") else { return nil }
-  // A network-path reference is a web link whose scheme is inherited from
-  // its surrounding document, not an absolute filesystem path.
   guard !target.hasPrefix("//") else { return nil }
   if target.hasPrefix("file://") { return target }
   if target.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#, options: .regularExpression) != nil {
@@ -209,17 +200,9 @@ public func markdownLocalFilePath(_ target: String) -> String? {
   {
     return decoded
   }
-  // A transcript has no useful browser-relative navigation context, so a
-  // scheme-less Markdown destination is a server-local path. This also
-  // covers extensionless files such as README and Makefile.
   return decoded
 }
 
-/// Resolves server-issued attachment URLs and, once a turn is complete, local
-/// image embeds. Ordinary Markdown links remain Markdown even when they point
-/// at local files; the UI routes those when the user activates them. Relative
-/// paths stay relative so the server can resolve them against the session's
-/// authoritative cwd.
 public func assistantMarkdownSegments(
   _ markdown: String,
   attachments: [Attachment],
@@ -233,8 +216,6 @@ public func assistantMarkdownSegments(
   let fullRange = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
   let codeRanges = markdownCodeRanges(markdown)
   let parsed = markdown.contains("|") ? MarkdownParser().parseWithTableRanges(markdown) : nil
-  // Reference-style images have no inline destination for the regex to match.
-  // Count them as referenced as well so they never acquire a duplicate preview.
   for target in parsed?.blocks.flatMap(\.imageSources) ?? [] where target.hasPrefix(attachmentOrigin) {
     let id = String(target.dropFirst(attachmentOrigin.count).prefix(while: { $0 != "?" }))
     if byID[id] != nil { referenced.insert(id) }
@@ -263,8 +244,6 @@ public func assistantMarkdownSegments(
     } else {
       continue
     }
-    // Keep the full table in one Markdown segment. Rendering owns its images;
-    // extracting one here would orphan the remaining cells and pipe delimiters.
     if parsed?.tableRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) == true {
       continue
     }

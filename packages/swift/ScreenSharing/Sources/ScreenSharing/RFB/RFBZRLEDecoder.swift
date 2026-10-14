@@ -1,7 +1,5 @@
 import Foundation
 
-/// ZRLE (RFC 6143 §7.7.6) for the client's 24-bit-depth format, where each
-/// CPIXEL is three bytes: B, G, R in our little-endian layout.
 package enum RFBZRLEDecoder {
   package static let tile = 64
 
@@ -96,7 +94,6 @@ package enum RFBZRLEDecoder {
       return (data[offset], data[offset + 1], data[offset + 2])
     }
 
-    /// Run lengths are 1 plus a sum of bytes, each 255 adding another byte.
     mutating func runLength() throws -> Int {
       var length = 1
       while true {

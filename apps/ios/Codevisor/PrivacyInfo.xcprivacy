@@ -11,7 +11,6 @@
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<!-- Read and migrate this app's preferences. -->
 				<string>CA92.1</string>
 			</array>
 		</dict>
@@ -20,7 +19,6 @@
 			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<!-- Measure elapsed time between connection and session events. -->
 				<string>35F9.1</string>
 			</array>
 		</dict>
@@ -29,7 +27,6 @@
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<!-- Migrate local data and prune caches in the app container. -->
 				<string>C617.1</string>
 			</array>
 		</dict>

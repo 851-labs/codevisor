@@ -1,9 +1,6 @@
 import Foundation
 
 extension WorkspaceSyncModel {
-  /// Renames a workspace everywhere. The name shows immediately and reaches
-  /// the workspace's machine through the outbox, including after being
-  /// offline. A draft is renamed on this device until the server has it.
   @discardableResult
   public func renameWorkspace(
     _ renamed: Workspace,

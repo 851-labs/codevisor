@@ -1,8 +1,6 @@
 import CodevisorUI
 import Foundation
 
-/// The toolbar and pane resolve the same Review state, and a loaded diff
-/// survives switching tabs.
 @MainActor
 final class ReviewPaneCache {
   static let shared = ReviewPaneCache()
@@ -14,7 +12,6 @@ final class ReviewPaneCache {
     models[id] = model
     order.removeAll { $0 == id }
     order.append(id)
-    // Loaded diffs carry whole file texts, so keep fewer than file panes.
     while order.count > 16 { remove(paneId: order[0]) }
     return model
   }

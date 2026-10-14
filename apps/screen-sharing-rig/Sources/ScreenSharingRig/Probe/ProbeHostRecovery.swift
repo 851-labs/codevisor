@@ -4,8 +4,6 @@
   import ScreenSharing
   import ScreenSharingWebRTC
 
-  /// A focused integration check against the actual native host API. It uses a
-  /// supplied test pane, never posts OS input and never accesses either clipboard.
   @MainActor
   final class ProbeHostRecovery {
     private let client: CodevisorServerClient

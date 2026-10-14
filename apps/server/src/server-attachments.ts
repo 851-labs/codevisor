@@ -12,9 +12,6 @@ import { inlineSizing } from "./infra/prompt-media.js"
 import type { CodevisorServerServices } from "./server-context-types.js"
 import { run, HttpFailure } from "./server-http.js"
 
-/// Prompt attachment handling: temp-file staging, disk-backed reads, byte
-/// ranges, and the periodic sweep.
-
 const ATTACHMENT_TEMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 const attachmentsTempRoot = (): string => join(tmpdir(), "codevisor-attachments")
@@ -25,8 +22,6 @@ export const sanitizeFileName = (name: string): string => {
   return cleaned.length === 0 ? "attachment" : cleaned
 }
 
-/// Rebuilds the disk object for a row that still carries its legacy SQLite
-/// bytes (pre-object-store attachments, or dual rows mid-migration).
 const restoreLegacyObject = async (
   services: CodevisorServerServices,
   fileId: string,
@@ -59,9 +54,7 @@ export const attachmentDiskFile = async (
       ) {
         return { path, metadata: record.metadata }
       }
-    } catch {
-      // A dual row can be reconstructed from its legacy bytes below.
-    }
+    } catch {}
     if (record.storageState === "disk") {
       throw new AttachmentStoreError(`Attachment object is missing: ${fileId}`)
     }
@@ -79,9 +72,9 @@ export const requestedByteRange = (
   if (header === undefined) return undefined
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
   if (match === null || size <= 0) return "invalid"
-  /* v8 ignore next -- both capture groups are guaranteed by the matched expression. */
+  /* v8 ignore next */
   const startText = match[1] ?? ""
-  /* v8 ignore next -- both capture groups are guaranteed by the matched expression. */
+  /* v8 ignore next */
   const endText = match[2] ?? ""
   if (startText.length === 0) {
     const suffix = Number(endText)
@@ -102,9 +95,6 @@ export const requestedByteRange = (
   return { start, end: Math.min(requestedEnd, size - 1) }
 }
 
-/// Materializes attachment bytes as temp files so path-based provider inputs
-/// (Codex localImage, path notes for arbitrary files) can reference them.
-/// Files are immutable, so an existing materialization is reused.
 export const resolvePromptAttachments = async (
   services: CodevisorServerServices,
   refs: ReadonlyArray<AttachmentRef>
@@ -120,8 +110,6 @@ export const resolvePromptAttachments = async (
       }
       throw cause
     }
-    // Streamed hash: a corrupt object must not reach the agent, and the
-    // file never needs to fit in memory.
     if (!(await services.attachments.verify(file.metadata))) {
       throw new AttachmentStoreError(`Attachment object is missing or corrupt: ${ref.fileId}`)
     }
@@ -129,9 +117,6 @@ export const resolvePromptAttachments = async (
     mkdirSync(directory, { recursive: true })
     const path = join(directory, sanitizeFileName(ref.name))
     if (!existsSync(path)) {
-      // Clone where the filesystem supports it; attachments can be hundreds
-      // of megabytes and must not pass through memory. The rename keeps an
-      // interrupted copy from being reused as the materialized file.
       const partial = `${path}.${randomUUID()}.partial`
       await copyFile(file.path, partial, constants.COPYFILE_FICLONE)
       await rename(partial, path)
@@ -148,8 +133,6 @@ export const resolvePromptAttachments = async (
   return resolved
 }
 
-/// Best-effort start-up sweep of stale materialized attachments; OS tmp
-/// reaping is the backstop.
 export const sweepAttachmentTempFiles = (now = Date.now()): void => {
   try {
     for (const entry of readdirSync(attachmentsTempRoot())) {
@@ -158,16 +141,7 @@ export const sweepAttachmentTempFiles = (now = Date.now()): void => {
         if (now - statSync(path).mtimeMs > ATTACHMENT_TEMP_MAX_AGE_MS) {
           rmSync(path, { force: true, recursive: true })
         }
-      } catch {
-        // Another process may have removed the entry mid-sweep.
-      }
+      } catch {}
     }
-  } catch {
-    // The temp root does not exist until the first attachment is resolved.
-  }
+  } catch {}
 }
-
-/// Archiving retires the session's runtime: the agent process shuts down and
-/// every background-task terminal it registered is killed and removed — a
-/// dev server must not keep running under an archived chat. Best-effort: the
-/// archive itself must succeed even if the runtime is already gone.

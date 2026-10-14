@@ -13,49 +13,24 @@ import type { ChannelHandler } from "./incoming-channel.js"
 import type { CancelTimeout, CloudSocket } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
-/// The direct pipe, machine side: accepts sealed-channel connections straight
-/// from apps on the same network — same wire format as the hub relay (JSON
-/// text hello/welcome/ping, binary envelope batches), same ChannelReceiver,
-/// no hub in the middle. Unlike the relay there is no account gate in front,
-/// so identity is mandatory: a hello from a device whose key is not ALREADY
-/// pinned (established through prior relay use — TOFU happens there, never
-/// here) is refused before any channel can open. The E2E channel crypto then
-/// authenticates every frame, so the pipe needs no TLS of its own.
-///
-/// Channels die with their connection; apps re-open from durable cursors on
-/// whatever pipe is available next (LAN reconnects are instant, and the
-/// relay is always the fallback). No resume machinery on this pipe.
-
-/// Close codes, mirroring the hub's conventions (42xx fatal).
 export const DIRECT_CLOSE_INVALID = 4000
 export const DIRECT_CLOSE_HELLO_TIMEOUT = 4002
 export const DIRECT_CLOSE_UNSUPPORTED_PROTOCOL = 4200
-/// The presented device identity has no matching pin: this pipe never
-/// trusts on first use. Fatal — pair through the relay first.
 export const DIRECT_CLOSE_UNPINNED = 4202
 
 export interface DirectChannelHostOptions {
-  /// This machine's cloud device id — the address apps put in relay headers.
   deviceId: string
-  /// This machine's static X25519 secret key (base64url).
   secretKey: string
   channelHandlers: Record<string, ChannelHandler>
-  /// The SAME pin store the relay connection uses; get-only here.
   peerKeyPins: PeerKeyPinStore
   compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
   decompressPayload?: (bytes: Uint8Array) => Uint8Array
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   log?: (line: string) => void
-  /// Identity gate for a hello, given what the transport proved about the
-  /// peer. Default: the device's X25519 key must already be pinned (the LAN
-  /// pipe never trusts on first use). The tunnel supplies its own gate, which
-  /// also binds the authenticated tunnel endpoint (see tunnel-host.ts).
   admitHello?: (device: { deviceId: string; publicKey: string }, peer: PipePeer) => boolean
 }
 
-/// What the carrying transport authenticated about the remote side.
 export interface PipePeer {
-  /// Tunnel pipes: the peer's verified endpoint id (QUIC TLS).
   endpointId?: string
 }
 
@@ -64,7 +39,6 @@ export class DirectChannelHost {
 
   constructor(private readonly options: DirectChannelHostOptions) {}
 
-  /// Adopts one server-accepted WebSocket as a direct channel pipe.
   accept(socket: CloudSocket, peer: PipePeer = {}): void {
     this.#accepted += 1
     const connectionId = `direct-${this.#accepted}`
@@ -73,8 +47,6 @@ export class DirectChannelHost {
     const receiver = new ChannelReceiver({
       secretKey: options.secretKey,
       channelHandlers: options.channelHandlers,
-      // The hello gate below guarantees the pinned identity; the receiver's
-      // own pin check then re-verifies it per open (defense in depth).
       peerKeyPins: options.peerKeyPins,
       ...(options.compressPayload === undefined
         ? {}
@@ -96,7 +68,7 @@ export class DirectChannelHost {
       socket.close(DIRECT_CLOSE_HELLO_TIMEOUT, "hello timeout")
     }, 10_000)
 
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     socket.onmessage = (data) => {
       if (typeof data === "string") {
         this.#onControl(socket, data, hello, peer, (accepted) => {
@@ -123,8 +95,6 @@ export class DirectChannelHost {
       }
       for (const envelope of envelopes) {
         const header = parseAppRelayHeader(envelope.header)
-        // Ignore malformed or misaddressed envelopes rather than tearing the
-        // pipe down; the channel-level seq contract catches real corruption.
         if (header === undefined || header.machineId !== options.deviceId) continue
         receiver.handleRelay(
           connectionId,
@@ -135,7 +105,7 @@ export class DirectChannelHost {
         )
       }
     }
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     socket.onclose = () => {
       cancelHelloTimeout?.()
       cancelHelloTimeout = undefined
@@ -161,13 +131,11 @@ export class DirectChannelHost {
       this.#send(socket, encodeCloudFrame({ t: "pong" }))
       return
     }
-    if (hello !== undefined) return // duplicate hello — ignore
+    if (hello !== undefined) return
     if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
       socket.close(DIRECT_CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
       return
     }
-    // No TOFU here: only identities already pinned through the relay may
-    // open a direct pipe (anyone on the LAN can reach this listener).
     const device = { deviceId: frame.device.deviceId, publicKey: frame.device.publicKey }
     const admitted =
       this.options.admitHello?.(device, peer) ??
@@ -191,16 +159,9 @@ export class DirectChannelHost {
     )
   }
 
-  /// Every write onto the pipe goes through here. A socket may already be
-  /// closing when a queued message is answered (a ping still in flight when
-  /// a send failed), and its send then throws. Dropping the write is right:
-  /// the socket's close event tears the connection's channels down, and a
-  /// throw escaping a message handler would take the whole server with it.
   #send(socket: CloudSocket, data: string | Uint8Array): void {
     try {
       socket.send(data)
-    } catch {
-      // Closing; onclose reports it.
-    }
+    } catch {}
   }
 }

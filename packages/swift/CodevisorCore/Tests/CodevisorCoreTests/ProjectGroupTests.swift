@@ -3,8 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Cross-machine project linking: records that share a server-derived repo
-/// key fold into one group; everything else stands alone.
 @MainActor
 @Suite("ProjectGroup")
 struct ProjectGroupTests {
@@ -63,7 +61,6 @@ struct ProjectGroupTests {
       ])
     let widget = groups[2]
     #expect(widget.members.count == 2)
-    // The oldest record names the group and leads its members.
     #expect(widget.name == "Widget Checkout")
     #expect(widget.primary.serverId == "desktop")
     #expect(widget.serverIds == ["desktop", "laptop"])
@@ -119,7 +116,6 @@ struct ProjectGroupTests {
     #expect(model.fleetSessions(in: groups[0]).map(\.title) == ["desktop-new", "laptop-mid", "laptop-old"])
     #expect(model.fleetProjectGroup(containing: laptop)?.id == groups[0].id)
     #expect(model.fleetProjectGroup(containing: scratch) == nil)
-    // Picking the group picks the machine that used it most recently.
     #expect(model.mostRecentlyUsedMember(of: groups[0]).serverId == "desktop")
   }
 
@@ -149,8 +145,6 @@ struct ProjectGroupTests {
       )
     }
 
-    // The widget group's most recent workspace is on the desktop; it
-    // outranks docs, whose only workspace is older.
     let ordered = model.fleetActiveProjectGroupsByWorkspaceRecency([
       workspace(docs, createdAt: 10),
       workspace(desktop, createdAt: 20),

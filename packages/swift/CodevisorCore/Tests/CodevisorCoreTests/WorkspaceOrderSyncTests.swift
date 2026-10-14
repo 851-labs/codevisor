@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Sidebar moves go through the outbox as `reorderWorkspace` requests. The
-/// move shows immediately and the latest move wins on the server, so a
-/// workspace stays where the user put it.
 @MainActor
 struct WorkspaceOrderSyncTests {
   private func makeFixture(
@@ -18,7 +15,6 @@ struct WorkspaceOrderSyncTests {
     }
   }
 
-  /// `otherWorkspace` is newer, so it starts above `workspace`.
   private func moveToTop(_ fixture: WorkspaceSyncFixture) {
     fixture.sync.reorderWorkspace(
       id: fixture.workspace.id, visibleIDs: [fixture.workspace.id, fixture.otherWorkspace.id])
@@ -84,8 +80,6 @@ struct WorkspaceOrderSyncTests {
     }
     moveToTop(fixture)
     await started.wait()
-    // The cache hasn't seen the first move land, so this one is queued with
-    // the same revision the first carried.
     fixture.sync.reorderWorkspace(
       id: fixture.workspace.id, visibleIDs: [fixture.otherWorkspace.id, fixture.workspace.id])
     let latest = try #require(fixture.current?.sidebarPosition)
@@ -104,7 +98,6 @@ struct WorkspaceOrderSyncTests {
     let fixture = await makeFixture()
     moveToTop(fixture)
     let pending = try #require(fixture.current?.sidebarPosition)
-    // Another device moved the same workspace while this one was offline.
     var earlier = try fixture.serverRecord(fixture.workspace.id)
     earlier.sidebarPosition = WorkspacePosition.initial(
       createdAt: Date(timeIntervalSince1970: 1_600_000_000), id: fixture.workspace.id)

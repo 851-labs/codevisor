@@ -4,13 +4,8 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Off-main preparation through the same coordinator: one reserved slot, the
-/// newest mailbox frame, main-actor callbacks, and stop/failure/stale release.
-/// The preparer is a controlled gate; the hop is the explicit queue.
 @MainActor
 struct ScreenSharingRenderPreparationTests {
-  /// Scalars of a request, kept as history; the full request (with its frame)
-  /// is held only while the preparation is outstanding and released on finish.
   private struct RequestSummary: Equatable {
     let rtpTimestamp: UInt32
     let isNewFrame: Bool
@@ -36,8 +31,6 @@ struct ScreenSharingRenderPreparationTests {
     var requestCount: Int { lock.withLock { history.count } }
     var last: RequestSummary? { lock.withLock { history.last } }
     var outstandingCount: Int { lock.withLock { outstanding.count } }
-    /// Finishes the oldest outstanding preparation with a result built from its
-    /// frame (or nil), then releases the request — the worker keeps nothing.
     func finish(_ make: (ScreenSharingVideoFrame) -> ScreenSharingPreparedSubmission?) {
       let entry = lock.withLock { outstanding.isEmpty ? nil : outstanding.removeFirst() }
       guard let entry else { return }
@@ -119,13 +112,11 @@ struct ScreenSharingRenderPreparationTests {
       coordinator.bind { draws.value += 1 }
     }
     func counter(_ name: String) -> Int { metrics.snapshot().counters[name] ?? 0 }
-    /// What the view does on a draw request in the off-main mode (size from its backing store).
     @discardableResult func drawRequested(size: CGSize = size) -> Bool {
       coordinator.prepare(
         with: preparer,
         geometry: .init(clearColor: geometry.clearColor, drawableSize: size))
     }
-    /// A prepared result: the submission plus the retained frame (as the worker's TextureFrame would be).
     func prepared(_ submission: ControlledSubmission) -> (ScreenSharingVideoFrame) -> ScreenSharingPreparedSubmission? {
       { frame in .init(submission: submission, retained: Retained(frame), videoSize: CGSize(width: 64, height: 64)) }
     }
@@ -152,19 +143,16 @@ struct ScreenSharingRenderPreparationTests {
     #expect(f.drawRequested())
     let request = try #require(f.preparer.last)
     #expect(request.isNewFrame && request.rtpTimestamp == 1 && request.geometry == f.geometry)
-    #expect(request.geometry.drawableSize == Fixture.size)  // the size travels with the request
+    #expect(request.geometry.drawableSize == Fixture.size)
     #expect(f.coordinator.inFlight && f.coordinator.preparationToken != nil && f.coordinator.isHoldingCachedFrame)
-    // While the slot is held: a second draw request prepares nothing, commits are refused,
-    // arrivals only replace the mailbox's newest frame.
     #expect(!f.drawRequested() && f.preparer.requestCount == 1)
     let refused = ControlledSubmission()
     let held = frame(try makeBuffer(), rtp: 99)
     #expect(!f.coordinator.commit(refused, retaining: Retained(held), frame: held, isNewFrame: true, submittedAt: 1))
     f.mailbox.put(frame(try makeBuffer(), rtp: 2))
     f.mailbox.put(frame(try makeBuffer(), rtp: 3))
-    _ = f.queue.drain()  // the arrival hop for frame 2 requests a draw, which prepares nothing
+    _ = f.queue.drain()
     #expect(f.preparer.requestCount == 1 && f.mailbox.isHolding && f.mailbox.droppedFrames == 1)
-    // The worker finishes; the result is committed on the main actor behind the guard.
     let submission = ControlledSubmission()
     f.preparer.finish(f.prepared(submission))
     #expect(f.queue.drain() == 1)
@@ -173,11 +161,10 @@ struct ScreenSharingRenderPreparationTests {
     submission.present(at: 2)
     _ = f.queue.drain()
     #expect(notified == [1])
-    // GPU completion — not presentation — releases the slot and drives the next arrival.
     submission.complete()
     _ = f.queue.drain()
     #expect(!f.coordinator.inFlight && f.counter("renderedFrames") == 1)
-    #expect(f.drawRequested() && f.preparer.last?.rtpTimestamp == 3)  // newest, frame 2 was replaced
+    #expect(f.drawRequested() && f.preparer.last?.rtpTimestamp == 3)
   }
 
   @Test func stopWhilePreparationIsHeldClearsTheSlotOnTheLateResultAndReleasesEverything() throws {
@@ -193,16 +180,15 @@ struct ScreenSharingRenderPreparationTests {
       _ = f.queue.drain()
       #expect(f.drawRequested())
     }
-    #expect(weakBuffer != nil && f.preparer.outstandingCount == 1)  // held by the cache and the outstanding request
+    #expect(weakBuffer != nil && f.preparer.outstandingCount == 1)
     f.coordinator.stop()
-    // the executing preparation is still accounted
     #expect(f.coordinator.inFlight && f.coordinator.preparationToken != nil)
-    #expect(!f.coordinator.isHoldingCachedFrame && weakBuffer != nil)  // only the worker's request holds it now
-    autoreleasepool { f.preparer.finish(f.prepared(submission)) }  // the worker returns once; its request is released
+    #expect(!f.coordinator.isHoldingCachedFrame && weakBuffer != nil)
+    autoreleasepool { f.preparer.finish(f.prepared(submission)) }
     #expect(f.queue.drain() == 1)
-    #expect(!f.coordinator.inFlight && f.coordinator.preparationToken == nil)  // slot gone
+    #expect(!f.coordinator.inFlight && f.coordinator.preparationToken == nil)
     #expect(!submission.committed && !submission.holdsHandlers && sizes.isEmpty && f.draws.value == 1)
-    #expect(weakBuffer == nil)  // the dropped result retained nothing
+    #expect(weakBuffer == nil)
     #expect(f.counter("renderedFrames") == 0 && f.counter("renderDrops") == 0)
     #expect(f.queue.pending == 0)
   }
@@ -224,12 +210,11 @@ struct ScreenSharingRenderPreparationTests {
     }
     #expect(submission.committed && f.coordinator.inFlight)
     f.coordinator.stop()
-    #expect(f.coordinator.inFlight && weakBuffer != nil)  // GPU still owns the buffer and textures
+    #expect(f.coordinator.inFlight && weakBuffer != nil)
     submission.complete()
     submission.forgetInstalledCompletion()
     _ = f.queue.drain()
-    #expect(!f.coordinator.inFlight && f.draws.value == 1)  // slot cleared, no restart after stop
-    // released; the pending presentation handler holds scalars only
+    #expect(!f.coordinator.inFlight && f.draws.value == 1)
     #expect(weakBuffer == nil && submission.holdsPresentationHandler)
     submission.present(at: 3)
     _ = f.queue.drain()
@@ -246,14 +231,14 @@ struct ScreenSharingRenderPreparationTests {
       _ = f.queue.drain()
       #expect(f.drawRequested())
       f.mailbox.put(frame(try makeBuffer(), rtp: 2))
-      _ = f.queue.drain()  // arrival while held: no preparation
+      _ = f.queue.drain()
       #expect(f.preparer.requestCount == 1)
-      f.preparer.finish { _ in nil }  // e.g. no drawable (timeout or invalid layer properties)
+      f.preparer.finish { _ in nil }
     }
     #expect(f.queue.drain() == 1)
     #expect(!f.coordinator.inFlight && f.counter("renderDrops") == 1 && f.draws.value == 3)
-    #expect(f.drawRequested() && f.preparer.last?.rtpTimestamp == 2)  // the waiting newest frame proceeds
-    #expect(weakFirst == nil)  // frame 1: request released on failure, cache replaced by frame 2
+    #expect(f.drawRequested() && f.preparer.last?.rtpTimestamp == 2)
+    #expect(weakFirst == nil)
   }
 
   @Test func idleCachedFrameRedrawsOnResizeOrFitWithoutANewVideoFrame() throws {
@@ -266,17 +251,16 @@ struct ScreenSharingRenderPreparationTests {
     _ = f.queue.drain()
     submission.complete()
     _ = f.queue.drain()
-    #expect(!f.coordinator.inFlight && !f.mailbox.isHolding)  // idle, cache held, no video frame coming
+    #expect(!f.coordinator.inFlight && !f.mailbox.isHolding)
     let drawsBefore = f.draws.value
-    f.coordinator.setNeedsRedraw()  // resize / backing scale / fit change
-    f.coordinator.setNeedsRedraw()  // coalesced: one scheduled hop for the burst
-    #expect(f.draws.value == drawsBefore && f.queue.pending == 1)  // never a synchronous reentrant draw
+    f.coordinator.setNeedsRedraw()
+    f.coordinator.setNeedsRedraw()
+    #expect(f.draws.value == drawsBefore && f.queue.pending == 1)
     #expect(f.queue.drain() == 1 && f.draws.value == drawsBefore + 1)
     #expect(f.drawRequested(size: CGSize(width: 1280, height: 720)))
     let redraw = try #require(f.preparer.last)
     #expect(!redraw.isNewFrame && redraw.rtpTimestamp == 1)
     #expect(redraw.geometry.drawableSize == CGSize(width: 1280, height: 720))
-    // A redraw requested while the slot is held waits for completion (no extra draw).
     f.coordinator.setNeedsRedraw()
     #expect(f.queue.drain() == 1 && f.draws.value == drawsBefore + 1)
     let second = ControlledSubmission()
@@ -284,7 +268,6 @@ struct ScreenSharingRenderPreparationTests {
     _ = f.queue.drain()
     second.complete()
     _ = f.queue.drain()
-    // completion drove the pending redraw
     #expect(f.draws.value == drawsBefore + 2 && f.coordinator.select()?.isNewFrame == false)
   }
 
@@ -304,7 +287,7 @@ struct ScreenSharingRenderPreparationTests {
       _ = f.queue.drain()
     }
     #expect(coordinator.stopped && !submission.committed && !submission.holdsHandlers)
-    #expect(!coordinator.inFlight && coordinator.preparationToken == nil)  // prepared-but-unsubmitted slot released
+    #expect(!coordinator.inFlight && coordinator.preparationToken == nil)
     #expect(weakBuffer == nil)
   }
 
@@ -319,7 +302,6 @@ struct ScreenSharingRenderPreparationTests {
     firstSubmission.complete()
     _ = f.queue.drain()
     #expect(!f.coordinator.inFlight)
-    // A second occupancy is reserved; then the FIRST submission's completion fires again (replayed).
     f.mailbox.put(frame(try makeBuffer(), rtp: 2))
     _ = f.queue.drain()
     #expect(f.drawRequested() && f.coordinator.inFlight)
@@ -327,13 +309,11 @@ struct ScreenSharingRenderPreparationTests {
     #expect(firstSubmission.replayCompletion())
     #expect(f.queue.drain() == 1)
     #expect(f.coordinator.inFlight && f.coordinator.preparationToken != nil && f.draws.value == drawsBefore)
-    // A stale result for the first token is ignored while the second preparation is held.
     let stale = ControlledSubmission()
     let staleFrame = frame(try makeBuffer(), rtp: 1)
     f.coordinator.finishPreparation(
       token: 1, .init(submission: stale, retained: Retained(staleFrame), videoSize: .zero))
     #expect(!stale.committed && f.coordinator.inFlight && f.coordinator.preparationToken != nil)
-    // The second result commits; a duplicate result for the same token is ignored.
     let secondSubmission = ControlledSubmission()
     f.preparer.finish(f.prepared(secondSubmission))
     _ = f.queue.drain()

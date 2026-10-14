@@ -1,17 +1,9 @@
-// Vendors the curated Shiki preset themes into the CodevisorTheming package
-// resources and regenerates the theme manifest (which also indexes the Pierre
-// themes already committed there). Output is committed; rerun when bumping the
-// shiki dependency or changing the curated set:
-//
-//   bun apps/macos/scripts/vendor-shiki-themes.mjs
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
-// Resolve the @shikijs/themes dist directory from Bun's workspace store so
-// the individual theme modules can be enumerated directly.
 async function findShikiThemesDist() {
   const store = join(repoRoot, "node_modules/.bun")
   const entry = (await readdir(store)).find((name) => name.startsWith("@shikijs+themes@"))
@@ -25,7 +17,6 @@ const themesDir = join(
   "packages/swift/CodevisorTheming/Sources/CodevisorTheming/Resources/Themes"
 )
 
-// Curated Shiki presets, a spread of well-known light and dark themes.
 const SHIKI_THEMES = [
   "one-dark-pro",
   "dracula",
@@ -45,9 +36,6 @@ const SHIKI_THEMES = [
   "vesper",
 ]
 
-// The Pierre themes are committed directly (copied from
-// .repos/pierre/packages/theme/themes); the manifest indexes them so the
-// catalog reads one file for ordering and grouping.
 const PIERRE_THEMES = [
   "pierre-light",
   "pierre-light-soft",

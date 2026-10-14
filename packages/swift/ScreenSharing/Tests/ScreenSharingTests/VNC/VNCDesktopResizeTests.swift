@@ -4,8 +4,6 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// ExtendedDesktopSize (-308), 851-2314: the remote desktop follows the
-/// viewer's size, debounced, and falls back to scaling when refused.
 @MainActor
 struct VNCDesktopResizeTests {
   typealias Harness = RFBClientLoopbackTests.Harness
@@ -16,8 +14,6 @@ struct VNCDesktopResizeTests {
     return configuration
   }
 
-  // MARK: L1
-
   @Test func setDesktopSizeHasItsRegisteredLayout() async throws {
     let message = RFBClientMessage.setDesktopSize(
       width: 800, height: 600, screens: [RFBScreen(id: 7, x: 0, y: 0, width: 800, height: 600)])
@@ -25,8 +21,6 @@ struct VNCDesktopResizeTests {
     let stream = RFBInputStream(transport: ScriptedTransport(message.encoded))
     #expect(try await RFBClientMessage.read(from: stream) == message)
   }
-
-  // MARK: L2 — client
 
   @Test func theServerAnnouncesItsLayoutAndAcceptsAResize() async throws {
     let harness = try await Harness(configuration: Self.server(.accept))
@@ -52,13 +46,10 @@ struct VNCDesktopResizeTests {
     #expect(!answer.update.resized && (answer.width, answer.height) == (64, 48))
   }
 
-  // MARK: L2 — session, debounced on a test clock
-
   final class Session {
     let server: RFBLoopbackServer
     let session: VNCScreenSharingSession
     let clock = TestClock()
-    /// What the session reported about resizing, in order (851-2368).
     @MainActor var resizeSupport: [Bool] = []
     @MainActor init(_ resize: RFBLoopbackServer.Configuration.DesktopResize) async throws {
       server = try await RFBLoopbackServer(configuration: VNCDesktopResizeTests.server(resize))
@@ -84,7 +75,6 @@ struct VNCDesktopResizeTests {
     #expect(await awaitPolled { harness.session.metrics.snapshot().counters["vncUpdatesPublished"] == 1 })
     harness.session.requestDesktopSize(width: 700, height: 500)
     harness.session.requestDesktopSize(width: 900, height: 600)
-    // The second call cancels the first debounce (before or after it starts sleeping): one stays pending.
     await harness.clock.waitForSleep(VNCScreenSharingSession.resizeDebounce)
     #expect(harness.clock.pendingCount == 1)
     harness.clock.advance(by: .milliseconds(399))
@@ -130,15 +120,12 @@ struct VNCDesktopResizeTests {
     #expect(await awaitPolled { harness.server.framebuffer.width == 320 && harness.server.framebuffer.height == 240 })
   }
 
-  // MARK: Whether Dynamic Resolution can do anything (851-2368)
-
   @Test func aServerThatAnnouncesItsLayoutCanResize() async throws {
     let harness = try await Session(.accept)
     defer { harness.stop() }
     #expect(await awaitPolled { harness.resizeSupport == [true] })
   }
 
-  /// macOS Screen Sharing: no layout with the first update, so the desktop never follows the pane.
   @Test func aServerWithoutALayoutCannotResize() async throws {
     let harness = try await Session(.unsupported)
     defer { harness.stop() }

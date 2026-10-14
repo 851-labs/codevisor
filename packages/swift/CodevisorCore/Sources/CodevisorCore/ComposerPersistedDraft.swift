@@ -5,8 +5,6 @@ struct ComposerPersistedAttachment: Codable, Sendable {
   var name: String
   var mimeType: String
   var kind: String
-  /// "<id>/<name>" inside `attachmentFiles`. Absent in drafts written
-  /// before staging, whose bytes live under `attachmentKey(id)`.
   var stagedPath: String?
 }
 
@@ -45,8 +43,6 @@ struct ComposerPersistedDraft: Codable, Sendable {
       isGoalComposerArmed: persisted.isGoalComposerArmed,
       isGoalEditing: persisted.isGoalEditing,
       composerTextBeforeGoalEdit: persisted.composerTextBeforeGoalEdit,
-      // Absence identifies a draft written before explicit selections
-      // were persisted immediately.
       usesImmediateDefaultsPersistence: persisted.usesImmediateDefaultsPersistence ?? false,
       selectionWasAutomaticallyCarried: persisted.selectionWasAutomaticallyCarried ?? false
     )
@@ -88,8 +84,6 @@ struct ComposerPersistedDraft: Codable, Sendable {
     files: ComposerAttachmentFileStore,
     migratedBlobKeys: inout [String]
   ) -> URL? {
-    // A draft from before staging: move its blob into a staged file
-    // once, then persist the reference instead.
     let blobKey = Self.attachmentKey(attachment.id)
     guard let data = store.loadData(forKey: blobKey),
       let url = try? files.stage(data: data, id: attachment.id, name: attachment.name)
@@ -107,7 +101,6 @@ struct ComposerPersistedDraft: Codable, Sendable {
       projectServerId: draft.projectServerId,
       composerText: draft.composerText,
       attachments: draft.attachments.compactMap {
-        // A file outside the staging folder can't be referenced portably.
         guard let stagedPath = files.relativePath(of: $0.fileURL) else { return nil }
         return ComposerPersistedAttachment(
           id: $0.id, name: $0.name, mimeType: $0.mimeType, kind: $0.kind, stagedPath: stagedPath)
@@ -123,7 +116,6 @@ struct ComposerPersistedDraft: Codable, Sendable {
     )
   }
 
-  /// Where drafts from before staging kept each attachment's bytes.
   @MainActor
   private static func attachmentKey(_ id: UUID) -> String {
     "composer-draft-attachment-\(id.uuidString.lowercased())"

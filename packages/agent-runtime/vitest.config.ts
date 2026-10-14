@@ -2,20 +2,6 @@ import { fileURLToPath } from "node:url"
 
 import { defineConfig } from "vitest/config"
 
-// Ownership model (Wave 2a): package-local suites + thinner runtime keepers.
-//
-// Adapter packages own their full `test:coverage` runs. This package no longer
-// re-includes the full adapter-claude / adapter-codex / adapter-acp suites.
-//
-// Keepers retained here are only the ACP `runtime-*.test.ts` files that exercise
-// agent-runtime through real adapters. Those tests live in adapter-acp to avoid
-// a package cycle (adapters depend on agent-runtime). Workspace imports are
-// aliased to sources so coverage attributes to this package's files (imports
-// normally resolve to dist, which coverage excludes).
-//
-// Runtime-owned pure helpers (model-selection, attachments, background keys,
-// normalizePromptInput, stdio transport edge cases) are covered by local unit
-// tests in this package — not by replaying Claude/Codex adapter suites.
 const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url))
 
 export default defineConfig({
@@ -39,9 +25,6 @@ export default defineConfig({
         functions: 84,
         lines: 81,
         statements: 78,
-        // model-selection and stdio-transport moved here from providers/**
-        // during the adapter extraction and keep their ratcheted floors
-        // (raise as fakes grow, never lower). Everything else stays at 100%.
         "src/!(model-selection|stdio-transport).ts": {
           branches: 100,
           functions: 100,

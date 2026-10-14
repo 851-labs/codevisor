@@ -4,13 +4,7 @@ import ACPKit
 import CodevisorProtocol
 @testable import TranscriptKit
 
-/// How a turn that ended abnormally is projected: on its own measured row
-/// while it is the latest turn, and not at all once it is history.
 struct TranscriptFailedTurnProjectionTests {
-  /// A harness failure closes the turn but leaves it in the active slot
-  /// until the next bubble starts, and the session banner defers to it. The
-  /// active projection must therefore own the failure row itself, exactly
-  /// where the settled projection will later place it.
   @Test func failedActiveTurnWithWorkedItemsProjectsItsStopDetailRow() throws {
     let messageID = UUID()
     let failed = ConversationItem.assistant(
@@ -65,18 +59,11 @@ struct TranscriptFailedTurnProjectionTests {
       to: &settledRows
     )
 
-    // The aggregate active row was measured for its 32pt activity line;
-    // the failure gets its own row instead of being drawn into that frame.
     #expect(rows.map(\.id) == [.assistantChrome(messageID, .epilogue)])
-    // Settling must not remount the failure under the aggregate
-    // `message:` key, whose ledger height belongs to the activity line.
     #expect(settledRows.map(\.id) == [.assistantChrome(messageID, .epilogue)])
     #expect(settledRows.map(\.layoutKey) == rows.map(\.layoutKey))
   }
 
-  /// Only the latest turn's failure is actionable, so only it is shown.
-  /// Older failed turns drop their stop detail: an error-only turn projects
-  /// nothing, a turn with work keeps the work but loses the banner.
   @Test func olderFailedTurnsProjectNoStopDetail() throws {
     let olderErrorOnly = AssistantMessage(
       turn: AssistantTurn(stopDetail: "codex: 401 Unauthorized")
@@ -117,7 +104,6 @@ struct TranscriptFailedTurnProjectionTests {
         }
       })
 
-    // A live active item makes every settled turn "older".
     let withActive = try TranscriptRowProjectionCache.project(
       makeInput(
         settled: [.assistant(latest), user],
@@ -148,8 +134,6 @@ struct TranscriptFailedTurnProjectionTests {
     let answeredRows = TranscriptActiveRowProjection.rows(for: answered)
 
     #expect(!generatingRows.contains { $0.id == .assistantChrome(generating.id, .epilogue) })
-    // A turn with a final answer already carries one epilogue from its
-    // response projection; the failure row must not duplicate it.
     #expect(answeredRows.filter { $0.id == .assistantChrome(answered.id, .epilogue) }.count == 1)
   }
 

@@ -5,9 +5,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The `ScreenSharingViewingSession` contract, end to end, over a session with no transport: what
-/// the viewer sees is a mailbox, two typed channels, transport state and a terminal close. Every
-/// hop is drained explicitly, so ordering is observed rather than awaited.
 @Suite @MainActor struct ScreenSharingViewingSessionTests {
   @Test func framesReachTheViewerNewestFirstAndEveryReplacementIsCounted() {
     let hop = ScreenSharingManualHop()
@@ -15,11 +12,9 @@ import Testing
     let available = TestSignal()
     session.frames.onFrameAvailable { available.signal() }
     for identity in Int64(1)...3 { host.deliverFrame(identity: identity) }
-    // A renderer that has not drained keeps the newest frame; the other two are counted, not queued.
     #expect(session.frames.take()?.timestampNs == 3)
     #expect(session.frames.droppedFrames == 2)
     #expect(session.frames.take() == nil)
-    // Only the empty-to-full transition wakes the renderer, so three frames are one notification.
     #expect(available.value == 1)
     host.deliverFrame(identity: 4)
     #expect(available.value == 2)
@@ -39,7 +34,6 @@ import Testing
     peer.onMessage = { message in
       hostReceived.append(message)
       guard case .request = message else { return }
-      // A reply from inside delivery is queued behind this drain, never delivered inline.
       #expect(peer.send(.grant(request: request, lease: lease)))
       #expect(viewerReceived.isEmpty)
     }
@@ -51,7 +45,6 @@ import Testing
     hop.drain()
     #expect(viewerReceived == [.grant(request: request, lease: lease)])
 
-    // Input rides the same channel behind the lease, in the order it was sent.
     let events: [ScreenSharingControlMessage] = (1...3).map {
       .input(
         lease: lease, sequence: UInt64($0), event: .key(code: UInt16($0), down: true, repeatKey: false, modifiers: 0))
@@ -68,7 +61,6 @@ import Testing
     #expect(session.failure == nil)
     host.report(connection: "connected")
     host.fail("The hardware decoder stopped.")
-    // A media failure is not a transport state change, and the first one is the one that stands.
     host.fail("A later failure.")
     host.report(connection: "disconnected")
     #expect(session.failure == "The hardware decoder stopped.")
@@ -86,7 +78,6 @@ import Testing
     control.onMessage = { viewerReceived.append($0) }
     host.deliverFrame(identity: 1)
     #expect(await session.statistics() == ["bytesReceived": "1024"])
-    // A message already in flight when the session closes must never be delivered late.
     #expect(try #require(host.control).send(.heartbeat(lease: UUID())))
 
     session.close()
@@ -114,7 +105,6 @@ import Testing
     #expect(host.control == nil)
     host.publish(statistics: ["bytesReceived": "1024"])
     #expect(await session.statistics().isEmpty)
-    // Frames do not depend on a capability: a session that negotiated nothing still shows a screen.
     host.deliverFrame(identity: 1)
     #expect(session.frames.take()?.timestampNs == 1)
   }
@@ -135,9 +125,6 @@ import Testing
     #expect(second.frames.take() == nil)
   }
 
-  /// The clipboard protocol over the session's own channel: a chunked transfer completes through
-  /// the hop, and a transfer nobody answers ends exactly at its ten-second deadline. The deadline
-  /// is the only thing here that depends on time, so it is the only thing driven by the clock.
   @Test func aChunkedClipboardTransferCompletesOverTheSessionChannelAndTimesOutAtItsDeadline() throws {
     let hop = ScreenSharingManualHop()
     let (session, host) = ScreenSharingLocalViewingSession.connected(hop: hop.schedule)
@@ -163,7 +150,6 @@ import Testing
     hostChannel.onMessage = { hostTransfer.receive($0) }
     viewerChannel.onMessage = { viewerTransfer.receive($0) }
 
-    // Larger than one 2 KiB chunk, so the stop-and-wait acknowledgment loop runs over the channel.
     let text = String(repeating: "é👩🏽‍💻日本語\n", count: 400)
     viewerTransfer.sendText(text)
     #expect(viewerTransfer.isBusy)
@@ -172,7 +158,6 @@ import Testing
     #expect(viewerResults == [nil])
     #expect(!viewerTransfer.isBusy && !hostTransfer.isBusy)
 
-    // A request whose answer never arrives: nothing expires early, and the deadline ends it.
     viewerChannel.onMessage = { _ in }
     viewerTransfer.requestText()
     hop.drainAll()

@@ -77,7 +77,6 @@ describe("Apple Cloud authorization", () => {
     const machine = await connectMachine(macToken.token, "apple-mac", "mac-device")
     onTestFinished(() => machine.socket.close())
     const phone = new Browser()
-    // Apple can omit email/name on later authorizations; use the stored subject.
     const phoneDone = await phone.finish(
       await phone.start(),
       await identityToken({ email: undefined })

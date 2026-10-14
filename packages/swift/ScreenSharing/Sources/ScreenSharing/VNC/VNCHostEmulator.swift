@@ -1,14 +1,6 @@
 #if os(macOS)
   import Foundation
 
-  /// The host's side of Codevisor's control and clipboard protocols, played
-  /// locally for a VNC server that has neither: every control request is
-  /// granted at once (VNC has no consent step), input under the lease becomes
-  /// RFB messages, and clipboard transfers bridge to ServerCutText and
-  /// ClientCutText — as UTF-8 through the Extended Clipboard handshake when the
-  /// server offers it (851-2316), Latin-1 otherwise. The viewer's lease
-  /// reducer, input forwarder and clipboard transfer run unchanged against the
-  /// near ends of two local channel pairs.
   @MainActor
   final class VNCHostEmulator {
     let controlChannel: ScreenSharingLocalChannel<ScreenSharingControlMessage>
@@ -20,22 +12,14 @@
     private var lease: UUID?
     private var serverText: String?
     private var transfer: ScreenSharingClipboardTransfer!
-    /// The server sent Extended Clipboard caps that include text.
     private var extended = false
-    /// Text announced to the server (notify), provided when it asks.
     private var announcedText: String?
-    /// Shared clipboard: the server's copies go to the viewer as they arrive.
     var sharing = false {
       didSet { if !sharing { waiting = nil } }
     }
-    /// A server copy that arrived while a transfer was in flight; only the newest is kept.
     private var waiting: String?
-    /// What the viewer last sent the server, which a server may announce straight back.
     private var echo: String?
 
-    /// With a channel, control is codevisor-server's to give (851-2338): a request goes to the
-    /// server, which grants it and may later revoke it for another viewer (last one wins).
-    /// Without one, a VNC server has no notion of control and a request is granted at once.
     private let leaseChannel: (any RFBControlChannel)?
     private let viewerName: String
     private var pendingRequest: UUID?
@@ -72,7 +56,6 @@
       }
     }
 
-    /// The server's answer to a request, or another viewer taking control.
     func serverLease(_ message: RFBControlLeaseMessage) {
       switch message {
       case .granted:
@@ -94,7 +77,6 @@
       share(text)
     }
 
-    /// The Extended Clipboard handshake, text only.
     func extendedClipboard(_ message: RFBExtendedClipboard.Message) {
       let text = RFBExtendedClipboard.text
       switch message {
@@ -109,7 +91,6 @@
                 | RFBExtendedClipboard.provide,
               maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)])))
       case .notify(let formats):
-        // The server's clipboard changed: fetch it now, for "Get Clipboard" or the shared clipboard.
         if formats & text != 0 { outbox(.extendedClipboard(.request(formats: text))) }
       case .request(let formats):
         if formats & text != 0 { outbox(.extendedClipboard(.provide(text: announcedText))) }
@@ -140,7 +121,7 @@
     private func sendText(_ text: String) {
       echo = text
       guard extended else {
-        outbox(.clientCutText(text))  // Latin-1: a server without the extension
+        outbox(.clientCutText(text))
         return
       }
       announcedText = text

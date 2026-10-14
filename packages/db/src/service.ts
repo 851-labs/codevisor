@@ -63,9 +63,6 @@ import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspac
 export interface CodevisorDatabaseConfig {
   readonly filename: string
   readonly serverId: string
-  /// Synchronous by design: migrations use better-sqlite3 and report after
-  /// every durable batch. The app-hosted server writes this to a sidecar file
-  /// that remains readable while the HTTP server is still booting.
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
@@ -84,9 +81,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
     request: UpdateProjectRequest
   ) => Effect.Effect<Project, DatabaseError>
   readonly deleteProject: (id: string) => Effect.Effect<void, DatabaseError>
-  /// Records the git remote discovered in a project's folder on this machine
-  /// (null clears it). Deliberately not part of UpdateProjectRequest: the
-  /// remote is observed, not chosen.
   readonly setProjectRepoUrl: (
     id: string,
     repoUrl: string | null
@@ -101,9 +95,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
     projectId: string
   ) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
   readonly deleteWorktree: (id: string) => Effect.Effect<void, DatabaseError>
-  /// Records a worktree whose files were snapshotted and removed. The matching
-  /// `worktrees` row is deleted by the caller in the same flow, which is what
-  /// releases the name back into the pool.
   readonly createArchivedWorktree: (
     record: ArchivedWorktree
   ) => Effect.Effect<ArchivedWorktree, DatabaseError>
@@ -120,8 +111,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
   readonly upsertWorkspace: (
     request: UpsertWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
-  /// Partial update. `isArchived` is the only archive state in the schema:
-  /// the workspace owns it, and its chats follow by belonging to it.
   readonly updateWorkspace: (
     id: string,
     request: UpdateWorkspaceRequest
@@ -138,37 +127,23 @@ export interface CodevisorDatabaseService extends SessionStateService {
     paneId: string,
     request: UpdateWorkspacePaneRequest
   ) => Effect.Effect<WorkspacePane, DatabaseError>
-  /// Puts the workspace's tabs in this order (listed first, the rest after
-  /// in their current order) and returns every pane of the workspace.
   readonly reorderWorkspacePanes: (
     workspaceId: string,
     paneIds: ReadonlyArray<string>
   ) => Effect.Effect<ReadonlyArray<WorkspacePane>, DatabaseError>
-  /// Deletes the pane; an emptied workspace is a valid state.
   readonly deleteWorkspacePane: DeleteWorkspacePane
-  /// Workspace, session and chat pane in one transaction; idempotent per session id.
   readonly createWorkspaceWithSession: CreateWorkspaceWithSession
-  /// Atomically replaces one pane's renderer/resource and assigns the chat
-  /// session to that workspace. It never manufactures a second pane id.
   readonly promoteWorkspacePaneToSession: (
     workspaceId: string,
     paneId: string,
     sessionId: string,
     title: string
   ) => Effect.Effect<WorkspacePane, DatabaseError>
-  /// Sets the title the program in terminal `terminalKey` set (OSC 0/2, its
-  /// activity glyph dropped) and the activity it showed on every pane showing
-  /// that terminal; `undefined` clears either. Returns the navigation changes
-  /// it journaled, empty when no pane changed, so the caller can wake event
-  /// readers without appending another event.
   readonly setTerminalPaneStatus: (
     terminalKey: string,
     liveTitle: string | undefined,
     activity: TerminalActivity | undefined
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
-  /// Clears every pane's live title and activity, for a boot: no terminal
-  /// process from before it survives. Returns the navigation changes it
-  /// journaled.
   readonly clearTerminalPaneStatuses: Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly setSessionWorkspace: (
     sessionId: string,
@@ -179,7 +154,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, DatabaseError>
   readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
-  /** The session's blocking question, if any (undefined for unknown ids). */
   readonly getSessionPendingQuestion: (
     id: string
   ) => Effect.Effect<QuestionPayload | undefined, DatabaseError>
@@ -189,9 +163,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly markSessionUnread: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly clearSessionPlanApproval: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
-  /// Settles a parked turn finish into an unread revision bump once its grace
-  /// deadline has passed. Idempotent and re-validating: races with a turn
-  /// that restarted (or a subagent that reappeared) are no-ops.
   readonly settleSessionAttention: (
     id: string
   ) => Effect.Effect<{ readonly settled: boolean; readonly nextDueAt?: string }, DatabaseError>
@@ -229,9 +200,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
     id: string,
     request: UpdateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
-  /// Replaces the saved selections. `unavailable` (saved config id → value
-  /// the runtime no longer offers) replaces the recorded unavailable set when
-  /// given and is left untouched when omitted.
   readonly replaceSessionConfigSelections: (
     id: string,
     selections: Readonly<Record<string, string>>,
@@ -265,7 +233,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
     id?: string,
-    /** The native window (client-control id) that sent the prompt. */
     clientId?: string
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
@@ -323,21 +290,13 @@ export interface CodevisorDatabaseService extends SessionStateService {
     sessionId: string,
     messageId: string
   ) => Effect.Effect<boolean, DatabaseError>
-  /// Completes every still-streaming assistant chat item except
-  /// `excludeItemId` as an ordinary finished response (no failure status or
-  /// stop detail) — healing for a lost terminal event. Returns the count.
   readonly closeStaleAssistantChatItems: (
     sessionId: string,
     excludeItemId?: string
   ) => Effect.Effect<number, DatabaseError>
-  /// Session ids with a still-streaming assistant chat item and no event since
-  /// `quietSinceIso`. Candidates only: quiet is not dead (a long tool call
-  /// streams nothing), so the caller must skip sessions with a live turn.
   readonly listQuietStreamingSessions: (
     quietSinceIso: string
   ) => Effect.Effect<ReadonlyArray<string>, DatabaseError>
-  /// Atomically revalidates a quiet candidate and heals its orphaned rows.
-  /// The caller must exclude live turns. Returned events are already durable.
   readonly reconcileQuietStreamingSession: ReconcileQuietStreamingSession
   readonly getSessionActionResult: (
     sessionId: string,
@@ -411,25 +370,14 @@ export interface CodevisorDatabaseService extends SessionStateService {
     sessionId: string,
     accountId: string
   ) => Effect.Effect<SessionSummary, DatabaseError>
-  /// Moves every session pinned to `fromAccountId` onto `toAccountId`.
-  /// Claude selection applies this to every sibling so existing chats use the
-  /// selected account on their next turn. Other harnesses use it to move
-  /// sessions off unusable accounts. Returns the number of sessions moved.
   readonly rebindHarnessAccountSessions: (
     fromAccountId: string,
     toAccountId: string
   ) => Effect.Effect<number, DatabaseError>
   readonly issuePairingToken: Effect.Effect<string, DatabaseError>
   readonly verifyBearerToken: (token: string) => Effect.Effect<boolean, DatabaseError>
-  /// A stable machine identity that survives --serverId defaults ("local") and
-  /// renames: generated once on first access and persisted with the database.
   readonly getOrCreateInstanceId: Effect.Effect<string, DatabaseError>
-  /// The machine's stable connection token: generated once, persisted, and
-  /// returned unchanged across restarts and updates until rotated. This is
-  /// what `codevisor token` prints and `codevisor setup` hands to clients.
   readonly getOrCreateConnectionToken: Effect.Effect<string, DatabaseError>
-  /// Replaces the connection token with a fresh one and retires the old,
-  /// forcing previously paired clients to re-pair.
   readonly rotateConnectionToken: Effect.Effect<string, DatabaseError>
   readonly exchangeBrowserCookies: (
     mutations: ReadonlyArray<BrowserCookieMutation>
@@ -447,8 +395,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
   ) => Effect.Effect<void, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
-  /// Persisted latest-version knowledge per harness (the periodic update
-  /// check's output — survives restarts so clients see last-known state).
   readonly listHarnessUpdateStates: Effect.Effect<
     ReadonlyArray<HarnessUpdateStateRecord>,
     DatabaseError
@@ -456,7 +402,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
   readonly setHarnessUpdateState: (
     record: HarnessUpdateStateRecord
   ) => Effect.Effect<HarnessUpdateStateRecord, DatabaseError>
-  /// Durable pending/running update per harness (the when-idle gate's truth).
   readonly listHarnessPendingUpdates: Effect.Effect<
     ReadonlyArray<HarnessPendingUpdateRecord>,
     DatabaseError
@@ -465,8 +410,6 @@ export interface CodevisorDatabaseService extends SessionStateService {
     record: HarnessPendingUpdateRecord
   ) => Effect.Effect<HarnessPendingUpdateRecord, DatabaseError>
   readonly clearHarnessPendingUpdate: (harnessId: string) => Effect.Effect<void, DatabaseError>
-  /// Replicated config-plane documents (@codevisor/sync): this server's
-  /// per-namespace LWW replica, merged rather than overwritten.
   readonly getSyncEntries: (
     namespace: string
   ) => Effect.Effect<ReadonlyArray<SyncEntryRecord>, DatabaseError>

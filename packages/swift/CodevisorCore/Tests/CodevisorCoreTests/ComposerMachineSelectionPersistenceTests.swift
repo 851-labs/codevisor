@@ -42,7 +42,6 @@ struct ComposerMachineSelectionPersistenceTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
-    // The source draft's model is the user's own pick, staged like any pick.
     controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     async let retarget: Void = controller.retarget(
@@ -145,17 +144,13 @@ struct ComposerMachineSelectionPersistenceTests {
 
     await controller.prepare()
 
-    // The carried harness stays; its missing model is never replaced by
-    // the destination's default or remembered model.
     #expect(controller.selectedHarnessId == "codex")
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(
       controller.modelUnavailableMessage
         == "gpt-5.6-sol is no longer available. Select another model.")
-    // A carried setting the destination does not offer is not staged.
     #expect(controller.thoughtLevelOptions.first?.currentValue == "high")
     #expect(!controller.draftSnapshot().selectionWasAutomaticallyCarried)
-    // The destination's own defaults are untouched.
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
   }
 

@@ -6,8 +6,6 @@
   import Foundation
   import VideoToolbox
 
-  /// Diagnostic workload only. A bounded pool feeds a serial capture timer;
-  /// each surface becomes immutable before it is handed to WebRTC.
   package final class SyntheticSource: @unchecked Sendable {
     private let queue = DispatchQueue(label: "codevisor.screen-sharing.synthetic", qos: .userInteractive)
     private let pool: CVPixelBufferPool
@@ -95,8 +93,6 @@
     private func draw() {
       autoreleasepool {
         let started = ScreenSharingMetrics.nowNs
-        // Bursty input: a healthy desktop that changes in short bursts must not
-        // trigger refreshes; the timer keeps running so cadence stays exact.
         if let gapNs {
           let origin = firstFrameNs ?? started
           if firstFrameNs == nil { firstFrameNs = started }

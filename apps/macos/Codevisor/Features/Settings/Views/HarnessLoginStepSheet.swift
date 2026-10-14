@@ -3,15 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One sign-in attempt as a focused step. The accounts list never grows
-/// inline flow UI; every kind of exchange — paste-code, device-code, plain
-/// browser wait, API key — renders here with one instruction, one input,
-/// and clear actions.
-///
-/// Presented as its own sheet. A pushed version was tried and reverted:
-/// running the navigation transition inside AppKit's layout pass let an
-/// `@Observable` model mutation land mid-layout, and AppKit raised from
-/// `_postWindowNeedsUpdateConstraints`. Revisit only with that settled.
 enum HarnessLoginStep: Identifiable {
   case flow(ServerHarnessAuthFlow)
   case apiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod)
@@ -27,7 +18,6 @@ enum HarnessLoginStep: Identifiable {
 struct HarnessLoginStepSheet: View {
   let harness: ServerHarness
   let step: HarnessLoginStep
-  /// Returns an error message to display, or nil when accepted.
   let submitCode: (String) async -> String?
   let submitApiKey: (ServerHarnessAccount, ServerHarnessAuthMethod, String) async -> String?
   let cancel: () -> Void
@@ -51,8 +41,6 @@ struct HarnessLoginStepSheet: View {
         }
       }
       .padding(20)
-      // Hug the top so the footer sits on the sheet's bottom edge rather
-      // than floating directly under the content.
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .navigationTitle("Sign in to \(harness.name)")
     }
@@ -78,8 +66,6 @@ struct HarnessLoginStepSheet: View {
         Text(flow.userCode ?? "")
           .font(.system(.title2, design: .monospaced, weight: .semibold))
           .textSelection(.enabled)
-        // Stays in the body because it acts on the body's content rather
-        // than advancing the task. The step's primary lives in the footer.
         Button {
           copyCode(flow.userCode ?? "")
         } label: {
@@ -103,8 +89,6 @@ struct HarnessLoginStepSheet: View {
     }
   }
 
-  /// Every action lives here, so exactly one button in the sheet carries
-  /// `.defaultAction` and nothing in the body competes to look primary.
   @ViewBuilder
   private var actions: some View {
     Button("Cancel", role: .cancel) { cancel() }
@@ -115,13 +99,9 @@ struct HarnessLoginStepSheet: View {
     if let browserURL {
       Button("Open Browser") { NSWorkspace.shared.open(browserURL) }
         .settingsActionTint(theme)
-        // Primary only when there is nothing to type: a paste-code step's
-        // primary is Continue.
         .keyboardShortcut(needsSubmit ? nil : .defaultAction)
     }
     if needsSubmit {
-      // No "Verifying…" title swap — a button that changes width mid-flight
-      // shifts everything beside it. The footer's status slot says so.
       Button("Continue") { submit() }
         .settingsActionTint(theme)
         .keyboardShortcut(.defaultAction)
@@ -129,18 +109,11 @@ struct HarnessLoginStepSheet: View {
     }
   }
 
-  /// Every in-progress indicator in this family renders in the sheet's
-  /// chrome, never in the body — including the browser wait. The body of a
-  /// device-code step already carries the code and its copy action; a
-  /// spinner among them is status about a background poll, not content.
   private var footerStatus: String? {
     if isSubmitting { return "Verifying…" }
     return isAwaitingBrowser ? "Waiting for sign-in…" : nil
   }
 
-  /// Device-code and plain browser steps poll while the user finishes in
-  /// their browser. A paste-code step is waiting on input here instead, so
-  /// it has nothing in flight to report.
   private var isAwaitingBrowser: Bool {
     guard case .flow(let flow) = step else { return false }
     return flow.kind != "pasteCode"
@@ -153,7 +126,6 @@ struct HarnessLoginStepSheet: View {
     }
   }
 
-  /// The step's browser destination, if it has one.
   private var browserURL: URL? {
     guard case .flow(let flow) = step else { return nil }
     return (flow.url ?? flow.verificationUrl).flatMap(URL.init(string:))

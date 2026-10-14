@@ -100,7 +100,6 @@ describe("workspace pane conflicts", () => {
     )
     const [original] = await run(db.listWorkspacePanes)
 
-    // A device that has not loaded the chat's tab opens it under a fresh id.
     await run(
       db.upsertWorkspacePane(source.id, {
         id: "fresh-pane",

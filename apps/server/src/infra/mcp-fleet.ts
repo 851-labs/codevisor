@@ -5,22 +5,6 @@ import { Effect } from "effect"
 
 import { publishMachineReadiness } from "./config-sync.js"
 
-/// Phase 17: the MCP plane's per-machine data. Two namespaces:
-///
-/// "mcp-readiness" — what each MCP actually looks like ON each machine
-/// (ready, blocked and why, disabled here, pinned elsewhere). Single-writer:
-/// every machine publishes only its own entry, keyed by its server id, so
-/// readiness can never conflict. Derived from the manager's live connection
-/// state — a synced definition that cannot work somewhere (missing command,
-/// ungranted OS permission) finally has a fleet-visible reason.
-///
-/// "mcp-overlays" — the one per-machine knob the fleet definition
-/// deliberately does not carry: disable one MCP on one machine without
-/// touching the fleet. Plain LWW entries any client writes via the generic
-/// sync surface:
-///   "enable|<serverId>|<name>"  → { enabled: false }   delete to restore
-/// The name sits LAST in the key, so names may contain the delimiter;
-/// server ids (uuid/hostname-shaped) must not.
 export const MCP_READINESS_NAMESPACE = "mcp-readiness"
 export const MCP_OVERLAYS_NAMESPACE = "mcp-overlays"
 
@@ -29,9 +13,7 @@ const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise
 export const mcpOverlayDisableKey = (serverId: string, name: string): string =>
   `enable|${serverId}|${name}`
 
-/// The overlays as they apply to THIS machine.
 export interface McpOverlays {
-  /// Names switched off here by a per-machine enable overlay.
   readonly disabledHere: ReadonlySet<string>
 }
 
@@ -61,14 +43,7 @@ export interface McpReadinessEntry {
   readonly name: string
   readonly state: McpReadinessState
   readonly reason?: string | undefined
-  /// The raw connection state behind a `blocked` row. `reason` is prose for
-  /// a details popover; this is what a client switches on to choose the one
-  /// action the row offers — "Connect…" for an expired authorization is not
-  /// the same affordance as "Details…" for a missing binary.
   readonly code?: string | undefined
-  /// Tools this server actually exposes here. A server that connects
-  /// everywhere but advertises fewer tools on one machine is drift the
-  /// fleet list should be able to show without opening a machine page.
   readonly toolCount?: number | undefined
 }
 
@@ -80,9 +55,6 @@ const BLOCKED_REASONS: Readonly<Record<string, string>> = {
   error: "Connection error"
 }
 
-/// One server's readiness ON this machine. The per-machine overlay outranks
-/// live state, and each "disabled" carries its provenance — the reason
-/// distinguishes a machine opt-out from a fleet-wide disable.
 export const mcpReadiness = (
   server: {
     readonly name: string
@@ -122,10 +94,6 @@ export interface McpReadinessDeps {
   readonly serverId: string
 }
 
-/// Publishes this machine's MCP readiness under its own machine key —
-/// single-writer, change-detected, so a settled machine republishes
-/// nothing. Built-in providers (computer use, browser use) are included
-/// deliberately: they are the most machine-specific MCPs of all.
 export const publishMcpReadiness = async (
   deps: McpReadinessDeps
 ): Promise<{

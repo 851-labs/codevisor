@@ -13,14 +13,12 @@ import {
 } from "./screen-sharing-vnc-scale.js"
 import { vncScreenSharing } from "./screen-sharing-vnc.js"
 
-/// A desktop session in memory: xfconf values, and every command run, in order.
 const fakeSession = (
   options: {
     panel?: string
     bus?: string
     scale?: string
     theme?: string
-    /// xfconf reads fail (a key that was never set) and `xfdesktop --quit` fails (not running).
     failReads?: boolean
   } = {}
 ) => {
@@ -65,11 +63,9 @@ describe("Xfce desktop scale (851-2339)", () => {
     await xfceScaler(1, session.commands)(2)
     expect(session.values.get("xsettings /Gdk/WindowScalingFactor")).toBe("2")
     expect(session.values.get("xfwm4 /general/theme")).toBe("Default-xhdpi")
-    // Every desktop command carries the session's display and bus, never this process's.
     for (const line of session.log.filter((entry) => !entry.startsWith("pgrep")))
       expect(line).toContain("[:1 unix:path=/tmp/dbus-session]")
     expect(session.log.filter((entry) => entry.startsWith("spawn xfdesktop"))).toHaveLength(1)
-    // Already 2×: nothing restarts.
     session.log.length = 0
     await xfceScaler(1, session.commands)(2)
     expect(session.log.some((entry) => entry.includes("xfdesktop"))).toBe(false)
@@ -105,8 +101,6 @@ describe("Xfce desktop scale (851-2339)", () => {
   it("starts detached commands with the session's environment", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-vnc-scale-"))
     try {
-      // Opening a FIFO for reading blocks until the detached child opens it
-      // for writing, so the read completes exactly when the child has run.
       const fifo = join(directory, "out")
       execFileSync("mkfifo", [fifo])
       await systemScalerCommands.spawnDetached(
@@ -121,8 +115,6 @@ describe("Xfce desktop scale (851-2339)", () => {
   })
 
   it("reports a detached command that can't start instead of crashing the server", async () => {
-    // The failed spawn used to be an unheard 'error' event: an uncaught
-    // exception that exits the server and every agent running in it.
     await expect(
       systemScalerCommands.spawnDetached("/nonexistent/codevisor-xfdesktop", [], {})
     ).rejects.toThrow(expect.objectContaining({ code: "ENOENT" }))

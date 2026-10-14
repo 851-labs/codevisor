@@ -98,7 +98,6 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("demotes narration before tool calls, so each tool group follows its own text", async () => {
-    // OpenCode's order: narration, tool calls, more narration, more tool calls, the answer.
     class NarratingConnection extends FakeConnection {
       override prompt(sessionId: string) {
         const say = (messageId: string, text: string) =>
@@ -153,8 +152,6 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("delivers events that arrive with no prompt in flight", async () => {
-    // Regression test for the dropped-background-events bug: the sink used to
-    // exist only for the duration of a prompt request.
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
       connector,
@@ -193,7 +190,6 @@ describe("@codevisor/agent-runtime", () => {
     const entered = Promise.withResolvers<void>()
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", async (event) => {
-        // A slow async sink must not reorder events.
         entered.resolve()
         await release.promise
         seen.push((event.payload as { text?: string }).text ?? "lifecycle")
@@ -261,7 +257,6 @@ describe("@codevisor/agent-runtime", () => {
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
     )
-    // The ACP handle exposes no goal surface, so the runtime rejects cleanly.
     await expect(run(runtime.setGoal(sessionId, { objective: "x" }))).rejects.toThrow(
       "Goals are not supported by this harness"
     )
@@ -441,7 +436,6 @@ describe("@codevisor/agent-runtime", () => {
       })
     )
     expect(sessionId).toBe("custom-1")
-    // Events for sessions the runtime doesn't know are dropped, not crashed on.
     await capturedEmit?.({ kind: "session.output", payload: {}, subjectId: "unknown-session" })
     await capturedEmit?.({ kind: "session.output", payload: { ok: true }, subjectId: "custom-1" })
     await capturedEmit?.({ kind: "session.output", payload: "raw", subjectId: "custom-1" })

@@ -22,8 +22,6 @@ describe("cloud routes", () => {
       cloudDeviceId: "device-123"
     })
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: true })
-    // Without live control, /v1/cloud reflects the boot-time snapshot and
-    // connect/disconnect are unavailable.
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({
       connected: true,
       deviceId: "device-123"
@@ -106,19 +104,16 @@ describe("cloud routes", () => {
     )
     runningServers.push(server)
 
-    // Disconnected: no device id anywhere, /v1/cloud says so.
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({ connected: false })
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: false })
 
-    // A control that can't redeem invites says so rather than trying.
     const noInvites = await jsonRequest(server, "/v1/cloud/connect", {
       method: "POST",
       body: JSON.stringify({ inviteCode: "cvi1.x.y" })
     })
     expect(noInvites.status).toBe(501)
 
-    // Bad payloads are rejected before touching the control.
     expect(
       (
         await jsonRequest(server, "/v1/cloud/connect", {
@@ -128,7 +123,6 @@ describe("cloud routes", () => {
       ).status
     ).toBe(400)
 
-    // Connect registers the machine and the live device id shows up in info.
     const connected = await jsonRequest(server, "/v1/cloud/connect", {
       method: "POST",
       body: JSON.stringify({ serverUrl: "https://cloud.example", sessionToken: "session-1" })
@@ -149,11 +143,8 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       cloudDeviceId: "device-live"
     })
-    // Discovery follows the live registration, not the boot snapshot.
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: true })
 
-    // Provisioning failures surface as a gateway error with the cause —
-    // Error instances and bare thrown values alike.
     failWith = new Error("provisioning failed")
     const failed = await jsonRequest(server, "/v1/cloud/connect", {
       method: "POST",
@@ -208,15 +199,12 @@ describe("cloud routes", () => {
       options: { managedBy: "external", machineName: "CLI machine" }
     })
 
-    // Disconnect forgets the registration everywhere.
     const disconnected = await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })
     expect(disconnected.status).toBe(200)
     expect(disconnected.body).toEqual({ ok: true, removedFromAccount: true })
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({ connected: false })
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
 
-    // An unreachable cloud still disconnects locally, with a warning that
-    // the machine stays on the account until removed from an app.
     removedFromAccount = false
     const stranded = await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })
     expect(stranded.status).toBe(200)

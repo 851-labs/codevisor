@@ -1,6 +1,3 @@
-// Also run under Bun (dev:scripts:test): the dev runner runs on Bun, whose
-// node:https differs from Node where it matters here (see relayHealthy).
-
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -18,8 +15,6 @@ import {
   waitForDevRelays
 } from "./dev-net.mjs"
 
-/// A TCP server that accepts connections and never answers: the TLS
-/// handshake stalls, like an address that swallows packets.
 const silentServer = async () => {
   const sockets = new Set()
   const server = createServer((socket) => {
@@ -54,16 +49,12 @@ test("waiting on relays that never answer gives up after its attempts", async ()
   const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
   try {
     const caFile = join(netRoot, "ca.pem")
-    // A well-formed CA, so the wait reaches the never-answering server
-    // instead of failing on the certificate first.
     await writeFile(caFile, rootCertificates[0])
     const net = {
       caFile,
       relays: [
         {
           name: "relay-1",
-          // The container-facing address may not exist on the host yet; the
-          // host must never wait on it.
           url: "https://192.0.2.1:1",
           ports: { https: server.port, router: server.port }
         }
@@ -108,8 +99,6 @@ test("the host checks relays over loopback, not the container-facing address", (
 })
 
 test("dev relay certificates are signed with SHA-256 by any openssl", async () => {
-  // macOS's /usr/bin/openssl is LibreSSL, which signs with SHA-1 unless told
-  // otherwise; the tunnel's TLS rejects SHA-1, so every dev relay failed.
   const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
   try {
     await ensureDevCertificates({ netRoot, relayHost: "127.0.0.1" })

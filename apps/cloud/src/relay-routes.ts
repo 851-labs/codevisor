@@ -6,13 +6,6 @@ import { tunnelEndpoint } from "./db/schema.js"
 import type { CloudEnv } from "./env.js"
 import { isEndpointId } from "./hub-tunnel.js"
 
-/// Tunnel relay access control. Our relays
-/// run iroh-relay with `access.http`: for every client they POST here with
-/// the client's hex endpoint id, and admit it only on `200 true`. The pinned
-/// v1.2.0 binary names the header `X-Iroh-NodeId` (observed on the wire);
-/// iroh's source docs call it `X-Iroh-Endpoint-Id` — accept both. Endpoints are
-/// registered by authenticated devices on `/connect` (registerTunnelEndpoint).
-
 export const TUNNEL_ENDPOINT_HEADER = "x-codevisor-tunnel-endpoint"
 
 const bearerTokens = (env: CloudEnv): string[] =>
@@ -42,11 +35,6 @@ relayRoutes.post("/api/relay/authorize", async (c) => {
   return row === undefined ? c.text("false", 403) : c.text("true")
 })
 
-/// Called by `/connect` after authentication: records that this account owns
-/// the endpoint id the device presented, so our relays will serve it. A
-/// device re-keying replaces its previous endpoint. Best effort: relay access
-/// only matters to tunnel devices, so a D1 failure here is logged and never
-/// costs a device its hub connection.
 export const registerTunnelEndpoint = async (
   env: CloudEnv,
   registration: TunnelRegistration,
@@ -102,7 +90,6 @@ const storeTunnelEndpoint = async (
     })
 }
 
-/// Machine removal: its endpoint must stop being able to use our relays.
 export const forgetTunnelEndpoints = async (
   env: CloudEnv,
   userId: string,

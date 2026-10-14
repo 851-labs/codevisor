@@ -27,11 +27,6 @@ import {
   type AgyStep
 } from "./protocol.js"
 
-/// One chat's `agy` headless process: its conversation, turn lifecycle and
-/// controls. agy fixes the model for a process's lifetime, so a new model or
-/// reasoning tier — like a cancelled turn that took the process down —
-/// relaunches it on the same conversation at the next prompt.
-
 interface Turn {
   readonly id: string
   cancelled: boolean
@@ -52,21 +47,13 @@ export interface AgyChatOptions {
   readonly command: string
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
-  /// Arguments every launch carries (account isolation).
   readonly extraArgs?: ReadonlyArray<string>
   readonly models: ReadonlyArray<AgyModel>
-  /// The conversation to resume; a new one when absent.
   readonly resume?: string
-  /// How long agy may take to open its conversation.
   readonly startDeadlineMs?: number
-  /// How long a cancelled turn may take to stop before agy is killed.
   readonly cancelGraceMs?: number
 }
 
-/// How every chat runs. Codevisor gives every harness full access (see
-/// adapter-acp's permission policy), and headless agy can't ask for
-/// permission, so it proceeds on its own; Codevisor decides when a turn
-/// ends.
 const HEADLESS_ARGS = [
   "--input-format=stream-json",
   "--output-format=stream-json",
@@ -76,7 +63,6 @@ const HEADLESS_ARGS = [
 
 class AgyStartError extends Error {}
 
-/// Why agy stopped a turn, in words the transcript can show.
 const failureDetail = (message: string | undefined): string =>
   message === undefined
     ? "Antigravity stopped with an error."
@@ -84,7 +70,6 @@ const failureDetail = (message: string | undefined): string =>
       ? SIGN_IN_DETAIL
       : message
 
-/// `result.usage` is the session's running totals.
 const totalsUpdate = (result: AgyResult): Record<string, unknown> | undefined => {
   const usage = record(result.usage)
   const fields = Object.entries({
@@ -113,7 +98,6 @@ export const startAgyChat = async (
     selection.tier = resolved.variant.tier
   }
   let process_: AgyProcess | undefined
-  /// The running process predates the chosen model or tier.
   let stale = false
   let turn: Turn | undefined
   let cancelTimer: ReturnType<typeof setTimeout> | undefined
@@ -146,7 +130,6 @@ export const startAgyChat = async (
     const totals = totalsUpdate(result)
     if (totals !== undefined) void send("session.updated", totals)
     if (result.status === "SUCCESS") {
-      // Headless agy skips what it can't ask permission for, and says so.
       const denied = (result.denied_actions ?? []).flatMap((action) => {
         const name = text(action.display_name) ?? text(action.action)
         return name === undefined ? [] : [name]
@@ -178,13 +161,11 @@ export const startAgyChat = async (
   const exited = (owner: AgyProcess, error: Error) => {
     if (process_ !== owner) return
     process_ = undefined
-    // A cancelled turn's SIGINT takes agy down with it: that's the cancel.
     endTurn(
       turn?.cancelled === true ? { cancelled: true } : { detail: failureDetail(error.message) }
     )
   }
 
-  /// Starts agy on the chat's conversation and waits for it to open one.
   const launch = async (): Promise<void> => {
     const variant = resolveSelection(options.models, selection)?.variant
     const spawned = await options.connector({
@@ -211,7 +192,6 @@ export const startAgyChat = async (
           if (event.event === "init") {
             resolve(text(event.conversation_id) ?? key)
           } else if (event.event === "result") {
-            // Signed out, agy answers with a failed result and no `init`.
             reject(new AgyStartError(failureDetail(text(record(event.result).error))))
           }
         })
@@ -249,8 +229,6 @@ export const startAgyChat = async (
       endTurn({ detail: (cause as Error).message })
       return done
     }
-    // Attachments are already files on disk; agy reads images with its own
-    // file tool, and its stream input takes text only.
     const prompt = normalizePromptInput(input)
     process_!.send({
       event: "user",
@@ -264,9 +242,6 @@ export const startAgyChat = async (
       return key
     },
     configOptions: options_,
-    // agy takes one turn at a time: a prompt sent mid-turn waits its turn.
-    // A turn never rejects (a failure ends it with a reason), so the queue
-    // keeps moving.
     prompt: (input) => {
       const next = queue.then(() => run(input))
       queue = next
@@ -278,8 +253,6 @@ export const startAgyChat = async (
       current.cancelled = true
       process_?.interrupt()
       clearTimeout(cancelTimer)
-      // agy that ignores the interrupt is stopped outright. The turn ending
-      // first clears this.
       cancelTimer = setTimeout(() => {
         process_?.close()
         process_ = undefined
@@ -292,7 +265,6 @@ export const startAgyChat = async (
         if (model === undefined) throw new Error(`Unknown model: ${value}`)
         if (model.id !== selection.modelId) {
           selection.modelId = model.id
-          // The new model keeps the tier when it has one by that name.
           selection.tier = resolveSelection(options.models, selection)!.variant.tier
           stale = true
         }

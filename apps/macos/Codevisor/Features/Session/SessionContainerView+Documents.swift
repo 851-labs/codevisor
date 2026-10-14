@@ -3,8 +3,6 @@ import CodevisorUI
 import SwiftUI
 
 extension SessionContainerView {
-  /// Document identity belongs to the workspace's machine and canonical
-  /// path. Clicking the same document again selects its existing tab/split.
   func openFileDocument(_ target: String) -> Bool {
     var workspace = selectedWorkspace
     guard

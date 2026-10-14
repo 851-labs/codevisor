@@ -14,7 +14,6 @@ import { jsonRequest, run, start, tempDirs, listSubjectEvents } from "../test-su
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
 
-/// Points the server at a fresh worktrees root for the duration of `body`.
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
   tempDirs.push(worktreesRoot)
@@ -26,11 +25,8 @@ const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>)
   }
 }
 
-/// A started server with one git-backed project (git-project) and one plain
-/// folder project (plain-project).
 const setUpGitProjects = async () => {
   const { agents, server, services } = await start()
-  // makeServices' temp dir (the newest entry) holds the server database.
   const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
   tempDirs.push(repoRoot)
@@ -80,9 +76,6 @@ describe("project worktree archive routes", () => {
     await withWorktreesRoot(async () => {
       const { server, services, repoFolder, worktreeNames } = await setUpGitProjects()
 
-      /// A workspace anchored on a fresh worktree, plus `chats` chats in it.
-      /// The workspace owns the directory, so archiving it is what reclaims
-      /// the files.
       const makeWorkspace = async (id: string, name: string, chats = 1) => {
         const worktree = (
           await jsonRequest(server, "/v1/projects/git-project/worktrees", {
@@ -119,8 +112,6 @@ describe("project worktree archive routes", () => {
         }
         return { worktree, sessions }
       }
-      // The archive answers before its teardown runs; wait for the teardown
-      // so each step below sees the files it describes.
       const setArchived = async (id: string, isArchived: boolean) => {
         const response = await jsonRequest(server, `/v1/workspaces/${id}`, {
           body: JSON.stringify({ isArchived }),
@@ -133,7 +124,6 @@ describe("project worktree archive routes", () => {
       const { worktree: solo, sessions: soloChats } = await makeWorkspace("solo-ws", "solo work", 2)
       expect(existsSync(solo.path)).toBe(true)
 
-      // A second workspace sharing the same directory keeps it alive.
       await jsonRequest(server, "/v1/workspaces/sharer-ws", {
         body: JSON.stringify({
           projectId: "git-project",
@@ -147,8 +137,6 @@ describe("project worktree archive routes", () => {
       expect(existsSync(solo.path)).toBe(true)
       expect(await worktreeNames()).toContain(solo.name)
 
-      // Archiving the last workspace on that directory removes it from git and
-      // disk, and records a completed archive that restore can navigate by.
       await setArchived("sharer-ws", true)
       expect(existsSync(solo.path)).toBe(false)
       expect(await worktreeNames()).not.toContain(solo.name)
@@ -158,11 +146,8 @@ describe("project worktree archive routes", () => {
         )?.state
       ).toBe("complete")
 
-      // Re-archiving once the worktree record is gone is a harmless no-op.
       expect((await setArchived("sharer-ws", true)).status).toBe(200)
 
-      // Restoring rebuilds the worktree from its snapshot and reclaims the
-      // freed name, so every chat in the workspace resolves to its old cwd.
       const restored = (await setArchived("solo-ws", false)).body as {
         readonly isArchived: boolean
         readonly rootDirectory: string
@@ -176,9 +161,6 @@ describe("project worktree archive routes", () => {
       }
       expect(rejoined.session.cwd).toBe(solo.path)
 
-      // Gitignored files are not snapshotted — putting a .env into a git object
-      // that may later be pushed is worse than losing it — so the client is
-      // told exactly what went away with the worktree.
       const { worktree: ignoredTree, sessions: ignoredChats } = await makeWorkspace(
         "ignored-ws",
         "with ignored",
@@ -196,8 +178,6 @@ describe("project worktree archive routes", () => {
         )
       ).toBe(true)
 
-      // The freed name is taken before the restore, so the workspace comes back
-      // under a suffixed name rather than adopting the squatter's files.
       const squatter = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           body: JSON.stringify({ name: ignoredTree.name }),
@@ -211,8 +191,6 @@ describe("project worktree archive routes", () => {
       expect(suffixed.rootDirectory).not.toBe(squatter.path)
       expect(suffixed.rootDirectory).not.toBe(ignoredTree.path)
       expect(existsSync(suffixed.rootDirectory)).toBe(true)
-      // Every chat in the workspace follows the rename, not just one, or the
-      // others would resolve to a name nobody owns.
       for (const chatId of ignoredChats) {
         const chat = (await jsonRequest(server, `/v1/sessions/${chatId}`)).body as {
           readonly session: { readonly cwd: string }
@@ -220,8 +198,6 @@ describe("project worktree archive routes", () => {
         expect(chat.session.cwd).toBe(suffixed.rootDirectory)
       }
 
-      // A snapshot that has gone missing still restores — the chats matter more
-      // than the files — but says so rather than pretending they came back.
       const { worktree: orphanTree } = await makeWorkspace("orphan-ws", "orphan")
       await setArchived("orphan-ws", true)
       await run(services.db.deleteArchivedWorktree(orphanTree.id))
@@ -233,15 +209,10 @@ describe("project worktree archive routes", () => {
         true
       )
 
-      // A workspace pointing at a worktree row that no longer exists archives
-      // cleanly: there is nothing to snapshot, so it is a plain flag flip.
       const { worktree: strayTree } = await makeWorkspace("stray-ws", "stray")
       await run(services.db.deleteWorktree(strayTree.id))
       expect((await setArchived("stray-ws", true)).body).toMatchObject({ isArchived: true })
 
-      // A directory that is not a Codevisor worktree path (the project folder
-      // itself, or anything else a client pinned) has no name to look a
-      // snapshot up by, so archive and restore are both no-ops on the files.
       for (const [id, rootDirectory] of [
         ["rooted-ws", repoFolder],
         ["relative-ws", "noslash"]
@@ -260,9 +231,6 @@ describe("project worktree archive routes", () => {
       }
       expect(existsSync(repoFolder)).toBe(true)
 
-      // A snapshot ref pruned out from under a recorded archive: the restore
-      // rebuilds the worktree from the parent commit and must NOT delete a
-      // record whose contents it could not apply.
       const { worktree: prunedTree } = await makeWorkspace("pruned-ws", "pruned")
       await setArchived("pruned-ws", true)
       await runGit("drop-snapshot", ["update-ref", "-d", snapshotRefFor(prunedTree.id)], repoFolder)
@@ -275,7 +243,6 @@ describe("project worktree archive routes", () => {
         true
       )
 
-      // A workspace that never had a worktree leaves every worktree intact.
       await jsonRequest(server, "/v1/workspaces/plain-ws", {
         body: JSON.stringify({ projectId: "git-project", name: "plain", hasCustomName: false }),
         method: "PUT"
@@ -295,7 +262,6 @@ describe("project worktree archive routes", () => {
           method: "POST"
         })
       ).body as { readonly name: string; readonly path: string }
-      // A recorded worktree whose folder vanished is rejected too.
       rmSync(worktree.path, { force: true, recursive: true })
       await git(["worktree", "prune"], repoFolder)
       const missingFolder = await jsonRequest(server, "/v1/sessions", {
@@ -312,8 +278,6 @@ describe("project worktree archive routes", () => {
         "Worktree folder does not exist"
       )
 
-      // A project whose only folder lives on another machine can't host
-      // sessions here.
       await jsonRequest(server, "/v1/projects", {
         body: JSON.stringify({ folderPath: join(repoRoot, "detached"), id: "detached-project" }),
         method: "POST"
@@ -332,7 +296,6 @@ describe("project worktree archive routes", () => {
         "no folder on this machine"
       )
 
-      // Unknown worktree names are rejected.
       expect(
         (
           await jsonRequest(server, "/v1/sessions", {

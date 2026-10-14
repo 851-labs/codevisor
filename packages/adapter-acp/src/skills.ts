@@ -4,14 +4,12 @@ import { dirname, join, resolve } from "node:path"
 import { sessionSkills } from "@codevisor/agent-runtime"
 import type { SessionSkill, SessionSkillSource, SessionSkills } from "@codevisor/api"
 
-/// One `available_commands_update` row, as far as skills need it.
 export interface AcpAvailableCommand {
   readonly name: string
   readonly description?: string | null
   readonly _meta?: Record<string, unknown> | null
 }
 
-/// Skill folders ACP agents read in a workspace and each of its parents.
 const PROJECT_SKILL_DIRS = [
   ".agents/skills",
   ".claude/skills",
@@ -22,7 +20,6 @@ const PROJECT_SKILL_DIRS = [
   ".opencode/skills"
 ]
 
-/// Skill folders ACP agents read in the user's home directory.
 const USER_SKILL_DIRS = [
   ".agents/skills",
   ".claude/skills",
@@ -33,7 +30,6 @@ const USER_SKILL_DIRS = [
   ".grok/skills"
 ]
 
-/// Grok Build reports where each skill was loaded from.
 const GROK_SCOPES: Readonly<Record<string, SessionSkillSource>> = {
   bundled: "builtin",
   local: "project",
@@ -43,7 +39,6 @@ const GROK_SCOPES: Readonly<Record<string, SessionSkillSource>> = {
   user: "user"
 }
 
-/// The `name` a SKILL.md's frontmatter declares, if any.
 const frontmatterName = (content: string): string | undefined => {
   const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)?.[1]
   const name = block
@@ -53,8 +48,6 @@ const frontmatterName = (content: string): string | undefined => {
   return name === undefined || name === "" ? undefined : name
 }
 
-/// The skill names in one skills folder: each subfolder with a SKILL.md, by
-/// folder name and by its frontmatter `name`.
 const skillNamesIn = async (dir: string): Promise<ReadonlyArray<string>> => {
   let entries
   try {
@@ -78,9 +71,6 @@ const skillNamesIn = async (dir: string): Promise<ReadonlyArray<string>> => {
   return names.flat()
 }
 
-/// The skills on disk an ACP agent in `cwd` can see, and where each comes
-/// from: the workspace and its parents up to (not including) the home folder
-/// are the project's, the home folder's are the user's.
 export const discoverSkillFolders = async (
   cwd: string,
   home: string | undefined
@@ -101,23 +91,16 @@ export const discoverSkillFolders = async (
     Promise.all(userDirs.map(skillNamesIn))
   ])
   const sources = new Map<string, SessionSkillSource>()
-  // The nearest folder wins, as it does for the agents themselves.
   for (const name of project.flat()) if (!sources.has(name)) sources.set(name, "project")
   for (const name of user.flat()) if (!sources.has(name)) sources.set(name, "user")
   return sources
 }
 
-/// Cursor ends each skill's description with where it came from, which the
-/// palette already shows as the skill's source.
 const SOURCE_SUFFIX = /\s*\((?:project|user|global) skill\)$/i
 
 const metaText = (meta: Record<string, unknown> | null | undefined, key: string) =>
   typeof meta?.[key] === "string" ? meta[key] : undefined
 
-/// The skills among an ACP agent's slash commands. ACP has no field that
-/// tells a skill from a command: a row is a skill when the agent says where
-/// its SKILL.md lives (Grok's `_meta.path`), or when its name matches a skill
-/// folder on disk. Commands such as `/compact` or `/init` match neither.
 export const acpSkills = (
   commands: ReadonlyArray<AcpAvailableCommand>,
   skillFolders: ReadonlyMap<string, SessionSkillSource>
@@ -145,18 +128,11 @@ export const acpSkills = (
     "/"
   )
 
-/// Tracks each session's skills from its `available_commands_update`
-/// notifications, so session setup can report them with its metadata.
 export interface AcpSkillTracker {
-  /// Classifies a session's latest command list. Resolves with the skills
-  /// when they changed, or undefined when they did not or a newer list
-  /// superseded this one.
   readonly update: (
     sessionId: string,
     commands: ReadonlyArray<AcpAvailableCommand>
   ) => Promise<SessionSkills | undefined>
-  /// The session's skills, waiting up to `timeoutMs` for its first command
-  /// list. Agents push the list right after session setup, not with it.
   readonly current: (sessionId: string, timeoutMs: number) => Promise<SessionSkills | undefined>
 }
 

@@ -2,9 +2,6 @@ import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-/// Typed surface of the native tunnel addon (packages/net/crates/
-/// codevisor-net-node).
-
 export const ALPN_CHANNELS = "codevisor/channels/1"
 export const ALPN_MEDIA = "codevisor/media/1"
 
@@ -12,17 +9,13 @@ export type PathPolicy = "auto" | "relay-only" | "direct-only"
 
 export interface RelayOptions {
   url: string
-  /// UDP port of the relay's QUIC address discovery (default 7842).
   quicPort?: number
 }
 
 export interface EndpointOptions {
-  /// 64-char hex Ed25519 secret key.
   secretKeyHex: string
   relays: RelayOptions[]
-  /// Extra PEM trust anchors (local development's CA). Empty in production.
   trustAnchorsPem?: string[]
-  /// UDP bind addresses, e.g. ["0.0.0.0:41641", "[::]:41641"]. Default: any.
   bindAddrs?: string[]
   pathPolicy?: PathPolicy
   alpns: string[]
@@ -67,10 +60,7 @@ export interface TunnelConnection {
   acceptMessageStream(): Promise<TunnelMessageStream>
   paths(): TunnelPath[]
   maxMediaPayload(): number | null
-  /// Host side: bridge media flow `flowId` to a local UDP socket (`ip:port`,
-  /// the host WebRTC's own candidate).
   forwardMedia(flowId: number, targetAddr: string): Promise<TunnelMediaFlow>
-  /// Viewer side: a local UDP port (bound on all interfaces) bridged to the flow.
   bindMedia(flowId: number): Promise<TunnelMediaFlow>
   close(code: number, reason: string): void
   closed(): Promise<string>
@@ -93,20 +83,14 @@ export interface NetModule {
   endpointIdForSecretKey(secretKeyHex: string): string
 }
 
-// Node's arch names (x64, arm64) are the directory names net-artifact.mjs uses.
 const hostTarget = (): string => `${process.platform}-${process.arch}`
 
-/// Where the addon lives: `CODEVISOR_NET_ADDON` (release runtimes point it at
-/// the bundled copy), else `packages/net/native/<platform>-<arch>/` as
-/// installed by `scripts/net-artifact.mjs ensure-node`.
 export const defaultAddonPath = (environment: NodeJS.ProcessEnv = process.env): string =>
   environment.CODEVISOR_NET_ADDON ??
   join(dirname(fileURLToPath(import.meta.url)), "..", "native", hostTarget(), "codevisor_net.node")
 
 const loaded = new Map<string, NetModule>()
 
-/// Loads the native addon once per path. Throws with a build hint when it's
-/// missing.
 export const loadNet = (addonPath = defaultAddonPath()): NetModule => {
   const existing = loaded.get(addonPath)
   if (existing !== undefined) return existing

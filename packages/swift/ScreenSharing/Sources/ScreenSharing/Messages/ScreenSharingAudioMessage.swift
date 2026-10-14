@@ -1,20 +1,11 @@
 import Foundation
 
-/// The host's sound as its own stream (851-2379), on the `codevisor.audio.v1` channel: unordered
-/// and never retransmitted, since a late packet is worse than a lost one. The viewer asks for it
-/// (`subscribe`) and stops it when muted (`unsubscribe`); a peer that predates the channel never
-/// opens it. Packets are Opus, 20 ms of 48 kHz stereo each, stamped with when the host captured
-/// their first sample, on the same clock the video frames carry.
-///
-/// Binary, not JSON: a byte for the version, one for the kind, then the kind's fields
-/// (big-endian) and, for a packet, the Opus payload.
 public enum ScreenSharingAudioMessage: Equatable, Sendable {
   case subscribe
   case unsubscribe
   case packet(ScreenSharingAudioPacket)
 
   public static let version: UInt8 = 1
-  /// A 20 ms Opus packet at the highest bitrate is well under this; anything larger is refused.
   public static let maximumBytes = 4096
 
   public func encoded() -> Data {
@@ -55,11 +46,8 @@ public enum ScreenSharingAudioMessage: Equatable, Sendable {
 }
 
 public struct ScreenSharingAudioPacket: Equatable, Sendable {
-  /// Counts up by one per packet, wrapping; a gap is a lost packet.
   public var sequence: UInt32
-  /// Host capture clock of the first sample, nanoseconds.
   public var timestampNs: Int64
-  /// Samples per channel the packet decodes to.
   public var frames: UInt16
   public var payload: Data
 

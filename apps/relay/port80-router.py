@@ -1,7 +1,3 @@
-# The only process on the relay's plain-HTTP port.
-# /.well-known/acme-challenge/<token> -> file from certbot's webroot (HTTP-01).
-# Everything else -> the relay's own HTTP listener (captive-portal checks).
-# Standard library only; Python is already in the image for certbot.
 import http.client, http.server, os, socket
 
 WEBROOT = os.environ.get("ACME_WEBROOT", "/data/acme-webroot")

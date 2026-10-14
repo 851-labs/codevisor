@@ -20,11 +20,6 @@ import {
 
 type TunnelWelcome = ReturnType<typeof tunnelWelcome>
 
-/// The hub's reactions to tunnel control frames, kept out of user-hub.ts.
-
-/// An app said hello: decide whether its connection gets the tunnel and, if
-/// so, remember its tunnel identity and tell every machine when the vouched
-/// set changed. Returns the welcome's tunnel fields.
 export const onAppTunnelIdentity = (
   sql: SqlStorage,
   net: HubSockets,
@@ -39,10 +34,6 @@ export const onAppTunnelIdentity = (
   return tunnelWelcome(env, rollout)
 }
 
-/// A machine said hello: the welcome's tunnel fields, the device to record
-/// (without a tunnel identity when its connection doesn't get the tunnel, so
-/// apps never try to dial it), and whether it is a tunnel machine (receives
-/// `peer-devices`).
 export const machineTunnelScope = (
   env: Pick<CloudEnv, "RELAY_MAP">,
   device: CloudDeviceInfo
@@ -56,14 +47,11 @@ export const machineTunnelScope = (
   }
 }
 
-/// A tunnel machine finished hello: hand it the vouched app devices.
 export const sendPeerDevices = (sql: SqlStorage, net: HubSockets, socket: WebSocket): void => {
   if (net.attachment(socket)?.tunnel !== true) return
   net.send(socket, encodeCloudFrame({ t: "peer-devices", devices: vouchedDevices(sql) }))
 }
 
-/// A machine reported a new tunnel address: store it and republish presence.
-/// Reports before hello are ignored.
 export const onMachineTunnelAddr = (
   sql: SqlStorage,
   net: HubSockets,
@@ -78,7 +66,6 @@ export const onMachineTunnelAddr = (
     net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, true) })
 }
 
-/// The handlers user-hub.ts calls, under one import.
 export const hubTunnel = {
   appHello: onAppTunnelIdentity,
   machineScope: machineTunnelScope,

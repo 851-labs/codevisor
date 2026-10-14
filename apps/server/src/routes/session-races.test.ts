@@ -153,8 +153,6 @@ it("a second drain cannot dispatch while the first prompt is held", async () => 
   const second = drainPromptQueue(services, fanout, state, "server-a", session.id)
   try {
     await entered.promise
-    // The second drain returns after publishing its held queue. In the broken
-    // implementation it instead owns another prompt, so release both calls.
     await Promise.race([second, overlapping.promise])
     release.resolve()
     await Promise.all([first, second])

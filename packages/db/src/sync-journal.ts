@@ -14,8 +14,6 @@ const maxJournalRows = 2048
 const maxReplayBytes = 512 * 1024
 const maxReplayRows = 512
 
-/** Retention applies only to delivery records; transcript entities and media
- * are independent and never deleted by this function. */
 export const trimSyncJournal = (
   db: Database.Database,
   addedBytes: number,
@@ -131,10 +129,6 @@ export const readSyncBatch = (
     return { events, cursor, requiresSnapshot: false }
   })()
 
-/** Atomic cutover after verification. The old source tables are dropped, not
- * kept as a backup: nothing reads them, and their foreign keys made every
- * chat item delete scan the whole journal. Runtime readers use only the empty
- * delivery journals created here. */
 export const activateSyncJournals = (db: Database.Database): void => {
   const global = (
     db.prepare("select coalesce(max(id), 0) as cursor from events").get() as { cursor: number }

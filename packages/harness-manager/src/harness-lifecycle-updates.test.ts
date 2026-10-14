@@ -127,7 +127,6 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       gateReleased.resolve()
     })
 
-    // Two turns in flight → arm instead of running.
     lifecycle.notifyTurnStarted("fake-cli")
     lifecycle.notifyTurnStarted("fake-cli")
     await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
@@ -140,11 +139,9 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       { harnessId: "fake-cli", state: "pending" }
     ])
 
-    // First turn ends → still busy, nothing runs.
     lifecycle.notifyTurnEnded("fake-cli")
     expect(spawns).toHaveLength(0)
 
-    // Last turn ends → the armed update executes and gates dispatch.
     lifecycle.notifyTurnEnded("fake-cli")
     await spawned
     expect(spawns.length).toBe(1)
@@ -153,7 +150,6 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       { harnessId: "fake-cli", state: "running" }
     ])
 
-    // Completion releases the gate and clears the durable row.
     processes[0]?.emitExit(0)
     await gateReleased.promise
     expect(released).toEqual(["fake-cli"])
@@ -189,14 +185,12 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       gateReleased.resolve()
     })
 
-    // Cancel disarms without running anything.
     lifecycle.notifyTurnStarted("fake-cli")
     await lifecycle.beginUpdate("fake-cli")
     await lifecycle.cancelPendingUpdate("fake-cli")
     await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
     await expect(lifecycle.cancelPendingUpdate("fake-cli")).rejects.toThrow(/No pending update/)
 
-    // Update Now skips the idle wait; a failing update still releases.
     await lifecycle.beginUpdate("fake-cli")
     await lifecycle.forcePendingUpdate("fake-cli")
     await spawned
@@ -259,7 +253,6 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     lifecycle.subscribe((event) => events.push(event as never))
 
     await lifecycle.reconcileOnStartup()
-    // The interrupted update becomes a failure — never a surviving gate.
     expect(lifecycle.isGated("fake-cli")).toBe(false)
     await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
     expect(events.at(-1)?.payload.lifecycle).toMatchObject({

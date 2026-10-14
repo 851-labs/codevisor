@@ -12,7 +12,6 @@ extension ComputerUseBridge {
   ) throws -> [String: Any] {
     try requireAccessibility(prompt: true)
     let app = try resolveApp(name)
-    // Observing is the deliberate act that resumes an interrupted share.
     try ComputerUsePresentation.requireControlAllowed(
       sessionID: sessionID,
       pid: app.processIdentifier,
@@ -35,10 +34,6 @@ extension ComputerUseBridge {
         waitForLaunch: app.launchDate.map { Date().timeIntervalSince($0) < 15 } ?? false
       )
     } catch let error as ComputerUseNoWindow {
-      // A running app with every window closed (or on a Space that will
-      // not come forward) has nothing to snapshot, but it is still
-      // driveable: ⌘N is exactly how a person reopens a window. Report
-      // that state instead of failing the call outright.
       return try windowlessAppState(
         app: app,
         name: name,
@@ -55,16 +50,12 @@ extension ComputerUseBridge {
     )
     let snapshotID = UUID().uuidString
     let accessibilityWindowFrame = frame(of: window)
-    // Never fronts the app: ScreenCaptureKit composites a window on
-    // another Space perfectly well, so looking at an app must not steal
-    // the user's focus or drag them between desktops.
     let wantsScreenshot = options["screenshot"] as? Bool ?? true
     let outcome: ScreenshotOutcome =
       wantsScreenshot
       ? screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
       : .unavailable("Screenshot not requested.")
     let capture = outcome.capture
-    // Never combine pixels from one window position with AX frames from another.
     let windowFrame = frame(of: window) ?? accessibilityWindowFrame
     if let capture, let windowFrame, !computerUseFramesMatch(capture.windowFrame, windowFrame) {
       throw BridgeError("The window moved during capture. Call get_app_state again.")
@@ -76,18 +67,11 @@ extension ComputerUseBridge {
     guard ["auto", "window", "menu", "dialog"].contains(requestedView) else {
       throw BridgeError("view must be auto, window, menu, or dialog")
     }
-    // For another app these calls are IPC and remain on this worker. For
-    // Codevisor itself they synchronously enter AppKit/SwiftUI, so read the
-    // complete tree in one main-thread hop. Screenshot capture above stays
-    // off main because it waits on asynchronous ScreenCaptureKit work.
     let accessibility = computerUsePerformAccessibilityRead(
       targetPID: app.processIdentifier
     ) {
       var records: [String: ElementRecord] = [:]
       var lines: [String] = []
-      // An app that publishes its content upside down would otherwise
-      // send every coordinate — tree frames, the cursor, pointer events
-      // — to the mirror image of the control that was named.
       let contentIsFlipped =
         windowFrame.map {
           self.windowContentIsFlipped(
@@ -173,20 +157,13 @@ extension ComputerUseBridge {
       "coordinateSpace": capture == nil ? "windowPoints" : "screenshotPixels",
       "screenshot": screenshotMetadata,
     ]
-    // A modal sheet blocks every other control in the window, so say so
-    // rather than leaving the model to infer it from the tree.
     if accessibility.contentIsFlipped {
-      // Say so: the coordinates here will not match the app's own
-      // accessibility inspector output.
       metadata["frameOrientationCorrected"] = true
     }
     if accessibility.hasModalSheet {
       metadata["modalSheetPresent"] = true
       metadata["next"] = "A modal dialog is open; dismiss or complete it before using other controls."
     }
-    // The session follows one window. Publishing the rest is what makes an
-    // action that opened a new window (⌘N) visible instead of looking like
-    // it did nothing; windowId here can be passed back as window_id.
     let windows = accessibility.windows
     metadata["windows"] = windows
     if windows.count > 1,
@@ -215,8 +192,6 @@ extension ComputerUseBridge {
         "width": pixelSize.width,
         "height": pixelSize.height,
       ]
-      // windowBounds/screenshotSize are pixels while screenWindowBounds
-      // is display points; publish the ratio so consumers can convert.
       if let windowFrame, windowFrame.width > 0 {
         metadata["scaleFactor"] = Double(pixelSize.width / windowFrame.width)
       }
@@ -232,9 +207,6 @@ extension ComputerUseBridge {
     return ["content": content]
   }
 
-  /// State for a running app that currently exposes no window. Keyboard
-  /// tools still work (they address the process), so this is a recoverable
-  /// state rather than an error.
   private func windowlessAppState(
     app: NSRunningApplication,
     name: String,

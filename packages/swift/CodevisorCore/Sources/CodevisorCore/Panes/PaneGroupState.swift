@@ -1,8 +1,5 @@
 import Foundation
 
-/// Pane identities and selection within a workspace leaf or compact tab list.
-/// Stable pane keys let terminals reattach to the same server process after
-/// layout changes and app restarts.
 public struct PaneGroupState: Codable, Sendable, Equatable {
   public var panes: [PaneDescriptorState]
   public var selectedPaneId: UUID?
@@ -17,31 +14,21 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    // Element-lenient: a pane persisted by a NEWER build (an unknown
-    // future kind) drops alone instead of failing the whole group —
-    // the server registry re-materializes anything a downgrade loses.
     let panes = try container.decode([LenientPaneDescriptorState].self, forKey: .panes)
       .compactMap(\.pane)
     let selected = try container.decodeIfPresent(UUID.self, forKey: .selectedPaneId)
     self.init(
       panes: panes,
-      // Never restore a selection that doesn't exist anymore.
       selectedPaneId: panes.contains(where: { $0.id == selected }) ? selected : panes.first?.id
     )
   }
 
-  /// The state a center group starts with when the workspace has no chat to
-  /// bind: the same New Tab placeholder the user gets from `addNewTabPane`,
-  /// so nothing here invents a chat or a session-scoped key.
   public static func centerInitialWithoutChat() -> PaneGroupState {
     var state = PaneGroupState()
     state.addNewTabPane()
     return state
   }
 
-  /// The state a session's center group starts with: the chat pane, bound
-  /// to its session (an unbound chat pane is a DRAFT — see addChatPane),
-  /// selected when the workspace first opens.
   public static func centerInitial(sessionId: UUID, paneId: UUID = UUID()) -> PaneGroupState {
     let chat = PaneDescriptorState(
       id: paneId,
@@ -57,13 +44,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     panes.first { $0.id == selectedPaneId }
   }
 
-  /// Adopts the pane identities/content produced by workspace sync while
-  /// retaining this client's selection. The incoming state is authoritative only
-  /// for which shared panes exist and what each pane renders.
-  ///
-  /// The existing selection survives when its pane still exists. If sync
-  /// removed it, the repository's repaired selection is preferred before
-  /// falling back to the first remaining pane.
   @discardableResult
   public mutating func reconcilePaneDescriptors(from incoming: PaneGroupState) -> Bool {
     let previousPanes = panes
@@ -89,13 +69,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return previousPanes != panes || previousSelection != selectedPaneId
   }
 
-  /// Appends a new terminal pane named "Terminal" (it shows what runs in it;
-  /// see `displayName`), and selects it. The shell spawns
-  /// in the workspace's working directory (the anchor session's cwd).
-  /// Requires a session identity: the terminal key namespaces the server's
-  /// live PTY per session, so a substitute namespace would either collide with
-  /// a real session or orphan the shell. A group without a session never calls
-  /// this (see `convertNewTabPane`, which declines the terminal kind).
   @discardableResult
   public mutating func addTerminalPane(sessionId: UUID) -> PaneDescriptorState {
     let paneId = UUID()
@@ -110,8 +83,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Appends a chat pane and selects it. A nil session id is a DRAFT: the
-  /// pane hosts the new-chat composer and binds to a session on first send.
   @discardableResult
   public mutating func addChatPane(
     sessionId: UUID? = nil,
@@ -130,10 +101,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Appends the Chrome-style "New tab" placeholder and selects it —
-  /// spawned when a group's last real pane closes, so the strip always
-  /// shows at least one tab. Its page offers what to create; everything
-  /// opens in the workspace's working directory.
   @discardableResult
   public mutating func addNewTabPane() -> PaneDescriptorState {
     let paneId = UUID()
@@ -148,11 +115,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Replaces a New Tab placeholder with a real pane IN PLACE (same slot;
-  /// selection follows): a terminal, or a chat — established when
-  /// `chatSessionId` is provided (the session was created eagerly), a
-  /// draft that binds on first send otherwise. Returns nil when the pane
-  /// isn't a placeholder (or the target kind is another placeholder).
   @discardableResult
   public mutating func convertNewTabPane(
     id: UUID,
@@ -170,7 +132,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     let pane: PaneDescriptorState
     switch kind {
     case .terminal:
-      // Same rule as `addTerminalPane`: no session identity, no terminal.
       guard let sessionId else { return nil }
       pane = PaneDescriptorState(
         id: paneId,
@@ -220,9 +181,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Reverts a chat pane to an unbound DRAFT (its session was deleted —
-  /// e.g. a failed first-send setup tore the record down). The pane and
-  /// its composer stay; only the dangling reference goes.
   public mutating func unbindChatPane(paneId: UUID) {
     guard let index = panes.firstIndex(where: { $0.id == paneId }),
       panes[index].kind == .chat
@@ -231,9 +189,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     panes[index].name = "New Chat"
   }
 
-  /// Replaces a chat pane whose session no longer exists with a New Tab
-  /// placeholder IN PLACE (same slot; selection follows) — the dead-end
-  /// "chat no longer exists" state becomes a fresh start.
   @discardableResult
   public mutating func resetChatPaneToPlaceholder(id: UUID) -> PaneDescriptorState? {
     guard let index = panes.firstIndex(where: { $0.id == id }),
@@ -242,9 +197,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return replacePaneWithNewTab(id: id)
   }
 
-  /// Converts any renderer into a New Tab while preserving the server-owned
-  /// pane identity. Used for an optimistic final-pane close; the server
-  /// performs and confirms the same transition atomically.
   @discardableResult
   public mutating func replacePaneWithNewTab(id: UUID) -> PaneDescriptorState? {
     guard let index = panes.firstIndex(where: { $0.id == id }) else { return nil }
@@ -261,7 +213,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Binds a draft chat pane to its just-created session (first send).
   public mutating func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
     guard let index = panes.firstIndex(where: { $0.id == paneId }),
       panes[index].kind == .chat
@@ -270,27 +221,16 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     panes[index].name = name
   }
 
-  /// Whether a pane's tab may close, by GROUP-LOCAL rules: every existing
-  /// pane may. The rules that need cross-group sight live in the owning
-  /// model's policies: the workspace keeps at least one established chat
-  /// (its anchor), and a LONE New Tab placeholder closes only when its
-  /// group can dissolve (in the workspace's last group, closing it would
-  /// just respawn it).
   public func canClosePane(id: UUID) -> Bool {
     panes.contains { $0.id == id }
   }
 
-  /// Removes a pane (no-op when `canClosePane` forbids it). If it was
-  /// selected, selection moves to its right neighbor (or the new last
-  /// pane). Closing the last pane clears selection.
   @discardableResult
   public mutating func closePane(id: UUID) -> PaneDescriptorState? {
     guard canClosePane(id: id) else { return nil }
     return removePane(id: id)
   }
 
-  /// Removes a pane WITHOUT consulting the close rules. Selection moves
-  /// like closePane's.
   @discardableResult
   public mutating func removePane(id: UUID) -> PaneDescriptorState? {
     guard let index = panes.firstIndex(where: { $0.id == id }) else { return nil }
@@ -301,8 +241,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return removed
   }
 
-  /// Which pane takes over when the selected pane at `index` goes away:
-  /// the one before it, else the one after.
   static func replacementSelection(
     afterRemovingAt index: Int, from panes: [PaneDescriptorState]
   ) -> UUID? {
@@ -310,7 +248,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return (index > 0 ? panes[index - 1] : panes[0]).id
   }
 
-  /// Selects an existing pane, ignoring unknown identities.
   public mutating func selectPane(id: UUID) {
     guard panes.contains(where: { $0.id == id }) else { return }
     selectedPaneId = id

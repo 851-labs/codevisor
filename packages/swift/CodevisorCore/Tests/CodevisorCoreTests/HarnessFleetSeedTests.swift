@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Seeding the shared harness catalog from a machine's discovery, so the
-/// Harnesses settings page has rows after onboarding — and, once, for
-/// installs that onboarded before onboarding wrote the catalog.
 @MainActor
 @Suite("HarnessFleetSeed")
 struct HarnessFleetSeedTests {
@@ -55,7 +52,6 @@ struct HarnessFleetSeedTests {
   @Test("A leftover discovery row is not a preference and gets replaced")
   func replacesLegacyDiscoveryRow() throws {
     let sync = try makeSync()
-    // What servers published before the catalog became client-authored.
     sync.set(
       namespace: "harnesses", key: "claude-code",
       value: .object(["enabled": .bool(true), "installed": .bool(false)]))
@@ -80,8 +76,6 @@ struct HarnessFleetSeedTests {
     #expect(sync.revisionsByNamespace["harnesses"] == revision)
   }
 
-  // MARK: - One-time catch-up for already-onboarded installs
-
   @Test("An onboarded install with an unauthored catalog seeds once from the local machine")
   func environmentSeedsOnce() async {
     let machineStore = InMemoryStore()
@@ -92,8 +86,6 @@ struct HarnessFleetSeedTests {
     await environment.seedHarnessCatalogIfNeeded(from: "local")
     #expect(HarnessFleet.settings(environment.configSync).map(\.id) == ["claude-code"])
 
-    // The marker persists with the machine store: a later launch with more
-    // harnesses ready never seeds again.
     let later = makeEnvironment(
       machineStore: machineStore,
       service: SeedHarnessService(
@@ -156,8 +148,6 @@ struct HarnessFleetSeedTests {
     #expect(HarnessFleet.settings(reachable.configSync).map(\.id) == ["claude-code"])
     #expect(machineStore.loadData(forKey: AppEnvironment.harnessCatalogSeedKey) != nil)
   }
-
-  // MARK: - Fixtures
 
   private func harness(_ id: String, name: String, ready: Bool, desiredEnabled: Bool) -> ServerHarness {
     ServerHarness(

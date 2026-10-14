@@ -43,7 +43,6 @@ describe("skill store contents", () => {
       "nameless",
       "zeta"
     ])
-    // An empty frontmatter name falls back to the folder name.
     expect(storedSkill(list, "nameless").name).toBe("nameless")
     expect(storedSkill(list, "zeta")).toMatchObject({ description: "Last", name: "Zeta" })
     expect(storedSkill(list, "broken")).toEqual({

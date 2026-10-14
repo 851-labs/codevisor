@@ -6,8 +6,6 @@ import Testing
 struct CloudDeviceApprovalClientTests {
   private static let base = URL(string: "https://cloud.example")!
 
-  /// A client that records each request and answers with the scripted
-  /// status and body for its path.
   private final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [URLRequest] = []

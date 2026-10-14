@@ -1,37 +1,4 @@
 #!/usr/bin/env bash
-# Gives a Linux machine running codevisor-server a desktop the Codevisor app
-# can view as a Screen Sharing pane.
-#
-#   scripts/vnc-desktop.sh root@HOST            # idempotent
-#   DISPLAY_NAME="Studio" scripts/vnc-desktop.sh root@HOST
-#   SCALE=2 scripts/vnc-desktop.sh root@HOST     # Xfce at 2× for a machine with Retina Remote Desktop on
-#
-# TigerVNC (Xfce) listens on localhost only, with no VNC password: nothing but
-# codevisor-server on the same box reaches it, and the server only splices
-# machine-authenticated clients onto it. The server learns the display from
-# ~/.codevisor/data/screen-sharing.json and is restarted to pick it up.
-#
-# Idempotent and safe to rerun on a desktop in use: Xvnc and codevisor-server
-# restart only when their configuration changed (restarting Xvnc ends the
-# desktop session).
-#
-# Tuned for streaming (851-2322; measured with apps/screen-sharing-rig/scripts/vnc-desktop-sample.sh):
-# - xfwm4's compositor is off: shadows and fades only add repaints to send.
-# - GEOMETRY is only the size the desktop starts at; the viewer resizes it to
-#   its window (ExtendedDesktopSize/RandR, 851-2314).
-# - No sign-in blacklist (-UseBlacklist=0): Xvnc listens on localhost only with no password,
-#   so there is nothing to brute-force, and its only client, codevisor-server, connects from
-#   127.0.0.1: a few dropped connections from there must not lock the desktop out (851-2335).
-# - Xvnc settings reviewed and left at their defaults: FrameRate 60 (the most
-#   updates per second a viewer can use), CompareFB 2 (drop unchanged pixels,
-#   adaptively), DeferUpdate 1 ms. The client picks encodings and JPEG quality.
-# - SCALE=2 (851-2330) makes Xfce draw at 2× for machines whose Retina Remote
-#   Desktop setting is on (851-2315); SCALE=1, the default, sets it back. Apps
-#   already open keep their scale until reopened.
-#
-# Desktop settings go through the session's own D-Bus (851-2330). An ssh shell
-# has a different bus with its own xfconfd: settings written there land in the
-# XML files but never reach the running desktop.
 set -euo pipefail
 
 target=${1:-}

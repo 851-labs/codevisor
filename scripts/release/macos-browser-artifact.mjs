@@ -18,7 +18,6 @@ function execute(command, args) {
 
 export async function embeddedLibraries(app) {
   const frameworks = join(app, "Contents/Frameworks")
-  // Do not follow aliases or re-sign code inside an already sealed framework.
   return (await readdir(frameworks, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".dylib"))
     .map((entry) => join(frameworks, entry.name))
@@ -63,9 +62,6 @@ export function verifyBrowserLinkage(app, architectures, run = execute) {
     for (const arch of architectures) {
       if (!actual.includes(arch)) throw new Error(`${binary} is missing ${arch}.`)
       if (binary === library) continue
-      // dyld_info accepts helper names containing parentheses, unlike otool's
-      // archive(member) filename parser. Reject weak or delayed dependencies:
-      // interposition requires the library to be loaded at process startup.
       const dependencies = run("xcrun", ["dyld_info", "-arch", arch, "-dependents", binary])
       if (!dependencies.split("\n").some((line) => line.trim() === storageLoadPath)) {
         throw new Error(`${binary} (${arch}) must load ${storageLoadPath} at startup.`)
@@ -87,15 +83,11 @@ function distributionRequirement(binary, run) {
   const mainDetails = run("codesign", ["-d", "--verbose=4", binary])
   const team = /^TeamIdentifier=([A-Z0-9]+)$/m.exec(mainDetails)?.[1]
   if (!team) throw new Error("The release app must have a signing Team ID.")
-  // Developer ID Application, issued by Apple's Developer ID intermediate,
-  // with the same team as the app. Strict verification alone accepts ad-hoc.
   return `=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
 }
 
 function verifyDistributionBinary(binary, requirement, run) {
   run("codesign", ["--verify", "--strict", "--all-architectures", "-R", requirement, binary])
-  // A vendored dylib may still be universal. Check every slice, including
-  // those the arm64 app never loads: Apple's notary service scans them all.
   for (const arch of architecturesOf(binary, run)) {
     const details = run("codesign", ["-d", "--verbose=4", "--arch", arch, binary])
     if (!/^Timestamp=.+$/m.test(details) || !/flags=.*\bruntime\b/.test(details)) {

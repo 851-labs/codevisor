@@ -38,8 +38,6 @@ describe("session action routes", () => {
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => agents.prompts.length === promptCountBeforeReturnedEvents + 1)
-    // The fake agent records the prompt before it emits the answer, so wait
-    // for the answer itself rather than assuming it landed with the prompt.
     const conversationText = async () =>
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     await waitFor(async () => (await conversationText()).includes("Raw answer without id"))
@@ -200,7 +198,6 @@ describe("session action routes", () => {
     ).toMatchObject({ configId: "model", configOptions: [{ id: "model" }] })
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
 
-    // Goal set: the double-option tokenBudget key only forwards when present.
     const goalResponse = await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
       body: JSON.stringify({ clientActionId: "goal-1", objective: "ship it", tokenBudget: 50000 }),
       method: "POST"
@@ -214,27 +211,22 @@ describe("session action routes", () => {
     expect(agents.goals).toEqual([
       [session.agentSessionId, { objective: "ship it", tokenBudget: 50000 }]
     ])
-    // Idempotent replay: the same clientActionId returns the stored result
-    // without re-invoking the runtime.
     const goalReplay = await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
       body: JSON.stringify({ clientActionId: "goal-1", objective: "ship it", tokenBudget: 50000 }),
       method: "POST"
     })
     expect(goalReplay.status).toBe(202)
     expect(agents.goals).toHaveLength(1)
-    // Pause keeps the budget key off the wire entirely.
     await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
       body: JSON.stringify({ status: "paused" }),
       method: "POST"
     })
     expect(agents.goals.at(-1)).toEqual([session.agentSessionId, { status: "paused" }])
-    // Explicit null clears the budget.
     await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
       body: JSON.stringify({ tokenBudget: null }),
       method: "POST"
     })
     expect(agents.goals.at(-1)).toEqual([session.agentSessionId, { tokenBudget: null }])
-    // Bad payloads are rejected before reaching the runtime.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
@@ -243,7 +235,6 @@ describe("session action routes", () => {
         })
       ).status
     ).toBe(400)
-    // Runtime failures (e.g. goals unsupported by the harness) surface as errors.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
@@ -252,13 +243,11 @@ describe("session action routes", () => {
         })
       ).status
     ).toBeGreaterThanOrEqual(400)
-    // Clear.
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/goal`, { method: "DELETE" })).status
     ).toBe(204)
     expect(agents.goalClears).toEqual([session.agentSessionId])
 
-    // Question answers route to the runtime, with idempotent replay.
     const answerBody = {
       answers: { approach: { answers: ["MVP first"], note: "keep it lean" } },
       clientActionId: "answer-1",
@@ -288,7 +277,6 @@ describe("session action routes", () => {
         }
       ]
     ])
-    // Cancel outcome forwards without answers.
     await jsonRequest(server, `/v1/sessions/${session.id}/questions/q-2/answer`, {
       body: JSON.stringify({ outcome: "cancelled" }),
       method: "POST"
@@ -298,7 +286,6 @@ describe("session action routes", () => {
       "q-2",
       { outcome: "cancelled" }
     ])
-    // Bad payloads 400 before reaching the runtime; stale questions surface errors.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/questions/q-3/answer`, {
@@ -324,12 +311,8 @@ describe("session action routes", () => {
         })
       ).body
     ).toMatchObject({ title: "Retitled" })
-    // Retitling never touches the runtime.
     expect(agents.closes).toEqual([])
 
-    // Archiving the chat's WORKSPACE retires its runtime: the agent session
-    // closes and its background-task terminals (and only those) are killed and
-    // removed. Chats carry no archive state of their own.
     const backgroundProcess = { killCount: 0 }
     const backgroundTerminal = services.terminal.registerExternalTerminal(
       { sessionId: `${session.agentSessionId}:bg:tool-1` },
@@ -368,8 +351,6 @@ describe("session action routes", () => {
     await expect(attach(backgroundTerminal.terminalId)).rejects.toBeInstanceOf(TerminalError)
     await expect(attach(unrelatedTerminal.terminalId)).resolves.toBeTypeOf("function")
 
-    // A workspace whose chat has no runtime identity archives without touching
-    // the runtime.
     const runtimelessSession = (
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({

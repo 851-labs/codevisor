@@ -3,12 +3,7 @@
   import CoreGraphics
   import ScreenCaptureKit
 
-  /// `screen-sharing-rig colour-check CARD.png` (851-2398): shows the card 1:1 in a window this
-  /// process owns, captures that window through ScreenCaptureKit in several colour spaces, and
-  /// prints the flat colour patches each one delivers next to the card's own values. Isolates what
-  /// capture does to colour from the codec, the network and the viewer.
   enum ColourCheckCommand {
-    /// Card-space centres of flat patches in the 851-2381 sharpness card.
     static let patches: [(name: String, x: Int, y: Int)] = [
       ("blue", 1300, 198), ("magenta", 1300, 254), ("red", 1300, 310), ("sky", 1300, 366), ("white", 700, 540),
     ]
@@ -72,7 +67,6 @@
       }
     }
 
-    /// The image's own stored values (drawn in its own colour space, so nothing is converted).
     static func values(of image: CGImage) -> [(Int, Int, Int)] {
       let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
       guard

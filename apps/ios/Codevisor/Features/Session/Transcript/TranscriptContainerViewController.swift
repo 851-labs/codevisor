@@ -1,8 +1,6 @@
 import StreamMarkdown
 import UIKit
 
-/// SwiftUI owns this lightweight controller. The cached transcript remains a
-/// child of exactly one container, keeping row controllers out of navigation.
 @MainActor
 final class TranscriptContainerViewController: UIViewController {
   private(set) var surface: TranscriptPresentationSurface?
@@ -19,9 +17,6 @@ final class TranscriptContainerViewController: UIViewController {
     (controller.parent as? TranscriptContainerViewController)?.releaseSurface()
     loadViewIfNeeded()
     self.surface = surface
-    // Baseline before configure observes the restored projection. SwiftUI's
-    // outer appearance callback can arrive afterward; resetting there would
-    // swallow the first new chunk on a retained controller.
     surface.textAnimationRegistry.prepareForPresentation()
     controller.prepareForPresentationAttachment()
     addChild(controller)

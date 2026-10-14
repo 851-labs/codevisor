@@ -9,11 +9,6 @@ import type {
 import { SimulatorRequestError } from "./simulator-errors.js"
 import type { SimulatorEnvironment } from "./simulators.js"
 
-/// The settings Device Hub applies through CoreDevice rather than `simctl`: Liquid Glass, Color
-/// Filter, Reduce Motion, Show Borders, Reduce Transparency, VoiceOver, and the device's volume and
-/// audio routes. `devicectl`
-/// carries them to helpers CoreSimulator runs inside every simulator; an Xcode without these
-/// commands leaves the settings out.
 export type SimulatorDeviceSettings = Pick<
   SimulatorSettings,
   | "liquidGlass"
@@ -29,7 +24,6 @@ export type SimulatorDeviceSettings = Pick<
   | "audioInputs"
 >
 
-/// The route that follows the Mac's default device.
 export const systemAudioRoute = "system"
 
 const audioDevicesTTL = 10_000
@@ -39,14 +33,12 @@ const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =
     ? (value as Readonly<Record<string, unknown>>)
     : undefined
 
-/// `{enabled: true}` (accessibility settings) or a bare boolean.
 const enabled = (value: unknown): boolean | undefined => {
   if (typeof value === "boolean") return value
   const flag = record(value)?.["enabled"]
   return typeof flag === "boolean" ? flag : undefined
 }
 
-/// CoreDevice's filter names, as `devicectl` reads them back (`{filterType: {name: "Protanopia"}}`).
 const colorFilters: Readonly<Record<string, ColorFilter>> = {
   Protanopia: "protanopia",
   Deuteranopia: "deuteranopia",
@@ -56,7 +48,6 @@ const colorFilters: Readonly<Record<string, ColorFilter>> = {
 
 type ColorFilter = NonNullable<SimulatorSettings["colorFilter"]>
 
-/// `{enabled: false}` is no filter; an enabled one names its type.
 const parseColorFilter = (value: unknown): ColorFilter | undefined => {
   const filter = record(value)
   const on = filter?.["enabled"]
@@ -65,7 +56,6 @@ const parseColorFilter = (value: unknown): ColorFilter | undefined => {
   return on === true && typeof name === "string" ? colorFilters[name] : undefined
 }
 
-/// `{systemDefault: {}}` or `{device: {_0: "<uid>"}}`.
 export const parseAudioRoute = (value: unknown): string | undefined => {
   const route = record(value)
   if (route === undefined) return undefined
@@ -123,7 +113,6 @@ export const parseDeviceSettings = (
   }
 }
 
-/// A setting this Xcode or runtime can't read is left out rather than failing the rest.
 const optional = async (read: () => Promise<unknown>): Promise<unknown> => {
   try {
     return await read()
@@ -135,8 +124,6 @@ const optional = async (read: () => Promise<unknown>): Promise<unknown> => {
 const onOff = (value: boolean) => (value ? "on" : "off")
 
 export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) => {
-  /// Runs a `devicectl` command and answers its JSON `result` (written to a file: devicectl
-  /// prints its human-readable report on stdout too).
   const devicectl = (args: ReadonlyArray<string>): Promise<unknown> =>
     environment.withTemporaryDirectory(async (directory) => {
       const path = join(directory, "result.json")
@@ -147,7 +134,6 @@ export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) =
       return record(JSON.parse((await environment.readFile(path)).toString("utf8")))?.["result"]
     })
 
-  // The Mac's audio devices change rarely; every settings read shouldn't list them again.
   let devices: { readonly value: unknown; readonly at: number } | undefined
   const audioDevices = async (): Promise<unknown> => {
     if (devices !== undefined && environment.now() - devices.at < audioDevicesTTL)
@@ -167,8 +153,6 @@ export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) =
     return parseDeviceSettings(appearance, voiceOver, audio, hosts)
   }
 
-  /// A route to set: the system default, or a device the Mac has in that direction. CoreSimulator
-  /// silently keeps an unknown device, so it's refused here instead.
   const route = async (uid: string, direction: "outputDevices" | "inputDevices") => {
     if (uid === systemAudioRoute) return "systemDefault"
     const known = parseAudioDevices(record(await audioDevices())?.[direction])

@@ -4,14 +4,8 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Lifecycle and ownership of the renderer's scheduling state through the
-/// real coordinator used by `ScreenSharingMetalView`, with a controlled
-/// submission (completion/presentation delivered by the test) and a controlled
-/// hop (queued main-actor work drained by the test). No Metal, no window.
 @MainActor
 struct ScreenSharingRenderCoordinatorTests {
-  /// Records the installed handlers; the test decides when the GPU "completes"
-  /// and when the drawable is "presented".
   private final class ControlledSubmission: ScreenSharingRenderSubmission, @unchecked Sendable {
     private let lock = NSLock()
     private var completed: (@Sendable (Bool) -> Void)?
@@ -48,7 +42,6 @@ struct ScreenSharingRenderCoordinatorTests {
     }
   }
 
-  /// Queued main-actor work (arrival, completion, presentation hops), drained explicitly.
   private final class WorkQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [@Sendable @MainActor () -> Void] = []
@@ -63,7 +56,6 @@ struct ScreenSharingRenderCoordinatorTests {
     }
   }
 
-  /// Stand-in for the view's retained textures + frame (released at GPU completion).
   private final class Retained: @unchecked Sendable {
     let frame: ScreenSharingVideoFrame
     init(_ frame: ScreenSharingVideoFrame) { self.frame = frame }
@@ -95,18 +87,15 @@ struct ScreenSharingRenderCoordinatorTests {
     .init(pixelBuffer: buffer, timestampNs: Int64(rtp), rtpTimestamp: rtp, receivedAtSeconds: receivedAt)
   }
 
-  /// Selection order is unchanged: nothing in flight → incoming first; the
-  /// incoming frame is cached; a redraw re-selects the cache as not-new; while
-  /// in flight nothing is taken and the mailbox keeps its frame.
   @Test func selectionOrderAndCachingAreUnchanged() throws {
     let f = Fixture(renderOnArrival: false)
     #expect(f.coordinator.select() == nil)
     f.mailbox.put(frame(try makeBuffer(), rtp: 1))
     let first = try #require(f.coordinator.select())
     #expect(first.isNewFrame && first.frame.rtpTimestamp == 1 && f.coordinator.isHoldingCachedFrame)
-    #expect(f.coordinator.select() == nil)  // no redraw requested, nothing incoming
+    #expect(f.coordinator.select() == nil)
     f.coordinator.setNeedsRedraw()
-    #expect(f.queue.pending == 0)  // without redrawsOnDemand a redraw request schedules nothing (unchanged)
+    #expect(f.queue.pending == 0)
     let redraw = try #require(f.coordinator.select())
     #expect(!redraw.isNewFrame && redraw.frame.rtpTimestamp == 1)
     let submission = ControlledSubmission()
@@ -114,10 +103,10 @@ struct ScreenSharingRenderCoordinatorTests {
       submission, retaining: Retained(redraw.frame), frame: redraw.frame, isNewFrame: false, submittedAt: 2)
     #expect(submission.committed && f.coordinator.inFlight)
     f.mailbox.put(frame(try makeBuffer(), rtp: 2))
-    #expect(f.coordinator.select() == nil && f.mailbox.isHolding)  // in flight: the frame stays in the mailbox
+    #expect(f.coordinator.select() == nil && f.mailbox.isHolding)
     submission.complete()
     #expect(f.queue.drain() == 1 && !f.coordinator.inFlight)
-    #expect(f.draws.value == 0)  // display-link drive: completion never requests a draw
+    #expect(f.draws.value == 0)
     let next = try #require(f.coordinator.select())
     #expect(next.isNewFrame && next.frame.rtpTimestamp == 2)
   }
@@ -132,7 +121,7 @@ struct ScreenSharingRenderCoordinatorTests {
       let cached = try makeBuffer()
       weakCached = cached
       f.mailbox.put(frame(cached, rtp: 1))
-      _ = f.queue.drain()  // arrival hop → one draw request
+      _ = f.queue.drain()
       let selected = try #require(f.coordinator.select())
       f.coordinator.reportSize(CGSize(width: 64, height: 64))
       let submission = ControlledSubmission()
@@ -142,7 +131,7 @@ struct ScreenSharingRenderCoordinatorTests {
       _ = f.queue.drain()
       let waiting = try makeBuffer()
       weakWaiting = waiting
-      f.mailbox.put(frame(waiting, rtp: 2))  // arrives after completion; queued, not yet drawn
+      f.mailbox.put(frame(waiting, rtp: 2))
     }
     #expect(f.draws.value == 2 && sizes == [CGSize(width: 64, height: 64)])
     #expect(weakCached != nil && weakWaiting != nil && f.coordinator.isHoldingCachedFrame && f.mailbox.isHolding)
@@ -151,7 +140,7 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(weakCached == nil && weakWaiting == nil)
     #expect(f.coordinator.onFrameSize == nil && f.coordinator.onPresented == nil)
     #expect(f.metrics.snapshot().labels["rendererStopped"] == "true")
-    _ = f.queue.drain()  // the queued arrival for frame 2 is inert
+    _ = f.queue.drain()
     #expect(f.draws.value == 2)
   }
 
@@ -169,13 +158,13 @@ struct ScreenSharingRenderCoordinatorTests {
         submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
     }
     f.coordinator.stop()
-    #expect(f.coordinator.inFlight && weakBuffer != nil)  // GPU still owns the buffer: stop must not release it
+    #expect(f.coordinator.inFlight && weakBuffer != nil)
     #expect(f.counter("renderedFrames") == 0)
     submission.complete()
     submission.forgetInstalledCompletion()
-    #expect(weakBuffer == nil && f.counter("renderedFrames") == 1)  // released at completion, telemetry still counted
+    #expect(weakBuffer == nil && f.counter("renderedFrames") == 1)
     #expect(f.queue.drain() == 1 && !f.coordinator.inFlight)
-    #expect(f.draws.value == 1)  // the completion hop does not restart the arrival drive after stop
+    #expect(f.draws.value == 1)
   }
 
   @Test func presentationHandlerHoldsOnlyScalarsAndIsSilentAfterStop() throws {
@@ -196,13 +185,11 @@ struct ScreenSharingRenderCoordinatorTests {
       _ = f.queue.drain()
     }
     #expect(f.coordinator.isHoldingCachedFrame && weakBuffer != nil)
-    // releases the cache; the un-invoked presentation handler is still held by the submission
     f.coordinator.stop()
     #expect(first.holdsPresentationHandler && weakBuffer == nil)
     first.present(at: 1.5)
-    // real presentation is still recorded
     #expect(f.counter("presentationCallbacks") == 1 && f.counter("presentedFrames") == 1)
-    #expect(f.queue.drain() == 1 && notified.isEmpty)  // but the product is not notified after stop
+    #expect(f.queue.drain() == 1 && notified.isEmpty)
 
     let g = Fixture(renderOnArrival: false)
     var live: [UInt32] = []
@@ -220,13 +207,13 @@ struct ScreenSharingRenderCoordinatorTests {
       second.forgetInstalledCompletion()
       _ = g.queue.drain()
       g.mailbox.put(frame(try makeBuffer(), rtp: 43))
-      _ = try #require(g.coordinator.select())  // the cache moves on to frame 43
+      _ = try #require(g.coordinator.select())
     }
-    #expect(second.holdsPresentationHandler && weakLive == nil)  // the pending handler alone keeps no buffer alive
+    #expect(second.holdsPresentationHandler && weakLive == nil)
     second.present(at: 2)
     _ = g.queue.drain()
     #expect(live == [42])
-    second.present(at: 0)  // a second delivery is impossible for a real drawable; the handler was consumed
+    second.present(at: 0)
     #expect(g.counter("unpresentedDrawables") == 0)
   }
 
@@ -237,11 +224,11 @@ struct ScreenSharingRenderCoordinatorTests {
     _ = try #require(f.coordinator.select())
     #expect(f.draws.value == 1)
     f.coordinator.stop()
-    f.coordinator.setNeedsRedraw()  // resize / fit change
-    #expect(f.coordinator.select() == nil)  // display-link or arrival draw: nothing to render
-    f.mailbox.put(frame(try makeBuffer(), rtp: 2))  // late decoder delivery: no subscription left
+    f.coordinator.setNeedsRedraw()
+    #expect(f.coordinator.select() == nil)
+    f.mailbox.put(frame(try makeBuffer(), rtp: 2))
     #expect(f.queue.pending == 0 && f.mailbox.isHolding)
-    f.coordinator.arrivalScheduled()  // an arrival hop queued before stop
+    f.coordinator.arrivalScheduled()
     #expect(f.coordinator.select() == nil && f.mailbox.isHolding && f.draws.value == 1)
     f.coordinator.reportSize(CGSize(width: 1, height: 1))
     #expect(f.metrics.snapshot().labels["videoSize"] == nil)
@@ -254,9 +241,6 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(f.coordinator.stopped && f.draws.value == 1 && f.counter("renderedFrames") == 0)
   }
 
-  /// The reentrant path: select → reportSize → the size callback closes the
-  /// renderer → the caller still reaches commit. Commit is refused before any
-  /// handler is installed, anything retained or anything submitted.
   @Test func stopInsideTheSizeCallbackRefusesTheHeldSelectionAtCommit() throws {
     let f = Fixture(renderOnArrival: true)
     let coordinator = f.coordinator
@@ -276,7 +260,7 @@ struct ScreenSharingRenderCoordinatorTests {
       #expect(!committed)
     }
     #expect(!submission.committed && !submission.holdsPresentationHandler && !coordinator.inFlight)
-    #expect(weakBuffer == nil)  // nothing retained by a refused commit
+    #expect(weakBuffer == nil)
     submission.complete()
     submission.present(at: 1)
     #expect(f.queue.pending == 0 && f.counter("renderedFrames") == 0 && f.counter("presentationCallbacks") == 0)
@@ -306,9 +290,6 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(f.queue.drain() == 1 && !f.coordinator.inFlight && f.counter("renderedFrames") == 1)
   }
 
-  /// Distinct order: the GPU completion and the presentation happen while the
-  /// renderer is live (their main-actor hops are queued), the renderer stops,
-  /// and only then the queued work runs — no draw, no product notification.
   @Test func mainActorWorkQueuedBeforeStopIsInertWhenDrained() throws {
     let f = Fixture(renderOnArrival: true)
     var notified: [UInt32] = []
@@ -320,8 +301,8 @@ struct ScreenSharingRenderCoordinatorTests {
     let selected = try #require(f.coordinator.select())
     f.coordinator.commit(
       submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
-    submission.complete()  // live: queues the completion hop (would request a draw)
-    submission.present(at: 2)  // live: queues the presentation hop (would notify)
+    submission.complete()
+    submission.present(at: 2)
     #expect(f.queue.pending == 2 && f.coordinator.inFlight)
     #expect(f.counter("renderedFrames") == 1 && f.counter("presentedFrames") == 1)
     f.coordinator.stop()
@@ -344,14 +325,11 @@ struct ScreenSharingRenderCoordinatorTests {
       submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
     submission.complete(false)
     #expect(g.counter("renderErrors") == 1 && g.counter("renderedFrames") == 0)
-    // live arrival drive continues after an error
     #expect(g.queue.drain() == 1 && !g.coordinator.inFlight && g.draws.value == 2)
   }
 }
 
 extension ScreenSharingRenderCoordinatorTests {
-  /// The diagnostic presentation hook carries the frame's clocks and in-band identity, fires only for
-  /// real presentations, and is cleared by `stop()` like the product notification.
   @Test func framePresentedHookCarriesIdentityAndClocks() throws {
     let f = Fixture(renderOnArrival: false)
     var presented: [ScreenSharingPresentedFrame] = []
@@ -368,8 +346,6 @@ extension ScreenSharingRenderCoordinatorTests {
       submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
     submission.complete()
     _ = f.queue.drain()
-    // An untimed presentation (presentedTime 0, as a sparsely presented layer reports) still
-    // notifies the product — the frame is on screen — but carries no clocks for the diagnostic hook.
     submission.present(at: 0)
     #expect(f.queue.drain() == 1 && notified == 1 && presented.isEmpty)
     let second = ControlledSubmission()
@@ -390,9 +366,6 @@ extension ScreenSharingRenderCoordinatorTests {
     #expect(f.coordinator.onFramePresented == nil)
   }
 
-  /// A new frame dropped before submission (no drawable yet, encoding refused)
-  /// still owes its presentation: the redraw it schedules re-selects the cached
-  /// frame as new, exactly once; an ordinary redraw stays not-new; nothing after stop.
   @Test func aDroppedNewFrameOwesItsPresentationToTheNextRedraw() throws {
     let f = Fixture(renderOnArrival: false)
     f.mailbox.put(frame(try makeBuffer(), rtp: 3))
@@ -405,7 +378,6 @@ extension ScreenSharingRenderCoordinatorTests {
     f.coordinator.setNeedsRedraw()
     let plain = try #require(f.coordinator.select())
     #expect(!plain.isNewFrame)
-    // A newer incoming frame supersedes an owed presentation: it is new on its own.
     f.coordinator.deferPresentation()
     f.mailbox.put(frame(try makeBuffer(), rtp: 4))
     let newer = try #require(f.coordinator.select())

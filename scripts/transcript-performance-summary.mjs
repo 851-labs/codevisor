@@ -1,8 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
-// These are CPU operation timings. Nested operations overlap; neither their
-// sum nor the display-link callback duration measures total frame time.
 export function summarizeTranscriptPerformance(records) {
   const groups = new Map()
   const viewports = {}

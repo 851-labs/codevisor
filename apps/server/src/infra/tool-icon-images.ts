@@ -13,7 +13,6 @@ const startsWith = (data: Uint8Array, bytes: ReadonlyArray<number>, offset = 0):
   data.length >= offset + bytes.length &&
   bytes.every((byte, index) => data[offset + index] === byte)
 
-/// The image format by magic bytes. Declared MIME types are advisory only.
 export const sniffImageFormat = (data: Uint8Array): ImageFormat | undefined => {
   if (startsWith(data, [0x89, 0x50, 0x4e, 0x47])) return "png"
   if (startsWith(data, [0xff, 0xd8, 0xff])) return "jpeg"
@@ -26,8 +25,6 @@ export const sniffImageFormat = (data: Uint8Array): ImageFormat | undefined => {
   return undefined
 }
 
-/// SVGs become rasters here and never render as documents, but they are
-/// still refused when they carry active content or reach outside themselves.
 export const isInertSvg = (source: string): boolean => {
   if (/<(?:script|foreignObject|iframe|object|embed)\b/i.test(source)) return false
   if (/<!DOCTYPE|<!ENTITY|@import\b/i.test(source)) return false
@@ -40,8 +37,6 @@ export const isInertSvg = (source: string): boolean => {
   return true
 }
 
-/// A bounded PNG for every raster and SVG source. ICO passes through as-is:
-/// both clients decode it natively, and sharp does not.
 export const normalizeIcon = async (data: Uint8Array): Promise<ToolIconAsset | undefined> => {
   const format = sniffImageFormat(data)
   if (format === undefined) return undefined

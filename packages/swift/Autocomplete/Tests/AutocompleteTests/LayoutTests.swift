@@ -56,7 +56,6 @@
     }
 
     private func settle(_ view: NSView) {
-      // Resolve SwiftUI state before measuring, then lay out at the measured size.
       view.needsLayout = true
       view.layoutSubtreeIfNeeded()
       view.setFrameSize(view.fittingSize)
@@ -72,7 +71,6 @@
     private func highlightLast(in view: NSView) throws {
       let field = try #require(find(NSSearchField.self, in: view))
       let coordinator = try #require(field.delegate as? Autocomplete.InputField.Coordinator)
-      // Search edits restore the first result. Move twice to the third result.
       for _ in 0..<2 {
         _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
       }
@@ -84,8 +82,6 @@
       let bottomCornerInset: CGFloat
     }
 
-    /// Measure painted pixels rather than repeating the implementation's height
-    /// arithmetic: font line boxes, scroll offsets, and stale geometry all matter.
     private func highlightGeometry(in view: NSView) throws -> HighlightGeometry {
       let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
       view.cacheDisplay(in: view.bounds, to: rep)
@@ -115,8 +111,6 @@
       let view = try #require(window.contentView)
       settle(view)
       try highlightLast(in: view)
-      // Sweep every size from the report, then stress larger sizes and shrink
-      // again without remounting the control or its last row.
       for size in Array(13...24) + [36, 9, 32, 18, 24, 13] {
         options.value.fontSize = CGFloat(size)
         options.value.rightToLeft.toggle()

@@ -36,8 +36,6 @@ it("replays short gaps and resnapshots long gaps without deleting transcript con
     })
   )
 
-  // Seed already-projected history in one transaction. Retention keeps 2,048
-  // rows and checks every 64 revisions; real appends below cross that boundary.
   sqlite.transaction(() => {
     const insert = sqlite.prepare(
       `insert into session_events (session_id, revision, server_id, kind, created_at, payload)

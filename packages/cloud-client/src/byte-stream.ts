@@ -1,19 +1,11 @@
-/// Relay channel used for an opaque byte stream to the machine's own
-/// Codevisor loopback listener. The service name is deliberately fixed: this
-/// is not a general-purpose TCP proxy and peers never supply a host or port.
 export const BYTE_STREAM_CHANNEL_TYPE = "byte-stream"
 export const CODEVISOR_LOOPBACK_SERVICE = "codevisor-loopback"
 export const BYTE_STREAM_PROTOCOL_VERSION = 1
 
-/// Bound individual encrypted relay messages well below the hub frame limit.
 export const BYTE_STREAM_MAX_CHUNK_BYTES = 64 * 1024
 
-/// Per-direction in-flight ciphertext budget. Credit is measured in the raw
-/// box bytes carried as relay envelope payloads, not plaintext bytes.
 export const BYTE_STREAM_INITIAL_CREDIT_BYTES = 1024 * 1024
 
-/// ChaCha20-Poly1305 appends a 16-byte tag; the box travels as raw bytes
-/// (no encoding expansion).
 export const byteStreamSealedBytes = (plaintextBytes: number): number => {
   if (!Number.isSafeInteger(plaintextBytes) || plaintextBytes < 0) {
     throw new Error("invalid plaintext byte count")

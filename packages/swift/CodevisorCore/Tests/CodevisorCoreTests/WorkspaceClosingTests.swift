@@ -71,7 +71,6 @@ struct WorkspaceClosingTests {
       return WorkspaceTab(root: .leaf(group))
     }
     var workspace = makeWorkspace(tabs: tabs, selected: tabs[2].id)
-    // The outbox's optimistic close drops the last tab's pane record.
     let records = tabs[..<2].flatMap { $0.root.allGroups.flatMap(\.state.panes) }.map {
       WorkspaceSyncModel.serverPane(from: $0, workspaceId: workspace.id, createdAt: Date(timeIntervalSince1970: 0))
     }

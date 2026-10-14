@@ -52,7 +52,6 @@ export const makeBrowserRepls = () => {
   }
 }
 
-/** Direct provider users receive the same scalar/object contract without gateway attachments. */
 export const browserResultValue = (response: CallToolResult): unknown => {
   const message = response.content
     .filter((c) => c.type === "text")
@@ -62,9 +61,7 @@ export const browserResultValue = (response: CallToolResult): unknown => {
   let value: unknown = message
   try {
     value = JSON.parse(message)
-  } catch {
-    /* Accessibility snapshots are plain text. */
-  }
+  } catch {}
   const image = response.content.find((c) => c.type === "image")
   return image ? { value, image } : value
 }

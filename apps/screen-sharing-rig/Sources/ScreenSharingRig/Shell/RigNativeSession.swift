@@ -2,19 +2,14 @@
   import AppKit
   import SwiftUI
 
-  /// What the Native session scenario shows beside the video: the resident
-  /// viewer's connection, written by `RigRunner` on its telemetry tick.
   @MainActor
   @Observable
   final class RigNativeSessionStatus {
     var line = "Starting…"
     var hudEnabled = true
-    /// A `sample` is running: the window shows only the video for its duration.
     var sampling = false
   }
 
-  /// The resident two-Mac viewer inside the shell window: the session's Metal
-  /// view and HUD in the runner's surface, and a status line under it.
   struct RigNativeSessionView: View {
     let runner: RigRunner
 

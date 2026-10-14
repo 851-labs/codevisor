@@ -23,13 +23,9 @@ export interface SharedHarnessAccount {
   readonly sourceExpiresAt?: number
 }
 
-/// What a newly shared account is called: the name the user gave it, else
-/// its email, else what it is. The names Codevisor makes up for a new
-/// account ("New Account", "Account 1a2b3c") aren't a choice.
 export const sharedAccountLabel = (bundle: SharedTokenBundle, chosen?: string): string => {
   if (chosen && chosen !== "New Account" && !/^Account [0-9a-f]{6}$/.test(chosen)) return chosen
   if (bundle.email) return bundle.email
-  // A Gemini key isn't a Google sign-in; it's told apart by its last digits.
   if (bundle.harnessId === "antigravity" && bundle.authMethod === "apiKey")
     return `Gemini API key ••••${bundle.accessToken.slice(-4)}`
   return (
@@ -69,9 +65,6 @@ export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undef
   return row
 }
 
-/// The harnesses whose sign-ins a set of shared-account changes affects: a
-/// provider sign-in names its harness in its key, a shared account in its
-/// value, and an account selection in its key.
 export const harnessesSignedInBy = (
   entries: ReadonlyArray<Pick<SyncEntryRecord, "key" | "value">>
 ): ReadonlyArray<string> => {
@@ -81,9 +74,7 @@ export const harnessesSignedInBy = (
       try {
         const [harness] = JSON.parse(key.slice("provider:".length)) as Array<unknown>
         if (typeof harness === "string") harnesses.add(harness)
-      } catch {
-        // Not a provider sign-in this version writes.
-      }
+      } catch {}
     } else if (key.startsWith("selected:")) {
       harnesses.add(key.slice("selected:".length))
     } else if (key.startsWith("shared-")) {

@@ -74,8 +74,6 @@ extension ClientDatabase {
     }
   }
 
-  /// Applies a batch of preference changes in one transaction: optionally
-  /// clears every preference first, then sets each key (nil removes it).
   public func applyPreferenceChanges(clearingAll: Bool, changes: [String: Data?]) throws {
     try withTransaction {
       if clearingAll { try removeAllPreferences() }

@@ -38,9 +38,6 @@ struct SettledMarkdownViewTests {
     #expect(view.textContainer?.widthTracksTextView == true)
     #expect(view.textContainer?.size.width == 480)
 
-    // Reproduce the AppKit state observed after a host was detached and
-    // recycled: the text view remains wide while its container returns to
-    // the 1pt size supplied at construction.
     view.textContainer?.size = NSSize(
       width: 1,
       height: CGFloat.greatestFiniteMagnitude
@@ -136,10 +133,6 @@ struct SettledMarkdownViewTests {
     }
   }
 
-  /// A transcript reply is split into rows wherever the chunker decides, so
-  /// a block boundary must look the same inside one TextKit run and between
-  /// two views; and headings and list lead-ins must sit closer to what they
-  /// introduce than to what precedes or follows it.
   @Test("Block gaps match across views and rank heading and list spacing")
   func blockGapsMatchAcrossViews() {
     let theme = MarkdownTheme.default
@@ -253,19 +246,12 @@ struct SettledMarkdownViewTests {
 
   @Test("Code block fill follows the view's appearance, not the ambient one")
   func codeBlockFillTracksAppearance() {
-    // Drive the display pass explicitly rather than waiting on a run loop:
-    // `updateLayer()` only runs when the view actually draws, and the test
-    // must not depend on a window server being attached.
     func fill(_ view: NSView) -> NSColor? {
       guard let block = view.subviews.first else { return nil }
       block.displayIfNeeded()
       guard let cg = block.layer?.backgroundColor else { return nil }
       return NSColor(cgColor: cg)?.usingColorSpace(.sRGB)
     }
-    // MarkdownTheme.default's code fill is Color.secondary — a dynamic
-    // color. Resolving it to a CGColor uses NSAppearance.current, which at
-    // view-build time is whatever the last drawing context left behind, not
-    // the view's own appearance.
     let light = NSAppearance(named: .aqua)!
     let dark = NSAppearance(named: .darkAqua)!
 
@@ -278,7 +264,6 @@ struct SettledMarkdownViewTests {
     window.contentView?.addSubview(view)
     window.displayIfNeeded()
 
-    // Build the row while DARK is the ambient drawing appearance.
     dark.performAsCurrentDrawingAppearance {
       view.setContent(
         blocks: [.codeBlock(language: nil, code: "let answer = 42", isComplete: true)],
@@ -288,16 +273,10 @@ struct SettledMarkdownViewTests {
     window.contentView?.layoutSubtreeIfNeeded()
     window.displayIfNeeded()
 
-    // The window is light, so the fill must be the light one (dark ink on a
-    // light page), not the dark theme's light ink — which would be invisible.
-    // Compare against the midpoint, not an exact channel value: the dark
-    // resolution goes through extended sRGB and can land a hair past 1.0.
     let inLightWindow = fill(view)
     #expect((inLightWindow?.brightnessComponent ?? 1) < 0.5)
     #expect((inLightWindow?.alphaComponent ?? 0) > 0)
 
-    // A live light/dark switch leaves the theme value untouched, so nothing
-    // upstream rebuilds the row: the view has to follow on its own.
     window.appearance = dark
     window.contentView?.layoutSubtreeIfNeeded()
     #expect((fill(view)?.brightnessComponent ?? 0) > 0.5)
@@ -359,17 +338,15 @@ struct SettledMarkdownViewTests {
         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.scaleBy(x: scale, y: scale)
     let color = NSColor(white: 1, alpha: 0.2)
-    // Three pieces with fractional shared edges, as line/layout fragments produce.
     for (top, bottom) in [(0.0, 10.3), (10.3, 21.7), (21.7, 30.0)] {
       TextKitQuoteBarPainter.fill(
         CGRect(x: 1, y: top, width: 2, height: bottom - top), color: color, in: context)
     }
     let data = try #require(context.data).assumingMemoryBound(to: UInt8.self)
-    let column = 2 * Int(scale) + 1  // inside the 2pt bar
+    let column = 2 * Int(scale) + 1
     let alphas = (0..<height).map { row in data[(row * width + column) * 4 + 3] }
     let covered = alphas.filter { $0 > 0 }
     #expect(covered.count == Int(30 * scale))
-    // No pixel composited twice (darker) or missed (lighter) inside the bar.
     #expect(Set(covered).count == 1, "seam values: \(Set(covered))")
   }
 

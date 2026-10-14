@@ -6,14 +6,6 @@ import SwiftUI
   import UIKit
 #endif
 
-/// A horizontal shimmer sweep masked to the content's shape, used for
-/// ephemeral "in progress" states (agent status, running tool calls).
-///
-/// The sweep is a single Core Animation loop composited by the render server —
-/// NOT a `TimelineView(.animation)`, which re-evaluates the body at display
-/// refresh rate (up to 120 Hz) per shimmering view. During a busy turn several
-/// rows shimmer at once; per-frame SwiftUI work stacked onto the streaming
-/// updates was measurable main-thread cost for a purely cosmetic effect.
 public struct ShimmerModifier: ViewModifier {
   var active: Bool
 
@@ -26,9 +18,6 @@ public struct ShimmerModifier: ViewModifier {
   }
 }
 
-/// The moving highlight band, masked to `shape`. The platform view owns the
-/// animation lifecycle, so inserting this view into an already-mounted hosting
-/// controller cannot coalesce its starting state with its first rendered frame.
 private struct ShimmerSweep<Shape: View>: View {
   let shape: Shape
   @Environment(\.colorScheme) private var colorScheme
@@ -42,9 +31,6 @@ private struct ShimmerSweep<Shape: View>: View {
   }
 }
 
-/// A tight, bright glint whose motion lives entirely in Core Animation. Unlike
-/// a one-shot SwiftUI `@State` flip, the layer can inspect whether its animation
-/// is still installed and repair it after a remount, resize, or window move.
 @MainActor
 final class ShimmerSweepLayer: CAGradientLayer {
   static let animationKey = "codevisor.text-shimmer"
@@ -71,10 +57,6 @@ final class ShimmerSweepLayer: CAGradientLayer {
   func update(size: CGSize, colorScheme: ColorScheme) {
     guard size.width > 0, size.height > 0 else { return }
 
-    // Keep the glint proportional to the rendered label. A fixed minimum
-    // made short status text (for example, "Compacting context...") light
-    // up almost all at once while longer tool-call titles showed the
-    // intended tighter sweep.
     let bandWidth = max(size.width * 0.33, 1)
     let geometryChanged = animatedSize != size
     if geometryChanged {
@@ -109,8 +91,6 @@ final class ShimmerSweepLayer: CAGradientLayer {
   private func ensureAnimation(containerWidth: CGFloat, bandWidth: CGFloat) {
     guard animation(forKey: Self.animationKey) == nil else { return }
 
-    // Move from just outside the leading edge to just outside the trailing
-    // edge. The model layer stays at x = 0; only its presentation moves.
     let sweep = CABasicAnimation(keyPath: "transform.translation.x")
     sweep.fromValue = -bandWidth
     sweep.toValue = containerWidth
@@ -217,14 +197,11 @@ final class ShimmerSweepLayer: CAGradientLayer {
 #endif
 
 extension View {
-  /// Sweeps a shimmer across the view while `active` is true.
   public func shimmering(_ active: Bool = true) -> some View {
     modifier(ShimmerModifier(active: active))
   }
 }
 
-/// A text label with a horizontal shimmer sweep, used for ephemeral agent
-/// status while the agent is working.
 public struct ShimmeringText: View {
   var text: String = "Thinking..."
   var font: Font = .callout

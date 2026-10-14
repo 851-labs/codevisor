@@ -149,14 +149,11 @@ describe("relay envelopes (binary)", () => {
   it("rejects malformed messages", () => {
     expect(() => decodeRelayEnvelopes(new Uint8Array(0))).toThrow()
     expect(() => decodeRelayEnvelopes(new Uint8Array([0, 0]))).toThrow()
-    // Header length pointing past the end.
     expect(() => decodeRelayEnvelopes(new Uint8Array([0, 0, 0, 99, 123]))).toThrow()
-    // Valid header, truncated payload.
     const good = encodeRelayEnvelopes([
       { header: { machineId: "m", frame: frames[1] }, payload: new Uint8Array([1, 2, 3, 4]) }
     ])
     expect(() => decodeRelayEnvelopes(good.subarray(0, good.byteLength - 2))).toThrow()
-    // Header bytes that are not JSON.
     const bad = new Uint8Array([0, 0, 0, 2, 123, 123, 0, 0, 0, 0])
     expect(() => decodeRelayEnvelopes(bad)).toThrow()
   })

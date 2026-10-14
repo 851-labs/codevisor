@@ -1,6 +1,5 @@
 import Foundation
 
-/// Compact relative time like "9h", "2d", "now".
 enum RelativeTime {
   static func short(from date: Date, now: Date = Date()) -> String {
     let seconds = max(0, now.timeIntervalSince(date))

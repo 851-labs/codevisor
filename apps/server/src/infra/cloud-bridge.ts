@@ -38,55 +38,29 @@ import {
 } from "./cloud-proxy-handlers.js"
 import { prepareMachineTunnel, tunnelKeyPath, tunnelPinsPath } from "./cloud-tunnel.js"
 
-/// Connects a running server to the user's cloud hub as a machine, serving
-/// end-to-end encrypted request, WebSocket, and byte-stream channels.
-/// Integration boundary over `ws` and the filesystem — the protocol/reconnect/crypto logic
-/// it composes is covered in @codevisor/cloud-client and @codevisor/cloud-crypto.
-
 export interface CloudBridgeOptions {
-  /// ${dataDir}/cloud.json — owned by this server for both native and CLI login.
   readonly credentialsPath: string
   readonly machineName: string
   readonly appVersion: string
-  /// This server's stable id, published in hub presence so peer machines
-  /// list it under the same id it reports in /v1/info.
   readonly serverId?: string
-  /// Loopback origin of this server's own HTTP API (http://127.0.0.1:port);
-  /// structured request channels replay against it, while raw byte-stream
-  /// channels connect only to this exact listener.
   readonly localBaseUrl: string
   readonly env: Readonly<Record<string, string | undefined>>
   readonly log: (line: string) => void
-  /// This machine's update channel, reported at every hub hello.
   readonly releaseChannel?: () => "stable" | "alpha" | undefined
-  /// Cloud REST transport for account removal (defaults to global fetch).
   readonly fetchImpl?: FetchLike
 }
 
-/// Who created this machine's cloud registration. "app" registrations were
-/// provisioned by the signed-in desktop app and follow its account session
-/// (sign-out disconnects them); "external" ones came from `codevisor auth
-/// login` or dev auto-provisioning and outlive the app's viewer session.
 export type CloudBridgeManagedBy = "app" | "external"
 
 export interface CloudBridge {
   readonly stop: () => void
   readonly state: () => MachineConnectionState
-  /// This machine's cloud device id, advertised via /v1/info so clients can
-  /// match the machine to its cloud presence entry.
   readonly deviceId: string
   readonly serverUrl: string
   readonly managedBy: CloudBridgeManagedBy
-  /// The name this machine presents in cloud presence: the name chosen at
-  /// registration (stored in cloud.json), else `--name`, else the host name.
   readonly machineName: string
-  /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe:
-  /// same channel handlers and pins as the relay, no hub in the middle.
   readonly acceptDirect: (socket: CloudSocket) => void
-  /// The account's machines as the hub reports them (undefined until a hub
-  /// that supports machine peers welcomed this machine).
   readonly machines: () => ReadonlyArray<CloudMachinePresence> | undefined
-  /// Runs one gateway exchange on another machine through the relay.
   readonly requestGateway: (
     deviceId: string,
     body: string,
@@ -125,9 +99,6 @@ const readCredentials = async (
   }
 }
 
-/// Dev environments auto-provision: dev.mjs signs into the local cloud and
-/// hands servers a session token, so the local and Dev Remote machines appear
-/// in the hub with zero manual `auth login`.
 const devProvision = async (
   options: CloudBridgeOptions
 ): Promise<MachineCredentials | undefined> => {
@@ -151,17 +122,10 @@ const devProvision = async (
   }
 }
 
-/// Nagle for the relay: PTY writes and byte-stream chunks arrive in bursts,
-/// and each envelope no longer has to be its own hub message (billed and
-/// radio-waking). 5ms is far below any relay round trip.
 const RELAY_COALESCE_MS = 5
 
-/// Below this, DEFLATE overhead eats the win (and the CPU isn't worth it).
 const COMPRESS_MIN_BYTES = 512
 
-/// Raw DEFLATE for channels whose opener negotiated compressible framing:
-/// terminal output and API/event JSON routinely shrink 3-10x. Skipped when
-/// it would not actually shrink the payload (already-compressed data).
 const compressPayload = (bytes: Uint8Array): Uint8Array | undefined => {
   if (bytes.byteLength < COMPRESS_MIN_BYTES) return undefined
   const deflated = deflateRawSync(bytes)
@@ -170,10 +134,6 @@ const compressPayload = (bytes: Uint8Array): Uint8Array | undefined => {
 
 const decompressPayload = (bytes: Uint8Array): Uint8Array => new Uint8Array(inflateRawSync(bytes))
 
-/// Dev self-heal: a local cloud reset (fresh D1) leaves the machine holding a
-/// dead api key it would retry forever. When the dev env can mint fresh
-/// credentials, probe the stored ones and re-provision if they're no longer
-/// valid. Best-effort — an unreachable cloud keeps the stored credentials.
 const validateOrReprovision = async (
   options: CloudBridgeOptions,
   credentials: MachineCredentials
@@ -191,13 +151,9 @@ const validateOrReprovision = async (
   return (await devProvision(options)) ?? credentials
 }
 
-/// Where TOFU pins for app-device keys live, beside cloud.json. Deleting an
-/// entry (or the file) is the manual recovery path for a stale pin.
 const peerPinsPath = (credentialsPath: string): string =>
   join(dirname(credentialsPath), "cloud-peers.json")
 
-/// Loads the persisted app-key pins into an in-memory store that writes back
-/// (best-effort) whenever a new device is pinned.
 const loadPeerKeyPins = async (options: CloudBridgeOptions): Promise<PeerKeyPinStore> => {
   const path = peerPinsPath(options.credentialsPath)
   const initial = parsePeerKeyPins(await readFile(path, "utf8").catch(() => ""))
@@ -213,8 +169,6 @@ const loadPeerKeyPins = async (options: CloudBridgeOptions): Promise<PeerKeyPinS
   })
 }
 
-/// Constructs and starts the relay connection (and, where available, the
-/// tunnel endpoint) for known-good credentials.
 const makeBridge = async (
   options: CloudBridgeOptions,
   credentials: MachineCredentials,
@@ -222,8 +176,6 @@ const makeBridge = async (
   peerKeyPins: PeerKeyPinStore
 ): Promise<CloudBridge> => {
   const machineName = options.machineName === "" ? hostname() : options.machineName
-  // Shared by the relay connection and the direct pipe: a channel behaves
-  // identically no matter which pipe carried it.
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
@@ -338,8 +290,6 @@ const makeBridge = async (
   }
 }
 
-/// Starts the bridge when credentials exist (stored, or dev auto-provision).
-/// Returns undefined when this machine is not connected to a cloud account.
 export const startCloudBridge = async (
   options: CloudBridgeOptions
 ): Promise<CloudBridge | undefined> => {
@@ -358,14 +308,6 @@ export const startCloudBridge = async (
   return makeBridge(options, provisioned, "external", await loadPeerKeyPins(options))
 }
 
-/// Registers this machine on the signed-in user's account and starts the
-/// bridge immediately — the desktop app calls this (via POST
-/// /v1/cloud/connect) after cloud sign-in so the local machine appears on the
-/// account without a separate `codevisor auth login`. The stored credential
-/// is tagged app-managed so sign-out knows it may disconnect it.
-/// How a machine proves it may join an account: a signed-in person's session
-/// (the app, or `codevisor auth login`'s device flow), or a one-time invite
-/// another machine on the account minted (`codevisor machines invite`).
 export type CloudJoinGrant =
   | { readonly serverUrl: string; readonly sessionToken: string }
   | { readonly inviteCode: string }
@@ -400,9 +342,6 @@ export const connectCloudBridge = async (
   return makeBridge(bridgeOptions, credentials, managedBy, await loadPeerKeyPins(options))
 }
 
-/// Forgets this machine's stored cloud credential (the caller stops the
-/// bridge). App key pins go with it: a disconnected machine starts its next
-/// registration fresh.
 export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
   await rm(credentialsPath, { force: true })
   await rm(peerPinsPath(credentialsPath), { force: true })
@@ -410,7 +349,6 @@ export const removeCloudCredentials = async (credentialsPath: string): Promise<v
   await rm(tunnelKeyPath(credentialsPath), { force: true })
 }
 
-/// Shared live registration owner for native and CLI callers.
 export const makeCloudServerControl = (
   options: CloudBridgeOptions,
   initial: CloudBridge | undefined
@@ -424,8 +362,6 @@ export const makeCloudServerControl = (
   let current = initial
   let connecting: Promise<string> | undefined
   const fetchImpl = (): FetchLike => options.fetchImpl ?? ((input, init) => fetch(input, init))
-  /// Idempotent (see CloudServerControl.connect): concurrent callers share
-  /// one registration; switching accounts is an explicit disconnect first.
   const join = (
     grant: CloudJoinGrant,
     registration: { readonly managedBy?: CloudBridgeManagedBy; readonly machineName?: string } = {}
@@ -436,7 +372,6 @@ export const makeCloudServerControl = (
       .finally(() => (connecting = undefined))
     return connecting
   }
-  /// This machine's own credential, for calls it makes as itself.
   const storedCredentials = async (): Promise<MachineCredentials> => {
     const stored =
       current === undefined ? undefined : await readCredentials(options.credentialsPath)

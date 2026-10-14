@@ -3,8 +3,6 @@ import CodevisorCore
 import Foundation
 import Observation
 
-/// The old/new text of an edit's diff blocks: the input of its +N/−N
-/// counter when the adapter streams no `diffStats`.
 struct DiffTotalsInput: Equatable, Sendable {
   struct Block: Equatable, Sendable {
     let oldText: String?
@@ -16,7 +14,6 @@ struct DiffTotalsInput: Equatable, Sendable {
   init?(_ call: ToolCall) {
     let blocks = (call.content ?? []).compactMap { block -> Block? in
       if case let .diff(_, oldText, newText) = block {
-        // Strings are copy-on-write: this retains rather than copies.
         return Block(oldText: oldText, newText: newText)
       }
       return nil
@@ -25,9 +22,6 @@ struct DiffTotalsInput: Equatable, Sendable {
     self.blocks = blocks
   }
 
-  /// Call id, status and each block's text lengths. Costs no content
-  /// hashing, and moves with every streamed edit (the text grows) and with
-  /// settlement.
   static func key(for call: ToolCall, input: DiffTotalsInput) -> Int {
     var hasher = Hasher()
     hasher.combine(call.toolCallId)
@@ -39,8 +33,6 @@ struct DiffTotalsInput: Equatable, Sendable {
     return hasher.finalize()
   }
 
-  /// A Myers diff over each block's whole old and new text: run off the
-  /// main thread only.
   func totals() -> LineDiff.Totals {
     blocks.reduce(into: LineDiff.Totals(added: 0, removed: 0)) { totals, block in
       let blockTotals = LineDiff.totals(old: block.oldText, new: block.newText)
@@ -50,24 +42,6 @@ struct DiffTotalsInput: Equatable, Sendable {
   }
 }
 
-/// Process-level memo for the content-diff fallback of `diffTotals`, holding
-/// SETTLED results only.
-///
-/// The per-row `DiffTotalsCache` below lives in `@State`, so it dies whenever
-/// its row unmounts — a `LazyVStack` scroll past the viewport buffer, or a tab
-/// switch, which rebuilds the whole chat screen. Revisiting an edit therefore
-/// re-diffed the file's entire old and new text. Same rationale (and cap) as
-/// `DiffRenderCache`.
-///
-/// Entries are found by the cheap length key and confirmed by comparing the
-/// texts, never by a hash alone: a collision would render the wrong +N/−N.
-/// A remounted row's strings share storage with the stored ones, so the
-/// comparison is usually an identity check rather than a scan, and nothing
-/// hashes whole files on the main thread. In-progress calls are deliberately
-/// NOT stored — streaming rewrites their text every flush, so admitting
-/// intermediates would evict the settled entries that revisits actually
-/// re-encounter (the lesson already recorded on `MarkdownSegmentCache` and
-/// `CodeHighlightResultCache`).
 @MainActor
 private final class SettledDiffTotalsCache {
   private struct Entry {
@@ -81,7 +55,6 @@ private final class SettledDiffTotalsCache {
   private var order: [Int] = []
   private let limit: Int
 
-  /// Entries hold the full old/new texts, so the cap stays small.
   init(limit: Int = 24) {
     self.limit = max(1, limit)
   }
@@ -106,22 +79,9 @@ private final class SettledDiffTotalsCache {
   }
 }
 
-/// `ToolCall.diffTotals` for a row, without diffing on the main thread.
-/// Streamed `diffStats` are a cheap sum and pass straight through. The
-/// content-diff fallback (a Myers diff over the whole file's old/new text)
-/// runs in a detached task whenever the change key — call id, status, and
-/// each diff block's text lengths — moves; until it lands, the row keeps
-/// showing the previous totals (none, the first time), and the result
-/// publishes through Observation so the row re-renders with it.
-///
-/// One diff runs at a time per row: a stream flush that changes the text
-/// while one is running only replaces the next request, so streaming never
-/// queues a backlog of whole-file diffs.
 @MainActor
 @Observable
 final class DiffTotalsCache {
-  /// Bumped when a background diff lands. Read by `totals(for:)` so the
-  /// view that asked re-renders with the result.
   private var publishedRevision: UInt64 = 0
   @ObservationIgnored private var value: LineDiff.Totals?
   @ObservationIgnored private var valueKey: Int?
@@ -137,7 +97,6 @@ final class DiffTotalsCache {
     guard let input = DiffTotalsInput(call) else { return nil }
     let key = DiffTotalsInput.key(for: call, input: input)
     if key == valueKey { return value }
-    // A remounted settled row finds its earlier result without a diff.
     if let hit = SettledDiffTotalsCache.shared.totals(for: key, input: input) {
       value = hit
       valueKey = key

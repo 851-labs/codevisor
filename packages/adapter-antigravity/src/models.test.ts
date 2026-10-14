@@ -40,7 +40,6 @@ describe("agy model catalog", () => {
         variants: [{ slug: "gpt-oss-120b", tier: undefined, label: undefined }]
       }
     ])
-    // Without a medium tier, a model runs at its first listed one.
     expect(resolveSelection(models, {})!.variant.slug).toBe("gemini-4-argon-high")
   })
 

@@ -1,11 +1,6 @@
 import Foundation
 import TranscriptKit
 
-/// Which chronological slice of an assistant turn a transcript row owns.
-/// Active turns use `.complete`; settled plan turns split into planning and
-/// result rows with `PlanDocumentView` virtualized independently between
-/// them, and long turns split further into prelude, activity, and epilogue
-/// slices so each row measures independently.
 public enum AssistantTurnPresentation: Equatable, Sendable {
   case complete
   case planning
@@ -33,7 +28,6 @@ public enum AssistantTurnPresentation: Equatable, Sendable {
   public var showsResponse: Bool { self == .complete || self == .result || self == .response }
   public var showsEpilogue: Bool { showsResponse || self == .epilogue }
 
-  /// The slice a projected assistant chrome row renders.
   public init(chromeSlice: TranscriptAssistantChromeSlice) {
     switch chromeSlice {
     case .activity: self = .activity

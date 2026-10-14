@@ -238,8 +238,6 @@ struct SplitTreeTests {
   @Test("Pruning removes empty groups and collapses their splits")
   func pruneEmptyGroups() {
     let chat = UUID(), empty = UUID(), terminal = UUID()
-    // horizontal[vertical[chat | EMPTY] | terminal] — the stale shape an
-    // interrupted drop leaves behind.
     let tree = SplitNode.split(
       orientation: .horizontal,
       children: [
@@ -255,26 +253,20 @@ struct SplitTreeTests {
       ])
     let pruned = tree.prunedEmptyGroups
     #expect(pruned?.allGroups.map(\.id) == [chat, terminal])
-    // The vertical split collapsed into the chat leaf.
     guard case let .split(orientation, children)? = pruned else {
       Issue.record("expected split")
       return
     }
     #expect(orientation == .horizontal)
     #expect(children.count == 2)
-    // A tree of only empty groups prunes to nil; a healthy tree is
-    // returned unchanged.
     #expect(SplitNode.leaf(PaneGroupState()).prunedEmptyGroups == nil)
     #expect(pruned?.prunedEmptyGroups == pruned)
   }
 
   @Test("Fraction floors protect starved children and stay proportional")
   func flooredFractions() {
-    // Nothing starved: untouched.
     #expect(SplitNode.flooredFractions([0.5, 0.5], minFraction: 0.2) == [0.5, 0.5])
 
-    // One starved child rises to the floor; the others shrink
-    // proportionally (2:1 between them) and everything still sums to 1.
     let floored = SplitNode.flooredFractions([0.6, 0.3, 0.1], minFraction: 0.2)
     let expectedFirst = 8.0 / 15
     let expectedSecond = 4.0 / 15
@@ -284,18 +276,15 @@ struct SplitTreeTests {
     #expect(abs(floored[1] - expectedSecond) < 0.0001)
     #expect(abs(flooredSum - 1) < 0.0001)
 
-    // Clamping can starve the next child (waterfall): both floors hold.
     let cascade = SplitNode.flooredFractions([0.7, 0.21, 0.09], minFraction: 0.25)
     #expect(cascade[1] == 0.25)
     #expect(cascade[2] == 0.25)
     #expect(abs(cascade[0] - 0.5) < 0.0001)
 
-    // Infeasible floor (n·min > 1): equal shares.
     let equal = SplitNode.flooredFractions([0.8, 0.1, 0.1], minFraction: 0.4)
     let third = 1.0 / 3
     #expect(equal == [third, third, third])
 
-    // Degenerate inputs pass through.
     #expect(SplitNode.flooredFractions([], minFraction: 0.2) == [])
     #expect(SplitNode.flooredFractions([0.3, 0.7], minFraction: 0) == [0.3, 0.7])
   }

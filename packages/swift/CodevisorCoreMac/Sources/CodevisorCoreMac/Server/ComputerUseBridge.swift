@@ -5,9 +5,6 @@ import Darwin
 import Foundation
 import ScreenCaptureKit
 
-/// Authenticated, loopback-only Unix socket used by the bundled server for
-/// macOS accessibility automation. The Node process never receives direct
-/// Accessibility or Screen Recording entitlements; those stay in the app.
 public final class ComputerUseBridge: @unchecked Sendable {
   public struct Configuration: Sendable {
     public let socketPath: String
@@ -50,8 +47,6 @@ public final class ComputerUseBridge: @unchecked Sendable {
   var latestSnapshotIDs: [String: String] = [:]
   var windowIDBySession: [String: CGWindowID] = [:]
   var nextElementIndices: [String: Int] = [:]
-  /// Windows whose element frames are published upside down, established
-  /// once per window because the answer cannot change while it lives.
   var flippedContentWindows: [CGWindowID: Bool] = [:]
 
   public init(supportDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL()) {
@@ -166,10 +161,6 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
   }
 
-  // Keep this in sync with macComputerUseSocketPath in the server. Foundation
-  // and Node can resolve different temporary directories, and a worktree's
-  // TMPDIR can exceed macOS's 103-byte Unix socket path limit. The UID and data
-  // directory hash isolate instances; the socket and auth token remain 0600.
   static func socketPath(supportDirectoryPath: String, userID: uid_t = getuid()) -> String {
     var hash: UInt32 = 2_166_136_261
     for byte in supportDirectoryPath.utf8 {
@@ -298,10 +289,6 @@ func double(_ value: Any?) -> Double? {
   (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap(Double.init)
 }
 
-/// Reading another process's AX tree is an IPC request, but reading our own
-/// tree calls straight back into AppKit and SwiftUI on the calling thread.
-/// Keep those self-targeted callbacks on main without moving the bridge's
-/// socket, screenshot, or encoding work there as well.
 func computerUseAccessibilityReadRequiresMainThread(
   targetPID: pid_t?,
   currentPID: pid_t = ProcessInfo.processInfo.processIdentifier,
@@ -319,10 +306,6 @@ private final class ComputerUseAccessibilityReadBox<Value>: @unchecked Sendable 
   }
 }
 
-/// Runs one AX read on the thread that owns the target UI. Callers should wrap
-/// a whole tree traversal when possible; the lower-level attribute helpers use
-/// this too so a future read path cannot accidentally reintroduce self-target
-/// access from a bridge worker.
 func computerUsePerformAccessibilityRead<Value>(
   targetPID: pid_t?,
   _ operation: @escaping () -> Value

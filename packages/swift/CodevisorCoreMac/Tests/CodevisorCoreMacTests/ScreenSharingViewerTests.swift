@@ -7,10 +7,6 @@ import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The viewer's control plane against a scripted backend and endpoint client:
-/// every transition is asserted exhaustively, including the lease child's,
-/// and the endpoint calls (control messages, input) are checked on the client
-/// they land on.
 @MainActor
 struct ScreenSharingViewerTests {
   let display = ScreenSharingViewerFixtures.display
@@ -37,8 +33,6 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// The host's notice about missing video (851-2385) shows while connecting and goes with the first frame;
-  /// one about paused video (851-2375) shows over live video until the host clears it.
   @Test func hostNoticesShowWhileConnectingAndOverLiveVideo() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
@@ -57,7 +51,6 @@ struct ScreenSharingViewerTests {
         $0.phase = .viewing
         $0.hostNotice = nil
       }
-      // Over live video it's a banner: the host restarting a capture that stopped (851-2375), until it says it's done.
       backend.emit(.hostNotice("Capture stopped, restarting…"))
       await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = "Capture stopped, restarting…" }
       backend.emit(.hostNotice(nil))
@@ -116,9 +109,6 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// 851-2340: each new endpoint gets the machine's Dynamic Resolution setting;
-  /// the toolbar toggle flips it, bumps the revision the pane persists, and
-  /// tells the live endpoint.
   @Test func dynamicResolutionReachesTheEndpointAndTheToggleFlipsIt() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
@@ -126,7 +116,6 @@ struct ScreenSharingViewerTests {
       let store = await makeViewingStore(backend, client, channelAvailable: false)
       let endpoint = backend.endpoints[0]
       await awaitObserved { client.dynamicResolutions.count == 1 }
-      // Off by default (851-2481).
       #expect(client.dynamicResolutions.map(\.enabled) == [false])
       #expect(client.dynamicResolutions.first?.endpoint == endpoint.id)
       await store.send(.dynamicResolutionToggled) {
@@ -174,8 +163,6 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// A denial or revocation keeps Control selected (851-2472's sticky View came from treating it as the
-  /// user letting go): the message says why, and asking again is one Request Control away.
   @Test(arguments: [true, false])
   func deniedOrRevokedControlKeepsControlSelectedToAskAgain(grantFirst: Bool) async {
     await withMainSerialExecutor {
@@ -370,7 +357,6 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// Visible and connecting to the first display, which discovery remembered.
   func makeConnectingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient, clock: Clocks.TestClock<Duration> = .init()
   ) async -> TestStoreOf<ScreenSharingViewer> {
@@ -389,8 +375,6 @@ struct ScreenSharingViewerTests {
     return store
   }
 
-  /// Connected and viewing the first display in `mode`; with an available
-  /// channel, `.control` has a request (id 0) pending.
   func makeViewingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient,
     mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true,
@@ -422,9 +406,6 @@ struct ScreenSharingViewerTests {
   }
 }
 
-/// A scripted backend: discovery answers from a list (or fails), and each
-/// connection hands the test the stream's continuation. Endpoints it opens
-/// are real, over fake sessions and surfaces.
 @MainActor
 final class FakeBackend {
   var displays: [ServerScreenSharingDisplay]
@@ -456,7 +437,6 @@ final class FakeBackend {
       })
   }
 
-  /// Opens a new endpoint on the current stream and reports it.
   @discardableResult
   func open() -> ScreenSharingViewerEndpoint {
     let session = FakeMediaSession()

@@ -2,15 +2,10 @@ import CodevisorClient
 import CodevisorCloud
 import Foundation
 
-/// A directly paired machine (address + bearer token) waiting to be moved
-/// onto the signed-in Codevisor Cloud account. Directly paired machines were
-/// retired; the one-time storage migration hands each one here.
 public struct PendingDirectMachine: Codable, Equatable, Sendable {
   public var id: String
   public var name: String
   public var baseURL: URL
-  /// A token the legacy machine list stored inline (very old installs). Newer
-  /// installs keep it in the Keychain under `id`.
   public var legacyToken: String?
 
   public init(id: String, name: String, baseURL: URL, legacyToken: String? = nil) {
@@ -21,15 +16,6 @@ public struct PendingDirectMachine: Codable, Equatable, Sendable {
   }
 }
 
-/// Moves retired directly paired machines onto the signed-in cloud account,
-/// once. When signed in (with the account's machine list fetched), each
-/// pending machine is reached one last time at its old address with its old
-/// token and registered on the account (`POST /v1/cloud/connect`, which is
-/// idempotent — several clients migrating the same machine at once share one
-/// registration). A machine already registered on this account counts as
-/// moved. Anything else — unreachable, token refused, too old, registered on
-/// another account — is dropped. Either way the machine and its token are
-/// forgotten after that one attempt.
 @MainActor
 public final class DirectMachineCloudAdoption {
   public typealias TokenReader = @Sendable (String) throws -> String?
@@ -38,8 +24,6 @@ public final class DirectMachineCloudAdoption {
 
   nonisolated static let storeKey = "machines.pendingCloudAdoption"
 
-  /// A machine was settled: its old direct id, and the `cloud:` id it now
-  /// has (nil when it was dropped).
   public var onSettled: ((_ oldMachineId: String, _ cloudMachineId: String?) -> Void)?
 
   private let store: any PersistenceStore
@@ -64,8 +48,6 @@ public final class DirectMachineCloudAdoption {
 
   public var hasPendingMachines: Bool { !pending.isEmpty }
 
-  /// Queues machines for adoption (the storage migration's hand-off). Ids
-  /// already queued are kept as they are.
   nonisolated static func enqueue(_ machines: [PendingDirectMachine], in store: any PersistenceStore) throws {
     guard !machines.isEmpty else { return }
     var queued = load(from: store)
@@ -74,8 +56,6 @@ public final class DirectMachineCloudAdoption {
     try store.saveData(JSONEncoder().encode(queued), forKey: storeKey)
   }
 
-  /// Settles every pending machine. A no-op while signed out, before the
-  /// account's machine list is verified, or while a pass is already running.
   public func adoptPendingMachines(cloud: any CloudMachineProviding) async {
     guard !isRunning, !pending.isEmpty, cloud.isCloudSignedIn, cloud.isCloudRosterVerified else {
       return
@@ -98,16 +78,13 @@ public final class DirectMachineCloudAdoption {
     }
   }
 
-  /// The delete-all-data reset: forgets every pending machine and its token.
   public func reset() {
     for machine in pending { try? removeToken(machine.id) }
     pending = []
     persist()
   }
 
-  /// The machine's device id on this account, or nil when it can't be moved.
   private func register(_ machine: PendingDirectMachine, cloud: any CloudMachineProviding) async -> String? {
-    // Servers bound to loopback with auth off never needed a token.
     let token = machine.legacyToken ?? (try? readToken(machine.id)) ?? nil
     let client = clientFactory(CodevisorServerConfig(baseURL: machine.baseURL, bearerToken: token))
     do {

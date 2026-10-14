@@ -1,42 +1,23 @@
 import CodevisorClient
 import Foundation
 
-/// How one network roster fetch ended.
 enum MachineRefreshOutcome {
   case succeeded
   case failed(any Error)
-  /// Not attempted or superseded (signed out, cancelled, credentials changed
-  /// mid-flight). Whoever superseded it owns the next step, so no retry.
   case skipped
 }
 
-// MARK: - Launch, cached roster, and session validation
-
 extension CloudAccountController {
-  /// The longest wait between validation attempts while the cloud is
-  /// unreachable. Long enough not to hammer a down server, short enough that
-  /// the list heals within a minute of connectivity returning.
   static let maxValidationRetryDelay: Duration = .seconds(60)
 
-  /// Boot: restore whatever session is stored. With a stored token and a
-  /// cached roster the signed-in state and machines are published before the
-  /// first suspension point, so the UI renders instantly; validation then
-  /// runs in the background. Only a server that explicitly rejects the
-  /// session signs out — an unreachable one keeps the user signed in and
-  /// retries with backoff. Development builds sign into the dev cloud
-  /// exactly as production signs into the hosted one.
   public func bootstrap() async {
     guard !hasCompletedBootstrap else { return }
     await loadCredentials()
     guard storedToken != nil else {
-      // A roster without a session is a leftover from a sign-out that
-      // could not clear it; it must never resurface on the next sign-in.
       credentialStore.clearRoster()
       defer {
         if !Task.isCancelled { hasCompletedBootstrap = true }
       }
-      // Only the sign-in screen needs the provider list, so only
-      // signed-out launches pay for discovery up front.
       await refreshAuthProviders()
       state = .signedOut
       return
@@ -52,16 +33,10 @@ extension CloudAccountController {
       if !Task.isCancelled { hasCompletedBootstrap = true }
     }
     if !state.isSignedIn { state = .validating }
-    // No cache (first launch after install or upgrade): the machine list is
-    // genuinely unknown, so launch waits for the first attempt as before.
     let attempt = validationTask ?? startSessionValidation()
     await attempt.value
   }
 
-  /// Validates now when the roster on screen is still the unverified cache —
-  /// the app calls this on foreground, when connectivity has likely changed.
-  /// Skips any pending backoff sleep; an attempt already in flight is
-  /// awaited rather than duplicated.
   public func retryIfUnverified() async {
     guard state.isSignedIn, !isRosterVerified else { return }
     if let validationTask {
@@ -74,15 +49,11 @@ extension CloudAccountController {
     await startSessionValidation().value
   }
 
-  /// A 401 is the server saying the session is gone; everything else
-  /// (transport errors, timeouts, 5xx, garbled responses) says nothing about
-  /// the session and must not sign the user out.
   static func isSessionRejection(_ error: any Error) -> Bool {
     if case CloudAccountClientError.httpStatus(401) = error { return true }
     return false
   }
 
-  /// Called by the machine refresh after publishing a fetched list.
   func didVerifyRoster() {
     isRosterVerified = true
     validationFailures = 0
@@ -102,10 +73,6 @@ extension CloudAccountController {
     validationFailures = 0
   }
 
-  /// Sign-out may follow a token launch that skipped discovery; fetch the
-  /// providers then so the sign-in screen offers the right buttons. The
-  /// server is captured up front because `setCustomServer` signs out before
-  /// switching — an answer from the old server must not land on the new one.
   func refreshAuthProvidersIfUnknown() {
     guard authProviders == nil else { return }
     let server = serverURL
@@ -117,8 +84,6 @@ extension CloudAccountController {
     }
   }
 
-  /// Loads the persisted roster, discarding one fetched from a different
-  /// cloud server: its device ids mean nothing on the current instance.
   private func restoreCachedRoster() -> CachedRoster? {
     guard let roster = credentialStore.loadRoster() else { return nil }
     guard roster.serverURL == serverURL.absoluteString else {
@@ -144,12 +109,8 @@ extension CloudAccountController {
     return task
   }
 
-  /// One validation attempt: confirm the session, then fetch the roster.
   private func validateSession(revision: UInt64) async {
     guard authenticationRevision == revision, let token = storedToken else { return }
-    // Load the key pins alongside the session check so relay configs for
-    // the cached machines can be issued as soon as the hub is reachable,
-    // even while the REST API is still failing.
     try? await machineKeyPins.prepare()
     let user: CloudSessionUser?
     do {
@@ -170,7 +131,6 @@ extension CloudAccountController {
     }
     guard authenticationRevision == revision else { return }
     guard let user else {
-      // The server answered and holds no such session: revoked elsewhere.
       sessionEnded()
       return
     }
@@ -181,8 +141,6 @@ extension CloudAccountController {
     }
   }
 
-  /// Schedules the next attempt with capped exponential backoff
-  /// (1s, 2s, 4s, … 60s) on the injected clock.
   func scheduleSessionValidationRetry() {
     guard state.isSignedIn else { return }
     validationRetryTask?.cancel()

@@ -29,9 +29,6 @@ struct TranscriptSendTransitionTests {
     let controller = try #require(host.subviews.first?.nextResponder as? TranscriptContentHostingController)
     var readinessNotifications = 0
     host.onPresentationReady = { readinessNotifications += 1 }
-    // A placed-geometry report can arrive after the native layout callback.
-    // Its height is already in the ledger, so no measurement commit or
-    // model update will request an extra transcript layout.
     controller.onLaidOutHeightChange?(15)
     host.layoutSubtreeIfNeeded()
 
@@ -62,7 +59,6 @@ struct TranscriptSendTransitionTests {
     let history = try #require(view.mountedHosts[fixture.historyRow.layoutKey])
     let before = view.sendTransitionScreenY(of: history)
 
-    // The harness's first status row arrives under the bubble.
     let status = TranscriptVirtualRow(id: .startingAgent, content: .startingAgent, estimatedHeight: 32)
     view.sendTransitions.animatingContentShift {
       fixture.replaceRows(inserting: status)
@@ -76,11 +72,9 @@ struct TranscriptSendTransitionTests {
     let shift = try #require(layer.animation(forKey: shiftKey) as? CASpringAnimation)
     #expect(shift.isAdditive)
     #expect(abs((shift.fromValue as? CGFloat ?? 0) - moved) < 0.5)
-    // It arrived below the bubble, so it waits for the bubble to land.
     let arrived = try #require(view.mountedHosts[status.layoutKey]?.layer)
     let fade = try #require(arrived.animation(forKey: TranscriptSendAnimationKeys.follower))
     #expect(fade.beginTime > 0)
-    // Rows presented away from their model frames stay mounted.
     let mounted = Set(view.mountedHosts.keys)
     view.retireMountedHosts(excluding: [])
     #expect(Set(view.mountedHosts.keys) == mounted)
@@ -100,24 +94,19 @@ struct TranscriptSendTransitionTests {
 
     view.sendTransitions.receive(fixture.request, isForeground: true)
     let target = try #require(view.mountedHosts[fixture.userRow.layoutKey]?.layer)
-    // The real row is hidden until the flight lands on it.
     #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) != nil)
     #expect(fixture.events.started.isEmpty)
 
-    // Layout passes only schedule the flight; it starts on its own turn.
     view.sendTransitions.advance()
     #expect(fixture.events.started.isEmpty)
     view.sendTransitions.startReadyFlights()
-    // Flights draw in a click-through child window above the chat.
     let overlayWindow = try #require(fixture.window.childWindows?.first)
     let overlay = try #require(
       overlayWindow.contentView?.subviews.first { $0 is TranscriptSendOverlayView })
-    #expect(overlay.subviews.count == 2)  // the row's copy and the composer glyphs
+    #expect(overlay.subviews.count == 2)
     #expect(!TranscriptSendStaging.shared.hasStage(for: session))
     #expect(fixture.events.started == [fixture.request.token])
     #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) != nil)
-    // AppKit's display pass must not strip the flight's animations: the
-    // copy is still in the air after the transaction commits.
     CATransaction.flush()
     fixture.window.displayIfNeeded()
     RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -143,7 +132,6 @@ struct TranscriptSendTransitionTests {
       bubble: .gray, theme: Theme(palette: nil))
     view.sendTransitions.receive(fixture.request, isForeground: true)
 
-    // A new chat's first screen is rebuilt as the send happens.
     view.sendTransitions.interrupt()
     #expect(TranscriptSendStaging.shared.hasStage(for: session))
     #expect(fixture.events.claimed.isEmpty)
@@ -183,8 +171,6 @@ struct TranscriptSendTransitionTests {
   }
 }
 
-/// A mounted, measured, bottom-pinned transcript whose newest row is an
-/// optimistic user message: the moment right after a Send tap.
 @MainActor
 private final class SendFixture {
   final class Events {
@@ -241,8 +227,6 @@ private final class SendFixture {
     view.sendTransitions.onCompleted = { events.completed.append($0.token) }
   }
 
-  /// Publishes the rows (optionally with `row` inserted above the spacer),
-  /// lays them out, and pins the transcript to its newest row.
   func replaceRows(inserting row: TranscriptVirtualRow?) {
     if let row { rows.insert(row, at: rows.count - 1) }
     _ = view.rowSet.replaceRows(rows)

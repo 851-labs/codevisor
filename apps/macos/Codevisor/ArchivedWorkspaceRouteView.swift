@@ -1,24 +1,12 @@
 import CodevisorCore
 import SwiftUI
 
-/// An archived workspace, read-only: its tabs as they were left, each showing
-/// its selected pane. Chats show their history without a composer and never
-/// start an agent; terminals and files went with the archive, so those panes
-/// say so. Restoring, from the sidebar row, is the way back to a live
-/// workspace.
-///
-/// Its own view rather than the live container: nothing here can add, close,
-/// split, or rearrange a tab, so none of those paths need an archived guard.
 struct ArchivedWorkspaceRouteView: View {
   @Environment(AppEnvironment.self) private var environment
   let store: SessionStore
   let serverId: String
   let workspaceId: UUID
-  /// The workspace stopped being archived: restored from its sidebar row
-  /// or on another device. The caller moves the selection to the live
-  /// workspace, on the tab on screen here (nil: the one it last showed).
   let onRestored: (Workspace, _ tabId: UUID?) -> Void
-  /// The tab shown; nil starts on the tab the workspace last showed.
   @State private var selectedTabId: UUID?
   @State private var focus = TerminalFocusController()
 
@@ -48,7 +36,6 @@ struct ArchivedWorkspaceRouteView: View {
     let tabs = workspace.centerTabs
     let tab = tabs.first { $0.id == selectedTabId } ?? workspace.selectedCenterTab ?? tabs.first
     return VStack(spacing: 0) {
-      // The live workspace's strip, minus every edit: switching only.
       if tabs.count > 1, let tab {
         WorkspaceTabBar(
           items: tabs.map { tabItem($0, in: workspace) },
@@ -69,7 +56,6 @@ struct ArchivedWorkspaceRouteView: View {
     }
   }
 
-  /// ⌥⌘← / ⌥⌘→ through the tabs, wrapping around like a live workspace's.
   private func tabCycling(in workspace: Workspace) -> WorkspaceTabCycling? {
     let tabIds = workspace.centerTabs.map(\.id)
     guard tabIds.count > 1 else { return nil }
@@ -82,8 +68,6 @@ struct ArchivedWorkspaceRouteView: View {
       workspaceId: workspace.id, tabIds: tabIds, previous: { step(-1) }, next: { step(1) })
   }
 
-  /// The pane the tab last showed: its active split's selected pane, else
-  /// its first split's, as the live strip names it.
   private func selectedPane(of tab: WorkspaceTab) -> PaneDescriptorState? {
     tab.root.group(id: tab.activeLeafId)?.selectedPane ?? tab.root.allGroups.first?.state.selectedPane
   }
@@ -144,9 +128,6 @@ struct ArchivedWorkspaceRouteView: View {
   }
 }
 
-/// An archived chat's history, read-only: no composer, and no agent. Opening
-/// the chat only reads its transcript; the server refuses prompts while its
-/// workspace is archived.
 private struct ArchivedChatPane: View {
   let session: ChatSession
   let project: Project
@@ -163,7 +144,6 @@ private struct ArchivedChatPane: View {
       isReadOnly: true
     )
     .id(session.id)
-    // A read-only chat screen does not connect on its own.
     .task(id: SessionStore.SessionKey(session)) {
       store.noteAccess(SessionStore.SessionKey(session))
       await controller.connectIfNeeded()

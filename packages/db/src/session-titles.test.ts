@@ -19,7 +19,6 @@ describe("session title ownership", () => {
       expect(
         (await run(db.updateSession(session.id, { ...fallback, worktreeName: "work" }))).title
       ).toBe("Fix login validation")
-      // A later harness improvement remains eligible: snapshot sync never locks it.
       expect(
         (await run(db.updateSessionTitleFromHarness(session.id, "Validate login input")))?.title
       ).toBe("Validate login input")
@@ -44,7 +43,6 @@ describe("session title ownership", () => {
         await run(db.updateSessionTitleFromHarness(session.id, "Generated title"))
       ).toBeUndefined()
       expect((await run(db.getSessionSummary(session.id))).title).toBe("New Chat")
-      // Metadata-only PATCHes must preserve ownership too.
       await run(db.updateSession(session.id, { titleIntent: "rename", worktreeName: "sushi" }))
       expect(
         await run(db.updateSessionTitleFromHarness(session.id, "Another title"))

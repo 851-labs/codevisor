@@ -28,9 +28,7 @@ struct TranscriptPageCacheTests {
     let chats = [UUID(), UUID(), UUID()]
     for (offset, chat) in chats.enumerated() {
       cache.store(Data("\(offset)".utf8), machineId: "m", sessionId: chat)
-      // Saves are queued; a read waits for them, so the file exists after it.
       #expect(await cache.load(machineId: "m", sessionId: chat) == Data("\(offset)".utf8))
-      // Distinct modification times keep the order deterministic.
       let url = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         .first { $0.lastPathComponent.contains(chat.uuidString.lowercased()) }
       if let url {

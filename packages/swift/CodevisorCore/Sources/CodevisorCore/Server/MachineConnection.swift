@@ -1,74 +1,33 @@
 import Foundation
 import Observation
 
-/// One machine's live client-side state, owned by `MachineController`.
-///
-/// This is the single home for everything the app knows about a machine at
-/// runtime — reachability, release state, availability, and navigation-sync
-/// state — replacing the controller's parallel per-machine dictionaries.
-/// Consolidating here is what lets every machine carry its own lifecycle
-/// (its own event stream, its own update in flight) instead of the selected
-/// machine's state being the only state that exists.
 @MainActor
 @Observable
 public final class MachineConnection {
   public let machineId: String
 
-  /// Last status probe result (reachability + display label).
   public internal(set) var status: MachineStatus?
-  /// Last release-state check for this machine's server.
   public internal(set) var updateInfo: ServerUpdateInfo?
-  /// Whether ordinary requests to this machine are flowing, waiting on a
-  /// known startup/restart, or failed.
   public internal(set) var availability: ServerAvailability?
-  /// How current this machine's synced navigation snapshot is.
   public internal(set) var navigationSyncState: NavigationSyncState?
-  /// Progress of a client-triggered update of THIS machine's server. Per
-  /// machine so one machine's in-flight update never shows on another,
-  /// and switching away never abandons the tracking.
   public internal(set) var updatePhase: ServerUpdatePhase = .idle
-  /// What the in-flight update is doing right now ("Waiting for 2 chats to
-  /// finish…", "Restarting…"); nil when nothing worth showing.
   public internal(set) var updateStatusMessage: String?
-  /// Fraction reported by an updater that supports measurable progress.
   public internal(set) var updateProgress: Double?
-  /// The migration a health probe last reported while this machine's
-  /// server was booting through a data upgrade (`database != "ready"`);
-  /// `error` set means that upgrade failed. Nil once the server answers
-  /// ready. Set by any probe — the Updates pane follows a migration on a
-  /// machine this client did not ask to update.
   public internal(set) var dataUpgradeProgress: ServerMigrationProgress?
 
-  /// This machine's live shell-event subscription. Every machine holds its
-  /// own; selection changes never touch another machine's stream.
   @ObservationIgnored var eventSyncTask: Task<Void, Never>?
-  /// Guards one background connect at a time per machine.
   @ObservationIgnored var backgroundConnectInFlight = false
-  /// One startup/connection preparation per machine. This replaces the
-  /// controller-wide task that made an unrelated composer default decide
-  /// which machine was allowed to start.
   @ObservationIgnored var preparationTask: Task<Void, Never>?
-  /// Per-machine authoritative snapshot reconciliation.
   @ObservationIgnored var navigationSyncToken: UUID?
   @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
 
-  /// Manual refresh work survives the gesture's short presentation budget.
   @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
-  /// Coalesces navigation-affecting events for this machine only.
   @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
-  /// Retries failed navigation snapshots even when the event socket stays open.
   @ObservationIgnored var navigationRetryTask: Task<Void, Never>?
   @ObservationIgnored var navigationFailures = 0
-  /// A scheduled automatic re-preparation after a failed remote
-  /// preparation. Streams self-heal through their own backoff loop; this
-  /// is the equivalent for a machine whose preparation never got that far,
-  /// so one transient relay timeout never parks it in a latched failure.
   @ObservationIgnored var preparationRetryTask: Task<Void, Never>?
-  /// Consecutive failed preparations, for retry backoff. Reset on success.
   @ObservationIgnored var preparationFailures = 0
 
-  /// The "Reconnecting…" its chats show, once it has been unreachable for
-  /// longer than a blip.
   let reconnectNotice: DelayedConnectionNotice
 
   init(machineId: String, reconnectNotice: DelayedConnectionNotice) {
@@ -76,9 +35,6 @@ public final class MachineConnection {
     self.reconnectNotice = reconnectNotice
   }
 
-  /// Cold connections show progress. Once a sync has finished, retain its
-  /// result during retries: current rows stay visible, and a stale snapshot
-  /// keeps its connection warning until a new snapshot succeeds.
   func beginNavigationCatchUp() {
     if navigationSyncState == nil || navigationSyncState == .cached {
       navigationSyncState = .catchingUp
@@ -87,11 +43,8 @@ public final class MachineConnection {
 }
 
 extension MachineController {
-  /// The controller's persistence store, shared with collaborators that
-  /// persist their own small records (the update center's session).
   var persistenceStore: any PersistenceStore { store }
 
-  /// The connection record for a machine, created on first touch.
   func connection(for machineId: String) -> MachineConnection {
     if let existing = connectionsById[machineId] { return existing }
     let connection = MachineConnection(
@@ -102,10 +55,6 @@ extension MachineController {
     return connection
   }
 
-  /// Drops a machine's connection record entirely (machine removed). Its
-  /// status in particular carries the cloud device id that deduplicates
-  /// the cloud machine list — left behind, it would keep hiding the
-  /// machine's cloud twin.
   func removeConnection(for machineId: String) {
     connectionsById[machineId]?.manualNavigationRefresh?.cancel()
     connectionsById[machineId]?.eventSyncTask?.cancel()
@@ -117,8 +66,6 @@ extension MachineController {
     connectionsById[machineId] = nil
   }
 
-  // MARK: - Per-machine lifecycle
-
   func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
     let connection = connection(for: machineId)
     connection.navigationSyncTask?.cancel()
@@ -128,11 +75,7 @@ extension MachineController {
     connection.pendingRefreshTask = nil
     connection.navigationRetryTask?.cancel()
     connection.navigationRetryTask = nil
-    // Only THIS machine's stream stops; every other machine keeps
-    // streaming through the transition.
     stopEventSync(for: machineId)
-    // A new preparation owns the machine's lifecycle from here; a
-    // previously scheduled automatic retry must not fire on top of it.
     connection.preparationRetryTask?.cancel()
     connection.preparationRetryTask = nil
     connection.availability = .waiting(reason)
@@ -154,7 +97,6 @@ extension MachineController {
   func markFailed(for machineId: String, message: String) {
     let connection = connection(for: machineId)
     connection.availability = .failed(message)
-    // A failed machine is retried, so its chats just say "Reconnecting…".
     connection.reconnectNotice.update(isActive: true)
     connection.navigationSyncState = .stale(message)
     requestGate.markFailed(for: machineId, message: message)
@@ -165,16 +107,6 @@ extension MachineController {
     await prepareMachine(machineId)
   }
 
-  /// Schedules an automatic re-preparation after a failed remote
-  /// preparation, with the same backoff curve the event streams use.
-  /// Without it, one transient relay timeout latched the request gate
-  /// `.failed` — every later request for the machine failed instantly and
-  /// offline — and nothing retried until the next app foreground or an
-  /// explicit user retry.
-  ///
-  /// `delay` overrides the backoff for a known-finite wait (the server is
-  /// booting through a data upgrade): a steady cadence that follows the
-  /// migration live, and not counted as a failure.
   func schedulePreparationRetry(for machineId: String, delay override: Duration? = nil) {
     let connection = connection(for: machineId)
     connection.preparationRetryTask?.cancel()
@@ -190,9 +122,6 @@ extension MachineController {
       try? await sleep(delay)
       guard let self, !Task.isCancelled else { return }
       connection.preparationRetryTask = nil
-      // Only retry a machine that still exists and is still failed;
-      // anything else has an owner (removal, a user retry, a
-      // successful preparation) that superseded this schedule.
       guard self.machine(for: machineId) != nil,
         connection.preparationTask == nil,
         case .some(.failed) = connection.availability
@@ -201,19 +130,11 @@ extension MachineController {
     }
   }
 
-  /// A remote machine that just failed keeps being retried on the usual
-  /// backoff instead of staying `.failed` until a foreground or an explicit
-  /// retry. The local machine's failures have their own owner (the server
-  /// controller) and are left alone.
   func scheduleRemoteRecovery(for machineId: String) {
     guard let machine = machine(for: machineId), !machine.isLocal else { return }
     schedulePreparationRetry(for: machineId)
   }
 
-  /// A cloud machine's tunnel just came up. A machine parked `.failed`,
-  /// waiting out its retry backoff, is prepared now: the chat's
-  /// "Reconnecting…" line should clear the moment the machine is back, with
-  /// nothing for the user to do.
   public func cloudMachineBecameReachable(deviceId: String) {
     let machineId = CodevisorMachine.cloudIdPrefix + deviceId
     guard machine(for: machineId) != nil, let connection = connectionsById[machineId],
@@ -222,19 +143,12 @@ extension MachineController {
     Task { await self.prepareMachine(machineId) }
   }
 
-  /// Removes everything stored under this Mac's own cloud twin id: its
-  /// stream, and every project/session/workspace record that synced under
-  /// the duplicate identity.
   func pruneCloudTwinRecords(deviceId: String) {
     let twinId = CodevisorMachine.cloudIdPrefix + deviceId
     removeConnection(for: twinId)
     projectList.removeAllRecords(serverId: twinId)
   }
 
-  /// Establishes the embedded server's cloud identity before a refreshed
-  /// roster can start background sync. Registration itself proves the local
-  /// server is reachable; an existing status keeps its richer route/version
-  /// metadata while adopting the newly authoritative device id.
   func adoptLocalCloudIdentity(deviceId: String) {
     let connection = connection(for: CodevisorMachine.local.id)
     if var status = connection.status {
@@ -251,13 +165,6 @@ extension MachineController {
     pruneCloudTwinRecords(deviceId: deviceId)
   }
 
-  /// Removes records stored under cloud identities that no longer exist.
-  /// A wiped machine re-registers under a fresh device id, leaving its old
-  /// twin's projects and chats to render as duplicates forever. Runs only
-  /// after a REAL roster fetch (onMachinesRefreshed), so a signed-out or
-  /// still-loading client never mistakes "unknown" for "gone". The launch
-  /// cache can be stale in exactly that way (a machine registered since it
-  /// was saved), so an unverified roster prunes nothing either.
   public func pruneDeadCloudRecords() {
     guard let cloudProvider, cloudProvider.isCloudSignedIn, cloudProvider.isCloudRosterVerified else {
       return
@@ -276,9 +183,6 @@ extension MachineController {
     }
   }
 
-  /// Cloud ids whose device is this Mac, already served by the local
-  /// machine — connecting to them would resurrect the duplicate records the
-  /// prune above removes.
   func isCloudTwinOfConfiguredMachine(_ machineId: String) -> Bool {
     guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) else {
       return false
@@ -289,9 +193,6 @@ extension MachineController {
     }
   }
 
-  /// A background connect keeps its original connection record across
-  /// network suspension points. Identity pruning removes that exact record;
-  /// object identity keeps the old operation from committing more state.
   private func isCurrentBackgroundConnection(
     _ connection: MachineConnection,
     for machineId: String
@@ -301,8 +202,6 @@ extension MachineController {
       && !isCloudTwinOfConfiguredMachine(machineId)
   }
 
-  /// Opens one machine's live event stream — status probe, snapshot, then
-  /// subscribe — without reading or changing any global selection.
   public func connectMachine(_ machineId: String) async {
     guard machine(for: machineId) != nil else { return }
     guard !isCloudTwinOfConfiguredMachine(machineId) else { return }
@@ -316,9 +215,6 @@ extension MachineController {
     await refreshStatus(for: machineId)
     guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
     guard connection.status?.isReachable == true else {
-      // Unreachable is an ANSWER, not silence: fleet-aggregated UIs
-      // must be able to count this machine as failed instead of
-      // waiting on it forever.
       connection.navigationSyncState = .stale(connection.status?.label ?? "Unreachable")
       markFailed(for: machineId, message: connection.status?.label ?? "Unreachable")
       scheduleRemoteRecovery(for: machineId)
@@ -330,9 +226,6 @@ extension MachineController {
     onMachineConnected?(machineId)
   }
 
-  /// Ensures every registered machine has a live event stream. Safe to
-  /// call often: machines already streaming (or mid-connect) are skipped,
-  /// and failed probes simply retry on the next pass.
   public func ensureBackgroundConnections() {
     for machine in allMachines {
       let connection = connection(for: machine.id)
@@ -346,25 +239,14 @@ extension MachineController {
     }
   }
 
-  /// Legacy composer fallback retained for persistence migration. It is not
-  /// consulted by lifecycle, routing, synchronization, or update code.
   public var selectedMachineId: String {
     registry.selectedMachineId
   }
 
   public var selectedMachine: CodevisorMachine {
-    // A selection that no longer resolves (its machine was removed or
-    // re-registered under a new identity) adopts the first LIVE machine.
-    // Falling back to `.local` here haunted client-only platforms: iOS
-    // has no local machine, so the phantom never connected, never
-    // synced, and pinned every selection-keyed UI state forever.
     machine(for: registry.selectedMachineId) ?? allMachines.first ?? CodevisorMachine.local
   }
 
-  /// The machines configured on this device rather than synthesized from
-  /// the cloud account: only this Mac's embedded machine. Client-only
-  /// platforms (no local server) have none — every machine they reach
-  /// comes from the account.
   public var machines: [CodevisorMachine] {
     includesLocalMachine ? [CodevisorMachine.local] : []
   }
@@ -373,11 +255,6 @@ extension MachineController {
     allMachines.first { $0.id == id }
   }
 
-  /// Resolves a persisted machine target to the fleet identity the composer
-  /// can actually use. This Mac's cloud twin disappears from `allMachines`
-  /// once its identity is linked to the local machine; old drafts can still
-  /// name that hidden twin. Map it back to the local machine instead of
-  /// silently constructing a client for another target.
   public func canonicalComposerMachineId(for id: String) -> String? {
     if machine(for: id) != nil, !isCloudTwinOfConfiguredMachine(id) {
       return id
@@ -390,48 +267,29 @@ extension MachineController {
     }?.id
   }
 
-  /// A machine's display name for row metadata, regardless of fleet size.
   public func fleetMachineName(for serverId: String) -> String? {
     machine(for: serverId)?.name
   }
 
-  /// Resolves a fleet sync key (a server's config.id, how its entries are
-  /// keyed in synced namespaces) back to the CLIENT-side machine id, via
-  /// the id each reachable server reported in /v1/info. Nil when no known
-  /// machine reported that id.
   public func machineId(forSyncKey key: String) -> String? {
     statusByMachineId.first { $0.value.serverId == key }?.key
   }
 
-  /// The inverse of `machineId(forSyncKey:)`: the key a machine's server
-  /// uses for its single-writer sync entries. Every server — the app-hosted
-  /// one included — reports its stable id via /v1/info; the client never
-  /// assumes one (a shared placeholder made two app-hosted Macs one machine
-  /// to the fleet). Nil until the machine has been probed — its readiness
-  /// cannot be read yet either.
   public func syncKey(forMachineId id: String) -> String? {
     statusByMachineId[id]?.serverId
   }
 
-  /// The display name for a sync key: the matching machine's fleet name,
-  /// else the raw key (a machine that vanished or was never probed).
   public func fleetName(forSyncKey key: String) -> String {
     guard let machineId = machineId(forSyncKey: key) else { return key }
     return fleetMachineName(for: machineId) ?? key
   }
 
-  /// The cloud presence entry backing a `cloud:` machine id, if any.
   public func cloudMachine(forMachineId id: String) -> CloudMachine? {
     guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),
       let cloudProvider, cloudProvider.isCloudSignedIn
     else { return nil }
     return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
   }
-
-  // MARK: - Legacy projections
-
-  /// Read-only per-machine projections retained for existing consumers;
-  /// the connections themselves are the source of truth.
 
   public var statusByMachineId: [String: MachineStatus] {
     connectionsById.compactMapValues(\.status)
@@ -441,16 +299,10 @@ extension MachineController {
     connectionsById.compactMapValues(\.availability)
   }
 
-  /// Undiscovered or not-yet-prepared targets must not accept a first send
-  /// merely because the composer restored cached capabilities for them.
   public func availability(for machineId: String) -> ServerAvailability {
     connectionsById[machineId]?.availability ?? .waiting(.connecting)
   }
 
-  /// Whether a machine's chats say "Reconnecting…": it has been unreachable
-  /// for longer than a blip, or only just came back (see
-  /// `DelayedConnectionNotice`). A machine never prepared has no record yet
-  /// and counts as reconnecting.
   public func showsReconnectNotice(for machineId: String) -> Bool {
     connectionsById[machineId]?.reconnectNotice.isVisible ?? true
   }

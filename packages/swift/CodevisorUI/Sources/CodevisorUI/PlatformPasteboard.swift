@@ -1,5 +1,3 @@
-// CrossKit-style platform shims (naming precedent: the vendored GhosttySwift
-// helpers). Shared views use these instead of touching AppKit/UIKit directly.
 import SwiftUI
 #if canImport(AppKit)
   import AppKit
@@ -17,7 +15,6 @@ import SwiftUI
   public typealias OSImage = UIImage
 #endif
 
-/// The general pasteboard, platform-neutrally.
 public enum PlatformPasteboard {
   @MainActor
   public static func copy(_ string: String) {

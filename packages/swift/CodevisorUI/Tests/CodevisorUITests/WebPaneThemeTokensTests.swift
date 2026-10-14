@@ -3,9 +3,6 @@ import Testing
 
 @testable import CodevisorUI
 
-/// The bridge's theme vocabulary is part of the frozen v1 surface: plugins
-/// style against these `--codevisor-*` names, so their presence (and the
-/// light/dark mode strings) is a contract.
 @Suite("WebPaneThemeTokens")
 struct WebPaneThemeTokensTests {
   private static let frozenVariables = [
@@ -33,7 +30,6 @@ struct WebPaneThemeTokensTests {
         #expect(tokens.variables[name] != nil, "missing \(name) (isDark: \(isDark))")
       }
     }
-    // Light and dark are genuinely different token sets.
     #expect(
       WebPaneThemeTokens(palette: nil, isDark: false)
         != WebPaneThemeTokens(palette: nil, isDark: true)

@@ -1,19 +1,14 @@
-/// Pure helpers for the Screen Sharing rig CLI: argument parsing, generated
-/// files and command plans. Nothing here touches the filesystem, the network
-/// or a process, so every rule is unit-testable.
 import { rigIdentity } from "./screen-sharing-bundle.ts"
 
 export const rigLaunchAgentLabel = "com.codevisor.screen-sharing-rig"
-export const rigInstallDirectory = "Applications/CodevisorRig" // relative to $HOME on each Mac
+export const rigInstallDirectory = "Applications/CodevisorRig"
 export const rigDefaultPort = 48731
 export const rigDefaultControlPort = 48732
 
 export type RigRole = "host" | "viewer"
 
-/// Engine tuning written under `tuning` in rig.json; the Swift side owns the schema.
 export type Tuning = Record<string, unknown>
 
-/// rig.json as written by `rigConfiguration` and edited by `withTuning`.
 export type RigConfiguration = {
   role: RigRole
   token: string
@@ -30,7 +25,6 @@ export type RigConfiguration = {
   tuning?: Tuning
 }
 
-/// deploy.json: how this Mac (the viewer) reaches the host it installed.
 export interface DeployRecord {
   hostSSH: string
   hostAddress: string
@@ -38,17 +32,12 @@ export interface DeployRecord {
   remoteUid: number
 }
 
-/// One argv array; the first element is the executable.
 export type Command = [command: string, ...args: string[]]
 export type Plan = Command[]
 
 const xmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
 const escapeXML = (value: string) => value.replace(/[&<>"]/g, (c) => xmlEscapes[c] ?? c)
 
-/// A user LaunchAgent that owns exactly one rig process in the GUI session.
-/// The viewer restarts only on abnormal exit: closing its window exits 0 and stays
-/// down. The host has no window and restarts on any exit, including the clean one
-/// macOS performs when a Screen Recording grant is applied with "Quit & Reopen".
 export function launchAgentPlist({
   home,
   configPath,
@@ -80,8 +69,6 @@ ${role === "host" ? "<key>KeepAlive</key><true/>" : "<key>KeepAlive</key><dict><
 `
 }
 
-/// rig.json for one role. Validation mirrors the Swift parser's hard rules so
-/// a bad value fails here instead of on the other Mac.
 export function rigConfiguration({
   role,
   token,
@@ -135,9 +122,6 @@ export function rigConfiguration({
   return configuration
 }
 
-/// Commands to swap a freshly built bundle into place and restart the agent.
-/// `remote` is an ssh target; when absent the plan runs locally. Returned as
-/// argv arrays so nothing is shell-interpolated except the remote script.
 export function deployPlan({
   builtApp,
   home,
@@ -176,9 +160,6 @@ export function deployPlan({
   ]
 }
 
-/// Commands to (re)load the LaunchAgent from its plist path. `bootout` returns while the
-/// service is still unloading and a `bootstrap` issued then fails with EIO, so wait until
-/// the service is gone (bounded) before loading it again.
 export function bootstrapPlan({
   uid,
   plistPath,
@@ -221,13 +202,11 @@ const commands = [
 ] as const
 
 export type RigCommand = (typeof commands)[number]
-/// `--key value` stores the string; a bare `--flag` stores `true`.
 export type RigOptions = Record<string, string | true>
 
 const isRigCommand = (value: string): value is RigCommand =>
   (commands as readonly string[]).includes(value)
 
-/// `bun run screen-sharing:rig --help`.
 export const rigUsage = `Usage: bun run screen-sharing:rig <command> [options]
 
   build   [--debug] [--build-only]      Build + sign tmp/screen-sharing/${rigIdentity.appName}; install locally unless --build-only
@@ -246,8 +225,6 @@ export const rigUsage = `Usage: bun run screen-sharing:rig <command> [options]
 Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), virtual:WxH@fps (private CGVirtualDisplay with the workload window on it; needs Screen Recording), display:ID (needs Screen Recording).
 `
 
-/// `rig <command> [--key value | --flag]...`. Unknown commands and dangling
-/// values are errors; `build` is the default so the old invocation still works.
 export function parseRigArguments(argv: string[]): {
   command: RigCommand
   options: RigOptions
@@ -282,8 +259,6 @@ export function parseRigArguments(argv: string[]): {
   return { command, options, positional }
 }
 
-/// The string value of `--key value`, or undefined when absent. A bare `--key`
-/// is an error rather than the string "true" reaching ssh, Number() or a path.
 export function stringOption(options: RigOptions, key: string): string | undefined {
   const value = options[key]
   if (value === true) throw new Error(`--${key} needs a value`)
@@ -306,8 +281,6 @@ export function buildInfoExtras({
   }
 }
 
-/// Parses `rig tune` arguments into the `tuning` object written to both configs: a JSON object,
-/// `default` (remove all tuning), or the product profile name.
 export function parseTuningArgument(argument: string | undefined): Tuning | null {
   if (argument === undefined)
     throw new Error("tune needs a JSON object, a profile name, or default")
@@ -324,11 +297,8 @@ export function parseTuningArgument(argument: string | undefined): Tuning | null
   return object as Tuning
 }
 
-/// Keys a `tune` object may carry that live at the top of rig.json rather than under `tuning`.
 const topLevelTuningKeys = ["codec", "bitrate"]
 
-/// Returns a new configuration with `tuning` set (or removed when null). `codec` and `bitrate` in the
-/// object move to the top level so one `tune` call can switch the codec with its knobs; `default` keeps them.
 export function withTuning<T extends Record<string, unknown>>(
   configuration: T,
   tuning: Tuning | null

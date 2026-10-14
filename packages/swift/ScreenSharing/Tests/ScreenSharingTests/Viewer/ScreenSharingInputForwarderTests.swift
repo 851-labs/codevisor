@@ -3,9 +3,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The lease's data plane: what actually reaches the control channel for a
-/// stream of captured events, and what the viewer is told when the channel
-/// stops accepting them.
 @MainActor
 struct ScreenSharingInputForwarderTests {
   @Test func everyForwardedEventIsNumberedInOrderUnderTheLease() {
@@ -55,9 +52,6 @@ struct ScreenSharingInputForwarderTests {
     #expect(forwarder.lease == nil)
   }
 
-  /// The host revokes the lease over a single invalid event, so an event the
-  /// local surface somehow produced out of range must never take a sequence
-  /// number, let alone reach the wire.
   @Test(
     arguments: [
       ScreenSharingInputEvent.move(.init(x: -0.01, y: 0.5), modifiers: 0),

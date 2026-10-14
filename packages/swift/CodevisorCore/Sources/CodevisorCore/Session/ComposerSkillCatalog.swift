@@ -1,14 +1,7 @@
 import ACPKit
 import Foundation
 
-/// The skills the composer palette offers: the harness's own (built-in,
-/// project, user, plugin) plus the Codevisor skills the server offers the
-/// chat. Harness commands that are not skills never appear here.
 public enum ComposerSkillCatalog {
-  /// Merges the harness's skills with Codevisor's, sorted by name.
-  /// Codevisor skills are invoked by their gateway name behind the
-  /// harness's prefix; a harness skill with the same name wins, because
-  /// that is the one the harness would run.
   public static func merge(native: SessionSkills?, codevisor: [ServerComposerSkill]) -> [SessionSkill] {
     let nativeSkills = native?.skills ?? []
     let prefix = native?.invocationPrefix ?? "/"
@@ -28,9 +21,6 @@ public enum ComposerSkillCatalog {
     }
   }
 
-  /// The Codevisor skills `client`'s machine offers a chat. A server that
-  /// predates `GET /v1/composer-skills` answers 404; its store skills
-  /// stand in, minus invalid entries and the gateway's reserved names.
   static func codevisorSkills(
     from client: any CodevisorServerClienting,
     projectId: UUID?,
@@ -46,16 +36,11 @@ public enum ComposerSkillCatalog {
     }
   }
 
-  /// Names older servers' tool gateways reserve for their built-in skills;
-  /// newer servers filter these themselves.
   private static let legacyReservedSkillNames: Set<String> = [
     "execute", "browser-use", "computer-use", "codevisor", "codevisor-agents",
     "codevisor-machines", "codevisor-clients", "attaching-files", "create-codevisor-plugin",
   ]
 
-  /// Skills whose name matches a lowercased query: exact matches first,
-  /// then prefix matches, then names containing the query, each tier in
-  /// catalog order. An empty query matches everything.
   public static func matches(_ skills: [SessionSkill], query: String) -> [SessionSkill] {
     guard !query.isEmpty else { return skills }
     var exact: [SessionSkill] = []
@@ -76,7 +61,6 @@ public enum ComposerSkillCatalog {
 }
 
 public extension SessionSkillSource {
-  /// The palette row's trailing label.
   var paletteLabel: String {
     switch self {
     case .builtin: "Built-in"

@@ -27,8 +27,6 @@ import { Effect } from "effect"
 import { SERVER_PROCESS_TITLE, SERVER_UPDATE_CHECK_TTL_MS } from "./serve-boot.js"
 import type { CodevisorServerUpdater } from "./server.js"
 
-/// Self-updater for standalone server installs and the app-hosted handoff.
-
 const APP_UPDATE_HANDOFF_EXIT_CODE = 85
 
 const writeAppUpdateRequest = (path: string, version: string): void => {
@@ -46,10 +44,6 @@ const writeAppUpdateRequest = (path: string, version: string): void => {
   renameSync(temporary, path)
 }
 
-/// Starts a process that outlives this one and resolves once it is running.
-/// A launch failure (systemctl or bash missing) rejects so the update is
-/// reported as failed and the drain reopens; unheard, that 'error' event
-/// would be an uncaught exception that exits the server mid-update.
 const startDetachedHandoff = (
   command: string,
   args: ReadonlyArray<string>,
@@ -64,22 +58,18 @@ const startDetachedHandoff = (
     child.once("spawn", () => resolve())
   })
 
-/// Whether a macOS app hosts this server as a child inside its .app bundle.
 const appHosted = (): boolean =>
   process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1"
 
 const GITHUB_RELEASE_REPOSITORY =
   process.env.CODEVISOR_GITHUB_REPOSITORY ?? DEFAULT_GITHUB_REPOSITORY
 
-/// Compatibility fallback frozen at the first GitHub-aware release. Preserve
-/// the old override names for managed installations that already set them.
 const LEGACY_RELEASE_BASE_URL =
   process.env.CODEVISOR_LEGACY_RELEASE_BASE_URL ??
   process.env.CODEVISOR_RELEASE_BASE_URL ??
   process.env.HERDMAN_RELEASE_BASE_URL ??
   DEFAULT_LEGACY_RELEASE_BASE_URL
 
-/// "darwin-arm64", "linux-x64", … matching the published server archives.
 const releaseTarget = (): string | undefined => {
   const platform =
     process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : undefined
@@ -87,20 +77,14 @@ const releaseTarget = (): string | undefined => {
   return platform !== undefined && arch !== undefined ? `${platform}-${arch}` : undefined
 }
 
-/// Self-updater for standalone server installs: checks GitHub's latest stable
-/// release and on apply downloads the matching server archive,
-/// unpacks it next to the database, hands off to the new runtime, and exits.
 export const makeSelfUpdater = (options: {
   readonly currentVersion: string
   readonly currentBuildNumber?: number | undefined
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
   readonly serveArgs: ReadonlyArray<string>
-  /// Injected by tests; production uses the global fetch.
   readonly fetch?: typeof globalThis.fetch | undefined
 }): CodevisorServerUpdater => {
-  // Per-channel: an alpha check must never satisfy a stable one (or vice
-  // versa) — they read different manifests.
   const cached = new Map<
     ServerUpdateChannel,
     {
@@ -110,12 +94,6 @@ export const makeSelfUpdater = (options: {
     }
   >()
 
-  // On an app-hosted Mac the machine's own channel preference — written by
-  // the host app next to the database — is authoritative: Sparkle installs
-  // from that preference, so letting a remote client's requested channel
-  // decide the check would let check and install disagree and the update
-  // never converge. Standalone servers follow the config plane's synced
-  // channel the same way; the requested channel is only the fallback.
   const syncedChannel = async (): Promise<ServerUpdateChannel | undefined> => {
     const entries = await Effect.runPromise(options.db.getSyncEntries("settings")).catch(
       () => undefined
@@ -128,9 +106,6 @@ export const makeSelfUpdater = (options: {
     return fileChannel ?? (await syncedChannel()) ?? requested
   }
 
-  // Attached fresh on every check, never cached: the host app's unattended
-  // Sparkle session writes this while installing (or after failing), and a
-  // remote client polling for the outcome needs the live state.
   const withApplyState = (info: UpdateInfo): UpdateInfo => {
     if (!appHosted()) return info
     const lastApply = readAppUpdateApplyState(options.dataDir)
@@ -149,11 +124,6 @@ export const makeSelfUpdater = (options: {
       fetch: options.fetch
     })
 
-  // On an app-hosted Mac the install is done by the host app's Sparkle, from
-  // its appcast — so "latest" is read from that same document. The manifests
-  // stay as a reachability fallback only: if the feed is down, Sparkle's own
-  // install would fail with its own message anyway. Standalone servers
-  // install from the manifests and keep reading them.
   const resolveRelease = async (
     channel: ServerUpdateChannel
   ): Promise<ServerRelease | undefined> => {
@@ -186,9 +156,7 @@ export const makeSelfUpdater = (options: {
     let release: ServerRelease | undefined
     try {
       release = await resolveRelease(channel)
-    } catch {
-      // Offline or unreachable: report the last known state.
-    }
+    } catch {}
     const info: UpdateInfo = {
       currentVersion: options.currentVersion,
       latestVersion: release?.version ?? options.currentVersion,
@@ -201,10 +169,6 @@ export const makeSelfUpdater = (options: {
       channel,
       checkedAt: new Date().toISOString(),
       migrationState: "idle",
-      // Build numbers are the cross-feed authority clients compare to see
-      // whether an update landed: alpha manifests carry the full prerelease
-      // tag while installed runtimes report their base marketing version,
-      // so version strings alone cannot confirm convergence.
       ...(options.currentBuildNumber === undefined
         ? {}
         : { currentBuildNumber: options.currentBuildNumber }),
@@ -223,12 +187,6 @@ export const makeSelfUpdater = (options: {
     if (!info.updateAvailable) {
       return
     }
-    // A macOS app hosts this server as a child inside its .app bundle: a
-    // standalone runtime swap here lives under Application Support and would be
-    // discarded on the app's next launch (which re-runs the bundled runtime).
-    // Hand the update back to the app — it replaces the whole bundle and
-    // relaunches, bringing a fresh bundled server — by exiting with the agreed
-    // status the app is watching for.
     if (appHosted()) {
       console.log("Handing update off to the host macOS app")
       const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
@@ -301,9 +259,6 @@ export const makeSelfUpdater = (options: {
       throw new Error(`Downloaded runtime at ${runtimeDir} is incomplete`)
     }
 
-    // Install over the running root so systemd's ExecStart and the launcher
-    // symlinks boot the new version. Without this the staged runtime never
-    // becomes the default and every later restart resurrects the old build.
     const installRoot = resolveInstallRoot(process.argv[1])
     if (installRoot !== undefined) {
       await installRuntime({ installRoot, extract: extractArchive })
@@ -312,28 +267,16 @@ export const makeSelfUpdater = (options: {
     console.log(`Restarting into Codevisor server ${info.latestVersion}`)
     const plan = planRestart(process.env, process.geteuid?.() ?? 0)
     if (plan.kind === "systemd" && installRoot !== undefined) {
-      // Ask PID 1 to restart the unit. A detached handoff child would die
-      // with this unit's cgroup, and a clean exit is final under
-      // Restart=on-failure — but a restart job enqueued with --no-block
-      // survives this process: its stop half takes this server down and its
-      // start half boots the swapped install root.
       const managerArgs = plan.userManager ? ["--user"] : []
       await startDetachedHandoff(
         "systemctl",
         [...managerArgs, "restart", "--no-block", plan.unit],
         false
       )
-      // Failsafe: if the restart job never arrives, exit anyway — the
-      // install root is already swapped, so any later start (manual or
-      // scheduled) boots the new version.
       setTimeout(() => process.exit(0), 10_000).unref()
       return
     }
 
-    // Hand off: the replacement waits a beat for this process to release the
-    // port, then execs the new runtime with the same serve arguments. Runs
-    // from the swapped install root when there is one so the process and the
-    // install agree on the version; dev-style runs use the staged runtime.
     const handoffRoot = installRoot ?? runtimeDir
     await startDetachedHandoff(
       "/bin/bash",

@@ -2,10 +2,6 @@
   import AppKit
   import SwiftUI
 
-  /// The floating find-in-chat bar: a query field, "3 of 12", previous and
-  /// next, and close. Keys follow Chrome's find bar: Return steps to the next
-  /// match and Shift-Return to the previous one (both repeat while held), and
-  /// Escape closes.
   public struct TranscriptFindBar: View {
     private let model: TranscriptFindModel
     @FocusState private var isFocused: Bool
@@ -61,7 +57,6 @@
           await Task.yield()
           isFocused = true
           await Task.yield()
-          // A repeat ⌘F selects the existing query so typing replaces it.
           if !model.query.isEmpty {
             NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
           }
@@ -78,8 +73,6 @@
       .autocorrectionDisabled()
       .focused($isFocused)
       .accessibilityLabel("Find in chat")
-      // Handled here rather than in `onSubmit` so Shift-Return can step back
-      // and a held key keeps stepping, as in Chrome.
       .onKeyPress(.return, phases: [.down, .repeat]) { press in
         if press.modifiers.contains(.shift) {
           model.findPrevious()

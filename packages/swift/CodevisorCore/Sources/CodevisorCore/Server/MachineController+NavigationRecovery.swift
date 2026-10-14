@@ -9,8 +9,6 @@ extension MachineController {
     scheduleNavigationRetry(serverId: serverId, client: client)
   }
 
-  /// One retry per machine, with bounded backoff. A healthy socket does not
-  /// imply healthy list requests, so snapshot recovery has its own lifetime.
   func scheduleNavigationRetry(serverId: String, client: any CodevisorServerClienting) {
     let connection = connection(for: serverId)
     guard connection.navigationRetryTask == nil else { return }

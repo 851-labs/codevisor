@@ -40,14 +40,10 @@ export interface AcpStdioExtension {
     capabilities: acp.ClientCapabilities
   ) => acp.ClientCapabilities
   readonly configureClientApp?: ConfigureAcpClientApp
-  /// Replaces the default notification mapping for this connection. Returning
-  /// an empty array deliberately consumes an update.
   readonly mapSessionNotification?: (
     notification: acp.SessionNotification
   ) => ReadonlyArray<RuntimeEvent>
   readonly sdkConnectionCustomization?: AcpSdkConnectionCustomization
-  /// Rewrites each message line the agent writes before the ACP SDK parses
-  /// it, for extensions its schema would reject. Return the line to keep it.
   readonly rewriteAgentLine?: (line: string) => string
 }
 
@@ -58,7 +54,7 @@ export interface StdioAcpConnectorOptions {
   readonly extension?: AcpStdioExtensionFactory
 }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
+/* v8 ignore start */
 export const makeStdioAcpConnectorWithOptions = (
   options: StdioAcpConnectorOptions = {}
 ): AcpConnector => ({
@@ -66,8 +62,6 @@ export const makeStdioAcpConnectorWithOptions = (
     adapterPromise("connect", async () => {
       const child = spawn(request.command, [...request.args], {
         cwd: request.cwd,
-        // Some CLIs spawn worker descendants. A separate process group lets
-        // close/timeout reliably terminate the whole ACP tree.
         detached: process.platform !== "win32",
         env: request.env,
         stdio: ["pipe", "pipe", "pipe"]
@@ -201,8 +195,6 @@ export const makeStdioAcpConnectorWithOptions = (
           answer.outcome === "answered" ? answer.answers : undefined
         )
       }
-      /// ACP spec: a cancelled turn (and a closing connection) must resolve
-      /// pending permission requests as cancelled.
       const cancelQuestions = (sessionId: string | undefined): void => {
         for (const [questionId, pending] of pendingQuestions) {
           if (sessionId !== undefined && pending.sessionId !== sessionId) continue
@@ -217,9 +209,6 @@ export const makeStdioAcpConnectorWithOptions = (
       }
       child.once("exit", () => {
         cancelQuestions(undefined)
-        // A CLI that dies at startup can emit megabytes of minified bundle and
-        // stack frames; this message reaches the UI, so summarize rather than
-        // forward the captured tail verbatim.
         connection.close(
           new Error(summarizeProcessFailure(stderr(), `${request.command} exited unexpectedly`))
         )
@@ -246,10 +235,6 @@ export const makeStdioAcpConnectorWithOptions = (
         )
       } catch (cause) {
         const raw = cause instanceof Error ? cause : new Error(String(cause))
-        // A CLI that dies during startup surfaces here, not in `probeAuth`: the
-        // SDK sees EOF on the pipes and rejects this request with a bare "ACP
-        // connection closed" that says nothing about the cause. The child's
-        // stderr does, so wait for it to flush and summarize that instead.
         let error = raw
         if (isGenericConnectionClose(raw.message)) {
           await settleStderr(child)
@@ -282,8 +267,6 @@ export const makeStdioAcpConnectorWithOptions = (
           ? {}
           : { customization: extension.sdkConnectionCustomization })
       })
-      // Newer ACP agents report identity in the initialize response; read it
-      // defensively so older protocol versions stay decodable.
       const reportedInfo = (
         initialized as { agentInfo?: { name?: string; version?: string } } | undefined
       )?.agentInfo
@@ -344,11 +327,6 @@ const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => P
 
 export const stdioAcpConnector: AcpConnector = makeStdioAcpConnector()
 
-/// Waits for a dying child's stderr to finish arriving, capped so a process
-/// that keeps its pipe open can't stall a probe. The SDK rejects pending
-/// requests the moment stdout hits EOF, which can beat the final stderr chunks
-/// through the event loop — summarizing before this settles risks reading an
-/// empty or half-written buffer.
 const settleStderr = (child: ChildProcessWithoutNullStreams, timeoutMs = 250): Promise<void> =>
   new Promise((resolve) => {
     if (child.stderr.readableEnded) {

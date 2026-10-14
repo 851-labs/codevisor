@@ -63,7 +63,6 @@ describe("terminal socket sender", () => {
     immediates[0]!()
     sender.sink({ type: "output", seq: 3, data: "c" })
     sender.sink({ type: "exit", seq: 4, exitCode: 0 })
-    // The scheduled flush for "c" finds nothing left to send.
     immediates[1]!()
     expect(socket.sent.map((data) => JSON.parse(data as string))).toEqual([
       { type: "output", seq: 2, data: "ab" },
@@ -111,18 +110,15 @@ describe("terminal socket sender", () => {
     sender.sink({ type: "output", seq: 6, data: "fits" })
     socket.bufferedAmount = 500
     immediates[0]!()
-    // Past the high water mark: later output is dropped, even once batched.
     sender.sink({ type: "output", seq: 7, data: "dropped" })
     sender.sink({ type: "exit", seq: 8 })
     expect(socket.sent).toHaveLength(1)
-    // Still draining: no resync yet. Drained: resync from the last sent frame.
     socket.bufferedAmount = 50
     socket.callbacks[0]!()
     expect(resyncs).toEqual([])
     socket.bufferedAmount = 0
     socket.callbacks[0]!()
     expect(resyncs).toEqual([6])
-    // A completion on a healthy socket does nothing.
     socket.callbacks[0]!()
     expect(resyncs).toEqual([6])
   })
@@ -185,7 +181,6 @@ const observeClientClosure = (client: WebSocket): (() => Promise<void>) => {
   }
 }
 
-/// A real WebSocket pair, with the server side attached to `terminalId`.
 const connect = async (
   attach: (socket: WebSocket) => Promise<void>
 ): Promise<{
@@ -225,8 +220,6 @@ const connect = async (
       throw new AggregateError(errors, "Terminal socket fixture cleanup failed")
   })
   server.once("connection", (socket) => {
-    // Promise continuations run after all synchronous close listeners,
-    // including the terminal's ownership release, have finished.
     socket.once("close", () => serverClosed.resolve())
     attachmentStarted = true
     try {
@@ -243,7 +236,6 @@ const connect = async (
   client = new WebSocket(`ws://127.0.0.1:${port}`)
   clientClosed = observeClientClosure(client)
   const messages: Array<unknown> = []
-  // Size announcements, kept apart from the output the tests follow.
   const sizes: Array<unknown> = []
   const waiters: Array<{ count: number; resolve: () => void }> = []
   client.on("message", (data, isBinary) => {
@@ -296,7 +288,6 @@ describe("terminal socket", () => {
     handle.output("live")
     await received(4)
     client.send("{")
-    // Valid JSON that is not an object has no fields to read.
     client.send("null")
     client.send(JSON.stringify({ type: "ping" }))
     client.send(JSON.stringify({ type: "input" }))
@@ -315,7 +306,6 @@ describe("terminal socket", () => {
       "error",
       "pong"
     ])
-    // The PTY size is announced once on attach.
     expect(sizes).toEqual([{ type: "size", seq: 0, cols: 80, rows: 24 }])
   })
 
@@ -344,8 +334,6 @@ describe("terminal socket", () => {
           return disconnect
         })
     }
-    // Every send counts as backed up, and every completion as drained: each
-    // write is followed by a resubscription from the last delivered frame.
     const { messages, received } = await connect((socket) =>
       attachTerminalSocket(
         observed,
@@ -386,13 +374,11 @@ describe("terminal socket", () => {
     )
     const attach = (socket: WebSocket) =>
       attachTerminalSocket(spy, handle.terminalId, { lastOutputSeq: 0, protocol: 2 }, socket)
-    // The phone reconnects: its new socket is up before the old one closes.
     const old = await connect(attach)
     old.client.send(phoneResize(1))
     old.client.send(JSON.stringify({ type: "hide", clientId: "phone", clientSeq: 2 }))
     const current = await connect(attach)
     current.client.send(phoneResize(3))
-    // Handled frames are acknowledged, so the client can stop keeping them.
     await Promise.all([old.received(3), current.received(2)])
     expect(old.messages[0]).toEqual({ type: "ready", seq: 0, protocol: 2 })
     expect(old.messages.slice(1)).toHaveLength(2)

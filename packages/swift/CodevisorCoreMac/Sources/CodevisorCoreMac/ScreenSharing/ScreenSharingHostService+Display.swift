@@ -3,9 +3,6 @@ import ScreenSharing
 import ScreenSharingWebRTC
 
 extension ScreenSharingHostService {
-  /// Dynamic Resolution for a native viewer (851-2376): once the display channel opens the host
-  /// says whether it can size a virtual display; the viewer's pane size then arrives as `resize`
-  /// (in points) and `restore` puts the physical display back.
   func configureDisplay(_ session: ScreenSharingHostSession) {
     let channel = session.peer.displayChannel
     channel.onAvailabilityChanged = { [weak channel] available in
@@ -23,7 +20,6 @@ extension ScreenSharingHostService {
     }
   }
 
-  /// Until `display` reports `pixels` (at most 1 s): the new mode has taken effect.
   static func waitForDisplay(_ display: CGDirectDisplayID, pixels: (width: Int, height: Int)) async throws {
     for _ in 0..<100 {
       guard let mode = CGDisplayCopyDisplayMode(display),
@@ -33,18 +29,12 @@ extension ScreenSharingHostService {
     }
   }
 
-  /// Until the physical display has left the mirror set (at most 1 s): back to its own mode.
   static func waitForMirrorToEnd(_ display: CGDirectDisplayID) async throws {
     for _ in 0..<100 where CGDisplayIsInMirrorSet(display) != 0 {
       try await Task.sleep(for: .milliseconds(10))
     }
   }
 
-  /// A pane being dragged sends a burst of sizes: the last one within 300 ms wins.
-  ///
-  /// A resize already being applied is never cancelled: cancelling it mid-way cancelled its
-  /// capture start and left the capture stopped, so the video froze (tuftlord, 2026-09-25: two
-  /// sizes ~1 s apart as a viewer connected). A newer size waits for it, then applies.
   private func scheduleResize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) {
     session.pendingResize?.cancel()
     session.pendingResize = Task { [weak self, weak session] in
@@ -52,7 +42,6 @@ extension ScreenSharingHostService {
       guard let self, let session, !session.stopping else { return }
       await session.resizing?.value
       guard !Task.isCancelled, !session.stopping else { return }
-      // Its own task, so a newer size's cancelling this pending one can't reach it.
       let resizing = Task { await self.resize(session, to: size) }
       session.resizing = resizing
       await resizing.value
@@ -61,14 +50,11 @@ extension ScreenSharingHostService {
 
   private func resize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) async {
     let channel = session.peer.displayChannel
-    // The virtual display appearing, the mirror and the new mode each post a screen change.
     session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5
-    // An earlier change may have renumbered the physical display; mirror the one that's there.
     followDisplay(session)
     let movesDisplay: Bool
     do {
       if let size {
-        // The video first: if the encoder can't take this size, nothing on the host changes.
         let points = ScreenSharingHostVirtualDisplay.clamp(width: size.width, height: size.height)
         let configuration = try ScreenSharingVideoConfiguration(
           width: points.width * 2, height: points.height * 2, bitrate: Self.bitrateCeiling)
@@ -91,9 +77,6 @@ extension ScreenSharingHostService {
         session.configuration = session.physicalConfiguration
         movesDisplay = true
       }
-      // WindowServer applies the mirror and the new mode asynchronously; until the capture has the
-      // new size it squeezes the display into the old frame. Wait only until the display reports
-      // its new size (tens of milliseconds), then update at once.
       if session.virtualDisplay != nil {
         try await Self.waitForDisplay(
           session.captureDisplayID, pixels: (session.configuration.width, session.configuration.height))
@@ -132,10 +115,6 @@ extension ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
-  /// A display change ends the session only when it took away what the session shows (851-2376).
-  /// Any change used to end it once 5 s had passed since the host's own: on tuftlord a late
-  /// notification from the host's own virtual display arrived just after, and a session ended
-  /// 3 s after connecting with "Screen sharing was stopped on the host Mac" (alpha 1118).
   func screenParametersChanged() {
     guard let current else { return }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }

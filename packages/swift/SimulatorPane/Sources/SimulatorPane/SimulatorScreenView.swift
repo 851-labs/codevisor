@@ -1,26 +1,19 @@
 import ScreenSharing
 import SwiftUI
 
-/// What the simulator's screen reports back: touches in framebuffer-normalized coordinates,
-/// keys as HID usages, and the decoded video's size.
 @MainActor
 struct SimulatorScreenInput {
   var touch: (ScreenSharingSimulatorTouchPhase, [ScreenSharingSimulatorTouch]) -> Void
   var key: (_ usage: Int, _ down: Bool) -> Void
-  /// Scroll-wheel travel, for a watch's Digital Crown.
   var scroll: (_ delta: Double) -> Void
   var frame: (CGSize) -> Void
 }
 
-/// The stream's video in a Metal view, clipped to the screen's mask, taking touches and keys.
-/// Without a source it only takes input: a clear layer over a screen drawn elsewhere.
 struct SimulatorScreenView {
   let source: SimulatorScreenSource?
-  /// The screen's shape (rounded corners, cutouts) as an alpha mask; nil draws it square.
   let mask: CGImage?
   let input: SimulatorScreenInput
 
-  /// Within this many points of an edge, a touch that starts there is a system edge gesture.
   static let edgeBand: CGFloat = 12
 
   static func normalized(_ point: CGPoint, in size: CGSize) -> (Double, Double) {
@@ -38,9 +31,6 @@ struct SimulatorScreenView {
     return nil
   }
 
-  /// Changes the surface's own layers (mask, still image) at once. Core Animation animates a
-  /// standalone layer's changes by default, so a resized screen's mask would trail its new bounds
-  /// for a quarter second, cutting the video short and showing black where it hadn't caught up.
   static func withoutAnimation(_ changes: () -> Void) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -66,8 +56,6 @@ struct SimulatorScreenView {
     static func dismantleNSView(_ view: SimulatorScreenSurface, coordinator: ()) { view.stop() }
   }
 
-  /// Mouse is one finger; Option adds a second, mirrored through the screen's center, for pinch
-  /// and rotate as in Simulator. Keys go to the device while the screen has focus.
   final class SimulatorScreenSurface: NSView {
     var input: SimulatorScreenInput?
     private var metal: ScreenSharingMetalView?
@@ -81,8 +69,6 @@ struct SimulatorScreenView {
     init(source: SimulatorScreenSource?) {
       super.init(frame: .zero)
       wantsLayer = true
-      // Clear, and the video clear until its first frame: the canvas keeps a still of the screen
-      // (or black) underneath, so a new view never flashes black.
       layer?.backgroundColor = NSColor.clear.cgColor
       maskLayer.contentsGravity = .resize
       imageLayer.contentsGravity = .resize
@@ -178,16 +164,13 @@ struct SimulatorScreenView {
       if delta != 0 { input?.scroll(delta) }
     }
 
-    /// The key each Mac key went down as, so its key-up releases the same one.
     private var typedKeys: [UInt16: (usage: Int, shift: Bool)] = [:]
 
     override func keyDown(with event: NSEvent) {
-      // ⌘-shortcuts stay with Codevisor (close tab, switch panes).
       guard !event.modifierFlags.contains(.command), let key = simulatorKey(for: event)
       else { return super.keyDown(with: event) }
       if event.isARepeat, typedKeys[event.keyCode] == nil { return }
       typedKeys[event.keyCode] = key
-      // Shift for a shifted character typed without a Shift key held (synthesized text).
       let addShift =
         key.shift && !pressedKeys.contains(SimulatorKeyboard.leftShift)
         && !pressedKeys.contains(SimulatorKeyboard.rightShift)
@@ -208,7 +191,6 @@ struct SimulatorScreenView {
       input?.key(key.usage, false)
     }
 
-    /// Printable characters by what they type; everything else (arrows, Return, F-keys) by key.
     private func simulatorKey(for event: NSEvent) -> (usage: Int, shift: Bool)? {
       if let characters = event.characters, characters.count == 1, let character = characters.first,
         !character.isNewline, character != "\t",
@@ -253,7 +235,6 @@ struct SimulatorScreenView {
     static func dismantleUIView(_ view: SimulatorScreenSurface, coordinator: ()) { view.stop() }
   }
 
-  /// Every finger is a finger on the device; a hardware keyboard types into it.
   final class SimulatorScreenSurface: UIView {
     var input: SimulatorScreenInput?
     private var metal: ScreenSharingMetalView?
@@ -265,13 +246,10 @@ struct SimulatorScreenView {
     private var edges: [ObjectIdentifier: ScreenSharingSimulatorEdge] = [:]
     private var nextFinger = 0
     private var pressedKeys = Set<Int>()
-    /// The navigation's back-swipes, switched off while a finger that started on the screen is down.
     private var heldGestures: [UIGestureRecognizer] = []
 
     init(source: SimulatorScreenSource?) {
       super.init(frame: .zero)
-      // Clear, and the video clear until its first frame: the canvas keeps a still of the screen
-      // (or black) underneath, so a new view never flashes black.
       backgroundColor = .clear
       isMultipleTouchEnabled = true
       maskLayer.contentsGravity = .resize
@@ -382,9 +360,6 @@ struct SimulatorScreenView {
       }
     }
 
-    /// A drag on the device belongs to the device: the navigation's back-swipes (from the edge, and
-    /// from anywhere in the content) would otherwise take it as "go back". They're off only while
-    /// a finger that started here is down, so swiping elsewhere still goes back.
     private func holdNavigationGestures() {
       guard heldGestures.isEmpty else { return }
       var responder: UIResponder? = next
@@ -403,7 +378,6 @@ struct SimulatorScreenView {
 
     override func willMove(toWindow newWindow: UIWindow?) {
       super.willMove(toWindow: newWindow)
-      // Never leave the navigation without its back-swipes.
       if newWindow == nil { releaseNavigationGestures() }
     }
 

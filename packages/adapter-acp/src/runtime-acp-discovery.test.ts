@@ -40,8 +40,6 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "goose", "codex", "cursor-agent"].includes(name),
-      // Pinned so path/version enrichment stays off regardless of what is
-      // installed on the machine running the tests (e.g. ChatGPT.app).
       locateExecutable: () => undefined
     })
 
@@ -49,7 +47,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "gemini")?.readiness).toEqual({
       state: "ready"
     })
-    // Every catalog entry now launches the user's installed binary directly.
     expect(harnesses.find((harness) => harness.id === "codex")?.readiness).toEqual({
       state: "ready"
     })
@@ -66,7 +63,6 @@ describe("@codevisor/agent-runtime", () => {
       detail: "Provider not available",
       state: "unavailable"
     })
-    // Install hints ride along only for harnesses that define them.
     expect(harnesses.find((harness) => harness.id === "claude-code")?.installHint).toContain(
       "claude.ai/install.sh"
     )
@@ -86,15 +82,11 @@ describe("@codevisor/agent-runtime", () => {
           : Promise.reject(new Error("unexpected probe"))
     })
 
-    // Discovery resolves the path synchronously; versions only exist once a
-    // refresh has probed them.
     const first = await run(runtime.discoverHarnesses)
     const claudeBefore = first.find((harness) => harness.id === "claude-code")
     expect(claudeBefore?.readiness).toMatchObject({ state: "ready", path: "/opt/tools/claude" })
     expect(claudeBefore?.readiness.version).toBeUndefined()
 
-    // A refresh (the client's "Detect again") awaits probes even without an
-    // env resolver, so the next discovery carries the version.
     await run(runtime.refreshEnvironment)
     const after = await run(runtime.discoverHarnesses)
     expect(after.find((harness) => harness.id === "claude-code")?.readiness).toEqual({
@@ -102,7 +94,6 @@ describe("@codevisor/agent-runtime", () => {
       path: "/opt/tools/claude",
       version: "2.1.5"
     })
-    // Unavailable harnesses stay unenriched.
     expect(after.find((harness) => harness.id === "codex")?.readiness.path).toBeUndefined()
   })
 
@@ -110,11 +101,7 @@ describe("@codevisor/agent-runtime", () => {
     let resolveCalls = 0
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/before" },
-      // Readiness is keyed off the live env's PATH: claude "installs" only
-      // after refreshEnvironment swaps the env.
       executableExists: (name, env) => name === "claude" && env.PATH === "/after",
-      // Pinned: the refresh's version probe must not locate (and spawn) real
-      // binaries installed on the machine running the tests.
       locateExecutable: () => undefined,
       resolveEnv: () => {
         resolveCalls += 1
@@ -127,7 +114,6 @@ describe("@codevisor/agent-runtime", () => {
       "unavailable"
     )
 
-    // Concurrent refreshes share a single in-flight resolution.
     await Promise.all([run(runtime.refreshEnvironment), run(runtime.refreshEnvironment)])
     expect(resolveCalls).toBe(1)
 
@@ -136,7 +122,6 @@ describe("@codevisor/agent-runtime", () => {
       state: "ready"
     })
 
-    // A later refresh starts a fresh resolution (the shared promise clears).
     await run(runtime.refreshEnvironment)
     expect(resolveCalls).toBe(2)
   })
@@ -174,16 +159,12 @@ describe("@codevisor/agent-runtime", () => {
     await expect(run(runtime.refreshEnvironment)).rejects.toMatchObject({
       operation: "refreshEnvironment"
     })
-    // The failed in-flight promise clears; the next refresh succeeds.
     await run(runtime.refreshEnvironment)
     const harnesses = await run(runtime.discoverHarnesses)
     expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.state).toBe("ready")
   })
 
   it("reports every harness unavailable when no adapters are registered", async () => {
-    // locateExecutable is pinned to "nothing found": the default locator also
-    // probes absolute fallbackPaths (e.g. /Applications/Codex.app), which
-    // would make this machine-dependent.
     const runtime = makeAgentRuntime({ env: {}, locateExecutable: () => undefined })
     const harnesses = await run(runtime.discoverHarnesses)
     expect(harnesses.every((harness) => harness.readiness.state === "unavailable")).toBe(true)
@@ -209,10 +190,8 @@ describe("@codevisor/agent-runtime", () => {
     const binary = join(bundled, "codex")
     writeFileSync(binary, "#!/bin/sh\n", { mode: 0o755 })
     try {
-      // Absolute candidates skip PATH entirely.
       expect(locateExecutableOnPath(binary, {})).toBe(binary)
       expect(locateExecutableOnPath(join(home, "missing"), {})).toBeUndefined()
-      // `~/` expands via env.HOME; without a HOME there is nothing to probe.
       expect(
         locateExecutableOnPath("~/Applications/Codex.app/Contents/Resources/codex", {
           HOME: home
@@ -221,7 +200,6 @@ describe("@codevisor/agent-runtime", () => {
       expect(
         locateExecutableOnPath("~/Applications/Codex.app/Contents/Resources/codex", {})
       ).toBeUndefined()
-      // Plain names still walk PATH — and tolerate an absent PATH.
       expect(locateExecutableOnPath("codex", { PATH: bundled })).toBe(binary)
       expect(locateExecutableOnPath("codex", {})).toBeUndefined()
     } finally {

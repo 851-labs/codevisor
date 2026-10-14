@@ -372,8 +372,6 @@ describe("@codevisor/api", () => {
     expect(goal.tokenBudget).toBeNull()
     expect(goal.activity).toBe("verifying")
 
-    // The three set-request budget states survive decoding distinctly:
-    // absent key = keep, null = clear, number = set.
     const keep = decode(SetGoalRequest)({ status: "paused" })
     expect("tokenBudget" in keep).toBe(false)
     const clear = decode(SetGoalRequest)({ tokenBudget: null })
@@ -402,7 +400,6 @@ describe("@codevisor/api", () => {
           stars: 12,
           pushedAt: "2026-08-17T00:00:00Z"
         },
-        // Manifest description and tools stay optional, as in PluginSummary.
         {
           commit: "b".repeat(40),
           id: "beta.notes",
@@ -420,13 +417,10 @@ describe("@codevisor/api", () => {
     expect(index.entries).toHaveLength(2)
     expect(index.entries[0]?.repo).toBe("acme/git-diff")
     expect(index.entries[1]?.description).toBeUndefined()
-    // Curation groundwork: the indexer never sets `verified` yet.
     expect(index.entries[0]?.verified).toBeUndefined()
     expect(index.rejected[0]?.reason).toContain("not found")
     expect(() => decode(PluginRegistryIndex)({ entries: [] })).toThrow()
 
-    // Before the indexer's first poll, the cloud serves an honest empty
-    // index whose generatedAt is null.
     const empty = decode(PluginRegistryIndex)({ generatedAt: null, entries: [], rejected: [] })
     expect(empty.generatedAt).toBeNull()
     expect(empty.entries).toEqual([])

@@ -1,14 +1,5 @@
 import Foundation
 
-/// An ordered, reliable, bounded channel of typed messages between the two
-/// ends of a screen-sharing session. The native transport implements it with
-/// one negotiated SCTP data channel per protocol; tests and local backends use
-/// `ScreenSharingLocalChannel`. Control, clipboard and refresh protocols are
-/// written against this contract and never learn which transport carries them.
-///
-/// Delivery and availability callbacks arrive on the main actor. `send`
-/// returns false — and the channel may close itself — whenever the message
-/// cannot be carried right now; callers treat that as a transport failure.
 @MainActor
 public protocol ScreenSharingMessageChannel<Message>: AnyObject {
   associatedtype Message: Sendable
@@ -19,10 +10,6 @@ public protocol ScreenSharingMessageChannel<Message>: AnyObject {
   func close()
 }
 
-/// Two connected in-memory ends. Delivery hops through `hop` exactly like the
-/// native channel hops WebRTC callbacks onto the main actor, so a message sent
-/// from inside a delivery callback is never delivered reentrantly. Tests pass
-/// a hop they drain explicitly; the default schedules a main-actor task.
 @MainActor
 public final class ScreenSharingLocalChannel<Message: Sendable>: ScreenSharingMessageChannel {
   public typealias Hop = @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void
@@ -36,7 +23,6 @@ public final class ScreenSharingLocalChannel<Message: Sendable>: ScreenSharingMe
 
   private init(hop: @escaping Hop) { self.hop = hop }
 
-  /// A connected pair. Both ends are available until either closes.
   public static func pair(
     hop: @escaping Hop = { work in Task { @MainActor in work() } }
   ) -> (ScreenSharingLocalChannel, ScreenSharingLocalChannel) {

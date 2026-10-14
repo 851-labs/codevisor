@@ -77,8 +77,6 @@ it("repairs stranded older rows without ending the latest user message", async (
       messageId: "later"
     })
   )
-  // Persisted legacy shape: the user message is latest but the older row was
-  // left streaming by an interrupted process.
   sqlite.prepare("update chat_items set status = 'streaming' where id = ?").run(orphan.id)
   const result = await run(
     db.reconcileQuietStreamingSession(session.id, "2100-01-01T00:00:00.000Z")

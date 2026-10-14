@@ -86,7 +86,6 @@ try {
     owner,
     ready: false
   }
-  // Record ownership before any cancellable startup work.
   await writeJSON(simulatorOwnerPath(udid), manifest)
   marked = true
   await writeJSON(manifestPath, manifest)
@@ -96,7 +95,6 @@ try {
   check()
   const { stdout } = await exec("xcode-select", ["-p"])
   const developer = stdout.trim()
-  // Covers worktrees created before the post-checkout hook wrote this.
   await ensureXcodeDerivedDataSettings(repoRoot)
   xcodeWindow = await openOwnedXcodeWindow(
     join(repoRoot, "apps/ios/Codevisor.xcodeproj"),
@@ -134,7 +132,6 @@ try {
   console.log(
     `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${repoRoot}/apps/ios/Codevisor.xcodeproj\n  State: ${manifestPath}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
   )
-  // File removal also ends ownership, including manual worktree deletion.
   const monitor = setInterval(() => {
     void readJSON(manifestPath)
       .then((current) => {

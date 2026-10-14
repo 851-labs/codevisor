@@ -1,7 +1,5 @@
 import Foundation
 
-/// A buffered event counter. A signal cannot be lost between checking state
-/// and suspending, and waiting does not depend on scheduler speed.
 public final class TestSignal: @unchecked Sendable {
   private let lock = NSLock()
   private var count = 0

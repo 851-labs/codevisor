@@ -15,10 +15,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeSelfUpdater } from "./serve-self-updater.js"
 
-/// The release documents the same publish job writes: the appcast Sparkle
-/// installs from, and the JSON manifests standalone servers install from.
-/// They disagree here on purpose — the manifest is one build ahead — so
-/// each test shows which one an updater believes.
 const feed = `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
   <item>
     <link>https://github.com/851-labs/codevisor/releases/tag/v0.1.102-alpha.660</link>
@@ -115,8 +111,6 @@ describe("makeSelfUpdater release resolution", () => {
     writeFileSync(join(dataDir, APP_UPDATE_CHANNEL_FILE), "stable\n")
     writeFileSync(join(dataDir, APP_UPDATE_FEED_FILE), customFeedURL)
 
-    // The client asked for alpha; the machine installs stable, so the
-    // stable item is what "latest" means here (and it is not newer).
     const info = await updater().check({ channel: "alpha" })
 
     expect(info).toMatchObject({

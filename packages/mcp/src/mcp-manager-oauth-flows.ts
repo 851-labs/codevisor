@@ -17,9 +17,7 @@ export interface McpOAuthFlowDeps {
 
 export type McpOAuthFlows = Pick<McpManager, "beginOAuth" | "disconnectOAuth" | "finishOAuth">
 
-/* v8 ignore start -- browser OAuth lifecycle is covered by the live provider integration flow. */
-/// The interactive OAuth authorization flow: begin (redirect to the
-/// provider), finish (exchange the code), and disconnect (drop tokens).
+/* v8 ignore start */
 export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps): McpOAuthFlows => {
   const {
     callbackUrl,
@@ -56,11 +54,6 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     try {
       result = await authorize()
     } catch (cause) {
-      // auth() first tries to refresh saved tokens, and the SDK only
-      // recovers from invalid_grant/invalid_client. Providers answer a
-      // dead refresh token with other codes too (YC: invalid_target), and
-      // a Connect press must still reach the browser: drop the stale
-      // tokens and start a fresh authorization.
       if (!(cause instanceof OAuthError)) throw cause
       await provider.invalidateCredentials?.("tokens")
       result = await authorize()
@@ -119,8 +112,6 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
         configuredClientSecret: value.oauth?.configuredClientSecret
       }
     }))
-    // Dropping tokens is an auth action, not a disable: the enabled wish
-    // is left alone so the fleet definition never flips underneath it.
     return publicServer(
       await saveRecord(current, {
         connectionState: "needsAuthorization",

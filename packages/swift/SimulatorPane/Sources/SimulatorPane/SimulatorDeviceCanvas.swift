@@ -2,17 +2,12 @@ import CodevisorClient
 import ScreenSharing
 import SwiftUI
 
-/// The device as it's held: its bezel and hardware buttons turned with it, the live screen
-/// upright inside, all scaled to fit the pane. A foldable is drawn at one size whichever screen
-/// shows, bends open as a book, and folds shut and open as Device Hub animates it.
 struct SimulatorDeviceCanvas: View {
   let model: SimulatorPaneModel
   let device: ServerSimulatorDevice
-  /// Room between the device and the pane's edges; the action bar brings its own spacing below.
   static let margin: CGFloat = 16
   static let bottomMargin: CGFloat = 4
   #if os(macOS)
-    /// The window toolbar's height: it floats over a pane that starts at the window's top.
     static let minimumTop: CGFloat = 52
   #else
     static let minimumTop: CGFloat = 0
@@ -22,40 +17,27 @@ struct SimulatorDeviceCanvas: View {
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
   #endif
-  /// Each screen's bezel and screen mask, by face, at the scale the device is drawn.
   @State private var bezels: [String: CGImage] = [:]
-  /// Where each bezel's artwork is opaque, in its layout's canvas: the device's own outline,
-  /// inside any transparent margin its artwork carries.
   @State private var outlines: [String: CGRect] = [:]
   @State private var masks: [String: CGImage] = [:]
-  /// The angle the device is drawn at as it's held. It keeps counting past a full turn, so each
-  /// turn animates the short way (portrait to landscape left is -90°, not +270°).
   @State private var angle: Double?
   @State private var feed = SimulatorScreenFeed()
-  /// A foldable's hinge as drawn, in degrees open; it eases to each new posture.
   @State private var hinge: Double?
-  /// Folding between screens: the screen it left shows a still until the hinge settles.
   @State private var fold: Fold?
-  /// What each screen last showed, drawn under its live video: a screen coming into view shows it
-  /// until the guest has woken that screen (`SimulatorScreenFeed.waking`), rather than black.
   @State private var stills: [String: CGImage] = [:]
 
   private struct Fold {
     let id = UUID()
-    /// The screen shown before.
     let from: String
   }
 
-  /// One of the device's screens laid out in its chrome, and how it's mounted in the device.
   struct Face {
     let id: String
     let display: ServerSimulatorDisplay?
     let chrome: SimulatorChrome?
     let layout: SimulatorChromeLayout
-    /// Clockwise quarter turns from the screen as it's made to the device held upright.
     let mount: Int
 
-    /// The device around this screen, upright in the hand.
     var presented: CGSize {
       mount % 2 == 0 ? layout.canvas : CGSize(width: layout.canvas.height, height: layout.canvas.width)
     }
@@ -90,10 +72,8 @@ struct SimulatorDeviceCanvas: View {
     return Face(id: display?.name ?? "screen", display: display, chrome: chrome, layout: layout, mount: mount)
   }
 
-  /// The screen the stream shows.
   private var current: Face { face(model.display, mount: state?.screenTurns ?? 0) }
 
-  /// A foldable's cover screen (shown closed) and inner screen (open and as a book).
   private var foldable: (cover: Face, inner: Face)? {
     guard let state, !state.postures.isEmpty, let displays = model.deviceType?.displays else { return nil }
     let touchscreens = displays.filter(\.hasDigitizer)
@@ -108,7 +88,6 @@ struct SimulatorDeviceCanvas: View {
     GeometryReader { proxy in
       let current = current
       let foldable = foldable
-      // A foldable keeps one size, the larger of its screens', so folding doesn't resize it.
       let box =
         foldable.map {
           CGSize(
@@ -117,12 +96,8 @@ struct SimulatorDeviceCanvas: View {
         } ?? current.presented
       let held = held
       let rotated = held % 2 == 0 ? box : CGSize(width: box.height, height: box.width)
-      // A narrow iPhone pane fits the screen that's showing, zooming as the device folds; with
-      // room, the device keeps one size, as Device Hub draws it.
       let fit = fitsCurrentScreen ? current.presented : box
       let fitted = held % 2 == 0 ? fit : CGSize(width: fit.height, height: fit.width)
-      // The reader already fills only the safe area (below the toolbar, above the action bar);
-      // clear the toolbar ourselves only where the pane still runs under it.
       let underToolbar = max(0, Self.minimumTop - proxy.frame(in: .global).minY)
       let reserved = EdgeInsets(
         top: underToolbar + Self.margin, leading: Self.margin, bottom: Self.bottomMargin, trailing: Self.margin)
@@ -130,10 +105,6 @@ struct SimulatorDeviceCanvas: View {
         width: max(1, proxy.size.width - reserved.leading - reserved.trailing),
         height: max(1, proxy.size.height - reserved.top - reserved.bottom))
       let scale = min(available.width / fitted.width, available.height / fitted.height, 1.5)
-      // The device is laid out at the larger of its upright and sideways fits and shrunk to the
-      // current one with a transform. A turn then changes only transforms, which move bezel and
-      // live video together; a changing layout size would tween the bezel while the video's
-      // platform view jumped straight to its new size, leaving black gaps mid-turn.
       let drawn =
         (foldable.map { [$0.cover.presented, $0.inner.presented] } ?? [box]).map { size in
           max(
@@ -148,8 +119,6 @@ struct SimulatorDeviceCanvas: View {
         y: reserved.top + (available.height - rotated.height * scale) / 2)
       let faces = foldable.map { [$0.cover, $0.inner] } ?? [current]
       ZStack(alignment: .topLeading) {
-        // Frame and screen turn together, like glass in a real device; iOS rotates its own
-        // interface inside it.
         content(current: current, foldable: foldable, scale: drawn)
           .frame(width: box.width * drawn, height: box.height * drawn)
           .scaleEffect(scale / drawn)
@@ -159,7 +128,6 @@ struct SimulatorDeviceCanvas: View {
           .frame(width: rotated.width * scale, height: rotated.height * scale)
           .offset(x: origin.x, y: origin.y)
           .animation(.smooth(duration: 0.35), value: heldDegrees)
-        // Touches are taken upright, as the viewer sees the screen; the host maps them back.
         screenInput(bend: bend(current: current, foldable: foldable))
           .frame(width: screen.width * scale, height: screen.height * scale)
           .offset(x: origin.x + screen.minX * scale, y: origin.y + screen.minY * scale)
@@ -168,7 +136,6 @@ struct SimulatorDeviceCanvas: View {
       .onChange(of: heldDegrees) { old, new in
         angle = (angle ?? old) + Self.shortestTurn(from: old, to: new)
       }
-      // Another device starts from its own orientation and posture, without moving into them.
       .onChange(of: device.udid) {
         angle = nil
         hinge = nil
@@ -222,9 +189,6 @@ struct SimulatorDeviceCanvas: View {
     var display: String?
   }
 
-  // MARK: Folding
-
-  /// Device Hub's hinge for each posture, in degrees open.
   nonisolated static func hingeAngle(_ posture: String?) -> Double? {
     switch posture {
     case "closed": 0
@@ -234,8 +198,6 @@ struct SimulatorDeviceCanvas: View {
     }
   }
 
-  /// Eases the hinge to the new posture. Swapping screens, the one left keeps a still of what it
-  /// showed while the other comes in live, as Device Hub's fold reads as one pane of glass.
   private func postureChanged(from old: PostureKey, to new: PostureKey) {
     guard let target = Self.hingeAngle(new.posture) else {
       hinge = nil
@@ -261,7 +223,6 @@ struct SimulatorDeviceCanvas: View {
     }
   }
 
-  /// The stream's last frame, if it's the shape of `display` (and not already the next screen).
   private func snapshot(of display: String) -> CGImage? {
     guard let image = feed.snapshot(),
       let screen = model.deviceType?.displays.first(where: { $0.name == display }), screen.height > 0, image.height > 0
@@ -270,7 +231,6 @@ struct SimulatorDeviceCanvas: View {
     return abs(ratio - 1) < 0.01 ? image : nil
   }
 
-  /// A book's halves tilt toward you; touches on them are mapped back to the flat screen.
   private struct Bend {
     var hinge: Double
     var center: CGPoint
@@ -288,13 +248,7 @@ struct SimulatorDeviceCanvas: View {
       held: held)
   }
 
-  // MARK: Drawing
-
-  /// A foldable is always its fold scene, closed included, so each screen's video view lives
-  /// through every posture change (a new one would start black): the cover's on the first copy of
-  /// the stream, the inner halves' on the other two.
   @ViewBuilder private func content(current: Face, foldable: (cover: Face, inner: Face)?, scale: CGFloat) -> some View {
-    // Keyed by the scene drawn, as a foldable is a plain screen until its hinge is known.
     let sources = feed.sources(
       for: model.connection?.source, arrangement: foldable == nil || hinge == nil ? "screen \(current.id)" : "foldable")
     if let foldable, let hinge {
@@ -324,16 +278,10 @@ struct SimulatorDeviceCanvas: View {
     }
   }
 
-  /// The device's outline as drawn, turned as it's mounted: the bezel artwork's opaque extent,
-  /// or its frame until the artwork's been drawn.
   private func outline(_ face: Face) -> CGRect {
     Self.rotate(outlines[face.id] ?? face.layout.frame, in: face.layout.canvas, quarterTurns: face.mount)
   }
 
-  /// A screen's device, turned as it's mounted: its last still under its live video, which shows
-  /// once the stream's frames are this screen's. The screen showing takes its buttons; the one
-  /// being left keeps its still until the fold is done. Drawn as one `half` of a foldable, it
-  /// keeps only the buttons on that side of the hinge.
   private func screenFace(
     _ face: Face, source: SimulatorScreenSource?, current: Face, scale: CGFloat, half: Int? = nil
   ) -> some View {
@@ -364,8 +312,6 @@ struct SimulatorDeviceCanvas: View {
     .accessibilityHidden(!showing)
   }
 
-  /// Whether the stream's frames are `face`'s screen, awake: just after a swap they're still the
-  /// other one's, which would stretch across this screen, then the new one's, black and fading up.
   private func streams(_ face: Face) -> Bool {
     guard !feed.waking else { return false }
     guard let frame = model.connection?.frameSize, frame.height > 0, face.layout.screen.height > 0 else { return true }
@@ -373,7 +319,6 @@ struct SimulatorDeviceCanvas: View {
     return abs(ratio - 1) < 0.01
   }
 
-  /// The device as it's made, then turned as the screen is mounted, filling `presented`.
   private func mounted<Content: View>(
     _ face: Face, scale: CGFloat, @ViewBuilder content: () -> Content
   ) -> some View {
@@ -383,7 +328,6 @@ struct SimulatorDeviceCanvas: View {
       .frame(width: face.presented.width * scale, height: face.presented.height * scale)
   }
 
-  /// The screen's glass: black under whatever it shows, in the screen's shape.
   private func screenShape<Content: View>(_ face: Face, @ViewBuilder content: () -> Content) -> some View {
     ZStack {
       Color.black
@@ -433,7 +377,6 @@ struct SimulatorDeviceCanvas: View {
     }
   }
 
-  /// Over the screen, upright: where touches land, and what the stream is doing until it shows.
   @ViewBuilder private func screenInput(bend: Bend?) -> some View {
     ZStack {
       SimulatorScreenView(source: nil, mask: nil, input: input(bend: bend))
@@ -470,15 +413,11 @@ struct SimulatorDeviceCanvas: View {
 
 }
 
-/// Geometry and stand-ins, kept apart from the view's body.
 extension SimulatorDeviceCanvas {
   private static func scaled(_ rect: CGRect, _ scale: CGFloat) -> CGRect {
     CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
   }
 
-  /// A screen never seen yet, coming into view: the other screen's still, upright as the viewer
-  /// sees it, filling this one and blurred, as SpringBoard's wallpaper looks while a screen
-  /// wakes. Better than black glass until the guest's frames for it arrive.
   private func standIn(_ image: CGImage, mount: Int, on face: Face, scale: CGFloat) -> some View {
     let turns = ((mount - face.mount) % 4 + 4) % 4
     let size = CGSize(width: face.layout.screen.width * scale, height: face.layout.screen.height * scale)
@@ -493,9 +432,7 @@ extension SimulatorDeviceCanvas {
       .frame(width: size.width, height: size.height)
   }
 
-  /// A touch on a book's tilted screen, where it lands on the flat one.
   private static func flatten(_ touch: ScreenSharingSimulatorTouch, bend: Bend) -> ScreenSharingSimulatorTouch {
-    // Upright as seen, to the device as presented, then onto its flat screen and back.
     let point = unturn(CGPoint(x: touch.x, y: touch.y), turns: bend.held)
     let screen = bend.screen
     let drawn = CGPoint(x: screen.minX + point.x * screen.width, y: screen.minY + point.y * screen.height)
@@ -508,7 +445,6 @@ extension SimulatorDeviceCanvas {
     return ScreenSharingSimulatorTouch(id: touch.id, x: seen.x, y: seen.y, edge: touch.edge)
   }
 
-  /// A normalized point seen turned clockwise by `turns`, in the unturned picture.
   nonisolated static func unturn(_ point: CGPoint, turns: Int) -> CGPoint {
     switch ((turns % 4) + 4) % 4 {
     case 1: CGPoint(x: point.y, y: 1 - point.x)
@@ -518,12 +454,10 @@ extension SimulatorDeviceCanvas {
     }
   }
 
-  /// The signed turn, in degrees, from one angle to another the short way round (-180 to 180).
   nonisolated static func shortestTurn(from old: Double, to new: Double) -> Double {
     (new - old + 540).truncatingRemainder(dividingBy: 360) - 180
   }
 
-  /// `rect` inside a canvas of `size`, after turning the canvas clockwise by quarter turns.
   nonisolated static func rotate(_ rect: CGRect, in size: CGSize, quarterTurns: Int) -> CGRect {
     switch ((quarterTurns % 4) + 4) % 4 {
     case 1: CGRect(x: size.height - rect.maxY, y: rect.minX, width: rect.height, height: rect.width)
@@ -534,8 +468,6 @@ extension SimulatorDeviceCanvas {
   }
 }
 
-/// A hardware button on the bezel: press and hold sends down and up; hovering slides it out as
-/// Simulator does.
 struct SimulatorHardwareButton: View {
   let button: SimulatorChromeLayout.Button
   let chrome: SimulatorChrome?
@@ -549,8 +481,6 @@ struct SimulatorHardwareButton: View {
   var body: some View {
     let frame = hovering || pressed ? button.rolloverFrame : button.frame
     let name = pressed ? (button.input.imageDown ?? button.input.image) : button.input.image
-    // Artwork drawn for the other kind of edge is drawn at its own size, then turned to lie along
-    // this one.
     let art = button.turned ? CGSize(width: frame.height, height: frame.width) : frame.size
     Group {
       if let name,
@@ -591,7 +521,6 @@ struct SimulatorHardwareButton: View {
       }
     }
     .help(button.input.accessibilityTitle ?? button.input.name)
-    // Placed by layout (not offset), so where it's drawn is also where it hovers and clicks.
     .position(x: frame.midX * scale, y: frame.midY * scale)
     .animation(.snappy(duration: 0.15), value: hovering || pressed)
   }

@@ -31,9 +31,6 @@ export type HarnessUpdateGate = Pick<
 
 type BeginUpdateResult = Awaited<ReturnType<HarnessLifecycleManager["beginUpdate"]>>
 
-/// The update path plus its when-idle gate: origin-matched execution,
-/// durable pending updates armed while chats are mid-turn, and the
-/// startup reconciliation that never resurrects a gate.
 export const makeHarnessUpdateGate = (
   core: HarnessLifecycleCore,
   runner: HarnessOperationRunner
@@ -52,9 +49,7 @@ export const makeHarnessUpdateGate = (
 
   const gateEnabled = config.gateEnabled ?? process.env.CODEVISOR_HARNESS_UPDATE_GATE !== "0"
   const gateListeners = core.gateListeners
-  /// In-memory mirror of harness_pending_updates, hydrated by reconcile.
   const pendingUpdates = new Map<string, HarnessPendingUpdateRecord>()
-  /// In-flight turn count per harness (from the prompt dispatcher).
   const busyCounts = core.busyCounts
 
   const isHarnessBusy = (harnessId: string): boolean => (busyCounts.get(harnessId) ?? 0) > 0
@@ -65,9 +60,6 @@ export const makeHarnessUpdateGate = (
     for (const listener of gateListeners) listener(harnessId)
   }
 
-  /// An install of the release line this harness replaces (both own the
-  /// same binary, so the current package can't install beside it): remove
-  /// it, then install the current package.
   const replacedInstall = (
     definition: HarnessDefinition,
     origin: string,
@@ -201,8 +193,6 @@ export const makeHarnessUpdateGate = (
     }
   }
 
-  /// Transitions an armed update to running and executes it. The gate holds
-  /// only while the update actually runs; every settle path releases it.
   const runPendingUpdate = async (harnessId: string): Promise<void> => {
     const pending = pendingUpdates.get(harnessId)
     if (pending === undefined || pending.state === "running") return
@@ -230,8 +220,6 @@ export const makeHarnessUpdateGate = (
     definitionOrThrow(harnessId)
     if (core.uninstallRequests.has(harnessId)) throw new Error("Uninstall in progress")
     if (gateEnabled && isHarnessBusy(harnessId) && !pendingUpdates.has(harnessId)) {
-      // Chats are mid-turn on this harness: arm a durable pending update that
-      // executes when the last turn ends.
       const targetVersion = (await loadStates()).get(harnessId)?.latestVersion
       const record: HarnessPendingUpdateRecord = {
         harnessId,
@@ -295,8 +283,6 @@ export const makeHarnessUpdateGate = (
     }
     for (const record of records) {
       if (record.state === "running") {
-        // The update (and any gate) died with the previous process — never
-        // resurrect a gate; report the interruption instead.
         await run(config.db.clearHarnessPendingUpdate(record.harnessId)).catch(() => undefined)
         setOperation(record.harnessId, {
           error: "Interrupted by a server restart",
@@ -305,8 +291,6 @@ export const makeHarnessUpdateGate = (
         })
         continue
       }
-      // Still-armed updates survive the restart; the chats that blocked them
-      // did not, so run shortly after boot settles.
       pendingUpdates.set(record.harnessId, record)
       setOperation(record.harnessId, {
         phase: "pendingUpdate",

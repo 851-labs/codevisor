@@ -53,7 +53,6 @@ const validateSchemaAndResetAdoption = (sqlite: Database.Database): void => {
   if (violations.length > 0) {
     throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
   }
-  // New schemas may introduce more identity-bearing rows.
   sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()
 }
 
@@ -63,8 +62,6 @@ export const runDatabaseMigrations = (
 ): Array<string> => {
   const applied = loadAppliedMigrations(sqlite)
   const names: Array<string> = []
-  // Table rebuilds (drop + rename) would cascade-delete child rows under enforced foreign
-  // keys, and `pragma foreign_keys` is a no-op inside a transaction — toggle it out here.
   sqlite.pragma("foreign_keys = OFF")
   try {
     const transaction = sqlite.transaction(() => {
@@ -75,9 +72,6 @@ export const runDatabaseMigrations = (
       }
     })
     transaction()
-    // Required data upgrades run in bounded, checkpointed transactions
-    // after the schema commit. Startup remains blocking, but the old tables
-    // stay untouched and an interrupted process resumes from durable rows.
     runBlockingDataUpgrades(sqlite, config)
     migrateProjectLocationState(sqlite)
     installNavigationJournal(sqlite)

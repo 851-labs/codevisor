@@ -2,7 +2,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
 
-/** Keep video bytes outside both JavaScript sandboxes and the MCP transport. */
 export const makeRecordingArtifacts = () => {
   const published = new Map<string, Promise<unknown>>()
   const enrichResult = async (

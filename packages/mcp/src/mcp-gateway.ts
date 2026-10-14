@@ -36,12 +36,6 @@ import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
 
-/// One live MCP connection to a gateway. Harnesses may connect more than
-/// once per Codevisor session: codex 0.145+ tears down and re-initializes
-/// its MCP connections on mid-session events (account changes, plugin
-/// changes), so a gateway must accept fresh `initialize` handshakes for as
-/// long as the session lives — a single stateful transport (the previous
-/// design) rejects the redial and the harness silently drops every tool.
 export interface GatewayConnection {
   readonly server: McpSdkServer
   readonly transport: StreamableHTTPServerTransport
@@ -52,13 +46,9 @@ export interface GatewayConnection {
 export interface GatewayRuntime {
   readonly sessionId: string
   readonly projectId?: string | undefined
-  /// Live connections keyed by MCP session id (assigned at initialize).
   readonly connections: Map<string, GatewayConnection>
   inventory: string
-  /// The `skills` tool's current description (its skill index).
   skillsDescription: string
-  /// The session's event sink; executions stream their transcript
-  /// annotation through it. Replaced whenever the session re-issues.
   sink?: RuntimeEventSink | undefined
 }
 
@@ -80,7 +70,6 @@ export interface McpGatewayDeps {
   readonly isSuppressed: (name: string) => boolean
   readonly record: (id: string) => Promise<McpServerRecord>
   readonly selfMachine: { readonly id: string; readonly name: string }
-  /// The client window that sent the session's current turn, if any.
   readonly turnClientId: (sessionId: string) => string | undefined
 }
 
@@ -90,7 +79,6 @@ export interface BrowserSessionTab {
   readonly origin?: string
 }
 
-/** Appended to a failed `execute` result so the retry reuses still-open agent-created tabs. */
 export const browserSessionTabsNotice = (tabs: ReadonlyArray<BrowserSessionTab>): string => {
   const created = tabs.filter((tab) => tab.origin === "created")
   if (created.length === 0) return ""
@@ -118,7 +106,6 @@ const ARTIFACT_EXTENSIONS: Readonly<Record<string, string>> = {
   "application/json": "json"
 }
 
-/// `browser.screenshot` + `image/png` → `browser-screenshot.png`.
 export const artifactFileName = (toolPath: string, mimeType: string): string => {
   const base = toolPath
     .replace(/[^a-z0-9]+/gi, "-")
@@ -177,8 +164,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     )
   }
 
-  /// Emitted tool artifacts (screenshots and the like) become immutable server
-  /// files so the agent can embed them in its reply and the user can open them.
   const attachmentStore = makeAttachmentStore(config.dataDir)
   const publishRecording = makeRecordingPublisher(config.dataDir, (metadata) =>
     run(config.db.createDiskFile(metadata))
@@ -226,8 +211,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     selfMachine
   })
 
-  /// A failed script leaves whatever tabs it opened behind. Tell the agent about them so the
-  /// retry reuses those tabs instead of opening duplicates.
   const openBrowserSessionTabs = async (
     sessionId: string,
     projectId: string | undefined
@@ -258,9 +241,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     }
   }
 
-  /// Build one MCP server + transport pair for a fresh `initialize`. The
-  /// connection registers itself in the runtime once the SDK assigns its MCP
-  /// session id, and removes itself when the transport closes.
   const createGatewayConnection = async (runtime: GatewayRuntime): Promise<GatewayConnection> => {
     const { inventory, projectId, sessionId } = runtime
     const sdkServer = new McpSdkServer({ name: "Codevisor Tool Gateway", version: "0.1.0" })
@@ -268,8 +248,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       "execute",
       {
         description: executeToolDescription(inventory),
-        // The description is a display label; any length is accepted and the
-        // transcript shortens it, so a long label never fails the call.
         inputSchema: {
           description: z.string().min(1).describe(DESCRIPTION_GUIDANCE),
           code: z.string().min(1)
@@ -386,7 +364,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       }
     )
-    // Registered after `execute` so `execute` stays the first listed tool.
     const skillsTool = sdkServer.registerTool(
       "skills",
       {
@@ -419,9 +396,9 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         runtime.connections.set(mcpSessionId, connection)
       }
     })
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     transport.onclose = () => {
-      /* v8 ignore next -- transports without a completed initialize never register. */
+      /* v8 ignore next */
       if (transport.sessionId !== undefined) runtime.connections.delete(transport.sessionId)
     }
     const connection: GatewayConnection = {

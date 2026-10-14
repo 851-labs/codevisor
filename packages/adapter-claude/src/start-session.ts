@@ -57,13 +57,9 @@ export interface StartSessionDeps {
   readonly locateClaude: (definition: HarnessDefinition) => string
   readonly queryFn: ClaudeQueryFn
   readonly readFile: (path: string) => string | undefined
-  /// The subagent transcripts in a Claude config directory.
   readonly subagentTranscripts: (configDir: string) => SubagentTranscripts
 }
 
-/// Session/query startup extracted from makeClaudeProvider as a deps-factory
-/// (the makeSkillsOperations pattern): the startSession body is unchanged, its
-/// closed-over provider dependencies are injected.
 export const makeStartSession = (deps: StartSessionDeps) => {
   const {
     environment,
@@ -74,10 +70,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     readFile,
     subagentTranscripts
   } = deps
-  /// The model list the last process reported. A saved model is checked
-  /// against it before being handed to a new process: a value no current
-  /// row can name is left for restore to report as unavailable instead of
-  /// being started blind.
   let knownModels: ReadonlyArray<ClaudeModel> = []
   const commandCatalog = makeClaudeCommandCatalog()
 
@@ -93,10 +85,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     const claudePath = locateClaude(definition)
     await guardVersion(claudePath)
 
-    // In streaming-input mode the SDK emits `system:init` only once the first
-    // user message is sent, so session creation must not block on it. The
-    // session id is assigned up front via the CLI's --session-id flag; init
-    // later confirms it and fills in the model.
     const sessionKey = resume ?? randomUUID()
     const input = new InputQueue()
     const abort = new AbortController()
@@ -110,16 +98,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     }
     for (const name of account?.unsetEnv ?? []) delete accountEnv[name]
     Object.assign(accountEnv, account?.env)
-    // The chat's saved selections start the process, so it never runs a
-    // turn on the CLI default while restore catches up.
     const saved = sessionOptions?.configSelections ?? {}
     const savedModel =
       saved.model === undefined || knownModels.length === 0
         ? saved.model
         : resolveClaudeModel(knownModels, saved.model)?.value
-    // With Codevisor's gateway attached, its browser and desktop tools are the
-    // agent's: turn off Claude in Chrome and the claude.ai skills for Claude's
-    // own, so the agent doesn't get two competing ones.
     const startOptions = claudeStartOptions({
       effort: saved.effort,
       model: savedModel,
@@ -128,7 +111,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     })
     const nativeToolArgs: Record<string, string | null> =
       toolGateway === undefined ? {} : { "no-chrome": null }
-    // Filled in below; the hook and pump close over it.
     let session: ClaudeSession | undefined
     const options: ClaudeOptions = {
       ...startOptions,
@@ -137,8 +119,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       env: accountEnv,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudePath,
-      // The SDK sends no system prompt unless asked; without Claude Code's
-      // own, the model gets tools and skills but no guidance to use them.
       systemPrompt: { type: "preset", preset: "claude_code" },
       ...(toolGateway === undefined
         ? {}
@@ -152,12 +132,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
               }
             }
           }),
-      // Questions and approvals both surface through the blocking question
-      // pipeline. In bypassPermissions the CLI auto-approves ordinary tool
-      // calls before consulting this, but its Bash safety checks (unanalyzable
-      // commands, variable loops — mostly inside non-interactive subagents)
-      // still escalate here. Full access means the human already answered
-      // "allow" for those, so they are allowed without a prompt.
       canUseTool: async (toolName, toolInput, check) => {
         if (session === undefined) {
           return { behavior: "allow", updatedInput: toolInput }
@@ -165,9 +139,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         if (toolName === "AskUserQuestion") {
           return holdClaudeQuestion(session, toolInput)
         }
-        // ExitPlanMode's approval is the "implement this plan?" decision — give
-        // it a dedicated plan-approval question the client can render nicely,
-        // not a bare "Allow ExitPlanMode?" permission row.
         if (toolName === "ExitPlanMode") {
           return holdClaudePlanApproval(session, toolInput)
         }
@@ -182,8 +153,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         return holdClaudeApproval(session, toolName, toolInput)
       },
       permissionMode: "bypassPermissions",
-      // The SDK requires this alongside bypassPermissions as an explicit
-      // acknowledgement; Codevisor's full-access default is that choice.
       allowDangerouslySkipPermissions: true,
       hooks: {
         PostToolUse: [
@@ -297,9 +266,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       turnId: randomUUID()
     }
     session = created
-    // A fresh session has no background work by definition; this snapshot
-    // clears any stale "running" state a client may replay from a previous
-    // server process's event log.
     emitBackgroundTasks(created)
 
     const resumeAfterStreamDeath = (): Promise<boolean> =>
@@ -320,9 +286,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
             if (message.fast_mode_state !== undefined) {
               created.currentSpeed = message.fast_mode_state === "on" ? "fast" : "standard"
             }
-            // The CLI started on a different model than the one it was
-            // given (e.g. a usage-limit fallback): say so, and publish what
-            // is really running. Never persisted as the chat's selection.
             if (
               !created.retired &&
               expectedModel.length > 0 &&
@@ -338,25 +301,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
             message.type === "system" &&
             message.subtype === "model_refusal_fallback"
           ) {
-            // The selected model's safety classifiers declined the request and
-            // Claude Code re-ran the turn on a fallback model. Handled here
-            // rather than in `handleSystemMessage` for the same reason `init`
-            // is: correcting the model needs this scope's `metadataFor` and
-            // model-matching helpers. The swap is sticky for the CLI session,
-            // so the picker reports it; the chat's saved pick is untouched and
-            // restore re-applies it before the next prompt.
-            //
-            // Prefer the picker's canonical value when the provider's
-            // concrete id can be reconciled with it. If it cannot, keep the
-            // provider id: reporting an unfamiliar fallback is more truthful
-            // than substituting the model that just refused.
             const fallbackModel = applyClaudeModelFromProvider(created, message.fallback_model)
             emitModelFallback(
               created,
               message.original_model,
               fallbackModel,
-              // Open string on the wire — new categories ship ahead of
-              // schema updates, so this passes through untouched.
               message.api_refusal_category ?? null
             )
             continue
@@ -366,9 +315,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       } catch (cause) {
         const failure = cause instanceof Error ? cause.message : String(cause)
         streamFailure = failure
-        // A live turn is closed below through the normal terminal event so
-        // the failure is attached durably to that assistant response. Only a
-        // stream failure outside a turn remains a session-level error.
         if (!created.turnActive && !created.retired) {
           created.pendingPrompt?.reject(runtimeError("prompt", cause))
           created.pendingPrompt = undefined
@@ -380,16 +326,8 @@ export const makeStartSession = (deps: StartSessionDeps) => {
           })
         }
       } finally {
-        // Only the pump for the *current* query owns the session's stream
-        // state; a superseded query ending late must not disturb its
-        // successor.
         if (created.q === query) {
           created.streamEnded = true
-          // The SDK stream ended (query closed, aborted, or threw) with a turn
-          // still in flight and no final `result` to close it. Resume the turn
-          // where possible — the user sees output pause and continue, nothing
-          // else. Otherwise end the turn defensively so state can't get wedged
-          // and the awaited prompt settles.
           if (created.turnActive) {
             if (created.interruptRequested) {
               await finishActiveTurn(created, "cancelled")
@@ -408,8 +346,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     pump(q).catch(() => undefined)
 
     trackClaudeSkills(created)
-    // Best-effort model list: the control channel usually answers before the
-    // first turn, but session creation must not hang on it.
     try {
       const modelList = q.supportedModels()
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -425,21 +361,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         currentClaudeModelFor(created)
         await alignStartModel(created, startOptions.model)
       } else {
-        // Losing the race does not cancel the request: the CLI still answers
-        // on its control channel, typically a few seconds later on a busy
-        // machine. Without the list `metadataFor` emits no config options at
-        // all (effort and speed derive from the current model), so the picker
-        // would vanish for the life of the session. Adopt the late list and
-        // publish it through the same config-update event a model change
-        // uses; the client folds it in and the picker appears late instead
-        // of never.
         modelList.then(
           (lateModels) => {
             if (created.retired || created.models.length > 0) return
             adoptModelList(created, lateModels)
             knownModels = created.models
-            // Init may already have reported the concrete model id; reconcile
-            // it against the picker rather than resetting to the first entry.
             applyClaudeModelFromProvider(created, created.currentModel)
             void alignStartModel(created, startOptions.model)
             void created.emit({

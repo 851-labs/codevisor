@@ -2,12 +2,7 @@ import CodevisorCore
 import Foundation
 import StreamMarkdown
 
-/// Stable identities shared by the macOS and iOS transcript renderers.
 public enum TranscriptStreamingTextIdentity {
-  /// Snapshot provenance must travel with the projected rows. Reading the
-  /// current model at presentation time can consume a restoration while an
-  /// older compact projection is still on screen. Include the message id
-  /// because detail revisions are local to each restored turn.
   public static func restorationID(for item: ConversationItem) -> String? {
     guard case let .assistant(message) = item,
       message.turn.hasHydratedWorkedDetails
@@ -19,10 +14,6 @@ public enum TranscriptStreamingTextIdentity {
     "\(turnID.uuidString):main:\(entryID)"
   }
 
-  /// Final answers may be split around inline attachment previews. Each
-  /// Markdown slice owns a separate native streaming surface, so its
-  /// identity must include the same segment index in both the navigation
-  /// baseline and the platform renderers.
   public static func mainResponseSegment(
     turnID: UUID,
     entryID: String,
@@ -31,9 +22,6 @@ public enum TranscriptStreamingTextIdentity {
     main(turnID: turnID, entryID: "\(entryID):\(segmentIndex)")
   }
 
-  /// Every text stream that predates this turn view's mount. Seeding these
-  /// as settled is the navigation boundary: only entries first created
-  /// afterward may animate their initial content.
   public static func settledStreamIDs(turn: AssistantTurn, turnID: UUID) -> [String] {
     var result = turn.entries.compactMap { entry -> String? in
       guard case let .text(id, _) = entry else { return nil }
@@ -45,9 +33,6 @@ public enum TranscriptStreamingTextIdentity {
       let segments = assistantMarkdownSegments(
         markdown,
         attachments: turn.attachments,
-        // Response rendering resolves completed local-image syntax
-        // during streaming, so navigation baselines must use the same
-        // topology and semantic stream identities.
         includeServerPaths: true,
         includeUnreferencedAttachments: !turn.isGenerating
       )

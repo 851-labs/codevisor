@@ -45,9 +45,7 @@ describe("terminal persistence", () => {
     }).restore()
 
     expect(lines).toEqual(["Restored 1 terminal buffer(s) from previous run"])
-    // The snapshot file is consumed so a crash cannot replay it again later.
     expect(existsSync(join(dataDir, "terminal-buffers.json"))).toBe(false)
-    // The screen survives; the still-live terminal gained a synthetic exit.
     expect(second.snapshotTerminals().terminals).toMatchObject([
       {
         terminalId: handle.terminalId,
@@ -90,29 +88,24 @@ describe("terminal persistence", () => {
     const manager = makeTerminalManager()
     const persistence = makeTerminalPersistence({ dataDir, terminal: manager })
 
-    // First boot: no snapshot file, restore is a no-op.
     persistence.restore()
     expect(manager.snapshotTerminals().terminals).toEqual([])
 
-    // Nothing to write: no file appears.
     persistence.flush()
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     expect(existsSync(snapshotPath)).toBe(false)
 
-    // Corrupt file: restore is a no-op and consumes the file.
     writeFileSync(snapshotPath, "{not json")
     persistence.restore()
     expect(existsSync(snapshotPath)).toBe(false)
     expect(manager.snapshotTerminals().terminals).toEqual([])
 
-    // Unknown version or malformed terminals: ignored rather than misread.
     writeFileSync(snapshotPath, JSON.stringify({ version: 99, terminals: [{}] }))
     persistence.restore()
     writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: "nope" }))
     persistence.restore()
     expect(manager.snapshotTerminals().terminals).toEqual([])
 
-    // A valid but empty snapshot restores silently.
     const lines: Array<string> = []
     writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [] }))
     makeTerminalPersistence({
@@ -128,7 +121,6 @@ describe("terminal persistence", () => {
     const manager = makeTerminalManager()
     const snapshotPath = join(dataDir, "terminal-buffers.json")
 
-    // restore: a non-Error throw is stringified into the log line.
     const lines: Array<string> = []
     writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [{}] }))
     makeTerminalPersistence({
@@ -143,7 +135,6 @@ describe("terminal persistence", () => {
     }).restore()
     expect(lines).toEqual(["Terminal buffer restore skipped: boom"])
 
-    // flush: a snapshot failure is swallowed, and shutdown continues.
     makeTerminalPersistence({
       dataDir,
       terminal: {
@@ -187,7 +178,6 @@ describe("terminal persistence", () => {
       }
     }).installExitHooks()
 
-    // Signal handlers defer to process.exit so the "exit" hook does the write.
     handlers.get("SIGTERM")?.()
     handlers.get("SIGINT")?.()
     expect(exits).toEqual([143, 130])
@@ -218,7 +208,6 @@ describe("terminal persistence", () => {
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     tick.run()
     expect(existsSync(snapshotPath)).toBe(true)
-    // Unchanged since the last write: the file is left alone.
     rmSync(snapshotPath)
     tick.run()
     expect(existsSync(snapshotPath)).toBe(false)

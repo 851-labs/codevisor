@@ -15,7 +15,6 @@
       }
     }
 
-    /// A bounded output that can or cannot scroll further down.
     private final class BoundedOutput: TranscriptHorizontalScrollView {
       var canScrollDown = true
 
@@ -55,7 +54,6 @@
       return try #require(NSEvent(cgEvent: cgEvent))
     }
 
-    /// A trackpad swipe down that, like most, begins and ends without moving.
     private func swipeDown(over output: BoundedOutput) throws {
       output.scrollWheel(with: try event(.began, deltaY: 0))
       output.scrollWheel(with: try event(.changed, deltaY: -12))
@@ -68,8 +66,6 @@
       let mounted = mount(documentWidth: 1_400)
       mounted.output.canScrollDown = false
       try swipeDown(over: mounted.output)
-      // The motionless start can't tell yet; every movement and the end go
-      // to the transcript.
       #expect(mounted.transcript.scrollEvents == 3)
     }
 

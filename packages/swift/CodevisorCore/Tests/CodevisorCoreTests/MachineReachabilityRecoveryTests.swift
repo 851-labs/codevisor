@@ -4,8 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Connection loss is the app's to manage: a chat only reports it in its
-/// ephemeral activity line, and the app recovers without any user action.
 @MainActor
 @Suite("Machine reachability recovery")
 struct MachineReachabilityRecoveryTests {
@@ -37,7 +35,6 @@ struct MachineReachabilityRecoveryTests {
     let controller = chat(on: machines, machineId: studio.id)
     #expect(controller.connectionRecoveryMessage == nil)
 
-    // The app never gives up on a machine, so a failure reads as reconnecting.
     machines.markFailed(for: studio.id, message: "Offline")
     #expect(controller.connectionRecoveryMessage == nil)
     await awaitObserved { clock.pendingCount == 1 }
@@ -48,7 +45,6 @@ struct MachineReachabilityRecoveryTests {
     machines.markFailed(for: studio.id, message: "Offline")
     #expect(controller.connectionRecoveryMessage == "Reconnecting…")
 
-    // Back, the line stays a moment rather than flashing away.
     machines.markReady(for: studio.id)
     #expect(controller.connectionRecoveryMessage == "Reconnecting…")
     await awaitObserved { clock.pendingCount == 1 }
@@ -65,13 +61,11 @@ struct MachineReachabilityRecoveryTests {
     machines.markReady(for: studio.id)
     let controller = chat(on: machines, machineId: studio.id)
 
-    // Coming back from the background re-checks the machine.
     machines.beginWaiting(for: studio.id, reason: .connecting)
     #expect(controller.connectionRecoveryMessage == nil)
     machines.markReady(for: studio.id)
     #expect(controller.connectionRecoveryMessage == nil)
 
-    // A wait that outlasts the grace period is reported.
     machines.beginWaiting(for: studio.id, reason: .connecting)
     await awaitObserved { clock.pendingCount == 1 }
     #expect(clock.requestedIntervals.last == .seconds(5))

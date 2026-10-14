@@ -3,7 +3,6 @@
   import SwiftUI
 
   extension Autocomplete {
-    /// The highlight behind a hovered or keyboard-focused item.
     struct HighlightBackground: View {
       let highlight: ItemHighlight
       let topCornerRadius: CGFloat
@@ -13,9 +12,6 @@
         switch highlight {
         case .menuSelection:
           NativeMenuSelectionMaterial()
-            // AppKit applies this small color transform when `.selection` is
-            // hosted by an NSMenu. Reproduce it in a SwiftUI popover while
-            // retaining the material's accent and appearance behavior.
             .brightness(0.0274)
             .saturation(1.0126)
             .hueRotation(.degrees(-1.30))
@@ -58,7 +54,6 @@
   }
 
   extension Autocomplete {
-    /// "⌘N", "⇧⌘[", "⌃⌥⌘←" — modifiers in the order the menu bar uses.
     public static func symbols(for shortcut: KeyboardShortcut) -> String {
       var text = ""
       let modifiers = shortcut.modifiers

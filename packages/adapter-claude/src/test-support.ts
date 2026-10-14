@@ -28,8 +28,6 @@ export const environment: ProviderEnvironment = {
   locateExecutable: (name) => (name === "claude" ? "/bin/claude" : undefined)
 }
 
-/// A controllable SDK Query: tests push scripted SDKMessages and observe the
-/// streaming-input prompt the provider writes into.
 export class FakeQuery {
   private readonly changes = new EventEmitter()
   private pushed = 0
@@ -78,9 +76,6 @@ export class FakeQuery {
   readonly flagSettings: Array<Record<string, unknown>> = []
   promptInput: AsyncIterable<SDKUserMessage> | undefined
   options: ClaudeOptions | undefined
-  /// Queries handed out for later `queryFn` calls, in order — a session that
-  /// resumes after its stream dies asks for a fresh query. When empty, the
-  /// same (already finished) fake is returned again.
   readonly successors: Array<FakeQuery> = []
   readonly userMessages: Array<SDKUserMessage> = []
   interruptImplementation: (() => Promise<void>) | undefined
@@ -131,7 +126,6 @@ export class FakeQuery {
     this.flagSettings.push(settings)
   }
 
-  /// What `supportedCommands()` answers: skills and built-in commands mixed.
   commands: Array<ClaudeSlashCommand> = []
 
   async supportedCommands(): Promise<Array<ClaudeSlashCommand>> {
@@ -210,8 +204,6 @@ export const resultMessage = (
     type: "result"
   }) as never
 
-/// A result message with an explicit `stop_reason` — for the truncation
-/// (`max_tokens`) auto-continue path, which keys off it.
 export const resultWith = (fields: {
   subtype?: "success" | "error_during_execution"
   stop_reason?: string | null
@@ -233,9 +225,6 @@ export const resultWith = (fields: {
   } as never
 }
 
-/// An assistant message carrying the SDK's per-message `error` (overloaded,
-/// authentication_failed, …) — the signal the provider uses to tell a transient
-/// failure (retry) from a permanent one (surface).
 export const assistantErrorMessage = (error: string): SDKMessage =>
   ({
     error,
@@ -246,8 +235,6 @@ export const assistantErrorMessage = (error: string): SDKMessage =>
     uuid: "00000000-0000-0000-0000-000000000002"
   }) as never
 
-/// A 529-style transient failure that arrives with NO structured error — the CLI
-/// renders it as an assistant text message ending on a stop sequence.
 export const assistantApiErrorMessage = (text: string): SDKMessage =>
   ({
     message: {
@@ -288,7 +275,6 @@ export const systemMessage = (subtype: string, fields: Record<string, unknown>):
     ...fields
   }) as never
 
-/// No subagent transcript is ever found: tests never read a real Claude config.
 const NO_SUBAGENT_TRANSCRIPTS: SubagentTranscripts = {
   locate: () => undefined,
   readLines: (_path, offset) => ({ offset, text: "" })
@@ -306,8 +292,6 @@ export const makeProvider = (
     checkVersion,
     ...(getSessionInfo === undefined ? {} : { getSessionInfo }),
     queryFn: (input) => {
-      // The session's first query is always `fake`; later calls (a resume
-      // after the stream died) take the next scripted successor.
       const target = fake.promptInput === undefined ? fake : (fake.successors.shift() ?? fake)
       target.promptInput = input.prompt
       target.options = input.options
@@ -324,8 +308,6 @@ export const makeProvider = (
 
 type SupportedModels = Awaited<ReturnType<FakeQuery["supportedModels"]>>
 
-/// The list a current Claude CLI release offers: aliases for every family
-/// except Fable, whose row carries a concrete id that changes per release.
 export const RELEASE_MODELS: SupportedModels = [
   {
     description: "",
@@ -355,8 +337,6 @@ export const configUpdates = (
     .map((event) => event.payload as Record<string, unknown>)
     .filter((payload) => Array.isArray(payload.configOptions))
 
-/// Emitted payloads minus the session-start snapshots (background tasks,
-/// skills), which precede turn output.
 export const turnPayloads = (events: ReadonlyArray<RuntimeEvent>) =>
   events
     .map((event) => event.payload as Record<string, unknown>)

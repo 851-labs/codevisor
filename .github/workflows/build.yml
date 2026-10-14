@@ -1,17 +1,5 @@
 name: Build
 
-# Builds, tests, and signs every Codevisor artifact (macOS app, servers, iOS
-# app) for each push to main. It makes no Apple distribution calls: Publish
-# Alpha notarizes and ships the newest successful build on a schedule, so
-# Apple's daily notarization and TestFlight limits never depend on how often
-# main moves. Stable and Beta later promote those same published bytes.
-#
-# Outputs (run artifacts, kept 14 days):
-#   codevisor-macos             signed app ZIP/DMG, darwin-arm64 server, GhosttyKit
-#   codevisor-server-*          Linux and Intel macOS server archives
-#   codevisor-ios               signed IPA and archive
-#   codevisor-release-provenance version, build number, and source of this run
-
 on:
   push:
     branches: [main]
@@ -23,8 +11,6 @@ permissions:
 
 concurrency:
   group: build
-  # Finish the active run. GitHub keeps one pending run and replaces it with
-  # each newer push, so intermediate commits are skipped.
   cancel-in-progress: false
 
 defaults:
@@ -41,11 +27,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       build: ${{ steps.build.outputs.build }}
     steps:
-      # Self-hosted runners must only build trusted main commits.
       - name: Require main
         run: '[[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Build runs only on main." >&2; exit 1; }'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
       - name: Resolve the build number
@@ -56,9 +41,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Tags become visible before a release's remaining publication steps
-          # finish, so a push during that window still receives the next unused
-          # version instead of rebuilding the just-tagged one.
           latest="$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags?per_page=100" --jq '.[].name' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | sort -V \
@@ -72,24 +54,21 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building Alpha $version for $GITHUB_SHA"
 
-  # Former monolithic `checks` job, split so format/lint, typecheck, JS
-  # coverage, and net suites overlap. Same commands as `check:js` + net:*;
-  # fail-hard (no continue-on-error / retries). Turbo concurrency stays at
-  # the package.json default (Wave 2e).
   lint:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run lint
+      - run: bun run comments:check
       - run: bun run ratchet:check
       - run: bun run boundaries
 
@@ -97,11 +76,11 @@ jobs:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
@@ -111,14 +90,13 @@ jobs:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
-      # packages/net test:coverage runs `net-artifact ensure-node`.
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - name: Resolve net Cargo target cache key
@@ -178,7 +156,7 @@ jobs:
       - name: Restore net Cargo target cache
         id: net-cargo-cache
         if: github.ref == 'refs/heads/main' && steps.net-cargo-key.outputs.key != ''
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: packages/net/target
           key: ${{ steps.net-cargo-key.outputs.key }}
@@ -187,45 +165,41 @@ jobs:
       - run: bun run release:scripts:test
       - name: Save net Cargo target cache
         if: success() && github.ref == 'refs/heads/main' && steps.net-cargo-key.outputs.key != '' && steps.net-cargo-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: packages/net/target
           key: ${{ steps.net-cargo-key.outputs.key }}
 
-  # The tunnel: Rust unit + integration tests.
   net-test:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: bun run net:test
 
-  # Multi-process tunnel test (wrangler, two relays, two servers, a headless
-  # app) through the same launch code as `bun run dev`.
   net-e2e:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - name: Reserve tunnel fixture listener ports
         run: |
-          # Probing a listener port does not reserve it from outbound connections.
           tunnel_reserved_ports="$(sysctl -n net.ipv4.ip_local_reserved_ports)"
           sudo sysctl -w "net.ipv4.ip_local_reserved_ports=${tunnel_reserved_ports:+${tunnel_reserved_ports},}30000-34999,47000-48999"
       - run: bun run net:e2e
@@ -237,26 +211,24 @@ jobs:
       VERSION: ${{ needs.metadata.outputs.version }}
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
-      # The compiled JavaScript is platform independent. The Intel Mac reuses
-      # it instead of repeating the TypeScript build, which takes minutes there.
       - run: scripts/release/package-server-js.sh dist/release/build-inputs/codevisor-server-js.tar.gz
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-js
           path: dist/release/build-inputs/codevisor-server-js.tar.gz
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-linux-x64
           path: |
@@ -272,17 +244,17 @@ jobs:
       VERSION: ${{ needs.metadata.outputs.version }}
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-linux-arm64
           path: |
@@ -291,11 +263,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # The macOS app is Apple silicon only; this Intel Mac builds only the
-  # standalone darwin-x64 server. It does just the platform-specific work:
-  # native addons, the bundled Node, and the archive. The JavaScript comes
-  # from server-linux-x64, and a standalone node-gyp replaces the workspace
-  # install that only the TypeScript build needed.
   server-macos-x64:
     needs: [metadata, server-linux-x64]
     runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
@@ -303,21 +270,20 @@ jobs:
       VERSION: ${{ needs.metadata.outputs.version }}
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: true
-          # Native self-hosted runners own their checkouts; no global trust entry is needed.
           set-safe-directory: false
       - name: Select full Xcode
         run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: codevisor-server-js
           path: dist/release/build-inputs
@@ -333,7 +299,7 @@ jobs:
           runtime_dir="dist/release/work/server-runtime-darwin-x64"
           scripts/release/build-server-runtime.sh "$VERSION" "$runtime_dir" darwin-x64
           scripts/release/build-server-archive.sh "$VERSION" dist/release darwin-x64 "$runtime_dir"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-macos-x64
           path: |
@@ -354,10 +320,9 @@ jobs:
       VERSION: ${{ needs.metadata.outputs.version }}
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: true
-          # Native self-hosted runners own their checkouts; no global trust entry is needed.
           set-safe-directory: false
       - name: Select full Xcode
         run: |
@@ -365,27 +330,25 @@ jobs:
           echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
           DEVELOPER_DIR="$developer_dir" xcodebuild -version
           DEVELOPER_DIR="$developer_dir" xcrun swift --version
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - name: Restore GhosttyKit cache
         id: ghosttykit-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        # Downloads the pinned, checksum-verified libghostty-spm release and
-        # repackages it; no Ghostty source, Zig, or Metal toolchain needed.
         run: apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
@@ -405,14 +368,10 @@ jobs:
           echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
       - name: Resolve Xcode cache version
         id: xcode-cache-version
-        # DerivedData embeds absolute paths, and each self-hosted runner has its
-        # own workspace ($HOME differs per runner account). Keying on the
-        # workspace keeps one runner from restoring another's DerivedData,
-        # which fails with "There is no XCFramework found at /Users/<other>/…".
         run: echo "value=$({ xcodebuild -version; echo "$GITHUB_WORKSPACE"; } | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Restore Xcode DerivedData cache
         id: xcode-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
@@ -436,7 +395,6 @@ jobs:
           security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
-      # Signed but not notarized: Publish Alpha notarizes only what it ships.
       - name: Build the tunnel xcframework
         run: node scripts/net-artifact.mjs ensure-swift
       - name: Build and sign macOS app artifacts
@@ -444,8 +402,6 @@ jobs:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
           CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
         run: |
-          # Postinstall scripts download binaries (ffmpeg-static); a network timeout
-          # there failed a whole Alpha build. Bounded retries, then fail.
           for attempt in 1 2 3; do
             bun install --frozen-lockfile && break
             [ "$attempt" = 3 ] && exit 1
@@ -478,14 +434,14 @@ jobs:
           ditto -x -k dist/release/build-inputs/codevisor-unsigned-app.zip "$app_parent"
       - name: Save Xcode DerivedData cache
         if: steps.xcode-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
       - name: Build ARM macOS server archive
         run: scripts/release/build-server-archive.sh "$VERSION" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
       - name: Upload macOS release artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-macos
           path: |
@@ -520,26 +476,21 @@ jobs:
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
       CODEVISOR_APPLE_KEY_DIRECTORY: ${{ github.workspace }}/tmp/codevisor-ios-signing-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: true
-          # Native self-hosted runners own their checkouts; no global trust entry is needed.
           set-safe-directory: false
       - name: Select full Xcode
         run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
-      # Xcode 16+ ships the Metal Toolchain as a separate component. A no-op
-      # once installed.
       - name: Ensure Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
-      # The terminal view (packages/ghostty-terminal) links GhosttyKit's iOS
-      # slices: the pinned, checksum-verified libghostty-spm release.
       - name: Fetch GhosttyKit
         run: apps/macos/scripts/build-ghostty.sh
       - name: Build the tunnel xcframework
@@ -551,7 +502,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: bun scripts/release/build-ios-testflight.mjs "$VERSION"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-ios
           path: |
@@ -564,8 +515,6 @@ jobs:
         if: always()
         run: rm -rf tmp/build/ios/testflight "$CODEVISOR_APPLE_KEY_DIRECTORY"
 
-  # Written only when every build job succeeded. Publish Alpha attaches it to
-  # the Alpha release, which then serves as the record for Stable and Beta.
   provenance:
     needs:
       [
@@ -598,7 +547,7 @@ jobs:
             '{channel: "alpha", version: $version, source_sha: $source_sha, build_number: $build_number, run_id: $run_id, ghostty_stamp: $ghostty_stamp}' \
             > release-provenance.json
           cat release-provenance.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-release-provenance
           path: release-provenance.json

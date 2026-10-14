@@ -56,8 +56,6 @@ struct ComputerUseForegroundTests {
     let finished = DispatchSemaphore(value: 0)
     let oldAction = Task.detached {
       defer { finished.signal() }
-      // Use the same agent and PID as the successor: neither is sufficient
-      // proof of ownership when an old call eventually resumes.
       return try lock.perform(sessionID: "same-agent", pid: 1) {
         started.signal()
         guard resume.wait(timeout: .now() + 5) == .success else {
@@ -69,8 +67,6 @@ struct ComputerUseForegroundTests {
         } catch {
           #expect(String(describing: error).contains("expired"))
         }
-        // Even a delayed key/button release must not affect the successor
-        // while it is using the same app.
         lock.withCleanup(lock.currentToken, pid: 1) { delivered = true }
         return !delivered
       }
@@ -87,8 +83,6 @@ struct ComputerUseForegroundTests {
     let successor = Result {
       try lock.perform(sessionID: "same-agent", pid: 1) {
         resume.signal()
-        // This timeout only guards a broken test/deadlock; fake time above
-        // drives the actual ownership expiration being tested.
         #expect(finished.wait(timeout: .now() + 5) == .success)
         try lock.withInput(lock.currentToken, pid: 1) { successorInput = true }
       }

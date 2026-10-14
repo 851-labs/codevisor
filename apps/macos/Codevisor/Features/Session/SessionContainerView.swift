@@ -3,21 +3,9 @@ import CodevisorCore
 import CodevisorUI
 import SimulatorPane
 
-/// Hosts one workspace below the native toolbar (which follows the active
-/// pane): either a resolved chat session and its controller, or the workspace
-/// alone when it has never hosted a chat.
 struct SessionContainerView: View {
-  /// What this container is mounted on. A workspace owns its layout, server
-  /// identity and pane persistence with or without a chat; the chat case adds
-  /// the anchor session and its controller. There is no third state, so no
-  /// call site has to invent a session to show a workspace.
   enum Mount {
-    /// Resolved synchronously with the navigation selection so the destination
-    /// shell never waits for this view's asynchronous setup task to run. The
-    /// workspace is the one the route chose for the chat (created there for
-    /// a brand-new chat), as a snapshot like `.workspace`.
     case chat(ChatSession, SessionController, Workspace)
-    /// The mount-time snapshot; the live record is the workspace's entry.
     case workspace(Workspace)
   }
 
@@ -25,8 +13,6 @@ struct SessionContainerView: View {
   let project: Project
   let store: SessionStore
 
-  /// The anchor chat, when there is one. Chat focus, read and open reporting,
-  /// and anything keyed by a session identity, all go through this.
   var session: ChatSession? {
     if case let .chat(session, _, _) = mount { return session }
     return nil
@@ -35,24 +21,13 @@ struct SessionContainerView: View {
     if case let .chat(_, controller, _) = mount { return controller }
     return nil
   }
-  /// Fired when the user's focus lands in a DIFFERENT chat of this
-  /// workspace (composer/transcript click, chat tab) — the sidebar
-  /// selection follows the focused chat.
-  /// Non-chat focus (terminals) fires nothing: the last chat stays.
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.theme) var theme
-  /// Global geometry + pointer state for rearranging split leaves inside
-  /// the selected top tab by dragging their headers.
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
-  /// The session's focus coordinator (composer ⇄ terminals). Owned here so
-  /// every center leaf's chat content — any group can host chats — wires
-  /// against the same instance.
   @State var sessionFocus = TerminalFocusController()
 
-  /// Divider previews are valid only for the persisted tab they started
-  /// from. A navigation or remote layout change takes effect immediately.
   @State private var centerTreePreview: WorkspaceTreePreview?
 
   var liveCenterTree: SplitNode? {
@@ -64,7 +39,6 @@ struct SessionContainerView: View {
     }
   }
 
-  /// Re-runs the container's setup task when the mounted thing changes.
   var mountIdentity: UUID {
     switch mount {
     case let .chat(session, _, _): return session.id
@@ -72,22 +46,16 @@ struct SessionContainerView: View {
     }
   }
 
-  /// The workspace as the route chose it. Its id never changes for this
-  /// container (the route remounts on a different workspace).
   var mountedWorkspace: Workspace {
     switch mount {
     case let .chat(_, _, workspace), let .workspace(workspace): workspace
     }
   }
 
-  /// This workspace's observable entry: reading it re-renders the container
-  /// when -- and only when -- this workspace changes.
   var workspaceEntry: WorkspaceEntry {
     environment.navigationStore.workspaceEntries.entry(mountedWorkspace.id)
   }
 
-  /// The live record, an O(1) read. The snapshot covers the window between
-  /// a remote deletion and the selection moving away.
   var selectedWorkspace: Workspace {
     workspaceEntry.workspace ?? mountedWorkspace
   }
@@ -95,12 +63,8 @@ struct SessionContainerView: View {
   var activeLeafId: UUID? {
     selectedWorkspace.selectedCenterTab?.resolvedActiveLeafId(preferred: nil)
   }
-  /// Suppresses per-leaf dissolve while a whole top tab is closing.
   @State var closingCenterTabId: UUID?
-  /// Presentation-only state for a locally inserted split. Its destination
-  /// stays blank and inert until the opening geometry reaches its final size.
   @State var openingSplit: WorkspaceSplitOpening?
-  /// Identifies this mounted container independently of its cached chat.
   @State var focusSourceId = UUID()
   @State var isVisible = false
 
@@ -108,7 +72,6 @@ struct SessionContainerView: View {
     mounted(in: selectedWorkspace)
   }
 
-  /// The container around one read of the workspace.
   private func mounted(in workspace: Workspace) -> some View {
     titledContentColumn
       .navigationSubtitle(activePaneSubtitle)
@@ -161,13 +124,9 @@ struct SessionContainerView: View {
           openSubagent(parentSessionId: parentId, toolCallId: toolCallId, title: title, placement: placement)
         }
       )
-      // Any change to this workspace -- local or from another device --
-      // reaches mounted pane models that hold live views and focus.
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
       }
-      // Structural commands may arrive as this workspace is mounting.
-      // Navigation itself has already committed before view construction.
       .onChange(of: store.centerTabRequest, initial: true) { _, request in
         guard let request, store.centerTabRequest == request,
           request.workspaceId == workspace.id
@@ -194,10 +153,6 @@ struct SessionContainerView: View {
         }
         focusSelectedCenterPane()
       }
-      // Read = focus: publish the chat pane facing the user in this
-      // window (selected pane of the active split leaf). The store
-      // combines it with window-key state and feeds the app-wide
-      // attention coordinator, which marks the focused chat read.
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
         let workspace = selectedWorkspace
         store.setFocusedChat(
@@ -205,7 +160,6 @@ struct SessionContainerView: View {
           workspaceId: workspace.id, isVisible: isVisible
         )
       }
-      // The incoming container can publish before this one disappears.
       .onDisappear {
         isVisible = false
         store.clearFocusedChat(sourceId: focusSourceId)
@@ -226,10 +180,6 @@ struct SessionContainerView: View {
             edge: resolution.edge
           )
         }
-        // Upward focus feedback: clicking into any chat's composer
-        // makes its group the active one (terminals do the same through
-        // their surface responder callbacks) — and the sidebar's chat
-        // selection follows the focused chat.
         sessionFocus.onChatComposerFocused = { chatId in
           let workspace = selectedWorkspace
           guard isVisible,
@@ -243,20 +193,13 @@ struct SessionContainerView: View {
             onFocusedChatChanged?(chatId)
           }
         }
-        // Opening is a chat event: a workspace mount has nothing to mark read.
         if let session {
           store.markOpened(session.id, serverId: session.serverId)
         }
       }
   }
 
-  /// The workspace content: a browser-style tab strip above the selected
-  /// tab's split layout.
-  /// System themes reveal the native window backdrop. Custom themes paint
-  /// one explicit page color behind every workspace pane.
   var contentColumn: some View {
-    // Observes this workspace's entry, so a tab created on another device
-    // materializes in the mounted workspace immediately.
     let workspace = selectedWorkspace
     let showsTabBar = showsCenterTabBar(in: workspace)
     return VStack(spacing: 0) {
@@ -296,9 +239,6 @@ struct SessionContainerView: View {
       )
     }
     .background(theme.contentBackground)
-    // The sidebar stays seamless under the toolbar; the content has a
-    // hairline. The tab strip draws its own bottom divider, and two rules
-    // 40pt apart box the tabs in, so the hairline steps aside for it.
     .overlay(alignment: .top) {
       if !showsTabBar {
         theme.separator

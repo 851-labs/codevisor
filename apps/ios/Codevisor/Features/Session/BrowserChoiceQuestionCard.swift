@@ -3,9 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A deterministic browser picker with the same select-then-continue contract
-/// as macOS. Browser selection is navigation inside the held tool call, not a
-/// chat message, so the primary action uses an explicit Continue label.
 struct BrowserChoiceQuestionCard: View {
   @Bindable var controller: SessionController
   let question: QuestionSpec

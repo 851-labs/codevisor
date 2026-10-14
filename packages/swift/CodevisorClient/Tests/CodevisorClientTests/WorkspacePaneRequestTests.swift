@@ -26,7 +26,6 @@ struct WorkspacePaneRequestTests {
   }
 }
 
-/// Answers every request with 200, echoing a pane upsert's record.
 private actor PaneTransport: ServerRequestTransport {
   var requests: [URLRequest] = []
 

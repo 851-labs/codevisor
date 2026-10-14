@@ -9,11 +9,6 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 
-/// Adding and removing machines on the account — one route per operation,
-/// shared by `codevisor machines …` and the `machines.*` agent tools:
-/// - POST /v1/machines/invite → { code, expiresAt } (a one-time join code)
-/// - POST /v1/machines/add { ssh, name?, sshPort? } → { machine }
-/// - DELETE /v1/machines/:machineId → { machines } (the remaining list)
 export const routeMachineEnrollment = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -36,7 +31,6 @@ export const routeMachineEnrollment = async (
   }
   if (add) {
     const body = await readSchema(request, AddMachineRequestSchema)
-    // The caller hanging up cancels the install on the host.
     const controller = new AbortController()
     response.once("close", () => {
       if (!response.writableFinished) controller.abort(new Error("the caller cancelled"))

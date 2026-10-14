@@ -1,8 +1,6 @@
 import Foundation
 
 extension ProjectListModel {
-  /// Renames a chat everywhere. The new title shows immediately and reaches
-  /// the chat's machine through the outbox, including after being offline.
   @discardableResult
   public func renameSession(
     _ session: ChatSession, to title: String, errorReporter: ErrorReporter = .shared

@@ -30,24 +30,16 @@ import {
 const catalogKey = (account: HarnessAccountContext | undefined) => account?.id ?? ""
 
 export interface AntigravityProviderConfig {
-  /// Injectable for tests: scripted processes instead of a spawned binary.
   readonly connector?: AgyConnector
   readonly runner?: AgyRunner
   readonly readSummaries?: SummaryReader
   readonly now?: () => number
-  /// How long a listed model catalog stays fresh.
   readonly catalogTtlMs?: number
-  /// How long a one-shot command (`models`, `--version`) may take.
   readonly commandDeadlineMs?: number
-  /// The Node that runs the gateway bridge (the server's own, by default).
   readonly node?: string
-  /// Where the user's own agy gets its overlay data roots.
   readonly overlays?: string
 }
 
-/// Antigravity, driven over agy's headless stream-json mode: the user's own
-/// agy, with its sign-in, models, rules, skills and conversation store, and
-/// Codevisor's tool gateway as an MCP server (gateway.ts).
 export const makeAntigravityProvider = (
   environment: ProviderEnvironment,
   config: AntigravityProviderConfig = {}
@@ -60,7 +52,6 @@ export const makeAntigravityProvider = (
   const commandDeadlineMs = config.commandDeadlineMs ?? 30_000
   const node = config.node ?? process.execPath
   const overlays = config.overlays ?? join(tmpdir(), "codevisor-antigravity")
-  /// Listed catalogs per account; `agy models` asks Google, so it's slow.
   const catalogs = new Map<string, { at: number; models: ReadonlyArray<AgyModel> }>()
   const checkedVersions = new Map<string, Promise<void>>()
 
@@ -106,7 +97,6 @@ export const makeAntigravityProvider = (
             `This version of Antigravity CLI (${version || "unknown"}) is too old for Codevisor. Update it to ${MINIMUM_AGY_VERSION} or newer.`
           )
       })
-      // A failed check runs again next time (agy may have been updated).
       checked.catch(() => checkedVersions.delete(path))
       checkedVersions.set(path, checked)
     }
@@ -129,7 +119,6 @@ export const makeAntigravityProvider = (
     if (result === undefined) return cached?.models ?? []
     if (result.code === 0) return remember(account, result.stdout)
     if (signedOut(result.stderr)) throw new Error(SIGN_IN_DETAIL)
-    // A catalog that won't list leaves agy on its own default model.
     return cached?.models ?? []
   }
 
@@ -170,8 +159,6 @@ export const makeAntigravityProvider = (
       await chat.cancel()
       return { runtimeState: "reusable" as const }
     }),
-    // agy's modes (plan, accept-edits) are fixed per process and Codevisor
-    // runs every harness with full access; reasoning is a config option.
     setMode: (modeId) =>
       adapterPromise("setMode", () =>
         Promise.reject(new Error(`Antigravity has no mode named ${modeId}`))
@@ -209,7 +196,6 @@ export const makeAntigravityProvider = (
       adapterPromise("probeAuth", async () => {
         try {
           const result = await run(definition, account, ["models"])
-          // The probe lists the models a chat would: keep them.
           if (result.code === 0) remember(account, result.stdout)
           return agyAuthInspection(result)
         } catch (cause) {

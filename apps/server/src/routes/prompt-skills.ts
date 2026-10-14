@@ -4,13 +4,6 @@ import { run, type CodevisorServerServices } from "../server-context.js"
 
 const SKILL_TOKEN = /(^|\s)[/$]([\w.:-]+)/g
 
-/// Rewrites a prompt that invokes Codevisor skills (Codevisor's guides and
-/// the user's saved skills) for the harness. Harnesses can't see those skills
-/// (agents read them through the tool gateway's `skills` tool), and Claude
-/// would reject a leading `/name` as an unknown command. Each `/name` or
-/// `$name` token for a Codevisor skill the harness has no skill of its own for
-/// becomes plain text, and a note asks the agent to load the skills first.
-/// The transcript keeps what the user typed.
 export const expandCodevisorSkills = (
   text: string,
   codevisorSkills: ReadonlyArray<string>,
@@ -21,7 +14,6 @@ export const expandCodevisorSkills = (
   if (store.size === 0) return text
   const invoked: Array<string> = []
   const rewritten = text.replaceAll(SKILL_TOKEN, (token, lead: string, name: string) => {
-    // Trailing punctuation ends a sentence, not the name.
     const bare = store.has(name) ? name : name.replace(/[.:-]+$/, "")
     if (!store.has(bare)) return token
     if (!invoked.includes(bare)) invoked.push(bare)
@@ -34,8 +26,6 @@ export const expandCodevisorSkills = (
   return `${rewritten}\n\n<codevisor-skills>\n${note}\n</codevisor-skills>`
 }
 
-/// The prompt as the harness should see it when it invokes Codevisor
-/// skills, which only the tool gateway can serve.
 export const withCodevisorSkills = async (
   services: CodevisorServerServices,
   sessionId: string,
@@ -52,7 +42,6 @@ export const withCodevisorSkills = async (
       nativeSkills ?? (await run(services.db.getSessionSkills(sessionId)))
     )
   } catch {
-    // The skill list is best-effort context; the prompt itself must still run.
     return text
   }
 }

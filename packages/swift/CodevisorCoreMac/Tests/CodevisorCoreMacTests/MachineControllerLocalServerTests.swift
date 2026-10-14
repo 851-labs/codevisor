@@ -5,19 +5,12 @@ import CodevisorTestSupport
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
 
-/// MachineController behavior that depends on the concrete macOS
-/// `LocalCodevisorServer` (process launching). The controller itself is
-/// shared and platform-neutral; these integration tests live here because
-/// they construct the real local server.
 @MainActor
 @Suite("MachineController + LocalCodevisorServer")
 struct MachineControllerLocalServerTests {
   @Test("prepareSelectedMachine rescans harnesses on an already-running local server")
   func rescanOnAlreadyRunningServer() async throws {
     let client = RescanCountingClient()
-    // A healthy durable server: ensureRunning resolves .alreadyRunning
-    // without launching, which must trigger exactly one PATH rescan (the
-    // durable server's PATH is frozen at its original launch).
     let localServer = LocalCodevisorServer(
       client: client,
       allowsDevelopmentLaunch: true,
@@ -37,8 +30,6 @@ struct MachineControllerLocalServerTests {
 
   @Test("prepareSelectedMachine skips the rescan when it launches the server fresh")
   func noRescanOnFreshLaunch() async throws {
-    // First health probe fails (no durable server); the post-launch poll
-    // succeeds. A fresh launch already resolved PATH — no rescan needed.
     let client = RescanCountingClient(failFirstHealth: true)
     let localServer = LocalCodevisorServer(
       client: client,
@@ -108,10 +99,6 @@ struct MachineControllerLocalServerTests {
   }
 }
 
-/// Counts rescan calls; healthy by default so `ensureRunning` sees a durable
-/// server, or unhealthy on the first probe to force a fresh launch.
-/// (Local copy of the fake in CodevisorCoreTests' MachineControllerTests —
-/// it is private to that file.)
 @Observable
 private final class RescanCountingClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()

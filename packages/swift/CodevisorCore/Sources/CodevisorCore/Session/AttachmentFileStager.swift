@@ -1,7 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// File metadata and staging policy, independent of composer/session state.
 struct AttachmentFileStager {
   enum Result: Sendable {
     case staged(URL)
@@ -12,7 +11,6 @@ struct AttachmentFileStager {
   static func stageCopy(
     of url: URL, id: UUID, name: String, files: ComposerAttachmentFileStore, limitBytes: Int
   ) -> Result {
-    // Reject oversized files before copying them off the main thread.
     if let size = ComposerAttachmentFileStore.byteCount(of: url), size > limitBytes {
       return .tooLarge
     }
@@ -35,14 +33,10 @@ struct AttachmentFileStager {
     return (url.lastPathComponent, mimeType, kind)
   }
 
-  /// Keeps the "is too large to upload" wording: the iOS paste notice
-  /// matches on it to show the message verbatim.
   static func tooLargeMessage(name: String, limitBytes: Int) -> String {
     "“\(name)” is too large to upload. Choose a file smaller than \(formattedUploadLimit(limitBytes))."
   }
 
-  /// Whole binary megabytes, rounded down so "smaller than" stays true.
-  /// Deliberately locale-independent, like the rest of this message.
   static func formattedUploadLimit(_ bytes: Int) -> String {
     let mebibyte = 1024 * 1024
     if bytes >= mebibyte { return "\(bytes / mebibyte) MB" }

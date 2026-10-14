@@ -18,10 +18,6 @@ import {
 
 afterEach(() => vi.restoreAllMocks())
 
-/// Agent-tool surface of the manager: flattened tool listings, the invocation
-/// path (running-process reuse, signed context, typed failures), and the installed-set
-/// subscription that keeps the MCP gateway's advertised tools fresh.
-
 const invalid = async (
   attempt: Promise<unknown>,
   code: PluginsError["code"],
@@ -46,7 +42,6 @@ describe("plugin tool listing", () => {
     const add = tools.find((tool) => tool.name === "notes_add")
     expect(add?.description).toBe("Append a note")
     expect(add?.inputSchema).toMatchObject({ type: "object" })
-    // Tools without a declared schema stay schemaless (agents get "any").
     expect(tools.find((tool) => tool.name === "notes_list")?.inputSchema).toBeUndefined()
 
     const list = await manager.list()
@@ -100,14 +95,12 @@ describe("plugin tool invocation", () => {
   it("returns non-JSON responses as text", async () => {
     const { manager } = makeManager({}, toolManifest)
     await expect(manager.invokeTool("owner.notes", "notes_list", {})).resolves.toBe("two notes")
-    // Responses with no content type at all also come back as raw text.
     await expect(manager.invokeTool("owner.notes", "notes_untyped", {})).resolves.toBe("untyped")
   })
 
   it("maps tool failures onto typed errors", async () => {
     const { manager } = makeManager({}, toolManifest)
     await invalid(manager.invokeTool("owner.notes", "notes_fail", {}), "invalid", /HTTP 500.*boom/)
-    // Empty error bodies keep the message clean (no trailing colon).
     await invalid(
       manager.invokeTool("owner.notes", "notes_missing", {}),
       "invalid",
@@ -148,10 +141,7 @@ describe("plugin tool invocation", () => {
     await armed.promise
     deadline.abort(new DOMException("deadline reached", "TimeoutError"))
     await timedOut
-    // Keep the next request's deadline controlled too, so its real HTTP
-    // response never races a wall-clock timer.
     timeout.mockReturnValue(new AbortController().signal)
-    // The process is alive but was hung — the same instance keeps serving.
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({
       ok: true
     })
@@ -170,8 +160,6 @@ describe("plugin tool invocation", () => {
       "unavailable",
       /request failed/
     )
-    // markUnreachable registered the failure; once the crash backoff elapses
-    // the plugin is relaunched and the next invocation succeeds.
     await relaunched
     expect(fake.spawnCount()).toBe(2)
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({

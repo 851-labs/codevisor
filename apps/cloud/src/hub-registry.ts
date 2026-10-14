@@ -5,9 +5,6 @@ import type { HubNoticesPort } from "./hub-notices.js"
 import { machineRow, machineRows, machinePresence } from "./hub-schema.js"
 import { isEndpointId } from "./hub-tunnel.js"
 
-/// Upserts a machine's registry row from its hello and installs the next
-/// socket generation; returns that generation. A changed tunnel endpoint id
-/// forgets the stale tunnel address.
 export const registerMachine = (
   sql: SqlStorage,
   deviceId: string,
@@ -46,7 +43,6 @@ export const registerMachine = (
   return generation
 }
 
-/// Renames a machine and republishes its presence. False when unknown.
 export const renameHubMachine = (hub: HubNoticesPort, deviceId: string, name: string): boolean => {
   const updated = hub.sql.exec(
     "UPDATE machines SET name = ? WHERE device_id = ?",
@@ -69,8 +65,6 @@ export const renameHubMachine = (hub: HubNoticesPort, deviceId: string, name: st
 }
 
 export const listHubMachines = (hub: HubNoticesPort) => {
-  // Machines in their resume grace window count as online: their
-  // disconnect was never announced, and a resume makes it moot.
   const online = hub.resume.machineDeviceIdsInGrace(Date.now())
   const rows = machineRows(hub.sql)
   for (const row of rows) {
@@ -103,8 +97,6 @@ export const removeHubMachine = (
   return true
 }
 
-/// Records that `deviceId` joined through `addedBy`'s invite. Written when
-/// the invite is redeemed, so the new machine's first presence carries it.
 export const recordMachineOrigin = (
   sql: SqlStorage,
   deviceId: string,

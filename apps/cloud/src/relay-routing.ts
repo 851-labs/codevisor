@@ -8,24 +8,11 @@ import {
   type WireRelayEnvelope
 } from "@codevisor/api"
 
-/// The hub's relay data path, split from user-hub.ts: routes decoded envelope
-/// batches between app and machine sockets, rewriting only the addressing
-/// headers — payload ciphertext passes through untouched. Consecutive
-/// envelopes for the same destination forward as ONE binary message (senders
-/// coalesce for a reason — keep the batching through the hop).
-
-/// What routing needs from the hub; user-hub adapts its socket/registry
-/// internals onto this narrow surface.
 export interface RelayHubPort {
   isKnownMachine(machineId: string): boolean
-  /// The machine accepts channels from other machines (its last hello
-  /// advertised MACHINE_PEERS_FEATURE).
   acceptsMachinePeers(machineId: string): boolean
-  /// Tries every eligible live socket, retiring failures, then buffers during
-  /// resume grace. False means the destination is definitively unavailable.
   deliverToMachine(machineId: string, message: Uint8Array): boolean
   deliverToPeer(peerId: string, message: Uint8Array): boolean
-  /// send() that reports failure instead of throwing (dead-but-not-closed).
   send(socket: WebSocket, message: string | Uint8Array): boolean
   error(
     socket: WebSocket,
@@ -41,12 +28,8 @@ export interface AppRelayOpener {
   deviceId?: string
 }
 
-/// A machine socket as a relay endpoint: it answers channels peers opened
-/// and — once it advertised MACHINE_PEERS_FEATURE — opens its own channels
-/// toward other machines on the account.
 export interface MachineRelayEndpoint {
   connectionId: string
-  /// Always set on machine sockets (from the authenticated api key).
   deviceId?: string
   publicKey?: string
   peerAware?: boolean
@@ -75,10 +58,6 @@ export const routeAppRelay = (
   router.flush()
 }
 
-/// Opener-side routing shared by apps and machine openers: validates the
-/// destination against the account's registry and batches consecutive
-/// envelopes per destination. `openerMachineId` is set for machine openers:
-/// they may not address themselves, and targets learn the opener's kind.
 const openerRouter = (
   hub: RelayHubPort,
   socket: WebSocket,
@@ -95,8 +74,6 @@ const openerRouter = (
       const message = encodeRelayEnvelopes(batch)
       const delivered = hub.deliverToMachine(target.machineId, message)
       if (!delivered) {
-        // This error is scoped to the attempted channel. A global offline
-        // transition is broadcast only when the resume grace expires.
         console.warn("relay to machine failed", {
           machineId: target.machineId,
           channelId: batch[0]!.header.frame.channelId
@@ -110,11 +87,6 @@ const openerRouter = (
     batch = []
   }
   const push = (machineId: string, frame: RelayFrameHeader, payload: Uint8Array): void => {
-    // The registry holds only this account's machines (one hub per
-    // account), so an unknown id — including another account's machine —
-    // is refused here. Machine openers may reach only other machines that
-    // accept machine peers (older ones would not restrict them to the
-    // gateway channel), never themselves.
     const destination: Destination | undefined =
       hub.isKnownMachine(machineId) &&
       (openerMachineId === undefined ||
@@ -136,8 +108,6 @@ const openerRouter = (
       header: {
         peerId: opener.connectionId,
         frame,
-        // Opens carry the opener's identity (key + stable device id) so the
-        // machine can complete key agreement and TOFU-pin the key per device.
         ...(frame.t === "open" && opener.publicKey !== undefined
           ? { peerPublicKey: opener.publicKey }
           : {}),
@@ -154,10 +124,6 @@ const openerRouter = (
   return { push, flush }
 }
 
-/// Mirrors routeAppRelay for the machine→opener direction; vanished peers
-/// are reported once with peer-gone. Envelopes addressed by `machineId` are
-/// channels this machine opens toward another machine on the account —
-/// accepted only from peer-aware machines.
 export const routeMachineRelay = (
   hub: RelayHubPort,
   socket: WebSocket,
@@ -177,8 +143,6 @@ export const routeMachineRelay = (
       const message = encodeRelayEnvelopes(batch)
       const delivered = hub.deliverToPeer(peerId, message)
       if (!delivered && !reportedGone.has(peerId)) {
-        // Socket dead before its close event, or the grace buffer just
-        // overflowed: tell the machine the peer is gone so it drops channels.
         reportedGone.add(peerId)
         console.warn("relay to app failed", { peerId })
         reportGone(peerId)
@@ -193,8 +157,6 @@ export const routeMachineRelay = (
       continue
     }
     if (header.direction === "open") {
-      // Keep wire order across the two directions: flush the answer batch
-      // before an opened-channel frame and vice versa.
       flush()
       peerId = undefined
       opened.push(header.machineId, header.frame, envelope.payload)

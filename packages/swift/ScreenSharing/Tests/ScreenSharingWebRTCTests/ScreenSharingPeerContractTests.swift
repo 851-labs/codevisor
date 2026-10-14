@@ -6,13 +6,8 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// The peer's collaborators exercised directly: the option surface a caller
-/// configures, the statistics selection, the native delegate's dispatch rules
-/// and the renderer's admission rules. None of these needs a negotiated peer.
 @MainActor
 struct ScreenSharingPeerContractTests {
-  /// Delegate callbacks are `@Sendable` and arrive from WebRTC threads, so the
-  /// recording has to be safe for that even though these tests call them inline.
   final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
     private var states: [String] = []
@@ -29,8 +24,6 @@ struct ScreenSharingPeerContractTests {
     }
   }
 
-  /// The peer's delegate on a bare connection: the dispatch under test never depends on which
-  /// connection calls it, so no transport is involved.
   struct DelegateFixture {
     let factory: RTCPeerConnectionFactory
     let connection: RTCPeerConnection
@@ -38,7 +31,6 @@ struct ScreenSharingPeerContractTests {
   }
 
   private func stagedConnection() throws -> DelegateFixture {
-    // The same boundary as production: trials are pinned before any RTC object exists.
     _ = ScreenSharingFieldTrials.process.ensureInstalled()
     let factory = RTCPeerConnectionFactory()
     let delegate = ScreenSharingPeerDelegate()
@@ -67,7 +59,6 @@ struct ScreenSharingPeerContractTests {
     staged.delegate.peerConnection(staged.connection, didChange: RTCIceGatheringState.complete)
     #expect(recorder.gatheringCompletions == 1)
 
-    // Everything the peer does not model is inert: no hook fires for it.
     staged.delegate.peerConnection(staged.connection, didChange: RTCSignalingState.haveLocalOffer)
     staged.delegate.peerConnection(staged.connection, didChange: RTCIceConnectionState.failed)
     staged.delegate.peerConnectionShouldNegotiate(staged.connection)
@@ -92,8 +83,6 @@ struct ScreenSharingPeerContractTests {
     staged.delegate.peerConnection(staged.connection, didAdd: video.receiver, streams: [])
     #expect(recorder.videoTrackIDs == [try #require(video.receiver.track).trackId])
 
-    // The three protocol channels are negotiated out of band, so a channel the
-    // remote opened itself is refused rather than wired to anything.
     let uninvited = try #require(
       staged.connection.dataChannel(forLabel: "uninvited", configuration: RTCDataChannelConfiguration()))
     staged.delegate.peerConnection(staged.connection, didOpen: uninvited)
@@ -102,13 +91,10 @@ struct ScreenSharingPeerContractTests {
 
   @Test func peerOptionsCarryTheProductDefaultsAndCompareByValue() throws {
     let options = ScreenSharingPeerOptions()
-    // HEVC first, H.264 for older peers (851-2372).
     #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
     #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
-    // 851-2482: the sender never adapts, and three frames may be in the encoder at once.
     #expect(!options.prioritizeSpeed && options.maintainSourceRate)
     #expect(options.maximumPendingFrames == 3 && options.keyframeIntervalSeconds == 60)
-    // Every experiment threshold is absent by default, which means "the product".
     #expect(options.transportCeilingBps == nil && options.sourceIdleThresholdNs == nil)
     #expect(options.deliveryGrace == nil && options.deliveryGraceExtensions == nil)
     #expect(options == ScreenSharingPeerOptions())
@@ -148,15 +134,12 @@ struct ScreenSharingPeerContractTests {
       .init(id: "M", type: "media-source", values: ["framesPerSecond": 60 as NSNumber]),
     ]
     let values = ScreenSharingPeerStatistics.values(entries)
-    // The selected pair and the two candidates it names, and nothing else.
     #expect(values["candidate-pair.P1.currentRoundTripTime"] == "0.25")
     #expect(values["candidate-pair.P1.state"] == "succeeded" && values["candidate-pair.P1.nominated"] == "1")
     #expect(values["local-candidate.L1.candidateType"] == "host")
     #expect(values["remote-candidate.R1.candidateType"] == "srflx")
     #expect(values["candidate-pair.P2.currentRoundTripTime"] == nil)
     #expect(values["local-candidate.L9.candidateType"] == nil)
-    // A transport is never reported, an unlisted type is dropped whole, and an
-    // unlisted field is dropped from a type that is otherwise reported.
     #expect(values["transport.T.bytesSent"] == nil)
     #expect(values["media-source.M.framesPerSecond"] == nil)
     #expect(values["outbound-rtp.O.framesEncoded"] == "12")
@@ -181,11 +164,9 @@ struct ScreenSharingPeerContractTests {
     ]
     let values = ScreenSharingPeerStatistics.values(pairs)
     #expect(values["candidate-pair.P1.packetsSent"] == "4")
-    // Nomination alone is not enough, and neither is a succeeded state alone.
     #expect(values["candidate-pair.P2.packetsSent"] == nil && values["candidate-pair.P3.packetsSent"] == nil)
     #expect(values["local-candidate.L1.protocol"] == "udp")
 
-    // Without any usable pair no candidate is reported either.
     let unusable = ScreenSharingPeerStatistics.values(Array(pairs[1...]))
     #expect(unusable.isEmpty)
     #expect(ScreenSharingPeerStatistics.values([]).isEmpty)
@@ -210,8 +191,6 @@ struct ScreenSharingPeerContractTests {
 
     renderer.renderFrame(nil)
     renderer.renderFrame(try frame(identity: 1, rotation: ._90, timeStampNs: 1))
-    // Rotation is never applied downstream, so a rotated frame would be wrong
-    // rather than late; a non-native buffer would mean the bridge changed.
     renderer.renderFrame(RTCVideoFrame(buffer: RTCI420Buffer(width: 16, height: 16), rotation: ._0, timeStampNs: 2))
     #expect(metrics.snapshot().counters["receivedFrames"] == nil)
     #expect(!mailbox.isHolding)
@@ -219,7 +198,6 @@ struct ScreenSharingPeerContractTests {
     renderer.renderFrame(try frame(identity: 10, rotation: ._0, timeStampNs: 10))
     renderer.renderFrame(try frame(identity: 20, rotation: ._0, timeStampNs: 20))
     #expect(metrics.snapshot().counters["receivedFrames"] == 2)
-    // Newest wins: the older frame is counted as dropped rather than queued.
     #expect(mailbox.droppedFrames == 1)
     let held = try #require(mailbox.take())
     #expect(held.timestampNs == 20 && held.sourceTimestampNs == 20)
@@ -229,7 +207,6 @@ struct ScreenSharingPeerContractTests {
     renderer.stop()
     renderer.stop()
     #expect(!mailbox.isHolding)
-    // A stopped renderer releases its surface and never takes another frame.
     renderer.renderFrame(try frame(identity: 40, rotation: ._0, timeStampNs: 40))
     #expect(!mailbox.isHolding)
     #expect(metrics.snapshot().counters["receivedFrames"] == 3)
@@ -240,14 +217,11 @@ struct ScreenSharingPeerContractTests {
     let paced = Selection.probeOptions(
       jitterWindowFrames: nil, lowLatencyPlayout: false, playoutDelayBoundsMs: nil, pacingFactor: 4)
     #expect(paced.trials == ["WebRTC-Video-Pacing": "factor:4.0"] && paced.name == "probe options")
-    // Pacing alone touches no playout experiment, so the label stays absent.
     #expect(paced.playoutExperimentLabel == nil)
     let both = Selection.probeOptions(
       jitterWindowFrames: nil, lowLatencyPlayout: true, playoutDelayBoundsMs: nil, pacingFactor: 4)
     #expect(both.trials["WebRTC-Video-Pacing"] == "factor:4.0")
     #expect(both.playoutExperimentLabel == "WebRTC-ForcePlayoutDelay min_ms:0,max_ms:0")
-    // Provenance is descriptive: the same native map under another name is
-    // compatible, while the values themselves still compare by every field.
     let renamed = Selection(name: "renamed", trials: paced.trials)
     #expect(paced.installs(renamed) && renamed.installs(paced) && paced != renamed)
     #expect(!paced.installs(both))

@@ -4,11 +4,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The real system capture, driven through a recording installer: the tap it
-/// registers is never handed to Quartz, so the suite exercises the callback's
-/// consume/pass-through decision and the capture's teardown without taking the
-/// developer's keyboard away from them. The callback is invoked off the main
-/// thread, as the tap's own thread invokes it.
 @MainActor
 struct ScreenSharingKeyboardCaptureTests {
   @Test func theTapDecidesOffMainFromTheClaimAndDeliversClaimedKeysToMainInOrder() async throws {
@@ -37,8 +32,6 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(recorder.interruptions == 0)
   }
 
-  /// Viewing another machine from inside a Codevisor session, keys this Mac's host injected are the
-  /// user's: claimed like any other. The choice outlives a restart of the tap.
   @Test func injectedKeysAreClaimedOnlyWhenTheSurfaceSaysTheyAreTheUsers() async throws {
     let installer = RecordingTapInstaller()
     let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
@@ -69,7 +62,6 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(tap.reenables.value == 1, "a late answer turns the tap back on, on the tap's thread")
     #expect(await tap.deliver(.tapDisabledByUserInput, code: 12) == .passed)
     await recorder.interrupted.wait()
-    // Main runs queued work in order: a timeout interruption would have arrived first.
     #expect(recorder.interruptions == 1)
     #expect(tap.reenables.value == 1)
     #expect(recorder.events.isEmpty, "a disabled-tap notice is not a key press")
@@ -82,7 +74,6 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(capture.start(handle: recorder.handle, interrupted: recorder.interrupt))
     capture.setClaimsKeys(true)
     let tap = try #require(installer.tap)
-    // The tap's thread consumes the key and queues it for main; main stops before running it.
     let consumed = tap.deliverBlocking(.keyDown, code: 12)
     #expect(consumed == .consumed)
     capture.stop()
@@ -155,14 +146,11 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(!installer.isInstalled)
   }
 
-  /// Returns once main has run everything queued on it before this call.
   private func drainMainQueue() async {
     await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
   }
 }
 
-/// Stands in for Quartz: keeps the callback and context the capture registers
-/// and replays them on demand, counting installs and teardowns.
 @MainActor
 private final class RecordingTapInstaller: ScreenSharingKeyboardTapInstaller {
   var available = true
@@ -189,7 +177,6 @@ private final class RecordingTapInstaller: ScreenSharingKeyboardTapInstaller {
   }
 }
 
-/// One registered callback, invoked from a background thread as the tap's thread would.
 private final class RecordedTap: Sendable {
   enum Outcome: Sendable { case consumed, passed }
   nonisolated(unsafe) let callback: CGEventTapCallBack
@@ -209,12 +196,11 @@ private final class RecordedTap: Sendable {
     }
   }
 
-  /// On the calling thread; the callback never waits for main, so main can call it too.
   func deliverBlocking(_ type: CGEventType, code: UInt16, injected: Bool = false, withContext: Bool = true) -> Outcome {
     guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: type != .keyUp),
       let proxy = CGEventTapProxy(bitPattern: 1)
     else { return .passed }
-    event.flags = []  // not whatever modifiers happen to be held on this Mac
+    event.flags = []
     if injected { event.setIntegerValueField(.eventSourceUserData, value: ScreenSharingInputInjector.eventTag) }
     let context = withContext ? Unmanaged.passUnretained(context).toOpaque() : nil
     let result = withExtendedLifetime(self.context) { callback(proxy, type, event, context) }

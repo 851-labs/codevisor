@@ -17,7 +17,6 @@ struct ServerAgentServiceTests {
 
     #expect(sessions == native)
     #expect(client.requestedHarnessIds == ["claude-code"])
-    // The legacy DB path is untouched when the endpoint exists.
     #expect(client.listSessionsCalls == 0)
   }
 

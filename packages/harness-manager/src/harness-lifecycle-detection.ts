@@ -21,9 +21,6 @@ import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { appBundlePath, run } from "./harness-lifecycle-support.js"
 import type { HarnessUpdateCheckOutcome } from "./harness-lifecycle-types.js"
 
-/// After an updater exits successfully, the lifecycle stays `updating` while
-/// the installed binary catches up to the requested target, re-probing the
-/// local version at this cadence until the timeout.
 const UPDATE_VERIFICATION_TIMEOUT_MS = 2 * 60_000
 const UPDATE_VERIFICATION_POLL_INTERVAL_MS = 500
 
@@ -39,13 +36,9 @@ const meaningfullyChanged = (
   previous.latestVersion !== next.latestVersion ||
   previous.installedVersion !== next.installedVersion
 
-/// The leading number of a version ("v2.0.24" → 2); 0 when it has none.
 const majorVersion = (version: string | undefined): number =>
   Number(version?.match(/^v?(\d+)/)?.[1] ?? 0)
 
-/// Adds the harness's major-version notes when the available update is a
-/// new major version. Derived wherever update knowledge is handed out, from
-/// a fresh check or stored state alike, since the store keeps versions only.
 export const withMajorNotes = (
   definition: HarnessDefinition | undefined,
   info: HarnessUpdateInfo
@@ -66,9 +59,6 @@ export const matchSource = (
   return sources.find((source) => source.when === origin) ?? sources.find((s) => s.when === "any")
 }
 
-/// Update detection: latest-version lookups per source, the cached/coalesced
-/// check across every harness, and the local re-probe that verifies an
-/// update actually landed.
 export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
   const {
     arch,
@@ -136,9 +126,6 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     })
     const source = matchSource(definition, origin)
     if (source === undefined) return undefined
-    // App-bundle installs update via the app, so both sides of the version
-    // comparison must be app versions — never the CLI's own --version, whose
-    // channel runs ahead of the stable lines.
     let installedVersion = harness.readiness.version
     if (source.apply.kind === "appBundleSwap") {
       if (platform !== "darwin") return undefined
@@ -163,8 +150,6 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     return { harnessId: definition.id, info }
   }
 
-  /// Checks every cataloged harness with an update source, or only
-  /// `harnessIds` when given (the harnesses a client actually lists).
   const runChecks = async (
     harnessIds: ReadonlySet<string> | undefined
   ): Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> => {
@@ -200,9 +185,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
                 subjectId: outcome.harnessId
               })
             }
-          } catch {
-            // One harness's failed check must not block the others.
-          }
+          } catch {}
         })
     )
     return outcomes
@@ -212,11 +195,8 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     force = false,
     harnessIds?: ReadonlyArray<string>
   ): Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> => {
-    // A full check already running covers any scope.
     if (checkState.inFlight !== undefined) return checkState.inFlight
     if (!force && now() - checkState.lastCheckAt < checkCacheMs) return []
-    // A scoped check leaves the full check's cache and coalescing alone:
-    // it says nothing about the harnesses it skipped.
     if (harnessIds !== undefined) return runChecks(new Set(harnessIds))
     checkState.inFlight = runChecks(undefined)
       .then((outcomes) => {
@@ -229,9 +209,6 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     return checkState.inFlight
   }
 
-  /// A completion check must never reuse a probe that began before the
-  /// updater changed the binary. Drain that work first, then force one new
-  /// check; concurrent callers naturally share the newly-created inFlight.
   const checkForUpdatesFresh = async (): Promise<void> => {
     const previous = checkState.inFlight
     if (previous !== undefined) await previous.catch(() => undefined)
@@ -239,10 +216,6 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     await checkForUpdates(true).catch(() => undefined)
   }
 
-  /// Re-probes the local harness until it reaches the version the user was
-  /// offered. This is deliberately independent of the remote feed: a feed
-  /// outage after a successful install must not make a completed update look
-  /// unfinished, and a zero-exit no-op must not be reported as success.
   const waitForInstalledTarget = async (
     harnessId: string,
     targetVersion: string
@@ -268,9 +241,6 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     }
   }
 
-  /// The local target probe is stronger than a second network lookup. Merge
-  /// its observed version into the persisted/in-memory update knowledge so a
-  /// failed feed refresh cannot resurrect the same Update button.
   const recordVerifiedInstalledVersion = async (
     harnessId: string,
     installedVersion: string

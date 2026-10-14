@@ -214,8 +214,6 @@ struct CloudRelayLoopbackBridgeTests {
             received.append(payload)
           }
         }
-        // The real machine returns receive credit after its local TCP
-        // socket accepts the bytes.
         pipe.sendToApp(frame: machine.creditFrame(channelId: channelId, bytes: inbound.sealedBytes))
       case let .credit(_, _, bytes):
         lock.withLock { creditGrants.append(bytes) }
@@ -234,7 +232,6 @@ struct CloudRelayLoopbackBridgeTests {
 
   @Test("Ciphertext budget calculation matches raw encrypted boxes")
   func ciphertextBudget() {
-    // Raw box = plaintext + 16-byte tag; no encoding expansion.
     #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 0) == 16)
     #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 1) == 17)
     #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 65_536) == 65_552)

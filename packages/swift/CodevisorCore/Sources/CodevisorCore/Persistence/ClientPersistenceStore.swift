@@ -1,6 +1,5 @@
 import Foundation
 
-/// `PersistenceStore` adapter used by all existing client repositories.
 public final class SQLitePersistenceStore:
   PersistenceStore,
   ClientDataResetting,
@@ -46,10 +45,6 @@ public final class SQLitePersistenceStore:
   }
 }
 
-/// Live native persistence: structured payloads are SQLite rows, while large
-/// draft attachment bytes stay as managed assets under one subdirectory.
-/// SQLite still owns the asset manifest, migration history, and every other
-/// client value.
 public final class ClientPersistenceStore:
   PersistenceStore,
   ClientDataResetting,

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Transient divider geometry must never override a newly selected tab or
-/// a newer saved layout. Content and selection remain owned by the workspace.
 public struct WorkspaceTreePreview {
   private let workspaceId: UUID
   private let sourceTab: WorkspaceTab?

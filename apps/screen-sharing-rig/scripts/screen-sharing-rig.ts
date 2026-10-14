@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Screen Sharing rig CLI: build, install a host/viewer pair, deploy, inspect.
-// See apps/screen-sharing-rig/README.md. `bun run screen-sharing:rig --help`.
 import { spawnSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import {
@@ -126,8 +124,6 @@ function readDeployRecord(): DeployRecord {
   return readJSON<DeployRecord>(deployRecordPath)
 }
 
-// ---------------------------------------------------------------- build
-
 async function build({ debug = false, install = true } = {}): Promise<string> {
   const configuration = debug ? "debug" : "release"
   const identities = parseCodesigningIdentities(
@@ -217,8 +213,6 @@ function installLocally(): void {
   rmSync(previous, { recursive: true, force: true })
   process.stdout.write(`Installed ${installedApp}\n`)
 }
-
-// ---------------------------------------------------------------- install / deploy
 
 function remoteFacts(target: string): { remoteHome: string; remoteUid: number } {
   const [remoteHome, uid] = run("ssh", ["-o", "BatchMode=yes", target, 'echo "$HOME"; id -u'], {
@@ -326,8 +320,6 @@ async function deploy(): Promise<void> {
   )
   process.stdout.write("Deployed to both Macs; agents restarted.\n")
 }
-
-// ---------------------------------------------------------------- inspect / control
 
 const endpoints = () => endpointsFor(readLocalConfig())
 

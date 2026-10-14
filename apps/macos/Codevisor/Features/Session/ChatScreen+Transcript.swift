@@ -5,10 +5,7 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-// MARK: - Transcript
-
 extension ChatScreen {
-  /// Inline images preview in Quick Look; their menu opens a tab or copies.
   var transcriptImageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
       quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
@@ -111,9 +108,6 @@ extension ChatScreen {
                 controller.scrollState = state
               },
               onBottomStateChange: { atBottom in
-                // AppKit can publish a transient edge and its corrected final
-                // edge during one layout pass. Defer the SwiftUI mutation, but
-                // preserve every callback in order so the final geometry wins.
                 DispatchQueue.main.async {
                   if isAtBottom != atBottom { isAtBottom = atBottom }
                 }
@@ -139,12 +133,8 @@ extension ChatScreen {
               isInitialTranscriptReady = true
             },
             onScrollViewReady: { scrollView in
-              // A read-only mirror must not steal the parent chat's
-              // shared transcript slot.
               guard !isReadOnly else { return }
               focus.transcriptView = scrollView
-              // Keyed: EVERY chat's transcript is a click-to-blur zone in
-              // multi-chat workspaces (the single slot is last-mounted).
               if let chatId = controller.serverSession?.id {
                 focus.registerTranscript(scrollView, forChat: chatId)
               }

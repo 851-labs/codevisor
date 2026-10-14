@@ -2,8 +2,6 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
-/// H.264 remains the product default. HEVC variants are explicit diagnostic
-/// choices until transport recovery and hardware compatibility are validated.
 public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
   case h264
   case hevc
@@ -12,7 +10,6 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
   package var mediaType: CMVideoCodecType { self == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC }
   package var payloadName: String { self == .h264 ? "H264" : "H265" }
   var decodedPixelFormat: OSType { decodedPixelFormat(.standard) }
-  /// What the decoder outputs for a stream in `range`: 10-bit planes for high dynamic range (851-2380).
   func decodedPixelFormat(_ range: ScreenSharingDynamicRange) -> OSType {
     switch (self == .hevc444, range) {
     case (true, .standard): kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
@@ -21,11 +18,9 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
     case (false, .high): kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
     }
   }
-  /// BGRA preserves all source chroma for the hardware Main444 encoder.
   public var capturePixelFormat: OSType {
     self == .hevc444 ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   }
-  /// Only Main 4:4:4 carries high dynamic range: its 10-bit profile keeps the chroma (851-2380).
   public var supportsHighDynamicRange: Bool { self == .hevc444 }
   package var sdpParameters: [String: String] {
     if self == .h264 {
@@ -36,9 +31,6 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
 }
 
 extension ScreenSharingVideoCodec {
-  /// The codec a session description sends video with: the first payload type on its video
-  /// line, named by its rtpmap and, for H.265, told apart by its fmtp profile-id (1 Main, 4
-  /// Main 4:4:4). Nil when the description has no video codec this build knows.
   public static func negotiated(inDescription sdp: String) -> ScreenSharingVideoCodec? {
     let lines = sdp.split(whereSeparator: \.isNewline).map(String.init)
     guard let media = lines.first(where: { $0.hasPrefix("m=video") }),
@@ -53,21 +45,16 @@ extension ScreenSharingVideoCodec {
       let profile = fmtp.split(separator: " ").dropFirst().joined(separator: " ").split(separator: ";")
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .first { $0.hasPrefix("profile-id=") }?.dropFirst("profile-id=".count)
-      // RFC 7798: profile-id defaults to 1 (Main) when absent.
       return profile == "4" ? .hevc444 : .hevc
     default: return nil
     }
   }
 }
 
-/// Parse the hvcC fields needed to reject silent chroma/depth fallback.
-/// Standard (8-bit sRGB) or high (10-bit Display P3 PQ, 851-2380) dynamic range: what the host
-/// captures and encodes, told apart by the pixel format and the stream's bit depth.
 public enum ScreenSharingDynamicRange: String, Codable, Sendable, Equatable {
   case standard
   case high
 
-  /// What ScreenCaptureKit's HDR preset delivers: 10-bit 4:4:4 YCbCr, full range, in Display P3 PQ.
   public static let highCapturePixelFormat = kCVPixelFormatType_444YpCbCr10BiPlanarFullRange
 
   static let highPixelFormats: Set<OSType> = [
@@ -75,7 +62,6 @@ public enum ScreenSharingDynamicRange: String, Codable, Sendable, Equatable {
     kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
   ]
 
-  /// The range a captured or decoded frame of this pixel format is in.
   public init(pixelFormat: OSType) { self = Self.highPixelFormats.contains(pixelFormat) ? .high : .standard }
 }
 
@@ -96,14 +82,11 @@ struct ScreenSharingHEVCFormat: Equatable {
     chromaDepth = 8 + Int(bytes[18] & 7)
   }
 
-  /// 8-bit is standard dynamic range, 10-bit high (851-2380); nil for any other depth.
   var dynamicRange: ScreenSharingDynamicRange? {
     guard lumaDepth == chromaDepth else { return nil }
     return lumaDepth == 8 ? .standard : lumaDepth == 10 ? .high : nil
   }
 
-  /// The HEVC codec this stream is: Main 4:2:0 (8-bit Main or 10-bit Main10) or Main 4:4:4 (8-
-  /// or 10-bit, both profile 4), else nil.
   var codec: ScreenSharingVideoCodec? {
     guard let dynamicRange else { return nil }
     if chroma == 1, profile == (dynamicRange == .high ? 2 : 1) { return .hevc }

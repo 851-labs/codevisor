@@ -27,7 +27,6 @@ describe("@codevisor/db stale assistant items", () => {
 
     expect(await run(db.closeStaleAssistantChatItems(session.id))).toBe(1)
     const closed = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)!
-    // An ordinary finished response: no failure status, nothing to render.
     expect(closed).toMatchObject({
       id: stale.id,
       isGenerating: false,
@@ -37,8 +36,6 @@ describe("@codevisor/db stale assistant items", () => {
     expect(closed).not.toHaveProperty("stopDetail")
     expect(await run(db.listQuietStreamingSessions(new Date().toISOString()))).toEqual([])
 
-    // The projection pointer is dropped, so later output opens a fresh item
-    // instead of reviving the closed one.
     await run(
       db.appendEvent("session.output", session.id, {
         content: { type: "text", text: "later" },

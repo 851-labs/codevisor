@@ -1,8 +1,6 @@
 import Foundation
 import Network
 
-/// One-request-per-connection HTTP listener. The handler runs on its own actor
-/// (usually the main actor); this class only frames bytes and bounds them.
 public final class RigHTTPServer: @unchecked Sendable {
   public struct Response: Sendable {
     public let status: Int
@@ -28,7 +26,6 @@ public final class RigHTTPServer: @unchecked Sendable {
   private var readyContinuation: CheckedContinuation<UInt16, any Error>?
   private var connections: [ObjectIdentifier: NWConnection] = [:]
 
-  /// `loopbackOnly` binds 127.0.0.1 (viewer control); otherwise all interfaces (host signaling).
   public init(
     port: UInt16, loopbackOnly: Bool, requestTimeoutSeconds: Double = 10, handler: @escaping Handler
   )
@@ -47,7 +44,6 @@ public final class RigHTTPServer: @unchecked Sendable {
     self.requestTimeoutSeconds = requestTimeoutSeconds
   }
 
-  /// Resolves with the bound port once the listener is ready; throws if it fails.
   public func start() async throws -> UInt16 {
     try await withCheckedThrowingContinuation { continuation in
       lock.withLock { readyContinuation = continuation }
@@ -82,7 +78,6 @@ public final class RigHTTPServer: @unchecked Sendable {
     for connection in open { connection.cancel() }
   }
 
-  /// Wraps the per-connection timeout so it can travel through `` receive callbacks.
   private final class Timeout: @unchecked Sendable {
     let item: DispatchWorkItem
     init(_ item: DispatchWorkItem) { self.item = item }

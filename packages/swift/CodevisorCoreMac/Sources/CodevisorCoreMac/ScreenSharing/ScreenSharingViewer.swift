@@ -4,19 +4,6 @@ import ScreenSharing
 import ComposableArchitecture
 import Foundation
 
-/// The viewer's control plane: visibility, display choice, presentation
-/// preferences, interaction mode and the lifecycle of one connection at a
-/// time, with the control lease as a child feature per endpoint. A visible
-/// pane is always connecting or connected: discovery picks the display the
-/// pane last used, else the first one, and connects at once; the toolbar's
-/// display menu reconnects on choice. Everything
-/// timed or transport-specific lives in the backend; the long-running effects
-/// here are the backend's event stream and the endpoint's control-event
-/// stream, and cancelling them is how every transition away from a connection
-/// happens — choosing another display, closing, or staying hidden past
-/// `hiddenGrace`. Hiding alone keeps the connection, as Apple's Screen Sharing
-/// keeps a window's: only control goes back, and showing the pane again picks
-/// up the live picture instead of reconnecting.
 @Reducer
 public struct ScreenSharingViewer {
   public enum InteractionMode: Hashable, Sendable { case control, view }
@@ -27,24 +14,15 @@ public struct ScreenSharingViewer {
   @ObservableState
   public struct State: Equatable {
     public var displays: [ServerScreenSharingDisplay] = []
-    /// The live endpoint while connecting, viewing or reconnecting; nil otherwise.
     public var endpoint: ScreenSharingViewerEndpoint?
     public var interactionMode: InteractionMode = .control
-    /// The control lease over the live endpoint's channel.
     public var lease: ControlLease.State?
     public var message: String?
-    /// The host's word on missing or paused video (851-2385, 851-2375): under the progress while
-    /// connecting, as a banner over live video.
     public var hostNotice: String?
     public var phase: Phase = .idle
     public var preferences: ScreenSharingPanePreferences
-    /// Incremented for every preference change the user made here (never for
-    /// a synced registry update), so the pane persists exactly those.
     public var preferencesRevision = 0
     public var selectedDisplayId: String?
-    /// Dynamic Resolution (851-2340): the remote desktop follows the pane at the
-    /// Mac's resolution. A per-machine preference; the pane or rig persists it
-    /// whenever `dynamicResolutionRevision` moves.
     public var dynamicResolution: Bool
     public var dynamicResolutionRevision = 0
     var visible = false
@@ -60,24 +38,19 @@ public struct ScreenSharingViewer {
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
     case dynamicResolutionToggled
-    /// The pane stayed hidden for `hiddenGrace`: its connection ends.
     case hiddenGraceExpired
     case interactionModeChanged(InteractionMode)
     case lease(ControlLease.Action)
     case paneAppeared
     case paneClosed
     case paneDisappeared
-    /// A registry update from another client: applied to the live surface without echo.
     case preferencesSynced(ScreenSharingPanePreferences)
     case retryButtonTapped
-    /// Apps, Mission Control or Desktop (851-2469). While viewing it switches to Control and
-    /// presses the key once control is granted (851-2479).
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
   enum CancelID { case connection, controlEvents, hiddenGrace }
 
-  /// How long a hidden pane keeps its connection (and the host its capture) before letting go.
   static let hiddenGrace: Duration = .seconds(300)
 
   @Dependency(ScreenSharingViewerBackend.self) var backend
@@ -93,7 +66,6 @@ public struct ScreenSharingViewer {
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
-        // The display's provisioned size is what turning Dynamic Resolution off restores (851-2339).
         let display = state.displays.first(where: { $0.id == state.selectedDisplayId })
         let defaultSize = display?.defaultWidth.flatMap { width in display?.defaultHeight.map { [width, $0] } }
         let dynamicResolution = state.dynamicResolution
@@ -112,7 +84,6 @@ public struct ScreenSharingViewer {
         state.phase = .viewing
         state.message = nil
         state.hostNotice = nil
-        // A hidden pane (connected or reconnected behind another tab) asks when it's shown.
         return state.visible && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
 
       case .connectionEvent(.reconnecting):
@@ -122,7 +93,6 @@ public struct ScreenSharingViewer {
         return .cancel(id: CancelID.controlEvents)
 
       case .connectionEvent(.hostNotice(let notice)):
-        // While viewing too: a capture the host is restarting mid-session (851-2375) pauses the picture.
         guard [.connecting, .reconnecting, .viewing].contains(state.phase) else { return .none }
         state.hostNotice = notice
         return .none
@@ -132,8 +102,6 @@ public struct ScreenSharingViewer {
         fail(&state, message)
         return .cancel(id: CancelID.controlEvents)
 
-      // The display the pane last used when it is still listed, else the first one.
-      // Hidden meanwhile too: the connection it starts is kept like any other.
       case .discoveryResponse(.success(let displays)):
         guard state.phase == .loading else { return .none }
         state.displays = displays
@@ -164,8 +132,6 @@ public struct ScreenSharingViewer {
         let enabled = state.dynamicResolution
         return .run { [endpointClient] _ in await endpointClient.setDynamicResolution(id, enabled, nil, nil) }
 
-      // Keep the user's choice while connecting; ask the lease only once
-      // video is up. The lease itself waits for its channel.
       case .interactionModeChanged(let mode):
         state.interactionMode = mode
         guard state.phase == .viewing, state.lease != nil else { return .none }
@@ -178,9 +144,6 @@ public struct ScreenSharingViewer {
         state.interactionMode = .control
         return .merge(tap, .send(.lease(.controlRequested)))
 
-      // Only the user changes the mode (choosing View). A denial, revocation or input failure keeps
-      // Control selected, with the lease's message saying why, so the next connection (or Request
-      // Control) asks again rather than the pane staying in View for good (851-2472).
       case .lease:
         return .none
 
@@ -188,7 +151,6 @@ public struct ScreenSharingViewer {
         guard !state.visible else { return .none }
         state.visible = true
         guard Self.keepsConnection(state.phase) else { return refresh(&state) }
-        // The connection kept while hidden: the picture is already live; ask for control again.
         let resume: Effect<Action> =
           state.phase == .viewing && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
         return .merge(.cancel(id: CancelID.hiddenGrace), resume)
@@ -209,9 +171,6 @@ public struct ScreenSharingViewer {
           }
           .cancellable(id: CancelID.hiddenGrace, cancelInFlight: true))
 
-      // Apply a registry update without echoing the write. A display change
-      // from another client requires a new Connect (when shown; a hidden pane's
-      // kept connection is to the old display, so it goes).
       case .preferencesSynced(let preferences):
         guard state.preferences != preferences else { return .none }
         let displayChanged = state.preferences.preferredDisplayId != preferences.preferredDisplayId
@@ -241,7 +200,6 @@ public struct ScreenSharingViewer {
       .cancellable(id: CancelID.connection, cancelInFlight: true))
   }
 
-  /// Remembers `id` as the pane's display (persisted only when it changed) and connects to it.
   private func select(_ id: String, _ state: inout State) -> Effect<Action> {
     if state.preferences.preferredDisplayId != id {
       state.preferences.preferredDisplayId = id
@@ -251,7 +209,6 @@ public struct ScreenSharingViewer {
     return connect(&state)
   }
 
-  /// Ends the connection, if any, and cancels everything that drives it.
   private func disconnect(_ state: inout State) -> Effect<Action> {
     dropEndpoint(&state)
     state.phase = .suspended
@@ -259,7 +216,6 @@ public struct ScreenSharingViewer {
       .cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents), .cancel(id: CancelID.hiddenGrace))
   }
 
-  /// Phases with a connection worth keeping while hidden: one being made or one showing.
   static func keepsConnection(_ phase: Phase) -> Bool {
     [.loading, .connecting, .reconnecting, .viewing].contains(phase)
   }

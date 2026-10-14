@@ -93,7 +93,6 @@ describe("provider account replica validation", () => {
     )
     const localOnly = (await store.get(slot))!
     await host.shared.store.writeProvider(slot, null, true)
-    // A local-only account does not depend on the global selection existing.
     expect(await store.remove("opencode", "default", "github-copilot")).toBe(true)
     await expect(host.vault.token(localOnly.credential)).rejects.toThrow("signed out")
   })

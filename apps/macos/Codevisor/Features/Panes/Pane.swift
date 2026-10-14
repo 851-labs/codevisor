@@ -1,71 +1,28 @@
-//  The pane abstraction for workspace content.
-//
-//  A pane is a self-contained content unit (terminal today; logs, previews,
-//  ... later). Panes never see SessionController or the session UI — they
-//  receive a PaneContext (exposed data) at creation and lifecycle hooks from
-//  the group. Adding a new pane kind = a PaneKind case (CodevisorCore), a Pane
-//  conformance, and a branch in the group's factory.
-
 import Foundation
 import SwiftUI
 import CodevisorCore
 import CodevisorCoreMac
 import CodevisorCloud
 
-/// The data a pane is given to do its job. The terminal pane, for example,
-/// derives its working directory and server connection from here.
 struct PaneContext {
-  /// This pane's stable identity (persisted; survives app restarts).
   let paneId: UUID
-  /// The chat session this pane group belongs to, or nil when the group's
-  /// identity comes from its workspace instead (a workspace that has never
-  /// hosted a chat). Panes that genuinely need a session decline rather than
-  /// borrowing another identity.
   let sessionId: UUID?
-  /// The key the server's PTY manager stores this pane's shell under.
   let terminalKey: String
-  /// The machine (server URL + auth) the pane's backing resources live on.
   let machine: CodevisorMachine
-  /// Source data for working-directory resolution: the anchor session's cwd
-  /// (the workspace's one working directory), else the project folder. Nil
-  /// when the workspace has no chat yet — the project folder then applies,
-  /// exactly as it does for a session without a cwd.
   let session: ChatSession?
   let project: Project
-  /// The workspace's own working directory, used when there is no chat to
-  /// anchor on. Nil falls back to the project folder.
   var workspaceRootDirectory: String? = nil
-  /// The owning workspace's identity, for panes whose server resources are
-  /// workspace-scoped (plugin pane tokens). Nil in previews.
   var workspaceId: UUID? = nil
-  /// The machine's API client (relay-aware for cloud machines). Nil
-  /// (previews, legacy call sites) falls back to a direct client built
-  /// from `machine`.
   var client: (any CodevisorServerClienting)? = nil
-  /// Resolves the machine's effective HTTP origin for panes that dial a
-  /// real socket (plugin webviews): direct machines answer their baseURL,
-  /// cloud machines start the relay loopback bridge on demand and answer
-  /// its 127.0.0.1 address (MachineController.effectiveHTTPBaseURL). Nil
-  /// (previews) falls back to `machine.baseURL`.
   var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
-  /// The machine's relay-aware server config for panes that open their own
-  /// connections (terminals): MachineController.serverConfig(for:), so a
-  /// cloud machine tunnels through the in-process relay transports. Nil
-  /// (previews) falls back to `machine.serverConfig`.
   var resolveServerConfig: (@MainActor () -> CodevisorServerConfig)? = nil
-  /// Opens a screen-sharing media route over the Codevisor tunnel to this
-  /// machine; nil for direct machines.
   var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
-  /// The same tunnel route, raw, for panes that negotiate their own media (Simulator).
   var openTunnelRoute: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
 }
 
-/// Workspace tab and split commands emitted by a focused pane.
 enum PaneGroupCommand {
-  /// Every tab in sidebar order, across workspaces.
   case previousTab
   case nextTab
-  /// The current workspace's tabs, wrapping.
   case previousTabInWorkspace
   case nextTabInWorkspace
   case newTab
@@ -80,39 +37,22 @@ enum PaneGroupCommand {
   case reopenClosedPane
 }
 
-/// A live pane instance. Hooks are the pane's whole world: the group tells it
-/// when it becomes visible/hidden, when the user wants it focused, and when
-/// it is being deleted (permanent) vs detached (app-side teardown only).
 @MainActor
 protocol Pane: AnyObject {
   var id: UUID { get }
   var kind: PaneKind { get }
 
-  /// Set by the pane group: lets a focused pane forward tab-navigation
-  /// shortcuts up to the group.
   var onGroupCommand: ((PaneGroupCommand) -> Void)? { get set }
 
-  /// Set by the pane group: reports keyboard focus entering/leaving the
-  /// pane's content (drives the group bar's ⌘N shortcut hints). Panes
-  /// whose content doesn't track focus (the chat) never call it.
   var onFocusChanged: ((Bool) -> Void)? { get set }
 
-  /// The pane's content view. Called when the pane is selected; the pane
-  /// should cache expensive backing state (the terminal caches its NSView)
-  /// so re-selection restores rather than rebuilds.
   func makeView() -> AnyView
 
-  /// Route keyboard focus into the pane's content.
   func focus()
 
-  /// The pane's content became visible (selected + group open) or hidden.
   func visibilityChanged(_ visible: Bool)
 
-  /// The user is deleting this pane (closed its tab): destroy backing
-  /// resources permanently (the terminal kills its server-side shell).
   func willDelete() async
 
-  /// App-side teardown without destroying backing resources (the terminal's
-  /// shell survives on the server for reattachment — app-quit semantics).
   func detach()
 }

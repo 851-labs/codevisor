@@ -3,10 +3,6 @@
   import ScreenSharing
   import ScreenSharingTesting
 
-  /// `screen-sharing-rig vnc-record`: captures a real server's bytes after the
-  /// handshake into an `RFBRecording` fixture (851-2326), with the outcome of
-  /// replaying it as the expectation the replay test checks. Point it at
-  /// `bun run vnc:interop --keep` for TigerVNC.
   enum VNCRecordCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-record --host H --port P [--password P] [--seconds 3]
@@ -59,7 +55,7 @@
       let transport = RFBRecordingTransport(try await RFBNetworkTransport.connect(host: host, port: port))
       let client = try RFBClient(transport: transport, qualityLevel: quality)
       let outcome = try await client.connect(password: password)
-      transport.start()  // after authentication: nothing credential-derived is recorded
+      transport.start()
       let run = Task { try await client.run(onUpdate: { _, _ in }, onEvent: { _ in }) }
       if let pointer {
         try await Task.sleep(for: .milliseconds(300))
@@ -72,7 +68,6 @@
       var recording = RFBRecording(
         source: source, width: outcome.parameters.width, height: outcome.parameters.height,
         server: transport.recorded)
-      // With JPEG allowed the pixel hash isn't portable across OS versions: keep the rest.
       recording.expected = RFBRecording.comparable(try await recording.replay(), lossy: quality != nil)
       return recording
     }

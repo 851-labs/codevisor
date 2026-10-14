@@ -6,8 +6,6 @@ import type {
   SimulatorRuntime
 } from "@codevisor/api"
 
-/// simctl and device-type plist output, reduced to what clients show.
-
 const udidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface RawList {
@@ -112,8 +110,6 @@ const simulatorListDevice = (
   ...(device.lastBootedAt === undefined ? {} : { lastBootedAt: device.lastBootedAt })
 })
 
-/// simctl's JSON, reduced to what clients show. Unavailable devices and
-/// runtimes (a runtime that was deleted) are left out.
 export const parseSimulatorList = (raw: RawList): SimulatorList => {
   const deviceTypes = simulatorDeviceTypes(raw)
   const typeById = new Map(deviceTypes.map((type) => [type.identifier, type]))
@@ -138,9 +134,6 @@ const familyOrder = (family: string): number => {
 const platformOf = (runtimeIdentifier: string): string =>
   runtimeIdentifier.replace(/^com\.apple\.CoreSimulator\.SimRuntime\./, "").replace(/-.*$/, "")
 
-/// A device type's displays from its capabilities plist. Only powered,
-/// integrated screens are the device's own; an Apple TV's single screen is
-/// its powered TV output.
 export const parseDisplays = (
   raw: unknown,
   masks: ReadonlyMap<string, string>
@@ -181,7 +174,6 @@ export const numberField = (entry: Record<string, unknown>, key: string): number
 export const stringField = (entry: Record<string, unknown>, key: string): string | undefined =>
   typeof entry[key] === "string" && entry[key].length > 0 ? entry[key] : undefined
 
-/// The features a profile turns on, conditional ones included.
 export const parseFeatures = (profile: Record<string, unknown>): string[] => {
   const features = new Set<string>()
   for (const key of ["supportedFeatures", "supportedFeaturesConditionalOnRuntime"]) {
@@ -194,8 +186,6 @@ export const parseFeatures = (profile: Record<string, unknown>): string[] => {
   return [...features].toSorted()
 }
 
-/// The image names a chrome.json refers to: its frame slices and every
-/// input's normal and pressed images.
 export const chromeImageNames = (definition: unknown): string[] => {
   const names = new Set<string>()
   const record = definition as {

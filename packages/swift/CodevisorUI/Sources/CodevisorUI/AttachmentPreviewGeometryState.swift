@@ -1,8 +1,5 @@
 import CoreGraphics
 
-/// One-way layout geometry for an asynchronous attachment preview. The first
-/// valid intrinsic ratio or deadline fallback becomes authoritative for this
-/// mount; later pixel replacement cannot move transcript rows.
 public struct AttachmentPreviewGeometryState: Sendable, Equatable {
   public private(set) var aspectRatio: CGFloat?
   public private(set) var isResolved = false
@@ -27,9 +24,6 @@ public struct AttachmentPreviewGeometryState: Sendable, Equatable {
   }
 }
 
-/// Fits an intrinsic media aspect ratio inside transcript-friendly bounds.
-/// The returned size preserves the ratio exactly and never exceeds either
-/// maximum dimension.
 public func boundedAttachmentPreviewSize(
   aspectRatio: CGFloat?,
   maximumSize: CGSize,

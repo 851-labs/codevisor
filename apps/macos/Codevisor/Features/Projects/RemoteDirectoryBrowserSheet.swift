@@ -2,9 +2,6 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// A compact Finder-style folder picker for remote machines. It opens at the
-/// machine root, uses column navigation, and keeps less common actions in the
-/// options and context menus.
 struct RemoteDirectoryBrowserSheet: View {
   private struct NewFolderTarget: Identifiable {
     let path: String
@@ -80,8 +77,6 @@ struct RemoteDirectoryBrowserSheet: View {
     }
   }
 
-  // MARK: - Header
-
   private var header: some View {
     HStack {
       Text("Choose Folder")
@@ -123,8 +118,6 @@ struct RemoteDirectoryBrowserSheet: View {
       }
     }
   }
-
-  // MARK: - Columns
 
   private var columnBrowser: some View {
     ScrollViewReader { proxy in
@@ -221,8 +214,6 @@ struct RemoteDirectoryBrowserSheet: View {
     }
   }
 
-  // MARK: - Footer
-
   private var footer: some View {
     HStack(spacing: 12) {
       Spacer()
@@ -251,9 +242,6 @@ struct RemoteDirectoryBrowserSheet: View {
     .accessibilityLabel("Browsing options")
   }
 
-  /// Always-installed keyboard shortcuts (open-panel idioms) that have no
-  /// visible chrome: ⇧⌘N new folder, ⇧⌘. hidden folders, ⇧⌘G go to
-  /// folder, ⌘↑ enclosing folder.
   private var hiddenShortcuts: some View {
     Group {
       Button("") { presentNewFolder() }
@@ -276,8 +264,6 @@ struct RemoteDirectoryBrowserSheet: View {
     .frame(width: 0, height: 0)
     .accessibilityHidden(true)
   }
-
-  // MARK: - Actions
 
   private var showHiddenBinding: Binding<Bool> {
     Binding {
@@ -316,8 +302,6 @@ struct RemoteDirectoryBrowserSheet: View {
     dismiss()
   }
 
-  /// Moves focus into the child column of the focused column (→), selecting
-  /// its first folder when nothing is selected yet — Finder's behavior.
   private func focusColumnAfterFocused() -> KeyPress.Result {
     guard
       let index = model.columns.firstIndex(where: { $0.id == focusedColumn }),

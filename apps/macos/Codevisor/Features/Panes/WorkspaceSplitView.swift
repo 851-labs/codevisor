@@ -1,8 +1,3 @@
-//  Renders one workspace tab's split tree as a flat set of UUID-keyed leaves.
-//  The tree computes geometry and divider ownership, but never owns pane
-//  content: wrapping or collapsing a branch therefore cannot remount a
-//  surviving terminal or chat transcript.
-
 import SwiftUI
 import AppKit
 import CodevisorCore
@@ -10,8 +5,6 @@ import CodevisorUI
 
 struct WorkspaceSplitView: View {
   let node: SplitNode
-  /// The most recently active center leaf. This remains resolved while
-  /// focus temporarily moves to another window.
   let activeLeafId: UUID?
   let groupModel: (UUID) -> PaneGroupModel
   let paneTitle: (PaneDescriptorState) -> String
@@ -20,14 +13,9 @@ struct WorkspaceSplitView: View {
   let onSplitLeaf: (UUID, SplitEdge) -> Void
   let onRenameLeaf: (UUID, String) -> Void
   let onCloseLeaf: (UUID) -> Void
-  /// A local insertion whose blank shell is expanding from its requested
-  /// edge. The destination content mounts only after this clears.
   var openingSplit: WorkspaceSplitOpening? = nil
   var onOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
-  /// Called with the updated WHOLE tree after a divider drag ends.
   let onTreeChanged: (SplitNode) -> Void
-  /// Called with the WHOLE tree on every frame of a divider drag (render
-  /// only, nothing persisted).
   var onLiveTreeChanged: ((SplitNode) -> Void)? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -211,15 +199,10 @@ private extension SplitEdge {
   }
 }
 
-/// One single-pane split leaf. The header is split chrome, not another tab
-/// group: it identifies the pane and exposes leaf-targeted split actions.
 private struct SplitLeafView: View {
   let leafId: UUID
   let isInactive: Bool
-  /// Hidden when the leaf is alone in its tab: the split actions live in
-  /// the View > Split menu, so the header would only spend a row on chrome.
   let showsHeader: Bool
-  /// A new leaf stays as an inert blank shell until its size transition ends.
   let openingEdge: SplitEdge?
   let groupModel: (UUID) -> PaneGroupModel
   let paneTitle: (PaneDescriptorState) -> String
@@ -303,7 +286,6 @@ private struct SplitLeafView: View {
       .fill(theme.windowBackground)
       .opacity(isInactive ? 0.3 : 0)
       .allowsHitTesting(false)
-      // Active-group changes should read as focus changes, not motion.
       .transaction { $0.animation = nil }
   }
 }
@@ -393,14 +375,11 @@ private struct SplitLeafHeader: View {
       }
   }
 
-  /// The chat this pane is showing, once its record has loaded. Nil for
-  /// terminal/new-tab panes, so chat-only menu items can opt out.
   private var chatSession: ChatSession? {
     guard pane?.kind == .chat, let sessionId = pane?.chatSessionId else { return nil }
     return environment.projectList.sessions.first(where: { $0.id == sessionId })
   }
 
-  /// A subagent pane's harness: its chat's.
   private var subagentHarnessId: String? {
     guard pane?.kind == .subagent, let ownerId = pane?.ownerChatSessionId else { return nil }
     return environment.projectList.sessions.first(where: { $0.id == ownerId })?.harnessId
@@ -413,7 +392,6 @@ private struct SplitLeafHeader: View {
         .foregroundStyle(theme.textSecondary)
         .frame(width: 18)
     } else if let session = chatSession {
-      // Matches the tint its sibling (the non-chat pane icon) uses.
       ChatSessionLeadingIcon(
         session: session,
         store: sessionStore,
@@ -498,7 +476,6 @@ private struct SplitLeafHeader: View {
       Label(name, systemImage: icon)
         .labelStyle(.titleAndIcon)
     }
-    // Leading and top have no key equivalent; `shortcut(_:)` no-ops there.
     .shortcut(.split(towards: edge))
   }
 }

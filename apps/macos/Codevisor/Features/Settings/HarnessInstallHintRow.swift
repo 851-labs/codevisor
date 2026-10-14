@@ -2,20 +2,12 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// A "not installed" harness row: icon, name, readiness detail, and — when
-/// the server can run an installer — a one-click Install button with a
-/// confirmation popover showing the exact command. Falls back to the
-/// copyable install command when no method is runnable on the machine.
-/// Shared by onboarding's harness step and Settings' harness list.
 struct HarnessInstallHintRow: View {
   let harness: ServerHarness
 
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.settingsMachineId) private var settingsMachineId
 
-  /// The machine this view operates on — pinned by the machine-scoped
-  /// Settings page that presented it, else the app's selected machine
-  /// (onboarding, previews).
   private var scopedServerId: String {
     settingsMachineId ?? environment.defaultComposerServerId
   }
@@ -51,8 +43,6 @@ struct HarnessInstallHintRow: View {
           .padding(.leading, 30)
       }
       if availableMethods.isEmpty, let installHint = harness.installHint {
-        // No runnable method (missing brew/npm) — keep the copyable
-        // command so the user can install from a terminal.
         InstallCommandChip(command: installHint)
           .padding(.leading, 30)
       }
@@ -107,8 +97,6 @@ struct HarnessInstallHintRow: View {
     do {
       _ = try await environment.machines.client(for: serverId)
         .installHarness(id: harness.id, methodId: methodId)
-      // Progress arrives via harness.lifecycle.updated events → catalog
-      // revision bumps → the hosting list refetches.
       environment.harnessCatalogDidChange(onServer: serverId)
     } catch {
       startError = error.localizedDescription
@@ -116,8 +104,6 @@ struct HarnessInstallHintRow: View {
   }
 }
 
-/// Confirmation before running an installer: which method (remembered), and
-/// the exact command that will run — nothing hidden.
 struct HarnessInstallPopover: View {
   let harness: ServerHarness
   let methods: [ServerHarnessInstallMethod]
@@ -184,8 +170,6 @@ struct HarnessInstallPopover: View {
     .padding(14)
     .frame(width: 340)
     .onAppear {
-      // A remembered method that is no longer runnable falls back to
-      // the current recommendation.
       if !methods.contains(where: { $0.id == selectedMethodId }) {
         selectedMethodId = methods.first(where: \.recommended)?.id ?? methods.first?.id ?? ""
       }
@@ -193,7 +177,6 @@ struct HarnessInstallPopover: View {
   }
 }
 
-/// A monospaced, selectable install command with a copy button.
 struct InstallCommandChip: View {
   let command: String
 

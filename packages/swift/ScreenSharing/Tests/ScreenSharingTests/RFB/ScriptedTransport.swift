@@ -1,8 +1,6 @@
 import Foundation
 @testable import ScreenSharing
 
-/// Serves scripted server bytes in the given chunks (so field boundaries
-/// never line up with reads) and records everything the client writes.
 final class ScriptedTransport: RFBTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var chunks: [[UInt8]]

@@ -10,7 +10,6 @@ import { readGrokConfigFile, withGrokSkillsDisabled } from "./skills.js"
 
 export interface GrokBuildProviderConfig {
   readonly connector?: AcpConnector
-  /// Reads Grok's config files; exposed for tests.
   readonly readConfigFile?: (path: string) => string | undefined
 }
 

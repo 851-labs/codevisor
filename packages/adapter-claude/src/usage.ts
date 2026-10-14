@@ -8,11 +8,6 @@ import { isoTimestamp, type HarnessUsageLimits } from "@codevisor/api"
 import { isRecord } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 
-/// A transient API failure can also arrive with NO structured error — the CLI
-/// renders it as a plain assistant text message ending on a stop sequence
-/// (observed: `API Error: 529 Overloaded …`). Match the CLI's error-line format
-/// for 429 / 5xx (and a bare "overloaded"); 4xx client errors are NOT matched,
-/// since those are permanent. Used only alongside a `stop_sequence` ending.
 const API_ERROR_TEXT = /^\s*API Error:\s*(429|5\d\d)\b|^\s*overloaded\b/i
 
 const claudeLimitWindow = (
@@ -70,8 +65,6 @@ export const claudeUsageLimitsFrom = (response: SDKControlGetUsageResponse): Har
   }
 }
 
-/// Extracts the plain text from a CLI-generated assistant stop. Claude uses
-/// this shape both for transient API errors and terminal usage-limit messages.
 const stoppedAssistantText = (message: SDKMessage & { type: "assistant" }): string | undefined => {
   const inner = message.message as { stop_reason?: unknown; content?: unknown }
   if (inner.stop_reason !== "stop_sequence") return undefined

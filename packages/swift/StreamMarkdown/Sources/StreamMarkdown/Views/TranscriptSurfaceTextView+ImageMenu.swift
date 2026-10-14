@@ -2,9 +2,6 @@
   import AppKit
 
   extension TranscriptSurfaceTextView {
-    /// The menu for a secondary click on an inline image: the host's
-    /// preview, a new-tab open, and a copy of the original bytes. Nil off
-    /// an image, so text and links keep their usual menus.
     func markdownImageMenu(at point: NSPoint) -> NSMenu? {
       guard let images = linkAction?.images, let textStorage, textStorage.length > 0 else { return nil }
       let index = characterIndexForInsertion(at: point)
@@ -34,8 +31,6 @@
     }
   }
 
-  /// A menu item that runs a closure; `NSMenuItem.target` is weak, so the
-  /// item can be its own target without a retain cycle.
   @MainActor
   private final class MarkdownMenuItem: NSMenuItem {
     private let handler: @MainActor () -> Void

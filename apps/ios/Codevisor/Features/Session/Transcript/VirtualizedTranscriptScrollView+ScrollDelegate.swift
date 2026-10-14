@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - ScrollDelegate
-
 extension VirtualizedTranscriptScrollView {
   func scrollViewWillBeginDragging(_: UIScrollView) {
     cancelDisclosureViewportAnchor()
@@ -29,10 +27,6 @@ extension VirtualizedTranscriptScrollView {
     let previousDistance = lastDistanceFromBottom
     let distance = currentDistanceFromBottom()
     lastDistanceFromBottom = distance
-    // Every offset/inset/content-size mutation owned by the virtualizer is
-    // inside a position transaction. At a stable viewport size, movement
-    // outside that transaction is native input, including accessibility
-    // paging and selection scrolling that bypass touch delegate callbacks.
     let isNativeMovement =
       initialPositionApplied && !isApplyingPosition && lastViewportSize == bounds.size
     let isUserMovement =

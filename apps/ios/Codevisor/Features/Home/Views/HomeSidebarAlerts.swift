@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The tab a rename alert is editing.
 struct HomeTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
@@ -9,14 +8,11 @@ struct HomeTabRenameRequest: Identifiable, Equatable {
   var id: UUID { tabId }
 }
 
-/// The sidebar's rename alerts, chained in one place so the screen body
-/// stays within the size ratchet.
 struct HomeSidebarAlerts: ViewModifier {
   @Binding var renamingWorkspace: Workspace?
   @Binding var workspaceRenameTitle: String
   @Binding var renamingTab: HomeTabRenameRequest?
   @Binding var tabRenameTitle: String
-  /// Receives the workspace with its new name already applied and pinned.
   let onRenameWorkspace: (Workspace) -> Void
   let onRenameTab: (HomeTabRenameRequest, String) -> Void
 
@@ -34,8 +30,6 @@ struct HomeSidebarAlerts: ViewModifier {
         Button("Rename") {
           let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
           guard !trimmed.isEmpty else { return }
-          // An explicit rename pins the name so worktree creation does
-          // not replace it.
           var renamed = workspace
           renamed.name = trimmed
           renamed.hasCustomName = true

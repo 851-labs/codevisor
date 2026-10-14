@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// A count-less notification badge for chats that changed while unopened.
 struct UnreadBadge: View {
   let color: Color
 

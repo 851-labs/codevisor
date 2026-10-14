@@ -20,13 +20,9 @@ const output = resolve(repoRoot, "tmp/build/ios/testflight")
 const archive = join(output, "Codevisor.xcarchive")
 const exported = join(output, "export")
 
-// Fail on account/app access before spending time compiling. The API key is
-// used explicitly for export; no signed-in Xcode session is needed in CI.
 const app = await findApp(appStoreClient(configuration), configuration.bundleId)
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
-// A Mac-only runner may have full Xcode without its optional iOS platform.
-// Xcode reuses the installed platform on subsequent runs.
 await runXcodebuild(repoRoot, "ios", ["-downloadPlatform", "iOS"])
 await runXcodebuild(repoRoot, "ios", [
   "-project",
@@ -42,8 +38,6 @@ await runXcodebuild(repoRoot, "ios", [
   `DEVELOPMENT_TEAM=${configuration.teamId}`,
   `MARKETING_VERSION=${configuration.version}`,
   `CURRENT_PROJECT_VERSION=${configuration.buildNumber}`,
-  // Cloud signing at export time avoids installing development identities or
-  // creating a new development certificate on every ephemeral runner.
   "CODE_SIGNING_ALLOWED=NO",
   "-quiet",
   "archive"

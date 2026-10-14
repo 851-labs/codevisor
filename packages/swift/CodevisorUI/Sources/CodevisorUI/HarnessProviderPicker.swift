@@ -1,11 +1,9 @@
 import SwiftUI
 
-/// Provider selection stays searchable instead of growing an oversized menu.
 public struct HarnessProviderPicker: View {
   public struct Provider: Identifiable {
     public let id: String
     public let name: String
-    /// Already signed in, so choosing it replaces the credential.
     public let isConfigured: Bool
     public init(id: String, name: String, isConfigured: Bool = false) {
       self.id = id

@@ -9,10 +9,6 @@ extension VirtualizedTranscriptScrollView {
     budgetsInitialWindow: Bool,
     workStartedAt: CFTimeInterval
   ) {
-    // A cold transcript is still hidden behind its presentation gate, so
-    // prepare it across frames and leave the main thread free for another
-    // sidebar click. Once visible, viewport coverage remains mandatory to
-    // avoid exposing blank document space during scrolling.
     for index in indices {
       if budgetsInitialWindow, virtualLayout.keys.indices.contains(index) {
         let host = mountedHosts[virtualLayout.keys[index]]

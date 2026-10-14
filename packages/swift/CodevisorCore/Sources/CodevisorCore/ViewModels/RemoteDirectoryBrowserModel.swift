@@ -1,29 +1,12 @@
 import Foundation
 import Observation
 
-/// Drives the Finder-style remote folder browser: a stack of columns (one per
-/// descended directory), each backed by the server's `/v1/fs/list` endpoint.
-///
-/// Navigation semantics mirror NSOpenPanel's column view:
-/// - selecting an entry in a column truncates everything to its right and
-///   loads the entry's children into a fresh trailing column;
-/// - "up" prepends the parent directory as a new leftmost column with the old
-///   first column preselected, so ⌘↑ never loses context;
-/// - the chosen folder is the deepest selection (which is always the path of
-///   the deepest column), falling back to the browse root.
-///
-/// Listings are cached per (path, showHidden) for the lifetime of the sheet,
-/// so revisiting a column is instant even over a slow tunnel. A generation
-/// counter guards every in-flight fetch: any mutation that rebuilds the
-/// column stack invalidates responses that were requested for the old stack.
 @MainActor
 @Observable
 public final class RemoteDirectoryBrowserModel {
-  /// Fetches one directory listing.
   public typealias Lister = @Sendable (_ path: String, _ showHidden: Bool) async throws -> ServerFsListing
 
   public struct Column: Identifiable, Equatable, Sendable {
-    /// The requested directory path; stable identity for scroll targets.
     public let path: String
     public var listing: ServerFsListing?
     public var errorMessage: String?
@@ -39,7 +22,6 @@ public final class RemoteDirectoryBrowserModel {
 
   public private(set) var columns: [Column] = []
   public private(set) var showHidden = false
-  /// Error for the go-to-folder field only; column errors live on columns.
   public private(set) var goToError: String?
 
   private let list: Lister
@@ -53,10 +35,6 @@ public final class RemoteDirectoryBrowserModel {
     self.list = list
   }
 
-  // MARK: - Derived state
-
-  /// The folder the Choose button acts on: the deepest selection wins,
-  /// otherwise the current browse root. Nil until the first load resolves.
   public var chosenPath: String? {
     for column in columns.reversed() {
       if let selected = column.selectedEntryPath { return selected }
@@ -64,15 +42,10 @@ public final class RemoteDirectoryBrowserModel {
     return columns.first?.listing?.path
   }
 
-  /// Whether anything above the current leftmost column exists to walk up to.
   public var canGoUp: Bool {
     columns.first?.listing?.parent != nil
   }
 
-  // MARK: - Navigation
-
-  /// Resets the browser to a single column at `path`. Failures render
-  /// inside the column.
   public func open(_ path: String) async {
     generation += 1
     let requestGeneration = generation
@@ -95,15 +68,13 @@ public final class RemoteDirectoryBrowserModel {
     }
   }
 
-  /// Selects `entryPath` inside the column identified by `columnPath`:
-  /// truncates deeper columns and loads the entry's children to the right.
   public func select(_ entryPath: String, inColumn columnPath: String) async {
     guard let index = columns.firstIndex(where: { $0.path == columnPath }) else { return }
     if columns[index].selectedEntryPath == entryPath,
       columns.count > index + 1,
       columns[index + 1].path == entryPath
     {
-      return  // Re-click of the current selection; child column is live.
+      return
     }
     generation += 1
     let requestGeneration = generation
@@ -127,9 +98,6 @@ public final class RemoteDirectoryBrowserModel {
     }
   }
 
-  /// Walks up one level by prepending the parent as the new leftmost
-  /// column, with the previous root preselected — mirroring Finder, where
-  /// going up never discards the columns you came from.
   public func prependParent() async {
     guard let first = columns.first, let parent = first.listing?.parent else { return }
     generation += 1
@@ -146,14 +114,10 @@ public final class RemoteDirectoryBrowserModel {
       columns[0] = resolved
     } catch {
       guard generation == requestGeneration else { return }
-      // A parent we can't list isn't useful context; drop it and stay put.
       columns.removeFirst()
     }
   }
 
-  /// Validates and jumps to a typed path (⇧⌘G). On failure the current
-  /// columns are untouched and `goToError` carries actionable guidance, so
-  /// a typo is always recoverable. Returns true when navigation happened.
   @discardableResult
   public func goToPath(_ raw: String) async -> Bool {
     generation += 1
@@ -184,8 +148,6 @@ public final class RemoteDirectoryBrowserModel {
     goToError = nil
   }
 
-  /// Refreshes the parent after New Folder succeeds, selects the new folder,
-  /// and appends its children without discarding any columns to the left.
   public func revealCreatedFolder(_ path: String, parentPath: String) async {
     invalidateCachedListing(for: parentPath)
     invalidateCachedListing(for: path)
@@ -210,9 +172,6 @@ public final class RemoteDirectoryBrowserModel {
       columns[parentIndex] = refreshedParent
     } catch {
       guard generation == requestGeneration else { return }
-      // Folder creation already succeeded. Keep the previous parent
-      // listing and continue opening the new child instead of losing
-      // the user's column history to a transient refresh failure.
     }
 
     do {
@@ -230,9 +189,6 @@ public final class RemoteDirectoryBrowserModel {
     }
   }
 
-  /// Toggles hidden folders and reloads every column under the new flag.
-  /// Selections survive when the selected folder is still listed; a
-  /// selection that pointed at a now-hidden folder truncates from there.
   public func setShowHidden(_ value: Bool) async {
     guard value != showHidden else { return }
     showHidden = value
@@ -253,7 +209,7 @@ public final class RemoteDirectoryBrowserModel {
           reloaded.append(column)
         } else {
           reloaded.append(column)
-          break  // Deeper columns hang off a folder no longer shown.
+          break
         }
       } catch {
         guard generation == requestGeneration else { return }
@@ -264,8 +220,6 @@ public final class RemoteDirectoryBrowserModel {
       columns = reloaded
     }
   }
-
-  // MARK: - Internals
 
   private func resolvedColumn(for listing: ServerFsListing) -> Column {
     var column = Column(path: listing.path)
@@ -281,8 +235,6 @@ public final class RemoteDirectoryBrowserModel {
     let listing = try await list(path, showHidden)
     guard generation == requestGeneration, cacheGeneration == requestCacheGeneration else { return listing }
     cache[key] = listing
-    // Also key by the resolved path so an unnormalized request and its
-    // resolved path share an entry.
     cache["\(showHidden ? "h" : "v"):\(listing.path)"] = listing
     return listing
   }
@@ -293,9 +245,6 @@ public final class RemoteDirectoryBrowserModel {
     cache.removeValue(forKey: "h:\(path)")
   }
 
-  /// Actionable messages for the server's classified `fs/list` failures.
-  /// The fallback is the server's own error sentence (or the connection
-  /// failure message).
   public static func guidance(code: String?, fallback: String, machineName: String) -> String {
     switch code {
     case "not_found":

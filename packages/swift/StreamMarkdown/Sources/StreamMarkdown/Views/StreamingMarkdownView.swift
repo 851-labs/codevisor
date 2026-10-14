@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// One SwiftUI identity's claim on a semantic text stream. A baseline lasts
-/// for exactly the first rendered pass, long enough for every native Markdown
-/// surface to seed its word reconciler, and then switches to normal live mode.
 @MainActor
 final class StreamingMarkdownAnimationMount {
   struct Resolution {
@@ -34,8 +31,6 @@ final class StreamingMarkdownAnimationMount {
           nextSettlementToken != nil
           || !presentation.claimInitialAnimation(for: streamID)
       } else {
-        // Standalone callers retain the original behavior: an
-        // incomplete view animates the text it is first given.
         isBaselining = false
       }
       if isBaselining { activationToken &+= 1 }
@@ -58,15 +53,6 @@ final class StreamingMarkdownAnimationMount {
   }
 }
 
-/// Renders Markdown text as complete MD4C document snapshots so streamed
-/// responses remain CommonMark-correct while they grow. Blocks render in
-/// document order, including tool output and partially-arrived code fences.
-///
-/// Pass `isComplete: false` while the text is still streaming. Snapshot parsing
-/// then runs off the main actor, stale results are discarded, and unchanged
-/// prefix values are reused to preserve SwiftUI identity. When the flag flips
-/// back to true, the final result is cached without changing block topology.
-/// The default (`true`) is right for text that arrives whole.
 public struct StreamingMarkdownView: View {
   private let text: String
   private let isComplete: Bool
@@ -77,16 +63,9 @@ public struct StreamingMarkdownView: View {
   private let animationEnabled: Bool
   @Environment(\.markdownTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Per-view-identity parse state. Streaming updates parse off MainActor and
-  /// stale generations are discarded before they can replace newer text.
   @StateObject private var parseCoordinator: StreamingMarkdownParseCoordinator
-  /// Message-wide visual cadence. Individual native text surfaces retain
-  /// their own word identities but draw start times from this one queue.
   @State private var animationTimeline = StreamingTextAnimationTimeline()
   @State private var hasActiveEntranceAnimation = false
-  /// Separates a semantic stream's first live appearance from a native view
-  /// remount. The companion revision is only an invalidation signal after a
-  /// one-pass baseline; the mount object itself remains non-observable.
   @State private var animationMount = StreamingMarkdownAnimationMount()
   @State private var animationMountRevision = 0
 
@@ -129,8 +108,6 @@ public struct StreamingMarkdownView: View {
       animatesInitialContent: mount.animatesInitialContent,
       documentSource: parsed.text,
       pacingSourceID: pacingSourceID,
-      // A reused SwiftUI/native surface must reset its word reconciler
-      // when the semantic transcript entry changes.
       animationPath: streamID.map { "stream.\($0).root" } ?? "root",
       reduceMotion: reduceMotion,
       playbackRevision: playbackRevision
@@ -174,8 +151,6 @@ public struct StreamingMarkdownView: View {
     }
     .task(id: mount.activationToken) {
       guard mount.needsActivation else { return }
-      // The first native surfaces must consume the baseline before the
-      // same semantic stream becomes eligible for later append fades.
       await Task.yield()
       if animationMount.activate(token: mount.activationToken) {
         animationMountRevision &+= 1
@@ -192,9 +167,6 @@ private struct MarkdownParseRequest: Hashable {
   let isComplete: Bool
 }
 
-/// Aggregates the entrance-animation state of every streamed Markdown surface
-/// beneath a transcript row. Multiple commentary blocks can animate at once,
-/// so preference reduction is an OR rather than last-writer-wins.
 public struct StreamingMarkdownEntranceAnimationPreferenceKey: PreferenceKey {
   public static let defaultValue = false
 
@@ -211,8 +183,6 @@ private struct StreamingMarkdownPendingEntrancePreferenceKey: PreferenceKey {
   }
 }
 
-/// Renders Markdown blocks with the same one-block-per-segment topology used
-/// by the streaming and settled document paths.
 struct MarkdownSegmentsView: View {
   let blocks: [MarkdownBlock]
   let foregroundColor: Color
@@ -251,7 +221,6 @@ extension MarkdownSegmentListView {
   }
 }
 
-/// Renders pre-computed markdown segments in document order.
 struct MarkdownSegmentListView: View {
   let segments: [MarkdownRenderSegment]
   let foregroundColor: Color
@@ -262,7 +231,6 @@ struct MarkdownSegmentListView: View {
   let animationPath: String
   let reduceMotion: Bool
   var playbackRevision = 0
-  /// Blocks inside one list item are spaced like list items.
   var isListItemContent = false
   @Environment(\.markdownTheme) private var theme
   @State private var blockEntranceSequence = StreamingMarkdownBlockEntranceSequence()
@@ -316,9 +284,6 @@ struct MarkdownSegmentListView: View {
       else { return }
 
       do {
-        // Native text surfaces schedule their words during the render
-        // pass. Yield once so their exact deadline is on the shared
-        // timeline before deciding that the prefix has finished.
         try await animationTimeline.waitUntilIdle()
         switch blockEntranceSequence.beginReveal(blockID: blockID) {
         case .started:
@@ -340,9 +305,6 @@ struct MarkdownSegmentListView: View {
           return
         }
 
-        // A quote may mount nested animated prose with its bar. Wait
-        // for both the block fade and any such child text before
-        // activating the following document segment.
         try await animationTimeline.waitUntilIdle()
         guard blockEntranceSequence.finishReveal(blockID: blockID) else { return }
         blockEntranceRevision &+= 1
@@ -355,11 +317,6 @@ struct MarkdownSegmentListView: View {
   }
 }
 
-/// An unchanged streaming segment is an explicit SwiftUI equality boundary.
-/// Growing the hosting surface still lays out the stack, but it cannot rebuild
-/// or repaint the already-rendered prefix; only the changing tail crosses this
-/// boundary. The parse coordinator reuses equal prefix values,
-/// making the comparison O(1) in the steady state.
 private struct MarkdownSegmentView: View, Equatable {
   let segment: MarkdownSegment
   let foregroundColor: Color

@@ -1,9 +1,4 @@
 import { spawn } from "node:child_process"
-// iOS development loop: starts a development cloud and the same isolated Dev
-// Cloud machine as scripts/dev.mjs (a Linux container by default), then
-// builds and launches the iOS app in the visible Simulator. No macOS app is
-// built or launched — iOS is a pure client that reaches machines only
-// through the dev cloud account it signs into.
 import { createHash } from "node:crypto"
 import { readFile, realpath } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
@@ -51,20 +46,14 @@ const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
 const layout = developmentLayout(repoRoot)
-// Shared with scripts/dev.mjs's Dev Cloud server so the simulator sees the
-// same machine (same data, same cloud identity) either way.
 const cloudRemoteDataDirectory = layout.remoteCloud.data
 const cloudRemoteName = `Dev Cloud (${worktreeName})`
-// Same hash → hue derivation as scripts/dev.mjs, so a worktree's iOS icon
-// color matches its macOS icon color.
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const appDisplayName = `Codevisor (${worktreeName})`
 const bundleIdentifier = iosDevelopmentBundleIdentifier(repoRoot)
 const urlScheme = `codevisor-dev-${instanceHash}`
 
-// Same preferred port as scripts/dev.mjs's Dev Cloud server (the local
-// server's preferred port + 2).
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
 const cloudRemotePort = await findAvailablePort(preferredPort + 2, 51_000, 10_000)
 const cloudRemoteURL = `http://127.0.0.1:${cloudRemotePort}`
@@ -106,8 +95,6 @@ console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (manag
 await bootstrapDevelopment(repoRoot, { environment: process.env, ghosttyKit: true })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
-// Match dev/dev:macos: a real Linux remote by default, same-host only when
-// explicitly requested or when neither supported engine is available.
 const containerEngine = wantsContainers
   ? await resolveContainerEngine(containerEnginePreference)
   : undefined
@@ -124,11 +111,6 @@ const containerContext =
         worktreeHash: instanceHash
       })
 
-// Match the macOS development runner: unless an external dev cloud was
-// explicitly supplied, own a worktree-isolated Worker, sign the Dev Cloud
-// server into it, and point the iOS app at it. The dev cloud is the app's
-// only route to a machine, so the development-account sign-in button must be
-// available without requiring a separate `wrangler dev` process.
 let cloud
 if (externalCloudURL === undefined) {
   await run(
@@ -177,9 +159,6 @@ if (externalCloudURL === undefined) {
   )
 }
 
-// Sign into the dev cloud first so the cloud test server boots
-// cloud-connected and the app can offer the explicit development-account
-// action.
 const cloudSession = await resolveCloudSession(cloudURL, cloud)
 if (cloudSession === undefined) {
   console.warn(
@@ -188,9 +167,6 @@ if (cloudSession === undefined) {
   )
 }
 
-// Dev Cloud: a standalone server that signs into the dev cloud and is
-// reached through it — the hub's realistic "machine somewhere else", and the
-// machine the simulator app sees after signing into the dev account.
 const cloudRemoteServer = await launchDevRemoteServer({
   containerContext,
   repoRoot,
@@ -256,7 +232,6 @@ try {
     environment: process.env
   })
 
-  // First container boots may need to provision Linux dependencies.
   const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
 
@@ -304,9 +279,6 @@ function capture(command, arguments_) {
   })
 }
 
-// Signs into the selected dev cloud. A managed Worker gets a short readiness
-// window; an explicitly supplied instance gets one bounded probe so a dead URL
-// cannot stall the entire iOS runner.
 async function resolveCloudSession(cloudUrl, ownedCloud) {
   const attempts = ownedCloud === undefined ? 1 : 120
   let lastError
@@ -337,17 +309,13 @@ async function resolveCloudSession(cloudUrl, ownedCloud) {
   return undefined
 }
 
-// Locate apps/cloud/.dev.vars in this worktree or the main checkout so the
-// managed iOS cloud offers the same configured providers as `bun run dev`.
 async function readCloudDevVariables() {
   const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
   try {
     const commonDir = (await capture("git", ["rev-parse", "--git-common-dir"])).trim()
     const mainRoot = resolve(repoRoot, commonDir, "..")
     if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
-  } catch {
-    // Not a git checkout (or git missing): worktree-local file only.
-  }
+  } catch {}
   for (const candidate of candidates) {
     let content
     try {

@@ -29,8 +29,6 @@ import type {
 } from "./harness-auth-types.js"
 import { linkMuseConfigHome, MUSE_HARNESS_ID, museProfileEnv } from "./muse-credentials.js"
 
-/// The account fields a probe can move that clients render. `lastCheckedAt`
-/// is deliberately excluded: it changes on every probe.
 const accountOutcomeChanged = (previous: HarnessAccount, next: HarnessAccount) =>
   previous.authState !== next.authState ||
   previous.authMethod !== next.authMethod ||
@@ -56,21 +54,13 @@ const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
   return account
 }
 
-/// The state and account-scoped helpers every auth module shares: the
-/// listener fanout, in-flight probe/refresh/login registries, the login-shell
-/// environment, and the managed-profile paths plus the env each account runs
-/// its harness CLI with.
 export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
-  /// Hosts and tests that stub the runtime without a catalog get the builtin one.
   const catalog: ReadonlyArray<HarnessDefinition> = config.agents.catalog ?? harnessCatalog
   const listeners = new Set<(event: HarnessAuthEvent) => void>()
   const probes = new Map<string, Promise<HarnessAccount>>()
   const refreshes = new Map<string, Promise<void>>()
   const codexLogins = new Map<string, CodexLoginEntry>()
   const claudeLogins = new Map<string, { accountId: string; client: ClaudeAuthClient }>()
-  /// `cursor-agent login` stays resident while the user finishes in the
-  /// browser and exits 0 once credentials are written, so the flow is the
-  /// child process itself rather than a protocol client.
   const cursorLogins = new Map<string, { accountId: string; child: ChildProcess }>()
   const spawnClaudeAuth = config.claudeAuth ?? spawnClaudeAuthClient
   const acpLoginMethods = new Map<string, ReadonlyArray<HarnessAuthMethod>>()
@@ -130,8 +120,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
           const candidatePath = profilePath(candidate)
           return candidatePath === undefined ? [] : [candidatePath]
         }),
-        // Codevisor installs skills into the catalog's ~/.claude/skills even
-        // when CLAUDE_CONFIG_DIR points the default profile elsewhere.
         join(baseEnvironment.HOME?.trim() || homedir(), ".claude", "skills")
       )
     })()
@@ -175,7 +163,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       id: account.id,
       profileKind: account.profileKind,
       ...(Object.keys(env).length === 0 ? {} : { env }),
-      // A key exported in the user's shell would outrank the account's own.
       ...(path !== undefined && account.harnessId === MUSE_HARNESS_ID
         ? { unsetEnv: ["META_API_KEY"] }
         : {}),
@@ -210,8 +197,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     if (account.profileKind === "managed" && account.harnessId === MUSE_HARNESS_ID) {
       delete base.META_API_KEY
     }
-    // A managed Antigravity account signs in on its own: a key the user's
-    // shell exports isn't its.
     if (account.profileKind === "managed" && account.harnessId === ANTIGRAVITY_HARNESS_ID) {
       delete base.GEMINI_API_KEY
     }
@@ -232,9 +217,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     account: HarnessAccountRecord,
     update: UpdateHarnessAccountAuthRequest
   ): Promise<HarnessAccount> => {
-    // Single choke point for every probe path (codex, claude, ACP, and the
-    // catch-all below). A crashing CLI's stderr must never reach the database
-    // or the wire at full length — the UI renders this as a one-line subtitle.
     const clamped: UpdateHarnessAccountAuthRequest =
       typeof update.detail === "string"
         ? { ...update, detail: clampFailureDetail(update.detail) ?? null }
@@ -244,10 +226,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     return announce(previous, publicAccount(saved))
   }
 
-  /// Publishes an account's settled state. Clients refetch the whole catalog
-  /// on `harness.auth.updated`, and that refetch re-probes — so emit only when
-  /// something they render changed; a probe that merely stamps
-  /// `lastCheckedAt` must not start a loop.
   const announce = (previous: HarnessAccount | undefined, next: HarnessAccount) => {
     if (previous === undefined || accountOutcomeChanged(previous, next)) {
       emit({ kind: "harness.account.updated", subjectId: next.harnessId, payload: next })

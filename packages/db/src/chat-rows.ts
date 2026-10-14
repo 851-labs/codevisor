@@ -50,7 +50,6 @@ export interface ChatItemRow {
   readonly attachments: string | null
   readonly has_details: number
   readonly revision: number
-  /// Selected from the typed parts table by chat page queries.
   readonly text: string
   readonly plan_document: string | null
 }

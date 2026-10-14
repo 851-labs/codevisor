@@ -81,7 +81,6 @@ describe("shared Claude conversation storage", () => {
     const customProfile = join(directory, "managed-b")
     await mkdir(join(customProfile, "skills", "mine"), { recursive: true })
 
-    // Skills live in the catalog's directory, not the default profile's.
     const installedSkills = join(directory, "home", ".claude", "skills")
     await ensureSharedClaudeConversations(
       defaultConfig,

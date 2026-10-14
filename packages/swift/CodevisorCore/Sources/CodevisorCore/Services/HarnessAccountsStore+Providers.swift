@@ -18,8 +18,6 @@ public extension HarnessAccountsStore {
     }
   }
 
-  /// The namespaces a shared provider list depends on. Pulling the whole
-  /// replica here made every account click wait on unrelated planes.
   static let sharedProviderNamespaces = ["harness-shared-accounts", HarnessSharedCredentials.namespace]
 
   func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider] {
@@ -159,8 +157,6 @@ public extension HarnessAccountsStore {
     return flow
   }
 
-  /// A shared API key is written to the synced credentials directly; there
-  /// is no sign-in to run.
   func savePiKey(providerId: String, key: String) async throws {
     try await removeSharedOAuth(harnessId: "pi", providerId: providerId)
     let source = HarnessSharedCredentials.pi

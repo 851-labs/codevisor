@@ -10,8 +10,6 @@ import SwiftUI
 #endif
 
 extension MarkdownLinkAction {
-  /// Activates a link at `index` in `textView`. An inline image there shows
-  /// as loading until the host's preview is ready.
   @MainActor
   func activate(_ url: URL, in textView: MarkdownLoadingHostView, at index: Int) -> Bool {
     #if canImport(AppKit)
@@ -26,10 +24,6 @@ extension MarkdownLinkAction {
   }
 }
 
-/// Places the shared `AttachmentLoadingOverlay` over an inline image while
-/// the host prepares its preview (for a remote file, a download). The
-/// overlay owns the delay and appearance; this only finds the image in the
-/// text and keeps the overlay there until the preview is ready.
 @MainActor
 enum MarkdownImageLoadingIndicator {
   private struct Key: Hashable {
@@ -59,7 +53,6 @@ enum MarkdownImageLoadingIndicator {
         host.view.frame = frame
         host.view.backgroundColor = .clear
         host.view.isUserInteractionEnabled = false
-        // Not in a view controller hierarchy: don't inset for safe areas.
         host.safeAreaRegions = []
       #endif
     }
@@ -68,7 +61,6 @@ enum MarkdownImageLoadingIndicator {
   }
 
   #if canImport(AppKit)
-    /// Leaves clicks and the image's context menu to the text view beneath.
     private final class PassthroughView: NSView {
       override func hitTest(_: NSPoint) -> NSView? { nil }
     }
@@ -83,8 +75,6 @@ enum MarkdownImageLoadingIndicator {
   ) {
     guard let rect = imageRect(in: textView, characterIndex: characterIndex) else { return }
     let key = Key(textView: ObjectIdentifier(textView), characterIndex: characterIndex)
-    // A repeat activation replaces the earlier indicator instead of
-    // stacking a second scrim over the same image.
     active[key]?.remove()
     let indicator = Indicator(frame: rect)
     textView.addSubview(indicator.view)
@@ -97,7 +87,6 @@ enum MarkdownImageLoadingIndicator {
     }
   }
 
-  /// The image attachment's frame in the text view's coordinates.
   private static func imageRect(
     in textView: MarkdownLoadingHostView,
     characterIndex: Int

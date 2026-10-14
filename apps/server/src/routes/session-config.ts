@@ -12,19 +12,6 @@ export interface SessionConfigPickResult {
   readonly configOptions: ReadonlyArray<SessionConfigOption>
 }
 
-/// Applies one picker change. An explicit pick is the only thing that writes
-/// a chat's saved selections, and it writes only what was picked: the
-/// option itself and, for a model pick, the options that depend on the model
-/// (reasoning, speed, model config) as the runtime resolved them for the new
-/// model. Nothing else the runtime reports is persisted, so a drifted value
-/// elsewhere in the snapshot can never overwrite an earlier pick.
-///
-/// With a live runtime the harness answers with the resulting option list,
-/// and a value it cannot apply fails the pick. Without one, the choice is
-/// only recorded: launching a harness process just to tell it a preference
-/// is what made the composer pickers hang, and the next connect or prompt
-/// restores saved selections against the live list anyway — which is also
-/// where an unavailable value gets reported.
 export const applySessionConfigPick = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -51,9 +38,6 @@ const applySessionConfigPickOwned = async (
   if (!isRuntimeLoaded) {
     const runtime = await run(services.db.getSessionRuntimeState(sessionId))
     const known = persistedConfigOptions(runtime)
-    // Land a drifted id on the entry the last known list offers; a value
-    // that list does not know is recorded as picked — the list may be stale,
-    // and the next restore reports it if the runtime really lacks it.
     const option = known.find((candidate) => candidate.id === payload.configId)
     const value =
       (option === undefined
@@ -67,8 +51,6 @@ const applySessionConfigPickOwned = async (
     const configOptions = known.map((candidate) =>
       candidate.id === payload.configId ? { ...candidate, currentValue: value } : candidate
     )
-    // No runtime reports this pick, so the chat's current options would keep
-    // the old value for every other client.
     await publishSessionConfigOptions(services, fanout, serverId, sessionId, configOptions)
     return { configId: payload.configId, configOptions }
   }
@@ -78,11 +60,6 @@ const applySessionConfigPickOwned = async (
   )
   const picked = configOptions.find((option) => option.id === payload.configId)
   const isModelPick = picked?.category === "model" || payload.configId === "model"
-  // The runtime's value for the pick (a drifted id lands on its current
-  // entry). For a model pick, also the options the model decides — the
-  // runtime's resolution of reasoning and speed for the new model (its
-  // default when the earlier level is not offered) — and dependents the new
-  // model no longer has are dropped.
   const written: Record<string, string> = { [payload.configId]: payload.value }
   for (const option of configOptions) {
     if (option.id === payload.configId || (isModelPick && isModelDependent(option))) {
@@ -104,10 +81,6 @@ const isModelDependent = (option: SessionConfigOption): boolean =>
   configRestorePriority(option) === 1 ||
   configRestorePriority(option) === 2
 
-/// Merges `written` into the saved selections; every id in `replaced` is
-/// dropped first (so a dependent the new model lacks goes away) and loses
-/// its unavailable mark — an explicit pick answers it. Every client hears
-/// about the new selections.
 const persistPick = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -128,10 +101,5 @@ const persistPick = async (
   await publishSessionSelections(services, fanout, sessionId)
 }
 
-/// The last option snapshot a runtime published for this chat. A pick
-/// recorded while no runtime is up is reflected onto it so the client gets
-/// an answer shaped like a live one. The store always answers with an
-/// object whose `configOptions` is an array (empty when nothing was
-/// published), so the untyped value is read as that shape.
 const persistedConfigOptions = (runtime: unknown): ReadonlyArray<SessionConfigOption> =>
   (runtime as { readonly configOptions: ReadonlyArray<SessionConfigOption> }).configOptions

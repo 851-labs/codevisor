@@ -9,15 +9,12 @@ extension SessionContainerView {
   @ViewBuilder
   var titledContentColumn: some View {
     if let model = activeFileModel {
-      // Keep the window's document title while the toolbar supplies a browse button.
       contentColumn.navigationTitle(model.title)
     } else {
       contentColumn.navigationTitle(activePaneTitle)
     }
   }
 
-  /// Resolve within the selected tab, even during the frame between a tab
-  /// change and its focus callback. A stale split must never own pane controls.
   private var activeToolbarGroup: PaneGroupModel? {
     let workspace = selectedWorkspace
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else { return nil }
@@ -58,12 +55,9 @@ extension SessionContainerView {
 
   var paneControlsReplaceTitle: Bool {
     activePaneDescriptor?.kind == .browser || activeFileModel != nil || activeReviewModel != nil
-      // A chosen simulator's device picker takes the title's place.
       || activeSimulatorModel?.device != nil
   }
 
-  /// Chats retain the editable title and context previously used in Nous.
-  /// Connected screen sharing names the remote Mac; browser and file controls replace the title.
   var activePaneTitle: Binding<String> {
     Binding(
       get: {

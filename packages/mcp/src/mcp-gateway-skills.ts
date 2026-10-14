@@ -5,8 +5,6 @@ import { codevisorSandboxSignatures } from "@codevisor/automation"
 import { parseFrontmatter, RESERVED_SKILL_NAMES } from "@codevisor/skills"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
-/// The user's saved skills, as the gateway reads them. Satisfied
-/// structurally by @codevisor/skills' SkillStore.
 export interface SkillSource {
   readonly list: () => Promise<{
     readonly skills: ReadonlyArray<{
@@ -26,7 +24,6 @@ export interface SkillSource {
   readonly subscribe: (listener: () => void) => () => void
 }
 
-/// A skill shipped inside Codevisor; `path` is its SKILL.md.
 export interface PackagedSkill {
   readonly name: string
   readonly summary: string
@@ -35,19 +32,14 @@ export interface PackagedSkill {
 }
 
 export interface SkillContext {
-  /// Built-in MCP servers enabled (and not machine-disabled) for the session.
   readonly enabledIds: ReadonlySet<string>
   readonly pluginTools: ReadonlyArray<Tool>
 }
 
 export interface BuiltinSkill {
   readonly name: string
-  /// One line for the `skills` tool description.
   readonly summary: string
-  /// One line for the composer's skill palette. Only guides users invoke
-  /// themselves (`/browser-use …`) have one; the rest stay agent-facing.
   readonly composer?: string
-  /// The built-in MCP server this skill documents; hidden while it's off.
   readonly gate?: string
   readonly load: (context: SkillContext) => Promise<string>
 }
@@ -56,10 +48,7 @@ export interface SkillEntry {
   readonly name: string
   readonly summary: string
   readonly builtin: boolean
-  /// The composer palette's line: a built-in's (only built-ins the composer
-  /// offers have one), or a saved skill's description.
   readonly composer?: string
-  /// The skill's instructions, or undefined when it vanished since listing.
   readonly read: () => Promise<string | undefined>
 }
 
@@ -77,8 +66,6 @@ const stripFrontmatter = (raw: string): string => {
   }
 }
 
-/// A packaged SKILL.md, read on demand. `path` is resolved lazily so a
-/// missing resource only fails the read, never gateway startup.
 export const packagedSkill = (
   skill: {
     readonly name: string
@@ -104,8 +91,6 @@ const CAPABILITY_SKILLS: ReadonlyArray<{ readonly gate: string; readonly line: s
   }
 ]
 
-/// The full guide to the `execute` tool, generated because it embeds the
-/// sandbox type signatures and the session's plugin tools.
 export const executeSkill: BuiltinSkill = {
   name: "execute",
   summary: "how to write code for `execute`: tool discovery, labels, other agents, sandbox globals",
@@ -149,8 +134,6 @@ export const executeSkill: BuiltinSkill = {
   }
 }
 
-/// Every skill a session can read: enabled built-ins first, then the user's
-/// saved skills (minus any that would shadow a built-in).
 export const skillEntries = async (
   builtins: ReadonlyArray<BuiltinSkill>,
   context: SkillContext,
@@ -190,8 +173,6 @@ export const skillEntries = async (
   ]
 }
 
-/// The skills a user can invoke from the composer: the built-ins that offer
-/// themselves there, then the user's saved skills.
 export const composerSkills = (entries: ReadonlyArray<SkillEntry>): ReadonlyArray<ComposerSkill> =>
   entries.flatMap((entry): ReadonlyArray<ComposerSkill> => {
     if (entry.builtin && entry.composer === undefined) return []
@@ -204,7 +185,6 @@ export const composerSkills = (entries: ReadonlyArray<SkillEntry>): ReadonlyArra
     ]
   })
 
-/// Claude Code cuts MCP tool descriptions at 2,048 characters.
 const DESCRIPTION_BUDGET = 1_900
 const SUMMARY_LIMIT = 100
 
@@ -229,7 +209,6 @@ export const skillsToolDescription = (entries: ReadonlyArray<SkillEntry>): strin
     const line = summaryLine(entry)
     const remaining = saved.length - index
     const more = `- …and ${remaining} more (call with no name)`
-    // Keep room for the "more" line unless this is the last skill.
     const reserve = remaining > 1 ? more.length + 1 : 0
     if (length + line.length + 1 + reserve > DESCRIPTION_BUDGET) {
       lines.push(more)

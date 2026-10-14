@@ -9,8 +9,6 @@ import UniformTypeIdentifiers
 #endif
 
 extension View {
-  /// The attachment's secondary actions: open as a workspace tab, copy the
-  /// original file, or share it. The primary tap stays a preview.
   public func attachmentContextMenu(
     file: PreviewFile, image: OSImage?, openInNewTab: (@MainActor () -> Void)? = nil
   ) -> some View {
@@ -18,9 +16,6 @@ extension View {
   }
 }
 
-/// How an attachment's copy and share actions describe it. Images copy as
-/// pictures; everything else copies as a file the pasteboard can drop into
-/// Finder, Files, or a message.
 public enum AttachmentMediaKind: Equatable, Sendable {
   case image
   case video
@@ -63,8 +58,6 @@ public enum AttachmentMediaKind: Equatable, Sendable {
   }
 }
 
-/// The uniform type a shared or copied attachment is tagged with: the MIME
-/// type when it is known, else the filename extension, else plain data.
 public func attachmentContentType(name: String, mimeType: String) -> UTType {
   if let type = UTType(mimeType: mimeType), type != .data { return type }
   let pathExtension = (name as NSString).pathExtension
@@ -83,8 +76,6 @@ private struct AttachmentContextMenu: ViewModifier {
 
   private var kind: AttachmentMediaKind { AttachmentMediaKind(file: file) }
 
-  /// A broken image (no decoded thumbnail) has nothing worth copying; other
-  /// files copy their bytes regardless of whether a preview rendered.
   private var offersFileActions: Bool {
     attachmentImages != nil && (kind != .image || image != nil)
   }
@@ -147,10 +138,6 @@ private struct AttachmentContextMenu: ViewModifier {
   }
 }
 
-/// Copies an attachment's ORIGINAL bytes to the pasteboard; on-screen
-/// previews are downsampled. Images land as pictures so they paste into
-/// editors; videos, PDFs, and other files land as files (plus their typed
-/// data) so they paste into Finder, Files, Mail, and Messages.
 public enum AttachmentClipboard {
   @MainActor
   public static func copy(_ file: PreviewFile, using store: AttachmentImageStore) async -> Bool {
@@ -182,8 +169,6 @@ public enum AttachmentClipboard {
     }
   }
 
-  /// Writes the bytes under the attachment's real filename so pasted files
-  /// keep their name and extension.
   static func materializeClipboardFile(data: Data, name: String) async -> URL? {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("Codevisor-Clipboard", isDirectory: true)
@@ -203,11 +188,6 @@ public enum AttachmentClipboard {
   }
 }
 
-// MARK: - Sharing
-
-/// `FileRepresentation` needs its content type at the type level, so each
-/// media kind gets a phantom type instead of a runtime switch.
-/// `SendableMetatype`: the export closure runs off the main actor and reads `T.contentType`.
 protocol AttachmentShareType: SendableMetatype {
   static var contentType: UTType { get }
 }
@@ -217,8 +197,6 @@ enum MovieShareType: AttachmentShareType { static let contentType: UTType = .mov
 enum PDFShareType: AttachmentShareType { static let contentType: UTType = .pdf }
 enum DataShareType: AttachmentShareType { static let contentType: UTType = .data }
 
-/// Shares the original file through the system share UI, loading it only
-/// when requested; the thumbnail is used solely for the share preview.
 struct ShareableAttachment<T: AttachmentShareType>: Transferable {
   let file: PreviewFile
   let store: AttachmentImageStore

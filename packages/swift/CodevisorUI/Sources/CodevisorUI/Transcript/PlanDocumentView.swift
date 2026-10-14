@@ -1,24 +1,14 @@
 import SwiftUI
 import StreamMarkdown
 
-/// Geometry shared by every renderer that draws part of a proposed-plan
-/// card (the SwiftUI views below and the macOS native Markdown row host).
 public enum PlanDocumentMetrics {
-  /// Inset from the card's border to its markdown column, per side.
   public static let horizontalPadding: CGFloat = 12
-  /// Inset below the last markdown block.
   public static let bottomPadding: CGFloat = 12
   public static let cornerRadius: CGFloat = 8
   public static let borderWidth: CGFloat = 1
-  /// How far a wide table's scroll viewport reaches past the markdown
-  /// column: up to the inner edge of the card's border, never across it.
   public static let tableBleedLimit: CGFloat = horizontalPadding - borderWidth
 }
 
-/// The "Proposed Plan" card: a free-form markdown plan the agent produced in
-/// plan mode (Claude ExitPlanMode, codex plan items), rendered with the same
-/// markdown pipeline as the final answer — the codex CLI's "Proposed Plan"
-/// cell equivalent.
 public struct PlanDocumentView: View {
   let markdown: String
 
@@ -52,7 +42,6 @@ public struct PlanDocumentView: View {
   }
 }
 
-/// The independently virtualized top of a proposed-plan card.
 public struct PlanDocumentHeaderView: View {
   @Environment(\.theme) private var theme
 
@@ -82,15 +71,12 @@ public struct PlanDocumentHeaderView: View {
   }
 }
 
-/// One bounded Markdown chunk inside the virtualized proposed-plan card.
 public struct PlanDocumentBlockView: View {
   private let blocks: [MarkdownBlock]
   private let documentSource: String
   private let streamID: String
   private let animationGroupID: String
   private let isStreaming: Bool
-  /// Space above this chunk inside the card: the gap its first block
-  /// takes from the block before it.
   private let topSpacing: CGFloat
   private let isLast: Bool
   private let fragmentLayout: MarkdownFragmentLayout?

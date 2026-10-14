@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// Server byte scripts assembled from the pieces the client reads in order, so
-/// a test can truncate or vary exactly one field and leave the rest valid.
 enum RFBScript {
   static func bytes(_ text: String) -> [UInt8] { Array(text.utf8) }
 
@@ -14,12 +12,10 @@ enum RFBScript {
     u16(UInt16(width)) + u16(UInt16(height)) + format.encoded + u32(declaredNameLength ?? UInt32(name.count)) + name
   }
 
-  /// 3.8 offering only None, accepted: the shortest complete handshake.
   static func openHandshake(width: Int = 64, height: Int = 48, name: [UInt8] = Array("Loopback".utf8)) -> [UInt8] {
     bytes("RFB 003.008\n") + [1, 1] + u32(0) + serverInit(width: width, height: height, name: name)
   }
 
-  /// A FramebufferUpdate carrying already-encoded rectangles.
   static func update(_ rectangles: [[UInt8]]) -> [UInt8] {
     [0, 0] + u16(UInt16(rectangles.count)) + rectangles.flatMap { $0 }
   }
@@ -30,7 +26,6 @@ enum RFBScript {
       + payload
   }
 
-  /// `rect.width * rect.height` BGRA pixels of one colour, as Raw wants them.
   static func rawPixels(_ rect: RFBRectangle, blue: UInt8, green: UInt8, red: UInt8) -> [UInt8] {
     Array(repeatElement([blue, green, red, 0xff], count: rect.width * rect.height).joined())
   }
@@ -45,8 +40,6 @@ func performHandshake(
     stream: RFBInputStream(transport: transport), transport: transport, password: password, shared: shared)
 }
 
-/// The framebuffer as it stood when one update was reported; the read loop is
-/// free to overwrite it as soon as the callback returns.
 struct FrameSnapshot: Sendable {
   let update: RFBUpdate
   let width: Int
@@ -58,9 +51,6 @@ struct FrameSnapshot: Sendable {
   }
 }
 
-/// A client run to the end of a scripted byte stream. `run` can only stop by
-/// throwing, and a script that runs out ends it with `connectionClosed`, so
-/// every case settles with no waiting, no sockets and no scheduler luck.
 struct ScriptedSession {
   let outcome: RFBHandshake.Outcome
   let updates: [FrameSnapshot]
@@ -82,8 +72,6 @@ struct ScriptedSession {
     func record(_ event: RFBServerEvent) { lock.withLock { events.append(event) } }
   }
 
-  /// `chunk` deliberately does not divide any field, so no boundary in the
-  /// script lines up with a read.
   static func play(
     _ serverMessages: [UInt8], handshake: [UInt8] = RFBScript.openHandshake(), password: String? = nil, chunk: Int = 7
   ) async throws -> ScriptedSession {

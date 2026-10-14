@@ -88,7 +88,6 @@ const selectFirstAccount = (
   }
 }
 
-/** Writes an account and preserves the first selection for its harness. */
 export const saveHarnessAccountId = (
   sqlite: Sqlite,
   request: SaveHarnessAccountRequest

@@ -1,18 +1,10 @@
-// Argument parsing and the markdown report for `bun run vnc:frame-clock` (851-2358).
-
 export const defaultFrameClockApps = ["com.codevisor.ScreenSharingRig", "com.apple.ScreenSharing"]
 export const frameClockModes = ["video", "scroll", "type", "still"] as const
 export type FrameClockMode = (typeof frameClockModes)[number]
 
 export type FrameClockOptions = {
-  /// `user@host` of the viewed Mac: measure its clock offset over SSH and ask the page for
-  /// wall-clock frames, so each viewer's absolute image age is reported (851-2371).
   hostSsh?: string
-  /// The host key name to check `hostSsh` against, when it's reached by another name (tuftlord
-  /// by its Tailscale address, keyed under its LAN name).
   hostKeyAlias?: string
-  /// The address the viewed Mac opens the page at; by default this Mac's first LAN address,
-  /// which a Mac on another network (over Tailscale) can't reach.
   pageHost?: string
   apps: string[]
   seconds: number
@@ -22,9 +14,6 @@ export type FrameClockOptions = {
   label?: string
 }
 
-/// A clock sample: this Mac sent at `sent`, the host answered `host`, the answer arrived at
-/// `received` (seconds). The host's clock minus this Mac's, in ms, from the sample with the
-/// shortest round trip (NTP's reasoning: its midpoint is the tightest bound). Undefined when empty.
 export function clockOffset(
   samples: ReadonlyArray<{ sent: number; host: number; received: number }>
 ): { offsetMs: number; roundTripMs: number } | undefined {
@@ -38,7 +27,6 @@ export function clockOffset(
   return best
 }
 
-/// One app's line of `screen-sharing-rig frame-clock` output.
 export type FrameClockApp = {
   window?: string
   captures?: number
@@ -128,7 +116,6 @@ function cell(value: number | undefined, digits = 0, suffix = ""): string {
   return value === undefined ? "–" : `${value.toFixed(digits)}${suffix}`
 }
 
-/// The report: one row per viewer, then each viewer's lag behind the others.
 export function frameClockReport(
   summary: FrameClockSummary,
   context: { mode: FrameClockMode; label?: string }

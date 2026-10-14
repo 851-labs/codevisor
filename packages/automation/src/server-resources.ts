@@ -11,10 +11,6 @@ const unique = (values: ReadonlyArray<string | undefined>): ReadonlyArray<string
   ...new Set(values.filter((value): value is string => value !== undefined && value.length > 0))
 ]
 
-/// Server resources have one logical root even though development and packaged
-/// runtimes currently place that root differently. Keep the layout knowledge
-/// here so individual features never depend on process.cwd() or invent their
-/// own candidate lists.
 export const serverResourceDirectories = (
   options: ServerResourceOptions = {}
 ): ReadonlyArray<string> => {
@@ -22,11 +18,7 @@ export const serverResourceDirectories = (
   const workingDirectory = options.workingDirectory ?? process.cwd()
   return unique([
     process.env.CODEVISOR_SERVER_RESOURCES,
-    // Package layout, source and release alike: this module compiles to
-    // packages/automation/{src,dist}/*.js next to packages/automation/resources,
-    // and the packaged runtime preserves the same per-package shape.
     join(moduleDirectory, "..", "resources"),
-    // Compatibility fallbacks for direct source-tree launches.
     join(workingDirectory, "packages", "automation", "resources"),
     join(workingDirectory, "resources")
   ])

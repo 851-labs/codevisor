@@ -125,8 +125,6 @@ extension MachineControllerUpdateTests {
 
     await controller.updateServer(machineId: remote.id)
 
-    // Eight migrating polls plus the ready one exceed the three-poll budget
-    // several times over; each answer extended the deadline.
     #expect(clock.requestedIntervals.count >= 9)
     #expect(messages.contains("Moving worktrees"))
     #expect(controller.serverUpdatePhase(for: remote.id) == .idle)

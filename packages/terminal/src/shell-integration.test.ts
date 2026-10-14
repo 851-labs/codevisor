@@ -11,7 +11,6 @@ import { makeSpawner, run } from "./test-support.js"
 const resources = BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
 const integration = join(resources, "shell-integration")
 
-/// The shell launch the manager hands its spawner for `shell` and `args`.
 const launch = async (
   shell: string,
   args?: ReadonlyArray<string>,
@@ -43,7 +42,6 @@ describe("@codevisor/terminal Ghostty shell integration", () => {
     )
     expect((await launch("/bin/zsh", [], { LC_ALL: "C" }, mac)).env.LANG).toBeUndefined()
     expect((await launch("/bin/zsh", [], { LC_CTYPE: "UTF-8" }, mac)).env.LANG).toBeUndefined()
-    // Linux installs differ in which locales exist: nothing is assumed.
     expect((await launch("/bin/zsh")).env.LANG).toBeUndefined()
   })
 
@@ -70,8 +68,6 @@ describe("@codevisor/terminal Ghostty shell integration", () => {
       ["--login", "--norc", "--rcfile", "/home/me/rc", "--noprofile", "-i", "--", "-c", "x"],
       { ENV: "/home/me/env.sh", HOME: "/home/me" }
     )
-    // Interpreted flags move into the environment; everything after "--"
-    // passes through untouched.
     expect(args).toEqual(["--posix", "--login", "-i", "--", "-c", "x"])
     expect(env).toMatchObject({
       ENV: join(integration, "bash", "ghostty.bash"),
@@ -91,7 +87,6 @@ describe("@codevisor/terminal Ghostty shell integration", () => {
     expect(custom.env.GHOSTTY_BASH_ENV).toBeUndefined()
     expect(custom.env.GHOSTTY_BASH_RCFILE).toBeUndefined()
 
-    // Without HOME in the environment, the account's home directory.
     expect((await launch("bash")).env.HISTFILE).toBe(join(homedir(), ".bash_history"))
   })
 
@@ -128,8 +123,6 @@ describe("@codevisor/terminal Ghostty shell integration", () => {
     expect(args).toEqual(["--execute", "use ghostty *", "--login", "-l", "--", "-c", "x"])
     expect(env.GHOSTTY_SHELL_INTEGRATION_XDG_DIR).toBe(integration)
 
-    // Commands and the language server keep their arguments; the module
-    // stays importable by hand.
     for (const flags of [["-c", "ls"], ["--command", "ls"], ["--lsp"]]) {
       const unchanged = await launch("nu", flags)
       expect(unchanged.args).toEqual(flags)

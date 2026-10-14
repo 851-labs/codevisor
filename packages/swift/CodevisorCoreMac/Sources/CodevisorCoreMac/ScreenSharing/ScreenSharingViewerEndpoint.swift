@@ -3,45 +3,26 @@ import ScreenSharing
 import OSLog
 import SystemConfiguration
 
-/// One connected viewing endpoint, for any backend: the surface rendering the
-/// session's frames, the control channel and input forwarding the lease
-/// reducer drives through `ScreenSharingEndpointClient`, the explicit
-/// clipboard transfer, and the diagnostics sampled from the session. Equal by
-/// identity — the reducer keeps the live endpoint in state for the view and
-/// addresses it by `id` for everything else.
-///
-/// Clipboard and diagnostics stay `@Observable` objects: they are data-plane
-/// state (chunk transfers, 1 Hz samples) that the pane observes directly.
 @MainActor
 public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public typealias ID = UUID
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   public let id = ID()
   public let capabilities: ScreenSharingCapabilities
-  /// The lease-based control protocol is available on this session.
   public var supportsControl: Bool { capabilities.contains(.control) }
-  /// The explicit text clipboard protocol is available on this session.
   public var supportsClipboard: Bool { capabilities.contains(.clipboard) }
-  /// A native Mac host: the Apps, Mission Control and Desktop buttons (851-2469) do something there.
   public var supportsSystemKeys: Bool { capabilities.contains(.systemKeys) }
   public var view: NSView { surface.view }
-  /// Whether input this Mac's own Codevisor host injected is ignored: yes (the default) when the video
-  /// shows one of this Mac's displays, where forwarding it would loop back through the same screen;
-  /// no when it shows another machine, where it's the user's input through a Codevisor session.
   public var dropsInjectedInput: Bool {
     get { surface.dropsInjectedInput }
     set { surface.dropsInjectedInput = newValue }
   }
-  /// The video is the first responder: keys go to the host (while controlling), not the app.
   public var videoHasKeyboardFocus: Bool { view.window?.firstResponder === view }
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()
   public var failure: String? { session.failure }
-  /// Set by the pane: keyboard focus moved into or out of the video surface.
   public var onFocusChanged: ((Bool) -> Void)?
-  /// Set by the pane: Control–Option–Escape handed the keyboard back; focus goes to the pane, not the video.
   public var onKeyboardReturned: (() -> Void)?
-  /// The first presented frame; fired at most once. The backend turns it into `.ready`.
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
   private let surface: any ScreenSharingViewerSurface
@@ -55,44 +36,25 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private var reportedFailure = false
   private var closed = false
 
-  /// The remote desktop size for a pane of `points` at `scale` remote pixels per point.
   nonisolated static func desktopSize(points: CGSize, scale: Int) -> (width: Int, height: Int) {
     (Int((points.width * CGFloat(scale)).rounded()), Int((points.height * CGFloat(scale)).rounded()))
   }
 
-  // MARK: Dynamic Resolution (851-2340)
-
-  /// Whether the remote desktop follows the pane. On: its size at the Mac's
-  /// backing scale (1× on a slow link) and, where the server can, the desktop's
-  /// UI scale to match. Off: nothing is sent; if this viewer changed the size or
-  /// scale, they're put back. Only for sessions that resize their desktop.
   public var supportsDynamicResolution: Bool { session.resizesDesktop }
-  /// Whether turning Dynamic Resolution on can change anything here (851-2368): the
-  /// server resizes its desktop, or it can change its UI scale. Unknown until the session
-  /// hears from the server; the toolbar disables the button while it isn't true.
   public let resolutionAvailability = ScreenSharingResolutionAvailability()
-  /// The host's sound and its mute toggle (851-2379); nil when the session can't play it.
   public private(set) var audio: ScreenSharingAudioControl?
   private var desktopResizes: Bool? {
     didSet { updateResolutionAvailability() }
   }
   public private(set) var dynamicResolution = false
 
-  // MARK: HDR (851-2380, 851-2480)
-
-  /// The machine's HDR setting, off until the pane applies it. The host is told this Mac's screen
-  /// can show HDR only while it's on and the screen can; off keeps the stream 8-bit SDR.
   public var highDynamicRange = false {
     didSet { if highDynamicRange != oldValue { reportHighDynamicRange() } }
   }
-  /// Whether the connection can carry HDR at all; the settings sheet offers the toggle only then.
   public var supportsHighDynamicRange: Bool { session.supportsHighDynamicRange }
-  /// Whether the screen this pane is on can show HDR.
   public private(set) var screenShowsHighDynamicRange = false
-  /// What the host last said it sends, and why not HDR when asked.
   public private(set) var hostDynamicRange: (range: ScreenSharingDynamicRange, reason: String?)?
 
-  /// Why HDR isn't showing although it's on, for the settings sheet; nil when it is, or when off.
   public var highDynamicRangeNote: String? {
     guard highDynamicRange, supportsHighDynamicRange else { return nil }
     if !screenShowsHighDynamicRange { return "This Mac's screen can't show HDR. Move the window to an HDR display." }
@@ -104,12 +66,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private func reportHighDynamicRange() {
     session.setDisplayHighDynamicRange(highDynamicRange && screenShowsHighDynamicRange)
   }
-  /// Sets the desktop's UI scale on the server (`setScale`, 851-2339); nil when it can't.
   var setDesktopScale: (@MainActor (Int) async -> Void)?
-  /// The size the desktop was provisioned at (the server's `defaultWidth/Height`).
   public var defaultDesktopSize: (width: Int, height: Int)?
-  /// The desktop can draw its UI at 2× (the server lists scale 2, 851-2339). Without it a
-  /// 2× framebuffer would only make everything half size, so the pane stays at 1× pixels.
   public var desktopCanScale = false {
     didSet { updateResolutionAvailability() }
   }
@@ -124,7 +82,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     applyResolution()
   }
 
-  /// Sends what the current mode needs; also re-checked every second, as the link estimate moves.
   private func updateResolutionAvailability() {
     resolutionAvailability.available = desktopCanScale ? true : desktopResizes
   }
@@ -192,22 +149,17 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self.forwarder.end()
       self.emit(.inputLost(self.surface.inputFailureMessage))
     }
-    // Backends that report the pointer separately (VNC) draw it locally (851-2311),
-    // with the arrow when the video has none (851-2355).
     surface.setVideoShowsPointer(session.videoShowsPointer)
-    // A native host takes its pointer out of the video once it streams it (851-2377).
     session.onCursorChanged = { [weak surface, weak session] update in
       if let session { surface?.setVideoShowsPointer(session.videoShowsPointer) }
       surface?.showRemoteCursor(update)
     }
     session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
     if session.supportsAudio { audio = ScreenSharingAudioControl(session: session) }
-    // With Dynamic Resolution on, a desktop that can resize follows the pane (851-2314, 851-2340).
     surface.onSizeChanged = { [weak self] size, scale in
       self?.paneSize = (size, scale)
       self?.applyResolution()
     }
-    // A native host sends HDR while this Mac's screen can show it and HDR is on (851-2380, 851-2480).
     surface.onScreenHighDynamicRangeChanged = { [weak self] in
       self?.screenShowsHighDynamicRange = $0
       self?.reportHighDynamicRange()
@@ -223,7 +175,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         guard let self else { return }
         self.clipboard?.tick()
-        // The link estimate moves; a Retina pane may step between 1× and 2× (with hysteresis).
         if self.dynamicResolution { self.applyResolution() }
         if self.session.failure != nil, !self.reportedFailure {
           self.reportedFailure = true
@@ -231,7 +182,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
-    // Shared clipboard: a copy made elsewhere reaches the host soon after the user is back in the video.
     if clipboard != nil {
       clipboardTask = Task { [weak self] in
         while !Task.isCancelled {
@@ -240,7 +190,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
-    // Statistics callbacks must never delay the lease's heartbeats, which run on their own timer.
     let statsLogId = id
     diagnosticsTask = Task { [weak self] in
       let statsLog = Self.openStatsLog(for: statsLogId)
@@ -263,8 +212,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     ScreenSharingEndpointRegistry.shared.register(self)
   }
 
-  /// Names the Mac the user is sitting at and the app as Accessibility lists it: two Macs are in
-  /// play, and a development build is listed under its own name.
   static func systemShortcutsNotice(
     appName: String = NSRunningApplication.current.localizedName ?? "Codevisor",
     macName: String = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "this Mac"
@@ -279,8 +226,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     let metrics: ScreenSharingMetrics.Snapshot
   }
 
-  /// `CODEVISOR_SCREEN_SHARING_STATS_LOG` (a directory) opts in to a 1 Hz JSONL record of each
-  /// session's raw statistics and metrics, one file per endpoint, for measuring a session over time.
   private static func openStatsLog(for id: ID) -> FileHandle? {
     guard let directory = ProcessInfo.processInfo.environment["CODEVISOR_SCREEN_SHARING_STATS_LOG"] else {
       return nil
@@ -291,10 +236,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     return try? FileHandle(forWritingTo: file)
   }
 
-  // MARK: Control plane, addressed through ScreenSharingEndpointClient
-
-  /// A stream that opens with the channel's current availability and then
-  /// carries every control event until the endpoint closes.
   func controlEvents() -> AsyncStream<ScreenSharingControlEvent> {
     let (stream, continuation) = AsyncStream<ScreenSharingControlEvent>.makeStream()
     guard !closed else {
@@ -313,13 +254,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   @discardableResult
   func sendControl(_ message: ScreenSharingControlMessage) -> Bool { channel?.send(message) ?? false }
 
-  /// Begins capturing input on the surface and forwarding it under `lease`;
-  /// returns the surface's failure message when capture is refused.
   func beginInput(lease: UUID) -> String? {
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
     clipboard?.setControlling(true)
-    // Only a Mac host has system shortcuts worth sending; a Linux desktop needs nothing from this Mac.
     if supportsSystemKeys, !surface.capturesSystemShortcuts { emit(.inputNotice(Self.systemShortcutsNotice())) }
     if let key = pendingSystemKey {
       pendingSystemKey = nil
@@ -335,12 +273,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     surface.endInput()
   }
 
-  /// A key pressed before control was granted (851-2479): sent once input begins under the lease,
-  /// dropped if control ends or is refused first.
   private var pendingSystemKey: ScreenSharingSystemKey?
 
-  /// Presses and releases `key` on the host under the control lease (851-2469). Before control is
-  /// granted it waits for the grant (851-2479); the viewer asks for control alongside.
   public func tap(_ key: ScreenSharingSystemKey) {
     guard forwarder.isActive else {
       pendingSystemKey = key
@@ -355,8 +289,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     }
   }
 
-  /// The fill the surface paints around the remote display; the pane keeps it
-  /// on the app's own surface color instead of black bars.
   public func letterbox(_ color: NSColor) { surface.setLetterboxColor(color) }
 
   private func emit(_ event: ScreenSharingControlEvent) {
@@ -364,9 +296,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     for continuation in subscribers.values { continuation.yield(event) }
   }
 
-  /// Terminal and idempotent: releases a held lease on the wire, stops input,
-  /// the ticks and the surface, ends every control-event stream, then closes
-  /// the session (which clears its mailbox and channels).
   func close() {
     guard !closed else { return }
     closed = true
@@ -393,7 +322,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   }
 }
 
-/// Whether Dynamic Resolution can do anything on this session: nil until known (851-2368).
 @MainActor
 @Observable
 public final class ScreenSharingResolutionAvailability {
@@ -401,8 +329,6 @@ public final class ScreenSharingResolutionAvailability {
   init() {}
 }
 
-/// The host's sound on a native session (851-2379), set from the machine's settings: on unless
-/// turned off (the host then stops sending it), at the chosen volume.
 @MainActor
 @Observable
 public final class ScreenSharingAudioControl {
@@ -422,7 +348,6 @@ public final class ScreenSharingAudioControl {
     session.setAudioVolume(Float(volume))
   }
 
-  /// Applies a machine's saved sound settings.
   public func apply(_ sound: ScreenSharingMachineSettings.Sound) {
     enabled = sound.enabled
     volume = sound.volume

@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Builds codevisor-server from this working tree on a Linux box that was set
-# up with the public installer, and swaps it into /opt/codevisor there. The box builds natively: the
-# release runtime compiles Node addons, so it cannot be cross-built here.
-#
-#   scripts/deploy-dev-server.sh root@HOST
-#
-# Needs on the box: Node 24 at /opt/node24, bun in ~/.bun, build-essential.
-# Data (~/.codevisor/data, cloud pairing included) is untouched; the previous
-# runtime stays in /opt/codevisor.prev.
 set -euo pipefail
 
 target=${1:-}

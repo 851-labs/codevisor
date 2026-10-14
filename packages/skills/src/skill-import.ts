@@ -13,15 +13,11 @@ import {
 
 export type ImportOutcome = "imported" | "conflict" | "reserved"
 
-/// The directory name a skill folder imports under: its frontmatter name,
-/// falling back to the folder name.
 export const importedDirectoryName = async (source: string): Promise<string> => {
   const document = await readSkillDocument(source, basename(source))
   return sanitizeName(document.invalid ? basename(source) : document.name)
 }
 
-/// Copy one on-disk skill folder into the store, reporting the outcome
-/// rather than throwing so batch imports can report per-skill results.
 export const importDirectory = async (
   dir: string,
   source: string
@@ -43,8 +39,6 @@ export const exists = async (path: string): Promise<boolean> => {
   }
 }
 
-/// True when the folder carries the marker Codevisor put on skills it
-/// installed itself.
 export const isManagedSkillDir = async (dir: string): Promise<boolean> => {
   try {
     return (

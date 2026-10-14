@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// An archived workspace: the row's label in secondary colors, a hover
-/// Restore button, and Restore in its menu. Clicking the row opens the
-/// workspace read-only; restoring is a separate, deliberate step, since it
-/// also brings back the worktree.
 struct SidebarArchivedWorkspaceRow: View {
   let name: String
   let subtitle: String?
@@ -11,9 +7,7 @@ struct SidebarArchivedWorkspaceRow: View {
   let store: SessionStore?
   let isSelected: Bool
   let isReordering: Bool
-  /// Opens the workspace read-only.
   let onActivate: () -> Void
-  /// Restores right away.
   let onRestore: () -> Void
 
   var body: some View {
@@ -29,7 +23,6 @@ struct SidebarArchivedWorkspaceRow: View {
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
           .accessibilityValue("Archived")
           .accessibilityAction(.default, onActivate)
-          // Plain-title buttons: SwiftUI drops Label-built ones here.
           .accessibilityActions {
             Button("Restore", action: onRestore)
           }
@@ -42,8 +35,6 @@ struct SidebarArchivedWorkspaceRow: View {
           .foregroundStyle(.secondary)
           .help("Restore workspace")
           .frame(minWidth: 24, minHeight: 14, alignment: .trailing)
-          // Covered by the row's Restore action, which does not depend on
-          // hover.
           .accessibilityHidden(true)
         }
       }

@@ -2,8 +2,6 @@
   import CoreMedia
   import ScreenCaptureKit
 
-  /// One display, SDR, no audio. Lifecycle stays on the main actor; sample
-  /// delivery goes straight from SCK's serial queue into the native sender.
   @MainActor
   public final class ScreenSharingCapture {
     public var onStopped: ((String) -> Void)?
@@ -11,40 +9,23 @@
     private var starting = false {
       didSet { if !starting { wakeWaiters() } }
     }
-    /// Audio being turned on or off (it may restart the stream); `settled()` waits for it.
     private var changing = 0 {
       didSet { if changing < oldValue { wakeWaiters() } }
     }
-    /// Callers of `startSettled()` or `settled()`, woken to re-check whenever either may be done.
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Told each time a caller starts waiting for a start in flight; tests use it to hold the race open.
     var onWaitingForStart: (() -> Void)?
     private var stream: (any ScreenSharingCaptureStream)?
     private var output: ScreenSharingCaptureOutput?
     private let queueDepth: Int
-    /// What the frames are captured as; a host sets it to the negotiated codec's format
-    /// (`ScreenSharingVideoCodec.capturePixelFormat`) before starting (851-2381).
     public var pixelFormat: OSType
     private let copySurface: Bool
-    /// Optional SCK minimum-frame-interval request in frames per second, isolated
-    /// from the negotiated video/encoder rate. `nil` keeps the existing behaviour
-    /// (interval = 1 / video fps). Validated by `ScreenSharingCaptureIntervalRequest`.
-    /// The interval request in force. It changes only through `update(configuration:captureIntervalFPS:)`, and only
-    /// AFTER a successful stream update in the same generation (see `ScreenSharingCaptureRequestState`).
     private(set) var requestState: ScreenSharingCaptureRequestState
     private var captureIntervalFPS: Int? { requestState.overrideFramesPerSecond }
-    /// Whether the pointer is drawn into the frames; off once the viewer draws it from the cursor stream (851-2377).
     public private(set) var showsCursor = true
-    /// Standard: 8-bit sRGB. High (851-2380): ScreenCaptureKit's canonical HDR, 10-bit 4:4:4 in
-    /// Display P3 PQ; a display capture puts SDR white at 100 nits. Only a 4:4:4 (BGRA) capture can switch to it.
     public private(set) var dynamicRange = ScreenSharingDynamicRange.standard
-    /// Whether the system's sound is captured too (851-2379); off until a viewer asks for it.
     public private(set) var capturesAudio = false
-    /// Where audio sample buffers go, on the capture's audio queue; set it any time.
     public let audio = ScreenSharingCaptureAudioTap()
-    /// The video configuration the running stream was last started or updated with.
     private var video: ScreenSharingVideoConfiguration?
-    /// What the running stream was started with, so turning audio on can start it again.
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
@@ -84,11 +65,6 @@
         sink: sink, metrics: metrics, generation: generation)
     }
 
-    /// Diagnostic mode: capture one window this process owns, selected from
-    /// current-process shareable content (available without TCC consent per the
-    /// SDK) by exact window ID and owning process ID. There is no display or
-    /// other-window fallback; any mismatch fails closed. SCK validates the
-    /// filter when the stream starts.
     public func start(
       ownedWindowID: UInt32, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
@@ -128,8 +104,6 @@
         sink: sink, metrics: metrics, generation: generation)
     }
 
-    /// A filter returned by the system content picker carries its own scoped
-    /// authorization. SCK validates it when starting; no persistent grant is needed.
     public func start(
       pickedFilter: SCContentFilter, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
@@ -137,10 +111,6 @@
       try await start(target: pickedFilter, configuration: configuration, sink: sink, metrics: metrics)
     }
 
-    /// The start transaction over an ALREADY RESOLVED target: refuse a concurrent start, take a
-    /// generation, and run the shared start path in it. The picker hands its filter straight to
-    /// this; the display and owned-window entry points resolve a filter first and then call
-    /// `startResolved` with the generation they took.
     func start(
       target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
@@ -163,8 +133,6 @@
       guard [kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA].contains(pixelFormat) else {
         throw ScreenSharingError.invalid("Unsupported capture pixel format.")
       }
-      // The interval request is validated on EVERY start and update (no silent fallback); telemetry
-      // describes only requests that were actually applied.
       let interval = try requestState.validated(video: configuration, override: captureIntervalFPS)
       let streamConfiguration = Self.streamConfiguration(
         configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat, showsCursor: showsCursor,
@@ -206,25 +174,13 @@
       }
     }
 
-    /// Unchanged behaviour for the probe and every existing caller: keeps whatever interval request is currently in
-    /// force — the value this capture was constructed with until an explicit level-aware update changes it, and that
-    /// changed value afterwards.
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
       try await update(configuration: configuration, captureIntervalFPS: captureIntervalFPS)
     }
 
-    /// The smallest explicit override needed for a level-aware request: the SAME single validated configuration path,
-    /// with the interval request supplied by the caller for this update (nil = the video rate).
-    ///
-    /// Ordering matters and is deliberate: validate, then call ScreenCaptureKit, and only then — still in the same
-    /// generation — commit the stored request state and its labels. A validation failure, a failed stream update or a
-    /// generation change leaves the previous request and telemetry exactly as they were.
     public func update(configuration: ScreenSharingVideoConfiguration, captureIntervalFPS: Int?) async throws {
       guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
-      // An override that was valid for the previous video rate may be invalid for the new one
-      // (e.g. video 30 + override 30, then video 60): the update throws instead of silently
-      // requesting the video rate while the telemetry still says 30.
       try await applyIntervalUpdate(
         configuration: configuration, override: captureIntervalFPS, metrics: output.metrics,
         apply: { interval in
@@ -236,8 +192,6 @@
       video = configuration
     }
 
-    /// Draws the pointer into the frames or leaves it out, now and for later starts. A running
-    /// stream is updated in place with its current configuration and interval request.
     public func setShowsCursor(_ shows: Bool) async throws {
       guard shows != showsCursor else { return }
       let previous = showsCursor
@@ -248,9 +202,6 @@
       }
     }
 
-    /// Captures in high dynamic range or standard (851-2380), now and for later starts. A running
-    /// stream is updated in place; the frames' pixel format says which range each one is in, and
-    /// the encoder follows it.
     public func setDynamicRange(_ range: ScreenSharingDynamicRange) async throws {
       guard range != dynamicRange else { return }
       guard range == .standard || pixelFormat == kCVPixelFormatType_32BGRA else {
@@ -265,10 +216,6 @@
       output?.metrics.label("captureDynamicRange", range.rawValue)
     }
 
-    /// Captures the system's sound too, or stops, now and for later starts. The audio output
-    /// hears only this Mac's other apps: the capturing process is excluded. Turning audio on
-    /// starts a running stream again with audio in its starting configuration: on tuftlord a live
-    /// update turned it on and ScreenCaptureKit never delivered a buffer (851-2379).
     public func setCapturesAudio(_ captures: Bool) async throws {
       await settled()
       guard captures != capturesAudio else { return }
@@ -289,18 +236,10 @@
       }
     }
 
-    /// Until no start is in flight. A start installs its stream before ScreenCaptureKit has started
-    /// it; a change applied then (the viewer's audio subscription, arriving as the connection
-    /// opens) stopped that stream and cancelled the start, which ended the session (851-2379: on
-    /// tuftlord over Tailscale, every connection). Changes wait for the start and then apply.
     private func startSettled() async {
       while starting { await waitForChange() }
     }
 
-    /// Until no start is in flight and no audio change is restarting the stream. Moving the
-    /// capture while either runs collided with it: on tuftlord the host's catch-up after a slow
-    /// first start met the audio subscription's restart and failed with "Capture is already
-    /// running", ending the session (851-2376).
     public func settled() async {
       while starting || changing > 0 { await waitForChange() }
     }
@@ -318,17 +257,12 @@
       for waiter in waiters { waiter.resume() }
     }
 
-    /// Applies the current settings to a running stream.
     private func reconfigure() async throws {
       await startSettled()
       guard let video, stream != nil else { return }
       try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
     }
 
-    /// The whole update transaction in one place: validate, apply, re-check the generation, and only then commit the
-    /// request state and its labels. `apply` and `isCurrent` are the seams the real `update` fills with
-    /// ScreenCaptureKit and the generation counter, and which tests fill with a controlled apply — the ORDER and the
-    /// guards live here, in the code production runs, not in a test-only copy of the algorithm.
     func applyIntervalUpdate(
       configuration: ScreenSharingVideoConfiguration, override: Int?, metrics: ScreenSharingMetrics,
       apply: (ScreenSharingCaptureIntervalRequest) async throws -> Void, isCurrent: () -> Bool
@@ -339,25 +273,17 @@
       requestState.commit(override: override, request: interval, metrics: metrics)
     }
 
-    /// Builds the stream configuration from an ALREADY VALIDATED interval request. Validation lives in
-    /// `ScreenSharingCaptureRequestState`, which both the start and update paths use, so no path can build a
-    /// configuration from an unvalidated request.
     static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, interval: ScreenSharingCaptureIntervalRequest, queueDepth: Int,
       pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool, dynamicRange: ScreenSharingDynamicRange = .standard
     ) -> SCStreamConfiguration {
       let config: SCStreamConfiguration
       if dynamicRange == .high {
-        // Canonical rather than local: rendered for a display other than this one, which is what a
-        // viewer is. Its format (10-bit 4:4:4 full range, Display P3 PQ, BT.709 matrix) is what the
-        // encoder tags and the viewer draws.
         config = SCStreamConfiguration(preset: .captureHDRStreamCanonicalDisplay)
         config.pixelFormat = ScreenSharingDynamicRange.highCapturePixelFormat
       } else {
         config = SCStreamConfiguration()
         config.pixelFormat = pixelFormat
-        // sRGB, which the viewer's layer shows: Rec. 709's transfer curve brightened mid-tones by
-        // up to 6 levels (sky blue 150 → 156) before anything was encoded (851-2398).
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
@@ -371,9 +297,6 @@
         config.excludesCurrentProcessAudio = true
       }
       config.scalesToFit = true
-      // Fill the frame rather than letterbox in black: the display and the frame only disagree for
-      // a frame or two while a virtual display is resized (851-2376), and a stretched frame there is
-      // less jarring than black bars.
       config.preservesAspectRatio = false
       return config
     }
@@ -386,15 +309,11 @@
       }
     }
 
-    /// Stops the stream and records the request/completion boundary so a
-    /// report can order it against the window's close.
     public func stop() async throws {
       generation += 1
       starting = false
       let generation = generation
       guard let stream else {
-        // Nothing to stop (never started, already stopped, or cleared by a
-        // failed stop). Recorded as skipped; this is not completion evidence.
         output?.metrics.increment("captureStopSkippedNoStream")
         return
       }
@@ -405,7 +324,6 @@
       do {
         try await stream.stopCapture()
       } catch {
-        // A failed stop is evidence too; it never produces a completion label.
         metrics?.label("captureStopFailed", error.localizedDescription)
         metrics?.increment("captureStopFailures")
         throw error
@@ -415,12 +333,8 @@
     }
   }
 
-  /// Internal so a capture target can attach it to whatever stream it creates. Both delegate
-  /// callbacks forward to a method that takes no `SCStream`, which is what makes the sample and
-  /// error paths reachable from a test that has no stream to hand back.
   final class ScreenSharingCaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let queue = DispatchQueue(label: "codevisor.screen-sharing.capture", qos: .userInteractive)
-    /// Audio has its own queue: sound never waits behind a frame.
     let audioQueue = DispatchQueue(label: "codevisor.screen-sharing.capture-audio", qos: .userInteractive)
     let sink: any ScreenSharingFrameSink
     let metrics: ScreenSharingMetrics
@@ -455,15 +369,11 @@
         as? [[SCStreamFrameInfo: Any]]
       let status = attachments?.first?[.status] as? Int
       let pixel = sampleBuffer.imageBuffer
-      // Every callback is counted by status; only a complete frame with an
-      // image is delivered. Absent callbacks are not a measured drop count.
       guard
         ScreenSharingCaptureCallbackAccounting.record(
           valid: sampleBuffer.isValid, rawStatus: status, hasImage: pixel != nil, metrics: metrics),
         let pixel
       else { return }
-      // SCK's presentation timestamp uses the host clock. Forward it without
-      // copying pixels; WebRTC maps the local clock onto RTP timestamps.
       let time = CMTimeConvertScale(sampleBuffer.presentationTimeStamp, timescale: 1_000_000_000, method: .default)
       guard time.isNumeric, time.value >= 0 else { return }
       let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
@@ -499,8 +409,6 @@
     }
   }
 
-  /// The capture's audio hand-off (851-2379): whoever encodes the sound sets `handler`, before or
-  /// after the stream starts; buffers arriving while it's nil are dropped.
   public final class ScreenSharingCaptureAudioTap: @unchecked Sendable {
     private let lock = NSLock()
     private var handler: (@Sendable (CMSampleBuffer) -> Void)?

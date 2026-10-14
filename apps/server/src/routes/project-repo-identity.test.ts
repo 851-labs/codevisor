@@ -16,9 +16,6 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-/// A project's git remote is its cross-machine identity: observed from the
-/// folder, normalized into a repo key, backfilled for older rows — and never
-/// mistaken for the repository a scratch folder happens to be nested in.
 describe("project repo identity", () => {
   it("refreshes persisted navigation when a plain folder becomes a repository", async () => {
     const { services } = await makeServices("server-a")
@@ -72,7 +69,6 @@ describe("project repo identity", () => {
       repoKey: "github.com/acme/widget"
     })
 
-    // An explicitly supplied remote is kept as-is, with no discovery.
     const explicitFolder = mkdtempSync(join(tmpdir(), "codevisor-explicit-"))
     tempDirs.push(explicitFolder)
     const explicit = await jsonRequest(server, "/v1/projects", {
@@ -86,7 +82,6 @@ describe("project repo identity", () => {
     expect(explicit.status).toBe(201)
     expect((explicit.body as { readonly repoKey?: string }).repoKey).toBe("github.com/acme/other")
 
-    // A plain folder (no repository) stays unlinked.
     const plainFolder = mkdtempSync(join(tmpdir(), "codevisor-plain-"))
     tempDirs.push(plainFolder)
     const plain = await jsonRequest(server, "/v1/projects", {
@@ -97,7 +92,6 @@ describe("project repo identity", () => {
     expect((plain.body as { readonly repoUrl?: string }).repoUrl).toBeUndefined()
     expect((plain.body as { readonly repoKey?: string }).repoKey).toBeUndefined()
 
-    // A remote added AFTER the project was links up on the next list.
     await execFileAsync("git", ["init"], { cwd: plainFolder })
     await execFileAsync(
       "git",
@@ -115,8 +109,6 @@ describe("project repo identity", () => {
     expect(byId.get("remote-project")).toBe("github.com/acme/widget")
     expect(byId.get("plain-project")).toBe("github.com/acme/widget-docs")
 
-    // A second list inside the memo window answers from the cache — no
-    // fresh git spawn per folder per navigation refresh.
     const relisted = await jsonRequest(server, "/v1/projects", { method: "GET" })
     expect(relisted.status).toBe(200)
     expect(
@@ -135,12 +127,8 @@ describe("project repo identity", () => {
       cwd: repo
     })
     const missingFolder = join(repo, "gone")
-    // Legacy rows: created straight in the database with no repoUrl, the
-    // way every release before remote tracking left them.
     await run(services.db.createProject({ folderPath: repo, id: "legacy-linked" }))
     await run(services.db.createProject({ folderPath: missingFolder, id: "legacy-missing" }))
-    // A clone-from-git project keeps its recorded URL even though the
-    // folder no longer exists on disk.
     await run(
       services.db.createProject({
         folderPath: join(repo, "cloned"),
@@ -165,15 +153,12 @@ describe("project repo identity", () => {
     expect(projects.get("legacy-cloned")).toBe("https://github.com/acme/cloned.git")
     expect(updates).toEqual(["legacy-linked"])
 
-    // Idempotent: a second sweep finds nothing to change and stays quiet.
     resetRepoUrlDiscoveryCache()
     await backfillProjectRepoUrls(services.db, "server-a", fanout)
     expect(updates).toEqual(["legacy-linked"])
   })
 
   it("never treats a scratch folder as a repository, even nested inside a checkout", async () => {
-    // A development layout keeps the worktrees root inside the app's own
-    // checkout, so every scratch folder is inside a git work tree.
     const checkout = mkdtempSync(join(tmpdir(), "codevisor-checkout-"))
     tempDirs.push(checkout)
     await execFileAsync("git", ["init"], { cwd: checkout })

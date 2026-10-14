@@ -40,10 +40,6 @@ func computerUseReadReadyWindow<T>(
   }
 }
 
-// Stable AX-window to WindowServer identity. This SPI has remained available
-// since macOS 10.9 and lets us avoid guessing by frame, which is especially
-// important when the window lives on another Space. The same bridge is used by
-// CUA's macOS driver (trycua/cua, b8a0f32a0).
 @_silgen_name("_AXUIElementGetWindow")
 private func AXUIElementGetWindowID(
   _ element: AXUIElement,
@@ -93,11 +89,6 @@ extension ComputerUseBridge {
     throw ComputerUseNoWindow()
   }
 
-  /// Keep a session attached to one composited window even if another Space
-  /// changes the app's focused/main window. If that window closes, fall back
-  /// to the app's current main window and establish a new identity.
-  /// Re-pins the session to a caller-chosen window from the inventory, so a
-  /// multi-window app can actually be navigated.
   func selectSessionWindow(
     sessionID: String,
     application: AXUIElement,
@@ -123,10 +114,6 @@ extension ComputerUseBridge {
     pid: pid_t,
     waitForLaunch: Bool = false
   ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
-    // A successful LaunchServices completion only means the process is
-    // running. Allow normal app startup to expose its first window.
-    // Windows on another Space are still published, so this never needs to
-    // activate the app to find them.
     return try computerUseReadReadyWindow(timeout: waitForLaunch ? 5 : 0) {
       try availableSessionWindow(
         sessionID: sessionID,
@@ -144,10 +131,6 @@ extension ComputerUseBridge {
     let scope = computerUseAppScope(sessionID, pid)
     let pinnedID = lock.withLock { windowIDBySession[scope] }
     if let pinnedID {
-      // AXWindows comes back empty while the app's windows are on
-      // another Space, which would silently drop the pin and re-resolve
-      // to whatever is focused. The focused/main windows still resolve
-      // then, so search those too.
       let candidates =
         elementsAttribute(application, kAXWindowsAttribute)
         + [
@@ -173,11 +156,6 @@ extension ComputerUseBridge {
     return (window, windowID)
   }
 
-  /// Modal sheets attached to a window. Apps are inconsistent about the
-  /// `AXSheets` attribute — Chess leaves it empty and exposes the sheet as
-  /// a plain child — so fall back to a role scan of the children.
-  /// The element the system reports at a screen point, which is the only
-  /// authority on where a control really is.
   private func elementAtPosition(
     application: AXUIElement,
     point: CGPoint
@@ -217,10 +195,6 @@ extension ComputerUseBridge {
     }
   }
 
-  /// Whether this window publishes upside-down content, established once per
-  /// window by hit-testing a sample of its controls. Chess is the case in
-  /// the wild: its SceneKit board reports view-space coordinates, so every
-  /// piece resolves to its mirror image.
   func windowContentIsFlipped(
     application: AXUIElement,
     window: AXUIElement,
@@ -265,10 +239,6 @@ extension ComputerUseBridge {
     return flipped
   }
 
-  /// Corrects one element's frame in a flipped window. Per element, because
-  /// the flip is not window-wide: Chess reports its title bar correctly and
-  /// only its board upside down, so anything that already resolves to
-  /// itself is left untouched.
   func correctedFrame(
     of element: AXUIElement,
     reported: CGRect,
@@ -288,15 +258,9 @@ extension ComputerUseBridge {
     ), CFEqual(hit, element) {
       return mirrored
     }
-    // Neither position resolves to this element (occluded, or a container
-    // whose hit-test lands on a child). Reporting the app's own value
-    // beats inventing one.
     return reported
   }
 
-  /// Every window the app currently exposes, so a caller can see that an
-  /// action opened a new one (⌘N in a document app) instead of silently
-  /// staring at the window the session happens to be pinned to.
   func windowInventory(
     application: AXUIElement,
     pinnedWindowID: CGWindowID?
@@ -328,10 +292,6 @@ extension ComputerUseBridge {
     }
   }
 
-  /// A sheet is its own WindowServer window sitting inside its parent's
-  /// bounds, and it is app-modal: events stamped with the parent's window
-  /// id are refused while it is up. Resolve the window that actually owns
-  /// the point so pointer events reach the dialog.
   func deliveryTarget(
     point: CGPoint,
     window: AXUIElement,

@@ -2,8 +2,6 @@ import AppKit
 import ScreenSharing
 @preconcurrency import ScreenCaptureKit
 
-/// A diagnostic process owns one picker and one stream. Keep the picker active
-/// until capture stops so the system can display and revoke the selected share.
 @MainActor
 final class ProbeCapturePicker: NSObject, SCContentSharingPickerObserver {
   private var selection: CheckedContinuation<Void, any Error>?

@@ -9,51 +9,24 @@ extension Notification.Name {
   static let codevisorOpenSettings = Notification.Name("codevisor.open-settings")
 }
 
-/// The chat pane body: connects an existing session through the shared
-/// SessionController/SessionModel engine and renders the transcript with the
-/// shared row views. UIKit owns the virtual window and viewport coordinate so
-/// opening, measurement, pagination, and streaming are one position system.
 struct SessionTranscriptView: View {
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
-  /// Increment whenever the iOS row-measurement environment changes. Scroll
-  /// state can outlive a mounted transcript, so heights produced under an
-  /// older hosting contract must not be restored as exact geometry.
   static let transcriptMeasurementSchemaVersion = 3
-  /// Space between the newest row and the composer's top edge when the
-  /// transcript rests at the bottom.
   static let transcriptBottomBreathingRoom: CGFloat = 8
-  /// The composer cluster's margin above the chat area's bottom edge.
   static let composerBottomMargin: CGFloat = 6
 
   @Bindable var controller: SessionController
   let presentationSurface: TranscriptPresentationSurface
-  /// The new-chat page shows project/run-location chips above the composer;
-  /// the first chat inside a workspace doesn't (its directory is fixed).
-  /// This flag is the only difference between the two surfaces — everything
-  /// else (watermark, composer, expansion, notice rails) is shared here.
   var showsRunPickers: Bool = false
-  /// A view-only transcript (a subagent's thread): no composer or
-  /// accessories, and the transcript runs to the bottom edge.
   var isReadOnly: Bool = false
-  /// New Chat supplies one request for its initial presentation. Existing
-  /// chats leave this nil and never steal keyboard focus when opened.
   var initialComposerFocusRequest: UUID? = nil
   var onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)? = nil
-  /// During first-send promotion the destination beneath the sheet is laid
-  /// out ahead of time, but the sheet remains the sole owner of presentation
-  /// events and shared viewport state until the handoff commits.
   var presentationRole: TranscriptPresentationRole = .foreground
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
   var onSendAnimationStarted: ((UserSendAnimationRequest) -> Void)? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
-  /// A promoted New Chat keeps its UIKit editor first responder while its
-  /// real workspace route mounts underneath. Ordinary chats still dismiss
-  /// the keyboard on send.
   var preservesComposerFocusOnSend = false
-  /// A draft adopting its workspace in place (the New Chat page, not the
-  /// sheet) hashes this instead of the controller's preview namespace, so
-  /// adoption does not invalidate layout and cut the first send short.
   var layoutNamespaceToken: UUID? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var composerTextEditorHandoffID: UUID? = nil
@@ -67,37 +40,17 @@ struct SessionTranscriptView: View {
   @State private var presentationOwner = UUID()
   var disclosure: TranscriptDisclosureStore { presentationSurface.disclosure }
   @Namespace var composerGlassNamespace
-  /// Resting measurements stay split so a live resize drag never republishes
-  /// transcript geometry. `ComposerBar` owns the card measurement; the
-  /// accessory stack changes only when semantic surfaces appear or resize.
   @State var composerCardHeight: CGFloat = 96
   @State var composerAccessoryHeight: CGFloat = 0
-  /// True while the transcript is parked at the newest content; drives both
-  /// auto-scroll and the scroll-to-bottom button, mirroring the macOS
-  /// transcript's follow mode.
   @State var followsLatest = true
   @State var isAtBottom = true
-  /// Height available to the chat area, used to cap composer expansion.
   @State var availableHeight: CGFloat = 600
-  /// Window-space bottoms, as UIKit lays them out, of the transcript (which
-  /// runs beneath the composer and the home indicator) and of the chat area
-  /// the composer rests on (above the home indicator or the keyboard).
   @State var transcriptWindowBottom: CGFloat = 0
   @State var chatAreaWindowBottom: CGFloat = 0
-  /// Window-space frame of the space offered to the chat (see `chat`).
   @State var offeredChatWindowFrame: CGRect = .zero
-  /// Window-space top of the software keyboard while it is up. The
-  /// composer's ceiling is bounded by it directly: the geometry SwiftUI
-  /// reports for the chat area does not shrink by the keyboard's full
-  /// overlap here, which let a tall question card end up behind it.
   @State var keyboardWindowTop: CGFloat?
-  /// True while the composer is dragged to full height; informational
-  /// accessories hide until it collapses, while actionable failures remain.
   @State var composerExpanded = false
-  /// Fetches and caches transcript attachment previews via the controller's
-  /// authenticated client.
   @State var attachmentImages: AttachmentImageStore?
-  /// Downloads and presents Quick Look previews for every row in this chat.
   @State var quickLook = QuickLookController()
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
@@ -107,9 +60,6 @@ struct SessionTranscriptView: View {
   @State var projectedRowsVersion: UInt64 = 0
   @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
   @State var projectedSessionID: UUID?
-  /// Readiness belongs to a particular projection request. Existing chats
-  /// move from an empty/loading request to a history-backed request, and the
-  /// native gate must not treat the old rows as current between those two.
   @State var projectionPublication =
     TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
   @State var ownsVisibleTranscriptLifecycle = false
@@ -119,14 +69,9 @@ struct SessionTranscriptView: View {
   var textAnimationRegistry: StreamingTextAnimationRegistry {
     presentationSurface.textAnimationRegistry
   }
-  /// Window-space bounds of the live editor. UIKit uses this as the actual
-  /// launch point for the optimistic user row instead of estimating from the
-  /// transcript's bottom inset.
   @State var sendAnimationSourceFrame: CGRect?
   @State var queueSendAnimation = IOSQueueSendAnimation()
 
-  /// The complete resting bottom chrome above the safe-area margin. Every
-  /// transcript inset and snapshot crop reads this single value.
   var composerHeight: CGFloat {
     isReadOnly ? 0 : composerCardHeight + composerAccessoryHeight
   }
@@ -154,8 +99,6 @@ struct SessionTranscriptView: View {
           "transcript.roleChanged", "role=\(role) session=\(diagnosticSessionID)")
         updateVisibleTranscriptLifecycle(for: role)
       }
-      // Remount / reset diagnostics: every one of these is a candidate
-      // for a visible flicker after a first send.
       .onAppear {
         IOSNavigationDiagnostics.record(
           "transcript.appear", "session=\(diagnosticSessionID) role=\(presentationRole)")
@@ -234,8 +177,6 @@ struct SessionTranscriptView: View {
         } catch is CancellationError {
           return
         } catch {
-          // Never authorize rows from an older request after an
-          // unexpected projection failure.
         }
       }
       .task(id: isLoadingTranscriptContent) {
@@ -297,9 +238,6 @@ struct SessionTranscriptView: View {
     }
   }
 
-  /// Read = focus: the foregrounded chat screen is the focused chat. The
-  /// coordinator marks it read on open and continuously while open (gated
-  /// by scene activity), and never pings for it.
   func publishAttentionFocus(isForeground: Bool) {
     guard let session = controller.serverSession else { return }
     environment.attentionCoordinator.updateFocus(
@@ -310,11 +248,6 @@ struct SessionTranscriptView: View {
     )
   }
 
-  /// The watermark shows while the transcript has nothing to say at all — a
-  /// model-less draft (new-worktree chats deliberately don't connect until
-  /// first send) or an empty conversation. Equivalent to `rows.isEmpty`, but
-  /// O(1): the body re-evaluates on every streaming token, so this must not
-  /// build the row list.
   var showsWatermark: Bool {
     guard controller.pendingUserMessage == nil, controller.setupPhases.isEmpty else { return false }
     guard controller.sessionErrorMessage == nil else { return false }
@@ -326,8 +259,6 @@ struct SessionTranscriptView: View {
     return controller.settledConversation.isEmpty && !controller.hasActiveItem
   }
 
-  /// The scroll-to-bottom button only means something once there's a
-  /// conversation to scroll through.
   var hasScrollableContent: Bool {
     !controller.settledConversation.isEmpty || controller.hasActiveItem
   }
@@ -336,21 +267,8 @@ struct SessionTranscriptView: View {
     !composerExpanded && !isAtBottom && hasScrollableContent
   }
 
-  /// One chat surface for every connection state. The composer is mounted
-  /// exactly once — reconnects (run-location changes, harness switches)
-  /// swap only the content behind it, so drafts keep their text, focus,
-  /// and attachments, just like the macOS composer. Connecting reads as an
-  /// inline status line, never a screen takeover.
   var chat: some View {
-    // Deliberately not wrapped in a GeometryReader: that opts the subtree
-    // out of SwiftUI's keyboard avoidance, which left the composer sitting
-    // underneath the keyboard.
     ZStack(alignment: .bottom) {
-      // The space the chat is offered (keyboard-avoided). Measured on a
-      // flexible child, not the ZStack: a ZStack grows to fit its largest
-      // child, so measuring it let an over-tall composer (a question card
-      // when the keyboard rose) inflate its own height ceiling and stay
-      // stuck behind the keyboard.
       Color.clear
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
@@ -370,14 +288,10 @@ struct SessionTranscriptView: View {
         .frame(width: 130)
         .foregroundStyle(Color.primary.opacity(0.08))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        // Center in the space the user can actually see — above
-        // the composer — and let keyboard avoidance (which
-        // shrinks this ZStack) float it upward, Grok-style.
         .padding(.bottom, composerHeight + 20)
         .allowsHitTesting(false)
         .opacity(showsWatermark ? 1 : 0)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: showsWatermark)
-      // One always-mounted native transcript for every connection state.
       transcript
 
       if showsInitialLoadingSpinner, isLoadingTranscriptContent {
@@ -426,8 +340,6 @@ struct SessionTranscriptView: View {
 
       ComposerBar(
         controller: controller,
-        // Actionable notices remain visible while fully expanded, so
-        // reserve their measured height from the editor's upper bound.
         maxHeight: composerMaxHeight,
         collapsedHeight: $composerCardHeight,
         isExpanded: $composerExpanded,
@@ -456,8 +368,6 @@ struct SessionTranscriptView: View {
             return
           }
           queueSendAnimation.cancel()
-          // The glyphs leave the editor in the same frame it clears; the
-          // transcript flies them into the new bubble once it is laid out.
           if !reduceMotion {
             SentAttachmentThumbnails.prepare(controller.composerAttachments)
             ComposerSendStaging.stage(
@@ -481,8 +391,6 @@ struct SessionTranscriptView: View {
       queueSendAnimation.cancel()
     }
     .onChange(of: controller.userSendAnimationRequest) { _, _ in
-      // The active turn may finish while attachments are uploading. A send
-      // that ends up in the transcript must release its queued presentation.
       queueSendAnimation.cancel()
     }
     .onChange(of: reduceMotion) { _, reduced in
@@ -493,25 +401,13 @@ struct SessionTranscriptView: View {
     }
     .onDisappear { queueSendAnimation.cancel() }
   }
-
-  // MARK: - Native transcript
-
 }
 
-// MARK: - Bottom chrome geometry
-
 extension SessionTranscriptView {
-  /// The tallest the composer card may grow: the chat area (below the top
-  /// bar) less the card's 6pt margins top and bottom and any actionable
-  /// accessories above it.
   var composerMaxHeight: CGFloat {
     max(160, visibleChatHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
   }
 
-  /// The chat area's height as UIKit lays it out, less whatever the
-  /// keyboard or the window's bottom safe area covers of it. SwiftUI's
-  /// reported height overshoots here (with the keyboard up, and in
-  /// landscape), which let a tall question card run off screen.
   var visibleChatHeight: CGFloat {
     let offered = offeredChatWindowFrame
     guard offered.height > 0, let window = UIWindow.codevisorKeyWindow else { return availableHeight }
@@ -520,9 +416,6 @@ extension SessionTranscriptView {
     return min(availableHeight, max(0, visibleBottom - offered.minY))
   }
 
-  /// Tracks the keyboard's top edge in window space; nil while it is
-  /// hidden, undocked off-screen, or floating (a floating keyboard doesn't
-  /// span the width, so it doesn't bound the composer).
   func updateKeyboardTop(_ notification: Notification) {
     guard
       notification.name != UIResponder.keyboardWillHideNotification,
@@ -538,14 +431,6 @@ extension SessionTranscriptView {
     keyboardWindowTop = docked ? frame.minY : nil
   }
 
-  /// How far the transcript's bottom edge sits below the resting composer's
-  /// top edge: the composer, its margin, and however far the transcript
-  /// runs past the chat area — the home indicator at rest, nothing above
-  /// the keyboard. Both edges come from UIKit probes: the transcript's
-  /// platform view extends past the frame SwiftUI's geometry reports, and
-  /// safe-area insets also count the keyboard.
-  /// The transcript's real extent, measured with the same safe-area
-  /// treatment the transcript gets.
   var transcriptExtentProbe: some View {
     WindowFrameProbe { frame in
       transcriptWindowBottom = frame.maxY
@@ -555,7 +440,6 @@ extension SessionTranscriptView {
     .accessibilityHidden(true)
   }
 
-  /// The chat area the composer cluster rests on.
   var chatAreaExtentProbe: some View {
     WindowFrameProbe { frame in
       chatAreaWindowBottom = frame.maxY
@@ -578,7 +462,6 @@ extension SessionTranscriptView {
         .font(.system(size: 13, weight: .semibold))
         .foregroundStyle(.secondary)
     }
-    // The same Liquid Glass treatment as the macOS transcript's button.
     .buttonStyle(.glass)
     .buttonBorderShape(.circle)
     .controlSize(.large)
@@ -586,20 +469,11 @@ extension SessionTranscriptView {
   }
 }
 
-// MARK: - Bottom chrome
-
 extension SessionTranscriptView {
-  /// The composer and its accessories, with the jump-to-latest control.
   var composerChrome: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       composerCluster
-        // On a wide pane (iPad, an unfolded iPhone Duo) the composer
-        // keeps the transcript's reading column instead of spanning
-        // the window. Phone widths never reach the cap.
         .frame(maxWidth: VirtualizedTranscriptScrollView.maxRowWidth)
-        // The jump control belongs to the same material group but
-        // not its measured vertical stack: showing it must never
-        // change transcript insets or the user's scroll position.
         .overlay(alignment: .topTrailing) {
           if showsScrollToBottom {
             scrollToBottomButton
@@ -608,10 +482,6 @@ extension SessionTranscriptView {
                 ComposerGlassElement.scrollToBottom.rawValue,
                 in: composerGlassNamespace
               )
-              // This control floats well beyond the
-              // container spacing, so Apple recommends
-              // materializing instead of seeking a nearby
-              // shape to morph from.
               .glassEffectTransition(.materialize)
               .transition(.opacity)
           }
@@ -622,8 +492,6 @@ extension SessionTranscriptView {
     .padding(.bottom, Self.composerBottomMargin)
   }
 
-  /// A read-only transcript has no composer; only the jump-to-latest
-  /// control floats over it.
   var readOnlyScrollControl: some View {
     GlassEffectContainer {
       if showsScrollToBottom {

@@ -2,10 +2,6 @@ import CodevisorCore
 import Foundation
 
 extension SessionStore {
-  /// Navigation commits layout without constructing panes or connecting a
-  /// routing chat. The save updates the workspace's entry, which the mounted
-  /// container and the sidebar section both observe. Re-selecting what is
-  /// already selected writes nothing.
   @discardableResult
   func selectDestination(_ destination: WorkspaceDestination, in workspaceId: UUID) -> Bool {
     guard var workspace = environment.workspaces.workspace(id: workspaceId) else { return false }
@@ -20,8 +16,6 @@ extension SessionStore {
       if previous.selectedCenterTabId != workspace.selectedCenterTabId,
         let oldTab = previous.selectedCenterTab
       {
-        // Release terminal keyboard focus using only existing panes. Browser
-        // views own visibility, including their separate detached windows.
         for leaf in oldTab.root.allGroups {
           let key = CenterLeafKey(workspaceId: workspaceId, groupId: leaf.id)
           if let model = centerLeafGroups[key],
@@ -32,8 +26,6 @@ extension SessionStore {
           }
         }
       }
-      // Legacy groups may contain several panes. Adopt only their selection;
-      // native visibility and focus follow after the destination is mounted.
       if let tab = workspace.selectedCenterTab,
         let state = tab.root.group(id: tab.activeLeafId),
         let model = centerLeafGroups[.init(workspaceId: workspaceId, groupId: tab.activeLeafId)]
@@ -44,9 +36,6 @@ extension SessionStore {
     return true
   }
 
-  /// Direct chat links and archive restoration select the chat before the
-  /// destination view is evaluated. A restored chat regains a tab in its
-  /// original workspace even when closing it removed its old pane.
   func selectChat(_ session: ChatSession) {
     guard
       let project = environment.projectList.projects.first(where: {
@@ -63,8 +52,6 @@ extension SessionStore {
       environment.workspaces.save(workspace)
     }
     if !hadChatPane {
-      // The one-time migration is complete. Publish panes created by explicit
-      // navigation now so the next snapshot and other devices retain them.
       for pane in workspace.centerTabs.flatMap({ $0.root.allGroups.flatMap { $0.state.panes } })
       where pane.chatSessionId == session.id {
         environment.workspaceSync.publishPane(

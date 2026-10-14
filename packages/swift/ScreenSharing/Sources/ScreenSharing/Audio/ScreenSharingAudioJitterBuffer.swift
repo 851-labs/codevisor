@@ -1,25 +1,13 @@
 import Foundation
 import os
 
-/// The viewer's buffer between arriving packets and the audio device: stereo frames in a
-/// preallocated ring. It fills to `targetFrames` before playing (so network jitter doesn't click),
-/// covers a lost packet with silence, drops what arrives late or twice, catches up gently when it
-/// runs more than `drainFrames` past the target (bursts after a refill would otherwise pile up and
-/// the sound fall behind the picture), and drops the oldest audio outright past `slackFrames`.
-///
-/// Real-time safe on the device's render thread: `pull` never allocates, and both sides do work
-/// proportional only to the frames they move (dropping the oldest moves an index), under an
-/// unfair lock (priority-donating) held for one bounded copy. The decoder pushes from its own
-/// queue; the device pulls on its render thread.
 public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
   public let slackFrames: Int
   public let drainFrames: Int
-  /// Frames the ring holds; pushes past it drop the oldest first.
   public let capacityFrames: Int
   private let lock = OSAllocatedUnfairLock()
   private let left: UnsafeMutablePointer<Float>
   private let right: UnsafeMutablePointer<Float>
-  // Guarded by `lock`. Indices count frames ever written/read; the ring position is modulo capacity.
   private var target: Int
   private var readIndex = 0
   private var writeIndex = 0
@@ -29,8 +17,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
   private var lostCount = 0
   private var droppedCount = 0
 
-  /// `capacityFrames` defaults to the longest target the session asks for (0.4 s), the slack and a
-  /// burst of packets with a covered loss.
   public init(
     targetFrames: Int, slackFrames: Int = 7_200, drainFrames: Int = 1_200,
     capacityFrames: Int? = nil
@@ -77,7 +63,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     }
   }
 
-  /// One decoded packet, as planar channels of `frames` frames each.
   public func push(
     sequence: UInt32, left newLeft: UnsafePointer<Float>, right newRight: UnsafePointer<Float>, frames: Int
   ) {
@@ -85,9 +70,7 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     lock.withLockUnchecked {
       if let expected = nextSequence {
         let ahead = sequence &- expected
-        // Behind (late or a duplicate): its moment has passed.
         guard ahead < UInt32.max / 2 else { return }
-        // A short gap is covered with silence; a long one (a pause) just restarts the stream.
         if ahead > 0, ahead <= 5 {
           lostCount += Int(ahead)
           writeSilence(Int(ahead) * frames)
@@ -100,7 +83,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     }
   }
 
-  /// `frames` frames for the device, silence while (re)filling. `right` may be nil for a mono device.
   public func pull(frames: Int, left outLeft: UnsafeMutablePointer<Float>, right outRight: UnsafeMutablePointer<Float>?)
   {
     guard frames > 0 else { return }
@@ -109,7 +91,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
         guard writeIndex - readIndex >= target else { return 0 }
         playing = true
       }
-      // Over the target: play up to a tenth faster (skip that much) until back near it.
       let over = (writeIndex - readIndex) - frames - target - drainFrames
       if over > 0 { drop(min(over, max(1, frames / 10))) }
       let available = writeIndex - readIndex
@@ -127,12 +108,9 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     }
   }
 
-  // MARK: Ring (callers hold `lock`)
-
   private func write(_ sourceLeft: UnsafePointer<Float>, _ sourceRight: UnsafePointer<Float>, frames: Int) {
     var remaining = frames
     var offset = 0
-    // A packet larger than the ring keeps only its newest frames.
     if remaining > capacityFrames {
       droppedCount += remaining - capacityFrames
       offset = remaining - capacityFrames
@@ -173,7 +151,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     }
   }
 
-  /// The ring is full: the oldest frames make way.
   private func makeRoom(for frames: Int) {
     let overflow = (writeIndex - readIndex) + frames - capacityFrames
     if overflow > 0 { drop(overflow) }

@@ -2,15 +2,6 @@ import Foundation
 import ACPKit
 
 extension SessionModel {
-  /// Starts the single long-lived event consumer (idempotent).
-  ///
-  /// Events are buffered and applied in per-frame batches rather than one
-  /// at a time: streaming delivers dozens of token-sized chunks per second,
-  /// and each individually-applied chunk lands in its own run-loop turn —
-  /// its own full SwiftUI invalidation of every `conversation` observer.
-  /// Batching bounds UI work to roughly once per frame no matter how fast
-  /// the server streams, which is what keeps typing in the composer crisp
-  /// while a turn is running.
   func startConsumer() async {
     guard consumerTask == nil else { return }
     let events =
@@ -57,8 +48,6 @@ extension SessionModel {
     await reconcileFromServer()
   }
 
-  /// A transcript view for this session became visible. Everything buffered
-  /// while hidden is armed for its first native presentation frame.
   public func viewDidAppear() {
     visibleViewCount += 1
     if visibleViewCount == 1 {
@@ -73,9 +62,6 @@ extension SessionModel {
     }
   }
 
-  /// Schedules one buffered flush. Visible transcripts use their native
-  /// display clock; hidden transcripts use a coarse timer because they have
-  /// no pixels to present.
   func scheduleFlush() {
     guard !isFlushScheduled,
       !pendingEvents.isEmpty
@@ -98,8 +84,6 @@ extension SessionModel {
     }
   }
 
-  /// Moves an already-armed fallback timer onto the native presentation
-  /// clock as soon as a visible surface becomes available.
   func preferPresentationFrameIfPending() {
     guard isFlushScheduled, !pendingEvents.isEmpty, isViewVisible,
       presentationFrameRequester?() == true
@@ -108,8 +92,6 @@ extension SessionModel {
     scheduledFlushTask = nil
   }
 
-  /// Visibility or driver ownership changed while work was pending. Re-arm
-  /// against the correct clock without applying the buffered events early.
   func reschedulePendingEventsForCurrentVisibility() {
     guard !pendingEvents.isEmpty else { return }
     scheduledFlushTask?.cancel()
@@ -130,8 +112,6 @@ extension SessionModel {
     }
   }
 
-  /// Applies every buffered stream event in one synchronous pass — a single
-  /// run-loop turn, so SwiftUI renders the whole batch once.
   func flushPendingEvents() {
     scheduledFlushTask?.cancel()
     scheduledFlushTask = nil
@@ -144,20 +124,12 @@ extension SessionModel {
     }
   }
 
-  /// Records that every event through `cursor` is now reflected in the
-  /// conversation. Only ever moves forward: a coalesced batch carries the
-  /// highest cursor it merged, and replayed history can never rewind it.
   func advanceServerEventCursor(to cursor: Int?) {
     guard let cursor, cursor < ServerSessionTransport.liveOnlyEventCursor else { return }
     if let current = serverEventCursor, current >= cursor { return }
     serverEventCursor = cursor
   }
 
-  /// Semantic barriers (prompt completion, cancellation, stream completion)
-  /// must see all events already in flight, but a visible transcript must not
-  /// bypass its display clock to do so. Wait briefly for the armed native
-  /// frame; only fall back to an immediate flush if a registered surface has
-  /// stopped producing frames (for example while the app is suspended).
   func flushPendingEventsAtPresentationBoundary() async {
     guard !pendingEvents.isEmpty else { return }
     if isViewVisible, presentationFrameRequester?() == true {
@@ -172,20 +144,10 @@ extension SessionModel {
     flushPendingEvents()
   }
 
-  /// Merges runs of adjacent text chunks addressed to the same span (same
-  /// messageId, parent, and phase) into one chunk before applying. The
-  /// reducer's `existing + newText` copies the whole accumulated string per
-  /// applied chunk — one merged chunk costs one O(accumulated) append per
-  /// flush instead of one per token, which matters once several subagents
-  /// stream at once. Zero-length chunks are retro-tag markers and never
-  /// merge; annotated chunks are left alone.
   static func coalesced(_ events: [ServerSessionStreamEvent]) -> [ServerSessionStreamEvent] {
     coalesced(events.map { SessionPendingStreamEvent($0) }).map(\.event)
   }
 
-  /// Cursor-aware form: a merged chunk carries the newest cursor of the run
-  /// it absorbed, so applying it advances the resume cursor past every
-  /// token it contains.
   static func coalesced(_ events: [SessionPendingStreamEvent]) -> [SessionPendingStreamEvent] {
     guard events.count > 1 else { return events }
     var result: [SessionPendingStreamEvent] = []
@@ -239,10 +201,6 @@ extension SessionModel {
     }
   }
 
-  /// Stops the live event consumer and drops any buffered events. Called
-  /// when the owning controller is evicted from the session cache; a later
-  /// reopen builds a fresh model that replays history and resumes the
-  /// stream from its cursor.
   public func shutdown() {
     stopConnectionRecovery()
     for task in transcriptDetailLoadTasks.values { task.cancel() }
@@ -257,8 +215,6 @@ extension SessionModel {
     pendingEvents.invalidateConsumer(keepingCapacity: false)
   }
 
-  /// Yields until the update consumer stops applying buffered updates, so the
-  /// final transcript is complete before the turn is marked finished.
   func drain() async {
     var stableRounds = 0
     var lastCount = appliedUpdateCount

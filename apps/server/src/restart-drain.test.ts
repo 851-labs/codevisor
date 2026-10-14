@@ -19,10 +19,6 @@ import {
   listSubjectEvents
 } from "./test-support.js"
 
-/// The restart drain end to end: an update accepted while a chat is mid-turn
-/// waits for it, holds anything sent meanwhile, snapshots the live sessions,
-/// and the next boot brings them back and dispatches the held prompts.
-
 const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
   const state = observableFixture({
     applyCalls: 0,
@@ -120,7 +116,6 @@ describe("restart drain", () => {
     runningServers.push(server)
     const sessionId = await openSession(server, "Draining")
 
-    // A turn is in flight when the update arrives.
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
 
@@ -128,7 +123,6 @@ describe("restart drain", () => {
     expect(applied.status).toBe(202)
     expect(applied.body).toMatchObject({ accepted: true, draining: true, targetBuildNumber: 200 })
 
-    // Draining: the update state says so, and nothing has been applied yet.
     const drain = await jsonRequest(server, "/v1/restart/drain")
     expect(drain.body).toMatchObject({ state: "draining", remaining: 1 })
     expect((await jsonRequest(server, "/v1/update")).body).toMatchObject({
@@ -136,8 +130,6 @@ describe("restart drain", () => {
     })
     expect(state.applyCalls).toBe(0)
 
-    // A prompt sent meanwhile is accepted and held, with the transcript
-    // marker clients render as "waiting for update".
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
     await waitFor(async () =>
       (await gateEvents(services, sessionId)).some((event) => event.state === "waiting")
@@ -146,8 +138,6 @@ describe("restart drain", () => {
     expect(await gateEvents(services, sessionId)).toEqual([
       { harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" }
     ])
-    // Snapshots carry the same gate, so a client that (re)opens the chat
-    // now shows the marker without depending on having seen the event.
     expect((await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body).toMatchObject({
       updateGate: { harnessId: "codevisor-server", harnessName: "Codevisor" }
     })
@@ -155,8 +145,6 @@ describe("restart drain", () => {
       updateGate: { harnessId: "codevisor-server", harnessName: "Codevisor" }
     })
 
-    // The turn ends → the drain completes, sessions are snapshotted and
-    // their processes closed, and only then does the updater run.
     await run(services.agents.cancel(`agent-codex-repo`))
     await waitFor(() => state.applyCalls === 1)
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({
@@ -170,12 +158,8 @@ describe("restart drain", () => {
       sessions: [sessionId]
     })
     expect(agents.closes).toContain("agent-codex-repo")
-    // Still gated after the drain: nothing dispatches until the restart.
     expect(agents.prompts).toHaveLength(1)
 
-    // Sessions the snapshot may also name: one whose worktree is gone (its
-    // resume fails and is logged), one archived since, and one that no
-    // longer exists. None of them blocks the rest.
     const project = (await run(services.db.listProjects))[0]!
     const doomed = await run(
       services.db.createSession({
@@ -209,15 +193,10 @@ describe("restart drain", () => {
       JSON.stringify({ sessions: [doomed.id, archived.id, idle.id, "no-such-session", sessionId] })
     )
 
-    // The "restarted" server consumes the snapshot: the session reconnects
-    // through its harness's native resume and the held prompt dispatches.
     const restarted = await startWithApp(services, undefined, { restartSnapshotPath: snapshotPath })
     runningServers.push(restarted)
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[1]?.[1]).toBe("held prompt")
-    // The gate the old process closed is released durably by the new one:
-    // clients replaying the stream see `waiting` → `released`, and a fresh
-    // snapshot no longer carries the gate.
     expect(await gateEvents(services, sessionId)).toEqual([
       { harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" },
       { harnessId: "codevisor-server", harnessName: "Codevisor", state: "released" }
@@ -233,7 +212,6 @@ describe("restart drain", () => {
     expect(agents.loads.some(([, agentSessionId]) => agentSessionId === "agent-codex-repo")).toBe(
       true
     )
-    // Consumed: a crash mid-resume must not loop on the same snapshot.
     expect((await jsonRequest(restarted, "/v1/restart/drain")).body).toMatchObject({
       state: "idle"
     })
@@ -248,7 +226,6 @@ describe("restart drain", () => {
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
 
-    // A malformed body still begins the drain with defaults.
     const malformed = await jsonRequest(server, "/v1/restart/drain", {
       body: "{not json",
       method: "POST"
@@ -299,14 +276,11 @@ describe("restart drain", () => {
     )
     expect(agents.prompts).toHaveLength(1)
 
-    // Abandon the update: the gate reopens and the held session is told so.
     const cancelled = await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
     expect(cancelled.body).toMatchObject({ state: "idle" })
     await waitFor(async () =>
       (await gateEvents(services, sessionId)).some((event) => event.state === "released")
     )
-    // The live turn is still running, so the re-drain holds behind it; once
-    // that turn ends the held prompt dispatches normally.
     await run(services.agents.cancel("agent-codex-repo"))
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[1]?.[1]).toBe("held prompt")
@@ -325,7 +299,6 @@ describe("restart drain", () => {
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
     await run(services.agents.cancel("agent-codex-repo"))
     await waitFor(() => state.applyCalls === 1)
-    // apply threw → cancel → the held prompt dispatches.
     await waitFor(() => agents.prompts.length === 2)
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({ state: "idle" })
   })
@@ -341,7 +314,6 @@ describe("restart drain", () => {
 
     expect((await jsonRequest(server, "/v1/update/apply", { method: "POST" })).status).toBe(202)
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })).status).toBe(200)
-    // Unsupported methods on the drain route fall through to 404.
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "PUT" })).status).toBe(404)
     await run(services.agents.cancel("agent-codex-repo"))
     await waitFor(async () => {

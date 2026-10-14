@@ -96,7 +96,6 @@ pluginModeration.post("/api/plugins/consent", async (c) => {
   return c.json({ ok: true })
 })
 
-// Account-only index also covers unlisted and privately developed plugins.
 pluginModeration.get("/api/plugins/index", async (c) => {
   const rows = await c.env.DB.prepare(
     "SELECT plugin_id, consent_key, metadata FROM plugin_consents WHERE user_id = ?"
@@ -158,7 +157,6 @@ pluginModeration.post("/api/plugins/reports", async (c) => {
     return existing.user_id === userId
       ? c.json({ ok: true })
       : c.json({ error: "invalid report id" }, 409)
-  // Atomic insertion also enforces the per-account limit under concurrent requests.
   const inserted = await c.env.DB.prepare(
     "INSERT INTO plugin_reports (id, user_id, plugin_id, plugin_name, reason, details, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT count(*) FROM plugin_reports WHERE user_id = ? AND created_at > ?) < 20"
   )

@@ -4,10 +4,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The host half of a control lease: who holds it, when it lapses, and what the
-/// host owes the local machine when it takes the lease back. Every deadline is
-/// virtual, so "just before" and "just after" the three-second window are exact
-/// points rather than sleeps.
 @MainActor
 struct ScreenSharingHostControlTests {
   @Test func aRequestGrantsALeaseAndTheSecondViewerIsToldWhyItCannotHaveOne() throws {
@@ -231,7 +227,6 @@ private final class HostFixture {
     return control.lease
   }
 
-  /// Numbering is the forwarder's job; here every event simply gets the next one.
   func input(_ lease: UUID, _ event: ScreenSharingInputEvent) {
     sequence += 1
     control.receive(.input(lease: lease, sequence: sequence, event: event))

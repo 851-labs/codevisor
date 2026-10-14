@@ -8,9 +8,6 @@ export interface CredentialRecord {
   committedOperation?: string
 }
 
-/// A reservation can expire safely before provider I/O. Once provider I/O
-/// starts, expiry is ambiguous: the provider may have rotated the token even
-/// when its response was lost. Never let another machine replay that token.
 export const CREDENTIAL_RESERVATION_MS = 30_000
 
 export const coordinateCredential = (
@@ -76,7 +73,6 @@ export const coordinateCredential = (
     return result("busy")
   }
   if (command.action === "start") {
-    // A lost start response must not authorize a second provider request.
     if (pending.started || pending.deadline <= now) return result("uncertain")
     pending.started = true
     return result("acquired")

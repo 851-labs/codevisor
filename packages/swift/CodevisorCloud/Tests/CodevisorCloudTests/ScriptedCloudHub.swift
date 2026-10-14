@@ -5,11 +5,6 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-// MARK: - Fake WebSocket seam
-
-/// A fake hub control plane living on the other end of a
-/// FakeWebSocketConnection: answers `hello` with `welcome`, pongs pings, and
-/// lets a test push presence and error frames.
 @Observable
 final class ScriptedCloudHub: @unchecked Sendable {
   private let lock = NSLock()
@@ -17,18 +12,12 @@ final class ScriptedCloudHub: @unchecked Sendable {
   let machines: [CloudMachine]
   private(set) var sawHello = false
   private var helloResumes: [String?] = []
-  /// The `resume` token each hello offered, in order (nil = fresh session).
   var helloResumeTokens: [String?] { lock.withLock { helloResumes } }
   var appPublicKey: String?
-  /// The tunnel endpoint id the app registered in its hello.
   var helloTunnelEndpointId: String?
   var helloReleaseChannel: String?
-  /// Tunnel fields every welcome carries (nil = an older hub without them).
   var tunnelWelcome: (relays: [CloudTunnelConfig.Relay], tunnel: String)?
   var respondsToPing = true
-  /// Session resume scripting: when true, welcomes carry rotating resume
-  /// tokens and a hello presenting the current token resumes (same
-  /// connection id + resumed flag) — unless `acceptResume` is off.
   var issueResumeTokens = false
   var acceptResume = true
   private var issuedToken: String?
@@ -39,8 +28,6 @@ final class ScriptedCloudHub: @unchecked Sendable {
     self.machines = machines
   }
 
-  /// The first scripted socket (created lazily so single-socket tests can
-  /// hand it to a transport before connecting).
   var socket: FakeWebSocketConnection {
     lock.withLock {
       if scriptedSockets.isEmpty { scriptedSockets.append(wireSocket()) }
@@ -48,13 +35,10 @@ final class ScriptedCloudHub: @unchecked Sendable {
     }
   }
 
-  /// The socket the hub currently speaks through (reconnects switch it).
   var currentSocket: FakeWebSocketConnection {
     lock.withLock { scriptedSockets.last ?? scriptedSockets[0] }
   }
 
-  /// A fresh scripted socket for reconnect tests; wire the transport with
-  /// `FakeWebSocketTransport { _ in scripted.makeSocket() }`.
   func makeSocket() -> FakeWebSocketConnection {
     lock.withLock {
       let socket = wireSocket()
@@ -175,9 +159,6 @@ final class ScriptedCloudHub: @unchecked Sendable {
   }
 }
 
-/// The responder half of relay channels for tests: performs the machine-side
-/// key agreement, tracks per-channel seqs both ways, and lets a script send
-/// sealed frames back.
 @Observable
 final class ScriptedRelayMachine: @unchecked Sendable {
   let deviceId: String
@@ -195,7 +176,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
     var openPayload: Data?
     var messages: [Data] = []
     var closeReason: CloudChannelCloseReason?
-    /// The opener negotiated prefix-framed (compressible) payloads.
     var compressedFraming = false
 
     init(cipher: CloudChannelCipher) {
@@ -225,8 +205,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
     lock.withLock { channels[id] }
   }
 
-  /// Handles one app→machine relay envelope, decrypting with the machine's
-  /// keys. Returns the decrypted payload for open/data frames.
   @discardableResult
   func receive(
     _ frame: CloudRelayFrame,
@@ -285,8 +263,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
     }
   }
 
-  /// Seals a machine→app data frame (header + ciphertext payload). On
-  /// channels that negotiated compressible framing the body is RAW-framed.
   func sealData(
     channelId: String,
     payload: Data
@@ -301,8 +277,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
     return (frame: .data(channelId: channelId, seq: seq), payload: box)
   }
 
-  /// Seals a machine→app data frame whose body is DEFLATE-framed — only
-  /// valid on channels that negotiated compressible framing.
   func sealDeflated(
     channelId: String,
     payload: Data
@@ -336,7 +310,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
   }
 }
 
-/// Waits for fixture state changes; the test runner owns the hang watchdog.
 @MainActor
 func waitUntil(_ condition: () -> Bool) async -> Bool {
   await awaitObserved(condition)

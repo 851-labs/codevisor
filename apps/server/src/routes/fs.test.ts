@@ -37,16 +37,13 @@ describe("fs routes", () => {
       ".hidden"
     )
 
-    // Home expansion: bare "~" and "~/..." resolve against the server's home.
     const home = await jsonRequest(server, "/v1/fs/list")
     expect(home.status).toBe(200)
     expect((home.body as { path: string }).path.startsWith("/")).toBe(true)
 
-    // The filesystem root has no parent.
     const rootListing = await jsonRequest(server, "/v1/fs/list?path=/")
     expect((rootListing.body as { parent: string | null }).parent).toBeNull()
 
-    // "~/…" paths expand under the server's home.
     const homeChild = await jsonRequest(server, "/v1/fs/list?path=%7E%2F")
     expect(homeChild.status).toBe(200)
 
@@ -68,7 +65,6 @@ describe("fs routes", () => {
     expect(relative.status).toBe(400)
     expect(relative.body).toMatchObject({ code: "invalid_path" })
 
-    // Symlinks: follow directory links, skip broken ones and plain files.
     const linked = mkdtempSync(join(tmpdir(), "codevisor-fs-links-"))
     tempDirs.push(linked)
     symlinkSync(join(root, "Alpha"), join(linked, "Alpha-link"))
@@ -86,7 +82,6 @@ describe("fs routes", () => {
       ]
     })
 
-    // Unreadable directories surface a permission error, not a crash.
     const sealed = join(root, "sealed")
     mkdirSync(sealed, { mode: 0o000 })
     const denied = await jsonRequest(server, `/v1/fs/list?path=${encodeURIComponent(sealed)}`)
@@ -227,7 +222,6 @@ describe("fs routes", () => {
     const mkdirRequest = (path: string) =>
       jsonRequest(server, "/v1/fs/mkdir", { body: JSON.stringify({ path }), method: "POST" })
 
-    // Nested creation, idempotent repeat, and visibility in the listing.
     const nested = join(root, "projects", "fresh")
     expect((await mkdirRequest(nested)).status).toBe(201)
     expect((await mkdirRequest(nested)).status).toBe(201)
@@ -237,15 +231,12 @@ describe("fs routes", () => {
     )
     expect((listing.body as { entries: Array<{ name: string }> }).entries[0]?.name).toBe("fresh")
 
-    // Home expansion: "~" is the (existing) home itself.
     expect((await mkdirRequest("~")).status).toBe(201)
 
-    // Relative paths are rejected; files in the way are conflicts.
     expect((await mkdirRequest("relative/path")).status).toBe(400)
     expect((await mkdirRequest(join(root, "occupied"))).status).toBe(409)
     expect((await mkdirRequest(join(root, "occupied", "child"))).status).toBe(409)
 
-    // Permission failures surface as 403.
     const locked = join(root, "locked")
     mkdirSync(locked)
     chmodSync(locked, 0o400)

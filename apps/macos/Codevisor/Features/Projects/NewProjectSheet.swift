@@ -4,13 +4,6 @@ import CodevisorUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Adds a project on one machine: pick a folder you've recently worked in,
-/// choose any other folder, or clone a repository. The one add-project
-/// surface on macOS — the sidebar and Settings both present it.
-///
-/// Suggestions from the last visit show at once and refresh underneath, and
-/// adding closes the sheet immediately: the project is registered locally
-/// right away and `onAdded` runs once the server has probed it.
 struct NewProjectSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -84,8 +77,6 @@ struct NewProjectSheet: View {
     }
   }
 
-  // MARK: Layout
-
   private var header: some View {
     HStack(alignment: .firstTextBaseline) {
       Text("Add Project")
@@ -105,8 +96,6 @@ struct NewProjectSheet: View {
     }
   }
 
-  /// Recent folders as a Finder-style icon grid: click selects,
-  /// double-click (or Return) adds.
   private var suggestions: some View {
     ScrollView {
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
@@ -171,8 +160,6 @@ struct NewProjectSheet: View {
     .disabled(!isTargetReady)
   }
 
-  // MARK: Actions
-
   private var machineSelection: Binding<String> {
     Binding(
       get: { serverId },
@@ -223,8 +210,6 @@ struct NewProjectSheet: View {
   }
 }
 
-/// One suggested folder, drawn like a Finder icon-view item: the folder's
-/// icon over its name, with Finder's two-part selection highlight.
 private struct RecentFolderTile: View {
   let recommendation: ProjectRecommendation
   let isLocal: Bool
@@ -268,8 +253,6 @@ private struct RecentFolderTile: View {
     .accessibilityAction(.default, select)
   }
 
-  /// The folder's own icon on this Mac; the generic folder icon for a
-  /// folder on another machine.
   private var icon: NSImage {
     isLocal
       ? NSWorkspace.shared.icon(forFile: recommendation.folderURL.path)

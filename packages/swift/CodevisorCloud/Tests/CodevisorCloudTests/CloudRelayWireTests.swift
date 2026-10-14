@@ -21,8 +21,6 @@ struct CloudRelayWireTests {
 
   @Test("Decodes payloads at the right offsets in a non-zero-based Data slice")
   func sliceSafety() throws {
-    // Data slices keep their parent's indices; the decoder must not assume
-    // a zero startIndex.
     let message = CloudRelayWire.encode([
       CloudRelayEnvelope(header: Data(#"{"a":1}"#.utf8), payload: Data([9]))
     ])
@@ -42,11 +40,9 @@ struct CloudRelayWireTests {
     #expect(throws: CloudRelayWireError.truncated) {
       _ = try CloudRelayWire.decode(Data([0, 0]))
     }
-    // Header length pointing past the end.
     #expect(throws: CloudRelayWireError.truncated) {
       _ = try CloudRelayWire.decode(Data([0, 0, 0, 99, 1]))
     }
-    // Valid header, truncated payload.
     let good = CloudRelayWire.encode([
       CloudRelayEnvelope(header: Data(#"{"a":1}"#.utf8), payload: Data([1, 2, 3, 4]))
     ])

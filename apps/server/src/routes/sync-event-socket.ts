@@ -9,8 +9,6 @@ interface SyncEventSink {
 }
 import { run, type EventFanout } from "../server-context.js"
 
-/** Notifications wake a bounded journal reader. No live-event array grows
- * behind replay or a slow network; slow consumers resnapshot durable state. */
 export const attachSyncEventSocket = async (
   db: CodevisorDatabaseService,
   fanout: EventFanout,

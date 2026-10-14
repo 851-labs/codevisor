@@ -17,9 +17,7 @@ port.on("message", ({ chunk }: { chunk: string }) => {
     start = newline + 1
     try {
       port.postMessage({ message: JSON.parse(line) as unknown })
-    } catch {
-      // Codex can print non-protocol startup diagnostics on stdout.
-    }
+    } catch {}
   }
   if (start < filtered.length) fragments.push(filtered.slice(start))
   port.postMessage({ consumed: chunk.length })

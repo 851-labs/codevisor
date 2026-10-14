@@ -1,4 +1,3 @@
-/** Auth may return only to a path on this Cloud instance. */
 export const validAuthRedirect = (value: string): boolean =>
   value.startsWith("/") &&
   !value.startsWith("//") &&

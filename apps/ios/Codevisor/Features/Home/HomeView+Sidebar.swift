@@ -3,12 +3,7 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// Answers the sidebar rows' requests: opening, closing, renaming, and
-/// adding tabs. The sections themselves are built by `HomeSidebarLiveList`
-/// from Core's precomputed sidebar.
 extension HomeView {
-  // MARK: - Actions
-
   var sidebarActions: HomeSidebarActions {
     HomeSidebarActions(
       open: { row, workspace in openSidebarRow(row, in: workspace) },
@@ -46,8 +41,6 @@ extension HomeView {
     )
   }
 
-  /// Chat rows open their chat like any chat route; other tabs mount the
-  /// workspace through its anchor chat and name the pane to show.
   private func openSidebarRow(_ row: HomeSidebarTabRow, in workspace: HomeSidebarWorkspaceRef) {
     if let chatId = row.chatSessionId, let session = projectList.session(chatId, serverId: workspace.serverId) {
       openChat(session)
@@ -68,9 +61,6 @@ extension HomeView {
     )
   }
 
-  /// A background close, without mounting the workspace. Chats archive
-  /// (which closes their pane locally and on the server); other panes take
-  /// the same last-pane-becomes-New-Tab path the workspace screen uses.
   private func closeSidebarRow(_ row: HomeSidebarTabRow, in ref: HomeSidebarWorkspaceRef) {
     withSidebarReflow {
       if let chatId = row.chatSessionId, let session = projectList.session(chatId, serverId: ref.serverId) {
@@ -100,7 +90,6 @@ extension HomeView {
     }
     var updated = workspace
     WorkspaceScreen.applyCompactPaneState(state, to: &updated)
-    // Saving updates the workspace's entry, which re-renders its section.
     environment.workspaces.save(updated)
     environment.workspaceSync.deletePane(
       id: paneId,
@@ -110,7 +99,6 @@ extension HomeView {
     )
   }
 
-  /// Adds a New Tab page to the workspace and opens it there.
   private func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
     guard var workspace = environment.workspaces.workspace(id: ref.id) else { return }
     var state = WorkspaceScreen.compactPaneState(from: workspace)
@@ -133,7 +121,6 @@ extension HomeView {
     )
   }
 
-  /// Chat labels belong to the shared session record.
   func renameSidebarTab(_ request: HomeTabRenameRequest, to title: String) {
     environment.workspaceSync.renameTab(
       workspaceId: request.workspaceId, tabId: request.tabId, chatSessionId: request.chatSessionId, to: title
@@ -148,13 +135,10 @@ extension HomeView {
     }
   }
 
-  /// A local sidebar edit: the entries it touches update synchronously, so
-  /// the resulting row reflow animates with it.
   func withSidebarReflow(_ change: () -> Void) {
     withAnimation(Motion.listReflow(reduceMotion: reduceMotion), change)
   }
 
-  /// Only the dragged workspace receives a new shared position.
   func commitWorkspaceOrder(_ id: UUID, visibleIDs: [UUID]) {
     guard let workspace = environment.workspaces.workspace(id: id) else { return }
     environment.workspaceSync.reorderWorkspace(

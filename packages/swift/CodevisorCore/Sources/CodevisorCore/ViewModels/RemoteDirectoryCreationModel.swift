@@ -1,9 +1,6 @@
 import Foundation
 import Observation
 
-/// Creates one child folder for the remote project browsers. Both native
-/// apps use this model so name validation, progress, and actionable failures
-/// stay identical across platforms.
 @MainActor
 @Observable
 public final class RemoteDirectoryCreationModel {
@@ -20,9 +17,6 @@ public final class RemoteDirectoryCreationModel {
     self.create = create
   }
 
-  /// Returns a validation message for a single folder name, or nil when it
-  /// can be submitted. Paths are deliberately rejected: New Folder creates
-  /// exactly one child of the directory visible in the picker.
   public static func validationMessage(
     for rawName: String,
     existingNames: Set<String> = []
@@ -47,8 +41,6 @@ public final class RemoteDirectoryCreationModel {
     errorMessage = nil
   }
 
-  /// Creates a child of `parentPath` and returns the server-resolved path.
-  /// A nil result leaves `errorMessage` ready for inline presentation.
   @discardableResult
   public func createFolder(
     named rawName: String,

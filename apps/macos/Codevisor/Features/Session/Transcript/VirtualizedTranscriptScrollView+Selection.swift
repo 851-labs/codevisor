@@ -3,9 +3,6 @@ import AppKit
 import StreamMarkdown
 import TranscriptKit
 
-/// Mutable state of the transcript-wide text selection. It is a separate
-/// object so the scroll view extension below can own the behavior without
-/// needing stored properties.
 @MainActor
 final class TranscriptSelectionState {
   enum Granularity {
@@ -16,31 +13,16 @@ final class TranscriptSelectionState {
 
   var selection: TranscriptTextSelection?
   var granularity: Granularity = .character
-  /// The whole word or paragraph under a multi-click anchor. Dragging keeps
-  /// the far edge of this range selected, as native text views do.
   var anchorRange: PointRange?
   var isDragging = false
   var lastDragLocationInWindow: NSPoint?
   var autoScrollTask: Task<Void, Never>?
-  /// Raw surface text of the anchor and focus rows, captured while those rows
-  /// were mounted. Copy stays offset-accurate after the virtualizer unmounts
-  /// an endpoint row; interior rows only need their whole text.
   var endpointTexts: [String: [String]] = [:]
   var highlightedHostKeys: Set<String> = []
   var mouseDownMonitor: Any?
   var windowKeyObservers: [NSObjectProtocol] = []
 }
 
-// MARK: - Transcript-wide selection
-
-/// One selection across every text surface in the transcript.
-///
-/// Rows are independent `NSTextView`s, so AppKit's own selection can never
-/// leave the view a drag started in. The scroll view instead owns the
-/// selection as `(row key, surface, offset)` endpoints, resolves them against
-/// the virtual layout, and asks each mounted surface to paint its slice.
-/// Hosts are recycled and rows unmount freely, so nothing here is keyed by
-/// view identity; highlights are re-applied whenever the mounted set changes.
 extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUserInterfaceValidations {
   var hasTranscriptSelection: Bool {
     resolvedSelectionSpan.map { !$0.isEmpty } ?? false
@@ -49,8 +31,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   var resolvedSelectionSpan: TranscriptSelectionSpan? {
     textSelection.selection?.resolve { virtualLayout.indexByKey[$0] }
   }
-
-  // MARK: TranscriptSelectionCoordinating
 
   func beginTranscriptSelection(with event: NSEvent, in surface: NSTextView) -> Bool {
     guard initialPresentationGate.isReady,
@@ -61,9 +41,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     return true
   }
 
-  /// A click on transcript whitespace, arriving through the document view.
-  /// Starts a gesture anchored at the nearest text so a drag that begins in
-  /// the margin still selects; a plain click there just clears.
   func beginTranscriptSelection(withDocumentClick event: NSEvent) -> Bool {
     guard initialPresentationGate.isReady else { return false }
     let documentPoint = transcriptDocumentView.convert(event.locationInWindow, from: nil)
@@ -101,8 +78,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     applySelectionHighlights()
   }
 
-  // MARK: Gesture
-
   private func startSelectionGesture(at point: TranscriptSelectionPoint, event: NSEvent) {
     takeFocusForSelection()
     let granularity: TranscriptSelectionState.Granularity =
@@ -130,7 +105,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     startSelectionAutoScroll()
   }
 
-  /// Anchors a fresh selection on the unit of text at `point`.
   func replaceSelection(
     at point: TranscriptSelectionPoint,
     granularity: TranscriptSelectionState.Granularity
@@ -151,8 +125,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   private func updateSelectionFocus(toWindowPoint windowPoint: NSPoint) {
     guard var selection = textSelection.selection else { return }
     var documentPoint = transcriptDocumentView.convert(windowPoint, from: nil)
-    // Only the visible rows are guaranteed to be mounted; auto-scroll brings
-    // the rest into the viewport and re-runs this.
     let visible = contentView.bounds
     documentPoint.y = min(max(documentPoint.y, visible.minY), max(visible.minY, visible.maxY - 1))
     guard let point = selectionPoint(atDocumentPoint: documentPoint) else { return }
@@ -193,8 +165,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       let surface = selectionSurface(at: point),
       let storage = surface.textStorage, storage.length > 0
     else { return (point, point) }
-    // Derived from the text itself rather than `selectionRange(forProposedRange:granularity:)`,
-    // which TextKit 2 views answer with a range running to the end of the text.
     let index = min(max(0, point.offset), storage.length)
     let range =
       switch granularity {
@@ -222,9 +192,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     textSelection.endpointTexts = texts
   }
 
-  // MARK: Hit testing
-
-  /// The row at a document-space y; see `VirtualTranscriptLayout.index(nearestToOffset:)`.
   func selectionRowIndex(atDocumentY y: CGFloat) -> Int? {
     virtualLayout.index(nearestToOffset: y - transcriptRowsOrigin)
   }
@@ -297,10 +264,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     return surfaces[point.surface]
   }
 
-  /// Every selectable text surface inside a mounted host, top to bottom.
-  /// Both the settled AppKit renderer and SwiftUI-hosted rows nest their
-  /// text views a few levels deep, so this walks the subtree; hosts are
-  /// small and the walk only runs while a selection exists.
   func selectionSurfaces(in host: NSView) -> [TranscriptSurfaceTextView] {
     var found: [(view: TranscriptSurfaceTextView, frame: NSRect, order: Int)] = []
     func visit(_ view: NSView) {
@@ -322,14 +285,9 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       .map(\.view)
   }
 
-  // MARK: Highlights
-
-  /// Pushes the current selection into every mounted surface. Cheap when
-  /// nothing is selected; otherwise bounded by the mounted window.
   func applySelectionHighlights() {
     var span = resolvedSelectionSpan
     if textSelection.selection != nil, span == nil {
-      // An endpoint row left the layout (its message was re-projected).
       textSelection.selection = nil
       textSelection.anchorRange = nil
       textSelection.endpointTexts = [:]
@@ -355,8 +313,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     textSelection.highlightedHostKeys = highlightedKeys
   }
 
-  /// Mount and refresh passes call this on every scroll frame; it is a
-  /// no-op unless a selection exists.
   func refreshSelectionHighlightsIfNeeded() {
     if textSelection.selection != nil {
       applySelectionHighlights()
@@ -369,14 +325,10 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     }
   }
 
-  /// Called when a host leaves the mounted set. Recycled hosts must never
-  /// carry a highlight into their next row.
   func selectionHostWillDetach(_ host: TranscriptMountedRowHost, key: String) {
     guard textSelection.highlightedHostKeys.remove(key) != nil else { return }
     clearSelectionHighlights(in: host)
   }
-
-  // MARK: Copy
 
   func selectedTranscriptText() -> String? {
     guard let span = resolvedSelectionSpan, !span.isEmpty else { return nil }
@@ -428,8 +380,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     )
   }
 
-  // MARK: Auto-scroll
-
   private func startSelectionAutoScroll() {
     guard textSelection.autoScrollTask == nil else { return }
     textSelection.autoScrollTask = Task { @MainActor [weak self] in
@@ -466,8 +416,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     updateSelectionFocus(toWindowPoint: windowPoint)
   }
 
-  /// A selection drag past the viewport edge is user scrolling: it clears
-  /// restore locks and follow intent exactly like a wheel event.
   private func scrollForSelection(by delta: CGFloat) {
     let maximumTop = max(0, transcriptDocumentView.frame.height - contentView.bounds.height)
     var origin = contentView.bounds.origin
@@ -487,10 +435,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     markRecentUserInput()
   }
 
-  // MARK: Focus and clicks elsewhere
-
-  /// Clicks that never reach a surface or the document view — SwiftUI rows
-  /// swallow their own mouse events — still dismiss the selection.
   func installSelectionMouseMonitor() {
     guard textSelection.mouseDownMonitor == nil else { return }
     textSelection.mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) {
@@ -498,7 +442,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       self?.selectionMonitorObservedMouseDown(event)
       return event
     }
-    // The highlight color follows key-window status, like a native selection.
     let center = NotificationCenter.default
     textSelection.windowKeyObservers = [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
@@ -534,8 +477,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       let hit = window.contentView?.hitTest(event.locationInWindow),
       hit.isDescendant(of: self)
     else { return }
-    // Surfaces and the document view start their own gesture; a scroller
-    // drag is not a click on content.
     if hit is TranscriptSurfaceTextView || hit is NSScroller || hit === transcriptDocumentView {
       return
     }

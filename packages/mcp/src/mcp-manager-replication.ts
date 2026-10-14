@@ -16,15 +16,10 @@ export type McpReplicationOperations = Pick<
 >
 
 export interface McpReplicationDeps {
-  /// Re-arms the refresh timer for tokens this machine now owns.
   readonly scheduleRefresh: (server: McpServerRecord, tokens: OAuthTokens) => void
-  /// Opens the upstream with freshly imported material so a mirror reports
-  /// the same connected state as the owner instead of "needs authorization".
   readonly connect: (id: string) => Promise<unknown>
 }
 
-/// The config-plane replication surface: static secrets travel as-is, OAuth
-/// material travels under refresh ownership so exactly one machine rotates.
 export const makeMcpReplicationOperations = (
   core: McpManagerCore,
   deps: McpReplicationDeps
@@ -87,7 +82,6 @@ export const makeMcpReplicationOperations = (
       return
     }
     if (typeof parsed !== "object" || parsed === null) return
-    // Identical re-imports must not thrash the live connection.
     if (
       current?.refreshOwner === incoming.owner &&
       (current?.tokensSavedAt ?? 0) === (parsed.tokensSavedAt ?? 0)
@@ -102,10 +96,6 @@ export const makeMcpReplicationOperations = (
       oauth: { ...parsed, refreshOwner: incoming.owner }
     }))
     await closeConnection(id)
-    // Imported tokens are only useful once tried: a mirror that just
-    // received the owner's material connects in the background so its
-    // row (and readiness) reflect the credentials instead of sitting at
-    // "needs authorization" until a session happens to use the tools.
     if (
       updated.enabled &&
       parsed.tokens !== undefined &&

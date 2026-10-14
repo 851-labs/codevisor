@@ -23,8 +23,6 @@ describe("a new chat's starting picks", () => {
     const parent = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    // The parent's runtime no longer offers its saved tone, so it is not
-    // running it and the child does not inherit it.
     await run(
       services.db.replaceSessionConfigSelections(
         parent.id,
@@ -62,7 +60,6 @@ describe("a new chat's starting picks", () => {
       })) as { readonly body: { readonly session: SessionSummary } }
     ).body
     expect(workspace.session.configSelections).toEqual(inherited)
-    // Each agent process starts on the chat's picks, not the harness default.
     expect(agents.startSelections).toEqual([
       inherited,
       { model: "model-picked" },

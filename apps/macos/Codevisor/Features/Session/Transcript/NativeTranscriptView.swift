@@ -5,18 +5,12 @@ import StreamMarkdown
 import SwiftUI
 import CodevisorUI
 
-/// SwiftUI boundary around the AppKit scroll view. All high-frequency geometry
-/// stays inside AppKit; SwiftUI receives only boundary transitions and a tiny
-/// observation-ignored viewport snapshot.
 struct NativeTranscriptView: NSViewRepresentable {
   let presentationSurface: TranscriptPresentationSurface
   let input: TranscriptSurfaceInput
   let callbacks: TranscriptSurfaceCallbacks
   let markdownRowStyle: TranscriptMarkdownRowStyle
   var onInitialPresentationReady: (@MainActor () -> Void)? = nil
-  /// Called once with the underlying scroll view so the session's focus
-  /// controller can park keyboard focus on the chat history when it is
-  /// clicked (mirrors the composer's `onTextViewReady`).
   var onScrollViewReady: (@MainActor (NSView) -> Void)? = nil
 
   final class SurfaceContainerView: NSView {
@@ -107,9 +101,6 @@ struct NativeTranscriptView: NSViewRepresentable {
     let scrollView = presentationSurface.ensureScrollView()
     guard scrollView.superview !== container else { return }
 
-    // A detached host can receive late layout callbacks while SwiftUI is
-    // constructing its replacement. It may adopt an orphaned surface, but
-    // must never steal one back from the live container.
     if scrollView.superview?.window != nil,
       container.window == nil,
       container.superview == nil
@@ -133,8 +124,6 @@ struct NativeTranscriptView: NSViewRepresentable {
 
   private func reportInitialPresentationReady() {
     guard let onInitialPresentationReady else { return }
-    // Readiness can resolve inside updateNSView. Publish after SwiftUI's
-    // current update transaction rather than mutating view state from it.
     DispatchQueue.main.async {
       onInitialPresentationReady()
     }

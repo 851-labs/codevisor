@@ -3,8 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// SwiftUI menu labels ignore `lineLimit`. UIKit's display preferences
-/// keep the management action on one line and truncate its overflowing title.
 struct ComposerMachineMenu: UIViewRepresentable {
   let machineName: String
   let machines: [CodevisorMachine]

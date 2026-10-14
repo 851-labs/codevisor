@@ -1,80 +1,36 @@
 import Foundation
 
-/// The kinds of pane a session's pane groups can host. Future kinds (diff
-/// viewers, previews, extensions, ...) add a case here plus a factory branch
-/// in the app layer.
 public enum PaneKind: String, Codable, Sendable {
   case terminal
-  /// A chat session's transcript + composer. Lives in center groups;
-  /// closing its tab archives the session.
   case chat
-  /// The Chrome-style placeholder spawned when a group's last real pane
-  /// closes: the empty state IS a tab (the strip never lies about what's
-  /// open), and its page offers what to create. It leaves by conversion —
-  /// picking New Chat/New Terminal replaces it in place.
   case newTab
-  /// A plugin-contributed webview pane. The descriptor's plugin fields
-  /// identify the plugin server and pane type; the app layer renders it
-  /// through the server's plugin proxy.
   case plugin
-  /// A file on the workspace’s machine. The persisted name retains compatibility with document panes.
   case document
   case browser
   case screenSharing
-  /// A read-only view of one subagent's thread inside its parent chat.
-  /// Device-local: never published to the server's pane registry, so other
-  /// devices (and older builds) never see it. `ownerChatSessionId` is the
-  /// parent chat; `subagentToolCallId` is the spawning tool call.
   case subagent
-  /// A native diff of the workspace's working state (uncommitted, staged,
-  /// branch, last turn, ...). Its preferences say what to compare.
   case review
-  /// An Apple simulator on the workspace's Mac: its screen, hardware
-  /// buttons and settings. The preferences say which device.
   case simulator
 
-  /// Panes that exist only in this device's layout: never published to the
-  /// server's pane registry, never pruned by server reconciliation.
   public var isDeviceLocal: Bool { self == .newTab || self == .subagent }
 }
 
-/// The persisted identity of one pane in a session's pane group. Pure data —
-/// live pane objects (surfaces, PTY attachments) are built from this by the
-/// app layer.
 public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public let id: UUID
   public let kind: PaneKind
   public var name: String
-  /// The key the server's PTY manager stores this pane's shell under (the
-  /// terminal create request's `sessionId`). The first pane of a session
-  /// uses the bare chat-session UUID so it reattaches to shells created
-  /// before panes existed; later panes use "<sessionUuid>:<paneUuid>".
   public let terminalKey: String
-  /// Chat panes only: the session this pane shows. A chat pane is a
-  /// REFERENCE — the server owns the session; closing the pane never
-  /// deletes it.
   public var chatSessionId: UUID?
-  /// Subagent panes only: the parent chat whose subagent this shows.
   public var ownerChatSessionId: UUID?
-  /// Plugin panes only: the owner-namespaced plugin id ("owner.name").
   public var pluginId: String?
-  /// Plugin panes only: which of the plugin's pane types this renders.
   public var pluginPaneType: String?
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var documentPath: String?
-  /// Review panes only: what the pane compares.
   public var review: ReviewPanePreferences?
-  /// Simulator panes only: which device the pane shows.
   public var simulator: SimulatorPanePreferences?
-  /// Terminal panes only: the title the running program set, from the
-  /// server's pane record. Kept apart from `name`, which this client
-  /// publishes back as the record's title.
   public var liveTitle: String?
-  /// Terminal panes only, from the server's pane record like `liveTitle`:
-  /// what the program running in the terminal says it is doing.
   public var terminalActivity: TerminalActivity?
-  /// Subagent panes only: the tool call that spawned the subagent.
   public var subagentToolCallId: String?
   public init(
     id: UUID,
@@ -119,12 +75,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       kind: try container.decode(PaneKind.self, forKey: .kind),
       name: try container.decode(String.self, forKey: .name),
       terminalKey: try container.decode(String.self, forKey: .terminalKey),
-      // Chat panes persisted before workspaces existed learn their
-      // session id in the workspace backfill.
       chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId),
       ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
-      // Panes persisted before plugin panes existed carry no plugin
-      // payload.
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
@@ -133,27 +85,18 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       review: try container.decodeIfPresent(ReviewPanePreferences.self, forKey: .review),
       simulator: try container.decodeIfPresent(SimulatorPanePreferences.self, forKey: .simulator),
       liveTitle: try container.decodeIfPresent(String.self, forKey: .liveTitle),
-      // Layouts persisted before terminal status carry none.
       terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity),
       subagentToolCallId: try container.decodeIfPresent(String.self, forKey: .subagentToolCallId)
     )
   }
 
-  /// The pane's own title: a terminal shows what is running in it, and plain
-  /// "Terminal" otherwise (older panes were numbered "Terminal N"; the number
-  /// told nothing apart). A name someone chose (a rename, an agent task's
-  /// description) is deliberate, so the program's title never replaces it.
-  /// Tab-level renames (`WorkspaceTab.customTitle`) take precedence over this.
   public var displayName: String {
     guard kind == .terminal, Self.isDefaultTerminalName(name) else { return name }
     return liveTitle ?? Self.defaultTerminalName
   }
 
-  /// What a new terminal pane is called until something runs in it.
   public static let defaultTerminalName = "Terminal"
 
-  /// Programs may set any string, including blank or multi-line titles; a
-  /// tab label needs one trimmed line, and a blank title means "no title".
   static func normalizedLiveTitle(_ title: String?) -> String? {
     guard let title else { return nil }
     let line = title.split(whereSeparator: \.isNewline)

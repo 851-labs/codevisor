@@ -55,8 +55,6 @@ struct BrowserStateSyncTests {
     server.change(nil, key: cookie.key)
     try await sync.synchronize()
     #expect(local.isEmpty)
-    // A freshly opened, previously offline profile still carrying the old cookie
-    // must consume the deletion instead of seeding another login.
     local[cookie.key] = cookie
     let restarted = BrowserCookieSync(
       client: server, read: { Array(local.values) },
@@ -84,8 +82,6 @@ struct BrowserStateSyncTests {
     reads = 0
     try await sync.synchronize()
     #expect(reads == 1)
-    // A remote change still rereads to guard concurrent page writes and to
-    // record the engine's normalized form of the imported cookie.
     var rotated = cookie; rotated.value = "remote"
     server.change(rotated, key: cookie.key)
     reads = 0
@@ -133,8 +129,6 @@ struct BrowserStateSyncTests {
     #expect(server.sentChanges == 0)
   }
 
-  /// Engines skip cookies they refuse to import. The shared cookie must stay on
-  /// the server, and later polls must not retry the import until it changes.
   @Test func aCookieTheEngineRejectsIsNotRetriedOrPublishedAsDeleted() async throws {
     let server = BrowserStateFixture()
     server.change(cookie, key: cookie.key)
@@ -217,7 +211,6 @@ struct BrowserStateSyncTests {
     let pane = BrowserPaneSync(paneId: UUID(), client: server)
     let cookies = BrowserCookieSync(client: server, read: { [] }, apply: { _, _ in })
     server.navigation = BrowserNavigation(url: "https://example.test/old", title: "Old")
-    // The local page starts navigating while its activation exchange is pending.
     server.beforeReply = { pane.cancelActivation() }
     _ = pane.setVisible(true)
     var loaded = false
@@ -249,7 +242,6 @@ struct BrowserStateSyncTests {
     await pane.activate(cookies: cookies, currentURL: url, fallbackURL: nil) { url, _ in loads.append(url) }
     #expect(loads.isEmpty)
 
-    // A later login from another client must still refresh on pane entry.
     #expect(!pane.setVisible(false))
     var rotated = cookie
     rotated.value = "updated-login"

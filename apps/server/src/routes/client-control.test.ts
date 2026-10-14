@@ -24,13 +24,10 @@ describe("client control routes", () => {
     const socket = new WebSocket(`${server.url.replace("http", "ws")}/v1/clients/window/socket`)
     try {
       await once(socket, "open")
-      // The command stream acknowledges registration: context is requested
-      // only after a ping sent behind hello has made the round trip.
       socket.send(JSON.stringify({ type: "hello", name: "Test window", platform: "macos" }))
       const pong = once(socket, "pong")
       socket.ping()
       await pong
-      // Listing reads each window's fresh context to say what it is viewing.
       const probe = once(socket, "message")
       const listing = jsonRequest(server, "/v1/clients?originClientId=WINDOW")
       const [probeRaw] = await probe

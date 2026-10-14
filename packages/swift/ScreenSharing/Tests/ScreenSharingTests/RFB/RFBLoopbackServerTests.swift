@@ -4,11 +4,7 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// The loopback server is a fixture every other suite trusts, so the promises
-/// it makes — an ephemeral port, a faithful message log, rectangles delivered
-/// on the next request — are tested in their own right here.
 struct RFBLoopbackServerTests {
-  /// One connected client, with its updates and events on streams.
   final class Client: @unchecked Sendable {
     let client: RFBClient
     let outcome: RFBHandshake.Outcome
@@ -48,8 +44,6 @@ struct RFBLoopbackServerTests {
     try await RFBLoopbackServer(configuration: configuration)
   }
 
-  // MARK: The listener
-
   @Test func eachServerBindsItsOwnEphemeralPort() async throws {
     let first = try await open()
     defer { first.stop() }
@@ -60,8 +54,6 @@ struct RFBLoopbackServerTests {
     #expect(first.port != second.port)
   }
 
-  /// Port 0 is the explicit spelling of "any port", so configuring it takes
-  /// the same path as a real port number without pinning one.
   @Test func anExplicitPortOfZeroStillMeansEphemeral() async throws {
     var configuration = RFBLoopbackServer.Configuration()
     configuration.port = 0
@@ -69,8 +61,6 @@ struct RFBLoopbackServerTests {
     defer { server.stop() }
     #expect(server.port != 0)
   }
-
-  // MARK: Configuration
 
   @Test func serverInitReportsTheConfiguredDesktop() async throws {
     var configuration = RFBLoopbackServer.Configuration()
@@ -109,8 +99,6 @@ struct RFBLoopbackServerTests {
     #expect(await client.nextUpdate() != nil)
   }
 
-  /// On 3.8 the failure carries the server's reason; on 3.7 there is no reason
-  /// on the wire, so the client supplies its own wording.
   @Test func awrongPasswordIsRejectedWithTheServersReasonOn38() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -143,8 +131,6 @@ struct RFBLoopbackServerTests {
     await #expect(throws: RFBError.securityUnsupported([16, 18])) { try await client.connect(password: "secret") }
   }
 
-  // MARK: The message log
-
   @Test func everyClientMessageIsLoggedInArrivalOrder() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -173,8 +159,6 @@ struct RFBLoopbackServerTests {
       ])
   }
 
-  /// The callback sees the same messages as the log, which is what the rig's
-  /// live view is built on.
   @Test func theMessageCallbackSeesEveryMessageToo() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -202,10 +186,6 @@ struct RFBLoopbackServerTests {
     #expect(await awaitPolled { server.connectionCount == 2 })
   }
 
-  // MARK: Delivering rectangles
-
-  /// The client keeps one incremental request outstanding, so the server is
-  /// always able to push the next rectangle without being asked again.
   @Test func anIdleClientLeavesARequestPending() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -218,9 +198,6 @@ struct RFBLoopbackServerTests {
     #expect(await client.nextUpdate()?.pixel(x: 3, y: 3) == [1, 2, 3])
   }
 
-  /// Rectangles enqueued back to back all arrive, in order. Whether they are
-  /// coalesced into one update depends on when the client's next request lands,
-  /// so the grouping is deliberately not asserted — only that nothing is lost.
   @Test func rectanglesEnqueuedBackToBackAllArrive() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -263,8 +240,6 @@ struct RFBLoopbackServerTests {
     }
   }
 
-  /// A ZRLE reply compresses solid tiles and raw tiles differently; both have
-  /// to come back as the pixels that went in.
   @Test func zrleRepliesRoundTripSolidAndMixedTiles() async throws {
     var configuration = RFBLoopbackServer.Configuration()
     configuration.encoding = .zrle
@@ -277,13 +252,11 @@ struct RFBLoopbackServerTests {
     let client = try await Client(to: server)
     defer { client.close() }
     let update = try #require(await client.nextUpdate())
-    #expect(update.pixel(x: 0, y: 0) == [8, 8, 8])  // a solid tile
-    #expect(update.pixel(x: 65, y: 65) == [1, 2, 3])  // the raw tile in the corner
+    #expect(update.pixel(x: 0, y: 0) == [8, 8, 8])
+    #expect(update.pixel(x: 65, y: 65) == [1, 2, 3])
     #expect(update.pixel(x: 69, y: 69) == [8, 8, 8])
   }
 
-  /// CopyRect moves pixels on the server's own framebuffer as well, so the
-  /// two sides stay in step for whatever is sent next.
   @Test func copyRectMovesPixelsOnBothSides() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -311,8 +284,6 @@ struct RFBLoopbackServerTests {
     #expect(server.framebuffer.width == 30 && server.framebuffer.height == 20)
   }
 
-  // MARK: Events and raw bytes
-
   @Test func bellAndCutTextReachTheClient() async throws {
     let server = try await open()
     defer { server.stop() }
@@ -322,19 +293,16 @@ struct RFBLoopbackServerTests {
     server.sendBell()
     server.sendCutText("héllo\r\nworld")
     #expect(await client.nextEvent() == .bell)
-    // Latin-1 on the wire, and CRLF normalised to LF on the way out.
     #expect(await client.nextEvent() == .serverCutText("héllo\nworld"))
   }
 
-  /// `write` is the escape hatch for malformed-message tests: whatever bytes
-  /// go in reach the client untouched.
   @Test func rawBytesAreForwardedVerbatim() async throws {
     let server = try await open()
     defer { server.stop() }
     let client = try await Client(to: server)
     defer { client.close() }
     _ = await client.nextUpdate()
-    server.write([2, 2, 0xc8])  // two bells, then an unknown message type
+    server.write([2, 2, 0xc8])
     #expect(await client.nextEvent() == .bell)
     #expect(await client.nextEvent() == .bell)
     #expect(await client.run.value as? RFBError == .malformed("unknown server message 200"))
@@ -353,8 +321,6 @@ struct RFBLoopbackServerTests {
   }
 }
 
-/// A lock-guarded sink for the server's message callback, which fires on the
-/// server's own queue.
 final class MessageBox: @unchecked Sendable {
   private let lock = NSLock()
   private var storage: [RFBClientMessage] = []

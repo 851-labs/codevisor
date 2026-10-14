@@ -2,11 +2,6 @@ import { createHash } from "node:crypto"
 import { readFile, readdir, readlink } from "node:fs/promises"
 import { join } from "node:path"
 
-/// A deterministic content hash for a directory tree — the blob identity
-/// the config plane replicates big payloads (skill directories) by. Two
-/// trees with identical relative paths, file bytes, and symlink targets
-/// hash identically on every machine, regardless of timestamps, archive
-/// encoding, or traversal order.
 export const treeHash = async (
   root: string,
   options?: { readonly exclude?: ReadonlySet<string> }
@@ -18,11 +13,8 @@ export const treeHash = async (
       (entry) => !exclude.has(entry.name)
     )
     const byName = new Map(entries.map((entry) => [entry.name, entry]))
-    // Default string sort is UTF-16 code-unit order — deterministic on every
-    // machine, unlike localeCompare, whose collation varies by locale and
-    // would make the "identity" hash platform-dependent.
     for (const name of [...byName.keys()].toSorted()) {
-      /* v8 ignore next -- names derive from entries; the map always hits. */
+      /* v8 ignore next */
       const entry = byName.get(name)!
       const relative = prefix === "" ? name : `${prefix}/${name}`
       const absolute = join(directory, name)
@@ -37,7 +29,6 @@ export const treeHash = async (
         hash.update(`file:${relative}:${contents.byteLength}\n`)
         hash.update(contents)
       }
-      // Sockets/devices/etc. are ignored: they cannot be replicated anyway.
     }
   }
   await walk(root, "")

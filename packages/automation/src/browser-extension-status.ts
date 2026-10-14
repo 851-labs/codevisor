@@ -1,6 +1,5 @@
 import { jsonResult } from "./browser-cdp-engine.js"
 
-/// The extension backend's connection status, as the agent's tools report it.
 export const extensionConnectionReply = (connected: boolean) =>
   jsonResult({
     backend: "extension",

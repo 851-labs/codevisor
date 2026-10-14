@@ -38,7 +38,6 @@ struct ServerComposerSkillTests {
       try CodevisorServerClient.composerSkillsPath(projectId: projectId, sessionId: sessionId)
         == "/v1/composer-skills?projectId=11111111-2222-3333-4444-555555555555"
         + "&sessionId=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
-    // A "No project" draft asks for the machine's defaults.
     #expect(
       try CodevisorServerClient.composerSkillsPath(projectId: nil, sessionId: nil)
         == "/v1/composer-skills")

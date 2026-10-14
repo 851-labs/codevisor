@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// The window's sidebar: the refreshed one when its feature flag is on,
-/// else the classic sidebar that lists each workspace's tabs as rows.
 struct WorkspaceSidebar: View {
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil

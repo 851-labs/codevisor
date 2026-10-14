@@ -5,10 +5,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The fill around the remote display: a native window surface by default
-/// (Apple's Screen Sharing seats the screen on it rather than on black bars),
-/// the pane's themed color when one is set, and always re-resolved for the
-/// view's current appearance.
 @MainActor
 struct ScreenSharingVideoSurfaceLetterboxTests {
   private func makeSurface() throws -> ScreenSharingVideoSurface {
@@ -21,8 +17,6 @@ struct ScreenSharingVideoSurfaceLetterboxTests {
     let aqua = try #require(NSAppearance(named: .aqua))
     surface.appearance = aqua
     let clear = surface.metal.clearColor
-    // Resolve the expectation under the same appearance the surface uses, so
-    // the test does not depend on the machine's light/dark setting.
     var resolved: NSColor?
     aqua.performAsCurrentDrawingAppearance { resolved = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) }
     let expected = try #require(resolved, "window background resolves in sRGB")
@@ -65,20 +59,15 @@ struct ScreenSharingVideoSurfaceLetterboxTests {
   }
 }
 
-/// Which pane point stands for which remote pixel, once the same aspect-fit the
-/// renderer uses has left its bars. The surface is laid out explicitly before
-/// anything is measured: an unlaid view has a zero-sized renderer to map through.
 @MainActor
 struct ScreenSharingVideoSurfaceGeometryTests {
   @Test func theRemoteDisplaySitsBetweenTheBarsAndTheEdgesMapToItsCorners() throws {
     let fixture = try GeometryFixture(size: .init(width: 640, height: 480))
     defer { fixture.close() }
     #expect(fixture.surface.metal.frame == fixture.surface.bounds, "layout hands the renderer the whole pane")
-    // 1920 × 1080 fitted into 640 × 480 is 640 × 360, with 60-point bars.
     try fixture.expectPointer(at: .init(x: 320, y: 240), x: 0.5, y: 0.5)
     try fixture.expectPointer(at: .init(x: 0, y: 240), x: 0, y: 0.5)
     try fixture.expectPointer(at: .init(x: 640, y: 240), x: 1, y: 0.5)
-    // AppKit's y grows upwards and the remote display's grows downwards.
     try fixture.expectPointer(at: .init(x: 320, y: 420), x: 0.5, y: 0)
     try fixture.expectPointer(at: .init(x: 320, y: 60), x: 0.5, y: 1)
   }
@@ -89,14 +78,11 @@ struct ScreenSharingVideoSurfaceGeometryTests {
     fixture.expectNothing(at: .init(x: 320, y: 450))
     fixture.expectNothing(at: .init(x: 320, y: 30))
     fixture.expectNothing(at: .init(x: -10, y: 240))
-    // Clamping is what a held button does: the drag keeps reporting the edge.
     try fixture.expectPointer(at: .init(x: 320, y: 450), x: 0.5, y: 0, clamp: true)
     try fixture.expectPointer(at: .init(x: 320, y: 30), x: 0.5, y: 1, clamp: true)
     try fixture.expectPointer(at: .init(x: -10, y: 240), x: 0, y: 0.5, clamp: true)
   }
 
-  /// The remote display is addressed in normalized coordinates, so a Retina pane
-  /// must send the same point as a 1× one even though it maps twice the pixels.
   @Test(arguments: [1.0, 2.0, 3.0] as [CGFloat])
   func theMappingIsIndependentOfTheBackingScaleFactor(scale: CGFloat) throws {
     let fixture = try GeometryFixture(size: .init(width: 640, height: 480), backingScale: scale)
@@ -127,7 +113,6 @@ struct ScreenSharingVideoSurfaceGeometryTests {
     defer { fixture.close() }
     try fixture.expectPointer(at: .init(x: 80, y: 240), x: 0.125, y: 0.5)
     fixture.reportVideoSize(.init(width: 1000, height: 1000))
-    // 480 × 480 centred in a 640-point pane leaves 80-point bars left and right.
     try fixture.expectPointer(at: .init(x: 320, y: 240), x: 0.5, y: 0.5)
     try fixture.expectPointer(at: .init(x: 80, y: 240), x: 0, y: 0.5)
     try fixture.expectPointer(at: .init(x: 320, y: 480), x: 0.5, y: 0)
@@ -141,19 +126,16 @@ struct ScreenSharingVideoSurfaceGeometryTests {
     try fixture.expectPointer(at: .init(x: 480, y: 240), x: 0.75, y: 0.5)
     fixture.resize(to: .init(width: 960, height: 480))
     #expect(fixture.surface.metal.frame.size == CGSize(width: 960, height: 480))
-    // Wider than 16:9, so the video now fits by height: 853.33 × 480, no bars above.
     try fixture.expectPointer(at: .init(x: 480, y: 240), x: 0.5, y: 0.5)
     try fixture.expectPointer(at: .init(x: 480 - 1920 * (480.0 / 1080) / 2, y: 240), x: 0, y: 0.5, accuracy: 1e-12)
     try fixture.expectPointer(at: .init(x: 480, y: 480), x: 0.5, y: 0)
     fixture.expectNothing(at: .init(x: 20, y: 240))
   }
 
-  /// `NSCursor` is process-wide state; these tests never suspend, so they run to
-  /// completion on the main actor without another test seeing a hidden cursor.
   @Test func theLocalCursorDisappearsOverTheRemoteDisplayAndComesBackInTheBars() throws {
     let fixture = try GeometryFixture(size: .init(width: 640, height: 480))
     defer { fixture.close() }
-    #expect(fixture.window.makeFirstResponder(fixture.surface))  // the user clicked into the video
+    #expect(fixture.window.makeFirstResponder(fixture.surface))
     #expect(fixture.surface.beginInput())
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(fixture.isRemoteCursor, "the host draws the pointer, so the local one is a 1 × 1 blank")
@@ -170,7 +152,7 @@ struct ScreenSharingVideoSurfaceGeometryTests {
     defer { fixture.close() }
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(NSCursor.current === NSCursor.arrow)
-    #expect(fixture.window.makeFirstResponder(fixture.surface))  // the user clicked into the video
+    #expect(fixture.window.makeFirstResponder(fixture.surface))
     #expect(fixture.surface.beginInput())
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(fixture.isRemoteCursor)
@@ -186,8 +168,6 @@ private let paneSizes: [CGSize] = [
   CGSize(width: 1200, height: 480),
 ]
 
-/// A pane in its own window, laid out, with an input surface that neither
-/// installs a keyboard tap nor waits on a real clock.
 @MainActor
 private final class GeometryFixture {
   let window: GeometryTestWindow
@@ -223,7 +203,6 @@ private final class GeometryFixture {
     layOut()
   }
 
-  /// The renderer's own path for telling the pane how big the remote display is.
   func reportVideoSize(_ size: CGSize) {
     surface.metal.coordinator.reportSize(size)
     layOut()
@@ -266,8 +245,6 @@ private final class GeometryTestWindow: NSWindow {
   override var backingScaleFactor: CGFloat { scale }
 }
 
-/// Stands in for the system tap: `beginInput()` must succeed without the suite
-/// grabbing the developer's keyboard.
 @MainActor
 private final class GeometryKeyboardCapture: ScreenSharingKeyboardCapture {
   func start(handle: @escaping (CGEventType, CGEvent) -> Bool, interrupted: @escaping () -> Void) -> Bool { true }

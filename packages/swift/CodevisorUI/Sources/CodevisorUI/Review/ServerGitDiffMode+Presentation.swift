@@ -1,7 +1,6 @@
 import CodevisorCore
 
 extension ServerGitDiffMode {
-  /// Menu order: the pull-request view first, then narrower slices.
   public static let reviewOrder: [ServerGitDiffMode] = [.branch, .uncommitted, .staged, .unstaged, .lastTurn]
 
   public var title: String {
@@ -24,7 +23,6 @@ extension ServerGitDiffMode {
     }
   }
 
-  /// What the comparison covers, for accessibility and menu help.
   func summary(base: String) -> String {
     switch self {
     case .branch: "All changes since this branch left \(base), including uncommitted work."

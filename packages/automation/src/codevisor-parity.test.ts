@@ -9,13 +9,9 @@ describe("Codevisor native action parity", () => {
 
   it("exposes the pane, plugin, machine and prompt queue HTTP actions used by native clients", () => {
     const equivalents = new Set([
-      // Native transport, not an agent operation.
       "GET /v1/clients/:clientId/socket",
-      // Close has the exact same final-pane behavior as DELETE.
       "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
-      // Plugin tools are exposed dynamically by the gateway.
       "POST /v1/plugins/:pluginId/tools/:toolName",
-      // Artwork transport is not an agent action.
       "GET /v1/plugins/:pluginId/icon",
       "GET /v1/plugins/:pluginId/panes/:paneType/icon"
     ])

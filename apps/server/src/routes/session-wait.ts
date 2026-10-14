@@ -14,7 +14,6 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { HttpFailure, run } from "../server-context.js"
 import type { EventFanout } from "../server-context.js"
 
-/// Events after which a watched session's sidebar state or queue may differ.
 const wakingKinds: ReadonlySet<EventEnvelope["kind"]> = new Set([
   "session.attention.updated",
   "session.queue.updated",
@@ -22,17 +21,11 @@ const wakingKinds: ReadonlySet<EventEnvelope["kind"]> = new Set([
   "session.deleted"
 ])
 
-/// Whether a session is in one of the requested states. A finished turn
-/// nobody has read yet shows as `unread`, which is `idle` with news, so it
-/// satisfies `idle`. A session with prompts still queued or starting is
-/// not idle even before its turn has begun, so `prompt` then `wait` never
-/// resolves on the stale pre-turn state.
 const settledIn = async (
   db: CodevisorDatabaseService,
   session: SessionSummary,
   until: ReadonlySet<SessionSidebarState>
 ): Promise<boolean> => {
-  // Local summaries always carry the projected state (optional only on the wire).
   const state = session.sidebarState as SessionSidebarState
   if (state !== "idle" && state !== "unread") return until.has(state)
   if (!until.has(state) && !until.has("idle")) return false
@@ -59,9 +52,6 @@ const waitedSession = async (
   }
 }
 
-/// Long-polls until ANY listed session is in an `until` state (checked
-/// immediately), the timeout passes, or `signal` aborts. A session deleted
-/// mid-wait wakes it too and is omitted from the result.
 export const waitForSessions = async (
   db: CodevisorDatabaseService,
   fanout: EventFanout,
@@ -88,11 +78,6 @@ export const waitForSessions = async (
     woken = true
     woke.resolve()
   }
-  // Re-evaluate one session. Checks run one at a time and stop once woken.
-  // A check that cannot read the database ends the wait with that error:
-  // the state it needed is unknown, so waiting on would only hang the
-  // caller. The chain itself never rejects — event-driven checks are
-  // detached, and a rejection there would be unhandled and exit the server.
   const check = (id: string): Promise<void> =>
     (checks = checks
       .then(async () => {
@@ -108,7 +93,6 @@ export const waitForSessions = async (
         wake()
       }))
 
-  // Subscribe before the first check so no transition slips between them.
   const unsubscribe = fanout.subscribe((event) => {
     if (wakingKinds.has(event.kind) && ids.includes(event.subjectId)) void check(event.subjectId)
   })

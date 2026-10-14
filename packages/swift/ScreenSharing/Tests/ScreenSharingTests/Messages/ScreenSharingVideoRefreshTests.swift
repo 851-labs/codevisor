@@ -16,7 +16,6 @@ struct ScreenSharingVideoRefreshTests {
     let signal = ScreenSharingRefreshSignal()
     let metrics = ScreenSharingMetrics()
     signal.onChange { event in
-      // Reentry verifies notifications do not hold the signal's lock.
       _ = signal.keyframeGeneration
       metrics.increment(event.needed ? "requested" : "recovered")
     }
@@ -26,8 +25,6 @@ struct ScreenSharingVideoRefreshTests {
     #expect(metrics.snapshot().counters["requested"] == 1)
     signal.decodedKeyframe(generation: old)
     #expect(metrics.snapshot().counters["recovered"] == nil)
-    // A callback cannot acknowledge recovery before the invalid session has
-    // been handed back to the decoder queue for reset.
     signal.decodedKeyframe(generation: signal.keyframeGeneration)
     #expect(metrics.snapshot().counters["recovered"] == nil)
     #expect(signal.consumeDecoderReset())
@@ -160,12 +157,10 @@ struct ScreenSharingVideoRefreshTests {
     var store = ScreenSharingRefreshFrameStore()
     #expect(store.capture(.init(pixelBuffer: a, timestampNs: 10))?.timestampNs == 10)
     #expect(store.refresh(nowNs: 30)?.timestampNs == 30)
-    // Capture B (PTS 20) was produced before the refresh but delivered late.
     let late = store.capture(.init(pixelBuffer: b, timestampNs: 20))
     #expect(late?.pixelBuffer === b && late?.timestampNs == 31 && late?.sourceTimestampNs == 20)
     let refreshedB = store.refresh(nowNs: 25)
     #expect(refreshedB?.pixelBuffer === b && refreshedB?.timestampNs == 32 && refreshedB?.sourceTimestampNs == 20)
-    // Actual duplicates and out-of-order captures remain rejected.
     #expect(store.capture(.init(pixelBuffer: b, timestampNs: 20)) == nil)
     #expect(store.capture(.init(pixelBuffer: a, timestampNs: 15)) == nil)
     #expect(store.capture(.init(pixelBuffer: a, timestampNs: -1)) == nil)

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Polls and request deadlines share one monotonic clock. Tests can advance
-/// polling time while deadline timers wait for that same virtual clock.
 struct LocalServerScheduler: Sendable {
   typealias Instant = ContinuousClock.Instant
 

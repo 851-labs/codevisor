@@ -4,11 +4,7 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - Send transition
-
 extension VirtualizedTranscriptScrollView {
-  /// Retires rows that moved out of the window once the send's springs
-  /// have carried them there; until then they stay mounted.
   func requestMountedRowsUpdateAfterSendTransition() {
     guard !isSendTransitionCleanupScheduled else { return }
     isSendTransitionCleanupScheduled = true
@@ -38,9 +34,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
     initialPositionApplied && host.isPresentationReady
   }
 
-  /// The row as the transcript draws it, without the measured root's
-  /// reporting hooks: the flight's copy must never publish readiness or
-  /// heights for the real row.
   func sendTransitionRowContent(for key: String) -> AnyView? {
     guard let row = rowByKey[key], let rowContent else { return nil }
     return AnyView(
@@ -50,9 +43,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
     )
   }
 
-  /// Without a composer snapshot the row rises from the editor (or, before
-  /// the composer has reported its frame, from just below the transcript's
-  /// visible bottom).
   func sendTransitionLiftOffset(for host: TranscriptRowHost) -> CGFloat {
     let sourceY: CGFloat
     if let frame = sendAnimationSourceFrame {

@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest"
 import { makePluginSupervisor } from "./plugin-supervisor.js"
 import { advancingClock, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
 
-/// Crash backoff and the circuit breaker, unit tested with an injectable
-/// clock. Process lifetime is owned by the manager's always-running loop.
-
 describe("crash backoff and circuit breaker", () => {
   it("refuses restarts inside the crash-backoff window, then relaunches", async () => {
     let now = 0
@@ -47,7 +44,6 @@ describe("crash backoff and circuit breaker", () => {
     expect(supervisor.state("owner.example")).toBe("failed")
     await expect(supervisor.ensureRunning(target)).rejects.toThrow(/failed 2 times in a row/)
     expect(supervisor.state("owner.example")).toBe("failed")
-    // Explicit restart clears the breaker; the next request starts fresh.
     supervisor.restart("owner.example")
     expect(supervisor.state("owner.example")).toBe("stopped")
     await supervisor.ensureRunning(target)
@@ -71,7 +67,6 @@ describe("crash backoff and circuit breaker", () => {
     await supervisor.ensureRunning(target)
     supervisor.noteSuccess("owner.example", await supervisor.acquire(target))
     spawn.simulateExit("exited with code 1")
-    // Without the reset this second crash would have tripped the breaker.
     expect(supervisor.state("owner.example")).toBe("stopped")
     now += 500
     await supervisor.ensureRunning(target)
@@ -95,8 +90,6 @@ describe("crash backoff and circuit breaker", () => {
     await supervisor.ensureRunning(target)
     now += 30_000
     spawn.simulateExit("exited with code 1")
-    // The stable second run resets the earlier failure before this crash is
-    // counted, so the process remains eligible for automatic recovery.
     expect(supervisor.state("owner.example")).toBe("stopped")
     now += 500
     await supervisor.ensureRunning(target)
@@ -120,7 +113,6 @@ describe("crash backoff and circuit breaker", () => {
     await supervisor.ensureRunning(target)
     expect(spawn.spawnCount()).toBe(2)
     supervisor.stop("owner.example")
-    // Not running (and unknown) plugins are no-ops.
     supervisor.markUnreachable("owner.example", lease)
     supervisor.markUnreachable("owner.unknown", lease)
     expect(supervisor.state("owner.example")).toBe("stopped")

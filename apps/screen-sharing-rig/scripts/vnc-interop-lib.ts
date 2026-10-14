@@ -1,5 +1,3 @@
-// Pure helpers for `bun run vnc:interop` (apps/screen-sharing-rig/scripts/vnc-interop.ts): the L3
-// real-server gate.
 import { createHash } from "node:crypto"
 
 export const defaults = {
@@ -43,8 +41,6 @@ export function parseInteropArguments(argv: string[]): InteropOptions {
   return options
 }
 
-/// The image tag follows its build context, so a changed Dockerfile or
-/// entrypoint always rebuilds and an unchanged one is reused.
 export function imageTag(files: Record<string, string>): string {
   const hash = createHash("sha256")
   for (const [name, contents] of Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b))) {
@@ -53,7 +49,6 @@ export function imageTag(files: Record<string, string>): string {
   return `codevisor-vnc-interop:${hash.digest("hex").slice(0, 12)}`
 }
 
-/// `docker port <container> 5901/tcp` prints one line per binding.
 export function parseDockerPort(output: string): number {
   for (const line of output.split("\n")) {
     const match = /^127\.0\.0\.1:(\d+)$/.exec(line.trim())
@@ -82,7 +77,6 @@ export function interopEnvironment({
   }
 }
 
-/// A gate, not a smoke test: the suites must have run (not been skipped) and passed.
 export interface TestRunVerdict {
   ran: number
   skipped: number

@@ -25,13 +25,11 @@ describe("mcp overlays", () => {
           value: { enabled: false },
           timestamp: at(1)
         },
-        // A name containing the delimiter parses as the key's tail.
         {
           key: mcpOverlayDisableKey("overlay-host", "odd|name"),
           value: { enabled: false },
           timestamp: at(2)
         },
-        // Another machine's disable, a tombstoned one, and enabled: true are all inert here.
         {
           key: mcpOverlayDisableKey("other-machine", "GitHub"),
           value: { enabled: false },
@@ -48,7 +46,6 @@ describe("mcp overlays", () => {
           value: { enabled: true },
           timestamp: at(5)
         },
-        // Malformed keys never crash the reader.
         { key: "enable|", value: { enabled: false }, timestamp: at(9) },
         { key: "enable|overlay-host", value: { enabled: false }, timestamp: at(10) },
         { key: "unrelated", value: 1, timestamp: at(12) }
@@ -71,8 +68,6 @@ describe("mcp readiness mapping", () => {
     expect(mcpReadiness(server("connected"), none)).toEqual({ name: "S", state: "ready" })
     expect(mcpReadiness(server("connecting"), none)).toEqual({ name: "S", state: "connecting" })
     expect(mcpReadiness(server("disconnected"), none)).toEqual({ name: "S", state: "idle" })
-    // A blocked row carries the raw connection state too, so a client can
-    // choose the action (sign in vs read a log) without parsing the prose.
     expect(mcpReadiness(server("needsSetup"), none)).toEqual({
       name: "S",
       state: "blocked",
@@ -85,9 +80,7 @@ describe("mcp readiness mapping", () => {
       code: "error",
       reason: "spawn npx ENOENT"
     })
-    // Unknown states surface verbatim rather than vanishing.
     expect(mcpReadiness(server("someFutureState"), none).reason).toBe("someFutureState")
-    // Each "disabled" carries its provenance: fleet-wide vs this machine.
     expect(mcpReadiness(server("connected", false), none)).toEqual({
       name: "S",
       state: "disabled",
@@ -107,15 +100,12 @@ describe("mcp readiness mapping", () => {
       state: "ready",
       toolCount: 14
     })
-    // Zero is a real answer and must survive; absent stays absent rather
-    // than becoming a misleading 0.
     expect(mcpReadiness({ ...server("connected"), toolCount: 0 }, none)).toEqual({
       name: "S",
       state: "ready",
       toolCount: 0
     })
     expect(mcpReadiness(server("connected"), none)).toEqual({ name: "S", state: "ready" })
-    // Only a connected server has a meaningful count.
     expect(mcpReadiness({ ...server("connecting"), toolCount: 9 }, none)).toEqual({
       name: "S",
       state: "connecting"
@@ -135,17 +125,13 @@ describe("publishMcpReadiness", () => {
     const value = first.changedEntries[0]?.value as {
       servers: Array<{ name: string; state: string }>
     }
-    // Built-in providers ride along — the most machine-specific MCPs of all.
     expect(value.servers.map((s) => s.name)).toContain("Computer Use")
-    // Sorted for stable change detection.
     expect(value.servers.map((s) => s.name)).toEqual(
       value.servers.map((s) => s.name).toSorted((a, b) => a.localeCompare(b))
     )
 
-    // A settled machine republishes nothing.
     expect((await publishMcpReadiness(deps)).changedEntries).toEqual([])
 
-    // An overlay flip changes the derived document and republishes.
     const target = value.servers[0]?.name ?? ""
     await run(
       services.db.mergeSyncEntries(MCP_OVERLAYS_NAMESPACE, [

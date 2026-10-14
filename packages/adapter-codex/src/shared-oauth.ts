@@ -2,8 +2,6 @@ import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 
 import type { CodexClient } from "./client.js"
 
-/// External-token mode keeps refresh ownership in Codevisor. Wrapping the
-/// request handler preserves it when the session installs approval handlers.
 export const connectSharedCodexAccount = async (
   client: CodexClient,
   oauth: NonNullable<HarnessAccountContext["oauth"]>

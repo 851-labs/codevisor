@@ -23,8 +23,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.controlling)
   }
 
-  /// 851-2318: synthesized typing (key code 0 carrying the text) goes out as
-  /// the text, once per press, its release swallowed; a real A key stays a key.
   @Test func synthesizedTypingIsSentAsTextAndPhysicalKeysStayKeys() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -47,7 +45,6 @@ struct ScreenSharingInputSurfaceTests {
       ])
   }
 
-  /// Control and Command change a key's characters by design (⌃A is U+0001): still a physical key.
   @Test func controlAndCommandKeepKeyCodeZeroPhysical() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -88,8 +85,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.keyboard.send(.keyDown, shortcut))
   }
 
-  /// Control–Option–Escape hands the keyboard back to the app and keeps the lease: the app's
-  /// shortcuts work again, and a click into the video takes the keyboard back.
   @Test func injectedHostKeysAreNotCapturedAndEscapeHandsTheKeyboardBack() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -108,8 +103,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.input.isLive && fixture.keyboard.claims)
   }
 
-  /// Viewing another machine from inside a Codevisor session to this Mac, input this Mac's host
-  /// injected is the user's own: forwarded, and the tap told to claim it.
   @Test func withAnotherMachineInViewInjectedInputIsForwarded() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -126,8 +119,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.events.last == .button(.init(x: 0.5, y: 0.5), button: 0, down: true, clicks: 1, modifiers: 0))
   }
 
-  /// A grant doesn't take the keyboard (⌘[ through the sidebar onto the pane must keep driving the
-  /// app): input goes to the host only once the video is clicked.
   @Test func aGrantLeavesTheKeyboardWhereItWasUntilTheVideoIsClicked() throws {
     let fixture = try InputSurfaceFixture(videoFocused: false)
     defer { fixture.close() }
@@ -161,8 +152,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.keyboard.stops == 1)
   }
 
-  /// The system tap decides on its own thread from this claim, so it must follow every focus
-  /// change the surface sees: otherwise keys would be swallowed from other apps, or leak locally.
   @Test func theTapClaimsKeysOnlyWhileTheFocusedVideoOwnsTheKeyboard() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -177,7 +166,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.keyboard.claims)
     fixture.notifications.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
     #expect(fixture.keyboard.claims)
-    // A change no notification announces is caught by the next key the tap claimed.
     fixture.view.isHidden = true
     #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12, flags: .maskCommand)))
     #expect(!fixture.keyboard.claims)
@@ -189,8 +177,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.keyboard.claims)
   }
 
-  /// Without Accessibility the tap can't start, and control works anyway: the local monitor carries
-  /// ordinary keys (and the mouse), and system shortcuts stay on this Mac.
   @Test func withoutKeyboardCaptureControlStillWorksAndSystemShortcutsStayLocal() throws {
     let fixture = try InputSurfaceFixture(keyboardStarts: false)
     defer { fixture.close() }
@@ -213,7 +199,7 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.input.route(toolbarClick) === toolbarClick)
     #expect(fixture.controlling)
     #expect(fixture.input.active)
-    #expect(fixture.window.firstResponder === fixture.view)  // A menu button need not take first responder.
+    #expect(fixture.window.firstResponder === fixture.view)
     #expect(fixture.events.contains(.key(code: 0, down: false, repeatKey: false, modifiers: 8)))
     #expect(fixture.events.contains(.key(code: 55, down: false, repeatKey: false, modifiers: 0)))
     #expect(fixture.events.last == .button(.init(x: 0.5, y: 0.5), button: 0, down: false, clicks: 1, modifiers: 0))
@@ -267,18 +253,13 @@ struct ScreenSharingInputSurfaceTests {
     let key = try fixture.key(.keyDown, code: 1)
     #expect(fixture.input.route(key) === key)
     fixture.window.key = true
-    #expect(fixture.input.route(key) === key)  // Returning to the app alone does not route local editor input.
+    #expect(fixture.input.route(key) === key)
     #expect(fixture.events.count == count)
     _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100)))
     #expect(fixture.input.route(key) == nil)
     #expect(fixture.events.last == .key(code: 1, down: true, repeatKey: false, modifiers: 0))
   }
 
-  /// ⌘Tab away and back with the video still first responder: input was
-  /// suspended (not live, so the pointer must be the arrow, not the host's
-  /// cursor) and resumes when the app is active and the window key again.
-  /// Before, nothing resumed it: the pointer stayed invisible over the video
-  /// and moves went nowhere until a click.
   @Test func returningToTheAppResumesInputWhenTheVideoStillHasFocus() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -294,13 +275,10 @@ struct ScreenSharingInputSurfaceTests {
     fixture.notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
     #expect(fixture.input.isLive)
     #expect(fixture.view.cursorChanges == changes + 2, "the host's cursor again")
-    // Keys reach the host again without a click.
     #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12)))
     #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
   }
 
-  /// 851-2472: a grant that arrives while the window isn't key starts input suspended, keeping the
-  /// lease, and goes live when the window becomes key. Refusing it switched the pane to View.
   @Test func aGrantWhileTheWindowIsNotKeyStartsSuspendedAndResumesOnFocus() throws {
     let fixture = try InputSurfaceFixture(windowIsKey: false)
     defer { fixture.close() }
@@ -312,7 +290,6 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
   }
 
-  /// Returning while something else has focus (a local editor, a sheet) stays suspended.
   @Test func returningWithAnotherResponderStaysSuspended() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -323,7 +300,6 @@ struct ScreenSharingInputSurfaceTests {
     fixture.notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
     fixture.notifications.post(name: NSWindow.didBecomeKeyNotification, object: fixture.window)
     #expect(!fixture.input.isLive)
-    // A menu closing doesn't resume it either while the editor has focus.
     fixture.notifications.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
     #expect(!fixture.input.isLive)
   }
@@ -362,22 +338,17 @@ private final class InputSurfaceFixture {
   let notifications = NotificationCenter()
   let keyboard = InputTestKeyboardCapture()
   let application = InputTestApplication()
-  /// Where focus sits when the user hasn't clicked into the video (the sidebar, another pane).
   let sidebar = NSTextView(frame: .init(x: 0, y: 490, width: 100, height: 30))
   var messages: [ScreenSharingControlMessage] = []
   var events: [ScreenSharingInputEvent] = []
   private(set) var keyboardReturns = 0
-  /// The lease's data plane, wired exactly as the endpoint wires it.
   lazy var forwarder = ScreenSharingInputForwarder(send: { [unowned self] in
     messages.append($0); return true
   })
-  /// The lease the host granted; the fixture plays the lease reducer's part around it.
   private(set) var lease: UUID? = UUID()
-  /// The reason the lease was given back, as the lease reducer would receive it.
   private(set) var releaseReason: String?
   var controlling: Bool { forwarder.isActive }
 
-  /// What the lease reducer does on `.inputLost`: stop forwarding and capture, release the lease on the wire.
   func release(reason: String?) {
     releaseReason = reason
     if let lease { messages.append(.release(lease: lease)) }
@@ -386,7 +357,6 @@ private final class InputSurfaceFixture {
     input.end()
   }
 
-  /// `videoFocused`: the user clicked into the video before the grant (most tests start there).
   init(keyboardStarts: Bool = true, windowIsKey: Bool = true, videoFocused: Bool = true) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
@@ -400,7 +370,6 @@ private final class InputSurfaceFixture {
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard,
       applicationIsActive: { [application] in application.active },
-      // A fixed layout (key 0 is A), not the developer's: the synthesized-text check compares against it.
       layout: { code, carbon in code == 0 ? (carbon & UInt32(Carbon.shiftKey >> 8) != 0 ? "A" : "a") : "x" })
     input.onInput = { [unowned self] in
       events.append($0); forwarder.forward($0)
@@ -420,7 +389,6 @@ private final class InputSurfaceFixture {
     return event
   }
 
-  /// A key event carrying `text`, the way Computer Use `typeText` posts it (key code 0 by default).
   func typed(_ text: String, code: UInt16 = 0, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
     let event = try systemKey(code: code, down: down, flags: flags)
     let units = Array(text.utf16)
@@ -454,7 +422,6 @@ private final class InputTestApplication {
 private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
   var starts = true
   var stops = 0
-  /// What the surface last told the tap about owning the keyboard.
   private(set) var claims = false
   private(set) var claimsInjected = false
   var handle: ((CGEventType, CGEvent) -> Bool)?
@@ -482,7 +449,6 @@ private final class InputTestWindow: NSWindow {
 @MainActor
 private final class InputTestView: NSView, ScreenSharingInputTarget {
   override var acceptsFirstResponder: Bool { true }
-  /// How often the surface asked for the pointer to be re-evaluated (host cursor vs. arrow).
   private(set) var cursorChanges = 0
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? { .init(x: 0.5, y: 0.5) }
   func controlCursorChanged() { cursorChanges += 1 }

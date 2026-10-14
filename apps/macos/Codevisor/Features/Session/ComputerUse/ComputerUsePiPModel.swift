@@ -1,8 +1,3 @@
-//  Drives the picture-in-picture preview of the window a chat's agent is
-//  controlling through Computer Use. Local chats watch the in-process
-//  stream; chats on another Mac watch it over screen sharing. The viewer
-//  owns the frame source and must always be detached.
-
 import AppKit
 import CodevisorCore
 import CodevisorCoreMac
@@ -11,8 +6,6 @@ import Observation
 import os
 import SwiftUI
 
-/// The chat pane a live view is shown in; a remote host checks that the
-/// pane really shows this chat before streaming to it.
 struct ComputerUsePiPPane: Equatable {
   let workspaceId: UUID
   let paneId: UUID
@@ -30,14 +23,8 @@ final class ComputerUsePiPModel {
     case remote(client: any CodevisorServerClienting, pane: ComputerUsePiPPane)
   }
 
-  /// Dismissals survive tab switches and turns, but not new Computer Use
-  /// activity: the preview returns once the agent has stopped (or gone
-  /// idle) and then controls an app again.
   private static var dismissedSessions: Set<UUID> = []
-  /// Where the user last left each session's card; survives tab switches.
   private static var cornerBySession: [UUID: ComputerUseLivePreviewCorner] = [:]
-  /// The card area the user last chose in each session, and anywhere: a new
-  /// chat starts at the size the user last settled on.
   private static var areaBySession: [UUID: CGFloat] = [:]
   private static var lastArea: CGFloat?
 
@@ -51,25 +38,17 @@ final class ComputerUsePiPModel {
   var corner: ComputerUseLivePreviewCorner {
     didSet { Self.cornerBySession[chatSessionID] = corner }
   }
-  /// The preferred card area in square points; nil until the user resizes,
-  /// meaning the default fit.
   var area: CGFloat? {
     didSet {
       Self.areaBySession[chatSessionID] = area
       if let area { Self.lastArea = area }
     }
   }
-  /// Local only: true from a stop until the hide delay elapses, so the card
-  /// shows the stopped state briefly instead of vanishing mid-glance.
   private(set) var isLingering = false
   @ObservationIgnored private var hideTask: Task<Void, Never>?
-  /// Remote only: while dismissed, asks the host (without streaming) for
-  /// the agent's next activity.
   @ObservationIgnored private var reappearanceTask: Task<Void, Never>?
   @ObservationIgnored private var prefersFastPolling = false
 
-  /// `preview` defaults to the shared facade. It is resolved here rather
-  /// than as a default argument, which would be evaluated off the main actor.
   init(chatSessionID: UUID, source: Source, preview: ComputerUseLivePreview? = nil) {
     self.chatSessionID = chatSessionID
     self.source = source
@@ -84,12 +63,9 @@ final class ComputerUsePiPModel {
     return false
   }
 
-  /// Local activity; nil for remote chats.
   var activity: ComputerUseLivePreview.Activity? {
     isRemote ? nil : preview.activity(forChatSession: chatSessionID)
   }
-
-  // MARK: Presentation
 
   var isVisible: Bool {
     guard !isDismissed, let viewer else { return false }
@@ -116,7 +92,6 @@ final class ComputerUsePiPModel {
     return isRemote || activity?.state == .active
   }
 
-  /// The agent cursor as a 0…1 fraction of the frame, when known.
   var cursor: CGPoint? {
     isLive ? activity?.cursor : nil
   }
@@ -139,8 +114,6 @@ final class ComputerUsePiPModel {
 
   var canActivateTarget: Bool { activity != nil }
 
-  /// Refresh applies to a preview that is showing, or trying to show, live
-  /// frames: not once it has stopped.
   var canReload: Bool {
     guard let viewer else { return false }
     if isRemote {
@@ -150,13 +123,8 @@ final class ComputerUsePiPModel {
     return activity?.state == .active
   }
 
-  /// Whether the user has resized the card away from the default fit.
   var hasCustomSize: Bool { area != nil }
 
-  // MARK: Lifecycle
-
-  /// The card's view appeared, e.g. on a tab or chat switch, possibly
-  /// mid-turn. A dismissed preview stays dismissed.
   func appeared(isTurnRunning: Bool) {
     Log.computerUse.debug(
       "Live view \(self.chatSessionID, privacy: .public): appeared (remote=\(self.isRemote), dismissed=\(self.isDismissed), turn running=\(isTurnRunning))"
@@ -165,8 +133,6 @@ final class ComputerUsePiPModel {
     sync()
   }
 
-  /// Reconciles the viewer with the current state. Call on appear and
-  /// whenever local activity changes.
   func sync() {
     switch source {
     case .local: syncLocal()
@@ -180,21 +146,16 @@ final class ComputerUsePiPModel {
     }
   }
 
-  /// Recovers a frozen or blank preview without closing the card: a fresh
-  /// viewer re-attaches to the stream, which reconfigures for it.
   func reload() {
     guard canReload else { return }
     viewer = ComputerUseLivePreview.replace(viewer) { makeViewer() }
   }
 
-  /// Back to the default fit, here and for chats that open later.
   func resetSize() {
     area = nil
     Self.lastArea = nil
   }
 
-  /// The chat's turn started or finished. A running turn makes a remote
-  /// viewer look more often; it doesn't bring back a dismissed preview.
   func turnActivityChanged(isRunning: Bool) {
     if isRunning != prefersFastPolling {
       Log.computerUse.debug(
@@ -227,7 +188,6 @@ final class ComputerUsePiPModel {
     releaseViewer()
   }
 
-  /// New Computer Use activity: a dismissed preview may show again.
   private func undismiss(reason: String) {
     guard isDismissed else { return }
     Log.computerUse.log("Live view \(self.chatSessionID, privacy: .public): reopens, \(reason, privacy: .public)")
@@ -235,10 +195,6 @@ final class ComputerUsePiPModel {
     Self.dismissedSessions.remove(chatSessionID)
   }
 
-  /// Polls the host until the agent has stopped controlling an app and then
-  /// controls one again, which brings the dismissed preview back. The
-  /// activity the user closed doesn't: it must be seen to end first. A host
-  /// that can't answer leaves the preview closed.
   private func watchForRemoteActivity() {
     guard reappearanceTask == nil, case .remote(let client, let pane) = source else { return }
     let preview = preview
@@ -256,8 +212,6 @@ final class ComputerUsePiPModel {
     }
   }
 
-  /// One answer from the host while dismissed. Returns how long to wait
-  /// before asking again, or nil once the watch is over.
   private func remoteActivityObserved(_ active: Bool?, sawNoActivity: inout Bool) -> Duration? {
     guard isDismissed else {
       reappearanceTask = nil
@@ -278,8 +232,6 @@ final class ComputerUsePiPModel {
       teardown()
       return
     }
-    // Once the closed activity goes idle or stops, the agent's next use of
-    // an app is a new request for attention.
     if activity.state != .active { undismiss(reason: "the activity went \(activity.state)") }
     switch activity.state {
     case .active, .idle:

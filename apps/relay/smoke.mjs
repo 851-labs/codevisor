@@ -1,13 +1,3 @@
-// Relay smoke tests.
-//
-//   node apps/relay/smoke.mjs --local-image <image> [--engine docker|container]
-//     Boots the image exactly as Fly does, but with a throwaway CA (no
-//     certbot): /healthz over TLS, the port-80 router, and a relay-only
-//     tunnel round trip between two real endpoints through the container.
-//
-//   node apps/relay/smoke.mjs --relay <id>
-//     Against the live hostname: public-CA TLS with ≥14 days left, /healthz,
-//     and the router's /generate_204.
 import { execFile, spawn } from "node:child_process"
 import { mkdir, readFile, rm } from "node:fs/promises"
 import { createServer } from "node:http"
@@ -49,9 +39,6 @@ const get = (url, options = {}) =>
     req.end()
   })
 
-/// Retries `check` for up to a minute. A thrown error counts as "not yet":
-/// a relay that just deployed can reset its first few connections while
-/// Fly's proxy picks up the new Machine.
 const until = async (label, check) => {
   let lastError
   for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -108,7 +95,6 @@ async function smokeLocalImage(image, engine) {
   await mkdir(dir, { recursive: true })
   const net = { relayHost: "localhost", netRoot: dir }
   await ensureDevCertificates(net)
-  // The relay admits every endpoint this server is asked about.
   const authorize = createServer((req, res) => {
     res.end(req.headers.authorization === "Bearer smoke-token" ? "true" : "false")
   })
@@ -136,9 +122,6 @@ async function smokeLocalImage(image, engine) {
             "--entrypoint",
             "/app/entrypoint.sh"
           ]),
-      // Linux Docker resolves host.docker.internal (the authorize server's
-      // address) only when asked to; Docker Desktop and Apple containers
-      // always do.
       ...(engine === "docker" ? ["--add-host", "host.docker.internal:host-gateway"] : []),
       "--publish",
       "18443:443",

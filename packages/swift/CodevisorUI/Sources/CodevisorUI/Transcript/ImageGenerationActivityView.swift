@@ -1,7 +1,6 @@
 import ACPKit
 import SwiftUI
 
-/// The image tool owns its display even when the model sends no Markdown.
 public struct ImageGenerationActivityView: View {
   private let call: ToolCall
 

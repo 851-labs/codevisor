@@ -5,9 +5,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Flat colours through the product's Main 4:4:4 encoder and decoder, converted back to RGB with
-/// the viewer's shader maths (851-2398: colours arrived darker on tuftlord). Hardware-gated like
-/// the codec round trip: a Mac without Main444 skips.
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingColourFidelityTests {
   static let colours: [(r: Int, g: Int, b: Int)] = [(0, 150, 255), (128, 128, 128), (200, 0, 0), (200, 0, 160)]
@@ -54,8 +51,6 @@ struct ScreenSharingColourFidelityTests {
     }
   }
 
-  /// The Computer Use live preview (851-2471): BGRA frames (crisp text, alpha edges) into HEVC
-  /// Main. The encoder must emit Main 4:2:0, which the preview negotiated, not 4:4:4.
   @Test func bgraFramesIntoHEVCMainComeOutAsMain() async throws {
     let metrics = ScreenSharingMetrics()
     let configuration = try ScreenSharingVideoConfiguration(
@@ -80,8 +75,6 @@ struct ScreenSharingColourFidelityTests {
     #expect(metrics.snapshot().counters["encodeErrors"] == nil && metrics.snapshot().counters["decodeErrors"] == nil)
   }
 
-  /// 851-2471: libwebrtc handed a viewer a Main 4:4:4 decoder for a Main stream (the Computer Use
-  /// preview), and every frame was rejected. The decoder follows the stream's own profile.
   @Test func aDecoderMadeForMain444DecodesAMainStream() async throws {
     let metrics = ScreenSharingMetrics()
     let configuration = try ScreenSharingVideoConfiguration(
@@ -106,7 +99,6 @@ struct ScreenSharingColourFidelityTests {
     #expect(metrics.snapshot().labels["decoderError"] == nil)
   }
 
-  /// Four vertical bands of `colours`, BGRA, tagged the way ScreenCaptureKit tags the product's sRGB capture.
   static func bands(width: Int, height: Int) throws -> CVPixelBuffer {
     var created: CVPixelBuffer?
     let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
@@ -130,7 +122,6 @@ struct ScreenSharingColourFidelityTests {
     return buffer
   }
 
-  /// The viewer's shader maths (ScreenSharingMetalView.shader) at one pixel of a biplanar 4:4:4 frame.
   static func rgb(_ buffer: CVPixelBuffer, x: Int, y: Int) -> (r: Int, g: Int, b: Int) {
     CVPixelBufferLockBaseAddress(buffer, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }

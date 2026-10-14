@@ -9,11 +9,6 @@ private struct TerminalThemeUpdate: Equatable {
   let isDark: Bool
 }
 
-/// Resolves the active theme from the ThemeManager and injects the token set
-/// into the environment. Must be applied at EVERY hosting root — the main
-/// `WindowGroup` and the `Settings` scene are separate SwiftUI hierarchies and
-/// each needs its own application. Sheets and popovers presented from within a
-/// hierarchy inherit the environment automatically.
 struct ThemedRoot: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.colorScheme) private var systemScheme
@@ -33,17 +28,9 @@ struct ThemedRoot: ViewModifier {
         highlight.map { CodeHighlightTheme(key: $0.key, json: $0.json) }
       )
       .markdownTheme(makeMarkdownTheme(theme: theme, highlight: highlight))
-      // Setting the root foreground style makes the hierarchical styles
-      // (.primary/.secondary/.tertiary/.quaternary) derive from the
-      // theme foreground everywhere, so text hierarchy is on-theme
-      // without per-view changes. System themes keep the native styles.
       .foregroundStyle(theme.isSystem ? AnyShapeStyle(.foreground) : AnyShapeStyle(theme.textPrimary))
-      // Themed windows paint the theme's content surface behind
-      // everything; system themes keep the default window background.
       .background(theme.isSystem ? nil : theme.windowBackground.ignoresSafeArea())
       .tint(theme.isSystem ? nil : theme.accent)
-      // Seed the terminal theme before the Ghostty runtime prewarns
-      // (initial: true) and re-theme live surfaces on switches.
       .onChange(of: terminalUpdate, initial: true) { _, update in
         CodevisorGhosttyApp.applyTheme(update.palette, systemIsDark: update.isDark)
       }
@@ -63,14 +50,6 @@ extension View {
     modifier(ThemedRoot())
   }
 
-  /// Paints this content column's slice of the title bar with the theme's
-  /// window surface when a theme is active. Sidebar columns keep the native
-  /// title bar. `.toolbarBackground(_:for: .windowToolbar)` can't do
-  /// this — it always tints the toolbar across the WHOLE window — so the
-  /// toolbar's own backing is hidden and a band the height of the top safe
-  /// area is drawn above this view's content instead. The band sits over
-  /// scrolled content while the toolbar controls render above it. System
-  /// themes keep the native toolbar.
   func themedToolbarBackground(_ theme: Theme) -> some View {
     modifier(ThemedToolbarBackgroundModifier())
   }
@@ -86,21 +65,10 @@ struct ThemedToolbarBackgroundModifier: ViewModifier {
       content
         .toolbarBackground(.hidden, for: .windowToolbar)
         .overlay {
-          // Laid out INSIDE the top safe area (ignoresSafeArea,
-          // pinned to the true window top) — never `.offset` out of
-          // bounds. WindowDragGesture registers its drag region at
-          // the LAYOUT position, so an offset band leaves an
-          // invisible window-drag strip over the content below the
-          // toolbar (it swallowed the center pane bar's tab clicks).
           GeometryReader { proxy in
             VStack(spacing: 0) {
               Rectangle().fill(theme.windowBackground)
                 .frame(height: proxy.safeAreaInsets.top)
-                // Hiding the system toolbar background removes
-                // its implicit drag region on older SDK
-                // compatibility paths. Restore that behavior
-                // with SwiftUI's dedicated native window
-                // gesture.
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
                 .allowsWindowActivationEvents()

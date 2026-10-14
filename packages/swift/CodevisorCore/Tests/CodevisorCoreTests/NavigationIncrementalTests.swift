@@ -4,8 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Rebuilds recompute only what changed, and a view of one workspace hears
-/// only about that workspace.
 @MainActor
 struct NavigationIncrementalTests {
   let project = Project.fromFolder(URL(fileURLWithPath: "/src/app"), serverId: "m")
@@ -149,7 +147,6 @@ struct NavigationIncrementalTests {
     let fixture = NavigationFixture()
     await fixture.install(
       machineId: "m", projects: [project], sessions: [open], workspaces: [live, archived, terminalOnly])
-    // The closed chat still belongs to the terminal workspace on the server.
     var closedRecord = serverSession(from: closed)
     closedRecord.workspaceId = terminalOnly.id.uuidString
     #expect(await fixture.store.apply(.fixture(cursor: 5, sessions: [closedRecord]), machineId: "m"))

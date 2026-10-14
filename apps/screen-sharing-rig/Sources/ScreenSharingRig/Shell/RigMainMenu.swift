@@ -3,19 +3,10 @@
   import CodevisorCoreMac
   import ScreenSharingRigKit
 
-  /// The standard menu bar. The rig runs `NSApplication` by hand, not as a
-  /// SwiftUI `App`, so nothing installs one for it, and on macOS the usual
-  /// shortcuts (⌘Q, ⌘W, ⌘M, ⌘H, copy and paste in text fields, full screen)
-  /// are menu key equivalents. While a machine is under Control the video
-  /// surface captures keys first and forwards them to the machine, as the
-  /// product does; Control–Option–Escape hands the keyboard back.
   @MainActor
   enum RigMainMenu {
-    /// Posted by View → Toggle Sidebar; the shell flips its split view's column visibility, as its toolbar button does.
     static let toggleSidebar = Notification.Name("RigMainMenu.toggleSidebar")
-    /// Posted by View → Reconnect; the selected machine starts its connection over.
     static let reconnect = Notification.Name("RigMainMenu.reconnect")
-    /// Posted by View → Forget Password; the selected machine drops its stored VNC password and asks again.
     static let forgetPassword = Notification.Name("RigMainMenu.forgetPassword")
 
     static func install(appName: String = "Codevisor Screen Sharing Rig") {
@@ -83,15 +74,12 @@
     }
   }
 
-  /// Actions the rig handles itself rather than through the responder chain.
   @MainActor
   final class RigMenuTarget: NSObject, NSMenuItemValidation {
     static let shared = RigMenuTarget()
-    /// The machine whose view is mounted (only the selected one is).
     var selectedMachineId: String?
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
       if item.action == #selector(forgetPassword(_:)) {
-        // Only a machine whose password lives in the Keychain has one to forget.
         let machine = RigMachine.catalog.first { $0.id == selectedMachineId }
         guard case .vnc(_, _, .keychain) = machine?.connection else { return false }
         return true
@@ -109,9 +97,7 @@
     }
   }
 
-  /// Per-machine rig settings, in the rig's defaults (the product keeps them per machine id too).
   enum RigMachineSettings {
-    /// Dynamic Resolution (851-2340): off unless turned on for this machine (851-2481).
     static func dynamicResolution(_ id: String) -> Bool {
       resetDynamicResolutionOnce()
       return UserDefaults.standard.object(forKey: "dynamicResolution.\(id)") as? Bool ?? false
@@ -120,7 +106,6 @@
       resetDynamicResolutionOnce()
       UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
     }
-    /// 851-2481: every machine's choice cleared once for the new default, as in the app.
     private static func resetDynamicResolutionOnce() {
       let defaults = UserDefaults.standard
       guard !defaults.bool(forKey: "dynamicResolutionResetToOff") else { return }
@@ -129,14 +114,12 @@
       }
       defaults.set(true, forKey: "dynamicResolutionResetToOff")
     }
-    /// HDR (851-2480): off unless turned on for this machine.
     static func highDynamicRange(_ id: String) -> Bool {
       UserDefaults.standard.object(forKey: "highDynamicRange.\(id)") as? Bool ?? false
     }
     static func setHighDynamicRange(_ enabled: Bool, for id: String) {
       UserDefaults.standard.set(enabled, forKey: "highDynamicRange.\(id)")
     }
-    /// The machine's sound (851-2379): on unless turned off, volume 0…1.
     static func sound(_ id: String) -> ScreenSharingMachineSettings.Sound {
       .init(
         enabled: UserDefaults.standard.object(forKey: "soundEnabled.\(id)") as? Bool ?? true,
@@ -146,7 +129,6 @@
       UserDefaults.standard.set(sound.enabled, forKey: "soundEnabled.\(id)")
       UserDefaults.standard.set(sound.volume, forKey: "soundVolume.\(id)")
     }
-    /// When video last arrived from this machine (851-2367).
     static func lastConnected(_ id: String) -> Date? {
       UserDefaults.standard.object(forKey: "lastConnected.\(id)") as? Date
     }

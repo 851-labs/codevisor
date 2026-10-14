@@ -1,10 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// One continuous recognizer owns the hold and subsequent drag. A swipe fails
-/// the hold as soon as it moves, leaving the List's pan recognizer free to
-/// scroll. A SwiftUI sequence containing DragGesture can claim that pan while
-/// its long press is still pending, even when installed as simultaneous.
 struct WorkspaceReorderGesture: UIGestureRecognizerRepresentable {
   var onBegan: (CGPoint) -> Void
   var onChanged: (CGPoint) -> Void

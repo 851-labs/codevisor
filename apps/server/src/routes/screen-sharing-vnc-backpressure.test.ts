@@ -11,8 +11,6 @@ import { VNCControlArbiter } from "./vnc-control.js"
 it.each([4, 5])(
   "pauses at %i queued bytes and resumes only below the high-water mark",
   (queued) => {
-    // Control the send queue and its completions: loopback buffering depends on the OS
-    // and can drain an entire payload without ever applying backpressure.
     const completions: Array<() => void> = []
     const webSocket = Object.assign(new EventEmitter(), {
       bufferedAmount: 0,
@@ -44,7 +42,6 @@ it.each([4, 5])(
         new VNCControlArbiter(),
         4
       )
-      // Registering the data listener starts the readable stream.
       resume.mockClear()
 
       const first = Buffer.from([1])
@@ -61,7 +58,6 @@ it.each([4, 5])(
         [second, { binary: true }]
       ])
 
-      // One send completed, but the queue is still exactly at the limit.
       webSocket.bufferedAmount = 4
       completions.shift()!()
       expect(upstream.isPaused()).toBe(true)
@@ -72,7 +68,6 @@ it.each([4, 5])(
       expect(upstream.isPaused()).toBe(false)
       expect(resume).toHaveBeenCalledOnce()
 
-      // A later send on a drained connection must not pause or resume it again.
       webSocket.bufferedAmount = 0
       upstream.emit("data", first)
       webSocket.bufferedAmount = 0

@@ -1,25 +1,18 @@
 import Foundation
 import Observation
 
-/// The providers pane's state, the same for every harness: loading, the
-/// configured providers, what is running right now, and what went wrong.
 @MainActor @Observable public final class HarnessProviderAccounts {
   public enum Load: Equatable, Sendable {
     case loading
     case loaded
-    /// Nothing loaded yet, with the reason.
     case failed(String)
   }
 
   public let backend: any HarnessProviderBackend
-  /// A machine's own accounts sign in to providers only; API keys are
-  /// shared across the fleet, so they're managed in the shared settings.
   public let providerAccountsOnly: Bool
   public private(set) var providers: [HarnessProvider] = []
   public private(set) var load: Load = .loading
-  /// The running operation's label, or nil: shown as the sheet's status.
   public private(set) var workingLabel: String?
-  /// A failure after the providers loaded.
   public var errorMessage: String?
 
   public init(backend: any HarnessProviderBackend, providerAccountsOnly: Bool) {
@@ -29,7 +22,6 @@ import Observation
 
   public var isWorking: Bool { workingLabel != nil }
 
-  /// The providers with a credential this screen manages.
   public var configured: [HarnessProvider] {
     providers.filter { provider in
       guard let credential = provider.credential else { return false }
@@ -37,7 +29,6 @@ import Observation
     }
   }
 
-  /// Providers someone can sign in to, with a way to do it from here.
   public var available: [HarnessProvider] { providers.filter { !$0.methods.isEmpty } }
 
   public func reload() async {
@@ -69,7 +60,6 @@ import Observation
     }
   }
 
-  /// Runs `operation` labelled `label`; a failure becomes `errorMessage`.
   func perform(_ label: String, _ operation: () async throws -> Void) async {
     workingLabel = label
     errorMessage = nil
@@ -82,11 +72,8 @@ import Observation
   }
 }
 
-/// The add-provider sheet's state: the chosen provider and method, what the
-/// user typed, and the sign-in it starts.
 @MainActor @Observable public final class HarnessProviderSignInDraft {
   public let providers: [HarnessProvider]
-  /// Replacing a configured provider's credential rather than adding one.
   public let isReplacing: Bool
   public var providerId: String {
     didSet { if providerId != oldValue { selectDefaultMethod() } }
@@ -96,13 +83,11 @@ import Observation
   }
   public var inputs: [String: String] = [:]
   public var apiKey = ""
-  /// The answer to the running sign-in's prompt.
   public var answer = ""
   public private(set) var signIn: HarnessProviderSignIn?
   public private(set) var workingLabel: String?
   public var errorMessage: String?
   public private(set) var isComplete = false
-  /// The provider's sign-in page, set once per page for the sheet to open.
   public private(set) var pageToOpen: URL?
 
   private let backend: any HarnessProviderBackend
@@ -128,14 +113,11 @@ import Observation
   }
   public var isWorking: Bool { workingLabel != nil }
 
-  /// What the sheet says while it works or waits.
   public var status: String? {
     if signIn?.state == .running { return "Waiting for sign-in…" }
     return workingLabel
   }
 
-  /// The sheet's action: "Save" for a key, "Sign In" otherwise, "Continue"
-  /// to answer a prompt; nil while waiting on the provider's page.
   public var actionTitle: String? {
     guard let signIn else { return method?.kind == .apiKey ? "Save" : "Sign In" }
     return signIn.state == .waiting && signIn.prompt != nil ? "Continue" : nil
@@ -170,8 +152,6 @@ import Observation
     }
   }
 
-  /// Follows the provider's sign-in until it finishes. Runs for as long as
-  /// the sheet shows it.
   public func follow() async {
     while let current = signIn, current.state.isPending, !isComplete {
       do { try await sleep(.seconds(1)) } catch { return }
@@ -182,7 +162,6 @@ import Observation
     }
   }
 
-  /// The sheet closed: a sign-in still running is abandoned.
   public func dismissed() async {
     guard let signIn, signIn.state.isPending else { return }
     self.signIn = nil

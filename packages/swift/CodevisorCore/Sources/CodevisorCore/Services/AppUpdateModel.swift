@@ -1,9 +1,6 @@
 import Foundation
 import Observation
 
-/// The small, framework-independent portion of app update state consumed by
-/// Codevisor's existing sidebar and composer. Sparkle owns discovery,
-/// verification, installation, rollback, release notes, and relaunching.
 public struct AppUpdateRelease: Equatable, Sendable {
   public var version: String
   public var releasePageURL: URL?
@@ -27,27 +24,15 @@ public final class AppUpdateModel {
   }
 
   public private(set) var phase: Phase = .idle
-  /// Download progress (0...1) while the update is downloading; nil when the
-  /// current step has no measurable progress.
   public private(set) var progress: Double?
-  /// What the update is doing right now ("Downloading…", "Waiting for 2
-  /// chats to finish…"); nil outside an install.
   public private(set) var statusMessage: String?
   public let currentVersion: String
   public let currentBuildNumber: Int?
   public private(set) var allowsAlphaUpdates: Bool
 
-  /// Installed by the app target's Sparkle coordinator. Checks report
-  /// through this model — Sparkle never shows its own UI.
   public var checkHandler: (@MainActor () async -> Void)?
-  /// Installs the release behind the banner headlessly: download, drain the
-  /// local server's chats, install, relaunch — progress lands in this model.
   public var installHandler: (@MainActor (AppUpdateRelease) async -> Void)?
-  /// The same headless cycle, started without a known release: used when a
-  /// remote client asked this machine's server to update itself, so the
-  /// feed check and the install run as one session.
   public var unattendedInstallHandler: (@MainActor () async -> Void)?
-  /// Resets Sparkle's update cycle after the user changes channels.
   public var channelChangeHandler: (@MainActor (_ allowsAlpha: Bool) -> Void)?
 
   public init(
@@ -65,9 +50,6 @@ public final class AppUpdateModel {
     channelChangeHandler?(value)
   }
 
-  /// Alpha and Stable publish the same signed app bytes. The bundle keeps
-  /// the base marketing version while its build number identifies the Alpha
-  /// release that produced those bytes.
   public var displayedCurrentVersion: String {
     Self.displayedVersion(
       currentVersion,
@@ -113,10 +95,6 @@ public final class AppUpdateModel {
     await checkHandler()
   }
 
-  /// The same check, run by the fleet's periodic sweep: the row keeps
-  /// whatever it last knew until Sparkle reports, so a known release never
-  /// blinks out of the list (or the count) while the feed is re-read, and
-  /// an offline sweep leaves no failure behind.
   public func checkForUpdatesInBackground() async {
     guard !isUpdating, let checkHandler else { return }
     await checkHandler()
@@ -133,9 +111,6 @@ public final class AppUpdateModel {
     await installHandler(release)
   }
 
-  /// Installs the newest release without any Sparkle UI, then relaunches.
-  /// Falls back to the interactive check when no unattended handler is
-  /// installed (development builds have no Sparkle coordinator).
   public func installUpdateUnattended() async {
     guard let unattendedInstallHandler else {
       await checkForUpdates()
@@ -165,7 +140,6 @@ public final class AppUpdateModel {
     )
   }
 
-  /// A step of the install: `progress` is the download fraction when known.
   public func reportProgress(_ message: String?, fraction: Double? = nil) {
     statusMessage = message
     progress = fraction.map { min(1, max(0, $0)) }

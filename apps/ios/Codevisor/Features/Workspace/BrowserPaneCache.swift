@@ -2,7 +2,6 @@ import CodevisorUI
 import UIKit
 import WebKit
 
-/// Keep recent pages alive across pane switches, bounded on memory-constrained devices.
 @MainActor
 @Observable
 final class BrowserPaneCache {
@@ -19,8 +18,6 @@ final class BrowserPaneCache {
     models[id] = model
     order.removeAll { $0 == id }
     order.append(id)
-    // BrowserPageRetention owns the live-page budget. Keep lightweight models
-    // so eviction doesn't invalidate a SwiftUI view or lose its last location.
     while order.count > 128,
       let oldest = order.first(where: {
         $0 != id && models[$0]?.hasLiveBrowserPage == false && models[$0]?.protectsBrowserPage == false

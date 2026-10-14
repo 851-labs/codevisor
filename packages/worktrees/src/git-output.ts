@@ -4,16 +4,11 @@ import type { Readable } from "node:stream"
 export type GitOutputStream = "stdout" | "stderr"
 export type GitOutputListener = (stream: GitOutputStream, line: string) => void
 
-/// Matches ANSI escape sequences - CSI (colors, cursor moves, erase), OSC
-/// (titles/links), and single-character escapes - that TUI-style checkout
-/// hooks emit. Setup logs render as plain text, so these are stripped.
 // oxlint-disable no-control-regex
 const ansiEscapePattern =
   /\u001B(?:\[[0-9:;<=>?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?|[@-Z\\^_])/g
 // oxlint-enable no-control-regex
 
-/// Strips ANSI escapes and stray control characters and trims trailing
-/// whitespace, leaving a human-readable log line (possibly empty).
 export const sanitizeGitOutputLine = (line: string): string =>
   line
     .replace(ansiEscapePattern, "")
@@ -47,11 +42,9 @@ const acceptSanitizedLine = (output: CommandOutput, stream: StreamOutput, raw: s
   onOutput?.(stream.name, line)
 }
 
-/// Bare CR frames support progress repainting; each stream retains its own remainder.
 const appendCompleteLines = (output: CommandOutput, stream: StreamOutput, chunk: string): void => {
   stream.buffered += chunk
   const lines = stream.buffered.split(/\r?\n|\r/)
-  // split always yields at least one element, so pop never returns undefined.
   stream.buffered = lines.pop() as string
   for (const line of lines) acceptSanitizedLine(output, stream, line)
 }
@@ -67,8 +60,6 @@ const attachStream = (readable: Readable, output: CommandOutput, stream: StreamO
   readable.on("data", (chunk: string) => appendCompleteLines(output, stream, chunk))
 }
 
-/// Synchronous output ownership for one spawned Git command. Settlement and
-/// diagnostic construction stay with the operation that spawned it.
 export class GitCommandOutput {
   readonly stderrLines: Array<string> = []
   private readonly output: CommandOutput

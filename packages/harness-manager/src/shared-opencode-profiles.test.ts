@@ -195,7 +195,6 @@ it("applies shared keys without publishing or replacing local credentials and re
     anthropic: current.anthropic
   })
   expect(await source.read()).toBeUndefined()
-  // Reconstructing the source simulates a restart; the local override survives.
   await sharedProfileCredentialSource(id, f.dataDir).apply(
     JSON.stringify({ openai: apiKey("three") })
   )

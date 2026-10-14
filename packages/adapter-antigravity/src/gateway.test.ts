@@ -37,7 +37,6 @@ const gateway = {
   bearerToken: "secret"
 }
 
-/// A user home whose agy has its own MCP servers and data.
 const home = async () => {
   const root = await temporary()
   const own = join(root, "home", ".gemini")
@@ -58,7 +57,6 @@ describe("Codevisor's gateway for agy", () => {
   it("adds the bridge beside an account's own servers, the chat's gateway in its environment", async () => {
     const { root, home: user, own } = await home()
     const gemini = join(root, "account", "gemini")
-    // An account's config links the user's MCP config until a chat starts.
     await mkdir(join(gemini, "config"), { recursive: true })
     await symlink(join(own, "config", "mcp_config.json"), join(gemini, "config", "mcp_config.json"))
 
@@ -81,7 +79,6 @@ describe("Codevisor's gateway for agy", () => {
         codevisor: { command: "/bin/node", args: [bridge] }
       }
     })
-    // The user's own config is untouched; the token never reaches a file.
     expect(await json(join(own, "config", "mcp_config.json"))).toEqual({
       mcpServers: { fs: { command: "npx", args: ["fs"] } }
     })
@@ -90,7 +87,6 @@ describe("Codevisor's gateway for agy", () => {
       "secret"
     )
 
-    // A second chat finds it all in place.
     await prepareGateway({
       gateway,
       geminiDir: gemini,
@@ -112,7 +108,6 @@ describe("Codevisor's gateway for agy", () => {
     })
     const overlay = setup.args[0]!.slice("--gemini_dir=".length)
     expect(overlay.startsWith(join(root, "overlays"))).toBe(true)
-    // Their conversations, data and rules are theirs, linked.
     for (const name of ["antigravity-cli", "antigravity", "GEMINI.md"])
       expect(await readlink(join(overlay, name))).toBe(join(own, name))
     expect(await readlink(join(overlay, "config", "skills"))).toBe(join(own, "config", "skills"))
@@ -120,7 +115,6 @@ describe("Codevisor's gateway for agy", () => {
     expect(await json(join(overlay, "config", "mcp_config.json"))).toMatchObject({
       mcpServers: { fs: {}, codevisor: { command: "/bin/node" } }
     })
-    // The same user gets the same overlay.
     const again = await prepareGateway({
       gateway,
       geminiDir: undefined,
@@ -162,7 +156,6 @@ describe("Codevisor's gateway for agy", () => {
       node: "/bin/node"
     })
     const overlay = first.args[0]!.slice("--gemini_dir=".length)
-    // A new entry appears in the user's data, but the overlay can't take it.
     await writeFile(join(user, ".gemini", "AGENTS.md"), "more rules")
     await chmod(overlay, 0o500)
     cleanups.push(() => chmod(overlay, 0o700))
@@ -172,15 +165,12 @@ describe("Codevisor's gateway for agy", () => {
   })
 })
 
-/// A request's JSON body, if it has one.
 const read = async (request: IncomingMessage) => {
   let body = ""
   for await (const chunk of request) body += chunk
   return body === "" ? undefined : (JSON.parse(body) as Record<string, unknown>)
 }
 
-/// A gateway that speaks MCP's streamable HTTP the way Codevisor's does:
-/// a session from `initialize`, SSE or JSON replies, and a stream of its own.
 const fakeGateway = async () => {
   const seen: Array<{
     method: string
@@ -246,7 +236,6 @@ const fakeGateway = async () => {
   return { url: `http://127.0.0.1:${port}/mcp?gateway=g1`, seen }
 }
 
-/// The bridge as agy runs it: lines in, lines out, each awaited by content.
 const runBridge = async (env: Record<string, string>) => {
   const root = await temporary()
   const path = join(root, "bridge.mjs")
@@ -295,7 +284,6 @@ describe("the gateway bridge", () => {
     })
     expect(await bridge.byId(1)).toMatchObject({ result: { serverInfo: { name: "codevisor" } } })
     bridge.send({ jsonrpc: "2.0", method: "notifications/initialized" })
-    // The gateway's own stream opens once the session is ready.
     expect(
       await bridge.next((message) => message.method === "notifications/tools/list_changed")
     ).toBeDefined()
@@ -322,7 +310,6 @@ describe("the gateway bridge", () => {
         params: { protocolVersion: "2025-06-18" }
       }
     })
-    // Everything after initialize is in its session, at its protocol version.
     for (const request of remote.seen.slice(1))
       expect(request).toMatchObject({
         session: "s-1",
@@ -337,7 +324,6 @@ describe("the gateway bridge", () => {
       CODEVISOR_MCP_GATEWAY_URL: "http://127.0.0.1:1/mcp",
       CODEVISOR_MCP_GATEWAY_TOKEN: "secret"
     })
-    // A notification has no answer to give; the request after it does.
     bridge.send({ jsonrpc: "2.0", method: "notifications/roots/list_changed" })
     bridge.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
     expect(await bridge.byId(1)).toMatchObject({

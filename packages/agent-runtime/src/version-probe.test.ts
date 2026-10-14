@@ -45,11 +45,9 @@ describe("makeVersionProber", () => {
     await prober.probe(["/bin/tool"])
     expect(prober.get("/bin/tool")).toBe("1.0.0")
 
-    // Unchanged binary: cache hit, no new spawn.
     await prober.probe(["/bin/tool", "/bin/tool"])
     expect(reads).toBe(1)
 
-    // Upgraded in place: identity moves, version refreshes.
     identity = "b"
     await prober.probe(["/bin/tool"])
     expect(prober.get("/bin/tool")).toBe("2.0.0")
@@ -84,15 +82,11 @@ describe("makeVersionProber", () => {
     })
     await expect(failing.probe(["/bin/broken"])).resolves.toBeUndefined()
     expect(failing.get("/bin/broken")).toBeUndefined()
-    // The failure is cached too — no retry storm for the same binary.
     await failing.probe(["/bin/broken"])
     expect(failedReads).toBe(1)
   })
 
   it("notices a package-manager upgrade that keeps the binary's mtime", async () => {
-    // Homebrew bottles (1980-01-01) and npm tarballs (1985-10-26) stamp every
-    // file with one fixed time, so an upgrade swaps the symlinked binary
-    // without moving the mtime.
     const root = mkdtempSync(join(tmpdir(), "version-probe-"))
     cleanups.push(() => rmSync(root, { force: true, recursive: true }))
     const stamped = new Date("1980-01-01T00:00:00Z")

@@ -6,13 +6,11 @@ import Foundation
 import Observation
 @testable import CodevisorCoreMac
 
-/// Shared fixtures of the viewer feature tests.
 enum ScreenSharingViewerFixtures {
   static let display = ServerScreenSharingDisplay(id: "display", name: "Display", width: 1920, height: 1080)
   static let second = ServerScreenSharingDisplay(id: "second", name: "Second", width: 1280, height: 720)
 }
 
-/// A typed channel whose availability and inbound messages the test controls.
 @MainActor
 final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChannel {
   var isAvailable = false {
@@ -38,8 +36,6 @@ final class FakeChannel<Message: Sendable & Equatable>: ScreenSharingMessageChan
   }
 }
 
-/// A media session without media: SDP is a fixture string, video readiness is
-/// its surface presenting, and the control channel becomes available on accept.
 @MainActor
 final class FakeMediaSession: NativeScreenSharingMediaSession {
   let capabilities: ScreenSharingCapabilities
@@ -52,16 +48,12 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { nil }
   var failure: String?
   var onConnectionChanged: ((String) -> Void)?
-  /// Every remote desktop size the endpoint asked for.
   private(set) var desktopSizeRequests: [[Int]] = []
   func requestDesktopSize(width: Int, height: Int) { desktopSizeRequests.append([width, height]) }
-  /// A desktop that resizes (VNC-like), for Dynamic Resolution (851-2340).
   var resizesDesktop = false
   var initialDesktopSize: (width: Int, height: Int)? = (1024, 768)
   var linkBitsPerSecond: Double?
   var deliversVideo = true
-  /// HDR (851-2480): whether the session can carry it, what the endpoint told the host, and the
-  /// host's answer, which a test sends through `onVideoFormatChanged`.
   var supportsHighDynamicRange = false
   private(set) var highDynamicRangeReports: [Bool] = []
   func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
@@ -90,8 +82,6 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   }
 }
 
-/// The AppKit half of an endpoint without AppKit behavior: an empty view,
-/// recorded input state, and a presentation the test triggers.
 @MainActor
 final class FakeSurface: ScreenSharingViewerSurface {
   let view = NSView()
@@ -105,12 +95,10 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var inputFailureMessage: String?
   var capturesSystemShortcuts = true
   var dropsInjectedInput = true
-  /// Whether `beginInput` succeeds; false models a refused focus or keyboard capture.
   var beginInputSucceeds = true
   private(set) var inputActive = false
   private(set) var presentations = 0
   private(set) var stopped = false
-  /// What the endpoint said about the host's pointer in the video (851-2355).
   private(set) var videoShowsPointer: Bool?
 
   func setVideoShowsPointer(_ shows: Bool) { videoShowsPointer = shows }
@@ -128,16 +116,13 @@ final class FakeSurface: ScreenSharingViewerSurface {
   }
 }
 
-/// The Codevisor server's screen-sharing signaling as a scripted transport.
 actor SharingTransport: ServerRequestTransport {
   nonisolated let started = TestSignal()
   nonisolated let releaseFirstStart = TestSignal()
-  /// Signaled for every stop request, after it was recorded.
   nonisolated let stopped = TestSignal()
   private let blockFirstStart: Bool
   private let capabilitiesStatus: String
   private let heartbeatStatus: String
-  /// Answers the first heartbeats, in order, before `heartbeatStatus` takes over.
   private var heartbeatReplies: [ServerScreenSharingReply]
   private let restartStatus: String
   private let provider: String?
@@ -183,7 +168,6 @@ actor SharingTransport: ServerRequestTransport {
   }
 }
 
-/// Events observed from one or more backend streams, in arrival order.
 @MainActor
 @Observable
 final class ScreenSharingEventLog {
@@ -196,7 +180,6 @@ final class ScreenSharingEventLog {
   func finish() { finished += 1 }
 }
 
-/// The native backend over the scripted transport, a virtual clock and fake media.
 @MainActor
 final class NativeBackendHarness {
   let transport: SharingTransport
@@ -235,7 +218,6 @@ final class NativeBackendHarness {
       vncOpen: vncOpen, target: target)
   }
 
-  /// Consumes one connection's events into the log until the stream ends or the consumer is cancelled.
   @discardableResult
   func connect(_ display: String = "display") -> Task<Void, Never> {
     let consumer = Task { @MainActor [self] in

@@ -70,16 +70,12 @@ export function readBrowserLogs(
 ): BrowserLogEntry[] {
   const levels = readLevels(args)
   const filter = typeof args.filter === "string" ? args.filter : undefined
-  // Normalize every record before filtering: even hidden invalid timestamps must throw.
   const normalized = (logs.get(sessionId) ?? []).map(normalizeEntry)
-  return (
-    normalized
-      .filter(
-        (entry) =>
-          (levels === undefined || levels.has(entry.level)) &&
-          (filter === undefined || entry.message.includes(filter))
-      )
-      // Read and coerce the limit last, retaining JavaScript's slice coercion.
-      .slice(-Math.max(1, Math.min(1_000, Number(args.limit ?? 100))))
-  )
+  return normalized
+    .filter(
+      (entry) =>
+        (levels === undefined || levels.has(entry.level)) &&
+        (filter === undefined || entry.message.includes(filter))
+    )
+    .slice(-Math.max(1, Math.min(1_000, Number(args.limit ?? 100))))
 }

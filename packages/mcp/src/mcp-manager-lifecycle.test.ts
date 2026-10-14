@@ -71,8 +71,6 @@ describe("MCP manager lifecycle", () => {
     expect(created).toMatchObject({ connectionState: "connected", toolCount: 2 })
     const handshakes = initializeCount(upstream.requests)
 
-    // A rename (what a synced definition most often carries) and a no-op
-    // enable flip leave the upstream untouched.
     expect(await manager.update(created.id, { name: "Renamed" })).toMatchObject({
       connectionState: "connected",
       name: "Renamed",
@@ -84,7 +82,6 @@ describe("MCP manager lifecycle", () => {
     })
     expect(initializeCount(upstream.requests)).toBe(handshakes)
 
-    // Disabling closes; re-enabling answers before the handshake settles.
     expect(await manager.update(created.id, { enabled: false })).toMatchObject({
       connectionState: "disconnected",
       enabled: false,
@@ -95,7 +92,6 @@ describe("MCP manager lifecycle", () => {
     expect(await connectionStateSettles(manager, created.id, "connected")).toBe("connected")
     expect(initializeCount(upstream.requests)).toBe(handshakes + 1)
 
-    // A transport-affecting edit reconnects.
     await manager.update(created.id, { headers: { "X-Trace": "1" } })
     expect(await connectionStateSettles(manager, created.id, "connected")).toBe("connected")
     expect(initializeCount(upstream.requests)).toBe(handshakes + 2)
@@ -161,7 +157,6 @@ describe("MCP manager lifecycle", () => {
     expect(seen).toContain(created.id)
     seen.length = 0
 
-    // Nothing visible changed: no notification.
     await manager.update(created.id, { enabled: false })
     expect(seen).toEqual([])
 
@@ -184,8 +179,6 @@ describe("MCP manager lifecycle", () => {
     })
     expect(created).toMatchObject({ enabled: true, connectionState: "needsAuthorization" })
 
-    // Enabling an unauthorized server is honored as a wish and reported as
-    // needing authorization — never silently flipped back off.
     expect(await manager.update(created.id, { enabled: true })).toMatchObject({
       enabled: true,
       connectionState: "needsAuthorization"
@@ -194,7 +187,6 @@ describe("MCP manager lifecycle", () => {
       enabled: true,
       connectionState: "needsAuthorization"
     })
-    // No credentials means no network attempt: the refusal is immediate.
     await expect(manager.tools(created.id)).rejects.toThrow("needs authorization")
     expect((await manager.list()).find((server) => server.id === created.id)).toMatchObject({
       enabled: true,
@@ -225,8 +217,6 @@ describe("MCP manager lifecycle", () => {
     await manager.importOAuthMaterial(legacy.id, { owner: "local", material })
     await manager.importOAuthMaterial(foreign.id, { owner: "other-machine", material })
 
-    // Adopting our own id is a no-op; a foreign owner is left alone; the
-    // legacy owner's tokens become ours to refresh (test manager id: "test").
     expect(await manager.adoptOAuthOwnership("test")).toEqual([])
     expect(await manager.adoptOAuthOwnership("local")).toEqual([legacy.id])
     expect((await manager.oauthSyncState(legacy.id))?.owner).toBe("test")
@@ -248,8 +238,6 @@ describe("MCP manager lifecycle", () => {
       tokens: { access_token: "at", refresh_token: "rt", token_type: "bearer", expires_in: 3600 },
       tokensSavedAt: 10
     })
-    // The owner's material arrives: the mirror tries it straight away —
-    // unless the server is switched off here, which leaves it alone.
     const idle = await manager.create({
       authType: "oauth",
       enabled: false,
@@ -267,8 +255,6 @@ describe("MCP manager lifecycle", () => {
       true
     )
 
-    // A record left at "needs authorization" by an older build (tokens
-    // present, never tried) heals when the manager boots.
     const stored = (await run(db.getMcpServer(created.id)))!
     await run(
       db.saveMcpServer({

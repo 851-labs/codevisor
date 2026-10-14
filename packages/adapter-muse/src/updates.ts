@@ -3,9 +3,6 @@ import type { SessionSkill, SessionSkills } from "@codevisor/api"
 
 import { record, text } from "./protocol.js"
 
-/// Session-level MSP notifications (usage, todos, skills) and the prompt
-/// shape, as Codevisor payloads.
-
 const finite = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined
 
@@ -14,7 +11,6 @@ const defined = (fields: Record<string, number | undefined>): Record<string, num
     Object.entries(fields).filter((entry): entry is [string, number] => entry[1] !== undefined)
   )
 
-/// `session/tokenUsage`: the session's running totals.
 export const tokenUsageUpdate = (params: unknown): Record<string, unknown> => {
   const event = record(params)
   const usage = record(event.usage)
@@ -22,7 +18,6 @@ export const tokenUsageUpdate = (params: unknown): Record<string, unknown> => {
   return {
     sessionUpdate: "usage_update",
     ...defined({
-      // The latest model call's prompt plus reply: what the context holds.
       used: finite(event.totalTokens),
       inputTokens: finite(cumulative.promptTokens),
       outputTokens: finite(cumulative.outputTokens),
@@ -33,7 +28,6 @@ export const tokenUsageUpdate = (params: unknown): Record<string, unknown> => {
   }
 }
 
-/// `session/contextUsage`: how full the context window is.
 export const contextUsageUpdate = (params: unknown): Record<string, unknown> => {
   const event = record(params)
   return {
@@ -51,12 +45,10 @@ const planStatus = (status: unknown): string | undefined => {
     case "completed":
       return "completed"
     default:
-      // Cancelled todos leave the checklist.
       return undefined
   }
 }
 
-/// `session/todoListChanged`: a full replacement of the checklist.
 export const planUpdate = (params: unknown): Record<string, unknown> => {
   const items = record(params).items
   return {
@@ -72,7 +64,6 @@ export const planUpdate = (params: unknown): Record<string, unknown> => {
   }
 }
 
-/// `skill/list`: each skill runs as `/<selector>`.
 export const museSkills = (response: unknown): SessionSkills => {
   const rows = record(response).skills
   return sessionSkills(
@@ -95,8 +86,6 @@ export const museSkills = (response: unknown): SessionSkills => {
   )
 }
 
-/// The `turn/start` input: a leading `/<skill>` becomes a skill part (Muse
-/// expands it host-side), images go inline, other attachments as path notes.
 export const turnInput = (
   input: PromptInput,
   skills: ReadonlyArray<SessionSkill>

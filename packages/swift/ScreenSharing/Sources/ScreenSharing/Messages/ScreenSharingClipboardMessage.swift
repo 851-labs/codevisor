@@ -1,7 +1,5 @@
 import Foundation
 
-/// Clipboard requests are explicit, connection-local operations. Text never
-/// enters the workspace database, signaling server, metrics or diagnostics.
 public enum ScreenSharingClipboardMessage: Codable, Sendable, Equatable {
   case read(id: UUID)
   case begin(id: UUID, bytes: Int)
@@ -22,8 +20,6 @@ public enum ScreenSharingClipboardMessage: Codable, Sendable, Equatable {
   }
   public func encoded() throws -> Data {
     let encoder = JSONEncoder()
-    // Base64 can consist almost entirely of slashes. Escaping each slash
-    // would double a chunk's wire size and exceed the bounded channel.
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let data = try encoder.encode(Envelope(version: 1, message: self))
     guard data.count <= 4096 else { throw ScreenSharingError.invalid("Clipboard message is too large.") }

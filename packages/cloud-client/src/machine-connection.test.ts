@@ -35,7 +35,6 @@ describe("connection lifecycle", () => {
     })
     expect(h.states).toEqual(["connecting", "connected"])
     expect(h.connection.state).toBe("connected")
-    // start() while running is a no-op.
     h.connection.start()
     expect(h.sockets).toHaveLength(1)
   })
@@ -53,17 +52,17 @@ describe("connection lifecycle", () => {
     connect(h)
     h.sockets[0]!.onclose?.(1006)
     expect(h.connection.state).toBe("reconnecting")
-    expect(h.reconnects[0]!.delayMs).toBe(250) // 0.5 * 500 * 2^0
+    expect(h.reconnects[0]!.delayMs).toBe(250)
     h.reconnects[0]!.callback()
     h.sockets[1]!.onclose?.(1006)
-    expect(h.reconnects[1]!.delayMs).toBe(500) // 0.5 * 500 * 2^1
+    expect(h.reconnects[1]!.delayMs).toBe(500)
     h.reconnects[1]!.callback()
     const socket = h.sockets[2]!
     socket.onopen?.()
     socket.receive({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "c" })
     expect(h.connection.state).toBe("connected")
     socket.onclose?.(1006)
-    expect(h.reconnects[2]!.delayMs).toBe(250) // attempts reset by welcome
+    expect(h.reconnects[2]!.delayMs).toBe(250)
   })
 
   it("reconnects when a half-open socket misses its heartbeat pong", () => {
@@ -83,7 +82,6 @@ describe("connection lifecycle", () => {
     expect(h.reconnects).toHaveLength(1)
     expect(h.reconnects[0]!.delayMs).toBe(250)
 
-    // Reconnect does not depend on the zombie socket ever emitting close.
     h.reconnects[0]!.callback()
     expect(h.sockets).toHaveLength(2)
   })
@@ -107,8 +105,6 @@ describe("connection lifecycle", () => {
     const socket = connect(h)
     activeTimeout(h, 30_000).run()
     const deadline = activeTimeout(h, 10_000)
-    // A newer hub: a frame kind this build does not know, a known kind with
-    // a value it does not know, and a garbled frame.
     socket.onmessage?.(JSON.stringify({ t: "future-frame" }))
     socket.onmessage?.(JSON.stringify({ t: "error", code: "future-code", message: "?" }))
     socket.onmessage?.("{")
@@ -116,7 +112,6 @@ describe("connection lifecycle", () => {
     expect(h.connection.state).toBe("connected")
     expect(socket.terminated).toBe(false)
     expect(h.disconnects).toEqual([])
-    // Frames it understands still land.
     socket.receive({ t: "pong" })
     expect(deadline.cancelled).toBe(true)
   })
@@ -133,16 +128,13 @@ describe("connection lifecycle", () => {
       }
     })
     const socket = connect(h)
-    // A handler that throws while accepting refuses that channel.
     openEcho(socket, "peer-1", "ch-bad", { fail: "open" })
     expect(socket.lastClose()).toMatchObject({ channelId: "ch-bad", seq: 0, reason: "rejected" })
-    // One that closed its channel before throwing is not closed twice.
     openEcho(socket, "peer-1", "ch-closed", { fail: "after-close" })
     expect(socket.closeFrames().filter((frame) => frame.channelId === "ch-closed")).toEqual([
       expect.objectContaining({ reason: "unsupported" })
     ])
 
-    // One that throws on a frame ends its channel; its sibling keeps working.
     const { opened } = openEcho(socket, "peer-1", "ch-1")
     openEcho(socket, "peer-1", "ch-2")
     const closes: string[] = []
@@ -210,8 +202,6 @@ describe("connection lifecycle", () => {
     const staleWelcome = activeTimeout(h, 15_000)
     first.onclose?.(1006)
 
-    // These may already be queued by an event loop when the socket is
-    // superseded. None may revive or disturb the detached transport.
     first.onopen?.()
     first.receive({ t: "pong" })
     staleWelcome.invoke()
@@ -264,11 +254,9 @@ describe("connection lifecycle", () => {
       h.sockets[0]!.onrejected?.(status)
       expect(h.connection.state).toBe("revoked")
       expect(h.disconnects).toEqual([{ kind: "upgrade-rejected", status }])
-      // The aborted request may still report a close; it belongs to nobody now.
       h.sockets[0]!.onclose?.(1006)
       expect(h.reconnects.map((entry) => entry.delayMs)).toEqual([REVOKED_RECHECK_MS])
 
-      // Still refused: the machine stays "revoked" (no flapping) and waits again.
       const statesBefore = [...h.states]
       h.reconnects[0]!.callback()
       expect(h.connection.state).toBe("revoked")
@@ -280,7 +268,6 @@ describe("connection lifecycle", () => {
       ])
       expect(h.states).toEqual(statesBefore)
 
-      // Accepted after all (the refusal was the cloud's mistake): back online.
       h.reconnects[1]!.callback()
       h.sockets[2]!.onopen?.()
       h.sockets[2]!.receive({
@@ -311,7 +298,6 @@ describe("connection lifecycle", () => {
     h.reconnects[0]!.callback()
     h.sockets[1]!.onrejected?.(429)
     expect(h.reconnects).toHaveLength(2)
-    // Stale rejection from the superseded socket is ignored.
     h.sockets[0]!.onrejected?.(401)
     expect(h.connection.state).toBe("reconnecting")
   })
@@ -329,7 +315,6 @@ describe("connection lifecycle", () => {
     expect(h.timeouts.every((timeout) => timeout.cancelled || timeout.fired)).toBe(true)
     socket.onclose?.(1000)
     expect(h.reconnects).toHaveLength(0)
-    // stop() twice is a no-op.
     h.connection.stop()
   })
 
@@ -362,19 +347,16 @@ describe("connection lifecycle", () => {
     first.onclose?.(1006)
     h.reconnects[0]!.callback()
     const second = h.sockets[1]!
-    // The first socket's late close must not trigger another reconnect.
     first.onclose?.(1006)
     expect(h.reconnects).toHaveLength(1)
     second.onopen?.()
     second.receive({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "c" })
     second.receive({ t: "pong" })
     second.receive({ t: "error", code: "rate-limited", message: "slow down" })
-    // Frames for unknown channels are answered with a close, not a crash.
     second.receiveRelay({
       peerId: "peer-x",
       frame: { t: "credit", channelId: "nope", seq: 0, bytes: 1 }
     })
-    // Malformed binary messages and headers are dropped.
     second.onmessage?.(new Uint8Array([0, 0]))
     second.receiveRelay({ frame: { t: "data", channelId: "x", seq: 0 } })
     expect(h.connection.state).toBe("connected")

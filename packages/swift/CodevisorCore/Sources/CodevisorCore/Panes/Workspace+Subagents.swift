@@ -1,10 +1,6 @@
 import Foundation
 
 extension Workspace {
-  /// A subagent pane is a view of a chat in this workspace. Removes every
-  /// subagent pane whose chat is no longer here, however that chat left
-  /// (closed here, archived from the sidebar, closed on another device), and
-  /// any tab or split that leaves empty. Returns the removed panes.
   @discardableResult
   public mutating func pruneOrphanedSubagentPanes() -> [PaneDescriptorState] {
     let chats = Set(chatSessionIds)
@@ -20,9 +16,6 @@ extension Workspace {
     return orphans
   }
 
-  /// Swaps the pane `id` for `pane` in place and makes its split the active
-  /// one — the agent viewer beside a chat switching to another agent. Nil
-  /// when `id` isn't here or `pane` already is.
   public mutating func replacePane(
     id: UUID, with pane: PaneDescriptorState
   ) -> (tabId: UUID, leafId: UUID)? {

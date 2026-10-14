@@ -46,9 +46,9 @@ struct ToolCallTests {
         rawOutput: ["ok": true],
         exitCode: 0
       ))
-    #expect(merged.title == "Read file")  // unchanged
-    #expect(merged.kind == .read)  // unchanged
-    #expect(merged.status == .completed)  // updated
+    #expect(merged.title == "Read file")
+    #expect(merged.kind == .read)
+    #expect(merged.status == .completed)
     #expect(merged.content?.count == 1)
     #expect(merged.locations?.first?.line == 3)
     #expect(merged.rawInput?["path"] == .string("/a"))
@@ -135,7 +135,6 @@ struct ToolCallTests {
     let decoded = try JSONDecoder().decode(ToolCall.self, from: data)
     #expect(decoded.parentToolCallId == "task-1")
 
-    // An update carrying the parent id attaches it; one without preserves it.
     let attached = ToolCall(toolCallId: "sub-2", title: "Grep")
       .applying(ToolCallUpdate(toolCallId: "sub-2", parentToolCallId: "task-1"))
     #expect(attached.parentToolCallId == "task-1")
@@ -156,7 +155,6 @@ struct ToolCallTests {
 
   @Test("web_search kind and resource_link source content decode from the wire shape")
   func webSearchSources() throws {
-    // Verbatim shape the claude provider emits for a WebSearch completion.
     let json = """
       {"toolCallId":"ws-1","title":"Searched for swift release","kind":"web_search","status":"completed","content":[
           {"type":"content","content":{"type":"resource_link","name":"Swift 6.2 Released | Swift.org","title":"Swift 6.2 Released | Swift.org","uri":"https://www.swift.org/blog/swift-6.2-released/"}}
@@ -184,7 +182,6 @@ struct ToolCallTests {
     let merged = call.applying(update)
     #expect(merged.diffStats?.first?.added == 14)
 
-    // An update without stats preserves the existing ones.
     let untouched = merged.applying(ToolCallUpdate(toolCallId: "x", status: .completed))
     #expect(untouched.diffStats?.first?.added == 14)
     #expect(untouched.status == .completed)

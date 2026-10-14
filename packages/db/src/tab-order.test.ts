@@ -11,7 +11,6 @@ const paneIds = [
 ] as const
 const [chat, terminal, browser] = paneIds
 
-/// A workspace with three tabs, created in order.
 const seed = async (filename: string) => {
   const db = await run(makeDatabase({ filename, serverId: "local" }))
   const project = await run(db.createProject({ folderPath: "/tmp/tab-order" }))
@@ -60,7 +59,6 @@ describe("@codevisor/db shared tab order", () => {
         (pane) => pane.workspaceId === workspace.id
       )
 
-      // UUID aliases deduplicate; unknown and foreign ids cannot join this workspace.
       const reordered = await run(
         db.reorderWorkspacePanes(workspace.id, [
           browser.toUpperCase(),
@@ -93,7 +91,6 @@ describe("@codevisor/db shared tab order", () => {
     const sqlite = new Database(filename)
     try {
       const before = await run(db.listWorkspacePanes)
-      // Browser writes first; abort Chat's second write after a real change.
       sqlite.exec(`
         create trigger reject_pane_move before update of position on workspace_panes
         when old.id = '${chat}'
@@ -126,7 +123,6 @@ describe("@codevisor/db shared tab order", () => {
       expect(moved).toMatchObject({ position: "0000000000018", revision: before.revision })
       expect((await run(db.listWorkspacePanes))[0]?.id).toBe(browser)
 
-      // Anything besides the position is still an edit.
       const renamed = await run(
         db.updateWorkspacePane(workspace.id, browser, { title: "Docs", position: "0000000000019" })
       )
@@ -141,8 +137,6 @@ describe("@codevisor/db shared tab order", () => {
     const { db } = await seed(filename)
     await run(db.close)
 
-    // Rewind migration 55 and give the rows creation times out of id order;
-    // an unreadable time sorts first rather than failing the upgrade.
     const sqlite = new Database(filename)
     sqlite.exec(`
       alter table workspace_panes drop column position;

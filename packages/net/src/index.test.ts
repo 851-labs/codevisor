@@ -9,9 +9,6 @@ import {
   type TunnelEndpoint
 } from "./index.js"
 
-// Real native boundary: two endpoints on loopback, no relay. The Rust crate's
-// own tests cover relays and media flows; this proves the binding and the
-// TypeScript types agree.
 describe("codevisor-net addon", () => {
   const endpoints: TunnelEndpoint[] = []
   afterEach(async () => {

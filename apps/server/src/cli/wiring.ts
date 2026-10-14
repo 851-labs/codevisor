@@ -13,11 +13,6 @@ import {
 } from "./machines.js"
 import type { CliDeps } from "./support.js"
 
-/// CLI wiring split from cli.ts to keep the entry point within size
-/// limits: shared flag helpers, the interactive prompt runner, and the
-/// `auth` command group. Wiring only — the testable logic lives in
-/// cloud-auth.ts.
-
 export const portFlag = Flag.integer("port").pipe(
   Flag.withDescription("Server port (defaults to CODEVISOR_PORT, the systemd unit, or 49361)"),
   Flag.optional
@@ -26,9 +21,6 @@ export const portFlag = Flag.integer("port").pipe(
 export const optionalString = (name: string, description: string) =>
   Flag.string(name).pipe(Flag.withDescription(description), Flag.optional)
 
-/// Interactive prompts, each provided its own platform services so they can
-/// run from inside the Promise-based command seam. Ctrl-C exits like a shell
-/// interrupt would.
 export const runPrompt = async <A>(prompt: Prompt.Prompt<A>): Promise<A> => {
   try {
     return await Effect.runPromise(Prompt.run(prompt).pipe(Effect.provide(NodeServices.layer)))
@@ -40,8 +32,6 @@ export const runPrompt = async <A>(prompt: Prompt.Prompt<A>): Promise<A> => {
 
 type RunCli = (command: (deps: CliDeps) => Promise<number>) => Effect.Effect<void>
 
-/// All of stdin, trimmed: secrets like invite codes arrive this way so they
-/// stay out of argv (and so `ps` and shell history).
 const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = []
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer)

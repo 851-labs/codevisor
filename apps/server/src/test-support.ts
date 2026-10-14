@@ -35,8 +35,6 @@ import { run, makeAgents } from "./test-support-agents.js"
 export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"
 
-/// A restart coordinator that never gates: for tests that assemble a
-/// `RouteState` by hand and don't exercise the restart drain.
 export const idleRestartCoordinator = (): RestartCoordinator => {
   const startedAt = "2026-06-30T00:00:00.000Z"
   return {
@@ -95,17 +93,12 @@ export const databases: Array<CodevisorDatabaseService> = []
 const mcpManagers: Array<ReturnType<typeof makeMcpManager>> = []
 const realFetch = globalThis.fetch
 
-// These integrations own loopback servers. Synced example MCP definitions must
-// not perform DNS, fetch real services, or depend on the developer's network.
 beforeEach(() => {
   vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input)
     if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
       return Promise.reject(new TypeError("External upstream unavailable in this fixture"))
     }
-    // fetch's connection pool can open a socket it never sends a request on.
-    // Node does not count that socket as idle, so closing the test server
-    // would wait out the client's 4s keep-alive timeout.
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}))
     headers.set("Connection", "close")
     return realFetch(input, { ...init, headers })
@@ -158,7 +151,6 @@ const readDatabase = <A>(
   services: CodevisorServerServices,
   read: (sqlite: Database.Database) => A
 ): A => {
-  // makeServices keeps the database beside the attachment store.
   const sqlite = new Database(join(dirname(services.attachments.root), "codevisor.sqlite"), {
     readonly: true
   })
@@ -199,8 +191,6 @@ const sessionEvent = (row: SessionEventRow): EventEnvelope => {
   }
 }
 
-/// The raw global event log after `since`, read straight from the events
-/// table (the sync reader trims and materializes; tests observe the log).
 export const listEvents = (
   services: CodevisorServerServices,
   since = 0
@@ -212,8 +202,6 @@ export const listEvents = (
       .map((row) => globalEvent(row as EventRow))
   )
 
-/// The raw event log of one subject after `since`: a session's own
-/// revisions, or the global events filed under any other subject.
 export const listSubjectEvents = (
   services: CodevisorServerServices,
   rawSubjectId: string,
@@ -236,9 +224,6 @@ export const listSubjectEvents = (
           .map((row) => globalEvent(row as EventRow))
   })
 
-/// Chats carry no archive state: their workspace does. Puts the chat in its
-/// own workspace and archives that, which is what "this chat is archived"
-/// means under the workspace-owned model.
 export const archiveSessionViaWorkspace = async (
   services: CodevisorServerServices,
   projectId: string,
@@ -286,8 +271,6 @@ export const startWithApp = async (
       const port = typeof address === "object" && address !== null ? address.port : 0
       resolve({
         close: Effect.promise(async () => {
-          // Await the app's own close so background work (the shared-account
-          // reconcile) is drained before a test removes its temp directories.
           await run(app.close)
           await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
         }),
@@ -318,10 +301,6 @@ export const jsonRequest = async (
   }
 }
 
-/// Reads the live stream until `count` events of `kind` have arrived,
-/// ignoring interleaved traffic (config-plane sync.changed, readiness
-/// publishes) that rides the same stream. Assertions about a specific
-/// event kind stay stable as new planes add ambient events.
 export const readSseEventsOfKind = async (
   server: RunningCodevisorServer,
   kind: string,

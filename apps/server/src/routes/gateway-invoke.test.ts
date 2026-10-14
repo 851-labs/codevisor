@@ -13,7 +13,6 @@ const origin = { machineId: "machine-studio", machineName: "Studio", sessionId: 
 
 type RemoteCall = McpManager["invokeRemoteGatewayCall"]
 
-/// A real server whose gateway's remote-call entry point is scripted.
 const serve = async (options: {
   machines?: MachineLink
   machineEnrollment?: MachineEnrollment
@@ -80,7 +79,6 @@ describe("machines routes", () => {
     expect((await jsonRequest(server, "/v1/machines/other", { method: "DELETE" })).status).toBe(404)
     expect(calls).toEqual([{ ssh: "root@h", name: "hetzner-1" }, "hetzner 1"])
 
-    // Without a cloud connection the routes say so.
     const bare = await serve({})
     expect((await jsonRequest(bare, "/v1/machines/invite", { method: "POST" })).status).toBe(501)
   })
@@ -95,7 +93,6 @@ describe("machines routes", () => {
     const server = await serve({ machines: link })
     expect(await jsonRequest(server, "/v1/machines")).toEqual({ status: 200, body: { machines } })
 
-    // Other methods fall through to the rest of the router.
     expect((await jsonRequest(server, "/v1/machines", { method: "POST" })).status).toBe(404)
     const bare = await serve({})
     expect((await jsonRequest(bare, "/v1/machines")).status).toBe(501)
@@ -113,7 +110,6 @@ describe("machines routes", () => {
       await invoke(server, { path: "linear.list_issues", args: { team: "x" }, origin })
     ).toEqual({ status: 200, body: { result: { issues: 3 } } })
     expect(calls).toEqual([{ callOrigin: origin, path: "linear.list_issues", args: { team: "x" } }])
-    // An undefined result still answers with a `result` key.
     const fromApp = { machineId: "machine-b", machineName: "B", sessionTitle: "T", clientId: "c" }
     expect((await invoke(server, { path: "none", origin: fromApp })).body).toEqual({ result: null })
     expect(calls.at(-1)).toEqual({ callOrigin: fromApp, path: "none", args: undefined })

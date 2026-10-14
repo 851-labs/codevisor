@@ -2,11 +2,6 @@ import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import type { EventEmitter } from "node:events"
 
-/// One OpenCode 2 server process: `opencode serve --stdio`, which prints its
-/// URL as the first stdout line and runs until its stdin closes (the
-/// ownership lease), so a crashed Codevisor server can't orphan it. Requests
-/// authenticate with the password Codevisor generated for it.
-
 export interface OpenCodeChild extends EventEmitter {
   readonly stdout: EventEmitter
   readonly stderr: EventEmitter
@@ -28,19 +23,15 @@ export interface OpenCodeServerOptions {
     }
   ) => OpenCodeChild
   readonly fetch?: typeof fetch
-  /// Resolves after `ms`; injected so startup and shutdown deadlines are testable.
   readonly wait?: (ms: number) => Promise<void>
 }
 
 export interface OpenCodeServer {
   readonly url: string
-  /// JSON request against the server's API. `location` scopes
-  /// location-bound endpoints (integrations, models) to a directory.
   readonly request: <A>(
     path: string,
     init?: { readonly method?: string; readonly body?: unknown; readonly location?: string }
   ) => Promise<A>
-  /// Ends the lease, then kills the process if it hasn't exited shortly after.
   readonly stop: () => Promise<void>
 }
 
@@ -81,8 +72,6 @@ export const startOpenCodeServer = async (
   child.stderr.on("data", (chunk: Buffer | string) => {
     if (stderr.length < OUTPUT_LIMIT) stderr += String(chunk)
   })
-  // A spawn failure surfaces as an error event; keep it from crashing the
-  // server once startup has settled.
   child.on("error", () => undefined)
   const exited = new Promise<number | null>((resolve) => {
     if (child.exitCode !== null) resolve(child.exitCode)
@@ -167,9 +156,7 @@ export const startOpenCodeServer = async (
       let message = text
       try {
         message = (JSON.parse(text) as { message?: string }).message ?? text
-      } catch {
-        // Keep the body when OpenCode didn't answer with JSON.
-      }
+      } catch {}
       throw new OpenCodeServerError(
         message.trim() || `OpenCode request failed (${response.status})`,
         response.status
@@ -178,8 +165,6 @@ export const startOpenCodeServer = async (
     return (text.length === 0 ? undefined : JSON.parse(text)) as A
   }
 
-  // The address is printed before the app finishes booting; /api/info
-  // answers 503 until then.
   for (let waited = 0; ; waited += READY_POLL_MS) {
     if (child.exitCode !== null) throw exitFailure(child.exitCode)
     try {

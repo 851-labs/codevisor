@@ -1,7 +1,5 @@
 import Foundation
 
-/// Lifecycle of a persistent session goal, mirroring codex thread-goal
-/// statuses. `active` goals auto-continue turns agent-side.
 public enum GoalStatus: String, Sendable, Codable, Equatable, CaseIterable {
   case active
   case paused
@@ -11,24 +9,17 @@ public enum GoalStatus: String, Sendable, Codable, Equatable, CaseIterable {
   case complete
 }
 
-/// Transient activity within an active goal. Duration is unknown, so clients
-/// present this as indeterminate progress rather than a lifecycle state.
 public enum GoalActivity: String, Sendable, Codable, Equatable {
   case planning
   case verifying
 }
 
-/// A persistent per-session objective (codex "goal mode"). Snapshots are
-/// idempotent full state: consumers replace, never accumulate.
 public struct SessionGoal: Sendable, Codable, Equatable {
   public var objective: String
   public var status: GoalStatus
   public var activity: GoalActivity?
-  /// Token budget for the goal; nil when unbounded.
   public var tokenBudget: Int?
   public var tokensUsed: Int
-  /// Fractional because Grok reports elapsed milliseconds and the server
-  /// preserves that precision when converting to seconds.
   public var timeUsedSeconds: Double
   public var createdAt: String
   public var updatedAt: String
@@ -54,30 +45,17 @@ public struct SessionGoal: Sendable, Codable, Equatable {
   }
 }
 
-/// Finality of an agent message span, when the provider can tell.
-///
-/// `final` is the turn's terminal answer — clients may style it as the final
-/// response from its first streamed chunk. `commentary` is mid-turn narration
-/// that never becomes the answer. Absent means unknown: render optimistically
-/// (the last text span is the candidate answer). A zero-length chunk carrying
-/// a phase retro-tags an already-streamed span by `messageId`.
 public enum MessagePhase: String, Sendable, Codable, Equatable {
   case commentary
   case final
 }
 
-/// Context-compaction lifecycle normalized by Codevisor's native Claude and
-/// Codex providers. ACP agents may emit the same extension when supported.
 public enum ContextCompactionStatus: String, Sendable, Codable, Equatable {
   case started
   case completed
   case failed
 }
 
-/// A streaming update emitted by the agent during a prompt turn.
-///
-/// Discriminated by the `sessionUpdate` field. For `tool_call` and
-/// `tool_call_update` the payload fields are inline alongside the discriminator.
 public enum SessionUpdate: Sendable, Codable, Equatable {
   case agentMessagePatch(AgentMessagePatch)
   case agentMessageChunk(
@@ -89,9 +67,6 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   case toolCallUpdate(ToolCallUpdate)
   case plan(Plan)
   case availableCommandsUpdate([AvailableCommand])
-  /// The skills the composer palette offers for this session. Each update
-  /// replaces the previous snapshot; fields are inline beside the
-  /// discriminator.
   case availableSkillsUpdate(SessionSkills)
   case currentModeUpdate(currentModeId: String)
   case configOptionUpdate([SessionConfigOption])
@@ -99,13 +74,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   case contextCompaction(id: String?, status: ContextCompactionStatus)
   case goalUpdate(SessionGoal)
   case goalCleared
-  /// A free-form markdown plan the agent proposes before implementing
-  /// (Claude plan mode's ExitPlanMode, codex plan-mode plan items) —
-  /// distinct from the `plan` step checklist. Replaces per turn.
   case planDocument(markdown: String, detailResource: ToolDetailResource? = nil, stateRevision: Int? = nil)
-  /// A blocking agent question awaiting the user's answer.
   case question(QuestionRequest)
-  /// Terminal pair for a `question` event, matched by questionId.
   case questionResolved(QuestionResolution)
 
   private enum Keys: String, CodingKey {
@@ -127,7 +97,6 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         try container.decode(ContentBlock.self, forKey: .content),
         messageId: try container.decodeIfPresent(String.self, forKey: .messageId),
         parentToolCallId: try container.decodeIfPresent(String.self, forKey: .parentToolCallId),
-        // Lenient: an unknown phase value decodes as nil, not an error.
         phase: Self.decodePhase(from: container)
       )
     case "agent_thought_chunk":
@@ -213,8 +182,6 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     }
   }
 
-  // Lenient phase decode: unknown or malformed values become nil (a newer
-  // server must never make the client drop the chunk), with a .debug trace.
   private static func decodePhase(from container: KeyedDecodingContainer<Keys>) -> MessagePhase? {
     let raw: String?
     do {

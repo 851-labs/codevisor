@@ -1,12 +1,6 @@
 import CodevisorCore
 import Foundation
 
-/// App-wide SessionController cache — the iOS counterpart of the macOS
-/// SessionStore's controller map. Controllers outlive any single screen:
-/// leaving a workspace mid-stream and coming back rebinds the SAME
-/// controller, whose model kept consuming the live stream the whole time.
-/// Without this, every visit minted a fresh controller that only knew the
-/// settled history until the run finished.
 @MainActor
 @Observable
 final class ChatControllerCache {
@@ -17,27 +11,11 @@ final class ChatControllerCache {
     let id: UUID
   }
 
-  /// Not observed as a whole: a view reads one chat's slot, so caching or
-  /// evicting another chat's controller re-renders nothing that shows this
-  /// one.
   @ObservationIgnored private var controllers: [Key: SessionController] = [:]
-  /// One observable holder per chat a view has asked about, mirroring
-  /// `controllers`.
   @ObservationIgnored private var slots: [Key: ChatControllerSlot] = [:]
-  /// The retained new-chat draft controller per machine — the iOS
-  /// counterpart of the macOS store's `draftsByServer`. Unsent composer
-  /// state survives leaving the page and relaunches; the first send
-  /// promotes the controller to a real session and clears the draft.
   private var draftsByServer: [String: SessionController] = [:]
-  /// Viewport snapshots share the heavier controller LRU's lifetime. An
-  /// exact reading position survives screen remounts while the transcript is
-  /// resident; after eviction, reloaded history opens at its latest content.
   @ObservationIgnored private var scrollStates: [Key: SessionScrollState] = [:]
-  /// Todo disclosure outlives the heavier controller LRU, matching the
-  /// macOS SessionStore contract for pinned session checklists.
   @ObservationIgnored private var todoExpansionStates: [Key: Bool] = [:]
-  /// Access order, most recent last — LRU eviction so browsing many chats
-  /// doesn't retain every transcript ever opened.
   @ObservationIgnored private var accessOrder: [Key] = []
   private static let maxIdleControllers = 8
 
@@ -65,8 +43,6 @@ final class ChatControllerCache {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
-      // Consulted only while the chat is still an unsent draft; new tabs
-      // start from the machine's New Chat defaults.
       composerDefaults: environment.composerDefaults,
       hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: session.serverId),
@@ -75,8 +51,6 @@ final class ChatControllerCache {
     )
     controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
-    // Deferred sends persist the spawned agent id so relaunches resume
-    // the same agent session (the same wiring the macOS store does).
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(
         agentSessionId,
@@ -90,12 +64,6 @@ final class ChatControllerCache {
     return controller
   }
 
-  /// Returns the retained draft controller for the new-chat page, restoring
-  /// its disk snapshot first or seeding it from last-used composer defaults
-  /// if none exists — the same contract as the macOS store's
-  /// `draft(project:)`. The draft is retained until its first send promotes
-  /// it to a real session, so unsent composer state survives navigation and
-  /// relaunches.
   func draftController(
     preferredProject: Project,
     environment: AppEnvironment
@@ -126,7 +94,6 @@ final class ChatControllerCache {
         )
       } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
         rememberedId in
-        // A scratch folder is single-use: never the next chat's default.
         environment.projectList.fleetActiveProjects.first {
           $0.serverId == serverId && $0.id == rememberedId && !$0.isScratch
         }
@@ -141,16 +108,11 @@ final class ChatControllerCache {
       project: restoredProject,
       configCache: environment.configCache,
       composerDefaults: environment.composerDefaults,
-      // The restored project's OWN machine — a retargeted draft keeps
-      // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
       machines: environment.machines,
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
-    // Fresh drafts start from the project's remembered run-location
-    // choice (worktrees only apply to git projects). Retained drafts
-    // returned above keep whatever the user toggled.
     controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
@@ -161,12 +123,6 @@ final class ChatControllerCache {
     return controller
   }
 
-  /// Adopts a draft controller under its freshly created session id (the
-  /// new-chat page's first send), so the workspace screen rebinds the SAME
-  /// controller — mid-flight worktree setup, optimistic message and all —
-  /// instead of minting a fresh one. The promoted chat leaves the draft
-  /// slot behind and clears its persisted snapshot, exactly like the macOS
-  /// store's registration path.
   func register(
     _ controller: SessionController,
     for session: ChatSession,
@@ -176,8 +132,6 @@ final class ChatControllerCache {
     noteAccess(key)
     setController(controller, for: key)
     bindRetainedSessionState(controller, to: key)
-    // A retargeted draft's slot key (its home machine) can differ from
-    // its session's machine — release whichever slot holds it.
     if let slotKey = draftsByServer.first(where: { $0.value === controller })?.key {
       draftsByServer[slotKey] = nil
       environment.composerDrafts.clearDraft(forServer: slotKey)
@@ -188,21 +142,10 @@ final class ChatControllerCache {
     evictIfNeeded()
   }
 
-  /// The live controller for a chat if one is already cached, without
-  /// creating anything. Lets a screen render an in-flight chat on its FIRST
-  /// frame — the workspace opening onto a just-sent new chat would otherwise
-  /// flash a spinner while its async connect bound the very controller the
-  /// cache already held.
   func existingController(sessionId: UUID, serverId: String) -> SessionController? {
     slot(Key(serverId: serverId, id: sessionId)).controller
   }
 
-  /// Whether the chat's agent is actively working — the same classification
-  /// as the macOS sidebar (sending, running setup phases, or waiting on
-  /// background subagents; deliberately not `isConnecting`, which is client
-  /// plumbing, not agent work). A cached live controller is freshest; rows
-  /// without one use the server-projected sidebar state.
-  /// Observes only this chat's controller, never the rest of the cache.
   func isInProgress(_ session: ChatSession) -> Bool {
     guard let controller = slot(Key(serverId: session.serverId, id: session.id)).controller else {
       return session.sidebarState == .inProgress
@@ -213,11 +156,6 @@ final class ChatControllerCache {
       || controller.isWaitingOnBackgroundTasks
   }
 
-  /// Foreground/network-recovery sweep: every cached chat with a turn in
-  /// flight re-verifies against durable server history. Suspension can
-  /// strand a turn in ways stream replay alone cannot fix (a reconcile
-  /// that failed while unreachable, a server-side repair missed while
-  /// asleep); idle chats are a no-op.
   func reconcileInFlightControllers() async {
     await withTaskGroup(of: Void.self) { group in
       for controller in controllers.values where controller.isSending || controller.hasVisibleTranscript {
@@ -256,12 +194,6 @@ final class ChatControllerCache {
     }
   }
 
-  /// Drops the least-recently-used idle controllers; anything mid-send or
-  /// mid-connect stays put regardless of age — except a turn that has been
-  /// quiet past the stall window. Treating a stalled send as pinned kept a
-  /// stuck controller resident for the app's lifetime, so "navigate away
-  /// and back" could never rebuild it; a re-opened chat reconstructs from
-  /// durable history (and its stream cursor) losing nothing.
   private func evictIfNeeded() {
     var idle = accessOrder.filter { key in
       guard let controller = controllers[key] else { return false }
@@ -280,8 +212,6 @@ final class ChatControllerCache {
   }
 }
 
-/// One chat's cached controller, observable on its own so a sidebar row or
-/// screen re-renders only when its chat's controller comes or goes.
 @MainActor
 @Observable
 private final class ChatControllerSlot {

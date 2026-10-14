@@ -1,20 +1,17 @@
 import Foundation
 
-/// The priority of a plan entry.
 public enum PlanEntryPriority: String, Sendable, Codable, Equatable {
   case high
   case medium
   case low
 }
 
-/// The status of a plan entry.
 public enum PlanEntryStatus: String, Sendable, Codable, Equatable {
   case pending
   case inProgress = "in_progress"
   case completed
 }
 
-/// A single entry in an agent execution plan.
 public struct PlanEntry: Sendable, Codable, Equatable {
   public var content: String
   public var priority: PlanEntryPriority
@@ -27,7 +24,6 @@ public struct PlanEntry: Sendable, Codable, Equatable {
   }
 }
 
-/// An agent execution plan.
 public struct Plan: Sendable, Codable, Equatable {
   public var entries: [PlanEntry]
 
@@ -36,7 +32,6 @@ public struct Plan: Sendable, Codable, Equatable {
   }
 }
 
-/// A slash command advertised by the agent.
 public struct AvailableCommand: Sendable, Codable, Equatable, Identifiable {
   public struct Input: Sendable, Codable, Equatable {
     public var hint: String?

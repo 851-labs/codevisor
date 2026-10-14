@@ -2,8 +2,6 @@
   import CodevisorClient
   import SwiftUI
 
-  /// The focused device's controls as menu items, with Simulator's shortcuts: the Mac's home for
-  /// them, as the menu bar offers its items to whichever pane has focus and no other.
   public struct SimulatorDeviceCommandItems: View {
     let model: SimulatorPaneModel
     let device: ServerSimulatorDevice

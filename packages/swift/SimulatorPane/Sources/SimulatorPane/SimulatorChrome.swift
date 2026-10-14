@@ -2,9 +2,6 @@ import CodevisorClient
 import CoreGraphics
 import Foundation
 
-/// Xcode's DeviceKit chrome for one screen: a nine-slice bezel drawn around the screen and the
-/// hardware buttons on its edges, from the chrome bundle's chrome.json and PDFs (read on the
-/// simulator's Mac and sent here).
 public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
   public struct Images: Decodable, Sendable, Equatable {
     public var topLeft: String?
@@ -51,9 +48,7 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
     public var image: String?
     public var imageDown: String?
     public var onTop: Bool?
-    /// The bezel edge the button sits on: "left", "right", "top", "bottom".
     public var anchor: String
-    /// Whether `offsets` count from the edge's start ("leading") or end ("trailing").
     public var align: String?
     public var offsets: Offsets
     public var id: String { name }
@@ -66,13 +61,8 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
     public var simpleOutsideBorder: Border?
   }
 
-  /// Newer chromes (the iPhone Duo's) draw the bezel from one composite image rather than the
-  /// nine slices, which are left as "unused" placeholders. These mark, per corner, the areas the
-  /// composite keeps as they are while the rest stretches to the screen.
   public struct ResizeRect: Decodable, Sendable, Equatable {
-    /// The corner the rect is measured from: "upperLeft", "upperRight", "lowerLeft", "lowerRight".
     public var type: String
-    /// The rect's center, from that corner (negative when measured from the right or top).
     public var centerPoint: Point
     public var size: Size
   }
@@ -83,13 +73,8 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
   public var paths: Paths?
   public var resizeRects: [ResizeRect]?
 
-  /// The composite's fixed margins (left, right, top, bottom, in points) when the chrome is drawn
-  /// from its composite: as far into the image as any corner's resize rect reaches, and at least
-  /// as far as the outline's continuous corner curves, so each corner's whole curve is drawn as
-  /// it is rather than partly stretched (or flattened) with the edge beside it.
   public var compositeCaps: (left: Double, right: Double, top: Double, bottom: Double)? {
     guard let rects = resizeRects, !rects.isEmpty, images.composite != nil else { return nil }
-    // A continuous corner of radius r curves from about 1.53 r out, not r.
     let corner = (paths?.simpleOutsideBorder?.cornerRadiusX ?? 0) * 1.6
     let radius = (x: corner, y: corner)
     func reach(_ corners: Set<String>, _ extent: (ResizeRect) -> Double) -> Double {
@@ -110,29 +95,21 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
   }
 }
 
-/// Where everything goes for one screen size, in points, origin at the canvas's top-left.
 public struct SimulatorChromeLayout: Equatable, Sendable {
   public struct Button: Equatable, Sendable, Identifiable {
     public var input: SimulatorChromeDefinition.Input
     public var frame: CGRect
-    /// Where the button moves to while the pointer is over it.
     public var rolloverFrame: CGRect
-    /// The artwork was drawn for the other kind of edge (the iPhone Duo's inner chrome reuses its
-    /// cover's top-edge volume buttons on its side), so it's drawn a quarter turn counterclockwise
-    /// to lie along this one; `frame` is already the turned size.
     public var turned = false
     public var id: String { input.name }
   }
 
-  /// Everything drawn, bezel plus the buttons that stick out of it.
   public var canvas: CGSize
-  /// The bezel's outer edge.
   public var frame: CGRect
   public var screen: CGRect
   public var buttons: [Button]
   public var outerCornerRadius: Double
 
-  /// A bare screen (Apple TV, Vision Pro, or chrome that failed to load): a thin rounded border.
   public static func bare(screen size: CGSize, cornerRadius: Double) -> Self {
     let inset = 6.0
     let frame = CGRect(origin: .zero, size: CGSize(width: size.width + inset * 2, height: size.height + inset * 2))
@@ -146,7 +123,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     self.buttons = buttons; self.outerCornerRadius = outerCornerRadius
   }
 
-  /// A clear margin around a bezel's artwork, in points.
   public struct Margins: Sendable, Equatable {
     public var left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat
     public static let zero = Margins(left: 0, top: 0, right: 0, bottom: 0)
@@ -156,12 +132,8 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     }
   }
 
-  /// How far a button stands proud of the device's edge at most, as Device Hub draws them.
   static let buttonReach: CGFloat = 3
 
-  /// Lays the chrome around a screen of `screenSize` points. `imageSize` gives each image's
-  /// natural size (its PDF page) so buttons keep their drawn proportions. Buttons are placed
-  /// against the device's visible edge, inside the artwork's clear `margins`.
   public init(
     definition: SimulatorChromeDefinition, screen screenSize: CGSize, margins: Margins = .zero,
     imageSize: (String) -> CGSize?
@@ -187,7 +159,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
           ).offsetBy(dx: inward.x, dy: inward.y),
           turned: turned)
       } ?? []
-    // Grow the canvas to whatever the buttons need, then move everything into it.
     let union = buttons.reduce(bezel) { $0.union($1.rolloverFrame).union($1.frame) }
     let shift = CGPoint(x: -union.minX, y: -union.minY)
     bezel = bezel.offsetBy(dx: shift.x, dy: shift.y)
@@ -204,8 +175,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
       outerCornerRadius: definition.paths?.simpleOutsideBorder?.cornerRadiusX ?? 60)
   }
 
-  /// Whether a button's artwork lies across its edge rather than along it: long side out from a
-  /// side edge, or up from the top or bottom.
   static func isTurned(_ input: SimulatorChromeDefinition.Input, size: CGSize) -> Bool {
     switch input.anchor {
     case "top", "bottom": size.height > size.width
@@ -213,7 +182,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     }
   }
 
-  /// How far to move a button in so it stands at most `buttonReach` proud of the device's edge.
   static func inward(_ input: SimulatorChromeDefinition.Input, frame: CGRect, device: CGRect) -> CGPoint {
     switch input.anchor {
     case "top": CGPoint(x: 0, y: max(0, device.minY - frame.minY - buttonReach))
@@ -223,8 +191,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     }
   }
 
-  /// DeviceKit's placement: an offset from the anchored edge (inward positive on the left and
-  /// top, negative on the right and bottom), the image hanging outside by the rest of its depth.
   static func place(
     _ input: SimulatorChromeDefinition.Input, offset: SimulatorChromeDefinition.Point, size: CGSize, in bezel: CGRect
   ) -> CGRect {
@@ -246,8 +212,6 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
   }
 }
 
-/// A PDF from a chrome bundle or a screen mask, drawn to a bitmap at the size it's shown.
-/// `@unchecked`: a CGPDFDocument is immutable once opened and safe to draw from any thread.
 public struct SimulatorPDFImage: @unchecked Sendable {
   private let document: CGPDFDocument
 
@@ -258,12 +222,10 @@ public struct SimulatorPDFImage: @unchecked Sendable {
     self.document = document
   }
 
-  /// The page's size in points.
   public var size: CGSize {
     document.page(at: 1)?.getBoxRect(.mediaBox).size ?? .zero
   }
 
-  /// The page stretched to `size` points at `scale` pixels per point.
   public func render(size: CGSize, scale: CGFloat) -> CGImage? {
     guard let page = document.page(at: 1) else { return nil }
     let width = max(1, Int((size.width * scale).rounded(.up)))
@@ -283,13 +245,10 @@ public struct SimulatorPDFImage: @unchecked Sendable {
   }
 }
 
-/// A chrome bundle ready to draw: its definition and decoded PDFs.
 public struct SimulatorChrome: Sendable {
   public let definition: SimulatorChromeDefinition
   public let images: [String: SimulatorPDFImage]
 
-  /// How far in from the composite's edges its artwork starts (left, top, right, bottom, in
-  /// points): a clear margin some composites carry outside the device.
   public let margins: SimulatorChromeLayout.Margins
 
   public init(_ chrome: ServerSimulatorChrome) throws {

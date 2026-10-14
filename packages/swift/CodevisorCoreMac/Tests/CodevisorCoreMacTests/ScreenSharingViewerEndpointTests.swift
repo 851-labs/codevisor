@@ -6,9 +6,6 @@ import Observation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The endpoint's control-plane surface as the lease reducer sees it through
-/// `ScreenSharingEndpointClient`: the event stream, numbered input forwarding
-/// and its congestion cut-off, refused capture, and what closing releases.
 @MainActor
 struct ScreenSharingViewerEndpointTests {
   @Test func controlEventsOpenWithAvailabilityThenCarryMessagesAndInputLoss() async throws {
@@ -34,9 +31,6 @@ struct ScreenSharingViewerEndpointTests {
     #expect(ScreenSharingEndpointRegistry.shared.endpoint(endpoint.id) == nil)
   }
 
-  /// 851-2340: with Dynamic Resolution on, the desktop follows the pane at the
-  /// backing scale and the server is asked for the matching UI scale once;
-  /// moving to a 1× display follows at 1×.
   @Test func dynamicResolutionFollowsThePaneAtTheBackingScale() async {
     let fixture = EndpointFixture()
     let endpoint = fixture.make()
@@ -47,13 +41,12 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.setDynamicResolution(true)
     fixture.surface.onSizeChanged?(CGSize(width: 640.4, height: 400), 2)
     fixture.surface.onSizeChanged?(CGSize(width: 700, height: 400), 2)
-    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 1)  // moved to a 1× display
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 1)
     #expect(fixture.session.desktopSizeRequests == [[1281, 800], [1400, 800], [640, 400]])
     await awaitObserved { scales.values.count == 2 }
     #expect(scales.values == [2, 1], "the scale is sent when it changes, not with every size")
   }
 
-  /// A slow link keeps a Retina pane at 1× pixels (hysteresis in ScreenSharingDynamicResolution).
   @Test func aSlowLinkKeepsARetinaPaneAtOneX() {
     let fixture = EndpointFixture()
     fixture.session.linkBitsPerSecond = 3_000_000
@@ -65,8 +58,6 @@ struct ScreenSharingViewerEndpointTests {
     #expect(fixture.session.desktopSizeRequests == [[640, 400]])
   }
 
-  /// A desktop that can't draw at 2× (an older server, no scaler) stays at 1× pixels on a
-  /// Retina pane: a 2× framebuffer would only make its UI half size.
   @Test func aDesktopThatCannotScaleStaysAtOneXPixels() {
     let fixture = EndpointFixture()
     let endpoint = fixture.make()
@@ -76,8 +67,6 @@ struct ScreenSharingViewerEndpointTests {
     #expect(fixture.session.desktopSizeRequests == [[640, 400]])
   }
 
-  /// Off: the pane never resizes the desktop; turning it off after it did
-  /// restores the provisioned size (or the size at connect) and 1×.
   @Test func turningDynamicResolutionOffRestoresTheDesktop() async {
     let fixture = EndpointFixture()
     let endpoint = fixture.make()
@@ -95,7 +84,6 @@ struct ScreenSharingViewerEndpointTests {
     await awaitObserved { scales.values == [2, 1] }
     fixture.surface.onSizeChanged?(CGSize(width: 800, height: 500), 2)
     #expect(fixture.session.desktopSizeRequests.count == 2, "off: pane changes send nothing")
-    // Without a provisioned size, the size seen at connect is restored.
     let other = EndpointFixture()
     let second = other.make()
     defer { second.close() }
@@ -105,7 +93,6 @@ struct ScreenSharingViewerEndpointTests {
     #expect(other.session.desktopSizeRequests == [[640, 400], [1024, 768]])
   }
 
-  /// A backend that can't resize (a Mac) offers no toggle and sends nothing.
   @Test func aDesktopThatCannotResizeIsLeftAlone() {
     let fixture = EndpointFixture(resizes: false)
     let endpoint = fixture.make()
@@ -121,7 +108,7 @@ struct ScreenSharingViewerEndpointTests {
     fixture.session.controlChannel.isAvailable = true
     let endpoint = fixture.make()
     let log = fixture.observe(endpoint)
-    await awaitObserved { log.events.count >= 1 }  // subscribed: later events have a consumer
+    await awaitObserved { log.events.count >= 1 }
     let lease = UUID()
     #expect(endpoint.beginInput(lease: lease) == nil)
     #expect(fixture.surface.inputActive)
@@ -134,7 +121,7 @@ struct ScreenSharingViewerEndpointTests {
         .input(lease: lease, sequence: 1, event: move),
         .input(lease: lease, sequence: 2, event: .key(code: 0, down: true, repeatKey: false, modifiers: 0)),
       ])
-    fixture.session.controlChannel.isAvailable = false  // the channel refuses the next send
+    fixture.session.controlChannel.isAvailable = false
     fixture.surface.onInput?(move)
     #expect(!fixture.surface.inputActive)
     fixture.surface.onInput?(move)
@@ -146,8 +133,6 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
-  /// 851-2479: a key pressed before control is granted is sent once input begins under the lease,
-  /// once; a key held when control ends instead is dropped, never sent under a later lease.
   @Test func aSystemKeyPressedBeforeTheGrantIsSentWhenInputBeginsAndDroppedIfControlEnds() {
     let fixture = EndpointFixture()
     fixture.session.controlChannel.isAvailable = true
@@ -171,8 +156,6 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
-  /// Without Accessibility control still works. A Mac host's pane says system shortcuts stay on this
-  /// Mac, naming it and the app to allow; a Linux desktop needs nothing from this Mac, so says nothing.
   @Test(arguments: [true, false])
   func shortcutsThatStayHereAreNotedOnlyForAMacHost(macHost: Bool) async {
     var capabilities: ScreenSharingCapabilities = [.control, .statistics]
@@ -184,7 +167,6 @@ struct ScreenSharingViewerEndpointTests {
     let log = fixture.observe(endpoint)
     await awaitObserved { log.events.count >= 1 }
     #expect(endpoint.beginInput(lease: UUID()) == nil)
-    // A later message on the same stream: every event the grant could cause has arrived before it.
     fixture.session.controlChannel.deliver(.denied(request: UUID(), reason: "barrier"))
     await awaitObserved { log.events.contains { if case .message = $0 { true } else { false } } }
     let notices = log.events.compactMap { event -> String? in
@@ -194,8 +176,6 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
-  /// 851-2480: the host hears "this screen can show HDR" only while the machine's HDR setting is on
-  /// and the screen can; the sheet's note says why HDR isn't showing while it's on.
   @Test func hdrIsReportedOnlyWhileTheSettingIsOnAndTheScreenCanShowIt() {
     let fixture = EndpointFixture()
     fixture.session.supportsHighDynamicRange = true
@@ -290,7 +270,6 @@ struct ScreenSharingViewerEndpointTests {
   }
 }
 
-/// The scales the endpoint asked the server for, in order (observable: tests await it).
 @MainActor
 @Observable
 private final class ScaleLog {

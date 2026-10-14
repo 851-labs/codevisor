@@ -3,9 +3,6 @@ import type Database from "better-sqlite3"
 import { projectSetupState } from "./setup-state.js"
 import { appendTranscriptText } from "./transcript-state.js"
 
-/** Checkpoints inside a single imported message, as well as between messages.
- * Identity and text blocks commit together; interruption cannot duplicate text.
- * Tests can use smaller batches to exercise recovery without multi-megabyte fixtures. */
 export const seedImportedTranscript = (
   db: Database.Database,
   report: () => void,

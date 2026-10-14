@@ -3,8 +3,6 @@ import test from "node:test"
 
 import { planChecks, relativeImports, xcodeSwiftProducts } from "./check-plan.mjs"
 
-// A packages/swift shaped like the real one: an app-facing UI module, a
-// screen-sharing engine, and a core both depend on.
 const swiftPackage = {
   products: [
     { name: "Core", targets: ["Core"] },
@@ -14,7 +12,6 @@ const swiftPackage = {
   targets: [
     { name: "Core", type: "regular", path: "Core/Sources/Core", dependencies: [] },
     { name: "UI", type: "regular", path: "UI", dependencies: [{ byName: ["Core", null] }] },
-    // Nested inside UI's folder, but its own module that nothing links.
     { name: "Grammars", type: "regular", path: "UI/Vendor", dependencies: [] },
     {
       name: "Sharing",
@@ -23,7 +20,6 @@ const swiftPackage = {
       dependencies: [{ target: ["Core", null] }, { product: ["WebRTC", "webrtc", null, null] }]
     },
     { name: "CoreTests", type: "test", path: "Core/Tests/CoreTests", dependencies: [] },
-    // App sources the package tests through a symlink; no product links it.
     {
       name: "Transcript",
       type: "regular",
@@ -62,7 +58,7 @@ test("a change with no matching inputs runs only the always-on checks", () => {
     planChecks({ files: [], context })
       .filter(({ run }) => run)
       .map(({ step }) => step.name),
-    ["format:check", "lint", "ratchet:check", "boundaries", "dev:scripts:test"]
+    ["format:check", "lint", "comments:check", "ratchet:check", "boundaries", "dev:scripts:test"]
   )
 })
 
@@ -71,7 +67,6 @@ test("JavaScript changes run turbo for the changed packages and their dependents
     typecheck: ["--filter=...@codevisor/db", "--filter=...@codevisor/server"],
     "test:coverage": ["--filter=...@codevisor/db", "--filter=...@codevisor/server"]
   })
-  // Shared configuration reaches every package.
   assert.deepEqual(planned(["tsconfig.base.json"]), { typecheck: [], "test:coverage": [] })
 })
 
@@ -117,7 +112,6 @@ test("app sources and native inputs run the Swift builds that consume them", () 
   const changes = {
     "apps/ios/Codevisor/App.swift": ["swift:format:check", "swift:lint", "swift:build:ios"],
     "scripts/xcodebuild.mjs": ["swift:build:ios"],
-    // Linked into packages/swift, so its tests run there; no app links it.
     "apps/macos/Transcript/Row.swift": ["swift:format:check", "swift:lint", "swift:test"],
     "apps/macos/Settings/Pane.swift": ["swift:format:check", "swift:lint"],
     "apps/screen-sharing-rig/Package.resolved": ["swift:test (screen-sharing-rig)"],
@@ -152,7 +146,6 @@ test("tooling changes and --all run every check", () => {
       plan.filter(({ run }) => run).map(({ step }) => step.name),
       everything
     )
-    // Unfiltered, so turbo covers every package.
     assert.deepEqual(plan.find(({ step }) => step.name === "typecheck").args, [])
   }
 })
@@ -172,7 +165,6 @@ test("Xcode projects list only the packages/swift products they link", () => {
 		};
 /* End XCSwiftPackageProductDependency section */`
   assert.deepEqual(xcodeSwiftProducts(project), ["UI"])
-  // An unrecognized project makes every packages/swift change count.
   assert.equal(xcodeSwiftProducts("// no package section"), undefined)
 })
 

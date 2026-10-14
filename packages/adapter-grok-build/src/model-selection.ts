@@ -5,12 +5,6 @@ import type { AcpModelState, AcpReasoningEffortState } from "./acp-model-state.j
 
 export { extractAcpModelState, type AcpModelState } from "./acp-model-state.js"
 
-/// The synthesized config-option id for Grok's ACP model-selection extension.
-/// Grok reports `session/new.models` and, since 1.0.24, also a native
-/// `configOptions` list (`model` + `reasoning_effort`). When a native option
-/// is present, changes go through `session/set_config_option`. The models
-/// extension (`session/set_model`, including `_meta.reasoningEffort`) is
-/// only used to fill a gap the CLI has not advertised yet.
 export const acpModelConfigId = "model"
 export const acpReasoningEffortConfigId = "reasoning_effort"
 
@@ -38,9 +32,6 @@ export const usesAcpReasoningEffortExtension = (
 ): boolean =>
   configId === acpReasoningEffortConfigId && !nativeConfigIds?.has(acpReasoningEffortConfigId)
 
-/// Synthesizes the Codevisor `category: "model"` picker option from the ACP model
-/// extension so clients render a model chip — mirroring the shape claude/codex
-/// build for their native model pickers.
 export const acpModelConfigOption = (state: AcpModelState): SessionConfigOption => ({
   category: "model",
   currentValue: state.currentModelId,
@@ -79,12 +70,6 @@ const acpModelConfigOptions = (state: AcpModelState): ReadonlyArray<SessionConfi
     : [acpModelConfigOption(state), reasoning]
 }
 
-/// Overlays the models-extension pickers onto ACP `configOptions` only when
-/// the CLI omitted them. Grok 1.0.24+ already ships native `model` and
-/// `reasoning_effort` selects; those stay authoritative so a later
-/// `config_option_update` (the live effort menu after a model switch) is
-/// not replaced by a cached overlay. Thought-level labels are canonicalized
-/// by `normalizeAcpConfigOptions` at every ACP ingress.
 export const mergeAcpModelConfigOptions = (
   configOptions: ReadonlyArray<SessionConfigOption>,
   modelState: AcpModelState | undefined
@@ -102,19 +87,12 @@ export const mergeAcpModelConfigOptions = (
   return merged
 }
 
-/// `session/set_model` answers with a Rust-style `Result` under `_meta.model`
-/// (`{ Ok: modelId }` on success, `{ Err }` on failure).
 interface AcpSetModelResult {
   readonly _meta?: {
     readonly model?: { readonly Ok?: unknown; readonly Err?: unknown }
   }
 }
 
-/// Applies a model choice via the ACP model-selection setter and returns the
-/// refreshed config options to broadcast. An `Err` result throws so the client
-/// surfaces the failure instead of silently keeping the wrong model. Resumed
-/// sessions may have no cached model list (load didn't report one) — fall back
-/// to a single-entry option for the confirmed model so the chip still tracks it.
 export const applyAcpModelSelection = async (
   connection: acp.ClientConnection,
   modelStates: Map<string, AcpModelState>,
@@ -143,11 +121,6 @@ export const applyAcpModelSelection = async (
   return acpModelConfigOptions(state)
 }
 
-/// Fallback for CLIs that have no native `reasoning_effort` option: Grok
-/// applies a per-session effort by setting the current model again with
-/// `_meta.reasoningEffort`. The picker value is the server-defined option id;
-/// the request carries its canonical value so custom ids such as `deep` map to
-/// the xAI wire value (`xhigh`) correctly.
 export const applyAcpReasoningEffortSelection = async (
   connection: acp.ClientConnection,
   modelStates: Map<string, AcpModelState>,

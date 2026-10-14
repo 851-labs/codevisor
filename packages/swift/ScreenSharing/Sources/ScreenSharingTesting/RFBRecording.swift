@@ -2,23 +2,10 @@ import CryptoKit
 import Foundation
 import ScreenSharing
 
-/// A real server's bytes, captured after the handshake, that replay into the
-/// client with no server (real-server behaviour becomes L1 fixtures). Recordings never hold credentials: capture starts
-/// once authentication is over.
-///
-/// Format (JSON): `version`, `source` (free text naming the server), the
-/// framebuffer `width` × `height` after the handshake, `server` (the bytes
-/// the client read, base64, in read-sized chunks) and `expected` — what
-/// replaying those bytes produced when the recording was made. The replay
-/// test re-derives `expected` and must match it exactly.
 public struct RFBRecording: Codable, Equatable, Sendable {
   public struct Outcome: Codable, Equatable, Sendable {
-    /// Framebuffer updates applied.
     public var updates: Int
-    /// SHA-256 of the final framebuffer's colour bytes (B, G, R; padding excluded), hex;
-    /// `lossy` for a recording with JPEG, whose decoded pixels may differ across OS versions.
     public var framebuffer: String
-    /// Every update's pseudo-rectangles and every server event, in order, as text.
     public var events: [String]
 
     public init(updates: Int, framebuffer: String, events: [String]) {
@@ -45,7 +32,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
 
   public var byteCount: Int { server.reduce(0) { $0 + $1.count } }
 
-  /// A replay outcome as recorded: lossy recordings keep everything but the pixel hash.
   public static func comparable(_ outcome: Outcome, lossy: Bool) -> Outcome {
     guard lossy else { return outcome }
     var copy = outcome
@@ -63,8 +49,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
     try encoder.encode(self).write(to: url)
   }
 
-  /// Feeds the recorded bytes to a fresh client sized like the recording and
-  /// runs it until the bytes run out. Deterministic: it depends on the bytes only.
   public func replay() async throws -> Outcome {
     let transport = RFBReplayTransport(chunks: server.map { [UInt8]($0) })
     let client = try RFBClient(transport: transport, framebuffer: RFBFramebuffer(width: width, height: height))
@@ -74,7 +58,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
         onUpdate: { _, update in log.update(update) },
         onEvent: { log.event($0) })
     } catch RFBError.connectionClosed {
-      // The recording ended; a trailing partial message is expected.
     }
     return Outcome(updates: log.updates, framebuffer: Self.digest(client.framebuffer), events: log.events)
   }
@@ -114,7 +97,7 @@ public struct RFBRecording: Codable, Equatable, Sendable {
     func event(_ event: RFBServerEvent) {
       let text: String? =
         switch event {
-        case .roundTrip: nil  // timing, not content
+        case .roundTrip: nil
         case .extendedClipboard(.caps(let formats, let actions, _)):
           "clipboard caps formats \(formats) actions \(String(actions >> 24, radix: 2))"
         default: "\(event)"
@@ -125,8 +108,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
   }
 }
 
-/// Wraps a live transport and records what the client reads once `start()`
-/// is called (after the handshake, so no authentication bytes are kept).
 public final class RFBRecordingTransport: RFBTransport, @unchecked Sendable {
   private let inner: any RFBTransport
   private let lock = NSLock()
@@ -151,7 +132,6 @@ public final class RFBRecordingTransport: RFBTransport, @unchecked Sendable {
   public func close() { inner.close() }
 }
 
-/// Serves recorded chunks in order, then end of stream; accepts and discards writes.
 final class RFBReplayTransport: RFBTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var chunks: [[UInt8]]

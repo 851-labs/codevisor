@@ -4,10 +4,6 @@ import { Labels } from "./labels.js"
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
 import { WorkspacePosition } from "./workspace-position.js"
 
-/// A pane workspace: the server-owned identity of one working surface inside
-/// a project. It names the surface, points at the directory it works in (a
-/// worktree path or the project folder), and owns sessions. Pane layout
-/// (split trees) deliberately stays client-side.
 export const Workspace = Schema.Struct({
   id: Schema.String,
   serverId: Schema.String,
@@ -21,19 +17,11 @@ export const Workspace = Schema.Struct({
   updatedAt: Schema.optional(Schema.String),
   sidebarPosition: Schema.optional(WorkspacePosition),
   sidebarOrderRevision: Schema.optional(Schema.Number),
-  /// Free-form key/value labels (see `Labels`).
   labels: Schema.optional(Labels)
 })
 export type Workspace = typeof Workspace.Type
 
-/// Partial workspace update. Exists alongside the full `PUT` upsert so a client
-/// can archive a workspace without resending (and racing on) its whole record.
 export const UpdateWorkspaceRequest = Schema.Struct({
-  /// Moves the workspace in the shared sidebar order. The last move wins:
-  /// positions end in the workspace's own id, so moves of different
-  /// workspaces never collide, and the latest move of the same workspace is
-  /// the one its user expects to see. `expectedRevision` is accepted from
-  /// clients that still send it and ignored.
   sidebarOrder: Schema.optional(
     Schema.Struct({
       position: WorkspacePosition,
@@ -43,45 +31,27 @@ export const UpdateWorkspaceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   hasCustomName: Schema.optional(Schema.Boolean),
   rootDirectory: Schema.optional(Schema.String),
-  /// Archiving a workspace cascades to its sessions while retaining pane
-  /// layout; unarchiving revives only the sessions that cascade archived.
   isArchived: Schema.optional(Schema.Boolean),
-  /// Replaces the workspace's labels; an empty object clears them.
   labels: Schema.optional(Labels)
 })
 export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
 export const UpsertWorkspaceRequest = Schema.Struct({
-  /// Creation-only lower bound from the creator’s entire observed fleet.
   sidebarOrderHead: Schema.optional(WorkspacePosition),
-  /// Optional because the route path carries the id; when both are present
-  /// they must match.
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
   name: Schema.String,
   hasCustomName: Schema.Boolean,
   rootDirectory: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
-  /// Client backfills preserve the original creation date.
   createdAt: Schema.optional(Schema.String),
-  /// Omitted keeps existing labels, so a native re-upsert never drops the
-  /// labels an agent set; an empty object clears them.
   labels: Schema.optional(Labels)
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 
-/// What the program in a terminal says it is doing. A program that speaks the
-/// Program Status Protocol (OSC 7501) reports any of these itself: `idle`,
-/// `working`, `done` (finished, not yet looked at), `blocked` (needs the
-/// user), or `error` (failed and stopped). Otherwise it is read from the
-/// leading glyph of the title an agent sets: a spinner while `working`,
-/// Claude Code's `✳` once `idle` at its prompt.
 export const TerminalActivity = Schema.Literals(["working", "idle", "done", "blocked", "error"])
 export type TerminalActivity = typeof TerminalActivity.Type
 
-/// A server-owned pane identity. Layout deliberately does not live here:
-/// clients arrange these stable ids into their own tabs/splits, while the
-/// provider/type/resource tuple says what each pane renders on every device.
 export const WorkspacePane = Schema.Struct({
   id: Schema.String,
   workspaceId: Schema.String,
@@ -90,42 +60,22 @@ export const WorkspacePane = Schema.Struct({
   title: Schema.String,
   resourceKind: Schema.optional(Schema.String),
   resourceId: Schema.optional(Schema.String),
-  /// Opaque JSON owned by the provider. Keeping the transport opaque lets a
-  /// future extension evolve its pane contract without changing core schema.
   metadata: Schema.optional(Schema.String),
-  /// The title the program in a terminal pane set (OSC 0/2), server-owned;
-  /// absent when none. A leading activity glyph (a spinner frame, Claude
-  /// Code's `✳`) is dropped: `terminalActivity` carries what it meant.
-  /// Clients show it (unless the user renamed the tab) in place of `title`.
   liveTitle: Schema.optional(Schema.String),
-  /// What the program in a terminal pane is doing, as it reports (OSC 7501)
-  /// or else as its title shows; absent when neither says (a plain shell, a
-  /// program without one).
   terminalActivity: Schema.optional(TerminalActivity),
-  /// Monotonic server-owned content revision. Clients use this to reject a
-  /// snapshot that was captured before an optimistic pane conversion landed.
   revision: Schema.Number,
-  /// Shared tab order within the workspace (a `WorkspacePosition`-format
-  /// key; ascending). Clients sort their tabs by it while keeping splits
-  /// device-local. Absent only on servers that predate synced tab order.
   position: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })
 export type WorkspacePane = typeof WorkspacePane.Type
 
-/// A coherent server snapshot of the shared workspace registry. Returning
-/// workspaces and panes together prevents a client from treating the gap
-/// between two independent requests as an authoritative empty pane list.
 export const WorkspaceSnapshot = Schema.Struct({
   workspaces: Schema.Array(Workspace),
   panes: Schema.Array(WorkspacePane)
 })
 export type WorkspaceSnapshot = typeof WorkspaceSnapshot.Type
 
-/// Closing a pane deletes it; a workspace may be left with no panes, which
-/// every client renders with its own local empty page. `pane` is always
-/// absent — it remains in the schema for clients that predate this.
 export const CloseWorkspacePaneResponse = Schema.Struct({
   pane: Schema.optional(WorkspacePane)
 })
@@ -150,21 +100,15 @@ export const UpdateWorkspacePaneRequest = Schema.Struct({
   resourceKind: Schema.optional(Schema.NullOr(Schema.String)),
   resourceId: Schema.optional(Schema.NullOr(Schema.String)),
   metadata: Schema.optional(Schema.NullOr(Schema.String)),
-  /// Moves the tab in the workspace's shared tab order; the latest move wins.
   position: Schema.optional(WorkspacePosition)
 })
 export type UpdateWorkspacePaneRequest = typeof UpdateWorkspacePaneRequest.Type
 
-/// Puts a workspace's tabs in this order. Listed panes come first, in the
-/// given order; panes not listed keep their relative order after them.
 export const ReorderWorkspacePanesRequest = Schema.Struct({
   paneIds: Schema.Array(Schema.String)
 })
 export type ReorderWorkspacePanesRequest = typeof ReorderWorkspacePanesRequest.Type
 
-/// Converts an existing placeholder into a chat without creating a second
-/// pane identity. The session is ensured first but remains unassigned until
-/// the pane conversion and session membership commit together.
 export const PromoteWorkspacePaneToChatRequest = Schema.Struct({
   session: CreateSessionRequest,
   title: Schema.optional(Schema.String)
@@ -177,17 +121,11 @@ export const PromoteWorkspacePaneToChatResponse = Schema.Struct({
 })
 export type PromoteWorkspacePaneToChatResponse = typeof PromoteWorkspacePaneToChatResponse.Type
 
-/// Creates a workspace around its first chat in one server transaction: the
-/// workspace, the session and the chat pane commit together, so no client
-/// can observe the workspace without its chat. The workspace id is required
-/// (clients own workspace identity); the session's `workspaceId` is implied.
 export const CreateWorkspaceRequest = Schema.Struct({
   workspace: UpsertWorkspaceRequest,
   session: CreateSessionRequest,
   pane: Schema.optional(
     Schema.Struct({
-      /// Defaults to the session id, matching the pane a session membership
-      /// change would synthesize.
       id: Schema.optional(Schema.String),
       title: Schema.optional(Schema.String)
     })
@@ -213,13 +151,6 @@ export const Worktree = Schema.Struct({
 })
 export type Worktree = typeof Worktree.Type
 
-/// A worktree whose files have been removed, with its contents preserved as a
-/// git snapshot commit under `refs/codevisor/archived/<id>`. Deliberately a
-/// separate record from `Worktree`: archiving deletes the `worktrees` row so
-/// the (finite, ~500-name) food name pool is freed immediately, so restore is
-/// keyed by id and treats `originalName` only as the name it prefers to
-/// reclaim. `parentSha` is the commit the snapshot was taken against — the
-/// restore target when the original branch has moved or been deleted.
 export const ArchivedWorktreeState = Schema.Literals(["pending", "complete"])
 export type ArchivedWorktreeState = typeof ArchivedWorktreeState.Type
 
@@ -232,20 +163,12 @@ export const ArchivedWorktree = Schema.Struct({
   parentSha: Schema.String,
   snapshotRef: Schema.String,
   createdAt: Schema.String,
-  /// `pending` means the snapshot exists but the working files may not have
-  /// been removed yet. The record is written BEFORE the destructive step so an
-  /// interrupted archive is always recoverable; the boot reconciler finishes
-  /// the removal and promotes the row to `complete`.
   state: ArchivedWorktreeState
 })
 export type ArchivedWorktree = typeof ArchivedWorktree.Type
 
 export const CreateWorktreeRequest = Schema.Struct({
-  /// Client-supplied worktree id so callers can follow `worktree.setup` events
-  /// (subjectId = worktree id) while the create request is still in flight.
   id: Schema.optional(Schema.String),
-  /// Optional Codevisor session id that should also receive mirrored
-  /// `worktree.setup` progress while the session is waiting for first setup.
   sessionId: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String)
 })
@@ -254,10 +177,6 @@ export type CreateWorktreeRequest = typeof CreateWorktreeRequest.Type
 export const WorktreeSetupState = Schema.Literals(["started", "log", "completed", "failed"])
 export type WorktreeSetupState = typeof WorktreeSetupState.Type
 
-/** Progress payload carried on `worktree.setup` envelopes while the server
- *  materializes a worktree (`git worktree add` plus any checkout hooks).
- *  `log` updates stream one output line each; `completed`/`failed` carry the
- *  total `durationMs`, and `failed` carries the error `message`. */
 export const WorktreeSetupUpdate = Schema.Struct({
   state: WorktreeSetupState,
   worktreeId: Schema.String,

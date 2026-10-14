@@ -7,9 +7,6 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-// Shared helpers for the CloudHubConnection and channel suites (extracted so
-// the test files stay under the structural lint limits).
-
 @Observable
 
 final class Recorder: @unchecked Sendable {
@@ -72,8 +69,6 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
     lock.withLock { (tokenReadCount, deviceIdReadCount, secretKeyReadCount) }
   }
 
-  /// Session token and custom server reads, and how many of them ran on
-  /// the main thread.
   var credentialReadCounts: (token: Int, serverURL: Int, onMainThread: Int) {
     lock.withLock { (tokenReadCount, serverURLReadCount, mainThreadCredentialReadCount) }
   }
@@ -167,7 +162,6 @@ func makeHub(
     heartbeatInterval: heartbeatInterval,
     heartbeatTimeout: heartbeatTimeout,
     sleep: clock.sleep,
-    // A closed fake socket must suspend between attempts, even with one Swift worker.
     reconnectDelay: { _ in .seconds(1) }
   )
   return (hub, store)

@@ -35,7 +35,6 @@ describe("makePaneTokenStore", () => {
     const issued = store.issue(scope)
     current = 11 * 60_000
     expect(store.verify(issued.token, "owner.example")).toBeUndefined()
-    // A second expired token is removed by the sweep on the next issue.
     const second = store.issue(scope)
     current = 30 * 60_000
     store.issue(scope)
@@ -75,7 +74,6 @@ describe("makePaneTokenStore", () => {
     const sign = (secret: string) => createHmac("sha256", secret).update("payload").digest("hex")
     expect(sign(store.contextSecret("owner.example"))).toBe(signature)
     expect(sign(store.contextSecret("owner.other"))).not.toBe(signature)
-    // Restarted plugin processes get the same key from the same server.
     expect(store.contextSecret("owner.example")).toBe(store.contextSecret("owner.example"))
   })
 })

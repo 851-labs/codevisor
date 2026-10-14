@@ -69,8 +69,6 @@ extension CodevisorServerClient {
     )
   }
 
-  /// Servers that predate run locations ignore the field and return the
-  /// project without it.
   public func updateProjectDefaultRunLocation(
     id: UUID,
     defaultRunLocation: ProjectRunLocation?

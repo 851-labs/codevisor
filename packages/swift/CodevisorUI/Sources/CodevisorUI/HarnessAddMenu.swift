@@ -30,7 +30,6 @@
       .autocompleteSearchPrompt("Search harnesses")
       .autocompleteSearchLabel("Search harnesses")
       .autocompleteEmptyMessage("No Matching Harnesses", noItems: "All Harnesses Added")
-      // Adding closes the menu itself.
       .autocompleteDismissBehavior(.never)
     }
   }

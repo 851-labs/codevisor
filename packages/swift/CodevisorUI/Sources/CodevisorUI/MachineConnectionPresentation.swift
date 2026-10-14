@@ -1,35 +1,22 @@
 import CodevisorCore
 import Foundation
 
-/// How the Machines list shows the connection to one machine: a status dot (or spinner) and a
-/// short label saying how it's reached, with the round trip when it's connected.
-///
-/// "Offline" is from this device's point of view: a machine the hub sees but this device can't
-/// reach is offline here. Client reachability and sync results take precedence over cloud
-/// presence — an online cloud host doesn't prove this device can use it.
 public enum MachineConnectionPresentation: Equatable {
   case thisMac
-  /// Dialing it, or probing it for the first time.
   case connecting
   case waiting(ServerWaitingReason)
   case syncing
   case peerToPeer(milliseconds: Int?)
   case relayed(relayURL: String?, milliseconds: Int?)
-  /// Its Codevisor is too old to take tunnel connections.
   case updateNeeded
   case offline(lastSeen: Date?)
 
   public enum Indicator: Equatable {
-    /// A green dot.
     case connected
-    /// A spinner.
     case busy
-    /// A gray dot.
     case inactive
   }
 
-  /// - Parameters:
-  ///   - cloud: for a machine reached through Codevisor Cloud.
   public init(
     isLocal: Bool = false,
     status: MachineStatus?,
@@ -56,7 +43,6 @@ public enum MachineConnectionPresentation: Equatable {
   ) -> Self? {
     switch availability {
     case .waiting(.connecting):
-      // Automatic reconnects retain Offline until the failure clears.
       if case .stale = sync {
         return .offline(lastSeen: lastSeen)
       } else if status?.isReachable == false {
@@ -88,7 +74,6 @@ public enum MachineConnectionPresentation: Equatable {
 
   private static func unprobed(_ cloud: CloudMachineReach?, lastSeen: Date?) -> Self {
     if let cloud {
-      // Not probed yet: the tunnel's own state decides.
       if cloud.route != nil || cloud.dialing {
         return .connecting
       } else {
@@ -104,7 +89,6 @@ public enum MachineConnectionPresentation: Equatable {
     switch cloud?.route {
     case .peerToPeer(let milliseconds): return .peerToPeer(milliseconds: milliseconds)
     case .relayed(let url, let milliseconds): return .relayed(relayURL: url, milliseconds: milliseconds)
-    // Reachable but the path isn't measured yet (the first refresh is moments away).
     case nil: return .peerToPeer(milliseconds: nil)
     }
   }
@@ -132,7 +116,6 @@ public enum MachineConnectionPresentation: Equatable {
     }
   }
 
-  /// The tooltip, where the label needs explaining.
   public var help: String? {
     switch self {
     case .peerToPeer: "Direct encrypted connection"
@@ -154,7 +137,6 @@ public enum MachineConnectionPresentation: Equatable {
     return formatter.localizedString(for: date, relativeTo: now)
   }
 
-  /// Our relays are named by their Fly region (`relay-sjc-1.codevisor.dev`).
   static func relayPlace(_ url: String?) -> String? {
     guard let host = url.flatMap({ URL(string: $0)?.host() }) else { return nil }
     let places = ["iad": "Virginia", "sjc": "San Jose", "fra": "Frankfurt", "sin": "Singapore"]

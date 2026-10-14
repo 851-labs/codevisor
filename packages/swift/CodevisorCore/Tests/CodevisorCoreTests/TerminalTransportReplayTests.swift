@@ -3,7 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Delivers a fixed list of server frames, then waits until cancelled.
 private final class ScriptedSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
   private var pending: [ServerWebSocketMessage]
@@ -12,8 +11,6 @@ private final class ScriptedSocket: ServerWebSocketConnecting, @unchecked Sendab
 
   private let failsWhenDrained: Bool
 
-  /// `failsWhenDrained` drops the connection after the last frame, as a
-  /// network loss or the app's suspension would.
   init(frames: [String], failsWhenDrained: Bool = false) {
     pending = frames.map { .string($0) }
     self.failsWhenDrained = failsWhenDrained
@@ -46,8 +43,6 @@ private final class ScriptedSocket: ServerWebSocketConnecting, @unchecked Sendab
   }
 }
 
-/// Hands out one scripted socket per connection attempt, recording the
-/// replay cursor each asked for.
 private final class ScriptedSocketTransport: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var sockets: [ScriptedSocket]
@@ -66,8 +61,6 @@ private final class ScriptedSocketTransport: ServerWebSocketTransport, @unchecke
   }
 }
 
-/// Answers each create request with the next head in turn, recording
-/// whether it asked to attach only.
 private final class TerminalHeads: ServerRequestTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var heads: [Int]
@@ -89,7 +82,6 @@ private final class TerminalHeads: ServerRequestTransport, @unchecked Sendable {
   }
 }
 
-/// A terminal that has produced two frames before this client attaches.
 private struct TerminalWithHistory: ServerRequestTransport {
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let body = Data(#"{"terminalId":"t","websocketPath":"/v1/terminals/t/ws","nextOutputSeq":3}"#.utf8)
@@ -98,9 +90,6 @@ private struct TerminalWithHistory: ServerRequestTransport {
   }
 }
 
-/// Reattaching replays the terminal's history, including queries apps made
-/// back then; the renderer must be able to tell that history from live
-/// output so it doesn't answer those queries again into the shell.
 @MainActor
 @Suite("Terminal transport replay")
 struct TerminalTransportReplayTests {
@@ -133,9 +122,6 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, false])
   }
 
-  /// A client whose cursor predates the server's retained output gets the
-  /// reconstructed screen instead; it is history, even when it arrives
-  /// numbered at or past the head this client learned about.
   @Test("A reset reconstruction is delivered as replayed history", .timeLimit(.minutes(1)))
   func deliversResetAsReplayed() async throws {
     let socket = ScriptedSocket(frames: [
@@ -165,8 +151,6 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, false])
   }
 
-  /// An idle shell produces no live output, so the history can't wait for
-  /// any: its last frame releases it.
   @Test("History is delivered once complete, without waiting for live output", .timeLimit(.minutes(1)))
   func deliversCompleteHistory() async throws {
     let socket = ScriptedSocket(frames: [
@@ -196,9 +180,6 @@ struct TerminalTransportReplayTests {
     #expect(replayed)
   }
 
-  /// Output produced while the app was suspended or offline may include
-  /// queries another client already answered; it is caught up in one piece
-  /// like an attach's history, while what follows stays live.
   @Test("Output missed during a disconnect is caught up as history", .timeLimit(.minutes(1)))
   func catchesUpAfterReconnect() async throws {
     let sockets = ScriptedSocketTransport(sockets: [
@@ -231,8 +212,6 @@ struct TerminalTransportReplayTests {
 
     #expect(received.map(\.0) == ["before", "missed \u{1B}[c", "live"])
     #expect(received.map(\.1) == [true, true, false])
-    // The reconnect resumes after what was received, having asked for the
-    // head without spawning a shell.
     #expect(sockets.connectQueries == ["lastOutputSeq=0&protocol=2", "lastOutputSeq=1&protocol=2"])
     #expect(heads.attachOnlyRequests == [false, true])
   }

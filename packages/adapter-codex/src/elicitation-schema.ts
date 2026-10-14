@@ -4,13 +4,9 @@ import { isRecord } from "./internal.js"
 
 interface ElicitationField {
   readonly spec: QuestionSpec
-  /// Coerces the wire answer entry back to the field's schema type; undefined
-  /// drops the field from the accepted content.
   readonly coerce: (entry: QuestionAnswerEntry) => unknown
 }
 
-/// Lenient flat-object mapping of the MCP elicitation form schema
-/// (2025-11-25 `ElicitRequestFormParams`) onto question specs.
 export const elicitationFields = (schema: Record<string, unknown>): Array<ElicitationField> => {
   if (!isRecord(schema.properties)) return []
   return Object.entries(schema.properties).flatMap(([key, raw]): Array<ElicitationField> => {
@@ -26,13 +22,11 @@ const elicitationField = (key: string, raw: Record<string, unknown>): Array<Elic
   const base = { id: key, question }
   const enumeration = singleSelectField(raw, base)
   if (enumeration !== undefined) return enumeration
-  // Multi-select enums: `type: "array"` with enum-shaped `items`.
   if (raw.type === "array" && isRecord(raw.items)) {
     return multiSelectField(raw.items, base)
   }
   if (raw.type === "boolean") return booleanField(base)
   if (raw.type === "number" || raw.type === "integer") return numericField(base)
-  // Strings (and anything unrecognized) become free-text questions.
   return freeTextField(base)
 }
 
@@ -40,7 +34,6 @@ const singleSelectField = (
   raw: Record<string, unknown>,
   base: Pick<QuestionSpec, "id" | "question">
 ): Array<ElicitationField> | undefined => {
-  // Single-select enums: `oneOf: [{const, title}]` or `enum` (+ enumNames).
   const constOptions = Array.isArray(raw.oneOf) ? enumOptions(raw.oneOf) : undefined
   const plainEnum = Array.isArray(raw.enum) ? plainEnumOptions(raw.enum, raw.enumNames) : undefined
   if (constOptions !== undefined || plainEnum !== undefined) {

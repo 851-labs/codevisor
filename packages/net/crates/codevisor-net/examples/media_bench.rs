@@ -1,16 +1,3 @@
-//! A two-machine probe of the tunnel's media path:
-//! the loopback UDP → QUIC datagram → loopback UDP route screen
-//! sharing uses, measured side by side with plain UDP over the same network.
-//!
-//! ```text
-//! host$   media_bench serve --bind 0.0.0.0:47100 --udp-echo 0.0.0.0:47101
-//! viewer$ media_bench run --peer <endpoint id> --addr <host ip>:47100 --udp <host ip>:47101
-//! ```
-//!
-//! The host echoes every packet, through its end of the tunnel flow and on the
-//! plain UDP port, so each row is a round trip that crosses both directions.
-//! After each tunnel row, both ends report their tunnel counters.
-
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{Arc, Mutex},
@@ -25,9 +12,7 @@ use codevisor_net::{
 use tokio::net::UdpSocket;
 
 const FLOW: u32 = 1;
-/// `[test id: u32][sequence: u32][send time: u64 ns]`, then padding.
 const HEADER: usize = 16;
-/// How long a row waits for its last echoes.
 const DRAIN: Duration = Duration::from_millis(1500);
 const SWEEP_SIZES: [usize; 15] = [1000, 1100, 1150, 1160, 1170, 1180, 1190, 1200, 1210, 1220, 1240, 1260, 1300, 1400, 1472];
 
@@ -60,7 +45,6 @@ fn endpoint_config(bind: String) -> NetConfig {
     }
 }
 
-/// Answers every packet with itself.
 async fn spawn_echo(bind: &str) -> Result<SocketAddr> {
     let socket = UdpSocket::bind(bind).await?;
     let addr = socket.local_addr()?;
@@ -96,8 +80,6 @@ async fn serve(bind: String, udp_echo: String) -> Result<()> {
     }
 }
 
-/// Forwards the flow to the echo, then answers each report request with this
-/// end's counters (its sends carry the echoes back to the viewer).
 async fn host_connection(connection: NetConnection, echo: SocketAddr) -> Result<()> {
     let _flow = MediaFlow::forward(connection.media(), FLOW, echo).await?;
     let control = connection.accept_message_stream().await?;
@@ -160,8 +142,6 @@ impl Probe {
         Ok(Self { name, socket: Arc::new(UdpSocket::bind(bind).await?), target })
     }
 
-    /// Sends `schedule` (offset from the start, packet size) and returns each
-    /// packet's round trip in ms, or `None` if its echo never came back.
     async fn measure(&self, test: u32, schedule: &[(Duration, usize)]) -> Vec<Option<f64>> {
         let start = Instant::now();
         let results = Arc::new(Mutex::new(vec![None; schedule.len()]));
@@ -199,16 +179,12 @@ impl Probe {
     }
 }
 
-/// Packets of `size` at `mbps` for `seconds`.
 fn constant(size: usize, mbps: f64, seconds: f64) -> Vec<(Duration, usize)> {
     let interval = size as f64 * 8.0 / (mbps * 1e6);
     let count = (seconds / interval) as usize;
     (0..count).map(|index| (Duration::from_secs_f64(index as f64 * interval), size)).collect()
 }
 
-/// A screen-sharing shape: a steady `background_mbps` plus, every `period`, a
-/// `burst_bytes` keyframe paced at `burst_mbps` (the product paces at 10× its
-/// target bitrate).
 fn keyframes(background_mbps: f64, burst_bytes: usize, burst_mbps: f64, period: f64, seconds: f64) -> Vec<(Duration, usize)> {
     const SIZE: usize = 1100;
     let mut schedule = constant(SIZE, background_mbps, seconds);
@@ -224,7 +200,6 @@ fn keyframes(background_mbps: f64, burst_bytes: usize, burst_mbps: f64, period: 
     schedule
 }
 
-/// Each size, 40 packets at 400 a second.
 fn sweep() -> Vec<(Duration, usize)> {
     SWEEP_SIZES
         .iter()
@@ -266,8 +241,6 @@ async fn run(peer: String, addr: String, udp: String) -> Result<()> {
     let flow = MediaFlow::bind(connection.media(), FLOW).await?;
     let control = connection.open_message_stream().await?;
     println!("connected in {:.0} ms", dialed.elapsed().as_secs_f64() * 1000.0);
-    // The host opens its end of the flow before answering, so after this
-    // report no echo can arrive for a flow it hasn't registered yet.
     print_reports(&connection, &control).await?;
 
     let probes = [

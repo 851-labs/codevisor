@@ -1,15 +1,9 @@
 import SwiftUI
 
-/// Shared Liquid Glass treatment for the functional surfaces clustered around
-/// the composer. Keeping the material and geometry here prevents pinned
-/// controls from drifting back to opaque, independently styled cards.
 public enum ComposerGlassStyle {
   public static let clusterSpacing: CGFloat = 8
 }
 
-/// Stable identities for every Liquid Glass shape in the session's bottom
-/// chrome. SwiftUI uses these within one namespace to preserve the correct
-/// material geometry as nearby surfaces appear, disappear, and resize.
 public enum ComposerGlassElement: String, Hashable {
   case composer
   case todos
@@ -59,9 +53,6 @@ private struct ComposerGlassSurfaceModifier<S: Shape>: ViewModifier {
   let transition: GlassEffectTransition
 
   func body(content: Content) -> some View {
-    // The glass is drawn, not hit-tested: without a content shape, clicks
-    // and hover in a surface's padding fall through to whatever lies
-    // beneath it, such as the transcript's text and links.
     glass(content.contentShape(shape))
   }
 
@@ -73,9 +64,6 @@ private struct ComposerGlassSurfaceModifier<S: Shape>: ViewModifier {
           .regular,
           in: shape
         )
-        // The project defaults declarations to MainActor. Passing the
-        // raw String gives this nonisolated API a standard-library
-        // Hashable & Sendable identity without actor-bound conformance.
         .glassEffectID(id.rawValue, in: namespace)
         .glassEffectTransition(transition)
     } else {

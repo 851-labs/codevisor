@@ -3,7 +3,6 @@ import ACPKit
 import SwiftUI
 import TranscriptKit
 
-/// One conversation item: a trailing user bubble or a complete assistant turn.
 struct ConversationItemRow: View {
   let item: ConversationItem
   var isWaitingOnUser = false

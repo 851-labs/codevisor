@@ -1,8 +1,6 @@
 import CodevisorCore
 import Foundation
 
-/// Promotes a split's placeholder without exposing a routable session before
-/// its pane and workspace membership exist.
 @MainActor
 enum NewChatPanePromoter {
   static func promote(

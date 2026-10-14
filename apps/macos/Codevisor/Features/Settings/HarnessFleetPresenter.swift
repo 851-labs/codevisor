@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One machine-bound sign-in or account manager, as a sheet item.
 struct HarnessMachineSignInTarget: Identifiable {
   let machineId: String
   let harnessId: String
@@ -10,17 +9,11 @@ struct HarnessMachineSignInTarget: Identifiable {
   var id: String { "\(machineId)|\(harnessId)" }
 }
 
-/// The fleet-shared accounts sheet for one harness, with the machine the
-/// caller was looking at (a chat's server) as the preferred sign-in host.
 struct HarnessFleetAccountsTarget {
   let setting: HarnessFleet.Setting
   let preferredMachineId: String?
 }
 
-/// The sheets the shared harness list presents — fleet-shared accounts and
-/// one machine's sign-in — owned by whichever
-/// screen embeds the list (Settings › Harnesses, onboarding) so both
-/// behave identically.
 @MainActor @Observable
 final class HarnessFleetPresenter {
   var accountsSetting: HarnessAccountsPresentation<HarnessFleetAccountsTarget>?
@@ -36,10 +29,6 @@ final class HarnessFleetPresenter {
     signInTarget = .init(machineId: machineId, harnessId: harnessId, startsSignIn: startsSignIn)
   }
 
-  /// The one entry for "open this harness's accounts": callers that only
-  /// know a harness and the machine they were on (a rate-limited chat, a
-  /// deep link) land on the fleet sheet when accounts are fleet-shared and
-  /// on the machine's sheet only when they truly live there.
   func present(
     harnessId: String, machineId: String, startsSignIn: Bool, in environment: AppEnvironment
   ) {
@@ -57,7 +46,6 @@ final class HarnessFleetPresenter {
 }
 
 extension View {
-  /// Attaches the harness list's sheets.
   func harnessFleetSheets(_ presenter: HarnessFleetPresenter) -> some View {
     modifier(HarnessFleetSheetsModifier(presenter: presenter))
   }

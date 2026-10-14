@@ -1,7 +1,6 @@
 import CTreeSitter
 import Foundation
 
-/// Borrows capture nodes synchronously; their document retains the C tree.
 enum TreeSitterLocalReferences {
   static func resolve(
     _ matches: [TreeSitterQuery.Match], tree: OpaquePointer,

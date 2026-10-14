@@ -33,7 +33,6 @@ describe("parsePluginSource", () => {
       subpath: "plugins/diff",
       url: "https://github.com/acme/tools.git"
     })
-    // A trailing "#" means no ref, same as skills.
     expect(parsePluginSource("acme/tools#").ref).toBeUndefined()
     expect(() => parsePluginSource("just-a-name")).toThrow(/Unrecognized plugin source/)
   })
@@ -110,15 +109,12 @@ describe("parsePluginSource", () => {
       subpath: "plugins%20and%20tools",
       url: "https://github.com/acme/tools.git"
     })
-    // A #ref wins over the tree ref; a tree URL without a deeper path has no
-    // subpath.
     expect(parsePluginSource("https://github.com/acme/tools/tree/main#pinned")).toEqual({
       owner: "acme",
       ref: "pinned",
       repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
-    // Non-tree URL path segments become the subpath.
     expect(parsePluginSource("https://github.com/acme/tools/plugins/diff")).toEqual({
       owner: "acme",
       ref: undefined,

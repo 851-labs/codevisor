@@ -201,7 +201,6 @@ describe("Codevisor MCP provider", () => {
       projectId: "calling project/id",
       harnessId: "codex"
     })
-    // Sidebars list workspaces, so an agent-created chat must land in one.
     const created = JSON.parse(requests[2]!.init.body as string) as { workspaceId: string }
     const unscoped = JSON.parse(requests[4]!.init.body as string) as { workspaceId: string }
     expect(created.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
@@ -213,7 +212,6 @@ describe("Codevisor MCP provider", () => {
       parentSessionId: "explicit-parent"
     })
     expect(unscoped).not.toHaveProperty("projectId")
-    // An agent-created chat is linked to the agent that started it.
     expect(unscoped).toMatchObject({ parentSessionId: "caller" })
     expect(JSON.parse(requests[5]!.init.body as string)).toEqual({})
     expect(Buffer.from(requests[6]!.init.body as ArrayBuffer).toString()).toBe("hello")
@@ -258,7 +256,6 @@ describe("Codevisor MCP provider", () => {
       confirm: true
     })
     expect(requests[0]!.url.pathname).toBe("/v1/plugins/import-remote")
-    // The consent argument is local to the tool; the server never sees it.
     expect(JSON.parse(requests[0]!.init.body as string)).toEqual({ source: "owner/repo" })
   })
 

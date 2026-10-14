@@ -1,14 +1,7 @@
 import SwiftUI
 
-/// How long an attachment must be loading before its spinner appears. A
-/// cached or nearby file opens before then and never flashes one.
 private let attachmentLoadingDelay: Duration = .milliseconds(150)
 
-/// Dims an attachment and shows a spinner while its full file downloads for
-/// Quick Look. Thumbnails and images drawn inline in Markdown text both use
-/// it, so every attachment shows the same loading state on macOS and iOS.
-/// The spinner badge matches `VideoPlayBadge`'s footprint, so it covers a
-/// video's play glyph instead of stacking on it.
 public struct AttachmentLoadingOverlay: View {
   private let isLoading: Bool
 
@@ -35,8 +28,6 @@ public struct AttachmentLoadingOverlay: View {
   }
 }
 
-/// The leading glyph of a file chip: its document icon, swapped for a
-/// spinner while the file downloads for Quick Look.
 public struct AttachmentChipIcon: View {
   private let isLoading: Bool
 
@@ -54,13 +45,10 @@ public struct AttachmentChipIcon: View {
           .foregroundStyle(.secondary)
       }
     }
-    // One footprint for both glyphs so the filename doesn't shift.
     .frame(width: 18, height: 18)
   }
 }
 
-/// Reports `isActive` to `content` only once it has held for
-/// `attachmentLoadingDelay`, and clears it immediately when it ends.
 private struct DelayedActivity<Content: View>: View {
   let isActive: Bool
   @ViewBuilder let content: (Bool) -> Content

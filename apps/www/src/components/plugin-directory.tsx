@@ -1,12 +1,5 @@
 import { useState } from "react"
 
-/// Shared pieces of the plugin directory (codevisor.dev/plugins and the
-/// per-plugin detail pages): artwork, the install affordances, and the page
-/// chrome both routes render.
-
-/// Registry base URL, resolved lazily so the dev runner's local cloud
-/// instance wins over production. import.meta.env, not process.env: the SSR
-/// handler runs on workerd, which has no process environment.
 export const registryBaseUrl = (): string =>
   (
     (import.meta.env["VITE_CODEVISOR_DEV_CLOUD_URL"] as string | undefined) ??
@@ -15,13 +8,6 @@ export const registryBaseUrl = (): string =>
 
 export const installCliCommand = (repo: string): string => `codevisor plugin install ${repo}`
 
-/// The app deeplink the Install buttons open. The app never auto-installs
-/// from it: it routes into the same discover→consent flow as an in-app
-/// install, showing the verbatim commands first. A dev site targets its own
-/// dev app: `bun run dev` registers a per-worktree scheme
-/// (codevisor-dev-<hash>, via VITE_CODEVISOR_DEV_URL_SCHEME) so the Install
-/// button opens the development instance this page belongs to — never a
-/// production install or another worktree's dev app.
 const deeplinkScheme = (): string =>
   (import.meta.env["VITE_CODEVISOR_DEV_URL_SCHEME"] as string | undefined) ??
   (import.meta.env.DEV ? "codevisor-dev" : "codevisor")
@@ -29,8 +15,6 @@ const deeplinkScheme = (): string =>
 export const installDeeplink = (repo: string): string =>
   `${deeplinkScheme()}://install-plugin?repo=${encodeURIComponent(repo)}`
 
-/// The repo owner's GitHub avatar in an app-icon-style rounded rect, with a
-/// neutral placeholder when the index predates avatar support.
 export function PluginAvatar({ avatarUrl, sizeClass }: { avatarUrl?: string; sizeClass: string }) {
   if (avatarUrl === undefined) {
     return (
@@ -65,8 +49,6 @@ function PuzzleGlyph() {
   )
 }
 
-/// The primary install affordance: opens the app via the
-/// codevisor://install-plugin deeplink.
 export function InstallButton({ repo, prominent = false }: { repo: string; prominent?: boolean }) {
   return (
     <a
@@ -83,7 +65,6 @@ export function InstallButton({ repo, prominent = false }: { repo: string; promi
   )
 }
 
-/// The CLI fallback: click to copy `codevisor plugin install owner/repo`.
 export function CopyInstallCommand({ repo }: { repo: string }) {
   const command = installCliCommand(repo)
   const [copied, setCopied] = useState(false)

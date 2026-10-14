@@ -10,10 +10,6 @@ import {
 import { firstLine } from "./internal.js"
 import type { CodexSession } from "./session.js"
 
-/// Maps codex's `MessagePhase` ("commentary" | "final_answer") to the wire's
-/// phase vocabulary. Absent/unknown stays undefined — per codex convention
-/// untagged messages keep legacy semantics, which on our wire means "let the
-/// client render optimistically" rather than asserting finality.
 export const wirePhase = (raw: unknown): "commentary" | "final" | undefined =>
   raw === "commentary" ? "commentary" : raw === "final_answer" ? "final" : undefined
 
@@ -47,10 +43,6 @@ export const emitItemLifecycle = (
       break
     }
     case "plan": {
-      // EXPERIMENTAL codex plan-mode proposed-plan document. Codevisor doesn't
-      // expose the collaboration-mode toggle yet, but if a plan item arrives
-      // it renders as a plan document rather than an opaque tool call. The
-      // completed item is authoritative; deltas are ignored.
       if (!started && typeof item.text === "string" && item.text.length > 0) {
         void session.emit(
           event({
@@ -66,9 +58,6 @@ export const emitItemLifecycle = (
       break
     }
     case "webSearch": {
-      // The started item often lacks the query — codex fills it in as the
-      // model generates the call — so the completed item re-titles the call
-      // with the authoritative query.
       const query = typeof item.query === "string" && item.query.length > 0 ? item.query : undefined
       const title =
         query !== undefined
@@ -79,8 +68,6 @@ export const emitItemLifecycle = (
       if (started) {
         void session.emit(
           event({
-            // Not ACP vocabulary — Codevisor's own extension so clients can
-            // phrase web searches as searches instead of fetches.
             kind: "web_search",
             sessionUpdate: "tool_call",
             status: "in_progress",
@@ -191,9 +178,6 @@ function emitFileChangeItem(
   const stats = fileChangeStats(item.changes)
   const content = fileChangeDiffBlocks(item.changes)
   if (started) {
-    // The streamed patchUpdated events may have opened this call already;
-    // tool_call upserts merge in the client, so re-sending is safe and
-    // carries the final title/diff content.
     session.itemKinds.set(itemId, "edit")
     session.itemTitles.set(itemId, fileChangeTitle(item.changes, false))
     void session.emit(
@@ -264,16 +248,11 @@ function applyMessagePhase(
   started: boolean,
   event: ItemEvent
 ): void {
-  // Text already streamed via item/agentMessage/delta; the lifecycle only
-  // carries the message's phase (harmony commentary vs final answer).
   const phase = wirePhase(item.phase)
   if (started) {
     if (phase !== undefined) session.messagePhases.set(itemId, phase)
     return
   }
-  // Completion can reveal a phase the started item lacked (backends that
-  // tag only the finished item). A zero-length chunk retro-tags the span
-  // clients already streamed; skip when the deltas were tagged all along.
   if (phase !== undefined && session.messagePhases.get(itemId) !== phase) {
     void session.emit(
       event({

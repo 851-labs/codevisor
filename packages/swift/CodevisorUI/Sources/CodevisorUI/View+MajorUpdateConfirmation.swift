@@ -2,9 +2,6 @@ import CodevisorCore
 import SwiftUI
 
 public extension View {
-  /// Asks before an update that crosses a major version, showing what
-  /// changes for the user (the component's notes). Update All never runs
-  /// such an update, so this is the only way it starts.
   func majorUpdateConfirmation(
     _ component: Binding<UpdateComponent?>,
     perform: @escaping (UpdateComponent) -> Void

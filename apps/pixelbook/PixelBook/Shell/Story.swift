@@ -6,8 +6,6 @@ enum StoryGroup: String, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
-/// One example. The content view owns its state and presents its own
-/// inspector with `.storyInspector { … }`.
 struct Story: Identifiable, Hashable {
   let id: String
   let group: StoryGroup

@@ -39,7 +39,6 @@ struct CloudDirectConnectionTests {
     #expect(await waitUntil { recorder.closes.count == 1 })
     #expect(recorder.closes == [nil])
     #expect(await waitUntil { downs.messages.count == 1 })
-    // The pipe is single-shot: no reconnect loop, no second onDown.
     await #expect(throws: CloudHubConnectionError.disconnected) {
       _ = try await connection.openChannel(
         channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
@@ -50,7 +49,6 @@ struct CloudDirectConnectionTests {
   @Test("An answered keepalive keeps the pipe up past the pong deadline")
   func answeredKeepaliveKeepsPipeUp() async throws {
     let scripted = ScriptedDirectMachine()
-    // The test answers the ping itself, once the pong deadline is armed.
     scripted.respondsToPing = false
     let downs = Recorder()
     let clock = TestClock()
@@ -70,8 +68,6 @@ struct CloudDirectConnectionTests {
     await scripted.socket.drain()
     await clock.waitForSleep(.seconds(10), count: 2)
 
-    // Past the pong deadline and on to the next heartbeat: an unanswered
-    // deadline would take the pipe down and never send the second ping.
     clock.advance(by: .seconds(10))
     #expect(await waitUntil { scripted.pings == 2 || !downs.messages.isEmpty })
     #expect(downs.messages.isEmpty)
@@ -120,7 +116,6 @@ struct CloudDirectConnectionTests {
     let reply = try scripted.machine.sealData(channelId: answered.id, payload: Data("hi".utf8))
     scripted.sendToApp(frame: reply.frame, payload: reply.payload)
     #expect(await waitUntil { recorder.messages.count == 1 })
-    // A channel that heard back says nothing about the pipe.
     await answered.reportUnanswered()
     #expect(await connection.isReady)
 
@@ -175,7 +170,7 @@ struct SwitchingChannelTransportTests {
     #expect(await waitUntil { first.machine.channel(overFirst.id) != nil })
     #expect(second.machine.channel(overFirst.id) == nil)
 
-    useSecond.record(Data())  // the first pipe "went down"
+    useSecond.record(Data())
     let overSecond = try await transport.openChannel(
       channelType: "http", params: nil, compressed: false,
       onMessage: { _ in }, onClosed: { _ in })

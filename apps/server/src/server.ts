@@ -60,8 +60,6 @@ export const makeCodevisorServerApp = (
   fanout: EventFanout,
   webSocketServer = new WebSocketServer({ noServer: true })
 ): CodevisorServerApp => {
-  // The restart drain and the route state reference each other: the drain
-  // reads the live-turn sets and prompt dispatch reads the drain's gate.
   const turns = {
     activePromptSessions: new Set<string>(),
     promptTurnReleases: new Map<string, () => void>(),
@@ -78,7 +76,6 @@ export const makeCodevisorServerApp = (
     turns,
     snapshot: restartSnapshot,
     defaultTimeoutMs: config.restartDrainTimeoutMs,
-    // Resolved at call time: routeState is assembled just below.
     redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId)
   })
   const browserProxy = new BrowserProxy()
@@ -94,26 +91,13 @@ export const makeCodevisorServerApp = (
     updateSignature: {},
     restart
   }
-  // The previous process drained for a restart: bring its live sessions
-  // back and dispatch the prompts it held. Fire-and-forget so the listener
-  // is answering /health while agents reconnect.
   void resumeSessionsAfterRestart(services, fanout, routeState, config.id, restartSnapshot).catch(
     swallowError
   )
-  // Turn lifecycle → prompt dispatch: a harness can start a turn on its own
-  // (task-notification follow-up after a background task finishes), which no
-  // prompt drain owns. Track live turns from the event stream so
-  // drainPromptQueue can hold, and re-drain held sessions the moment the
-  // turn settles. Synthetic terminal events (stale-turn reconciliation) flow
-  // through the same fanout, so a crashed harness can never wedge the hold.
   const unsubscribeTurns = fanout.subscribe(
     makeTurnDispatchListener(services, fanout, routeState, config.id)
   )
-  // Startup reconciliation only heals rows stranded by a dead process. Rows
-  // stranded while this process keeps running (harness crash, lost terminal
-  // event) would otherwise render as an endless in-progress turn to every
-  // client until the next restart — sweep for them periodically.
-  /* v8 ignore next 3 -- timer-driven: the sweep itself is tested directly. */
+  /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)
     void backfillProjectRepoUrls(
@@ -124,11 +108,6 @@ export const makeCodevisorServerApp = (
     ).catch(swallowError)
   }, 60_000)
   staleTurnSweep.unref()
-  // Deferred attention settling: a turn that ended while a subagent was
-  // still running parks its unread bump; this scheduler fires it once the
-  // grace deadline passes without the agent being re-invoked. Recovery also
-  // drains parked finishes stranded by a previous process (startup
-  // reconciliation has already cleared their stale task snapshots).
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
   void attentionSettle.recover().catch(swallowError)
@@ -163,9 +142,6 @@ export const makeCodevisorServerApp = (
     }).catch(swallowError)
     authSyncRefresh.request()
   })
-  // Retained so close() can drain it: reconcile writes credential files under
-  // the harness home, and a write landing after shutdown races whatever tears
-  // that directory down (a restarting server, or a test's temp-dir cleanup).
   let sharedAccountReconcile: Promise<void> | undefined
   const reconcileSharedAccounts = () => {
     sharedAccountReconcile = services.sharedAccounts?.reconcile().catch(swallowError)
@@ -175,38 +151,32 @@ export const makeCodevisorServerApp = (
     ? setInterval(reconcileSharedAccounts, 30_000)
     : undefined
   sharedAccountSweep?.unref()
-  /* v8 ignore next 9 -- the auth manager invokes this thin event-forwarding callback. */
+  /* v8 ignore next 9 */
   const unsubscribeAuth = services.auth?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
     )
-    // Auth drift is fleet-visible (Phase 19): an account flipping state —
-    // a session dying of auth, a login completing — republishes this
-    // machine's roster immediately instead of waiting for a client sweep.
     if (event.kind === "harness.account.updated") {
       authSyncRefresh.request()
     }
   })
-  /* v8 ignore next -- the lifecycle manager invokes this thin event-forwarding callback. */
+  /* v8 ignore next */
   const unsubscribeLifecycle = services.lifecycle?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
     )
     authSyncRefresh.request()
   })
-  // Plugin runtime transitions ride the same fanout so Settings chips and
-  // pane error cards update live on every client.
   const unsubscribePlugins = services.plugins?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       swallowError
     )
   })
-  // Gate release → tell every held session and re-drain its durable queue.
   const unsubscribeGate = services.lifecycle?.onGateReleased((harnessId) => {
     const catalogName = services.agents.catalog.find(
       (definition) => definition.id === harnessId
     )?.name
-    /* v8 ignore next -- defensive: releases for uncataloged harnesses fall back to the id. */
+    /* v8 ignore next */
     const harnessName = catalogName ?? harnessId
     for (const [sessionId, gatedHarnessId] of Array.from(routeState.gatedSessions)) {
       if (gatedHarnessId !== harnessId) continue
@@ -219,9 +189,6 @@ export const makeCodevisorServerApp = (
       void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
     }
   })
-  // Identity first: a fleet that predates stable app-hosted ids still
-  // carries this machine's overlays (and OAuth refresh ownership) under
-  // "local", and they must be ours before suppression is derived from them.
   const identityAdopted = adoptLegacySyncIdentity({
     db: services.db,
     serverId: config.id,
@@ -235,16 +202,11 @@ export const makeCodevisorServerApp = (
           entries: change.entries
         }).catch(swallowError)
       }
-      // Re-owned tokens republish so mirrors learn who rotates them now.
       if (result.adoptedOAuth.length > 0) {
         void runBackgroundSyncReconcile(services, config, fanout, "mcps")
       }
     })
     .catch(swallowError)
-  // Suppression is enforcement state, not cache: the per-machine disable
-  // overlays live in the sync replica, so a restarted server must re-apply
-  // them before any session asks for tools. Enforcement only — the durable
-  // readiness entry republishes on its usual triggers, not at boot.
   const mcpAtBoot = services.mcp
   if (mcpAtBoot !== undefined) {
     void identityAdopted
@@ -252,16 +214,10 @@ export const makeCodevisorServerApp = (
       .then((overlays) => mcpAtBoot.setLocalSuppression(overlays.disabledHere))
       .catch(swallowError)
   }
-  // Every visible change to a managed MCP record (a connection settling,
-  // an OAuth expiry, a synced enable flip) reaches clients as mcp.updated
-  // so settings views follow the machine live instead of polling.
   const unsubscribeMcpChanges = services.mcp?.subscribeServersChanged((id) => {
     void appendAndPublish(services.db, fanout, "mcp.updated", id, { id }).catch(swallowError)
   })
-  // A rotated OAuth token republishes immediately: the refresh owner's
-  // config plane must carry the new material before any mirror's old
-  // access token expires.
-  /* v8 ignore next 3 -- rotation events fire from the live OAuth refresh timer. */
+  /* v8 ignore next 3 */
   const unsubscribeRotations = services.mcp?.subscribeCredentialsRotated(() => {
     void runBackgroundSyncReconcile(services, config, fanout, "mcps")
   })
@@ -310,23 +266,14 @@ export const makeCodevisorServerApp = (
       webSocketServer.close()
       services.plugins?.close()
       void services.mcp?.close().catch(swallowError)
-      // Every listener above is detached synchronously, so no new background
-      // work can start; awaiting the last reconcile drains what is in flight.
       await sharedAccountReconcile
       await closeTerminalTitles()
-      // Archive teardown outlives the request that started it. Finish it
-      // before the database closes so a half-done archive is not left for
-      // the next boot.
       await archiveJobs(services).jobsFinished()
     })
   }
   return app
 }
 
-/// `bootListener` is the socket `serve` bound before the data upgrades ran
-/// (see boot-listener.ts). When present its boot handlers are detached and
-/// the real handlers take over the same server, so clients never see a
-/// refused-connection gap between "migrating" and "recovering".
 export const startCodevisorServer = (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -335,11 +282,6 @@ export const startCodevisorServer = (
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
     yield* Effect.sync(() => sweepAttachmentTempFiles())
-    // An accidental second `serve` against the same data directory once
-    // shadow-bound the loopback address of a live server and hijacked its
-    // clients mid-turn. Refuse to start when the port is already served;
-    // ephemeral ports (tests) cannot conflict and skip the probe. A boot
-    // listener already holds the port (and ran this probe before binding).
     if (
       bootListener === undefined &&
       config.port !== 0 &&
@@ -352,13 +294,6 @@ export const startCodevisorServer = (
         })
       )
     }
-    // Every runtime continuation belongs to this server process. If the
-    // previous process died mid-turn, close only the orphaned durable state
-    // before accepting clients. Agent processes are deliberately restored on
-    // demand by /connect: cold-starting one here for every interrupted chat
-    // used to keep /health unavailable for minutes after an app relaunch.
-    // This makes startup reconciliation idempotent and prevents a reconnecting
-    // UI from inheriting a generating row that can never emit again.
     return yield* Effect.tryPromise({
       try: () =>
         new Promise<RunningCodevisorServer>((resolve, reject) => {
@@ -395,13 +330,11 @@ export const startCodevisorServer = (
           })
           const onListening = async (): Promise<void> => {
             server.off("error", reject)
-            // Once listening, a failed accept (EMFILE) still arrives as
-            // 'error'; unheard, it would exit the process and every agent.
             server.on("error", (error) => {
               console.error(`Server socket error: ${error.message}`)
             })
             const address = server.address()
-            /* v8 ignore next -- TCP listen always returns AddressInfo here. */
+            /* v8 ignore next */
             const port = isAddressInfo(address) ? address.port : config.port
             services.mcp?.setBaseUrl(`http://${config.host}:${port}`)
             try {
@@ -417,19 +350,12 @@ export const startCodevisorServer = (
               return
             }
             app = makeCodevisorServerApp(services, config, fanout)
-            // Projects recorded before remotes were tracked learn theirs
-            // now, off the request path; the list route repeats the same
-            // reconcile (memoized) for anything this sweep misses.
             void backfillProjectRepoUrls(
               services.db,
               config.id,
               fanout,
               services.resolveGitEnvironment
             ).catch(swallowError)
-            // Converge whatever the last run left on disk: finish interrupted
-            // archives, drop worktree rows whose files are gone, and prune
-            // snapshot refs nothing can restore. Off the boot path and
-            // best-effort — housekeeping must never keep the server down.
             void reconcileWorktreeArchives(services, fanout, config).catch(swallowError)
             resolve({
               host: config.host,
@@ -438,7 +364,6 @@ export const startCodevisorServer = (
               close: closeServer(server, app)
             })
           }
-          // A throw while wiring the app fails the start, not the process.
           const listening = (): void => {
             onListening().catch((cause: unknown) => {
               server.close()
@@ -452,7 +377,7 @@ export const startCodevisorServer = (
             listening()
           }
         }),
-      /* v8 ignore next -- startup errors are surfaced by Node before a server is returned. */
+      /* v8 ignore next */
       catch: (cause) =>
         new ServerError({
           operation: "start",
@@ -472,13 +397,13 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
           .catch(swallowError)
           .finally(() =>
             server.close((error) => {
-              /* v8 ignore next -- normal test shutdown closes cleanly. */
+              /* v8 ignore next */
               if (error !== undefined) return reject(error)
               resolve()
             })
           )
       }),
-    /* v8 ignore next -- normal test shutdown closes cleanly. */
+    /* v8 ignore next */
     catch: (cause) =>
       new ServerError({
         operation: "close",
@@ -486,12 +411,10 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
       })
   })
 
-/// Shutdown must await background work before reporting the app closed, so
-/// this is promise-aware rather than the plain synchronous `Effect.try`.
 const serverCloseAttempt = (runClose: () => Promise<void>): Effect.Effect<void, ServerError> =>
   Effect.tryPromise({
     try: runClose,
-    /* v8 ignore next -- app close only wraps defensive WebSocket close failures. */
+    /* v8 ignore next */
     catch: (cause) => new ServerError({ operation: "closeApp", message: failureMessage(cause) })
   })
 

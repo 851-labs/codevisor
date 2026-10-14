@@ -7,9 +7,6 @@ import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// Which display a new tab connects to: the one the pane last used when it is
-/// still listed, else the first — and the preference is rewritten only when
-/// the choice changed.
 @MainActor
 struct ScreenSharingViewerDiscoveryTests {
   private let display = ScreenSharingViewerFixtures.display

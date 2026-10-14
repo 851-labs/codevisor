@@ -1,9 +1,5 @@
 import ACPKit
 
-/// Codevisor's harness-independent mode vocabulary. Providers map their native
-/// permission/approval modes onto these ids so Codevisor can recognize shared
-/// modes (such as plan) across harnesses; modes without a mapping stay
-/// native-only.
 public enum CanonicalMode: String, Sendable {
   case readOnly
   case ask

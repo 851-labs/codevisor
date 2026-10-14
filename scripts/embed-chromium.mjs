@@ -29,10 +29,7 @@ async function* files(directory, relative = "") {
   }
 }
 
-/// Builds the signed, versioned framework at `framework`.
 async function assembleFramework(framework) {
-  // CEF ships a flat framework. Xcode requires the standard versioned macOS
-  // framework layout (the same conversion used by CEF's COPY_MAC_FRAMEWORK).
   const versioned = join(framework, "Versions/A")
   await mkdir(versioned, { recursive: true })
   await run(
@@ -46,7 +43,6 @@ async function assembleFramework(framework) {
   }
   const binaries = []
   for await (const path of files(framework)) {
-    // The framework layout is versioned; only visit actual files, never symlinks.
     if (path.endsWith("Chromium Embedded Framework") || path.endsWith(".dylib")) binaries.push(path)
   }
   if (architectures.length > 1) {
@@ -92,8 +88,6 @@ async function assembleFramework(framework) {
   )
 }
 
-/// Identifies one assembled framework: the CEF build each architecture
-/// comes from, the signing identity, and this script's own recipe.
 async function signedFrameworkKey() {
   const hash = createHash("sha256")
   for (const arch of architectures) {
@@ -106,10 +100,6 @@ async function signedFrameworkKey() {
 
 await rm(framework, { recursive: true, force: true })
 if (env.CONFIGURATION === "Debug") {
-  // The signed framework is identical for every worktree, but signing
-  // rewrites each ~230 MB binary, so a per-build copy never shares blocks.
-  // Assemble it once per CEF build and identity, then clone it into the
-  // app: no per-worktree copy and no re-signing on every build.
   const store = join(chromiumArtifactsRoot(env), "signed-frameworks")
   const key = await signedFrameworkKey()
   const entry = await ensureStoreEntry(store, key, (staging) =>
@@ -121,8 +111,6 @@ if (env.CONFIGURATION === "Debug") {
   await assembleFramework(framework)
 }
 
-// dyld discovers interposers only in libraries loaded at process startup.
-// Both the app and every helper link this signed, app-owned dependency.
 const storageName = "CodevisorBrowserStorage.dylib"
 const storageLibrary = join(frameworks, storageName)
 if (architectures.length === 1)
@@ -145,11 +133,7 @@ await run(
 )
 for (const suffix of chromiumHelperSuffixes) {
   const helperName = `${chromiumHelperName(env.PRODUCT_NAME)}${suffix}`
-  // Chromium derives each specialized bundle path from the base executable
-  // name, so the bundle and executable names must include the same dev suffix.
   const bundle = join(frameworks, `${helperName}.app`)
-  // Recreate known helper bundles so renamed executables and old signatures
-  // cannot survive an incremental build or a switch between app variants.
   await rm(join(frameworks, `Codevisor Helper${suffix}.app`), { recursive: true, force: true })
   await rm(bundle, { recursive: true, force: true })
   const contents = join(bundle, "Contents")
@@ -193,13 +177,9 @@ for (const suffix of chromiumHelperSuffixes) {
         ""
       )}<key>LSUIElement</key><true/><key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict></dict></plist>`
   )
-  // The final build phase copies the compiled app icon and signs the helpers.
 }
 const resources = join(env.TARGET_BUILD_DIR, env.UNLOCALIZED_RESOURCES_FOLDER_PATH)
 await mkdir(resources, { recursive: true })
-// Resolve frontend assets from the exact DevTools resource pack in this CEF SDK.
-// GRIT converts resource paths to uppercase identifiers with punctuation replaced
-// by underscores. Keep the map generated so a CEF update cannot mix frontend versions.
 const resourceHeader = await readFile(
   join(source, architectures[0], "sdk/include/cef_pack_resources.h"),
   "utf8"

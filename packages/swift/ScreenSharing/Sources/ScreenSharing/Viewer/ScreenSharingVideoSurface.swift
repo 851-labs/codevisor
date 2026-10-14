@@ -35,49 +35,24 @@
     public func endInput() { input.end() }
     private var tracking: NSTrackingArea?
     private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
-    /// The video contains the host's pointer (native capture): with no shape, the
-    /// local one is a blank. Otherwise (VNC) it's the arrow (851-2355).
     private var videoShowsPointer = true
     public func setVideoShowsPointer(_ shows: Bool) {
       videoShowsPointer = shows
       window?.invalidateCursorRects(for: self)
     }
     private var videoSize = CGSize(width: 1920, height: 1080)
-    /// Whether a video frame has arrived. The cursor channel opens before the video, and a
-    /// pointer drawn then sat frozen over the "Connecting…" screen (851-2468).
     private var hasVideo = false
-    /// The remote pointer when the backend reports it (VNC Cursor/PointerPos,
-    /// 851-2311): its shape is the local cursor while controlling, so the
-    /// pointer moves without a network round trip; while viewing, an overlay
-    /// shows it where the host put it. Without a visible shape, a host that draws
-    /// its pointer into the video gets a blank local cursor; one that doesn't
-    /// (macOS Screen Sharing reports no cursor and draws none, 851-2355) the arrow.
     private var remoteShape: RFBCursorShape?
-    /// A native shape's size as a share of the display (851-2377); nil for a VNC shape in video pixels.
     private var remoteShapeSize: (width: Double, height: Double)?
     private var remoteImage: CGImage?
     private var remotePosition: RFBPoint?
     private var remoteNormalizedPosition: ScreenSharingPointer?
     private var shapedCursor: NSCursor?
     private let cursorOverlay = ScreenSharingCursorOverlay()
-    /// What the pointer looks like over the video while controlling: the host's
-    /// shape; else a blank when the video shows the host's pointer, or the arrow.
     var controlCursor: NSCursor { shapedCursor ?? (videoShowsPointer ? Self.remoteCursor : .arrow) }
-    /// Whether the view-mode overlay is showing, and where (for tests).
     var remoteCursorOverlayFrame: CGRect? { cursorOverlay.isHidden ? nil : cursorOverlay.frame }
-    /// The fill around the remote display: the letterbox bars an aspect-fit
-    /// leaves, and the whole surface before the first frame. Apple's Screen
-    /// Sharing seats the remote screen on the window surface rather than black
-    /// bars, so the default is the dynamic window background, resolved against
-    /// this view's appearance (the Metal clear color is a fixed value, so it is
-    /// re-resolved whenever the appearance or the color changes). The pane
-    /// passes its own surface color when a theme palette is active.
     public var letterboxColor: NSColor = .windowBackgroundColor { didSet { applyLetterboxColor() } }
 
-    /// `profile` nil (the default) is the product renderer: frame-arrival drive, three drawables, and drawable
-    /// acquisition and encoding on the render worker, so a frame costs the main actor only its selection and commit
-    /// (the display-link drive ran the whole draw, and `currentDrawable`'s up-to-1 s wait, on main at up to 120 Hz).
-    /// The explicit profile forwards its own renderer options (two drawables).
     public init(
       mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, profile: ScreenSharingDiagnosticProfile? = nil
     ) throws {
@@ -106,10 +81,6 @@
       applyLetterboxColor()
     }
 
-    /// Resolves `letterboxColor` for the current appearance into the renderer's
-    /// clear color. A fully transparent color (a theme that defers to the
-    /// window backdrop) falls back to the window background, because the Metal
-    /// layer is opaque.
     private func applyLetterboxColor() {
       var resolved: NSColor?
       effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -122,14 +93,10 @@
       metal.needsDisplay = true
     }
     public required init?(coder: NSCoder) { nil }
-    /// Whether the window's screen can show HDR, whenever that changes (851-2380).
     public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
       get { metal.onScreenHighDynamicRangeChanged }
       set { metal.onScreenHighDynamicRangeChanged = newValue }
     }
-    /// The video always fills the pane, scaled to fit and letterboxed by the renderer.
-    /// The size in points and the backing scale, reported when either changes
-    /// (851-2314; the scale for a Retina remote desktop, 851-2315).
     public var onSizeChanged: ((CGSize, CGFloat) -> Void)? {
       didSet { reported = nil; reportSize() }
     }
@@ -176,11 +143,8 @@
       window?.invalidateCursorRects(for: self)
     }
 
-    /// Rebuilds the shaped cursor at the video's current on-screen scale and
-    /// places (or hides) the view-mode overlay.
     private func refreshRemoteCursor() {
       let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
-      // Video pixels per shape pixel: 1 for VNC; for a native shape, what its share of the display makes it.
       let unit =
         remoteShapeSize.map { size in
           remoteShape.map { Double(videoSize.width) * size.width / Double($0.width) } ?? 1
@@ -218,7 +182,6 @@
       cursorOverlay.isHidden = false
     }
 
-    /// Premultiplied BGRA (the shape's layout) as a CGImage.
     static func image(_ shape: RFBCursorShape) -> CGImage? {
       guard let provider = CGDataProvider(data: Data(shape.pixels) as CFData) else { return nil }
       return CGImage(
@@ -233,9 +196,6 @@
       needsLayout = true
       reportSize()
     }
-    /// Input first, then the renderer's terminal stop (arrival subscription,
-    /// mailbox, cached frame and callbacks released; an in-flight submission
-    /// keeps its buffers until the GPU completes it).
     public func stop() { input.end(); metal.stop() }
     public override var acceptsFirstResponder: Bool { true }
     public override func becomeFirstResponder() -> Bool {
@@ -314,7 +274,6 @@
 
   }
 
-  /// The view-mode remote pointer: drawn over the video, never hit by the mouse.
   final class ScreenSharingCursorOverlay: NSView {
     override init(frame: NSRect) {
       super.init(frame: frame)

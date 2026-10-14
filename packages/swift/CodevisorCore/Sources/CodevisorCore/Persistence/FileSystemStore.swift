@@ -1,14 +1,5 @@
 import Foundation
 
-/// A `PersistenceStore` backed by JSON files in the app's Application Support
-/// directory.
-///
-/// Writes are asynchronous: callers are `@MainActor` models on hot
-/// interaction paths (turn end, pane tab clicks, sidebar mutations), and a
-/// disk stall — Spotlight, low disk, a network home directory — must never
-/// block the run loop. Saves per key coalesce (last write wins), reads see
-/// pending writes immediately, and pending writes flush before the app
-/// terminates.
 public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
   private enum PendingOperation {
     case save(Data)
@@ -17,18 +8,11 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
 
   private let directory: URL
   private let fileManager: FileManager
-  /// Serial queue all disk writes run on.
   private let writeQueue = DispatchQueue(label: "com.codevisor.persistence-write", qos: .utility)
   private let pendingLock = NSLock()
-  /// Latest not-yet-flushed bytes per key — the coalescing buffer and the
-  /// read-your-writes source.
   private var pending: [String: PendingOperation] = [:]
-  /// Keys whose failed writes were already surfaced to the user this run,
-  /// so a repeatedly failing save logs every time but banners once.
   private var reportedWriteFailures: Set<String> = []
   private var terminationObservers: [any NSObjectProtocol] = []
-  /// Called (on the write queue) when a queued disk write fails. When nil,
-  /// the failure is surfaced through `ErrorReporter` on the main actor.
   private let onWriteFailure: (@Sendable (String, any Error) -> Void)?
 
   public init(
@@ -88,14 +72,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
   }
 
   private func registerTerminationObserver() {
-    // Drain queued writes before the process exits so a state change
-    // made just before quitting isn't lost. Name-based so this Foundation
-    // package needs no AppKit/UIKit import; the store lives for the app's
-    // lifetime, so the retained closures are fine.
-    //
-    // Termination is the one flush that blocks the main thread: the
-    // process exits as soon as the notification's handlers return, so the
-    // writes must land first.
     #if os(macOS)
       let terminationNotificationName = "NSApplicationWillTerminateNotification"
     #else
@@ -113,11 +89,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
 
   #if !os(macOS)
     private func registerBackgroundObserver() {
-      // iOS apps are usually jetsammed from the background without ever
-      // seeing a terminate notification, so pending writes also land on
-      // backgrounding — but off the main thread, which must keep animating
-      // the transition: inside an expiring-activity assertion that keeps
-      // the process running until the flush finishes.
       terminationObservers.append(
         NotificationCenter.default.addObserver(
           forName: Notification.Name("UIApplicationDidEnterBackgroundNotification"),
@@ -150,7 +121,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     do {
       return try Data(contentsOf: url(forKey: key))
     } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-      // A fresh key with no file yet is the normal empty state.
       return nil
     } catch {
       Log.persistence.error(
@@ -173,8 +143,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
       pending[key] = operation
       return scheduled
     }
-    // A write for this key is already queued; it will pick up the newer
-    // bytes when it runs.
     guard !alreadyScheduled else { return }
     writeQueue.async { [weak self] in
       guard let self else { return }
@@ -206,9 +174,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     }
   }
 
-  /// Surfaces a failed disk write. A custom handler gets every failure; the
-  /// default banner fires at most once per key per app run (each occurrence
-  /// is still logged above).
   private func notifyWriteFailure(key: String, error: any Error) {
     if let onWriteFailure {
       onWriteFailure(key, error)
@@ -226,9 +191,6 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     }
   }
 
-  /// Renames the payload file for `key` to `<name>.corrupt-<timestamp>` so
-  /// corrupt data survives for diagnosis instead of being overwritten by the
-  /// next save.
   public func quarantineCorruptData(forKey key: String) {
     let source = url(forKey: key)
     guard fileManager.fileExists(atPath: source.path) else { return }
@@ -248,22 +210,12 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     }
   }
 
-  /// Synchronously drains all queued writes. Called on app termination and
-  /// available to tests.
   public func flushPendingWrites() {
-    // Repository saves encode on a background stage before their bytes
-    // reach this store — drain that stage first, so a save issued moments
-    // before app termination is durably included in this flush.
     PersistenceEncoding.drain()
     writeQueue.sync {}
   }
 
   #if !os(macOS)
-    /// `flushPendingWrites` without involving the calling thread: the drain
-    /// runs on a background thread while ProcessInfo holds an
-    /// expiring-activity assertion, so a backgrounding app is not suspended
-    /// mid-flush. If the system expires the assertion first, the writes
-    /// stay queued and land once the app runs again (or at termination).
     public func flushPendingWritesInBackground() {
       ProcessInfo.processInfo.performExpiringActivity(withReason: "Saving Codevisor data") { [weak self] expired in
         guard !expired else { return }

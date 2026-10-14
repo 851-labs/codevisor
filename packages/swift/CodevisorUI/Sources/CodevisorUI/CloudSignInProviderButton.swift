@@ -6,7 +6,6 @@ enum CloudSignInButtonMetrics {
   static let fontSize: CGFloat = 16
 }
 
-/// Matches the native Apple button for every Cloud sign-in option.
 public struct CloudSignInProviderButton: View {
   public enum Icon {
     case asset(String)

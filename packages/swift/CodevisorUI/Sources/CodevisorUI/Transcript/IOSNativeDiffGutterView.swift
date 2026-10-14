@@ -3,9 +3,6 @@
   import TranscriptKit
   import UIKit
 
-  /// The pinned gutter: one line-number column (the new line, or the old
-  /// one for a removed line) and the change marker, over row tints a shade
-  /// stronger than the code's so changed lines read at a glance.
   @MainActor
   final class IOSNativeDiffGutterView: UIView {
     weak var textView: IOSNativeDiffTextView?
@@ -44,7 +41,6 @@
         colors.gutterBackground.setFill()
         UIRectFill(band)
         if let tint = tint(for: row.kind) {
-          // Twice the code's tint: the gutter marks the change.
           tint.setFill()
           UIRectFillUsingBlendMode(band, .normal)
           UIRectFillUsingBlendMode(band, .normal)

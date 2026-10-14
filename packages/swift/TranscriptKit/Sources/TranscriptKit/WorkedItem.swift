@@ -1,16 +1,11 @@
 import Foundation
 import ACPKit
 
-/// A presentation item within the "Worked for…" section: reasoning text, a
-/// group of consecutive tool calls, or a nested subagent.
 public struct ToolCallGroup: Identifiable, Sendable, Equatable {
   public let id: String
   public let calls: [ToolCall]
   public let hasUnsettledCall: Bool
 
-  /// Convenience initializer for detached callers such as previews. The
-  /// transcript grouper uses the internal initializer below so it can carry
-  /// the activity bit it already accumulated while grouping.
   public init(calls: [ToolCall]) {
     self.init(calls: calls, hasUnsettledCall: calls.contains { !$0.isSettled })
   }
@@ -25,13 +20,8 @@ public struct ToolCallGroup: Identifiable, Sendable, Equatable {
 public enum WorkedItem: Identifiable, Sendable, Equatable {
   case text(id: String, markdown: String)
   case toolGroup(ToolCallGroup)
-  /// Consecutive subagent spawns, shown together as chips that wrap (each
-  /// thread opens separately), never folded into a tool-group summary. The id
-  /// is the first spawn's, so the item keeps its identity as more join it.
   case subagents(id: String, calls: [ToolCall])
 
-  /// The worked-row id of a live section's "Thinking" line, which isn't an
-  /// item of its own (see `AssistantTurn.showsWorkedThinkingLine`).
   public static let thinkingLineID = "wthinking"
 
   public var id: String {
@@ -44,8 +34,6 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
 }
 
 extension ToolCall {
-  /// An agent call's agent, as people call it: its task description, else
-  /// its title without the "Agent: " prefix.
   public var agentName: String {
     if let description = rawInput?["description"]?.stringValue,
       !description.trimmingCharacters(in: .whitespaces).isEmpty
@@ -58,26 +46,14 @@ extension ToolCall {
 }
 
 extension AssistantTurn {
-  /// An agent call with no agent behind it yet: the model is still writing
-  /// its input (Claude streams a call before its arguments), or stopped
-  /// before finishing. It isn't shown — there's no thread to open until the
-  /// input arrives, and meanwhile the turn's activity reads "Starting
-  /// agent…". A placeholder standing in for a follow-up's work has no input
-  /// either, but always arrives with that work in its thread.
   public func isUnstartedSubagent(_ call: ToolCall) -> Bool {
     call.kind == .agent && call.rawInput == nil && subagents[call.toolCallId]?.entries.isEmpty != false
   }
 
-  /// The model is writing an agent call (see `isUnstartedSubagent`).
   public var isStartingSubagent: Bool {
     isGenerating && toolCalls.contains { !$0.isSettled && isUnstartedSubagent($0) }
   }
 
-  /// The agents a live turn is blocked on: open agent calls with nothing
-  /// after them. A foreground Claude agent's call stays open until its agent
-  /// returns; a background one closes at launch. Codex keeps an agent's call
-  /// open while it runs even as the parent works on, so an open call only
-  /// means waiting while nothing has followed it.
   public var awaitedAgentCalls: [ToolCall] {
     guard isGenerating else { return [] }
     var awaited: [ToolCall] = []
@@ -90,30 +66,20 @@ extension AssistantTurn {
     return awaited.reversed()
   }
 
-  /// The worked-for entries grouped for display: consecutive tool calls are
-  /// collapsed into a single `toolGroup`, with reasoning text in between.
-  /// Excludes the final text answer — the finished-turn presentation.
   public var workedItems: [WorkedItem] {
     groupedItems(workedEntries)
   }
 
-  /// Worked items produced before the plan was proposed (exploration and
-  /// planning). When the turn has no plan this is the whole worked section, so
-  /// non-plan turns render exactly as before.
   public var workedItemsBeforePlan: [WorkedItem] {
     guard let boundary = planBoundary else { return workedItems }
     return groupedItems(workedSlice(0..<min(boundary, entries.count)))
   }
 
-  /// Worked items produced after the plan was proposed — the implementation
-  /// that follows approval — so they render below the plan card in their own
-  /// section. Empty until work follows the plan.
   public var workedItemsAfterPlan: [WorkedItem] {
     guard let boundary = planBoundary else { return [] }
     return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
   }
 
-  /// Entries in `range`, minus the final-answer span (it renders separately).
   private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
     let finalIndex = finalTextIndex
     return range.compactMap { index in
@@ -123,9 +89,6 @@ extension AssistantTurn {
     }
   }
 
-  /// Every entry grouped in strict arrival order, including trailing text.
-  /// Used while the turn is generating so the transcript streams in place —
-  /// text and tool groups must never reorder around each other mid-turn.
   public var streamingItems: [WorkedItem] {
     groupedItems(entries)
   }
@@ -162,8 +125,6 @@ extension AssistantTurn {
     for entry in source {
       switch entry {
       case let .text(id, markdown):
-        // A blank span is a stream artifact, not reasoning. Emitting it
-        // would add an empty row to the worked disclosure.
         guard !entry.isBlankText else { continue }
         flush()
         items.append(.text(id: id, markdown: markdown))
@@ -178,8 +139,6 @@ extension AssistantTurn {
         group.append(call)
         groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
       case .contextCompaction:
-        // Lifecycle state drives the turn's temporary activity label. It is
-        // never transcript content, including when restoring older history.
         continue
       }
     }
@@ -189,8 +148,6 @@ extension AssistantTurn {
 
 }
 
-/// Summarizes a group of tool calls into a one-line description and an icon,
-/// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
   public enum Category: Equatable {
     case edit, read, search, webSearch, execute, fetch, delete, move, agent, question, other
@@ -215,8 +172,6 @@ public enum ToolCallSummary {
   public static func describe(_ calls: [ToolCall]) -> String {
     guard !calls.isEmpty else { return "" }
     if calls.allSatisfy(\.isIntegrationPresentationCall) {
-      // A lone workflow reads best as what the model said it was doing,
-      // and a lone skills call as the skill it read.
       if calls.count == 1,
         calls[0].integrationDescription != nil || calls[0].codevisorGatewayOperation == .skills,
         let title = calls[0].integrationDisplayTitle()
@@ -256,8 +211,6 @@ public enum ToolCallSummary {
     case .other: return "wrench.and.screwdriver"
     }
   }
-
-  // MARK: - Phrasing
 
   public static func phrase(_ category: Category, _ count: Int) -> String {
     let single = count == 1

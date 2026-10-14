@@ -5,8 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// The client half of the config plane: local replica, HLC stamping, and
-/// the gossip that converges every reachable machine.
 @MainActor
 @Suite("ConfigSync")
 struct ConfigSyncTests {
@@ -64,8 +62,6 @@ struct ConfigSyncTests {
     #expect(entries.count == 1)
     #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("stable"))
 
-    // The replica survives a fresh instance over the same store, and the
-    // device id is stable.
     let reloaded = ConfigSync(machines: controller, store: store)
     #expect(reloaded.value(namespace: "settings", key: "updateChannel") == .string("stable"))
     #expect(reloaded.deviceId == sync.deviceId)
@@ -125,8 +121,6 @@ struct ConfigSyncTests {
 
     await sync.synchronize(machineId: remote.id)
 
-    // The remote's (far-future) channel wins locally; the local theme
-    // landed remotely in the same round trip.
     #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("alpha"))
     #expect(fake.syncEntries(namespace: "settings").contains { $0.key == "theme" })
     #expect(sync.revisionsByNamespace["settings", default: 0] >= 2)
@@ -142,8 +136,6 @@ struct ConfigSyncTests {
         == .string("alpha"))
     #expect(environment.machines.serverUpdateChannel == .alpha)
 
-    // Another device flips it back: the synced entry applies locally —
-    // settings, Sparkle preference, and the server-check channel follow.
     environment.configSync.applyRemoteChange(
       namespace: "settings",
       entries: [
@@ -187,7 +179,6 @@ struct ConfigSyncTests {
 
     await sync.synchronizeSkills()
 
-    // B received A's archive and the follow-up reconcile applied it.
     #expect(fakeB.skillBlob(hash: hash) == Data("archive-bytes".utf8))
     #expect(fakeB.appliedSkills == ["deploy"])
     #expect(fakeA.appliedSkills == ["deploy"])
@@ -210,7 +201,6 @@ struct ConfigSyncTests {
       namespace: "codevisor-skills", key: "deploy",
       value: .object(["hash": .string(hash), "name": .string("Deploy")]))
 
-    // No sweep runs here: only the namespace's own trigger can ferry.
     try await waitForSync {
       fake.syncEntries(namespace: "codevisor-skills").count == 1 && fake.appliedSkills == ["deploy"]
     }
@@ -234,8 +224,6 @@ struct ConfigSyncTests {
     await controller.connectMachine(remote.id)
 
     #expect(connected == [remote.id])
-    // The targeted pass reached the machine: gossip plus all three
-    // reconcile/publish calls, with no periodic sweep involved.
     try await waitForSync {
       fake.operationLog.contains("mcps.reconcile")
         && fake.operationLog.contains("harnesses.reconcile")
@@ -279,8 +267,6 @@ struct ConfigSyncTests {
 
     sync.set(namespace: "mcps", key: "GitHub", value: .object(["enabled": .bool(true)]))
 
-    // The push lands the entry AND applies it on the receiver in the
-    // same breath — no waiting for the periodic sweep.
     try await waitForSync {
       fake.syncEntries(namespace: "mcps").count == 1
         && fake.operationLog.contains("mcps.reconcile")
@@ -322,7 +308,6 @@ struct ConfigSyncTests {
     #expect(sync.value(namespace: "settings", key: "theme") == nil)
     #expect(sync.entries(namespace: "settings").first?.deleted == true)
 
-    // A remote write OLDER than the tombstone does not resurrect it.
     let stale = ServerSyncEntry(
       key: "theme",
       value: .string("light"),

@@ -52,7 +52,6 @@ export function exportOptions(teamId) {
     destination: "export",
     teamID: teamId,
     signingStyle: "automatic",
-    // Alpha distribution stays internal; the same build can later be promoted.
     testFlightInternalTestingOnly: false,
     manageAppVersionAndBuildNumber: false,
     uploadSymbols: true
@@ -100,11 +99,6 @@ export function verifyBuildRecord(record, configuration, ipaSHA256) {
   }
 }
 
-// Uploads happen only from the Publish Alpha workflow (scheduled every 30
-// minutes, or dispatched manually) so Apple's daily upload limit is bounded by
-// the publish cadence. The uploaded build usually predates the workflow's own
-// main commit; Publish Alpha verifies that build's provenance before calling
-// this, and verifyBuildRecord binds the IPA to that provenance.
 export function assertAlphaUpload(environment) {
   if (
     environment.GITHUB_ACTIONS !== "true" ||
@@ -116,7 +110,6 @@ export function assertAlphaUpload(environment) {
   }
 }
 
-// altool reports Apple's per-app daily upload limit as error 90382.
 export function isUploadLimitError(output) {
   return /\b90382\b|upload limit (?:has been )?reached/i.test(output)
 }

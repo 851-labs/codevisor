@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Keep the selection and entry action together so the first presentation
-/// cannot capture the previous action from a separate SwiftUI state property.
 public struct HarnessAccountsPresentation<Selection>: Identifiable {
   public let id = UUID()
   public let selection: Selection
@@ -30,7 +28,6 @@ extension EnvironmentValues {
   @Entry public var harnessMachineSignIn: HarnessMachineSignInAction?
 }
 
-/// Dismisses the harness accounts presentation that owns the current page.
 public struct HarnessAccountsDismissAction: Sendable {
   private let handler: @MainActor @Sendable () -> Void
 
@@ -39,7 +36,6 @@ public struct HarnessAccountsDismissAction: Sendable {
   @MainActor public func callAsFunction() { handler() }
 }
 
-/// Starts a sign-in that has to run on a chosen machine.
 public struct HarnessMachineSignInAction: Sendable {
   private let handler: @MainActor @Sendable (HarnessMachineSignIn) -> Void
 
@@ -48,7 +44,6 @@ public struct HarnessMachineSignInAction: Sendable {
   @MainActor public func callAsFunction(_ request: HarnessMachineSignIn) { handler(request) }
 }
 
-/// The editor is shared by both scopes. Only machine-bound auth needs a chooser.
 public struct HarnessAccountsSheet<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -56,8 +51,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   let harnessId: String
   let harnessName: String
   let startsSignIn: Bool
-  /// The machine to host the sign-in when the caller has one in mind (the
-  /// chat that hit the error); any online machine with the harness works.
   let preferredMachineId: String?
   let editor: (String?, ServerHarness, HarnessMachineSignIn?) -> Editor
   @State private var machineSignIn: HarnessMachineSignIn?
@@ -92,7 +85,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
         #if os(iOS)
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
-            // Editors that host their own navigation bring their own Close.
             if sharesOAuth && sharedHost == nil || !sharesOAuth {
               HarnessAccountsCloseToolbar()
             }
@@ -127,8 +119,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           #endif
       }
       .environment(\.harnessAccountsDismiss, HarnessAccountsDismissAction { machineSignIn = nil })
-      // A nested sheet is its own presentation, so the outer sheet's
-      // preference reader never sees this editor's work. It reads its own.
       .onPreferenceChange(HarnessAccountsWorkingPreference.self) { pickerOperation = $0 }
       .interactiveDismissDisabled(pickerOperation != nil)
       #if os(macOS)
@@ -179,8 +169,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           .environment(\.harnessMachineSignIn, HarnessMachineSignInAction { machineSignIn = $0 })
       }
     }
-    // Machine-bound accounts never reach this sheet: the harness list
-    // opens them on the machine directly.
   }
 
   private var initialSignInRequest: HarnessMachineSignIn? {
@@ -279,7 +267,6 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
 }
 
 #if os(iOS)
-  /// Each page uses the sheet owner's action, so Close dismisses the sheet even after navigation.
   public struct HarnessAccountsCloseToolbar: ToolbarContent {
     @Environment(\.harnessAccountsDismiss) private var close
 
@@ -288,9 +275,6 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
     public var body: some ToolbarContent {
       if let close {
         ToolbarItem(placement: .cancellationAction) {
-          // `role: .close` is the iOS 26 dismissal idiom. Dismissal is the
-          // one action universally understood as a glyph, so it stays
-          // icon-only; confirm actions keep their verb as text.
           Button("Close", systemImage: "xmark", role: .close, action: { close() })
             .labelStyle(.iconOnly)
         }

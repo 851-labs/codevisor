@@ -4,8 +4,6 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// The whole client against the loopback server over TCP: handshake, the
-/// update-request loop, every encoding, events, input and failure modes.
 struct RFBClientLoopbackTests {
   struct Snapshot: Sendable {
     let update: RFBUpdate
@@ -18,7 +16,6 @@ struct RFBClientLoopbackTests {
     }
   }
 
-  /// A connected client whose `run` feeds snapshots and events into streams.
   final class Harness: @unchecked Sendable {
     let server: RFBLoopbackServer
     let client: RFBClient
@@ -84,7 +81,6 @@ struct RFBClientLoopbackTests {
         == .framebufferUpdateRequest(incremental: true, RFBRectangle(x: 0, y: 0, width: 64, height: 48)))
   }
 
-  /// 851-2361: a chosen encoding list is advertised exactly, to see what a server sends for it.
   @Test func anAdvertisedListReplacesTheClientsEncodings() async throws {
     let harness = try await Harness(setup: { await $0.advertise([16, -223]) })
     defer { harness.stop() }
@@ -92,7 +88,6 @@ struct RFBClientLoopbackTests {
     #expect(harness.server.received.prefix(2) == [.setPixelFormat(.bgra32), .setEncodings([16, -223])])
   }
 
-  /// 851-2360: without continuous updates, `requestDepth` requests stay outstanding.
   @Test func pipeliningKeepsSeveralRequestsOutstanding() async throws {
     let harness = try await Harness(setup: { await $0.setRequestPipelining(depth: 3, beforeApplying: true) })
     defer { harness.stop() }
@@ -100,7 +95,6 @@ struct RFBClientLoopbackTests {
     let incremental = RFBClientMessage.framebufferUpdateRequest(
       incremental: true, RFBRectangle(x: 0, y: 0, width: 64, height: 48))
     #expect(await awaitPolled { harness.server.received.filter { $0 == incremental }.count == 3 })
-    // One update answers the oldest; the next header tops the queue back up to three.
     harness.server.enqueue([.raw(RFBRectangle(x: 0, y: 0, width: 8, height: 8))])
     let next = await harness.nextUpdate()
     #expect(next?.update.latency != nil)
@@ -126,7 +120,6 @@ struct RFBClientLoopbackTests {
     let zrle = await harness.nextUpdate()
     #expect(zrle?.pixel(x: 10, y: 10) == [4, 5, 6])
     #expect(zrle?.pixel(x: 63, y: 47) == [9, 9, 9])
-    // A second ZRLE rectangle continues the same zlib stream.
     harness.server.enqueue([
       .zrle(RFBRectangle(x: 0, y: 0, width: 32, height: 32)), .zrle(RFBRectangle(x: 32, y: 0, width: 32, height: 48)),
     ])
@@ -187,7 +180,6 @@ struct RFBClientLoopbackTests {
     harness.server.write([200])
     #expect(await harness.run.value as? RFBError == .malformed("unknown server message 200"))
 
-    // Hextile (5) is never advertised (Tight, 7, now is: 851-2313).
     let hextile = try await Harness()
     defer { hextile.stop() }
     _ = await hextile.nextUpdate()
@@ -222,10 +214,6 @@ struct RFBClientLoopbackTests {
     configuration.encoding = .zrle
     let harness = try await Harness(configuration: configuration)
     defer { harness.stop() }
-    // The server answers the client's initial request the moment it
-    // arrives, so painting before consuming that reply races it: the
-    // snapshot could land between the two paints. Settle it first; the
-    // enqueued frame is then encoded only after both paints.
     let initial = await harness.nextUpdate()
     #expect(initial?.width == 1920 && initial?.height == 1080)
     try harness.server.paint(RFBRectangle(x: 0, y: 0, width: 1920, height: 1080), blue: 1, green: 2, red: 3)

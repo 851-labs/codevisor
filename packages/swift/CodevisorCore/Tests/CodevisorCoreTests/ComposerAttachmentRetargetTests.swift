@@ -5,8 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// Server file ids are minted per machine. These cover the composer keeping
-/// its staged attachments sendable when the draft's target machine changes.
 @MainActor
 @Suite("Composer attachments across machine retarget")
 struct ComposerAttachmentRetargetTests {
@@ -98,8 +96,6 @@ struct ComposerAttachmentRetargetTests {
     #expect(machineA.uploadedNames.isEmpty)
   }
 
-  // MARK: - Helpers
-
   private func makeController(
     serverId: String, client: SyncFakeServerClient
   ) -> SessionController {
@@ -126,8 +122,6 @@ struct ComposerAttachmentRetargetTests {
   }
 }
 
-/// A fake machine that mints file ids as `<prefix>:<name>` so a test can tell
-/// which machine an attachment ref came from.
 private final class UploadRecordingClient: @unchecked Sendable {
   let client: SyncFakeServerClient
   private let lock = NSLock()
@@ -157,8 +151,6 @@ private final class UploadRecordingClient: @unchecked Sendable {
 }
 
 extension SessionController {
-  /// Pasted bytes are written to the attachment folder before their
-  /// upload starts; wait for both.
   fileprivate func awaitUploads() async {
     await awaitStaged()
     _ = await attachments.collectAttachmentsForSend()

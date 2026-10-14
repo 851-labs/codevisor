@@ -196,8 +196,6 @@ describe("ws frames", () => {
   })
 
   it("survives split boundaries inside multi-byte code points", () => {
-    // Three-byte characters with a 4-byte cap: every part boundary lands mid
-    // code point; only the reassembled whole decodes correctly.
     const text = "€€€"
     const frames = encodeWsFrames(text, 4)
     expect(frames.length).toBeGreaterThan(1)

@@ -2,16 +2,11 @@
   import MarkdownCore
   import SwiftUI
 
-  /// Renders consecutive text-like Markdown blocks in one native TextKit view.
-  /// A single text storage keeps selection continuous across headings,
-  /// paragraphs, and lists without SwiftUI changing layout engines on click.
   struct MarkdownTextRunView: View {
     let blocks: [MarkdownBlock]
     let foregroundColor: Color
     let animationContext: StreamingTextAnimationContext?
     @Environment(\.markdownTheme) private var theme
-    /// Reuse the attributed string for unchanged blocks. Equality still compares
-    /// the block values; a hit avoids rebuilding attributes and native layout.
     @State private var memo = TextRunMemo()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var usesPreparedLayout: Bool
@@ -37,10 +32,6 @@
     }
   }
 
-  /// Converts parsed Markdown runs to native attributes. Font choices match the
-  /// semantic SwiftUI styles previously used by `MarkdownTextRunView`; the host
-  /// does not override MarkdownTheme's fonts today (tables follow the same
-  /// semantic-font contract).
   enum MarkdownTextRunRenderer {
     static func attributedString(
       for blocks: [MarkdownBlock],
@@ -178,11 +169,6 @@
       return output
     }
 
-    /// Ends the paragraph `text` finishes with and adds an empty paragraph
-    /// exactly `height` points tall. The blank line keeps copied text
-    /// readable; its fixed height makes the gap independent of font
-    /// metrics. The terminator keeps the preceding paragraph's style so the
-    /// line spacing below its last line matches every other line.
     static func blockSeparator(
       height: CGFloat,
       ending text: NSAttributedString,
@@ -232,7 +218,6 @@
       MarkdownNativeTypography.headingFont(for: level)
     }
 
-    /// H5 and H6 sit below body text in size, so color carries their rank.
     static func headingForeground(
       for level: Int,
       theme: MarkdownTheme,
@@ -246,9 +231,6 @@
     }
   }
 
-  /// Last-value memo for the immutable attributed string handed to both the
-  /// displayed TextKit view and its scratch measurer. Returning the same object
-  /// identity lets the native consumers skip resetting unchanged text storage.
   @MainActor
   private final class TextRunMemo {
     private var blocks: [MarkdownBlock]?

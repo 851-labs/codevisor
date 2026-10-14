@@ -4,9 +4,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Presents actionable Chrome setup on the Mac running the chat and a handoff
-/// everywhere else. The underlying question remains server-owned, so a Chrome
-/// connection from the host resolves the card on every connected client.
 struct BrowserExtensionQuestionContent: View {
   @Environment(\.theme) private var theme
   @Bindable var controller: SessionController
@@ -19,8 +16,6 @@ struct BrowserExtensionQuestionContent: View {
   let showDragStage: (Bool) -> Void
 
   @State private var archiveURL: URL?
-  /// The file's icon, read once off the main thread: `body` re-runs on
-  /// every hover change and must not decode images or ask Launch Services.
   @State private var fileIcon: NSImage?
   @State private var archiveError: String?
   @State private var isFileHovered = false
@@ -307,7 +302,6 @@ struct BrowserExtensionQuestionContent: View {
     .accessibilityHidden(true)
   }
 
-  /// The extension's own icon, else the archive's Finder icon.
   @concurrent
   nonisolated private static func loadFileIcon(iconURL: URL?, archiveURL: URL) async -> NSImage {
     let icon = iconURL.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: archiveURL.path)
@@ -359,7 +353,6 @@ struct BrowserExtensionQuestionContent: View {
     do {
       let archive = try await controller.browserExtensionArchive()
       let iconURL = try? await controller.browserExtensionIcon()
-      // Shown together, so the row never flashes a placeholder icon.
       fileIcon = await Self.loadFileIcon(iconURL: iconURL, archiveURL: archive)
       archiveURL = archive
     } catch {

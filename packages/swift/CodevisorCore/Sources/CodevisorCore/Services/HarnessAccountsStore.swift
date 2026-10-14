@@ -1,7 +1,6 @@
 import ACPKit
 import Foundation
 
-/// The account editor uses the same operations in shared and machine settings.
 @MainActor public struct HarnessAccountsStore {
   let environment: AppEnvironment
   let machineId: String
@@ -16,15 +15,10 @@ import Foundation
   var client: any CodevisorServerClienting { environment.machines.client(for: machineId) }
   var sync: ConfigSync { environment.configSync }
   static let namespace = HarnessSharedCredentials.namespace
-  /// Fleet accounts kept as server-side rows go over one RPC; fleet
-  /// credentials (OpenCode, Pi) are assembled from the replica below.
   func usesSharedOAuth(_ harnessId: String) -> Bool {
     isShared && HarnessRegistry.descriptor(for: harnessId).usesFleetAccountRows
   }
 
-  /// - Parameter prepared: the caller just synchronized shared accounts,
-  ///   which already made sure the machine can reach the account
-  ///   coordinator; asking again is a wasted round trip.
   func shared(
     _ harnessId: String, _ request: ServerSharedHarnessAccountRequest, prepared: Bool = false
   ) async throws -> ServerSharedHarnessAccountResponse {

@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The shared harness list: one row per harness, then one per machine.
 struct HarnessesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -23,9 +22,6 @@ struct HarnessesSettingsView: View {
     .settingsPaneFormStyle(theme)
     .harnessFleetSheets(presenter)
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in
-      // A chat's auth error deep-links with the harness and the machine it
-      // ran on; the presenter decides whether accounts are the fleet's or
-      // that machine's.
       guard let request else { return }
       presenter.present(
         harnessId: request.harnessId, machineId: request.machineId, startsSignIn: false, in: environment)

@@ -3,9 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// `ProjectedWorkspaceRepository`: reads come from the navigation projection;
-/// saves record only this device's layout (tabs, splits, selection); a
-/// workspace the server doesn't have yet is a draft.
 @MainActor
 @Suite("Workspace repository")
 struct WorkspaceRepositoryTests {
@@ -27,7 +24,6 @@ struct WorkspaceRepositoryTests {
     )
   }
 
-  /// A server workspace holding one chat, installed from a snapshot.
   private func install(
     _ navigation: NavigationFixture, chat: UUID = UUID(), name: String = "Shared"
   ) async -> Workspace {
@@ -112,7 +108,6 @@ struct WorkspaceRepositoryTests {
     let repository = navigation.workspaces
     let chat = seed()
     let first = repository.ensureWorkspace(for: chat, legacyGroups: nil)
-    // Rendering the chat with another suggested name changes nothing.
     let renamedSeed = seed(sessionId: chat.sessionId, initialName: "Another")
     let second = repository.ensureWorkspace(for: renamedSeed, legacyGroups: nil)
 
@@ -174,7 +169,6 @@ struct WorkspaceRepositoryTests {
     repository.save(layout)
     repository.delete(id: installed.id)
     navigation.store.rebuild()
-    // Still on the server, so still listed -- with its panes laid out afresh.
     let restored = try #require(repository.workspace(id: installed.id))
     #expect(restored.isServerSynced)
     #expect(restored.centerTabs.count == 1)
@@ -251,8 +245,6 @@ struct WorkspaceRepositoryTests {
     let repository = navigation.workspaces
     let chat = UUID()
     let installed = await install(navigation, chat: chat)
-    // Closing the chat's tab removes its pane; the server still assigns the
-    // chat to this workspace, so it must not get a second one.
     var workspace = try #require(repository.workspace(id: installed.id))
     workspace.centerTabs = [.placeholder()]
     workspace.selectedCenterTabId = workspace.centerTabs[0].id

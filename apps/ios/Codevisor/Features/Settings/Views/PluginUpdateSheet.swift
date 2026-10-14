@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Reviews the exact staged candidate before applying its short-lived plan.
 struct PluginUpdateSheet: View {
   @Environment(\.dismiss) private var dismiss
   let plan: ServerPluginUpdatePlan

@@ -53,7 +53,6 @@ describe("harness update checks", () => {
     const response = await jsonRequest(server, "/v1/harnesses/check-updates", { method: "POST" })
     expect(response.status).toBe(200)
     expect(checks).toEqual([[true, undefined]])
-    // A client scopes the check to the harnesses it lists.
     await jsonRequest(server, "/v1/harnesses/check-updates", {
       body: JSON.stringify({ harnessIds: ["codex", 7] }),
       method: "POST"
@@ -63,8 +62,6 @@ describe("harness update checks", () => {
       { id: "codex", updateInfo: { latestVersion: "9.9.9", updateAvailable: true } }
     ])
 
-    // Lifecycle decoration is opt-in: the plain list (the composer picker's
-    // path) skips it, ?include=lifecycle carries it.
     const plain = await jsonRequest(server, "/v1/harnesses")
     expect((plain.body as Array<{ updateInfo?: unknown }>)[0]?.updateInfo).toBeUndefined()
     const decorated = await jsonRequest(server, "/v1/harnesses?include=lifecycle")
@@ -80,7 +77,6 @@ describe("harness update checks", () => {
         calls.push(`bundled-update ${id}`)
       },
       beginInstall: async (id: string, methodId?: string) => {
-        // Non-Error throw exercises the conflict mapping's String branch.
         if (methodId === "carrier-pigeon") throw "no runnable install method"
         calls.push(`install ${id} ${methodId ?? "auto"}`)
         return { terminalId: "terminal-9" }
@@ -129,7 +125,6 @@ describe("harness update checks", () => {
     })
     expect(install.status).toBe(202)
     expect(install.body).toMatchObject({ accepted: true, terminalId: "terminal-9" })
-    // Method omitted → the server resolves the recommended one.
     const autoInstall = await jsonRequest(server, "/v1/harnesses/codex/install", {
       body: JSON.stringify({}),
       method: "POST"
@@ -141,8 +136,6 @@ describe("harness update checks", () => {
     })
     expect(badInstall.status).toBe(409)
     expect(badInstall.body).toMatchObject({ error: "no runnable install method" })
-    // Install authors the fleet catalog — the one document Settings
-    // renders — never a machine-local layer.
     expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
       { key: "codex", value: { name: "Codex", enabled: true, installed: true, uninstall: false } }
     ])
@@ -221,7 +214,6 @@ describe("harness update checks", () => {
       settings: { global: { enabled: false, installed: true } }
     })
     expect((disabled.body as Harness).settings?.override).toBeUndefined()
-    // Disabling never turned into an uninstall directive.
     expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
       { key: "codex", value: { name: "Codex", enabled: false, installed: true, uninstall: false } }
     ])
@@ -234,7 +226,6 @@ describe("harness update checks", () => {
       desiredEnabled: true,
       settings: { global: { enabled: true, installed: true } }
     })
-    // A stale row from the retired machine-local override layer changes nothing.
     await run(
       services.db.mergeSyncEntries("local.harness-overrides", [
         {
@@ -336,15 +327,12 @@ describe("harness update checks", () => {
       })
     ).body as { readonly id: string }
 
-    // Gate closed: the prompt is accepted (202, durable) but never reaches
-    // the provider.
     gated.add("codex")
     const accepted = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "held prompt" }),
       method: "POST"
     })
     expect(accepted.status).toBe(202)
-    // A second send while held re-queues without a duplicate hold marker.
     const second = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "also held" }),
       method: "POST"
@@ -356,7 +344,6 @@ describe("harness update checks", () => {
       )
     )
     expect(agents.prompts).toHaveLength(0)
-    // The transcript-facing hold marker was persisted for replay.
     const heldEvents = listSubjectEvents(services, session.id)
     expect(
       heldEvents.some(
@@ -365,8 +352,6 @@ describe("harness update checks", () => {
           (event.payload as { state?: string }).state === "waiting"
       )
     ).toBe(true)
-    // Snapshots carry the live gate, so a client (re)opening the chat shows
-    // the marker without having to have seen the event.
     expect((await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body).toMatchObject(
       { updateGate: { harnessId: "codex" } }
     )
@@ -374,19 +359,15 @@ describe("harness update checks", () => {
       updateGate: { harnessId: "codex" }
     })
 
-    // A release for a different harness leaves this session held.
     releaseListener?.("gemini")
-    // Releasing another harness is a synchronous no-op for this gate.
     expect(agents.prompts).toHaveLength(0)
 
-    // Gate releases → the held prompts dispatch and turn accounting ran.
     gated.delete("codex")
     releaseListener?.("codex")
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[0]?.[1]).toBe("held prompt")
     await waitFor(() => turns.includes("end codex"))
     expect(turns[0]).toBe("start codex")
-    // Released: snapshots no longer carry a gate.
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body
     ).not.toHaveProperty("updateGate")

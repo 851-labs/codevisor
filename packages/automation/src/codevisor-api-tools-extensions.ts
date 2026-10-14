@@ -13,7 +13,6 @@ import {
 
 import { enabledBody, apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 
-/// MCP server, native MCP, and skill tools.
 export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "mcps.machine_state",

@@ -11,13 +11,8 @@
     nonisolated var bottomInset: CGFloat
     let minimumBottomInset: CGFloat
     let maximumBottomInset: CGFloat
-    /// The SwiftUI safe area over the page. SwiftUI doesn't forward safe
-    /// area it adds itself (a split pane's share of the top bar and home
-    /// indicator) to UIKit views, whose own insets then read zero.
     var safeArea = EdgeInsets()
 
-    // SwiftUI interpolates this value on the same timeline as the glass. Passing
-    // only the target to UIViewRepresentable makes fixed page controls jump.
     nonisolated var animatableData: CGFloat {
       get { bottomInset }
       set { bottomInset = newValue }
@@ -71,15 +66,11 @@
       }
     }
 
-    /// The document draws behind the browser UI, but its layout viewport excludes
-    /// that UI. Scroll padding alone doesn't move fixed composers or CSS viewports.
     final class ContainerView: UIView {
       let webView: WKWebView
       var bottomInset: CGFloat = 0
       var minimumBottomInset: CGFloat = 0
       var maximumBottomInset: CGFloat = 0
-      /// SwiftUI's safe area over this view; for the top and bottom, the
-      /// larger of it and UIKit's own is what the page must clear.
       var swiftUISafeArea: UIEdgeInsets = .zero
       private let originalObscuredInsets: UIEdgeInsets
       private let originalMinimumInset: UIEdgeInsets
@@ -119,10 +110,6 @@
 
       func updateViewport() {
         guard !bounds.isEmpty else { return }
-        // Only the vertical edges come from SwiftUI (the top bar and home
-        // indicator). Its leading inset counts the floating sidebar even
-        // though this view already sits beside it, which would shift the
-        // page right by the sidebar's width; UIKit's own is correct.
         let safe = UIEdgeInsets(
           top: max(safeAreaInsets.top, swiftUISafeArea.top),
           left: safeAreaInsets.left,
@@ -135,12 +122,6 @@
         minimum.bottom += minimumBottomInset
         var maximum = safe
         maximum.bottom += maximumBottomInset
-        // WebKit throws on insets it can't honor. SwiftUI's safe area (unlike
-        // UIKit's) isn't clamped to this view, and it can arrive while the
-        // view is being inserted at a transient size; skip until layout
-        // gives it room, which calls back here.
-        // WebKit checks against its own bounds, which trail this view's
-        // until the next layout pass sets them.
         if Self.fits(minimum, maximum, in: webView.bounds.size),
           webView.minimumViewportInset != minimum || webView.maximumViewportInset != maximum
         {
@@ -153,8 +134,6 @@
         }
       }
 
-      /// Non-negative, minimum within maximum, and the maximum leaving part
-      /// of the view unobscured on each axis.
       static func fits(_ minimum: UIEdgeInsets, _ maximum: UIEdgeInsets, in size: CGSize) -> Bool {
         let edges = [
           minimum.top, minimum.left, minimum.bottom, minimum.right,
@@ -173,11 +152,6 @@
         let previousTop = scrollView.adjustedContentInset.top
         let wasAtTop = abs(scrollView.contentOffset.y + previousTop) < 1
 
-        // Obscured insets position fixed/sticky elements and define WebKit's
-        // initial offset, but don't change UIScrollView's resting scroll bounds.
-        // Both must agree or scrolling back to the top hides document content.
-        // UIKit owns the refresh control's additional inset. Apply only our
-        // viewport delta so layout updates don't remove the active spinner.
         let current = scrollView.contentInset
         scrollView.contentInset = UIEdgeInsets(
           top: current.top + insets.top - appliedContentInset.top,

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Errors surfaced by theme import and lookup, with user-facing messages the
-/// settings UI shows directly.
 public enum ThemeCatalogError: LocalizedError, Equatable {
   case notATheme
   case noLegibleForeground
@@ -19,10 +17,6 @@ public enum ThemeCatalogError: LocalizedError, Equatable {
   }
 }
 
-/// The set of themes the app can offer: the two system entries, the bundled
-/// Pierre + Shiki presets (indexed by the committed manifest), and any
-/// user-imported themes in the custom directory. Also owns the custom-theme
-/// import/delete file operations.
 @MainActor
 public final class ThemeCatalog {
   public nonisolated static let systemLightID = "system-light"
@@ -35,7 +29,6 @@ public final class ThemeCatalog {
       id: systemDarkID, displayName: "System Dark", type: .dark, group: .system),
   ]
 
-  // A manifest row: a ThemeDescriptor plus the resource file it loads from.
   private struct ManifestEntry: Codable {
     let id: String
     let file: String
@@ -53,15 +46,12 @@ public final class ThemeCatalog {
   private var customDescriptors: [ThemeDescriptor]
   private var parsedThemes: [String: VSCodeTheme] = [:]
 
-  /// - Parameter customThemesDirectory: where imported theme JSONs live
-  ///   (created on demand); typically `Application Support/<variant>/themes`.
   public init(customThemesDirectory: URL) {
     self.customThemesDirectory = customThemesDirectory
     self.bundledEntries = Self.loadManifest()
     self.customDescriptors = Self.scanCustomThemes(in: customThemesDirectory)
   }
 
-  /// Every selectable theme in picker order: System, Pierre, Shiki, Custom.
   public var availableThemes: [ThemeDescriptor] {
     Self.systemDescriptors + bundledEntries.map(\.descriptor) + customDescriptors
   }
@@ -74,9 +64,6 @@ public final class ThemeCatalog {
     id == systemLightID || id == systemDarkID
   }
 
-  /// The raw JSON bytes of a bundled or custom theme (the full document,
-  /// including tokenColors — what the syntax highlighter consumes). System
-  /// entries have no document and throw.
   public func loadThemeData(id: String) throws -> Data {
     if let entry = bundledEntries.first(where: { $0.id == id }) {
       guard
@@ -91,7 +78,6 @@ public final class ThemeCatalog {
     throw ThemeCatalogError.unknownTheme(id)
   }
 
-  /// The parsed structural theme, cached per id.
   public func loadTheme(id: String) throws -> VSCodeTheme {
     if let cached = parsedThemes[id] { return cached }
     let theme = try VSCodeTheme.decode(from: loadThemeData(id: id))
@@ -99,10 +85,6 @@ public final class ThemeCatalog {
     return theme
   }
 
-  /// Validates and stores a user-supplied theme JSON: it must decode, carry
-  /// color data, and derive a legible palette. The original bytes are copied
-  /// into the custom directory (never bookmarked — sandbox-safe, and the full
-  /// document survives for the highlighter). Returns the new descriptor.
   @discardableResult
   public func importTheme(data: Data, suggestedName: String? = nil) throws -> ThemeDescriptor {
     let theme: VSCodeTheme
@@ -142,8 +124,6 @@ public final class ThemeCatalog {
     return descriptor
   }
 
-  /// Removes an imported theme's file and catalog entry. Bundled and system
-  /// themes can't be deleted.
   public func deleteCustomTheme(id: String) throws {
     guard customDescriptors.contains(where: { $0.id == id }) else {
       throw ThemeCatalogError.unknownTheme(id)
@@ -153,7 +133,6 @@ public final class ThemeCatalog {
     } catch let error as CocoaError
       where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
     {
-      // Already gone — clearing the catalog entry is all that's left.
       themingLog.debug("Custom theme file for \(id, privacy: .public) was already missing")
     } catch {
       themingLog.error(
@@ -164,8 +143,6 @@ public final class ThemeCatalog {
     customDescriptors.removeAll { $0.id == id }
     parsedThemes.removeValue(forKey: id)
   }
-
-  // MARK: - Loading
 
   private static func loadManifest() -> [ManifestEntry] {
     guard
@@ -182,9 +159,6 @@ public final class ThemeCatalog {
     return entries
   }
 
-  // Reads every custom theme JSON eagerly at init: the directory holds a
-  // handful of files at most, and descriptors need the parsed type/name.
-  // Unreadable or degenerate files are skipped, not deleted.
   private static func scanCustomThemes(in directory: URL) -> [ThemeDescriptor] {
     guard
       let files = try? FileManager.default.contentsOfDirectory(
@@ -225,8 +199,6 @@ public final class ThemeCatalog {
     return customThemesDirectory.appendingPathComponent("\(slug).json")
   }
 
-  // Kebab-cases a display name and de-dupes against existing custom slugs
-  // with a numeric suffix ("my-theme", "my-theme-2", …).
   private func uniqueSlug(from name: String) -> String {
     let base = name.lowercased()
       .map { $0.isLetter || $0.isNumber ? $0 : "-" }

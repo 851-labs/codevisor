@@ -3,8 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Local echo on slow links: typed characters show at once and give way to
-/// the server's echo, without ever showing a guess where it would be wrong.
 @Suite("Echo predictor")
 struct EchoPredictorTests {
   private let start = ContinuousClock.now
@@ -30,7 +28,6 @@ struct EchoPredictorTests {
     #expect(!predictor.isEnabled)
     predictor.roundTripChanged(.milliseconds(31))
     #expect(predictor.isEnabled)
-    // Between the two thresholds, it stays on.
     predictor.roundTripChanged(.milliseconds(25))
     #expect(predictor.isEnabled)
     predictor.typed("x", at: at(0))
@@ -45,12 +42,10 @@ struct EchoPredictorTests {
     predictor.typed("ls", at: at(0))
     #expect(predictor.overlay(at: at(10)) == .init(text: "ls", underlined: false))
     #expect(predictor.overlay(at: at(100)) == .init(text: "ls", underlined: true))
-    // The echo may come wrapped in redraw controls.
     predictor.received("\u{1B}[?25ll")
     #expect(predictor.overlay(at: at(100))?.text == "s")
     predictor.received("s\u{1B}[?25h")
     #expect(predictor.overlay(at: at(100)) == nil)
-    // Nothing pending: more output is just output.
     predictor.received("anything")
     let glitched = predictor.tick(at: at(1000))
     #expect(!glitched)
@@ -101,16 +96,13 @@ struct EchoPredictorTests {
     predictor.received("49h\u{1B}[H")
     predictor.typed("j", at: at(0))
     #expect(predictor.overlay(at: at(0)) == nil)
-    // Leaving it (with a lone ESC split off first) restores predicting.
     predictor.received("bye\u{1B}")
     predictor.received("[?1049l$ ")
     predictor.typed("l", at: at(0))
     #expect(predictor.overlay(at: at(0))?.text == "l")
-    // Pending guesses are dropped when a program takes the screen.
     predictor.received("\u{1B}[")
     predictor.received("?47h")
     #expect(predictor.overlay(at: at(0)) == nil)
-    // Other private modes and unrelated long sequences change nothing.
     predictor.received("\u{1B}[?1049l\u{1B}[?25h\u{1B}[?1;2;3;4;5;6;7;8;9;10;11;12")
     predictor.typed("m", at: at(0))
     #expect(predictor.overlay(at: at(0))?.text == "m")

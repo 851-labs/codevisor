@@ -21,10 +21,6 @@ import { releaseElement, resolveElement } from "./browser-locators.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
-/// Element and coordinate interactions: clicking, typing, forms, keys, mouse, and media downloads.
-/// Every pointer action animates the session's presented cursor first and keeps the session's
-/// pointer state current, so held buttons and modifiers compose like Playwright's Mouse and
-/// Keyboard. Returns undefined for tool names this family does not own.
 export const invokeInteractionTools = async (
   invocation: BrowserToolInvocation,
   _state: BrowserToolSessionState
@@ -174,7 +170,6 @@ export const invokeInteractionTools = async (
       const key = heldKeyDescription(stringArgument(args, "key"), pointer.modifiers)
       const modifierBit = modifierKeyMask(key.key)
       if (toolName === "key_down") {
-        // Like Playwright, a modifier key's own keydown already reports it as held.
         pointer.modifiers |= modifierBit
         await dispatchKeyEvent(
           active,
@@ -196,7 +191,6 @@ export const invokeInteractionTools = async (
     case "keyboard_type": {
       const text = stringArgument(args, "text")
       if (args.mode === "keys") {
-        // Playwright's keyboard.type: a key event per character, so shortcuts fire.
         for (const character of text) {
           await pressKey(active, page, character, pointer.modifiers)
         }

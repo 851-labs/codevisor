@@ -1,8 +1,6 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Apple's standard button starts native authorization on iOS and browser
-/// authorization on macOS, including Developer ID distributions.
 public struct CloudAppleSignInButton: View {
   @Environment(\.colorScheme) private var colorScheme
   private let action: () -> Void

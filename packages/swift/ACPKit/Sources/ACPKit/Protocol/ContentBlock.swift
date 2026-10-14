@@ -1,6 +1,5 @@
 import Foundation
 
-/// Optional annotations attached to a content block.
 public struct Annotations: Sendable, Codable, Equatable {
   public var audience: [Role]?
   public var lastModified: String?
@@ -13,13 +12,11 @@ public struct Annotations: Sendable, Codable, Equatable {
   }
 }
 
-/// The role of a participant in the conversation.
 public enum Role: String, Sendable, Codable, Equatable {
   case user
   case assistant
 }
 
-/// Text/blob resource contents embedded directly in a content block.
 public enum EmbeddedResource: Sendable, Codable, Equatable {
   case text(uri: String, text: String, mimeType: String?)
   case blob(uri: String, blob: String, mimeType: String?)
@@ -55,9 +52,6 @@ public enum EmbeddedResource: Sendable, Codable, Equatable {
   }
 }
 
-/// A block of content exchanged between the client and the agent.
-///
-/// Discriminated by the `type` field.
 public enum ContentBlock: Sendable, Codable, Equatable {
   case text(String, annotations: Annotations? = nil)
   case image(data: String, mimeType: String, uri: String? = nil, annotations: Annotations? = nil)
@@ -134,7 +128,6 @@ public enum ContentBlock: Sendable, Codable, Equatable {
   }
 }
 
-/// A `resource_link` content block referencing an external resource.
 public struct ResourceLink: Sendable, Codable, Equatable {
   public var type: String
   public var name: String
@@ -166,7 +159,6 @@ public struct ResourceLink: Sendable, Codable, Equatable {
 }
 
 public extension ContentBlock {
-  /// Convenience accessor returning the plain text of a `.text` block.
   var textValue: String? {
     if case .text(let text, _) = self { return text }
     return nil

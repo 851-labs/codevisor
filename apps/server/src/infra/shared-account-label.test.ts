@@ -17,7 +17,6 @@ describe("shared account names", () => {
     expect(sharedAccountLabel(signIn, "Work")).toBe("Work")
     for (const madeUp of [undefined, "", "New Account", "Account 2b8f8d"])
       expect(sharedAccountLabel(signIn, madeUp)).toBe("me@example.com")
-    // A name that only looks like a made-up one is still the user's.
     expect(sharedAccountLabel(signIn, "Account two")).toBe("Account two")
   })
 

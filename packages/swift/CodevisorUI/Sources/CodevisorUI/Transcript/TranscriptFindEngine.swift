@@ -2,28 +2,15 @@ import Foundation
 import StreamMarkdown
 import TranscriptKit
 
-/// Searches a transcript's rows for the find bar.
-///
-/// Only final response Markdown is searched (see `findableBlocks`). Counting
-/// runs on a background index, so unmounted rows still contribute matches
-/// without the main thread rendering or scanning a long transcript; this
-/// type keeps the published results and the current match on the main
-/// actor. A mounted row re-derives exact ranges from the text its surfaces
-/// actually display.
 @MainActor
 public final class TranscriptFindEngine {
   public private(set) var query = ""
   public private(set) var results = TranscriptFindResults()
-  /// Called when a background re-count (streaming, pagination) changes the
-  /// results, so the host can republish and repaint without moving the
-  /// viewport.
   public var onRefresh: (@MainActor () -> Void)?
 
   private let index = TranscriptFindIndex()
-  /// Bumped by every new query; work started for an older one is dropped.
   private var generation = 0
   private var searchTask: Task<Bool, Never>?
-  /// Steps taken while a search is in flight, applied to its results.
   private var pendingStep = 0
   private var pendingRefresh: (rows: [TranscriptVirtualRow], theme: MarkdownTheme)?
   private var refreshTask: Task<Void, Never>?
@@ -34,9 +21,6 @@ public final class TranscriptFindEngine {
 
   public var isActive: Bool { !query.isEmpty }
 
-  /// Starts a new search. The current match will be the first at or below
-  /// `rows[firstVisibleRow]`. The returned task yields true once the results
-  /// are published, or false when a newer query superseded this one.
   @discardableResult
   public func search(
     _ query: String,
@@ -56,7 +40,6 @@ public final class TranscriptFindEngine {
       return Task { true }
     }
     let index = index
-    // Text already being built since the bar opened is reused, not redone.
     let preparing = prepareTask
     let task = Task { [weak self] () -> Bool in
       await preparing?.value
@@ -76,8 +59,6 @@ public final class TranscriptFindEngine {
     return task
   }
 
-  /// Moves to the next or previous match. Returns false when a search is
-  /// still running; the step is applied to its results instead.
   @discardableResult
   public func step(by delta: Int) -> Bool {
     guard searchTask == nil else {
@@ -88,17 +69,12 @@ public final class TranscriptFindEngine {
     return true
   }
 
-  /// Re-counts after the rows changed. At most one re-count runs at a time;
-  /// rows that change while it runs are counted once it finishes.
   public func refresh(rows: [TranscriptVirtualRow], theme: MarkdownTheme) {
     guard isActive else { return }
     pendingRefresh = (rows, theme)
     startRefreshIfNeeded()
   }
 
-  /// Builds the transcript's text in the background while the bar is open
-  /// but empty, so the first keystroke only has to scan.
-  /// A search awaits this rather than rendering the same text again.
   public func prepare(rows: [TranscriptVirtualRow], theme: MarkdownTheme) {
     guard !isActive else { return }
     let index = index
@@ -123,10 +99,6 @@ public final class TranscriptFindEngine {
     Task { await index.reset() }
   }
 
-  /// The highlights for each of a mounted row's surfaces, given the text
-  /// those surfaces display. Matches are numbered through the surfaces in
-  /// order, which is how `TranscriptFindMatch.ordinal` counts them. Bounded
-  /// by the mounted window, so it stays on the main actor with the views.
   public func highlights(
     forRow rowKey: String,
     surfaceTexts: [String]
@@ -145,11 +117,7 @@ public final class TranscriptFindEngine {
     }
   }
 
-  // MARK: Refresh
-
   private func startRefreshIfNeeded() {
-    // A search in flight re-counts everything; its completion picks up
-    // whatever rows arrived meanwhile.
     guard searchTask == nil, refreshTask == nil, pendingRefresh != nil else { return }
     refreshGeneration &+= 1
     let refreshGeneration = refreshGeneration

@@ -21,9 +21,6 @@ const makeWorktree = async (name: string): Promise<{ repo: string; path: string 
   return { repo, path }
 }
 
-/// The snapshot seeds its scratch index from a copy of the worktree's own
-/// index to reuse git's stat cache. That copy is an optimization only: these
-/// cases must capture exactly what a snapshot seeded from HEAD would.
 describe("snapshot index seeding", () => {
   it("captures the working tree when the worktree has no index to copy", async () => {
     const { repo, path } = await makeWorktree("udon")
@@ -38,8 +35,6 @@ describe("snapshot index seeding", () => {
   })
 
   it("captures edits to files the worktree marked assume-unchanged", async () => {
-    // Git skips assume-unchanged entries when it compares stat data, so a
-    // copied index carrying that flag would silently drop this edit.
     const { repo, path } = await makeWorktree("pho")
     git(path, "update-index", "--assume-unchanged", "tracked.txt")
     writeFileSync(join(path, "tracked.txt"), "edited\n")
@@ -50,9 +45,6 @@ describe("snapshot index seeding", () => {
   })
 
   it("snapshots HEAD's tracked set, not what the worktree happened to stage", async () => {
-    // Staged state lives only in the real index. The snapshot records the
-    // working tree against HEAD, so a force-added ignored file stays out and
-    // a file removed from the index but still on disk stays in.
     const { repo, path } = await makeWorktree("bao")
     writeFileSync(join(path, ".gitignore"), "secret.env\n")
     writeFileSync(join(path, "secret.env"), "TOKEN=abc\n")

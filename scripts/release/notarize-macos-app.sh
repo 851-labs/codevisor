@@ -51,8 +51,6 @@ app_path="$work_dir/Codevisor.app"
 codesign --verify --deep --strict "$app_path"
 codesign --verify "$dmg_path"
 
-# `notarytool submit --wait` uploads and blocks until Apple's verdict. The
-# timeout bounds a stuck Apple queue; the next scheduled publish retries.
 response="$(xcrun notarytool submit "$dmg_path" "${notary_args[@]}" \
   --wait --timeout 30m --output-format json)" || true
 submission_id="$(jq -r '.id // empty' <<<"$response" 2>/dev/null || true)"
@@ -67,8 +65,6 @@ if [[ "$status" != "Accepted" ]]; then
 fi
 echo "Notarization accepted ($submission_id)"
 
-# Stapling fetches the ticket from Apple's CDN, which can lag a fresh verdict
-# by a minute or two (stapler error 68). That delay is the only thing retried.
 staple() {
   local target="$1" attempt
   for attempt in 1 2 3 4 5; do

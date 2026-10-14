@@ -4,43 +4,23 @@ import ScreenSharingWebRTC
 import ComposableArchitecture
 import Foundation
 
-/// What a backend tells the viewer about one connection attempt, in order.
-/// `opened` may repeat after `reconnecting`; `ended` is terminal and the stream
-/// finishes after it. Cancelling the stream is the only way to stop early.
 @CasePathable
 public enum ScreenSharingViewerEvent: Equatable, Sendable {
-  /// Terminal, with the message to show.
   case ended(String)
-  /// New media to render; replaces any previous endpoint, which is already closed.
   case opened(ScreenSharingViewerEndpoint)
-  /// The endpoint's first frame reached the screen.
   case ready
-  /// Transport loss after video; a fresh `opened` follows, or `ended`.
   case reconnecting
-  /// What the host says about the missing video (a stalled capture it is restarting,
-  /// 851-2385); nil once it has nothing more to say.
   case hostNotice(String?)
 }
 
-/// The seam between the viewer feature and whatever negotiates media. The
-/// native implementation talks to the Codevisor server, which either streams
-/// a Mac's display over WebRTC or splices a "vnc:" display's RFB bytes over a
-/// socket; the reducer never learns which.
-/// Installed per pane with `withDependencies`: the native backend needs the
-/// pane's server client and identity, so there is no process-wide live value.
 @DependencyClient
 public struct ScreenSharingViewerBackend: Sendable {
-  /// One connection's events, until it ends or the stream is cancelled.
   public var connect: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
     .finished
   }
   public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
 }
 
-/// A screen-sharing media route over the Codevisor tunnel:
-/// the local UDP port bridged to one tunnel
-/// flow, which the machine bridges to the host's WebRTC socket. WebRTC keeps
-/// its own ICE/DTLS/RTP and just dials `localPort` as its remote candidate.
 public struct ScreenSharingTunnelMedia: Sendable {
   public let endpointId: String
   public let flowId: Int
@@ -60,13 +40,6 @@ extension ScreenSharingViewerBackend: TestDependencyKey {
 }
 
 extension ScreenSharingViewerBackend {
-  /// The shipped backend: capabilities, one-shot SDP over authenticated
-  /// signaling, 8 s heartbeats, lease-bound media replacement after network
-  /// loss (three restarts with the same viewer id), and an authenticated stop
-  /// that survives cancellation. A machine whose capabilities name the "vnc"
-  /// provider is viewed over the server's VNC socket route instead.
-  /// Opens a tunnel media route to the pane's machine, or nil (a direct
-  /// machine, or no tunnel): the connection then uses plain WebRTC ICE.
   public typealias TunnelMediaProvider = @MainActor () async -> ScreenSharingTunnelMedia?
 
   @MainActor
@@ -87,7 +60,6 @@ extension ScreenSharingViewerBackend {
       })
   }
 
-  /// Opens the RFB connection behind a "vnc:" display id.
   typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
 
   @MainActor
@@ -107,9 +79,6 @@ extension ScreenSharingViewerBackend {
   }
 }
 
-/// One pane's native connections, strictly one after another: a new discovery
-/// or connection waits for the previous connection's teardown — including its
-/// authenticated stop — so a stop can never overtake the next start.
 @MainActor
 private final class NativeScreenSharingViewerRunner {
   private let client: any CodevisorServerClienting
@@ -121,14 +90,9 @@ private final class NativeScreenSharingViewerRunner {
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
-  /// The provider the last capabilities reply named; "vnc:" display ids
-  /// are routed to the VNC runner even before discovery has run.
   private var provider: String?
-  /// The machine's server arbitrates control of its VNC desktop (851-2338).
   private var controlLease = false
   private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
-  /// A target every request names, including capabilities, heartbeat and
-  /// stop — a Computer Use live view is addressed by it end to end.
   private let target: String?
   private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
 
@@ -184,7 +148,6 @@ private final class NativeScreenSharingViewerRunner {
     }
   }
 
-  /// One VNC runner per display keeps its connections in sequence.
   private func vncRunner(for display: String) -> VNCScreenSharingViewerRunner {
     if let runner = vncRunners[display] { return runner }
     let open = vncOpen
@@ -192,7 +155,6 @@ private final class NativeScreenSharingViewerRunner {
       displayId: display, open: { try await open(display) },
       arbitratedByServer: { [weak self] in self?.controlLease ?? false },
       setDesktopScale: { [client, weak self] scale in
-        // The machine's server sets its VNC desktop's scale (851-2339); an old server says unsupported.
         guard let request = self?.request(.setScale, viewerId: UUID(), displayId: display) else { return }
         var scaled = request
         scaled.scale = scale
@@ -205,17 +167,14 @@ private final class NativeScreenSharingViewerRunner {
 
   private enum Outcome { case lost, ended(String), cancelled }
 
-  /// Mutable attempt state shared with the session's callbacks.
   @MainActor
   private final class Attempt {
     var endpoint: ScreenSharingViewerEndpoint?
-    /// The attempt's tunnel media route, closed with the attempt.
     var tunnelMedia: ScreenSharingTunnelMedia?
     var body: Task<Outcome, Never>?
     var ready = false
     var started = false
     var outcome: Outcome?
-    /// The media connection dropped, as opposed to signaling ending the attempt.
     var transportEnded = false
   }
 
@@ -241,8 +200,6 @@ private final class NativeScreenSharingViewerRunner {
     }
     if let message { emit(.ended(message)) }
     if started {
-      // URLSession inherits task cancellation. Cleanup needs a fresh task so
-      // hiding the tab can still deliver the authenticated stop request.
       let stop = request(.stop, viewerId: viewerId)
       let client = client
       await Task { _ = try? await client.screenSharing(stop) }.value
@@ -255,8 +212,6 @@ private final class NativeScreenSharingViewerRunner {
     let attempt = Attempt()
     let body = Task { @MainActor [self] () -> Outcome in
       do {
-        // Fetch fresh short-lived relay credentials at connection time. The
-        // display picker may have been left open much longer than their lifetime.
         let capabilitiesRequest = request(.capabilities, viewerId: viewerId)
         let capabilities = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client] in
           try await client.screenSharing(capabilitiesRequest)
@@ -265,7 +220,6 @@ private final class NativeScreenSharingViewerRunner {
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
-        // Built off the main thread; a stop meanwhile closes it before anything is wired to it.
         let session = try await makeSession(capabilities.connectivity)
         if Task.isCancelled {
           session.close()
@@ -290,8 +244,6 @@ private final class NativeScreenSharingViewerRunner {
         try Task.checkCancellation()
         attempt.started = true
         var start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
-        // Media over the tunnel when the machine is reached through it; the
-        // machine confirms the bridge in its reply, else plain ICE applies.
         let media = await tunnelMedia?()
         attempt.tunnelMedia = media
         if let media { start.tunnelMedia = .init(endpointId: media.endpointId, flowId: media.flowId) }
@@ -318,7 +270,6 @@ private final class NativeScreenSharingViewerRunner {
             notice = reply.message
             emit(.hostNotice(notice))
           }
-          // A host recovering its capture bounds that itself, and says so if it fails.
           if !attempt.ready, notice == nil {
             heartbeatsBeforeVideo += 1
             guard heartbeatsBeforeVideo < 3 else {
@@ -339,11 +290,7 @@ private final class NativeScreenSharingViewerRunner {
     }
     attempt.endpoint?.close()
     attempt.tunnelMedia?.close()
-    // A transport outcome recorded by a callback wins over the cancellation it
-    // caused; the stream's own cancellation wins over anything else.
     var outcome = Task.isCancelled ? .cancelled : (attempt.outcome ?? result)
-    // A host that ended the session itself only drops the connection; it says why on request
-    // (851-2397), which beats blaming the network.
     if attempt.transportEnded, attempt.started, !Task.isCancelled, let reason = await hostEndReason(viewerId: viewerId)
     {
       outcome = .ended(reason)
@@ -351,20 +298,15 @@ private final class NativeScreenSharingViewerRunner {
     return (outcome, attempt.started)
   }
 
-  /// The host's reason for ending `viewerId`'s session, if the host ended it itself.
   private func hostEndReason(viewerId: UUID) async -> String? {
     let heartbeat = request(.heartbeat, viewerId: viewerId)
     let client = client
-    // A fresh task: the attempt's own was cancelled when the connection dropped.
     guard let reply = try? await Task(operation: { try await client.screenSharing(heartbeat) }).value,
       reply.status == "failed"
     else { return nil }
     return reply.message
   }
 
-  /// The answer the viewer's WebRTC applies: routed to the tunnel flow when
-  /// the machine bridged it (and the viewer has a LAN address to name the
-  /// flow's socket with), else the host's own candidates.
   static func remoteAnswer(
     _ answer: String, offer: String, media: ScreenSharingTunnelMedia?, bridge: ServerScreenSharingTunnelMediaBridge?
   ) -> String {

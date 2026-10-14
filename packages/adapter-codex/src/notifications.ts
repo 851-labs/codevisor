@@ -10,8 +10,6 @@ import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
 
-// MARK: notification mapping
-
 export const codexThreadTitle = (thread: Record<string, unknown>): string | undefined => {
   for (const value of [thread.name, thread.preview]) {
     if (typeof value !== "string") continue
@@ -51,10 +49,7 @@ const refreshCodexSessionTitle = async (session: CodexSession): Promise<void> =>
         ? thread.name.trim()
         : undefined
     )
-  } catch {
-    // Older app-servers may not expose thread names. The first-prompt title
-    // stored by Codevisor remains the fallback in that case.
-  }
+  } catch {}
 }
 
 const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unknown>): void => {
@@ -117,11 +112,7 @@ const completeNotificationTurn = (
   const turnId = session.activeTurnId ?? randomUUID()
   session.activeTurnId = undefined
   session.pendingTurnError = undefined
-  // A turn that ends with questions still open (interrupt, failure)
-  // invalidates them — clients must not keep showing the picker.
   cancelPendingQuestions(session)
-  // Rate-limited goal accounting flushes before the turn closes so the
-  // final totals are persisted ahead of the ended event.
   void refreshCodexSessionTitle(session)
     .then(() => flushPendingGoalSnapshot(session))
     .then(() =>
@@ -147,7 +138,6 @@ const completeNotificationTurn = (
     })
 }
 
-/// The API's refusal to summarize reasoning for this account.
 const rejectsReasoningSummaries = (message: string): boolean =>
   /reasoning summar/i.test(message) && /verif/i.test(message)
 
@@ -160,9 +150,6 @@ const handleNotificationItemLifecycle = (
 ): void => {
   const item = isRecord(payload.item) ? payload.item : {}
   if (item.type === "contextCompaction") {
-    // A collab subagent's context belongs to its nested thread, not the
-    // main chat's status line. Main-thread compaction is a canonical v2
-    // item with matching started/completed ids.
     if (parentToolCallId === undefined) {
       void session.emit({
         kind: "session.output",
@@ -176,10 +163,6 @@ const handleNotificationItemLifecycle = (
     }
     return
   }
-  // The reasoning item's start is the thinking signal: with reasoning
-  // summaries requested (see turn/start) Codex reports it as the model
-  // starts reasoning, and an empty thought chunk drives the client's
-  // ephemeral "Thinking" state until text or a tool call follows.
   if (item.type === "reasoning" && method === "item/started") {
     void session.emit({
       kind: "session.output",
@@ -209,10 +192,6 @@ const emitStreamedFilePatch = (
   payload: Record<string, unknown>,
   parentField: { parentToolCallId?: string }
 ): void => {
-  // Codex streams the patch as the model generates it (gated behind the
-  // apply_patch_streaming_events feature we enable at spawn) — this is
-  // the realtime counter signal. These arrive BEFORE item/started for
-  // the same item, so the first one opens the tool call.
   const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
   if (itemId === undefined) return
   const stats = fileChangeStats(payload.changes)
@@ -277,11 +256,6 @@ export const handleNotification = (
 ): void => {
   if (session.titleGenerator?.handleNotification(method, params)) return
   const payload = isRecord(params) ? params : {}
-  // Every notification is thread-scoped. Collab subagents run as separate
-  // threads on the same connection: their items nest under the spawnAgent
-  // tool call, their turn lifecycle must NOT drive the session's turn state,
-  // and traffic from a thread we can't attribute is dropped rather than mixed
-  // into the main transcript.
   const threadId = typeof payload.threadId === "string" ? payload.threadId : undefined
   const isForeign = threadId !== undefined && threadId !== session.threadId
   const parentToolCallId = isForeign ? session.collabThreads.get(threadId) : undefined
@@ -299,7 +273,6 @@ export const handleNotification = (
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
     case "skills/changed": {
-      // An invalidation signal only: the new list has to be asked for.
       void refreshCodexSkills(session, true)
       break
     }
@@ -337,8 +310,6 @@ export const handleNotification = (
       break
     }
     case "item/agentMessage/delta": {
-      // Finality captured from the item's `item/started` (see wirePhase): lets
-      // clients style the final answer correctly from the very first chunk.
       const phase =
         typeof payload.itemId === "string" ? session.messagePhases.get(payload.itemId) : undefined
       void session.emit({
@@ -411,8 +382,6 @@ export const handleNotification = (
       break
     }
     default:
-      // turn/diff/updated is deliberately ignored for stats: it aggregates the
-      // whole turn, and Codevisor counters are per tool call.
       break
   }
 }

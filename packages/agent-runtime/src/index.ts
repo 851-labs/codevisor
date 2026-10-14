@@ -47,7 +47,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         let readiness: Harness["readiness"]
         if (definition.disabledReason !== undefined) {
           readiness = { detail: definition.disabledReason, state: "unavailable" }
-          /* v8 ignore start -- every catalog provider id is registered; guards future ids. */
+          /* v8 ignore start */
         } else if (provider === undefined) {
           readiness = { detail: "Provider not available", state: "unavailable" }
           /* v8 ignore stop */
@@ -57,9 +57,6 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         if (readiness.state === "ready") {
           const path = locateHarnessBinary(definition)
           if (path !== undefined) {
-            // Versions come from the refreshEnvironment probe cache: the
-            // server refreshes at boot and on every rescan, so discovery
-            // stays synchronous and spawn-free.
             const version = versions.get(path)
             readiness = {
               ...readiness,
@@ -87,10 +84,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         if (definition === undefined) {
           throw new Error(`Unknown harness: ${harnessId}`)
         }
-        // Deliberately no disabledReason check: a pulled integration's past
-        // sessions still inform workspace suggestions.
         const provider = providers.get(definition.provider)
-        /* v8 ignore next 3 -- every catalog provider id is registered above; guards future ids. */
+        /* v8 ignore next 3 */
         if (provider === undefined) {
           return []
         }
@@ -119,18 +114,12 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     refreshEnvironment: adapterPromise("refreshEnvironment", () => {
       const resolveEnv = config.resolveEnv
       if (resolveEnv === undefined) {
-        // Still settle version probes so a rescan without an env resolver
-        // (embedded runtimes, tests) reports complete readiness.
         return versions.probe(locateReadyBinaries(), state.currentEnv)
       }
-      // Concurrent refreshes (Settings + onboarding both rescanning) share
-      // one shell probe instead of stacking login-shell invocations.
       state.envRefresh ??= resolveEnv()
         .then((resolved) => {
           state.currentEnv = resolved
         })
-        // Awaited (not fire-and-forget) so the rescan response that follows
-        // a refresh carries binary versions, not a cache miss.
         .then(() => versions.probe(locateReadyBinaries(), state.currentEnv))
         .finally(() => {
           state.envRefresh = undefined
@@ -168,12 +157,10 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           .createSession(
             definition,
             cwd,
-            /* v8 ignore next -- inspection sessions are closed before they can emit. */
+            /* v8 ignore next */
             () => Promise.resolve(),
             account,
             undefined,
-            // Inspection's whole point is the option list: grant it most of
-            // the outer timeout instead of the snappy interactive default.
             {
               modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000),
               skillListTimeoutMs: 2_000,
@@ -197,8 +184,6 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           if (right === "model") return 1
           return left.localeCompare(right)
         })
-        // Requested values that did not land are reported, never silently
-        // replaced by whatever the harness defaulted to.
         const unapplied: Record<string, string> = {}
         const reconcile = provider.reconcileConfigValue
         for (const [configId, value] of selections) {
@@ -246,17 +231,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             existing.cwd === cwd &&
             existing.harnessAccountId === account?.id
           ) {
-            // Reconnects re-bind the sink (e.g. a restarted client re-loading
-            // a live session) without tearing down the agent process.
             existing.sink = sink
             return existing.metadata
           }
 
           if (existing !== undefined) {
-            // Finish delivering everything the old handle already emitted,
-            // then unmanage it before closing. Closing a Claude query aborts
-            // its SDK stream; any late shutdown event must be unable to land
-            // in either the old sink or the replacement session.
             await existing.chain
             if (sessions.get(agentSessionId) === existing) {
               sessions.delete(agentSessionId)

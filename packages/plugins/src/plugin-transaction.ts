@@ -36,8 +36,6 @@ export interface PluginTransactionEngine {
   readonly paths: (pluginId: string) => PluginTransactionPaths
   readonly withLock: <Value>(pluginId: string, operation: () => Promise<Value>) => Promise<Value>
   readonly apply: (pluginId: string, hadExisting: boolean) => Promise<void>
-  /// Restores the retained known-good code/data and keeps the displaced
-  /// current version as the next known-good target.
   readonly restoreKnownGood: (pluginId: string) => Promise<void>
   readonly recover: () => Promise<void>
   readonly recoverPlugin: (pluginId: string) => Promise<void>
@@ -127,7 +125,7 @@ export const makePluginTransactionEngine = (
       journal.phase === "dataBackedUp" ||
       journal.phase === "codeBackedUp" ||
       journal.phase === "candidateInstalled" ||
-      /* v8 ignore next -- only reachable if the atomic verified-journal write itself fails. */
+      /* v8 ignore next */
       journal.phase === "verified"
     if (dataMayHaveChanged) {
       await rm(transactionPaths.data, { force: true, recursive: true })
@@ -204,8 +202,6 @@ export const makePluginTransactionEngine = (
       return
     }
 
-    // A corrupt journal cannot be trusted, but the fixed backup names still
-    // let startup conservatively restore code without deleting unknown data.
     deps.stop(pluginId)
     if (await exists(transactionPaths.codeBackup)) {
       await rm(transactionPaths.destination, { force: true, recursive: true })
@@ -277,9 +273,6 @@ export const makePluginTransactionEngine = (
       journal = { ...journal, phase: "codeBackedUp" }
       await writeJournal(journal)
 
-      // Each rename is atomic, and the synchronous pair prevents any other
-      // request in this process from observing the destination between them.
-      // The intent journal repairs the tiny process-crash window at startup.
       if (hadExisting) {
         renameSync(transactionPaths.destination, transactionPaths.codeBackup)
       }

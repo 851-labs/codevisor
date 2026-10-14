@@ -1,14 +1,9 @@
 import SwiftUI
 
-/// Every command in the app that has (or could have) a keyboard shortcut.
-///
-/// The case order here is the order rows appear in Settings ▸ Shortcuts.
 enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
-  // Chats
   case newChat
   case newProject
 
-  // Tabs & splits
   case newTab
   case closeSplit
   case closeTab
@@ -31,20 +26,16 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case focusSplitAbove
   case focusSplitBelow
 
-  // View
   case toggleDebugOverlay
 
-  // Browser
   case browserZoomIn
   case browserZoomOut
   case browserResetZoom
 
-  // Composer
   case composerSend
   case composerNewline
   case composerDismissSuggestions
 
-  // Question picker
   case questionPickerMove
   case questionPickerSelectByNumber
   case questionPickerToggle
@@ -54,7 +45,6 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 }
 
-/// The Settings ▸ Shortcuts section a command is listed under.
 enum ShortcutCategory: String, CaseIterable, Identifiable, Sendable {
   case chats = "Chats"
   case tabsAndSplits = "Tabs & Splits"
@@ -66,22 +56,13 @@ enum ShortcutCategory: String, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 }
 
-/// One command's title, shortcut, and where it applies.
 struct ShortcutDefinition: Identifiable, Sendable {
   let id: ShortcutID
-  /// The menu-item title, and the label in the Shortcuts list.
   let title: String
-  /// `nil` for menu items that intentionally have no key equivalent
-  /// (Close Tab, Split Left/Up) and for the ranged shortcuts below.
   let combo: ShortcutCombo?
-  /// Further combos that run the same command. The menu item can carry only
-  /// `combo`, so these are matched by the AppKit key-equivalent paths alone.
   let alternateCombos: [ShortcutCombo]
-  /// Set for shortcuts that are a range rather than one combo, e.g. ⌘1–⌘9.
-  /// Takes precedence over `combo` when rendering.
   let displayOverride: String?
   let category: ShortcutCategory
-  /// Where the shortcut applies, when that isn't "anywhere in the window".
   let context: String?
 
   init(
@@ -102,36 +83,20 @@ struct ShortcutDefinition: Identifiable, Sendable {
     self.context = context
   }
 
-  /// What the Shortcuts list renders on the right-hand side, or `nil` for
-  /// commands that have no key equivalent at all.
   var displayString: String? {
     displayOverride ?? combo.map { ([$0] + alternateCombos).map(\.displayString).joined(separator: " / ") }
   }
 
-  /// Every combo, spoken, for VoiceOver.
   var accessibilityDescription: String? {
     combo.map { ([$0] + alternateCombos).map(\.accessibilityDescription).joined(separator: " or ") }
   }
 }
 
-/// The app's single source of truth for keyboard shortcuts.
-///
-/// Menus read their titles and key equivalents from here (via `ShortcutButton`),
-/// the AppKit key-equivalent paths match events against the same combos (via
-/// `ShortcutCatalog.paneCommand(for:)`), and Settings ▸ Shortcuts renders the
-/// whole table. Change a shortcut in one place and all three follow.
-///
-/// Shortcuts are not user-remappable yet. When they become so, the override map
-/// belongs behind `combo(for:)` — every consumer already goes through it.
 enum ShortcutCatalog {
-  /// Exhaustive by construction: adding a `ShortcutID` fails to compile until
-  /// it is defined here.
   static func definition(for id: ShortcutID) -> ShortcutDefinition {
     definition(for: id, refreshed: FeatureFlag.sidebarRefresh.isEnabled)
   }
 
-  /// `refreshed`: the sidebar refresh feature flag, which reassigns the tab
-  /// and split-focus keys.
   private static func definition(for id: ShortcutID, refreshed: Bool) -> ShortcutDefinition {
     switch id {
     case .newChat:
@@ -160,9 +125,6 @@ enum ShortcutCatalog {
         .selectTab, "Select Tab 1–9", nil,
         displayOverride: "⌘1–⌘9", category: .tabsAndSplits
       )
-    // The sidebar refresh moves ⇧⌘[ / ⇧⌘] to sidebar items and gives ⌥⌘ +
-    // arrows to tabs and workspaces; without it they keep their classic
-    // meanings (tab rows, and directional split focus).
     case .previousTab:
       refreshed
         ? ShortcutDefinition(
@@ -205,8 +167,6 @@ enum ShortcutCatalog {
     case .splitDown:
       ShortcutDefinition(
         .splitDown, "Split Down", ShortcutCombo("d", [.command, .shift]), category: .tabsAndSplits)
-    // With the sidebar refresh, ⌥⌘ + arrows step tabs and workspaces and
-    // directional split focus is menu-only (⌘[ / ⌘] still cycle splits).
     case .focusSplitLeft:
       ShortcutDefinition(
         .focusSplitLeft, "Focus Split Left", refreshed ? nil : ShortcutCombo(.leftArrow, [.command, .option]),
@@ -281,8 +241,6 @@ enum ShortcutCatalog {
     }
   }
 
-  /// The active combo for a command. The one place a future user-override map
-  /// needs to hook into.
   static func combo(for id: ShortcutID) -> ShortcutCombo? {
     definition(for: id).combo
   }
@@ -291,8 +249,6 @@ enum ShortcutCatalog {
     definition(for: id).title
   }
 
-  /// The glyph string for a command, e.g. "⌘T". Empty for commands with no
-  /// key equivalent, so it is safe to interpolate into tooltips.
   static func display(for id: ShortcutID) -> String {
     definition(for: id).displayString ?? ""
   }
@@ -301,9 +257,6 @@ enum ShortcutCatalog {
     ShortcutID.allCases.map { definition(for: $0) }
   }
 
-  /// Every category that has at least one listable shortcut, in declaration
-  /// order, each with its rows. Commands with no key equivalent are dropped —
-  /// they exist in the catalog only so menus can source their titles here.
   static var listedByCategory: [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
     let listable = all.filter { $0.displayString != nil }
     return ShortcutCategory.allCases.compactMap { category in

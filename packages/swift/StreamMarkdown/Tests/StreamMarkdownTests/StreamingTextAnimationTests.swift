@@ -225,8 +225,6 @@ struct StreamingTextAnimationTests {
     timeline.observeSource("Hello", sourceID: "answer", at: 1.500)
     timeline.observeSource("Hello world", sourceID: "answer", at: 1.600)
 
-    // The measured source gap is 600ms. If the duplicate render at 500ms
-    // were sampled, this would instead look like a low-latency 100ms feed.
     #expect(timeline.targetQueueLead > 0.180)
   }
 

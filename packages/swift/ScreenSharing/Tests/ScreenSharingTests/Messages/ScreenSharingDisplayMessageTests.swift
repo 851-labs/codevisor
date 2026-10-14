@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The display channel's wire format (851-2376).
 struct ScreenSharingDisplayMessageTests {
   @Test func everyMessageSurvivesTheWire() throws {
     for message: ScreenSharingDisplayMessage in [
@@ -15,7 +14,6 @@ struct ScreenSharingDisplayMessageTests {
     }
   }
 
-  /// The video format channel's wire format (851-2380).
   @Test func everyVideoFormatMessageSurvivesTheWire() throws {
     for message: ScreenSharingVideoFormatMessage in [
       .viewer(highDynamicRange: true), .viewer(highDynamicRange: false), .sending(.high, reason: nil),

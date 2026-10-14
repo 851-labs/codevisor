@@ -27,15 +27,10 @@ import { record, text, type MuseSession } from "./protocol.js"
 import { startMuseChat, type MuseChat } from "./session.js"
 
 export interface MuseProviderConfig {
-  /// Injectable for tests: scripted hosts instead of a spawned binary.
   readonly connector?: MuseConnector
-  /// How long a short-lived host (account, listing, usage) may take.
   readonly hostDeadlineMs?: number
 }
 
-/// How a chat's host runs. Codevisor gives every harness full access, so
-/// Muse's shell sandbox is off and the workspace trusted (its project MCP
-/// servers and hooks load); approvals are chosen per session on the wire.
 const CHAT_HOST_ARGS = ["--trust-workspace", "--disable-sandbox"]
 
 const SESSION_PAGES = 5
@@ -58,8 +53,6 @@ const usageWindow = (value: unknown, id: string, label: string) => {
   ]
 }
 
-/// `usage/read`: Muse's subscription windows. Muse only knows them once a
-/// model call reported them, so a fresh host often has none.
 export const museUsageLimits = (response: unknown): HarnessUsageLimits => {
   const usage = record(response)
   const windows = [
@@ -77,8 +70,6 @@ export const museUsageLimits = (response: unknown): HarnessUsageLimits => {
   }
 }
 
-/// Muse Code, driven over its own session protocol (`muse serve`): the
-/// user's Muse, with its sign-in, models, skills and session store.
 export const makeMuseProvider = (
   environment: ProviderEnvironment,
   config: MuseProviderConfig = {}
@@ -107,8 +98,6 @@ export const makeMuseProvider = (
     toolGateway: ToolGatewayConfig | undefined,
     resume?: string
   ): Promise<MuseChat> => {
-    // Muse refuses a workspace root reached through a symlink (macOS's /tmp
-    // is one), so it gets the real path.
     const root = await realpath(cwd).catch(() => cwd)
     const client = await connector({
       command: command(definition),
@@ -129,9 +118,6 @@ export const makeMuseProvider = (
     }
   }
 
-  /// Runs one request batch on a short-lived host: no session log, so
-  /// nothing it does lands in the user's session list, and a deadline, so
-  /// a wedged Muse can't hold an account probe forever.
   const withHost = async <A>(
     definition: HarnessDefinition,
     account: HarnessAccountContext | undefined,
@@ -164,7 +150,6 @@ export const makeMuseProvider = (
       await chat.cancel()
       return { runtimeState: "reusable" as const }
     }),
-    // Muse has no modes; its reasoning tier is a config option.
     setMode: (modeId) =>
       adapterPromise("setMode", () =>
         Promise.reject(new Error(`Muse Code has no mode named ${modeId}`))
@@ -214,7 +199,6 @@ export const makeMuseProvider = (
           for (const entry of Array.isArray(listed.sessions)
             ? (listed.sessions as Array<MuseSession>)
             : []) {
-            // Subagent and side-chat sessions belong to their parent chat.
             if ((entry.kind ?? "root") !== "root" || entry.workspaceRoot === null) continue
             const title = text(entry.name) ?? text(entry.title) ?? text(entry.firstUserPrompt)
             sessions.push({

@@ -29,8 +29,6 @@ struct HarnessAccountsStoreTests {
     #expect(opencode.id == "native-opencode")
     #expect(try await store.answerOpenCodeAuthFlow(id: opencode.id, code: "fixture-code").state == "complete")
     try await store.cancelOpenCodeAuthFlow(id: opencode.id)
-    // Each sign-in asks the account coordinator once: OpenCode's sync pass
-    // already did, so its shared request doesn't ask again.
     #expect(cloud.accountSyncPreparations == ["local", "local"])
     let paths = await transport.paths
     #expect(paths.contains("/v1/harnesses/pi/shared-accounts"))

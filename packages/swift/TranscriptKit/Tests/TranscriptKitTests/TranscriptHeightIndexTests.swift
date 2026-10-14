@@ -55,8 +55,6 @@ struct TranscriptHeightIndexTests {
       rows: (0..<count).map { .init(height: 20, spacing: $0 == count - 1 ? 0 : 4) }
     )
     let changed = original.replacing([(count / 2, 44)])
-    // 4096 leaves, a depth of 12, and one visited leaf. This measures actual
-    // update work even though an old geometry snapshot is still retained.
     #expect(changed.updatedNodeCount == 13)
     #expect(changed.totalHeight == original.totalHeight + 24)
     #expect(original.geometry(at: count / 2).height == 20)

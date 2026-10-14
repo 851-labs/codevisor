@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Renders one already-parsed Markdown row. Consecutive text-like blocks can
-/// share one TextKit surface so transcript chunking avoids both extra native
-/// hosts and extra text layout passes.
 public struct MarkdownBlockRenderView: View {
   private let blocks: [MarkdownBlock]
   private let foregroundColor: Color?
@@ -183,9 +180,6 @@ public struct MarkdownBlockRenderView: View {
   }
 }
 
-/// Renders one already-parsed leaf of a structurally complex quote. Each leaf
-/// still uses `MarkdownBlockRenderView`, so prose remains TextKit-backed and
-/// code/table leaves retain their dedicated native renderers.
 public struct MarkdownFragmentRenderView: View {
   private let blocks: [MarkdownBlock]
   private let documentSource: String
@@ -221,8 +215,6 @@ public struct MarkdownFragmentRenderView: View {
       animationGroupID: animationGroupID,
       isStreaming: isStreaming
     )
-    // Renderers that lay out at the row width (prepared text, tables) must
-    // see the indented column, or they overflow the row by the indent.
     .environment(\.streamMarkdownTextLayoutWidth, rowLayoutWidth.map { max(1, $0 - contentIndent) })
     .padding(.leading, contentIndent)
     .padding(.bottom, trailingSpacing)
@@ -271,12 +263,6 @@ public struct MarkdownFragmentRenderView: View {
 }
 
 extension MarkdownBlock {
-  /// Mirrors the settled renderer's `canRenderAsTextRun` rule. A streaming
-  /// list flips between `.bulletList` and `.list` as each item is typed (an
-  /// empty trailing item or a loose gap makes it a full list for a flush);
-  /// treating only the simple form as text-run compatible swapped the view
-  /// type on every flip, which recreated the native text view and replayed
-  /// the entrance fade for every word already on screen.
   var isTextRunCompatible: Bool {
     switch self {
     case .heading, .paragraph, .bulletList, .orderedList:
@@ -299,7 +285,6 @@ extension MarkdownBlock {
   }
 }
 
-/// Renders a single markdown block.
 struct MarkdownBlockView: View {
   let block: MarkdownBlock
   let foregroundColor: Color
@@ -454,10 +439,6 @@ private struct MarkdownRecursiveListView: View {
     let column = MarkdownFragmentMetrics.listColumn(markers: markers)
     VStack(alignment: .leading, spacing: theme.listItemGap) {
       ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
-        // The marker column has a fixed width and the content takes the
-        // remainder. Without this, the stack's initial equal-share
-        // proposal reaches the native text view, which fills whatever
-        // width it is offered — wrapping every item at half the row.
         HStack(alignment: .top, spacing: 0) {
           Text(markers[index])
             .fontWeight(MarkdownList.isBullet(markers[index]) ? .bold : nil)

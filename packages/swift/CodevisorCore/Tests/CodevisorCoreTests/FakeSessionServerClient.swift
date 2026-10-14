@@ -10,12 +10,6 @@ import ACPKit
 final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let sessionId: UUID
   private let projectId = UUID()
-  // Multi-subscription event plumbing: each `sessionEventStream` /
-  // `eventStream` call gets its own stream, seeded with every event emitted
-  // so far — mirroring the real server's replay-from-history semantics.
-  // First subscriptions behave exactly as the old single shared stream did
-  // (pre-subscription emits are buffered); re-subscriptions after a
-  // reconcile keep receiving live events instead of a dead stream.
   private var _eventBuffer: [ServerEventEnvelope] = []
   private var _eventContinuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
   private let lock = NSLock()
@@ -52,10 +46,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _lastBudget: Int?
   private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
   private var _questionAnswerGate: AsyncStream<Void>?
-  // Envelope ids for scripted prompt echoes are monotonic, like the real
-  // server's: repeated prompts (and test-emitted events picking ids above
-  // the echoed range) must never reuse an id, or cursor-based replay in
-  // `subscribeEvents` would treat distinct events as already-seen.
   private var _nextEnvelopeId = 1
 
   var detailCursor = 0
@@ -69,8 +59,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var transcriptBodyRequests: [Int] { lock.withLock { _transcriptBodyRequests } }
   private var _transcriptDetailCursors: [String?] = []
   var transcriptDetailCursors: [String?] { lock.withLock { _transcriptDetailCursors } }
-  /// When false, prompts are accepted without the scripted assistant echo,
-  /// leaving the turn generating so tests can emit their own events.
   var echoOnPrompt = true
   var openSessionResponse: ServerSessionOpenResponse?
   var openSessionFailure: CodevisorServerClientError?
@@ -108,14 +96,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     since: Int
   ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
     let (stream, continuation) = AsyncThrowingStream.makeStream(of: ServerEventEnvelope.self)
-    // Replay and registration are one atomic step against `emit`, so a
-    // concurrent live yield can never overtake the replayed prefix —
-    // the server's replay-then-live ordering guarantee.
     lock.withLock {
-      // Mirror the server's replay semantics: live-only sentinels replay
-      // nothing, cursors replay strictly newer events. Without this, a
-      // resubscription after reconcile re-applies history the transcript
-      // page already covers — which the real server never does.
       let liveOnly = since >= ServerSessionTransport.liveOnlyEventCursor
       for event in _eventBuffer where !liveOnly && event.id > since {
         continuation.yield(event)

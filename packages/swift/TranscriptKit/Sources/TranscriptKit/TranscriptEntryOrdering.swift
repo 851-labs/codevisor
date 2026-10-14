@@ -4,11 +4,6 @@ import Foundation
 enum TranscriptEntryOrdering {
   static func orderEntries(_ turn: inout AssistantTurn) {
     let positions = turn.entryPositions
-    // An entry without a durable position (live-only rows such as a
-    // compaction marker, or an older server's answered question) stays
-    // anchored behind whatever preceded it when it arrived. Sorting it to
-    // the end instead would drag it past every later tool call, so it
-    // would keep reappearing in the newest "Worked for" group.
     func sorted(_ entries: [TranscriptEntry]) -> [TranscriptEntry] {
       guard entries.count > 1 else { return entries }
       var anchor = Int.min
@@ -23,8 +18,6 @@ enum TranscriptEntryOrdering {
     }
     turn.entries = sorted(turn.entries)
     if turn.planDocument != nil, turn.planRevision > 0 {
-      // The answer summary may be present before earlier work is restored.
-      // Derive the split from durable order, not the order pages were loaded.
       turn.planBoundary =
         turn.entries.prefix {
           (positions[$0.id] ?? Int.max) <= turn.planRevision
@@ -92,8 +85,6 @@ enum TranscriptEntryOrdering {
     if let matchingIndex, case let .contextCompaction(existingId, _) = entries[matchingIndex] {
       entries[matchingIndex] = .contextCompaction(id: existingId, status: .completed)
     } else if let id {
-      // A client can attach between lifecycle notifications. Preserve
-      // the only position it observed instead of dropping completion.
       entries.append(.contextCompaction(id: id, status: .completed))
     }
   }

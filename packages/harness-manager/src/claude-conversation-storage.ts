@@ -143,15 +143,9 @@ export const defaultClaudeConfigPath = (environment: NodeJS.ProcessEnv): string 
   return join(home === undefined || home.length === 0 ? homedir() : resolve(home), ".claude")
 }
 
-/// Claude couples credentials and conversations under CLAUDE_CONFIG_DIR. Keep
-/// each managed root for authentication, but point its projects directory at
-/// the default profile's canonical history so every account can resume every
-/// chat without copying mutable transcripts during an account switch.
 export const ensureSharedClaudeConversations = async (
   defaultConfigPath: string,
   managedProfilePaths: ReadonlyArray<string>,
-  /// Where Codevisor installs Claude skills (the harness catalog's global
-  /// skills directory); managed profiles link here.
   sharedSkillsPath: string = join(defaultConfigPath, "skills")
 ): Promise<void> => {
   const sharedProjectsPath = join(defaultConfigPath, "projects")
@@ -167,10 +161,6 @@ export const ensureSharedClaudeConversations = async (
   )
 }
 
-/// Skills (user-authored and Codevisor-managed) are installed once into the
-/// default profile's skills directory. A managed profile without its own
-/// skills entry links to it, so every account sees the same skills. An
-/// existing directory or link in the profile is the user's choice and stays.
 const installSharedSkillsLink = async (
   managedProfilePath: string,
   sharedSkillsPath: string
@@ -183,7 +173,6 @@ const installSharedSkillsLink = async (
     managedSkillsPath,
     process.platform === "win32" ? "junction" : "dir"
   ).catch((cause: unknown) => {
-    // Another process linked it first; that link is equivalent.
     if ((cause as { code?: unknown }).code !== "EEXIST") throw cause
   })
 }

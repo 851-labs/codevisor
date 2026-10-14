@@ -23,8 +23,6 @@ struct TranscriptPresentationClockTests {
     #expect(sixtyHertzRequests == 0)
     #expect(oneTwentyHertzRequests == 1)
 
-    // A surface appearing while a frame is pending must use the existing
-    // election, including an equal-speed clock on another display.
     for framesPerSecond in [30, 120] {
       var lateSurfaceRequests = 0
       let late = clock.registerDriver(maximumFramesPerSecond: framesPerSecond) {

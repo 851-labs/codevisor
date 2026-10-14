@@ -57,8 +57,6 @@ it("manages Grok's shared account through HTTP while preserving local overrides 
     profileKind: "default"
   })
   expect(context.env).toMatchObject({ XAI_API_KEY: key })
-  // Inherited OAuth state is removed, never blanked: Grok reads an empty
-  // `GROK_AUTH` as a supplied credential and then refuses to start sessions.
   expect(context.env).not.toHaveProperty("GROK_AUTH")
   expect(context.env).not.toHaveProperty("GROK_AUTH_PROVIDER_COMMAND")
   expect(context.unsetEnv).toEqual(

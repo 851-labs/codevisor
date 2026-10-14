@@ -27,14 +27,6 @@ private enum MacServerAgentError: LocalizedError, Sendable {
   }
 }
 
-/// Registers the bundled server with launchd. The service is per-user,
-/// relocatable with the signed app bundle, and survives app/UI restarts.
-///
-/// Every call into ServiceManagement runs under a deadline. The calls are
-/// synchronous XPC round trips to `smd`; one that never returns (seen right
-/// after a bundle swap) used to pin app startup for minutes with nothing in
-/// any log. Now it fails within `serviceCallTimeout`, and every outcome —
-/// status, register, unregister, timing — lands in the server timeline.
 @MainActor
 final class MacServerAgentController {
   nonisolated static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
@@ -44,8 +36,6 @@ final class MacServerAgentController {
   private let legacyJobs = LegacyServerJobRetirer()
   private let lifecycleLog = ServerLifecycleLog.default
 
-  // Constructed on demand (it is cheap) so each detached closure below can
-  // build its own instance instead of sending one across isolation domains.
   private nonisolated static var service: SMAppService {
     SMAppService.agent(plistName: plistName)
   }
@@ -63,14 +53,6 @@ final class MacServerAgentController {
     try await legacyJobs.retire()
   }
 
-  /// Runs one ServiceManagement call off the main actor under a deadline.
-  ///
-  /// Not a task group: a group waits for every child before it returns,
-  /// and a synchronous XPC call that never comes back cannot be cancelled —
-  /// the deadline would fire and then wait anyway. The call runs on a
-  /// detached task instead; whichever of it and the timer finishes first
-  /// resumes the caller. A call that returns after the deadline is logged
-  /// so the timeline shows how long macOS actually took.
   private nonisolated static func serviceCall<T: Sendable>(
     _ operation: String,
     _ body: @escaping @Sendable () async throws -> T
@@ -116,13 +98,8 @@ final class MacServerAgentController {
 
   func ensureRegistered() async throws {
     var clock = StepClock()
-    // SMAppService.status/register/unregister are synchronous XPC round
-    // trips to launchd/smd, so keep them off the main actor.
     let status = try await Self.serviceCall("status") { Self.service.status }
     lifecycleLog.note("launchd: status \(Self.describe(status)) (\(clock.lap()) ms)")
-    // This closure is reached only when no matching service is healthy.
-    // Re-register an enabled-but-dead job so launchd resolves BundleProgram
-    // against the app bundle that is running now, never an updater backup.
     if status == .requiresApproval { throw MacServerAgentError.requiresApproval }
     if status == .enabled {
       do {
@@ -141,9 +118,6 @@ final class MacServerAgentController {
       lifecycleLog.error("launchd: register failed: \(error) (\(clock.lap()) ms)")
       throw error
     }
-    // `register()` can return successfully while macOS leaves the item
-    // awaiting approval. Anything short of enabled is a failure the user
-    // must resolve; the app never silently runs a child server instead.
     let after = try await Self.serviceCall("status") { Self.service.status }
     lifecycleLog.note("launchd: status after register \(Self.describe(after)) (\(clock.lap()) ms)")
     switch after {
@@ -185,9 +159,6 @@ final class MacServerAgentController {
     throw MacServerAgentError.processDidNotStop
   }
 
-  /// Whether launchd has a live process for the job right now, via
-  /// `launchctl print` (the only public view of a job's pid). Nil when the
-  /// answer is unknown — launchctl hung or its output was unreadable.
   func isJobRunning() async -> Bool? {
     let target = "gui/\(getuid())/\(Self.jobLabel)"
     do {
@@ -218,8 +189,6 @@ final class MacServerAgentController {
     }
   }
 
-  /// Drains and stops the local server ahead of a bundle swap. `onStatus`
-  /// receives progress such as "Waiting for 2 chats to finish…".
   func prepareForAppUpdate(
     localServer: (any LocalServerControlling)?,
     onStatus: @escaping @MainActor (String) -> Void = { _ in }
@@ -244,9 +213,6 @@ final class MacServerAgentController {
   }
 }
 
-/// Resumes exactly one waiter with whichever result arrives first; later
-/// results report that they lost the race.
-/// Lock-protected, so usable from any thread (nonisolated despite the app's MainActor default).
 nonisolated private final class FirstOutcome<T: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
   private var continuation: CheckedContinuation<T, any Error>?
@@ -269,7 +235,6 @@ nonisolated private final class FirstOutcome<T: Sendable>: @unchecked Sendable {
     }
   }
 
-  /// True when this result is the one delivered to the waiter.
   func resume(with result: Result<T, any Error>) -> Bool {
     lock.lock()
     guard !resumed, pending == nil else {

@@ -1,7 +1,6 @@
 import CTreeSitter
 import Foundation
 
-/// Stateless host predicate interpretation over one copied match; no C handle ownership.
 enum TreeSitterPredicateEvaluator {
   private typealias Argument = TreeSitterPredicateCompiler.Argument
   private typealias Predicate = TreeSitterPredicateCompiler.Predicate

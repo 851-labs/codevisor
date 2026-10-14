@@ -1,6 +1,5 @@
 import Foundation
 
-/// Compiles and scores the ordered scope terms of one TextMate selector.
 struct TextMateScopeSelector: Sendable {
   let required: [String]
   let excluded: [String]
@@ -51,8 +50,6 @@ struct TextMateScopeSelector: Sendable {
   private func addSpecificity(for term: String, at matchIndex: Int, in stack: [String], to score: inout Int) {
     let componentCount = term.split(separator: ".").count
     score += componentCount * 100 + term.count
-    // A selector naming the leaf scope is more specific than one
-    // that only matches a parent scope.
     if matchIndex == stack.count - 1 { score += 10_000 }
   }
 

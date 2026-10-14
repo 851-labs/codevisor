@@ -109,9 +109,6 @@ describe("session configuration picks", () => {
       speed: "standard",
       tone: "brief"
     })
-    // The runtime's fallback never replaces the picks: they stay saved, and
-    // the ones it does not offer are reported as unavailable. An option the
-    // runtime lacks altogether is kept, and an earlier verdict on it stands.
     const { session: afterFallback } = (await jsonRequest(server, `/v1/sessions/${session.id}`))
       .body as { readonly session: SessionSummary }
     expect(afterFallback.configSelections).toEqual({
@@ -129,8 +126,6 @@ describe("session configuration picks", () => {
       "zzz-removed": "unavailable"
     })
 
-    // Picking the option answers its unavailable mark; a model pick also
-    // settles the options that depend on the model.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
@@ -191,8 +186,6 @@ describe("session configuration picks", () => {
     })
     expect(opened.status).toBe(200)
     expect((opened.body as { readonly configOptions: unknown }).configOptions).toEqual([])
-    // Nothing to validate against, so nothing is applied — and, above all,
-    // nothing is overwritten.
     expect(agents.configs).toEqual([])
     expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
@@ -226,7 +219,6 @@ describe("session configuration picks", () => {
       method: "POST"
     })
     expect(picked.status).toBe(202)
-    // No runtime snapshot exists yet, so there is nothing to reflect it onto.
     expect(picked.body).toEqual({ configId: "model", configOptions: [] })
     expect(agents.loads).toEqual([])
     expect(agents.configs).toEqual([])
@@ -235,11 +227,9 @@ describe("session configuration picks", () => {
       reasoning: "low"
     })
 
-    // The next connect applies the recorded pick against the live list.
     const restored = (
       await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
-    // The process starts on the saved picks rather than its default.
     expect(agents.startSelections).toEqual([{ model: "model-saved", reasoning: "low" }])
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "model-saved"]])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-saved")
@@ -259,14 +249,12 @@ describe("session configuration picks", () => {
     )
     const server = await startWithApp(services)
     runningServers.push(server)
-    // Connect once so a runtime snapshot is persisted, then retire the process.
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
     ).toBe(200)
     await run(services.agents.closeAgentSession("agent-session-config-closed"))
     agents.configs.splice(0)
 
-    // A drifted id lands on the entry the last known list offers.
     const picked = await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "model", value: "model-saved-legacy" }),
       method: "POST"
@@ -282,8 +270,6 @@ describe("session configuration picks", () => {
       "model-saved"
     )
 
-    // A value that list does not know is still the user's pick: the list may
-    // be stale, and the next restore judges it against the live runtime.
     await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "model", value: "model-next" }),
       method: "POST"
@@ -305,7 +291,6 @@ describe("session configuration picks", () => {
     )
     const server = await startWithApp(services)
     runningServers.push(server)
-    // A live pick leaves the runtime's own report of the chat's options.
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "model", value: "model-saved" }),
@@ -319,13 +304,10 @@ describe("session configuration picks", () => {
       method: "POST"
     })
 
-    // A client opening the chat now sees the pick, not the older report.
     const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
       readonly configOptions: ReadonlyArray<SessionConfigOption>
     }
     expect(configSelectionsFromTestOptions(runtime.configOptions).model).toBe("model-default")
-    // Clients that already have it open hear about both the options and the
-    // saved selection.
     const published = listSubjectEvents(services, session.id, since).map(
       (event) => event.payload as Record<string, unknown>
     )
@@ -358,8 +340,6 @@ describe("session configuration picks", () => {
     const server = await startWithApp(services)
     runningServers.push(server)
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    // The runtime once reported another model, and the chat's pick changed
-    // while it was gone.
     await agents.emit("agent-session-config-starts-on-saved", {
       kind: "session.updated",
       subjectId: "agent-session-config-starts-on-saved",
@@ -371,9 +351,7 @@ describe("session configuration picks", () => {
 
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
 
-    // Started on the pick, so nothing needed re-applying...
     expect(agents.configs).toEqual([])
-    // ...and what a client opening the chat sees is what is now running.
     const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
       readonly configOptions: ReadonlyArray<SessionConfigOption>
     }
@@ -388,7 +366,6 @@ describe("session configuration picks", () => {
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    // A snapshot that carries no option list is not an answer either.
     await run(services.db.saveSessionRuntimeState(session.id, { sessionId: "agent-none" }))
     const server = await startWithApp(services)
     runningServers.push(server)
@@ -427,7 +404,6 @@ describe("session configuration picks", () => {
       await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
 
-    // Already the runtime's value: nothing to send, and the saved id migrates.
     expect(agents.configs).toEqual([])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-default")
     expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe(

@@ -1,14 +1,9 @@
-// The AppKit/TextKit rendering layer. iOS uses the matching UIKit/TextKit
-// implementation in `SelectableTextView+UIKit.swift`.
 #if canImport(AppKit)
   import AppKit
   import QuickLookUI
   import QuartzCore
   import SwiftUI
 
-  /// A non-editable TextKit 1 text view whose display and measurement paths use
-  /// the same layout configuration. Unlike SwiftUI's `.textSelection`, enabling
-  /// selection never swaps the renderer or changes the view's line metrics.
   public struct SelectableTextView: NSViewRepresentable {
     fileprivate enum Content {
       case attributed(NSAttributedString)
@@ -101,10 +96,6 @@
         for: content,
         animation: streamingAnimation
       )
-      // A hosting-controller size probe can run before `updateNSView`
-      // has applied this value's text. Measure the text this probe was
-      // given, not whatever the view last displayed; `setContent` is a
-      // no-op for an unchanged string.
       nsView.setContent(
         prepared.text,
         latestAnimationEnd: prepared.latestAnimationEnd,

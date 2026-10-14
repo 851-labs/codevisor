@@ -7,8 +7,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - Mounting
-
 extension VirtualizedTranscriptScrollView {
   func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
     windowPlanner.plannedRange(
@@ -50,17 +48,11 @@ extension VirtualizedTranscriptScrollView {
       workStartedAt: mountStarted
     )
 
-    // Complete the closest directional runway rows one at a time. Mounting
-    // a collection of hosts before laying any of them out consumed the
-    // frame budget on root installation and left the nearest rows unable
-    // to present when momentum carried them into the viewport.
     prepareRunwayRowsEndToEnd(
       at: mountPlan.runwayIndices,
       workStartedAt: mountStarted,
       usesFrameBudget: usesFrameBudget
     )
-    // Rows from an abandoned intermediate target are neither the last
-    // complete window nor part of the window currently being prepared.
     if reconciliation.targetChanged {
       retireMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
     }
@@ -122,10 +114,6 @@ extension VirtualizedTranscriptScrollView {
     )
   }
 
-  /// A mounted runway is useful only after its SwiftUI/AppKit subtree has
-  /// completed first layout. Directional rows are prepared on display-link
-  /// frames even during live scrolling, but both the count and elapsed work
-  /// remain bounded. The viewport keeps its synchronous no-blank fallback.
   func prepareRunwayRowsEndToEnd(
     at indices: [Int],
     workStartedAt: CFTimeInterval,
@@ -171,8 +159,6 @@ extension VirtualizedTranscriptScrollView {
     guard virtualLayout.keys.indices.contains(index) else { return false }
     let key = virtualLayout.keys[index]
     if let host = mountedHosts[key] {
-      // A deferred placeholder keeps its clear root until its rows
-      // publish; forcing a layout would only measure that empty root.
       if requiresImmediatePresentation, !host.isPresentationReady,
         key != deferredActivePlaceholderKey
       {
@@ -194,8 +180,6 @@ extension VirtualizedTranscriptScrollView {
     observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
     mountedHosts[key] = host
-    // Position and push the content width before assigning the root view.
-    // Otherwise its first TextKit measurement can race the 1pt placeholder.
     position(host: host, at: index)
     host.syncContentWidth()
     if defersActivePlaceholderPresentation(for: row) {
@@ -224,17 +208,11 @@ extension VirtualizedTranscriptScrollView {
     return true
   }
 
-  /// Whether `row` is the aggregate active placeholder that the pending
-  /// first active projection is about to replace, while the document is
-  /// still hidden behind the initial presentation gate.
   func defersActivePlaceholderPresentation(for row: TranscriptVirtualRow) -> Bool {
     guard case .active = row.id else { return false }
     return isAwaitingFirstActiveProjection && !initialPresentationGate.isReady
   }
 
-  /// Gives a deferred placeholder its real content once the first active
-  /// projection has published but left the aggregate row in place (an item
-  /// that projects to no precise rows yet).
   func presentDeferredActivePlaceholderIfNeeded() {
     guard let key = deferredActivePlaceholderKey, !isAwaitingFirstActiveProjection else { return }
     deferredActivePlaceholderKey = nil
@@ -314,9 +292,6 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func retireMountedHosts(excluding retainedKeys: Set<String>) {
-    // Rows mid-shift are drawn where the send's springs put them, not at
-    // their model frames. Retiring one by model position would blank it
-    // mid-motion; the next pass after the springs settle reconciles.
     guard !sendTransitions.isAnimatingRows else {
       requestMountedRowsUpdateAfterSendTransition()
       return
@@ -325,10 +300,6 @@ extension VirtualizedTranscriptScrollView {
     retireMountedHosts(withKeys: obsoleteKeys)
   }
 
-  /// Row-set removals are authoritative and cannot wait for the virtual
-  /// window handoff. The handoff prunes invalid keys before its ordinary
-  /// retirement pass, so leaving these hosts mounted would keep their pixels
-  /// visible after disclosure geometry closes underneath them.
   func retireRemovedMountedHosts(
     previousRowsByKey: [String: TranscriptVirtualRow]
   ) {
@@ -353,9 +324,6 @@ extension VirtualizedTranscriptScrollView {
     let animatedKeys = Set(automaticGroups.flatMap { $0 })
 
     if !animatedKeys.isEmpty {
-      // Automatic settlement must keep following through the final row
-      // measurements. Only a reader parked in history needs the temporary
-      // fixed viewport used by the collapse presentation.
       if !followsLatest {
         beginDisclosureViewportAnchor()
       }
@@ -421,10 +389,6 @@ extension VirtualizedTranscriptScrollView {
     var replacementKeys: [String] = []
     for (key, host) in mountedHosts {
       guard let row = rowByKey[key] else { continue }
-      // The deferred placeholder is refreshed by
-      // `presentDeferredActivePlaceholderIfNeeded` once its rows publish.
-      // Re-installing the aggregate root here would hand the late
-      // presentation path the full item to lay out before the reveal.
       if key == deferredActivePlaceholderKey { continue }
       if let previousRowsByKey {
         guard let previous = previousRowsByKey[key],
@@ -475,10 +439,6 @@ extension VirtualizedTranscriptScrollView {
     refreshFindHighlightsIfNeeded()
   }
 
-  /// A response becoming settled is a data transition, not a new visual
-  /// stream. Keep its already-mounted SwiftUI/TextKit host until it naturally
-  /// leaves the virtual window; a later settled remount can use the cheaper
-  /// native settled host without interrupting the final entrance animation.
   func preservesLiveMarkdownHost(
     host: TranscriptMountedRowHost,
     previous: TranscriptVirtualRow?,

@@ -38,7 +38,6 @@ describe("session resume", () => {
     channel.onClosed = (reason) => closes.push(reason)
 
     socket.onclose?.(1006)
-    // Suspended, not dead: sends keep sealing into the retention buffer.
     channel.send({ output: "during-gap-1" })
     channel.send({ output: "during-gap-2" })
     expect(closes).toEqual([])
@@ -56,7 +55,6 @@ describe("session resume", () => {
       resume: "tok-2",
       resumed: true
     })
-    // The retained backlog replays on the new socket, in order.
     const frames = revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data")
     expect(frames.map((envelope) => envelope.header.frame.seq)).toEqual([0, 1])
     expect(openJson(opened.cipher, "ch-1", "responder-to-opener", 1, frames[1]!.payload)).toEqual({
@@ -64,12 +62,10 @@ describe("session resume", () => {
     })
     expect(closes).toEqual([])
 
-    // The channel keeps flowing with continuous seqs.
     channel.send({ output: "after-resume" })
     expect(
       revived.sentRelay.findLast((envelope) => envelope.header.frame.t === "data")!.header.frame.seq
     ).toEqual(2)
-    // Observability: both welcomes reported, with the resume attributed.
     expect(h.welcomes).toEqual([
       { resumed: false, replayedFrames: 0 },
       { resumed: true, replayedFrames: 2 }
@@ -82,14 +78,12 @@ describe("session resume", () => {
     const { opened } = openEcho(socket, "peer-1", "ch-1")
     const channel = h.channels[0]!
 
-    // Frames still sitting in the coalescing window when the socket dies...
     channel.send({ output: "unflushed" })
     expect(socket.relayMessages).toHaveLength(0)
     const flushTimer = activeTimeout(h, 5)
     socket.onclose?.(1006)
     flushTimer.invoke()
 
-    // ...survive the gap and replay after the resumed welcome.
     h.reconnects[0]!.callback()
     const revived = h.sockets.at(-1)!
     revived.onopen?.()
@@ -128,7 +122,6 @@ describe("session resume", () => {
     })
 
     expect(closes).toEqual(["peer-gone"])
-    // The retained backlog referenced dead peer ids; nothing replays.
     expect(revived.sentRelay).toHaveLength(0)
   })
 
@@ -153,7 +146,6 @@ describe("session resume", () => {
     }
     expect(closes).toEqual(["peer-gone"])
 
-    // The next welcome is treated as fresh (resume state was discarded).
     h.reconnects[0]!.callback()
     const revived = h.sockets.at(-1)!
     revived.onopen?.()
@@ -162,8 +154,6 @@ describe("session resume", () => {
   })
 
   it("answers pre-welcome relay frames on the young socket", () => {
-    // No resume state and not yet welcomed: refusals go straight out on the
-    // fresh socket rather than into a retention buffer.
     const h = harness()
     h.connection.start()
     const socket = h.sockets[0]!
@@ -205,7 +195,6 @@ describe("peer key pinning", () => {
     expect(pins.get("app-1")).toBe(first.appKeys.publicKey)
     expect(persisted).toEqual([{ "app-1": first.appKeys.publicKey }])
 
-    // The same device re-opening with its pinned key stays welcome.
     openEcho(
       socket,
       "peer-1",
@@ -218,8 +207,6 @@ describe("peer key pinning", () => {
     )
     expect(h.channels).toHaveLength(2)
 
-    // A different key under the pinned device id is a substitution: refused
-    // before any key agreement, and reported.
     const attacker = generateDeviceKeyPair()
     openEcho(
       socket,
@@ -253,8 +240,6 @@ describe("peer key pinning", () => {
     const h = harness({ peerKeyPins: pins })
     const socket = connect(h)
 
-    // The presented public key does not match the sealing secret: the sealed
-    // payload cannot decrypt, so nothing gets pinned for the device.
     const sealer = generateDeviceKeyPair()
     const presented = generateDeviceKeyPair()
     const opened = openChannel(sealer.secretKey, machineKeys.publicKey)
@@ -270,7 +255,6 @@ describe("peer key pinning", () => {
     expect(socket.lastClose()).toMatchObject({ t: "close", reason: "crypto-error" })
     expect(pins.get("app-1")).toBeUndefined()
 
-    // The legitimate device can still establish its pin afterwards.
     const legit = openEcho(socket, "peer-1", "ch-2", { hello: true }, { peerDeviceId: "app-1" })
     expect(h.channels).toHaveLength(1)
     expect(pins.get("app-1")).toBe(legit.appKeys.publicKey)

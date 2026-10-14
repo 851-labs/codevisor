@@ -81,9 +81,6 @@ export const makeSessionWorkspacesService = (
         const targetWorkspaceId = workspaceId == null ? null : canonicalUuid(workspaceId)
         sqlite.transaction(() => {
           writeSessionMembership(sqlite, id, targetWorkspaceId, sessionId)
-          // Membership and the chat's pane move together. Detaching deletes
-          // the pane; a workspace left without panes is a valid state that
-          // clients render with their own local empty page.
           if (targetWorkspaceId === null) {
             removeSessionPane(sqlite, id)
             return
@@ -93,8 +90,6 @@ export const makeSessionWorkspacesService = (
               "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
             )
             .get(id) as { readonly id: string; readonly workspace_id: string } | undefined
-          // Opening a chat restates its workspace; a pane already there keeps
-          // its tab slot instead of moving to the end.
           if (existing?.workspace_id === targetWorkspaceId) return
           if (existing !== undefined) {
             moveSessionPane(sqlite, targetWorkspaceId, existing)

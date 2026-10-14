@@ -1,7 +1,5 @@
 import Foundation
 
-/// ASCII hex positions, compared identically by Swift, JavaScript and SQLite.
-/// The creation prefix reserves space above manual moves for new workspaces.
 public enum WorkspacePosition {
   private static let epochMax: Int64 = 0xffffffffffff
   private static let digits = Array("0123456789abcdef".utf8)
@@ -23,13 +21,10 @@ public enum WorkspacePosition {
       + "8" + id.uuidString.lowercased().replacingOccurrences(of: "-", with: "") + "8"
   }
 
-  /// The suffix makes concurrent moves into the same gap independently
-  /// addressable. Future moves can insert between their complete keys.
   public static func between(_ lower: String?, _ upper: String?, id: UUID) -> String? {
     guard lower.map(isValid) ?? true, upper.map(isValid) ?? true,
       lower == nil || upper == nil || lower! < upper!
     else { return nil }
-    // Prepending stays within the newest observed creation generation.
     let a = Array((lower ?? String(upper?.prefix(12) ?? "ffffffffffff")).utf8)
     var b = upper.map { Array($0.utf8) }
     var result: [UInt8] = []
@@ -50,8 +45,6 @@ public enum WorkspacePosition {
   }
 }
 
-/// Shares the observed creation frontier across a client's machine transports.
-/// It carries only a position hint; servers assign identities exactly once.
 public final class WorkspaceOrderClock: @unchecked Sendable {
   public static let shared = WorkspaceOrderClock()
   private let lock = NSLock()

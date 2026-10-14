@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Shared naming sheet for the macOS and iOS remote project browsers.
-/// Creation errors stay inline so a failed request never discards the name.
 public struct NewRemoteFolderSheet: View {
   @Environment(\.dismiss) private var dismiss
 

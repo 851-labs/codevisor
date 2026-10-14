@@ -1,7 +1,5 @@
 import Foundation
 
-/// WebRTC uses Annex B; VideoToolbox uses big-endian length-prefixed NALs.
-/// Keep framing validation independent of the hardware codec.
 enum NALUnitBitstream {
   static let maximumFrameBytes = 16 * 1024 * 1024
 

@@ -32,15 +32,12 @@ struct CloudHubConnectionTests {
     await hub.setMachinesChangedHandler { recorder.record($0) }
 
     try await hub.waitUntilReady()
-    // The welcome roster is a change from empty.
     #expect(
       await waitUntil {
         recorder.snapshots.contains { $0.map(\.deviceId) == [machine.deviceId] }
       }
     )
 
-    // A machine signed in elsewhere arrives as a presence push — the
-    // handler must see it appended, never waiting for a poll.
     scripted.presenceToApp(testMachine("just-signed-in"))
     #expect(
       await waitUntil {
@@ -50,7 +47,6 @@ struct CloudHubConnectionTests {
       }
     )
 
-    // A presence transition for a known machine updates it in place.
     var offline = machine.presence
     offline.online = false
     scripted.presenceToApp(offline)
@@ -62,7 +58,6 @@ struct CloudHubConnectionTests {
   @Test("An answered keepalive keeps the hub socket past the pong deadline")
   func answeredKeepaliveKeepsSocket() async throws {
     let scripted = ScriptedCloudHub()
-    // The test answers the ping itself, once the pong deadline is armed.
     scripted.respondsToPing = false
     let transport = FakeWebSocketTransport { _ in scripted.socket }
     let clock = TestClock()
@@ -88,8 +83,6 @@ struct CloudHubConnectionTests {
     await scripted.socket.drain()
     await clock.waitForSleep(.seconds(30), count: 2)
 
-    // The pong disarmed the deadline: only the next heartbeat is pending,
-    // so advancing past the deadline cannot tear the socket down.
     #expect(clock.pendingCount == 1)
     clock.advance(by: .seconds(10))
     #expect(scripted.socket.cancelled.value == 0)
@@ -154,11 +147,6 @@ struct CloudHubConnectionTests {
 
   @Test("Tokens with query-hostile characters are strictly percent-encoded")
   func connectURLEncodesToken() async throws {
-    // Session tokens are base64 with "+", "/" and "=". URLComponents
-    // leaves those literal, but the hub decodes the query per the WHATWG
-    // standard where "+" is a space — the token must arrive fully encoded
-    // or the hub authenticates the wrong session (see the app joining a
-    // stale cookie's account instead of its own).
     let scripted = ScriptedCloudHub()
     let transport = FakeWebSocketTransport { _ in scripted.socket }
     let store = InMemoryCloudCredentialStore(token: "a+b/c=.d+e=")
@@ -181,7 +169,6 @@ struct CloudHubConnectionTests {
   }
 }
 
-/// Thread-safe capture of every machine list the changed handler delivers.
 @Observable
 private final class MachineListRecorder: @unchecked Sendable {
   private let lock = NSLock()

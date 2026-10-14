@@ -1,22 +1,15 @@
 import Foundation
 
-/// Everything navigation shows, derived in one place from three inputs: the
-/// cached server state of every machine, the outbox's waiting requests laid
-/// over it, and this device's own layouts and drafts.
 public struct NavigationProjection: Sendable {
   public var projects: [Project] = []
   public var sessions: [ChatSession] = []
   public var workspaces: [Workspace] = []
   public var workspacesById: [UUID: Workspace] = [:]
-  /// The workspace each chat belongs to: the server's assignment, or for a
-  /// chat the server hasn't placed, the workspace whose layout shows it.
   public var sessionIndex: [UUID: UUID] = [:]
 
   public static let empty = NavigationProjection()
 }
 
-/// Maps records into workspaces. `NavigationProjector` decides which ones
-/// need mapping; these only build them.
 enum NavigationProjectionBuilder {
   static func workspace(
     from record: ServerWorkspace, machineId: String, worktreeName: String?

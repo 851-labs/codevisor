@@ -11,8 +11,6 @@ import SwiftUI
   public typealias MarkdownPlatformImage = UIImage
 #endif
 
-/// Immutable decoded pixels. The identity includes the host's file version and
-/// namespace, so render caches cannot mix identical paths from different servers.
 public struct MarkdownImage: Hashable, @unchecked Sendable {
   public let image: MarkdownPlatformImage
   public let id: String
@@ -31,8 +29,6 @@ enum MarkdownImageResource: Hashable, Sendable {
   case unavailable
 }
 
-/// A host supplies authenticated local/attachment loading; standalone Markdown
-/// can load ordinary HTTP images through the default provider.
 public final class MarkdownImageLoader: Sendable {
   public let id: String
   private let fetch: @MainActor @Sendable (String) async -> MarkdownImage?

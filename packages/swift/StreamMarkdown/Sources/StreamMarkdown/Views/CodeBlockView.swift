@@ -6,11 +6,6 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Renders a fenced code block with a language label and a copy button.
-/// While streaming (`isComplete == false`) a subtle progress indicator shows.
-/// When the theme provides a `codeHighlighter`, plain text renders first and
-/// the highlighted version swaps in as it resolves (debounced mid-stream so
-/// large blocks don't re-tokenize on every chunk).
 struct CodeBlockView: View {
   let id: String
   let language: String?
@@ -21,16 +16,9 @@ struct CodeBlockView: View {
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
   @State private var highlighted: CodeHighlightSnapshot?
-  /// Memoizes the plain-text fallback: `AttributedString(code)` in `body`
-  /// re-allocated attributed storage for the entire block on every body
-  /// evaluation — for a streaming block, every ~16ms flush.
   @State private var plainMemo = PlainCodeMemo()
   @State private var usesPreparedLayout: Bool
   #if canImport(AppKit) || canImport(UIKit)
-    /// Memoizes the native NSAttributedString conversion: the run-by-run
-    /// rebuild is O(tokens) on the main thread and `body` re-evaluates on
-    /// every layout/measurement pass, so the same settled block re-converted
-    /// repeatedly while scrolling.
     @State private var nativeMemo = NativeCodeMemo()
   #endif
 
@@ -61,8 +49,6 @@ struct CodeBlockView: View {
           Label {
             Text(didCopy ? "Copied" : "Copy")
           } icon: {
-            // Fixed box: the two glyphs have different intrinsic
-            // heights, which would otherwise resize the header.
             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
               .frame(width: 13, height: 13)
           }
@@ -118,10 +104,7 @@ struct CodeBlockView: View {
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .task(id: highlightTaskKey) {
       guard let highlighter = theme.codeHighlighter else { return }
-      // Already rendered synchronously from the shared cache.
       if settledCacheProbe != nil { return }
-      // Mid-stream, wait out further chunks before re-tokenizing; the
-      // task(id:) cancellation makes this a trailing-edge debounce.
       if !isComplete {
         try? await Task.sleep(for: .milliseconds(150))
         if Task.isCancelled { return }
@@ -133,8 +116,6 @@ struct CodeBlockView: View {
         isComplete: isComplete
       )
       if let result = await highlighter(request), !Task.isCancelled {
-        // Only settled blocks enter the shared cache: mid-stream
-        // texts change every flush and would churn the LRU.
         if isComplete {
           CodeHighlightResultCache.shared.store(result, for: resultCacheKey)
         }
@@ -155,9 +136,6 @@ struct CodeBlockView: View {
       ?? plainMemo.attributed(for: code)
   }
 
-  /// The shared-cache lookup, gated on `isComplete`: only settled blocks are
-  /// ever stored, so a mid-stream probe is a guaranteed miss that still
-  /// hashes the whole growing code string — on every body evaluation.
   private var settledCacheProbe: AttributedString? {
     isComplete ? CodeHighlightResultCache.shared.value(for: resultCacheKey) : nil
   }
@@ -167,8 +145,6 @@ struct CodeBlockView: View {
     let isComplete: Bool
   }
 
-  // Same-length replacements also need highlighting. String equality uses
-  // shared storage between unchanged view evaluations.
   private var highlightTaskKey: HighlightTaskKey {
     HighlightTaskKey(result: resultCacheKey, isComplete: isComplete)
   }
@@ -181,8 +157,6 @@ struct CodeBlockView: View {
       UIPasteboard.general.string = code
     #endif
     didCopy = true
-    // Flash the confirmation, then settle back to "Copy" (matching the
-    // transcript's MessageCopyButton). Re-copying restarts the timer.
     copyResetTask?.cancel()
     copyResetTask = Task {
       try? await Task.sleep(for: .seconds(1.5))
@@ -194,10 +168,6 @@ struct CodeBlockView: View {
 }
 
 #if canImport(AppKit) || canImport(UIKit)
-  /// Last-value memo for the native attributed-text conversion. Plain class in
-  /// `@State`: non-observable, and the `AttributedString` comparison is cheap
-  /// between evaluations that share storage — it does real work only when the
-  /// highlighted text, Dynamic Type size, or theme foreground actually changes.
   @MainActor
   private final class NativeCodeMemo {
     private var text: AttributedString?
@@ -240,10 +210,6 @@ struct CodeBlockView: View {
 #endif
 
 #if canImport(AppKit)
-  /// A horizontal-only code scroller that hands vertical trackpad gestures to
-  /// the transcript. SwiftUI's horizontal `ScrollView` consumes both axes on
-  /// macOS, so merely moving the pointer over a code block could stop the outer
-  /// conversation mid-scroll.
   private struct HorizontalCodeScrollView: NSViewRepresentable {
     let text: AttributedString
     let foreground: Color
@@ -347,10 +313,6 @@ struct CodeBlockView: View {
   }
 #endif
 
-/// Last-value memo for the un-highlighted fallback text. Plain class in
-/// `@State`: non-observable, and the `code` comparison is O(1) between
-/// flushes (same String storage) — it does real work only when the block
-/// actually grows.
 @MainActor
 private final class PlainCodeMemo {
   private var code: String?

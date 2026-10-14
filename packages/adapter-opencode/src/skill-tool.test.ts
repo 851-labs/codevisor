@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import { makeOpenCodeExtension } from "./extension.js"
 import { skillReadUpdate, withSkillRead } from "./skill-tool.js"
 
-/// OpenCode's skill tool output, as `packages/opencode/src/tool/skill.ts` builds it.
 const wrapped = [
   '<skill_content name="tophat">',
   "# Skill: tophat",
@@ -70,7 +69,6 @@ describe("OpenCode's skill tool", () => {
       rawOutput: "# Tophat\n\nRun the change.",
       _meta: { other: true, ...skill("tophat") }
     })
-    // An output without its trailer still loses the wrapper.
     const bare = skillReadUpdate({
       sessionUpdate: "tool_call_update",
       status: "completed",

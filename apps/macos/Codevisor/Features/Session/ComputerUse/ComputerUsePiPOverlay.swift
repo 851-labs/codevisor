@@ -1,6 +1,3 @@
-//  The floating card over a chat that shows what its agent is controlling:
-//  an app through Computer Use, or a browser tab through Browser Use.
-
 import AppKit
 import CodevisorCoreMac
 import SwiftUI
@@ -8,22 +5,16 @@ import SwiftUI
 struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
   @State private var model: Model
   @State private var isHovering = false
-  /// The pointer's offset from the card's resting corner while dragging.
   @State private var dragOffset: CGSize = .zero
-  /// The area while a resize handle is being dragged, and the size the
-  /// card had when that drag began.
   @State private var liveArea: CGFloat?
   @State private var resizeStartSize: CGSize?
   @Environment(\.displayScale) private var displayScale
   private let isTurnRunning: Bool
-  /// Height of the floating composer, so bottom corners sit above it.
   private let composerHeight: CGFloat
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static var coordinateSpace: String { "computer-use-pip-pane" }
 
-  /// `model` is adopted on first appearance; later values are ignored, as
-  /// with any `@State`, so give the card a stable `id`.
   init(model: @autoclosure () -> Model, isTurnRunning: Bool, composerHeight: CGFloat) {
     _model = State(wrappedValue: model())
     self.isTurnRunning = isTurnRunning
@@ -34,7 +25,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     GeometryReader { geometry in
       let insets = ComputerUseLivePreviewLayout.insets(composerHeight: composerHeight)
       ZStack(alignment: .topLeading) {
-        // Fills the pane without taking clicks; only the card is interactive.
         Color.clear.allowsHitTesting(false)
         if model.isVisible, let viewer = model.viewer {
           let aspect = aspect(viewer: viewer)
@@ -43,16 +33,12 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
             corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
           card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
             .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
-            // Over the card but outside its drag and tap, so a click on the
-            // close button that wobbles a few points still closes it, and
-            // never falls through to showing the target app.
             .overlay(alignment: .topLeading) { closeControl }
             .onHover { isHovering = $0 }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Live view of \(model.title) controlled by the agent")
             .accessibilityAction(.default) { model.activateTarget() }
-            // A refreshed viewer is a new surface: rebuild the card around it.
             .id(ObjectIdentifier(viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
             .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
@@ -68,9 +54,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     .onDisappear { model.teardown() }
   }
 
-  /// The streamed window's width ÷ height, or a landscape default before
-  /// the first frame arrives. The window, not the frame: the frame pads the
-  /// window by a pixel or two, which the card trims.
   private func aspect(viewer: ComputerUseLivePreviewViewer) -> CGFloat {
     guard let frame = viewer.frameSize, frame.width > 0, frame.height > 0 else { return 16.0 / 10.0 }
     let content = viewer.windowContent?.rect.size ?? CGSize(width: 1, height: 1)
@@ -91,9 +74,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     )
   }
 
-  /// Thin zones along each edge and corner that resize the card, with the
-  /// native frame-resize pointer. The card stays anchored to its corner, so
-  /// dragging any handle outward grows it away from that corner.
   private func resizeHandles(
     size: CGSize,
     aspect: CGFloat,
@@ -125,15 +105,12 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
       }
     }
     .frame(width: size.width, height: size.height, alignment: .topLeading)
-    // The capture follows the size the card settles at, not every drag step.
     .onChange(of: resizeStartSize == nil ? size : nil) { _, settled in
       if let settled { viewer.setDisplaySize(settled, backingScale: displayScale) }
     }
     .onAppear { viewer.setDisplaySize(size, backingScale: displayScale) }
   }
 
-  /// Follows the pointer 1:1, then settles in the corner the release is
-  /// heading for, so a flick carries the card across the pane.
   private func dragGesture(
     cardSize: CGSize,
     origin: CGPoint,
@@ -158,13 +135,10 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
       }
   }
 
-  /// How the card settles into a corner, after a drag or from the menu.
   private var snapAnimation: Animation? {
     reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)
   }
 
-  /// Right-click and control-click. Controls the card only; stopping the
-  /// agent stays in the menu bar.
   private var contextMenu: some View {
     let model = model
     let snap = snapAnimation
@@ -186,7 +160,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     .equatable()
   }
 
-  /// The on-screen pointer scaled by the card's zoom of the window.
   private func cursorScale(cardWidth: CGFloat) -> CGFloat {
     ComputerUseLivePreviewLayout.cursorScale(
       cardWidth: cardWidth, windowWidth: model.cursorWindowWidth)
@@ -197,8 +170,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     size: CGSize,
     resizeHandles: some View
   ) -> some View {
-    // The window's own corners, scaled with the card, so the stream's
-    // rounded corners meet the card's rather than showing black wedges.
     let shape = RoundedRectangle(
       cornerRadius: ComputerUseLivePreviewLayout.cardCornerRadius(
         radiusFraction: viewer.windowContent?.cornerRadiusFraction, cardSize: size),
@@ -210,7 +181,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
       ComputerUsePiPSurface(viewer: viewer)
         .frame(width: surface.width, height: surface.height)
         .offset(x: surface.minX, y: surface.minY)
-        // Overhangs the card by the padding; keeps the card's own size.
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .opacity(model.isLive ? 1 : 0.55)
       if let cursor = model.cursor {
@@ -234,20 +204,14 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     .frame(width: size.width, height: size.height)
     .background(.black)
     .clipShape(shape)
-    // Like native PiP, no outline: the shadow alone lifts the card.
     .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     .contentShape(shape)
-    // Outside the rounded content shape, so the corner handles reach the
-    // card's square corners rather than stopping at the curve.
     .overlay(alignment: .topLeading) { resizeHandles }
     .onTapGesture { model.activateTarget() }
     .contextMenu { contextMenu }
     .help(model.canActivateTarget ? "Show \(model.title)" : model.title)
   }
 
-  /// Native PiP's control: hidden until hover, then a glass close button.
-  /// It takes clicks even when hidden: a pointer resting on it while the
-  /// card moved or resized underneath can leave the hover state stale.
   private var closeControl: some View {
     closeButton
       .padding(8)
@@ -271,7 +235,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
   }
 }
 
-/// Hosts the viewer's stable container; the viewer is detached by its model.
 private struct ComputerUsePiPSurface: NSViewRepresentable {
   let viewer: ComputerUseLivePreviewViewer
 
@@ -302,7 +265,6 @@ extension ComputerUseLivePreviewCorner {
     }
   }
 
-  /// The card grows out of, and shrinks into, its own corner.
   fileprivate var unitPoint: UnitPoint {
     switch self {
     case .topLeading: .topLeading
@@ -317,8 +279,6 @@ extension ComputerUseLivePreviewResizeHandle {
   private static let edgeThickness: CGFloat = 6
   private static let cornerLength: CGFloat = 14
 
-  /// Where the handle's hit zone sits within a card of `size`, top-left
-  /// origin. Edges leave the corners to the corner handles.
   fileprivate func zone(in size: CGSize) -> CGRect {
     let edge = Self.edgeThickness
     let corner = Self.cornerLength
@@ -351,10 +311,6 @@ extension ComputerUseLivePreviewResizeHandle {
   }
 }
 
-/// The card's context menu, built from plain values rather than the model.
-/// The card re-renders with every streamed frame, and rebuilding the menu
-/// that often closes an open submenu, so it redraws only when what it shows
-/// changes.
 private struct ComputerUsePiPContextMenu: View, Equatable {
   struct Actions {
     let activateTarget: @MainActor () -> Void
@@ -400,7 +356,6 @@ private struct ComputerUsePiPContextMenu: View, Equatable {
     Button(action: actions.close) { label("Close", "xmark") }
   }
 
-  /// macOS menus drop a label's icon unless the style asks for it.
   private func label(_ title: String, _ systemImage: String) -> some View {
     Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }

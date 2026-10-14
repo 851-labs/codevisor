@@ -1,18 +1,10 @@
 import Foundation
 
-/// What a review compares the working state against. Raw values are the
-/// server's `mode` query values.
 public enum ServerGitDiffMode: String, Codable, CaseIterable, Sendable {
-  /// Everything on this branch since it left the base branch, including
-  /// uncommitted and untracked work — what a pull request would show.
   case branch
-  /// HEAD against the working tree, untracked files included.
   case uncommitted
-  /// HEAD against the index.
   case staged
-  /// The index against the working tree, untracked files included.
   case unstaged
-  /// The working tree when the latest agent turn started against now.
   case lastTurn
 }
 
@@ -26,16 +18,10 @@ public struct ServerGitDiffFile: Codable, Equatable, Sendable, Identifiable {
   }
 
   public var id: String { path }
-  /// Repository-relative. Deletions carry the removed path.
   public let path: String
-  /// Renames only.
   public let oldPath: String?
   public let status: Status
-  /// Identifies exactly this change (both sides' blob ids); per-file review
-  /// state keys on it so it lapses when the file changes. Nil from servers
-  /// that predate it.
   public let fingerprint: String?
-  /// Nil when the side doesn't exist or the content was omitted.
   public let oldText: String?
   public let newText: String?
   public let omitted: Omission?
@@ -62,14 +48,10 @@ public struct ServerGitDiffFile: Codable, Equatable, Sendable, Identifiable {
 public struct ServerGitDiff: Codable, Equatable, Sendable {
   public let mode: ServerGitDiffMode
   public let repositoryRoot: String
-  /// Branch mode: the base ref the server actually compared against.
   public let base: String?
   public let files: [ServerGitDiffFile]
   public let truncated: Bool
-  /// Identifies exactly what was compared; send it back to poll cheaply.
-  /// Nil from servers that predate polling.
   public let revision: String?
-  /// The request's revision is still current: `files` is empty, not resent.
   public let unchanged: Bool?
 
   public init(
@@ -103,9 +85,7 @@ public struct ServerGitRefs: Codable, Equatable, Sendable {
     }
   }
 
-  /// Nil when HEAD is detached.
   public let currentBranch: String?
-  /// The repository's conventional base (`origin/main`, …), if one resolves.
   public let defaultBase: String?
   public let branches: [Branch]
 
@@ -116,7 +96,6 @@ public struct ServerGitRefs: Codable, Equatable, Sendable {
   }
 }
 
-/// The current branch's pull request, as the machine's `gh` reports it.
 public struct ServerGitPullRequest: Codable, Equatable, Hashable, Sendable {
   public enum State: String, Codable, Sendable {
     case open
@@ -124,8 +103,6 @@ public struct ServerGitPullRequest: Codable, Equatable, Hashable, Sendable {
     case merged
   }
 
-  /// The pull request's checks rolled up: any failure wins, then anything
-  /// still running.
   public enum Checks: String, Codable, Sendable {
     case passing
     case failing
@@ -153,7 +130,6 @@ public struct ServerGitPullRequest: Codable, Equatable, Hashable, Sendable {
     case number, title, state, isDraft, url, checks
   }
 
-  /// Servers that predate check rollups omit `checks`.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     number = try container.decode(Int.self, forKey: .number)
@@ -198,8 +174,6 @@ extension CodevisorServerClient {
     var components = URLComponents()
     components.path = endpoint
     components.queryItems = items
-    // URLComponents leaves "+" literal, which URLSearchParams reads as a
-    // space; branch names and paths may legitimately contain one.
     components.percentEncodedQuery = components.percentEncodedQuery?
       .replacingOccurrences(of: "+", with: "%2B")
     guard let value = components.string else { throw CodevisorServerClientError.invalidURL(endpoint) }

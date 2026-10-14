@@ -2,7 +2,6 @@ import Testing
 
 @testable import CodevisorCoreMac
 
-/// 851-2482: the physical display is captured scaled to fit 2560×1440, keeping its shape.
 struct ScreenSharingHostCaptureSizeTests {
   @Test func displaysAreScaledToFitTheBoxAsAWhole() {
     let fit = ScreenSharingHostService.physicalCaptureSize

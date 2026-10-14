@@ -5,12 +5,6 @@ import Foundation
 import Sparkle
 import os
 
-/// Owns Sparkle for the lifetime of the app and adapts its native updater to
-/// the observable model behind Settings › Updates. Sparkle never shows its
-/// own windows: checks report into the model, and an install — whether the
-/// user clicked Update here or a remote client asked this machine's server
-/// to update — runs as one headless download → drain → install → relaunch
-/// session with progress in the model.
 @MainActor
 final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   private let model: AppUpdateModel
@@ -19,23 +13,10 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   private let instanceLease: AppInstanceLease
   private var updater: SPUUpdater!
   private var driver: HeadlessUserDriver!
-  /// A helper inherits the app's singleton lock immediately before Sparkle
-  /// takes over. It outlives this process and releases after the new bundle
-  /// version is visible.
   private var updateLeaseHandoff: AppUpdateLeaseHandoff?
-  /// True from an install's arming until it reports an outcome. Guards the
-  /// handoff status writes a remote client polls through the server.
   private var installSessionActive = false
-  /// The local server has been drained (and possibly stopped) for the
-  /// install in flight; an abort after this point must bring it back.
   private var serverPreparedForUpdate = false
-  /// The build Sparkle is installing in the active session (its
-  /// `sparkle:version`). Sparkle may resume an update it downloaded
-  /// earlier rather than the feed's newest item, so a remote client
-  /// converges on this build, not on the one it asked for.
   private var installTargetBuild: Int?
-  /// Sparkle reports every downloaded chunk; only visible progress changes
-  /// reach the model and the handoff file.
   private var progressThrottle = AppUpdateProgressThrottle()
 
   init(
@@ -49,9 +30,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     self.serverAgent = serverAgent
     self.instanceLease = instanceLease
     super.init()
-    // A raw SPUUpdater with a headless driver instead of
-    // SPUStandardUpdaterController: the app's own Updates page is the
-    // only update UI.
     driver = HeadlessUserDriver()
     driver.onProgress = { [weak self] progress in
       self?.report(progress)
@@ -67,20 +45,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     } catch {
       model.reportFailure(error.localizedDescription)
     }
-    // The update center's sweep checks this app on the same cadence as
-    // every other machine; Sparkle's own (daily) schedule would be a
-    // second, slower clock. Set in code as well as Info.plist so installs
-    // that persisted the old preference follow the single schedule too.
     updater.automaticallyChecksForUpdates = false
-    // A fresh boot is the success path of an install (the relaunched app
-    // IS the update): drop any stale handoff report, and re-assert this
-    // machine's release channel for the bundled server — it answers
-    // /v1/update from this preference, never a client's.
-    // Handoff files are written on their own queue, never the main thread.
     AppUpdateHandoff.enqueueClearStatus()
     AppUpdateHandoff.enqueueChannel(allowsAlpha: model.allowsAlphaUpdates)
-    // The server's update check reads the feed Sparkle will install from:
-    // one document decides what "latest" means on this machine.
     if let feedURL = feedURLString(for: updater) {
       AppUpdateHandoff.enqueueFeedURL(feedURL)
     }
@@ -95,17 +62,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       self?.beginInstall()
     }
     model.channelChangeHandler = { [weak self] allowsAlpha in
-      // The bundled server answers /v1/update from this machine's own
-      // channel; keep its copy of the preference current.
       AppUpdateHandoff.enqueueChannel(allowsAlpha: allowsAlpha)
       self?.updater.resetUpdateCycle()
     }
   }
 
-  /// Runs one headless check → download → install → relaunch cycle. Arms
-  /// even when a session is already in progress (a background check may be
-  /// mid-flight): the driver accepts whatever that session finds, and a
-  /// fresh check starts as soon as Sparkle is free.
   private func beginInstall() {
     Log.updates.log("install: begin (session in progress: \(self.updater.sessionInProgress))")
     ServerLifecycleLog.default.note("update: install requested")
@@ -115,9 +76,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     reportProgress("Checking for the update…")
     driver.armInstall()
     Task { @MainActor [weak self] in
-      // Sparkle runs one session at a time and ignores a check requested
-      // during another; wait for the in-flight one (an information check
-      // finishes in seconds) rather than dropping the install.
       for _ in 0..<50 {
         guard let self, self.installSessionActive else { return }
         if !self.updater.sessionInProgress {
@@ -129,14 +87,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
   }
 
-  /// Publishes a lifecycle step ("Checking…", "Restarting…") unthrottled.
   private func reportProgress(_ message: String?, fraction: Double? = nil) {
     progressThrottle.reset()
     publishProgress(message, fraction: fraction)
   }
 
-  /// Download and extraction progress, reported per chunk by Sparkle on the
-  /// main thread: published only when the throttle sees a visible change.
   private func reportThrottledProgress(_ message: String, fraction: Double?) {
     guard progressThrottle.shouldReport(message: message, fraction: fraction, at: .now) else { return }
     publishProgress(message, fraction: fraction)
@@ -176,18 +131,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     progressThrottle.reset()
     AppUpdateHandoff.enqueueStatus(state: "failed", message: message)
     model.reportFailure(message)
-    // The server may be holding prompts behind its restart drain (a remote
-    // client's request drained it before handing off) or already be
-    // stopped for an install that is not happening: release it and make
-    // sure it is running. Harmless when neither applies.
     Task { @MainActor [weak self] in
       await self?.localServer?.abandonAppUpdate()
     }
   }
 
-  /// Sparkle's installer tracks a single running instance of the app: with
-  /// two, it swaps and deletes the bundle out from under the survivor,
-  /// which then crashes in dyld. Refuse to install until only this one runs.
   private static func otherRunningInstanceCount() -> Int {
     guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return 0 }
     let ownPid = ProcessInfo.processInfo.processIdentifier
@@ -197,8 +145,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       .filter { $0.bundleURL?.standardizedFileURL == ownBundle }
       .count
   }
-
-  // MARK: - SPUUpdaterDelegate
 
   private func displayedVersion(for item: SUAppcastItem) -> String {
     AppUpdateModel.displayedVersion(
@@ -227,8 +173,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     let releasePageURL = item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
     model.reportAvailable(version: version, releasePageURL: releasePageURL)
     if installSessionActive {
-      // Committed from here: the row shows progress, the composer stops
-      // accepting turns, and a quit request is not confirmed.
       installTargetBuild = Int(item.versionString)
       model.reportInstalling(version: version, releasePageURL: releasePageURL)
       reportProgress("Downloading…")
@@ -237,8 +181,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
 
   func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
     if installSessionActive {
-      // The server's manifest (or this page) said "newer" but this
-      // machine's Sparkle feed disagrees, usually a channel mismatch.
       failInstall(
         "This machine's update feed has no newer release. Check its Alpha updates setting."
       )
@@ -252,8 +194,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     Log.updates.log("install: Sparkle will install \(version, privacy: .public)")
     ServerLifecycleLog.default.note("update: installing \(version)")
     if installSessionActive {
-      // A resumed download skips the "found" callback; this one always
-      // fires, so the build Sparkle is really installing is known here.
       installTargetBuild = Int(item.versionString)
       AppUpdateHandoff.enqueueStatus(
         state: "installing",
@@ -272,8 +212,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       failInstall(error.localizedDescription)
       return
     }
-    // "No update" is reported through updaterDidNotFindUpdate; only a
-    // check that was still running has a failure worth showing.
     if case .checking = model.phase {
       model.reportFailure(error.localizedDescription)
     }
@@ -311,9 +249,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         )
         return
       }
-      // Server draining is asynchronous. Check once more at the actual
-      // handoff boundary, then transfer the instance lease across our exit so
-      // no process can enter between Sparkle's termination and relaunch.
       let lateOthers = Self.otherRunningInstanceCount()
       guard lateOthers == 0 else {
         self.failInstall(
@@ -334,8 +269,6 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       self.reportProgress("Restarting…")
-      // The handoff file is written off the main thread; land the final
-      // state before Sparkle terminates this process.
       await AppUpdateHandoff.flushWrites()
       Log.updates.log("install: server prepared; handing over to Sparkle for the relaunch")
       ServerLifecycleLog.default.note("update: server prepared, Sparkle relaunching the app")

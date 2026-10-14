@@ -1,9 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The same row in onboarding and the shared list. The chrome is
-/// `FleetEntryRow`, shared with the MCP, skills, and plugin pages; the
-/// "Sign In…" button and the status caption are what a harness adds to it.
 public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: View {
   public static var trailingControlWidth: CGFloat { FleetRowMetrics.trailingControlWidth }
   public static var minContentHeight: CGFloat { FleetRowMetrics.minContentHeight }
@@ -67,8 +64,6 @@ extension HarnessSettingsRow where Accessory == EmptyView {
 }
 
 extension View {
-  /// Retained spelling of the shared row button so harness call sites (and
-  /// the auth sheets that match them) keep reading in harness terms.
   @ViewBuilder
   func harnessRowButton(_ theme: Theme) -> some View {
     fleetRowButton(theme)

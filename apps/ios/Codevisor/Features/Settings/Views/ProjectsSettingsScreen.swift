@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Every project across the fleet, one row per project however many
-/// machines have it. Tap for its settings; swipe or long-press to delete.
 struct ProjectsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var deleting: ProjectGroup?
@@ -97,8 +95,6 @@ struct ProjectsSettingsScreen: View {
     .padding(.vertical, 2)
   }
 
-  /// Adding a project means choosing a folder on a particular machine, so
-  /// with several machines the button asks which one first.
   @ToolbarContentBuilder
   private var addToolbarItem: some ToolbarContent {
     ToolbarItem(placement: .primaryAction) {

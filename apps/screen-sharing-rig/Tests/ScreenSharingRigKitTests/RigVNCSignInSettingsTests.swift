@@ -2,7 +2,6 @@ import Foundation
 import ScreenSharingRigKit
 import Testing
 
-/// The settings sheet's sign-in edits on a Keychain VNC machine (851-2367), against an in-memory store.
 struct RigVNCSignInSettingsTests {
   final class MemoryStore: RigSecretStore, @unchecked Sendable {
     private let lock = NSLock()

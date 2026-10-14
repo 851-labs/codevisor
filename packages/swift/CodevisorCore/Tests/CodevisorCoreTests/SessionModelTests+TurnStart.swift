@@ -4,13 +4,6 @@ import ACPKit
 
 @testable import CodevisorCore
 
-/// The elapsed "Working for Xs" label reads `AssistantTurn.startedAt`, and
-/// renders a hard 0 when it is nil. The server creates the assistant row when
-/// the prompt is accepted but only stamps `started_at` once the harness
-/// reports the turn started — so a client that opens the session during
-/// harness startup receives a generating turn with no start time and shows a
-/// frozen "Working for 0s" until some later full snapshot happens to carry
-/// the value, at which point it jumps to the true elapsed time.
 extension SessionModelTests {
   private func startedTurnModel(
     now: @escaping @Sendable () -> Date
@@ -35,7 +28,6 @@ extension SessionModelTests {
     let stamp = Date(timeIntervalSince1970: 1_700_000_000)
     let (model, _) = startedTurnModel(now: { stamp })
     let itemId = UUID()
-    // A snapshot taken during harness startup: generating, no start time.
     model.setConversation([
       .assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true)))
     ])
@@ -86,7 +78,6 @@ extension SessionModelTests {
         AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true, startedAt: original)))
     ])
 
-    // A mid-turn reconcile that raced the server's `started_at` write.
     model.setConversation([
       .assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true)))
     ])
@@ -102,8 +93,6 @@ extension SessionModelTests {
         AssistantMessage(turn: AssistantTurn(isGenerating: true, startedAt: original)))
     ])
 
-    // A genuinely new turn: carrying the old start time would invent an
-    // elapsed duration that never happened.
     model.setConversation([
       .assistant(AssistantMessage(turn: AssistantTurn(isGenerating: true)))
     ])
@@ -118,11 +107,9 @@ extension SessionModelTests {
     live.callsAfterReasoning = ["second"]
     model.setConversation([.assistant(AssistantMessage(id: itemId, turn: live))])
 
-    // The server never stores reasoning, so its copy lacks the break.
     model.setConversation([.assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true)))])
     #expect(activeTurn(model)?.callsAfterReasoning == ["second"])
 
-    // A different turn inherits nothing.
     model.setConversation([.assistant(AssistantMessage(turn: AssistantTurn(isGenerating: true)))])
     #expect(activeTurn(model)?.callsAfterReasoning.isEmpty == true)
   }

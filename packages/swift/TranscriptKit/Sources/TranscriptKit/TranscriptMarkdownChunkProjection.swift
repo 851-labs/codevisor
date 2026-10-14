@@ -1,12 +1,6 @@
 import Foundation
 import MarkdownCore
 
-/// A bounded group of adjacent Markdown blocks rendered by one native
-/// transcript host. Text-like blocks share one TextKit surface, while blocks
-/// with their own layout or interaction remain isolated in one-block chunks.
-/// Where a worked note's row sits on its section's timeline: the note's
-/// dot marks its first row, and the rail runs through every row between the
-/// section's first and last lines.
 public struct TranscriptTimelineMarks: Sendable, Equatable, Hashable {
   public let startsLine: Bool
   public let endsLine: Bool
@@ -20,18 +14,11 @@ public struct TranscriptTimelineMarks: Sendable, Equatable, Hashable {
     self.railBelow = railBelow
   }
 
-  /// The gutter the rail and dot take beside the note's text.
   public static let gutterWidth: CGFloat = 26
-  /// Padding above and below every timeline line: a tool line's row, and a
-  /// note's first and last rows.
   public static let linePadding: CGFloat = 6
-  /// The rail's stroke width.
   public static let railWidth: CGFloat = 1.5
-  /// The rail's x position, the center of its node column.
   public static let railX: CGFloat = 9
-  /// A node's center below its line's top: on the line's first text line.
   public static let nodeCenterY: CGFloat = linePadding + 8
-  /// Clear space between the rail and the node it runs into.
   public static let nodeClearance: CGFloat = 2.5
   public static let dotDiameter: CGFloat = 5
 }
@@ -39,28 +26,15 @@ public struct TranscriptTimelineMarks: Sendable, Equatable, Hashable {
 public struct TranscriptMarkdownChunk: Sendable, Equatable {
   public let messageID: UUID
   public let sourceID: String
-  /// Provider text identity, independent of its current transcript section.
   public let animationSourceID: String
-  /// The first block's ordinal in the complete assistant response or plan.
   public let ordinal: Int
   public let blocks: [MarkdownBlock]
   public let documentSource: String
   public let lifecycle: TranscriptBlockLifecycle
   public let container: TranscriptMarkdownContainer
-  /// Layout retained from a structurally complex block quote that was split
-  /// into independently virtualized leaf rows. Simple quotes stay intact and
-  /// leave this nil so they continue through the single TextKit fast path.
   public let fragment: MarkdownFragmentLayout?
-  /// Role of the block directly above this row in the same document when
-  /// this row starts a new block, so the row can add the space that rule
-  /// calls for. Nil for a document's first block and for rows continuing a
-  /// split list or quote, whose fragment layout carries their spacing.
   public let precedingRole: MarkdownBlockRole?
-  /// The complete block count for a plan document, whose fragments need to
-  /// know whether they draw the card's first and last edges. Assistant
-  /// response chunks use zero so stable prefix rows do not change on append.
   public let documentBlockCount: Int
-  /// Set for a worked note, which reads as a line of the section's timeline.
   public let timeline: TranscriptTimelineMarks?
 
   public init(
@@ -92,9 +66,6 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     self.timeline = timeline
   }
 
-  /// A source append can leave this rendered prefix unchanged. Its pacing
-  /// source travels with the next actual content change; refreshing an equal
-  /// prefix would rebuild native animation metadata for unrelated new text.
   public static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.messageID == rhs.messageID && lhs.sourceID == rhs.sourceID
       && lhs.animationSourceID == rhs.animationSourceID
@@ -143,11 +114,6 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
 }
 
 enum TranscriptMarkdownChunkProjection {
-  /// Keeps a row small enough to mount predictably while amortizing native
-  /// host and TextKit setup across ordinary prose. Height is the meaningful
-  /// bound: six short paragraphs are cheap, while two long wrapped paragraphs
-  /// can already fill most of a viewport. The count remains a safety valve
-  /// for empty or otherwise underestimated blocks.
   static let maximumEstimatedTextChunkHeight: CGFloat = 320
   static let maximumTextBlocksPerChunk = 12
   static let estimatedBlockSpacing: CGFloat = 13
@@ -285,9 +251,6 @@ enum TranscriptMarkdownChunkProjection {
     let listItemPath: [String]
   }
 
-  /// Breaks structural containers containing code, tables, or rules into
-  /// bounded leaf rows. This removes the recursive SwiftUI layout tree from
-  /// the scroll hot path without changing ordinary prose-only containers.
   private static func structuralFragments(
     from blocks: [MarkdownBlock],
     ordinal: Int,
@@ -454,8 +417,6 @@ enum TranscriptMarkdownChunkProjection {
     guard drafts.indices.contains(index + 1) else { return .none }
     let current = drafts[index]
     let next = drafts[index + 1]
-    // Rows inside one list are spaced like its items at every depth, the
-    // same rhythm the flattened TextKit list uses.
     if !current.listItemPath.isEmpty, !next.listItemPath.isEmpty {
       return .listItem
     }
@@ -479,11 +440,6 @@ enum TranscriptMarkdownChunkProjection {
     }
   }
 
-  /// Blocks that share one prose row. A list or quote that carries no code,
-  /// table, or rule renders inline with surrounding prose, so it must stay
-  /// in the prose chunk: giving it a row of its own — and merging it back
-  /// when the parser reshapes it a token later — changes row identity and
-  /// restarts the reveal animation for everything in the moved block.
   private static func isTextBlock(_ block: MarkdownBlock) -> Bool {
     switch block {
     case .heading, .paragraph, .bulletList, .orderedList:

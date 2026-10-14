@@ -19,8 +19,6 @@ struct McpScrollingTextField: NSViewRepresentable {
     textField.isBezeled = false
     textField.drawsBackground = false
     textField.focusRingType = .none
-    // HIG: match standard controls via the dynamic system font variant
-    // rather than a hardcoded size.
     textField.font = .controlContentFont(ofSize: NSFont.systemFontSize)
     textField.usesSingleLineMode = true
     textField.maximumNumberOfLines = 1

@@ -3,12 +3,9 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The one-time move from the old storage, where the device kept editable
-/// copies of workspaces, chats, and projects, to the navigation store.
 @MainActor
 @Suite("Navigation store migration")
 struct NavigationStoreMigrationTests {
-  /// The fields the old "workspaces" payload stored for each workspace.
   private struct LegacyWorkspace: Encodable {
     var id = UUID()
     var name = "Workspace"
@@ -69,7 +66,6 @@ struct NavigationStoreMigrationTests {
     let migrated = try #require(layouts.layout(for: synced.id))
     #expect(migrated.serverId == "remote-a")
     #expect(migrated.tabs == synced.centerTabs)
-    // No stored selection: the first tab.
     #expect(migrated.selectedTabId == synced.centerTabs[0].id)
     let withSelection = try #require(layouts.layout(for: selected.id))
     #expect(withSelection.serverId == "local")
@@ -110,7 +106,6 @@ struct NavigationStoreMigrationTests {
       #expect(store.loadData(forKey: key) == nil, "\(key) should be removed")
     }
     #expect(store.loadData(forKey: NavigationStoreMigration.receiptKey) != nil)
-    // Unrelated data is untouched.
     #expect(store.loadData(forKey: "settings") == Data("keep".utf8))
   }
 
@@ -121,7 +116,6 @@ struct NavigationStoreMigrationTests {
     NavigationStoreMigration.runIfNeeded(store: store, machineIds: ["local"])
     #expect(DeviceLayoutStore(store: store).layout(for: first.id) != nil)
 
-    // An older build writes the old format again after the upgrade.
     let second = LegacyWorkspace(centerTabs: tabs(2), isServerSynced: true)
     let rewritten = try legacyStore([second]).loadData(forKey: "workspaces")!
     try store.saveData(rewritten, forKey: "workspaces")
@@ -187,7 +181,6 @@ struct NavigationStoreMigrationTests {
       projectId: project.id, centerTabs: arranged, selectedCenterTabId: arranged[1].id, isServerSynced: true)
     let store = try legacyStore([legacy])
 
-    // The environment runs the migration before it opens the store.
     let environment = AppEnvironment(
       navigationPersistence: store,
       configCache: ConfigOptionCache(store: InMemoryStore()),
@@ -195,7 +188,6 @@ struct NavigationStoreMigrationTests {
     )
     #expect(store.loadData(forKey: "workspaces") == nil)
 
-    // The server's copy of the same workspace, as its first sync delivers it.
     let server = Workspace(
       id: legacy.id, name: "Server name", rootDirectory: nil, serverId: "local", projectId: project.id,
       centerTabs: arranged, createdAt: legacy.createdAt, isServerSynced: true)

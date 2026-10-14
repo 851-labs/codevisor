@@ -13,13 +13,9 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var decoder = "Waiting for decoder"
   public private(set) var decodeMilliseconds: Double?
   public private(set) var droppedFrames = 0
-  /// Native only: the streams beside the video (pointer 851-2377, sound 851-2379, display 851-2376).
   public private(set) var streams: String?
-  /// VNC only: framebuffer updates applied per second.
   public private(set) var updatesPerSecond: Double?
-  /// VNC only: mean wire bytes per update over the last interval.
   public private(set) var bytesPerUpdate: Double?
-  /// VNC only: p95 from sending an update request to applying its update.
   public private(set) var updateLatencyMilliseconds: Double?
   @ObservationIgnored private var previous: (time: TimeInterval, frames: Int, bytes: Double, updates: Int)?
 
@@ -62,15 +58,12 @@ public final class ScreenSharingViewerDiagnostics {
         "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
         + (metrics.labels["vncQuality"].map { " · \($0)" } ?? "")
       updateLatencyMilliseconds = metrics.timings["vncUpdateLatency"]?.p95Ms
-      // Fence round trips (851-2312); nil until the server speaks Fence.
       roundTripMilliseconds = metrics.timings["vncRoundTrip"]?.p50Ms
       return
     }
     roundTripMilliseconds = statistics.first { $0.key.hasSuffix(".currentRoundTripTime") }
       .flatMap { Double($0.value) }.map { $0 * 1000 }
     let types = statistics.filter { $0.key.hasSuffix(".candidateType") }.values
-    // A TURN allocation may carry UDP media over a TCP/TLS connection to the
-    // relay. Report that client transport when the selected candidate exposes it.
     let transport =
       (statistics.first { $0.key.hasSuffix(".relayProtocol") }
       ?? statistics.first { $0.key.hasSuffix(".protocol") })?.value.uppercased() ?? ""

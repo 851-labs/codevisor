@@ -4,19 +4,12 @@ import { delimiter, join } from "node:path"
 
 import { binaryIdentity, OPENCODE_INSTALL_PATH } from "@codevisor/agent-runtime"
 
-/// The OpenCode Codevisor runs. A machine can hold two: OpenCode 2 from its
-/// installer, and an OpenCode 1 its package manager still has. OpenCode 1
-/// must never run against data OpenCode 2 has migrated, so the newest wins,
-/// whatever order PATH lists them in.
-
 export interface OpenCodeBinaryDeps {
-  /// Every `opencode` the environment can run.
   readonly candidates?: (env: NodeJS.ProcessEnv) => ReadonlyArray<string>
-  /// `opencode --version` output, or undefined when it can't be read.
   readonly readVersion?: (path: string) => string | undefined
 }
 
-/* v8 ignore start -- reads the real PATH and binaries; tests inject candidates and versions. */
+/* v8 ignore start */
 const executable = (path: string): boolean => {
   try {
     accessSync(path, constants.X_OK)
@@ -70,8 +63,6 @@ const newer = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): boole
   return false
 }
 
-/// The newest OpenCode the environment can run, or undefined when it has
-/// none. One whose version can't be read only wins when nothing else can.
 export const makeOpenCodeLocator =
   (deps: OpenCodeBinaryDeps = {}) =>
   (env: NodeJS.ProcessEnv): string | undefined => {

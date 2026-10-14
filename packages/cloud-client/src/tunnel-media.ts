@@ -2,16 +2,6 @@ import type { TunnelConnection, TunnelMediaFlow } from "@codevisor/net"
 
 import type { CancelTimeout } from "./machine-socket.js"
 
-/// Screen-sharing media over the tunnel.
-/// WebRTC keeps its own ICE/RTP/DTLS stack and sees the tunnel as a
-/// LAN: the viewer opens a `codevisor/media/1` connection and a local UDP
-/// flow, names both in its screen-sharing request, and the machine bridges
-/// that flow to the host WebRTC's own candidate from the answer it produced.
-/// ICE then completes over the flow (the host learns the forwarder as a
-/// peer-reflexive candidate), and DTLS-SRTP runs end to end inside it.
-
-/// The first IPv4 UDP host candidate in an SDP (`ip:port`), skipping loopback
-/// and link-local — the socket the host's WebRTC actually listens on.
 const hostCandidate = (sdp: string): string | undefined => {
   for (const line of sdp.split(/\r?\n/)) {
     const match = /^a=candidate:\S+ \d+ udp \d+ (\d+\.\d+\.\d+\.\d+) (\d+) typ host\b/i.exec(line)
@@ -24,14 +14,12 @@ const hostCandidate = (sdp: string): string | undefined => {
 }
 
 export interface TunnelMediaRequest {
-  /// The viewer's tunnel endpoint id (hex); its media connection is keyed by it.
   readonly endpointId: string
   readonly flowId: number
 }
 
 export interface TunnelMediaBridge {
   readonly flowId: number
-  /// Largest UDP payload the flow carries now; the viewer caps RTP by it.
   readonly maxPayload?: number
 }
 
@@ -41,11 +29,8 @@ type MediaConnection = Pick<
 >
 
 export interface TunnelMediaRoutesOptions {
-  /// Only endpoints already admitted on the channels pipe (pinned or vouched,
-  /// see admitTunnelHello) may open media connections.
   readonly admit: (endpointId: string) => boolean
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
-  /// How long `bridge` waits for the viewer's media connection to arrive.
   readonly waitMs?: number
   readonly log?: (line: string) => void
 }
@@ -61,8 +46,6 @@ export class TunnelMediaRoutes {
 
   constructor(private readonly options: TunnelMediaRoutesOptions) {}
 
-  /// A media connection arrived (MachineTunnel's onMedia). A newer one from
-  /// the same endpoint replaces the older one and its flows.
   offer(connection: MediaConnection): void {
     const endpointId = connection.remoteId()
     if (!this.options.admit(endpointId)) {
@@ -80,9 +63,6 @@ export class TunnelMediaRoutes {
     this.#waiters.delete(endpointId)
   }
 
-  /// Bridges the viewer's flow to the host's candidate from `answer`.
-  /// Undefined when there is no usable candidate or the viewer's media
-  /// connection never arrived — the viewer then keeps plain WebRTC ICE.
   async bridge(
     request: TunnelMediaRequest,
     answer: string
@@ -114,7 +94,6 @@ export class TunnelMediaRoutes {
       waiters.push(waiter)
       this.#waiters.set(endpointId, waiters)
       cancel = schedule(() => {
-        // Still registered: offer() removes waiters only while cancelling this timer.
         const remaining = this.#waiters.get(endpointId)!.filter((entry) => entry !== waiter)
         if (remaining.length === 0) this.#waiters.delete(endpointId)
         else this.#waiters.set(endpointId, remaining)

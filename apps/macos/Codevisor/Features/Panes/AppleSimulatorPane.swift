@@ -6,7 +6,6 @@ import CodevisorUI
 import SimulatorPane
 import SwiftUI
 
-/// An Apple simulator on the workspace's Mac (the shared SimulatorPane view and model).
 @MainActor
 final class AppleSimulatorPane: Pane {
   let id: UUID
@@ -17,7 +16,6 @@ final class AppleSimulatorPane: Pane {
   var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)? {
     didSet { model?.onPreferencesChanged = onPreferencesChanged }
   }
-  /// Whether the pane is still the focused group's selected tab, for a chooser that mounts late.
   var canFocusChooser: () -> Bool = { true } {
     didSet { model?.canFocusChooser = canFocusChooser }
   }
@@ -49,15 +47,12 @@ final class AppleSimulatorPane: Pane {
 
   func unmounted(_ token: UUID) {
     mounts.remove(token)
-    // SwiftUI reparents carried panes within one update; only a real navigation-away has no
-    // replacement mount.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.mounts.isEmpty else { return }
       self.model?.disappeared()
     }
   }
 
-  /// Saves a screenshot to the Desktop, as Simulator does, and shows it in Finder.
   static func saveScreenshot(_ data: Data, deviceName: String) {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
@@ -97,7 +92,6 @@ private struct AppleSimulatorPaneView: View {
     .simultaneousGesture(
       TapGesture().onEnded {
         pane.onFocusChanged?(true)
-        // The chooser has no editor to take a click, so whitespace clicks focus its search field.
         if pane.model?.device == nil { pane.focus() }
       })
   }

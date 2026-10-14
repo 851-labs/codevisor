@@ -131,9 +131,6 @@ export const releaseElement = async (
   page: PageHandle,
   element: ResolvedElement
 ): Promise<void> => {
-  // Runtime commands are suspended while a JavaScript modal is open. The remote object is
-  // reclaimed with its execution context, so avoid holding the click tool open while the caller
-  // needs to issue Page.handleJavaScriptDialog.
   if (runtime.dialogs.has(page.sessionId)) return
   await runtime.connection
     .send("Runtime.releaseObject", { objectId: element.objectId }, page.sessionId)

@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - Position
-
 extension VirtualizedTranscriptScrollView {
   func currentDistanceFromBottom() -> CGFloat {
     viewportGeometry.distanceFromBottom(offsetY: contentOffset.y)
@@ -51,14 +49,6 @@ extension VirtualizedTranscriptScrollView {
     lastDistanceFromBottom = currentDistanceFromBottom()
   }
 
-  /// Re-anchors the viewport after a geometry commit. While UIKit owns the
-  /// scroll (a drag or its momentum), the correction shifts the live offset
-  /// by the anchor's displacement instead of calling
-  /// `setContentOffset(_:animated:)`, which stops deceleration. Assigning
-  /// `contentOffset` moves the bounds under UIKit's scroll physics, so the
-  /// fling continues from the corrected position, and shifting by a delta
-  /// keeps any rubber-band overscroll intact. Deliberate jumps keep using
-  /// `setViewportTop`, where stopping momentum is intended.
   func compensateViewport(
     toDistanceFromBottom distance: CGFloat,
     previousOffsetY: CGFloat
@@ -146,10 +136,6 @@ extension VirtualizedTranscriptScrollView {
     lastDistanceFromBottom = currentDistanceFromBottom()
   }
 
-  /// The composer floats over the scroll view, so its height must shorten
-  /// only the indicator track. Transcript content keeps its existing bottom
-  /// spacer and scroll geometry; this is a visual affordance, not an inset
-  /// that participates in positioning or restoration.
   func updateBottomScrollIndicatorInsetIfNeeded(_ rawInset: CGFloat) {
     let bottomInset = max(0, rawInset)
     guard abs(verticalScrollIndicatorInsets.bottom - bottomInset) > 0.5 else { return }
@@ -188,10 +174,6 @@ extension VirtualizedTranscriptScrollView {
     acknowledgeOlderHistoryPresentationIfPossible()
   }
 
-  /// The model's response can arrive while UIKit is still dragging or
-  /// decelerating. In that case `configure` parks the prepend so native
-  /// momentum is uninterrupted. Acknowledge only after the projection that
-  /// contains the page is part of the authoritative document geometry.
   func acknowledgeOlderHistoryPresentationIfPossible() {
     guard deferredRowsDuringScroll == nil,
       let target = olderHistoryPresentationTarget,
@@ -227,10 +209,6 @@ extension VirtualizedTranscriptScrollView {
     )
   }
 
-  /// An explicit bottom jump spans more than one layout transaction. Keep
-  /// pinning every height correction to distance zero until the complete
-  /// destination window is mounted and exact; only then return to ordinary
-  /// row anchoring.
   func resolveBottomJumpIfPossible() {
     guard bottomJumpGate.isActive,
       initialPositionApplied,
@@ -261,8 +239,6 @@ extension VirtualizedTranscriptScrollView {
       viewportHeight > 0
     else { return }
 
-    // Preparing the offscreen runway improves the first swipe, but unfinished
-    // content there must not keep an already measured viewport invisible.
     let requiredKeys = virtualLayout.keys(
       in: virtualLayout.visibleRange(
         distanceFromBottom: currentDistanceFromBottom(),
@@ -271,9 +247,6 @@ extension VirtualizedTranscriptScrollView {
       ))
     let mountedKeys = Set(mountedHosts.keys)
     guard requiredKeys.isSubset(of: mountedKeys) else {
-      // Resolving estimates can change which rows intersect the initial
-      // viewport. Mount that new window and wait for its measurements
-      // instead of revealing an intermediate geometry snapshot.
       updateMountedRows()
       return
     }
@@ -294,8 +267,6 @@ extension VirtualizedTranscriptScrollView {
     presentInitialTranscript()
   }
 
-  /// Reveals the transcript canvas after its initial presentation gate
-  /// opens, whether through normal readiness or a first send's flight.
   func presentInitialTranscript() {
     applyPositionTransaction {
       if initialBottomPin.isActive {

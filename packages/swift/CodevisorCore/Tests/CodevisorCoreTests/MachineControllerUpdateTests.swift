@@ -4,8 +4,6 @@ import ACPKit
 
 @testable import CodevisorCore
 
-/// Per-machine update state as the update surfaces read it from
-/// `connectionsById`; a machine with no connection is idle.
 extension MachineController {
   func serverUpdatePhase(for machineId: String) -> ServerUpdatePhase {
     connectionsById[machineId]?.updatePhase ?? .idle
@@ -16,9 +14,6 @@ extension MachineController {
   }
 }
 
-/// Server self-update flows: check/apply round trips, restart confirmation,
-/// and failure surfacing. Split from MachineControllerTests.swift to keep
-/// that suite within size limits.
 @MainActor
 @Suite("MachineController server updates")
 struct MachineControllerUpdateTests {
@@ -45,13 +40,10 @@ struct MachineControllerUpdateTests {
 
     #expect(fake.appliedUpdates == 1)
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
-    // After the restart the banner state clears and the status shows the
-    // new version.
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
     #expect(controller.statusByMachineId["local"]?.label.contains("0.2.0") == true)
     controller.stopEventSync()
 
-    // Triggering again is a no-op that just refreshes state.
     await controller.updateServer(machineId: "local")
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(fake.appliedUpdates == 2)
@@ -73,11 +65,9 @@ struct MachineControllerUpdateTests {
     )
     defer { controller.stopEventSync() }
 
-    // Stable by default.
     await controller.refreshStatus(for: "local")
     #expect(fake.updateInfoChannels == [.stable])
 
-    // Alpha once the app opts in — checks and installs alike.
     controller.serverUpdateChannel = .alpha
     await controller.refreshStatus(for: "local")
     #expect(fake.updateInfoChannels.last == .alpha)
@@ -178,8 +168,6 @@ struct MachineControllerUpdateTests {
   func remoteServerUpdateDrains() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    // The server reports "draining" for far more polls than the base
-    // attempt budget: the wait must extend instead of timing out.
     fake.configureDrain(polls: 12)
     let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
@@ -204,13 +192,10 @@ struct MachineControllerUpdateTests {
     }
     await controller.updateServer(machineId: "local")
 
-    // Draining extends the original 10 ms budget, regardless of real time
-    // spent scheduling this test alongside the rest of the suite.
     #expect(clock.elapsed > .milliseconds(10))
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
     #expect(messages.contains { $0.contains("Waiting for 2 chats to finish") })
-    // The message is a progress detail of the in-flight update only.
     #expect(controller.connectionsById["local"]?.updateStatusMessage == nil)
   }
 
@@ -233,8 +218,6 @@ struct MachineControllerUpdateTests {
 
     await controller.updateServer(machineId: "local")
 
-    // The server declined (chats running), so the phase reports a failure
-    // and the update was not applied/restarted.
     if case let .failed(message) = controller.serverUpdatePhase(for: "local") {
       #expect(message.contains("chats running"))
     } else {
@@ -247,7 +230,6 @@ struct MachineControllerUpdateTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureDrain(polls: drainPolls)
-    // Still down when the budget runs out AND at the final reachability probe.
     fake.configureRestartDowntime(polls: 4)
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
@@ -263,8 +245,6 @@ struct MachineControllerUpdateTests {
 
     await controller.updateServer(machineId: "local")
 
-    // The fake rejects three probes after restarting. Without another drain
-    // report, those probes exhaust the deadline instead of extending it.
     let expectedPolls = max(drainPolls - 1, 0) + 3
     #expect(clock.requestedIntervals.count == expectedPolls)
     #expect(clock.elapsed == .milliseconds(2) * expectedPolls)
@@ -280,8 +260,6 @@ struct MachineControllerUpdateTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     let clock = AdvancingServerUpdateScheduler()
-    // Model a scheduler delay without sleeping in real time. A fixed attempt
-    // loop would incorrectly keep polling and eventually report success.
     clock.onSleep = { [weak clock] in clock?.advance(by: .milliseconds(10)) }
     let controller = MachineController(
       store: InMemoryStore(),

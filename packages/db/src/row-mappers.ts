@@ -107,8 +107,6 @@ export const worktreeFromRow = (row: WorktreeRow): Worktree => ({
   createdAt: row.created_at
 })
 
-/// Labels are stored as a JSON object of strings. An empty or unreadable
-/// value reads as no labels so a hand-edited row can never fail a listing.
 export const parseLabels = (
   raw: string | null | undefined
 ): Readonly<Record<string, string>> | undefined => {
@@ -125,7 +123,6 @@ export const parseLabels = (
   }
 }
 
-/// The stored form of a labels write: an empty object clears them.
 export const serializeLabels = (
   labels: Readonly<Record<string, string>> | undefined
 ): string | null =>

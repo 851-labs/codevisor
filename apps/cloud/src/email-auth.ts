@@ -43,7 +43,6 @@ export const emailAuthPlugin = (env: CloudEnv) => {
         ...plugin.hooks.after,
         {
           matcher: () => deliveryFailed,
-          // Better Auth catches mail callback errors. Surface a safe, retryable result to native forms.
           handler: createAuthMiddleware(async () => {
             throw new APIError("SERVICE_UNAVAILABLE", {
               code: "EMAIL_DELIVERY_FAILED",
@@ -79,7 +78,6 @@ export async function sendAuthEmail(env: CloudEnv, email: string, code: string, 
     })
     if (!response.ok) throw new Error("Email delivery failed")
   } catch {
-    // Do not log recipient addresses, codes, credentials, or provider responses.
     throw new APIError("SERVICE_UNAVAILABLE", {
       code: "EMAIL_DELIVERY_FAILED",
       message: "Couldn't send your code. Please try again."

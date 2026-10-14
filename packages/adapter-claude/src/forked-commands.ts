@@ -4,27 +4,15 @@ import { isRecord } from "./internal.js"
 import type { ClaudeSession, ForkedCommand } from "./session.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
 
-/// Claude Code runs a forked slash command (a `context: fork` skill such as
-/// `/code-review`) as a subagent whose messages name a parent that no tool
-/// call ever opened: `forked-command-<name>`. In SDK mode the fork blocks the
-/// turn, the CLI holds every message of its thread until it ends, and its
-/// report comes back as one top-level assistant message the CLI writes
-/// itself. Codevisor opens a real agent call for that parent when the fork
-/// starts, mirrors the thread live from the transcript the CLI writes as the
-/// fork runs, and settles the call when the report arrives.
 const FORKED_COMMAND_PREFIX = "forked-command-"
 
-/// How often a running fork's transcript is read for new messages.
 const MIRROR_POLL_MS = 500
 
 type TaskStarted = Extract<SDKMessage, { type: "system"; subtype: "task_started" }>
 type ThreadMessage = Extract<SDKMessage, { type: "assistant" | "stream_event" | "user" }>
 
-/// Messages replayed from a fork's transcript, told apart from the CLI's
-/// end-of-run copy of the same thread.
 const mirroredMessages = new WeakSet<object>()
 
-/// The row of the forked command running as task `taskId`.
 export const forkedCommandRowId = (session: ClaudeSession, taskId: string): string | undefined => {
   for (const [parentId, command] of session.forkedCommands) {
     if (command.taskId === taskId) return parentId
@@ -32,10 +20,6 @@ export const forkedCommandRowId = (session: ClaudeSession, taskId: string): stri
   return undefined
 }
 
-/// A subagent started by a slash command rather than a tool call is a forked
-/// command; its task is described by the command (`/code-review`). Its row
-/// opens now, under the parent its messages will name, and its transcript is
-/// mirrored into it through `show` while it runs.
 export const startForkedCommand = (
   session: ClaudeSession,
   message: TaskStarted,
@@ -65,9 +49,6 @@ export const startForkedCommand = (
   command.mirror!.timer = timer
 }
 
-/// Whether a thread message should be shown. Opens the row of a forked command
-/// whose start was never seen, and drops the CLI's end-of-run copy of a
-/// thread already mirrored from its transcript.
 export const acceptForkedCommandMessage = (
   session: ClaudeSession,
   message: ThreadMessage
@@ -92,15 +73,12 @@ export const acceptForkedCommandMessage = (
     })
     return true
   }
-  // The fork has ended: whatever the transcript still holds comes first.
   finishMirror(session, parentId, command)
   return command.mirror?.shown !== true
 }
 
 const FAILED_TASK_STATUSES = new Set(["failed", "killed", "stopped"])
 
-/// A forked command's task settled: its transcript is complete, and a failure
-/// is recorded for its row.
 export const finishForkedCommand = (
   session: ClaudeSession,
   taskId: string,
@@ -113,9 +91,6 @@ export const finishForkedCommand = (
   finishMirror(session, parentId, command)
 }
 
-/// Settles every open forked command. A report, when given, also ends the
-/// command's thread unless the thread already ends with it. Returns whether a
-/// command completed with that report, which Claude then answers with.
 export const settleForkedCommands = (session: ClaudeSession, report?: string): boolean => {
   let reported = false
   for (const [parentId, command] of session.forkedCommands) {
@@ -150,7 +125,6 @@ export const settleForkedCommands = (session: ClaudeSession, report?: string): b
 
 const openRow = (session: ClaudeSession, parentId: string, command: ForkedCommand): void => {
   session.forkedCommands.set(parentId, command)
-  // Open like any tool call, so a turn that ends before the report settles it.
   session.openToolCalls.add(parentId)
   void ensureObservedTurnStarted(session)
   void session.emit({
@@ -174,11 +148,9 @@ const openRow = (session: ClaudeSession, parentId: string, command: ForkedComman
   })
 }
 
-/// Shows the transcript lines written since the last read.
 const mirror = (session: ClaudeSession, parentId: string, command: ForkedCommand): void => {
   const state = command.mirror
   if (state?.timer === undefined) return
-  // A settled or abandoned fork stops reading.
   if (session.retired || session.forkedCommands.get(parentId) !== command) {
     clearInterval(state.timer)
     state.timer = undefined
@@ -198,7 +170,6 @@ const mirror = (session: ClaudeSession, parentId: string, command: ForkedCommand
   }
 }
 
-/// Reads the rest of a fork's transcript once, then stops reading it.
 const finishMirror = (session: ClaudeSession, parentId: string, command: ForkedCommand): void => {
   const state = command.mirror
   if (state?.timer === undefined) return
@@ -207,7 +178,6 @@ const finishMirror = (session: ClaudeSession, parentId: string, command: ForkedC
   state.timer = undefined
 }
 
-/// One transcript line as the thread message the SDK would have delivered.
 const threadMessage = (
   line: string,
   parentId: string,

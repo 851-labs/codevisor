@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* Sources: class names live in the page templates next to this file. */
 @source "./pages.tsx";
 @source "./login.tsx";
 

@@ -1,30 +1,13 @@
 import Foundation
 import Observation
 
-/// The one owner of navigation state on this device.
-///
-/// It holds the three stores -- cached server state per machine, the outbox,
-/// and device layouts -- and rebuilds what the UI shows whenever any of them
-/// changes. Server events only ever replace cached state; user actions only
-/// ever add outbox requests or change layouts. That split is what keeps two
-/// devices in step without merge rules: another device's change arrives as an
-/// event and simply overwrites the cache, and this device's pending change
-/// can't be lost because it lives in the outbox, not the cache.
 @MainActor
 @Observable
 public final class NavigationStore {
-  /// Not observed: views read the narrow per-workspace entries and the row
-  /// lists instead, so a change to one workspace re-renders only its views.
   @ObservationIgnored public private(set) var projection = NavigationProjection.empty
-  /// Which machines have a cache, and whether it is empty. What the launch
-  /// screen and sync indicator depend on -- it changes only when a cache
-  /// appears, disappears, or becomes empty or not, never on ordinary events.
   public private(set) var cacheSummary: [String: Bool] = [:]
-  /// Advances on every rebuild. A wake-up signal for code that waits for the
-  /// store to settle; views must not read it -- it changes on every event.
   public private(set) var revision: UInt64 = 0
 
-  /// One observable entry per workspace; views observe these, not the store.
   @ObservationIgnored public let workspaceEntries = NavigationWorkspaces()
   @ObservationIgnored let layouts: DeviceLayoutStore
   @ObservationIgnored let executor: NavigationOutboxExecutor
@@ -35,9 +18,6 @@ public final class NavigationStore {
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
   @ObservationIgnored private var cacheGenerations: [String: UInt64] = [:]
 
-  /// `launchSnapshot`, when given, must have been read from `store`: its
-  /// machine caches were decoded off the main actor, so opening the store
-  /// does not decode every machine's session list here.
   public init(
     store: any PersistenceStore,
     launchSnapshot: ClientLaunchSnapshot? = nil,
@@ -57,15 +37,12 @@ public final class NavigationStore {
     }
   }
 
-  /// Connects the models that render the projection. Called once at startup.
   func attach(projectList: ProjectListModel, repository: ProjectedWorkspaceRepository) {
     self.projectList = projectList
     self.repository = repository
     workspaceEntries.lookup = { [weak repository] in repository?.workspace(id: $0) }
     rebuild()
   }
-
-  // MARK: - Server state
 
   public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
 
@@ -80,15 +57,6 @@ public final class NavigationStore {
 
   func eventCursor(for machineId: String) -> Int? { caches.caches[machineId]?.eventCursor }
 
-  /// Installs a complete snapshot from a machine. `requestedAt` is when the
-  /// request left, which lets requests the server accepted before then leave
-  /// the outbox even if the machine's event log was reset in between.
-  ///
-  /// A snapshot older than the cache is ignored unless `resetsStream` is set:
-  /// events already applied would otherwise be lost, since the stream won't
-  /// send them again. The machine's own connect sets it, because it restarts
-  /// the event stream from the snapshot's cursor (which also recovers from a
-  /// server whose event log was reset).
   @discardableResult
   public func replace(
     _ snapshot: ServerNavigationSnapshot, machineId: String, requestedAt: Date, resetsStream: Bool = true
@@ -110,8 +78,6 @@ public final class NavigationStore {
     return true
   }
 
-  /// Fetches a machine's current state now and installs it. Used where a
-  /// screen needs the latest records (a project picker, pull to refresh).
   @discardableResult
   public func refresh(machineId: String, client: any CodevisorServerClienting) async -> ServerNavigationRefreshResult {
     let requestedAt = Date()
@@ -126,16 +92,12 @@ public final class NavigationStore {
     }
   }
 
-  /// Moves a machine's cache forward by one of its events. Returns false when
-  /// there is no cache to move forward, meaning the caller needs a snapshot.
   public func apply(_ delta: ServerNavigationDelta, machineId: String) async -> Bool {
     let generation = cacheGenerations[machineId, default: 0]
     while !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation {
       guard let current = caches.caches[machineId] else { return false }
       guard let next = await current.applying(delta) else { return true }
       guard !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation else { return false }
-      // A refresh may be newer than the base but older than this delta.
-      // Rebase on it instead of acknowledging an event we never applied.
       guard caches.caches[machineId]?.eventCursor == current.eventCursor else { continue }
       caches.set(next)
       retire(machineId: machineId, snapshotRequestedAt: nil)
@@ -145,7 +107,6 @@ public final class NavigationStore {
     return false
   }
 
-  /// Forgets a machine that is no longer part of this account.
   public func forget(machineId: String) {
     cacheGenerations[machineId, default: 0] &+= 1
     caches.remove(machineId: machineId)
@@ -154,9 +115,6 @@ public final class NavigationStore {
     rebuild()
   }
 
-  // MARK: - User changes
-
-  /// Records a change to server state, shows it immediately, and sends it.
   public func enqueue(
     _ intent: NavigationIntent, machineId: String,
     origin: SessionAttentionTransition.Origin = .snapshot
@@ -168,8 +126,6 @@ public final class NavigationStore {
 
   public var pendingIntents: [NavigationOutboxEntry] { outbox.entries }
 
-  /// Sends the key changes that make `workspace`'s current tab order the one
-  /// every device sorts to. Tabs already in order keep their keys.
   func publishTabOrder(of workspace: Workspace) {
     guard workspace.isServerSynced else { return }
     var records = NavigationRecords(caches.caches[workspace.serverId])
@@ -196,16 +152,12 @@ public final class NavigationStore {
     rebuild()
   }
 
-  // MARK: - Rebuild
-
   private func retire(machineId: String, snapshotRequestedAt: Date?) {
     guard let cache = caches.caches[machineId] else { return }
     outbox.retire(machineId: machineId, cursor: cache.eventCursor, snapshotRequestedAt: snapshotRequestedAt)
     outbox.retireExpectedSessions(machineId: machineId, listed: Set(cache.sessions.map(\.id)))
   }
 
-  /// Brings what navigation shows up to date with the three stores,
-  /// recomputing only the machines and workspaces that changed.
   func rebuild(origin: SessionAttentionTransition.Origin = .snapshot) {
     let machineIds = Set(caches.caches.keys).union(outbox.entries.map(\.machineId))
       .union(layouts.drafts.map(\.serverId)).sorted()
@@ -224,7 +176,6 @@ public final class NavigationStore {
     projectList?.applyProjection(
       projects: result.projection.projects, sessions: result.projection.sessions, origin: origin)
     revision &+= 1
-    // Requests held for a draft can go now that the server has it.
     for machineId in promotedMachineIds { executor.resume(machineId: machineId) }
   }
 }

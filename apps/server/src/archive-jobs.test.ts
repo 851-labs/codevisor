@@ -14,7 +14,6 @@ import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
 
-/// A started server with a git project and one workspace on its own worktree.
 const setUp = async () => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-archive-jobs-"))
   tempDirs.push(worktreesRoot)
@@ -52,7 +51,6 @@ const setUp = async () => {
 describe("archive jobs", () => {
   it("does nothing when the workspace is unarchived before its job runs", async () => {
     const { server, services, repoFolder, worktree } = await setUp()
-    // Holding the worktree's lifecycle lock keeps the job from starting.
     const gate = Promise.withResolvers<void>()
     const held = withWorktreeLifecycle(services, worktree.path, () => gate.promise)
     try {
@@ -78,7 +76,6 @@ describe("archive jobs", () => {
 
   it("still reclaims a deleted workspace's worktree without resurrecting it", async () => {
     const { server, services, worktree } = await setUp()
-    // An ignored file makes the archive want to report what it dropped.
     writeFileSync(join(worktree.path, ".gitignore"), ".env\n")
     writeFileSync(join(worktree.path, ".env"), "SECRET=1\n")
     expect((await jsonRequest(server, "/v1/workspaces/work", { method: "DELETE" })).status).toBe(
@@ -92,8 +89,6 @@ describe("archive jobs", () => {
         (archived) => archived.state
       )
     ).toEqual(["complete"])
-    // Clients already dropped the workspace; an update after the delete would
-    // bring it back.
     const kinds = listSubjectEvents(services, "work").map((event) => event.kind)
     expect(kinds.at(-1)).toBe("workspace.deleted")
   })
@@ -130,7 +125,6 @@ describe("archive jobs", () => {
     await archiveJobs(services).idle()
     expect(existsSync(worktree.path)).toBe(true)
 
-    // The failed job must not wedge the queue for the next archive.
     await archive(false)
     await run(services.db.deleteWorkspacePane("work", "term"))
     expect((await archive(true)).status).toBe(200)

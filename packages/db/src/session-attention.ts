@@ -8,11 +8,6 @@ import { holdsInProgress, projectSessionSidebarState } from "./session-sidebar-s
 
 export { projectSessionSidebarState } from "./session-sidebar-state.js"
 
-/// How long a released hold (subagent finished, goal cleared) may sit quiet
-/// before the turn counts as finished and the unread revision advances. The
-/// Claude harness re-invokes the agent via a task notification seconds after a
-/// subagent completes; this grace absorbs that gap (and gaps between
-/// sequential subagents) so a chain of agent turns settles exactly once.
 export const ATTENTION_SETTLE_GRACE_MS = 12_000
 
 export const ensureSessionAttentionState = (sqlite: Database.Database, sessionId: string): void => {
@@ -45,8 +40,7 @@ const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean =>
   const session = sqlite
     .prepare("select background_tasks from sessions where id = ?")
     .get(sessionId) as { readonly background_tasks: string } | undefined
-  /* v8 ignore next -- attention rows cascade with their session; a missing
-     session row here is unreachable outside FK-disabled surgery. */
+  /* v8 ignore next */
   if (session === undefined) return false
   return (
     backgroundTasksFromRaw(session.background_tasks).some(holdsInProgress) ||
@@ -54,8 +48,6 @@ const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean =>
   )
 }
 
-// Include claimed prompts: the public queue hides them before their turn
-// starts, and their durable claim survives until the provider call returns.
 const sessionHasQueuedPrompts = (sqlite: Database.Database, sessionId: string): boolean =>
   sqlite.prepare("select 1 from prompt_queue_items where session_id = ? limit 1").get(sessionId) !==
   undefined
@@ -76,11 +68,6 @@ const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): bo
     payload.stopReason !== "end_turn" &&
     payload.stopReason !== "cancelled")
 
-/// Re-evaluates a deferred finish. Runs at the end of every projection so the
-/// state converges even without the server-side timer: a hold re-appearing
-/// disarms the deadline, a released hold arms it, and an expired deadline
-/// settles in-transaction with whatever event happened to arrive next. The
-/// scheduler in apps/server only makes expiry prompt.
 const reevaluatePendingFinish = (
   sqlite: Database.Database,
   sessionId: string,
@@ -109,10 +96,6 @@ const reevaluatePendingFinish = (
   }
 }
 
-/// Attempts to settle a deferred finish into an unread revision bump. Called
-/// by the server's settle scheduler when a grace deadline fires; idempotent
-/// and re-validating, so a race with a turn that started (or a hold that
-/// re-appeared) after the timer was armed is harmless.
 export const settleSessionAttention = (
   sqlite: Database.Database,
   sessionId: string,
@@ -142,9 +125,6 @@ export const settleSessionAttention = (
   return { settled: true }
 }
 
-/// Sessions with a finish waiting to settle, for restart recovery. Startup
-/// reconciliation has already cleared stale background-task snapshots by the
-/// time recovery runs. Queued prompts still hold their finish until drained.
 export const listPendingAttentionSettles = (
   sqlite: Database.Database
 ): ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }> =>
@@ -161,8 +141,6 @@ export const attentionSettleDeadline = (
   sqlite: Database.Database,
   sessionId: string
 ): string | undefined => {
-  // A queue-only finish retains an already-due deadline so acknowledging the
-  // last claim settles immediately. Do not schedule it while work remains.
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return undefined
   const row = sqlite
     .prepare(
@@ -172,15 +150,6 @@ export const attentionSettleDeadline = (
   return row?.settle_due_at ?? undefined
 }
 
-/// Projects the append-only runtime log into durable, cross-device attention
-/// state. This runs in the same SQLite transaction as the source event, so a
-/// reconnect cannot observe a terminal event without its unread consequence.
-///
-/// The model: one monotonic `attention_revision` per session (unread =
-/// revision ahead of the shared read cursor), plus intrinsic flags for the
-/// action-required tier (`errored` here; question/plan-approval live on the
-/// session row). There is no event ledger and no receipt target — reading is
-/// a cursor advance, performed by clients when the chat is focused.
 export const projectSessionAttention = (
   sqlite: Database.Database,
   event: SessionEventRow
@@ -241,10 +210,6 @@ const projectAttentionTurnStart = (
   payload: JsonRecord
 ): void => {
   if (event.kind === "session.updated" && payload.turnState === "started") {
-    // A new turn cancels any armed grace deadline but keeps `pending_finish`:
-    // a chain of agent continuations settles once, at the end of the chain.
-    // A user-initiated turn is the user acting in this chat — it clears the
-    // errored flag (the user has unblocked it).
     sqlite
       .prepare(
         `update session_attention set turn_active = 1, settle_due_at = null,
@@ -293,10 +258,6 @@ const completedTurnNeedsPlanApproval = (
     readonly current_mode_id: string | null
     readonly harness_id: string
   }
-  // The terminal event is routed to the assistant item it completed by the
-  // chat projection immediately above. Only a plan produced by that turn
-  // should raise approval; an older plan elsewhere in the transcript must
-  // not make every later plan-mode turn actionable.
   const completedTurnPlan = sqlite
     .prepare(
       `select 1 from session_events se
@@ -333,9 +294,6 @@ const projectTerminalAttention = (
     const needsPlanApproval = completedTurnNeedsPlanApproval(sqlite, event, initiatedBy)
 
     if (failed) {
-      // Errors are the urgent flavor of unread: they rank in the
-      // action-required tier until acknowledged, and the revision bump makes
-      // the turn read normally once the errored flag clears.
       sqlite
         .prepare("update session_attention set errored = 1 where session_id = ?")
         .run(event.session_id)
@@ -348,25 +306,18 @@ const projectTerminalAttention = (
         )
         .run(event.session_id)
     } else if (sessionIsHeld(sqlite, event.session_id)) {
-      // Waiting on a subagent (or an active goal): the agent will continue.
-      // Not ready for the user yet — stay inProgress with the finish parked.
       sqlite
         .prepare(
           "update session_attention set pending_finish = 1, settle_due_at = null where session_id = ?"
         )
         .run(event.session_id)
     } else if (sessionHasQueuedPrompts(sqlite, event.session_id)) {
-      // The whole prompt drain is one completion. No grace is needed after
-      // the final claim is acknowledged, unlike a subagent continuation.
       sqlite
         .prepare(
           "update session_attention set pending_finish = 1, settle_due_at = ? where session_id = ?"
         )
         .run(event.created_at, event.session_id)
     } else {
-      // Finished — user- and agent-initiated turns alike. A turn that ends
-      // with only background shells running counts as finished: whatever the
-      // agent left running (a dev server) is FOR the user to look at.
       bumpAttentionRevision(sqlite, event.session_id)
     }
   }

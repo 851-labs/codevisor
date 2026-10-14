@@ -6,8 +6,6 @@ import TranscriptKit
 
 @testable import CodevisorCore
 
-/// A subagent's thread, read from its parent chat, presented as a
-/// conversation of its own.
 @MainActor
 @Suite("Subagent mirror", .timeLimit(.minutes(1)))
 struct SubagentMirrorTests {
@@ -140,8 +138,6 @@ struct SubagentMirrorTests {
     let sessionId = UUID()
     let assistantId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    // A reload keeps the trailing finished turn active, summarized with its
-    // tool calls deferred.
     client.initialTranscriptPage = ServerTranscriptPage(
       items: [
         ServerTranscriptItem(
@@ -189,8 +185,6 @@ struct SubagentMirrorTests {
       .assistant(AssistantMessage(turn: parentTurn(agentStatus: .completed, isGenerating: false, thread: thread))),
       .user(UserMessage(text: "Ask it where the hot loop is.")),
       .assistant(AssistantMessage(turn: AssistantTurn(entries: [.tool(followUp)], startedAt: start))),
-      // The resumed agent streams under its spawning call's id, in an item
-      // holding only a placeholder for that call.
       .assistant(
         AssistantMessage(
           turn: AssistantTurn(
@@ -270,13 +264,11 @@ struct SubagentMirrorTests {
     ]
 
     #expect(parent.runningSubagentToolCallIds == ["toolu_agent"])
-    // The waiting line's chip is the agent's, not the follow-up's.
     #expect(parent.waitingSubagentCalls.map(\.toolCallId) == ["toolu_agent"])
   }
 
   @Test("An agent the model is still writing waits for its input instead of reading as unavailable")
   func agentStillBeingWritten() async throws {
-    // Claude streams the call before its input: just an id and the tool name.
     let writing = AssistantTurn(
       entries: [.tool(ToolCall(toolCallId: "toolu_agent", title: "Agent", kind: .agent, status: .inProgress))],
       isGenerating: true, startedAt: start, subagents: ["toolu_agent": SubagentTranscript()])
@@ -301,7 +293,6 @@ struct SubagentMirrorTests {
 
   @Test("A running agent with no instructions to show and no work yet reads as working")
   func promptlessAgentWorking() throws {
-    // Codex encrypts its agents' instructions: the spawn names only the task.
     let spawn = ToolCall(
       toolCallId: "toolu_agent", title: "Agent: Map server storage", kind: .agent, status: .inProgress,
       rawInput: .object(["description": .string("Map server storage")]))
@@ -322,7 +313,6 @@ struct SubagentMirrorTests {
     #expect(mirror.summary?.title == "Map server storage")
   }
 
-  /// A Codex agent's chip: its task names it, its thread ties its runs.
   private func codexRun(_ id: String, status: ToolCallStatus, continues: Bool = false) -> ToolCall {
     var subagent: [String: JSONValue] = ["taskId": .string("thread-child")]
     if continues { subagent["continues"] = .bool(true) }
@@ -357,8 +347,6 @@ struct SubagentMirrorTests {
 
     mirror.update()
 
-    // Codex's messages to its agents are encrypted: the runs read as
-    // consecutive responses, with no message between them.
     let settled = mirror.controller.settledConversation
     guard settled.count == 1, case let .assistant(first) = settled[0] else {
       Issue.record("expected the first run alone before the live one; got \(settled.count) items")

@@ -56,7 +56,6 @@ describe("@codevisor/db", () => {
       expect(detail.conversation[0]?.attachments).toEqual([ref])
       expect(detail.conversation[1]?.attachments).toBeUndefined()
 
-      // A literal empty JSON array in the canonical item reads back as "no attachments".
       const sqlite = new Database(filename)
       try {
         sqlite

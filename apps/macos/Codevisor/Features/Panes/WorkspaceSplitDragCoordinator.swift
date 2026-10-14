@@ -1,7 +1,3 @@
-//  Drag-to-rearrange for one workspace tab's split leaves. Each mounted
-//  leaf reports its global frame; while a header drag is active the nearest
-//  valid edge of the hovered leaf becomes the drop target.
-
 import AppKit
 import SwiftUI
 import CodevisorCore
@@ -33,8 +29,6 @@ final class WorkspaceSplitDragCoordinator {
 
   private(set) var active: ActiveDrag?
   @ObservationIgnored private var leafFrames: [UUID: OwnedFrame] = [:]
-  /// Container-owned validation against the candidate tree after the
-  /// source leaf has been removed and reinserted.
   @ObservationIgnored var canResolve: ((UUID, WorkspaceSplitDropResolution, CGSize) -> Bool)?
   @ObservationIgnored var onResolve: ((UUID, WorkspaceSplitDropResolution) -> Void)?
 
@@ -105,8 +99,6 @@ final class WorkspaceSplitDragCoordinator {
           && registration.frame.height > 0
           && registration.frame.contains(location)
       }
-      // Frames should not overlap, but choosing the smallest makes a
-      // stale ancestor-sized registration harmless during remounts.
       .min { lhs, rhs in
         lhs.value.frame.width * lhs.value.frame.height
           < rhs.value.frame.width * rhs.value.frame.height

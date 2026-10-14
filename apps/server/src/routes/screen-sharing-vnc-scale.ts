@@ -1,27 +1,19 @@
 import { execFile, spawn } from "node:child_process"
 import { readFileSync } from "node:fs"
 
-/// Sets a VNC desktop's UI scale (851-2339), for a viewer whose remote desktop
-/// has a pixel per device pixel (Dynamic Resolution, 851-2340): at 2× the UI
-/// stays its usual size and turns sharp.
 export type VNCDesktopScaler = (scale: 1 | 2) => Promise<void>
 
-/// What the scaler runs; the tests supply a fake.
 export interface ScalerCommands {
-  /// Runs a command to completion; rejects when it exits non-zero.
   readonly run: (
     command: string,
     args: readonly string[],
     env: Record<string, string>
   ) => Promise<string>
-  /// Starts a command detached from the server (it outlives the request).
-  /// Resolves once it is running; rejects when it could not start.
   readonly spawnDetached: (
     command: string,
     args: readonly string[],
     env: Record<string, string>
   ) => Promise<void>
-  /// A process's environment, NUL-separated (`/proc/<pid>/environ`).
   readonly environ: (pid: string) => string
 }
 
@@ -43,19 +35,12 @@ export const systemScalerCommands: ScalerCommands = {
         stdio: "ignore"
       })
       child.unref()
-      // A command that can't start (not installed) reports through 'error';
-      // unheard, that event is an uncaught exception that exits the server.
       child.on("error", reject)
       child.once("spawn", () => resolve())
     }),
   environ: (pid) => readFileSync(`/proc/${pid}/environ`, "utf8")
 }
 
-/// Xfce on X display `display`, as scripts/vnc-desktop.sh sets it up (851-2330):
-/// settings go through the session's own D-Bus (the panel's), never a second
-/// xfconfd; window borders follow (Default-xhdpi at 2×; back to Default only
-/// if it was the 2× theme); xfdesktop restarts when the scale changed, since it
-/// reads the scale at start. Apps already open keep theirs until reopened.
 export const xfceScaler =
   (display: number, commands: ScalerCommands): VNCDesktopScaler =>
   async (scale) => {

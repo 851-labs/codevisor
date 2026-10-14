@@ -17,8 +17,6 @@ extension ToolCall {
 }
 
 extension AssistantTurn {
-  /// Successful images render through the ordinary attachment preview. The
-  /// remaining calls keep a visible progress or failure card above the reply.
   public var generatedImageActivity: [ToolCall] {
     toolCalls.filter { $0.kind == .imageGeneration && $0.generatedImageAttachment == nil }
   }

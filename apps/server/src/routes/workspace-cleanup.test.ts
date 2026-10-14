@@ -228,8 +228,6 @@ describe("workspace process cleanup", () => {
       { stop: unrelated, kill: vi.fn(), write: vi.fn(), resize: vi.fn() }
     )
     try {
-      // Clients send one request at a time, so the archive must not hold the
-      // connection while a process takes its time to exit.
       expect(
         (
           await jsonRequest(server, "/v1/workspaces/work", {
@@ -279,7 +277,6 @@ describe("workspace process cleanup", () => {
       ],
       { cwd: folder, stdio: "ignore" }
     )
-    // Reprobe the folder now that it is a Git repository.
     await jsonRequest(server, "/v1/projects", {
       method: "POST",
       body: JSON.stringify({ id: "git-project", folderPath: folder })
@@ -344,8 +341,6 @@ describe("workspace process cleanup", () => {
     try {
       expect((await archive()).status).toBe(200)
       await started.promise
-      // A second archive of the same workspace lands while the first is still
-      // tearing down: the retry must be a no-op, not a second snapshot.
       expect((await archive()).status).toBe(200)
       expect(existsSync(join(worktree.path, "changes.txt"))).toBe(true)
       expect(

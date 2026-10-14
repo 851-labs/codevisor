@@ -26,17 +26,12 @@ export const makePromptQueueService = (
   const { sqlite, getSession } = context
 
   return {
-    // Queue-item ids are deliberately NOT canonicalized: a client-supplied id
-    // doubles as the client's optimistic-message token and must echo back
-    // byte-identical for identity reconciliation.
     createPromptQueueItem: (rawSessionId, text, attachments, id, clientId) =>
       attempt("createPromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         const now = isoTimestamp()
         const item: PromptQueueItem = {
-          // A client-supplied id makes the eventual user-echo messageId the
-          // client's own optimistic-message id (identity reconciliation).
           id: id ?? randomUUID(),
           sessionId,
           text,

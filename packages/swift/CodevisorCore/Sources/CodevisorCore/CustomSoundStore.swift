@@ -1,12 +1,6 @@
 import AVFoundation
 import Foundation
 
-/// Manages user-imported notification sounds. Files the user picks (wav, mp3,
-/// m4a, aiff, flac, …) are validated against a maximum duration and converted
-/// to a canonical Core Audio format — CAF with 16-bit linear PCM, the safest
-/// format for `UNNotificationSound` and `NSSound` alike — inside an
-/// app-managed sounds directory. Settings then reference the converted file
-/// by absolute path, exactly like the built-in macOS sounds.
 public struct CustomSoundStore: Sendable {
   public enum ImportError: Error, LocalizedError, Equatable {
     case unreadableAudio
@@ -32,8 +26,6 @@ public struct CustomSoundStore: Sendable {
     }
   }
 
-  /// Notification sounds are short attention cues, and `UNNotificationSound`
-  /// truncates long files anyway; cap imports well below that.
   public static let maxDuration: TimeInterval = 5
 
   public let directory: URL
@@ -46,14 +38,11 @@ public struct CustomSoundStore: Sendable {
     self.init(directory: Self.defaultDirectory())
   }
 
-  /// The default location for imported sound files:
-  /// `Application Support/<variant>/sounds`.
   public static func defaultDirectory() -> URL {
     CodevisorAppVariant.applicationSupportURL()
       .appendingPathComponent("sounds", isDirectory: true)
   }
 
-  /// The converted sounds currently in the store, sorted by name.
   public func availableSounds() -> [URL] {
     let manager = FileManager.default
     guard
@@ -72,10 +61,6 @@ public struct CustomSoundStore: Sendable {
       }
   }
 
-  /// Imports an audio file the user picked: validates it decodes and fits
-  /// the duration limit, converts it to CAF/PCM in the store directory, and
-  /// returns the converted file's URL. Reads through the security scope
-  /// (fileImporter URLs are scoped in the sandbox).
   @discardableResult
   public func importSound(from url: URL) throws -> URL {
     let scoped = url.startAccessingSecurityScopedResource()
@@ -97,16 +82,12 @@ public struct CustomSoundStore: Sendable {
     do {
       try convert(source, to: destination, format: format)
     } catch {
-      // Never leave a half-written file behind for the catalog to list.
       try? FileManager.default.removeItem(at: destination)
       throw (error as? ImportError) ?? ImportError.conversionFailed
     }
     return destination.standardizedFileURL
   }
 
-  /// Deletes an imported sound, along with the private copy prepared for
-  /// UserNotifications in `~/Library/Sounds`, if one was made. Callers are
-  /// responsible for resetting any setting that referenced the path.
   public func deleteSound(at url: URL) throws {
     let manager = FileManager.default
     try manager.removeItem(at: url)
@@ -119,21 +100,12 @@ public struct CustomSoundStore: Sendable {
     }
   }
 
-  /// The file name used when copying a sound into `~/Library/Sounds` so
-  /// UserNotifications can resolve it by name. Shared with the notification
-  /// manager so deleting a custom sound also removes its prepared copy.
   public static func preparedNotificationSoundName(for source: URL) -> String {
     let safeBase = source.deletingPathExtension().lastPathComponent
       .replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
     return "Codevisor-\(safeBase).\(source.pathExtension.lowercased())"
   }
 
-  // MARK: - Conversion
-
-  /// Decodes the source and rewrites it as CAF containing 16-bit linear PCM
-  /// at the source's sample rate and channel count. Reading and writing both
-  /// use the source's processing format (float32, deinterleaved), so buffers
-  /// pass straight through without an explicit converter.
   private func convert(_ source: AVAudioFile, to destination: URL, format: AVAudioFormat) throws {
     let settings: [String: Any] = [
       AVFormatIDKey: kAudioFormatLinearPCM,
@@ -160,8 +132,6 @@ public struct CustomSoundStore: Sendable {
     }
   }
 
-  /// A destination that won't clobber an existing sound: "Ding.caf",
-  /// then "Ding 2.caf", "Ding 3.caf", …
   private func availableDestination(for baseName: String) -> URL {
     let manager = FileManager.default
     let base = baseName.isEmpty ? "Sound" : baseName

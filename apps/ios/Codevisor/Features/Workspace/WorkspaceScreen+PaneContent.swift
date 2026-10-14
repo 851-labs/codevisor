@@ -3,16 +3,11 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-// MARK: - Pane content
-
-/// The workspace's writable pane state and the view for its active pane,
-/// plus the cached browser/plugin models that pane hands its content.
 extension WorkspaceScreen {
   var paneBinding: Binding<PaneGroupState> {
     Binding(
       get: { panes },
       set: { newValue in
-        // Unchanged writes neither invalidate the screen nor save.
         if paneState != newValue { paneState = newValue }
         persistCompactPaneState(newValue)
       }
@@ -22,12 +17,7 @@ extension WorkspaceScreen {
   func paneContent(_ pane: PaneDescriptorState) -> some View {
     WorkspacePaneContentView(
       pane: pane,
-      // Sync may re-id a pane (a first chat's pane takes its session's
-      // id); the transcript surface follows the original identity so the
-      // mounted transcript — and any send in flight — is not rebuilt.
       surfacePaneID: paneViewIdentities[pane.id] ?? pane.id,
-      // Until Home promotes the route (after the first send lands), the
-      // page is a draft whose workspace adoption must not relayout.
       layoutNamespaceToken: sessionId == nil ? draftPlaceholderId : nil,
       filePaneModel: { filePaneModel(for: $0) },
       reviewPaneModel: { reviewPaneModel(for: $0) },
@@ -73,13 +63,9 @@ extension WorkspaceScreen {
     )
     .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
     .environment(\.openSubagent, openSubagentAction)
-    // BrowserPaneView extends its page separately so its floating controls
-    // retain the home-indicator and keyboard safe areas.
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])
   }
 
-  /// A chat the New Tab page just created focuses its composer, like the
-  /// New Chat sheet; every other pane keeps Home's request.
   func composerFocusRequest(for pane: PaneDescriptorState) -> UUID? {
     if let pending = convertedChatFocusRequest, pane.chatSessionId == pending.chatSessionId {
       return pending.request
@@ -122,9 +108,6 @@ extension WorkspaceScreen {
     return model
   }
 
-  /// The pane's cached plugin model — the webview and its load state
-  /// survive tab switches; the cache tears down webviews for panes that
-  /// leave the active canvas.
   private func pluginPaneModel(for pane: PaneDescriptorState) -> PluginPaneModel {
     let serverId = resolvedServerId
     let machines = environment.machines
@@ -148,8 +131,6 @@ extension WorkspaceScreen {
     }
   }
 
-  /// `codevisor.setTitle` from a plugin pane: rename the tab like a manual
-  /// rename would (persisted + published), matching macOS.
   private func renamePane(_ pane: PaneDescriptorState, to name: String) {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     var state = panes

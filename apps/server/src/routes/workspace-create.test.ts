@@ -60,7 +60,6 @@ describe("workspace create route", () => {
         panes: [expect.objectContaining({ id: "chat-atomic" })]
       }
     })
-    // One navigation delta carries workspace, session and pane together.
     const batch = await run(services.db.readSyncBatch(before))
     const deltas = batch.events.filter((event) => event.kind === "navigation.changed")
     expect(deltas).toHaveLength(1)
@@ -70,8 +69,6 @@ describe("workspace create route", () => {
       panes: [expect.objectContaining({ id: "chat-atomic" })]
     })
 
-    // Retrying converges (200) instead of minting a second session, and pane
-    // options apply to the retried pane.
     const retried = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({
         workspace: { id: "ws-atomic", projectId: project.id, name: "Main", hasCustomName: false },
@@ -86,7 +83,6 @@ describe("workspace create route", () => {
     })
     expect(((await jsonRequest(server, "/v1/sessions")).body as Array<unknown>).length).toBe(1)
 
-    // Omitting the session id lets the server mint one; the pane follows it.
     const minted = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({
         workspace: { id: "ws-minted", projectId: project.id, name: "Minted", hasCustomName: false },
@@ -101,8 +97,6 @@ describe("workspace create route", () => {
     }
     expect(mintedBody.pane.id).toBe(mintedBody.session.id)
 
-    // Assigning an EXISTING chat to an EXISTING workspace keeps the
-    // workspace's record untouched and only adds membership and the pane.
     const loose = (
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
@@ -127,7 +121,6 @@ describe("workspace create route", () => {
       ).some((pane) => pane.resourceId === loose.id)
     ).toBe(true)
 
-    // A workspace and chat from different projects never pair.
     const otherFolder = join(root, "other")
     mkdirSync(otherFolder)
     const other = (

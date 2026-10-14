@@ -16,12 +16,7 @@ interface ProxyOptions {
   readonly cwd: string
   readonly shell?: string
   readonly clientId: string
-  /// Bearer token for servers that require auth (remote machines; same-machine
-  /// connections are exempt server-side).
   readonly token?: string
-  /// Attach to an agent-owned terminal instead of spawning a shell: creation
-  /// retries until the terminal is registered, and pane teardown must NOT
-  /// close the terminal (the process lifecycle belongs to the agent).
   readonly attachOnly: boolean
 }
 
@@ -106,22 +101,10 @@ const createTerminal = async (options: ProxyOptions): Promise<TerminalCreateResp
   return (await response.json()) as TerminalCreateResponse
 }
 
-/// Node's `setRawMode(true)` (libuv `UV_TTY_MODE_RAW`) only rawifies INPUT: it
-/// deliberately keeps `OPOST|ONLCR` on the local pty, so the tty driver
-/// rewrites every bare `\n` the proxy relays as `\r\n`. That is fine for a
-/// shell prompt but corrupts full-screen programs: the server-side pty is in
-/// true raw mode, so nvim/tmux/less emit `\n` as "cursor down, same column"
-/// (terminfo `cud1`/`ind`), and the injected CR drops the next cells at
-/// column 0 (gutter overwritten, duplicated line prefixes). There is no Node
-/// API for termios beyond `setRawMode`, so ask `stty` — it operates on the
-/// inherited stdin, which is the same pty Ghostty reads our stdout from.
 const disableOutputPostProcessing = (): void => {
   try {
     execFileSync("stty", ["raw", "-echo"], { stdio: ["inherit", "ignore", "ignore"] })
-  } catch {
-    // Without stty the proxy still works for shells; only full-screen
-    // programs relying on bare LF would misrender, as before this fix.
-  }
+  } catch {}
 }
 
 const main = async (): Promise<void> => {
@@ -159,8 +142,6 @@ const main = async (): Promise<void> => {
   })
 
   process.on("SIGTERM", () => {
-    // Attach-only proxies are viewers: tearing down the pane must not kill
-    // the agent-owned process behind the terminal.
     if (!options.attachOnly) {
       enqueue({ type: "close" })
     }
@@ -173,8 +154,6 @@ const main = async (): Promise<void> => {
   while (!exited) {
     try {
       const activeTerminal = await createTerminal(options)
-      // A different terminal (the server restarted and spawned a fresh
-      // shell) numbers its output from 1 again: replay all of it.
       if (activeTerminal.terminalId !== terminalId) {
         terminalId = activeTerminal.terminalId
         lastOutputSeq = 0
@@ -232,8 +211,6 @@ const main = async (): Promise<void> => {
     }
 
     if (!exited) {
-      // Exponential backoff (250ms doubling to 5s) so a server that is down
-      // for a while is not hammered by every open pane.
       failures += 1
       await sleep(Math.min(5000, 250 * 2 ** Math.min(failures - 1, 5)))
     }

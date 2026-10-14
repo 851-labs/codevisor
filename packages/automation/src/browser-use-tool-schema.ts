@@ -1,7 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
-/// Schema helpers shared by every Browser Use tool definition.
-
 export const objectSchema = (
   properties: Readonly<Record<string, unknown>> = {},
   required: ReadonlyArray<string> = []

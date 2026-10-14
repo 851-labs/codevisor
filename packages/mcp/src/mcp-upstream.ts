@@ -28,8 +28,6 @@ const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>
   return tools
 }
 
-/// Opens (or reuses) the live client connection to one managed upstream MCP
-/// server, persisting the resulting connection state on the record.
 export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
   const { connectionLocks, connections, record, saveRecord, secrets, state } = core
 
@@ -37,7 +35,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
     const cached = connections.get(id)
     if (cached !== undefined) return cached
     const pending = connectionLocks.get(id)
-    /* v8 ignore next -- concurrent connection callers normally observe the completed cache above. */
+    /* v8 ignore next */
     if (pending !== undefined) return pending
 
     const connecting = (async () => {
@@ -52,8 +50,6 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
       const server = await record(id)
       checkOwner()
       if (server.kind !== "managed") throw new Error(`${server.name} is an internal provider`)
-      // Refusals before the try/finally below must release the lock too, or
-      // every later caller would be handed this rejected promise.
       if (!server.enabled && options.allowDisabled !== true) {
         throw new Error(`${server.name} is disabled`)
       }
@@ -61,16 +57,11 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         throw new Error(`${server.name} is disabled on this machine`)
       }
       const stored = secrets(server)
-      // An empty bearer token is NO token — `""` must never shadow the
-      // OAuth access token a sync import delivered (PostHog answers an
-      // empty Authorization header with "No token provided" forever).
       const bearer =
         stored.bearerToken === undefined || stored.bearerToken === ""
           ? undefined
           : stored.bearerToken
       const accessToken = bearer ?? stored.oauth?.tokens?.access_token
-      // An enabled OAuth server without tokens is a known state, not a
-      // connection to attempt: report it and let the user authorize.
       if (server.authType === "oauth" && accessToken === undefined) {
         if (server.connectionState !== "needsAuthorization") {
           await saveRecord(server, {
@@ -81,7 +72,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         }
         throw new Error(`${server.name} needs authorization`)
       }
-      /* v8 ignore next -- preserveState is reserved for the live OAuth validation path. */
+      /* v8 ignore next */
       if (options.preserveState !== true) {
         await saveRecord(server, { connectionState: "connecting", detail: undefined })
       }
@@ -90,7 +81,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
       const transport =
         server.transport === "stdio"
           ? new StdioClientTransport({
-              /* v8 ignore next -- stdio records are validated to require a command before saving. */
+              /* v8 ignore next */
               command: server.command ?? "",
               args: [...server.args],
               env: { ...process.env, ...stored.env } as Record<string, string>,
@@ -106,9 +97,6 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         await client.connect(transport as unknown as Transport)
         phase = "tools/list"
         const tools = await listAllUpstreamTools(client)
-        // Connections settle in the background, so the server may have
-        // been switched off mid-handshake: never cache (or report) a
-        // connection the record no longer wants.
         const latest = await record(id)
         checkOwner()
         if (
@@ -153,19 +141,18 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         })
         return connection
       } catch (cause) {
-        /* v8 ignore next -- best-effort cleanup after the original connection failure. */
+        /* v8 ignore next */
         await client.close().catch(() => undefined)
-        // The disable already recorded its own state; leave it be.
         if (abandoned || !owns()) throw cause
         console.error(
           `MCP connection failed for ${server.name} during ${phase}: ${errorMessage(cause)}`
         )
         const updated = await record(id)
         checkOwner()
-        /* v8 ignore next -- OAuth connection failures are handled by live completion validation. */
+        /* v8 ignore next */
         const needsAuthorization = server.authType === "oauth" && accessToken === undefined
         await saveRecord(updated, {
-          /* v8 ignore next -- OAuth failures are classified by the live validation path. */
+          /* v8 ignore next */
           connectionState: needsAuthorization ? "needsAuthorization" : "error",
           detail: errorMessage(cause)
         })

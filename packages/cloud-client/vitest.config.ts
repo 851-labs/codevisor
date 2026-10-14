@@ -1,10 +1,5 @@
 import { defineConfig } from "vitest/config"
 
-// Product code stays at 100%. machine-connection-test-support.ts is shared
-// test scaffolding (fake socket, scripted timers, connection harness)
-// extracted from the old monolithic machine-connection.test.ts, not product
-// code — same exclusion the server and adapter packages use. The same goes
-// for machine-peers-test-support.ts (two connections joined by a fake hub).
 export default defineConfig({
   test: {
     coverage: {

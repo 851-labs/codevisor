@@ -13,7 +13,6 @@ import {
 
 describe("macOS Computer Use bridge discovery", () => {
   it("shares the native socket address across users and Unicode data paths", () => {
-    // The native test uses this same fixture to check the wire contract.
     const dataDir = "/Users/test/Codevisor café/data"
     expect(macComputerUseSocketPath(dataDir, 501)).toBe("/tmp/codevisor-cu-501-26606633.sock")
     expect(macComputerUseSocketPath(dataDir, 502)).not.toBe(macComputerUseSocketPath(dataDir, 501))

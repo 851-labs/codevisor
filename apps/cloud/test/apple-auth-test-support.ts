@@ -46,13 +46,9 @@ beforeEach(({ task }) => {
   codes = new Map()
   revoked = []
   revokeFails = false
-  // All Apple traffic is owned by this fake. An unexpected network request
-  // fails immediately; no developer credentials or live Apple accounts are used.
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const request = new Request(input, init)
     if (request.url === `${issuer}/auth/keys`) return Response.json(jwks)
-    // Apple's token and revoke endpoints take form bodies; decode the bytes as
-    // form data rather than calling .text() on a non-text Content-Type.
     const body = new URLSearchParams(new TextDecoder().decode(await request.arrayBuffer()))
     if (request.url === `${issuer}/auth/token` || request.url === `${issuer}/auth/revoke`) {
       const audience = body.get("client_id")!
@@ -149,8 +145,6 @@ export class Browser {
   async finish(state: string, token: string, name?: string) {
     const code = `code-${state}`
     codes.set(code, token)
-    // Safari omits SameSite=Lax cookies on Apple's cross-origin form POST.
-    // Better Auth redirects to GET, where this browser sends its state cookie.
     const posted = await worker.fetch(
       new Request(`${BASE}/api/auth/callback/apple`, {
         method: "POST",

@@ -24,18 +24,13 @@ extension PaneGroupStateTests {
   func chatCloseRules() {
     var state = PaneGroupState.centerInitial(sessionId: sessionId)
     let anchor = state.panes[0]
-    // Bind the initial chat to its session (the backfill's shape).
     state.assignChatSession(paneId: anchor.id, sessionId: sessionId, name: "First")
-    // Group-locally closable (close = archive); the workspace-wide
-    // keep-one-chat anchor is the owning model's policy, not state's.
     #expect(state.canClosePane(id: anchor.id))
 
-    // A draft closes freely.
     let draft = state.addChatPane()
     #expect(state.canClosePane(id: draft.id))
     #expect(state.closePane(id: draft.id) != nil)
 
-    // Established chats close and selection moves on.
     let second = state.addChatPane(sessionId: UUID(), name: "Second")
     #expect(state.closePane(id: second.id) != nil)
     #expect(state.selectedPaneId == anchor.id)
@@ -61,15 +56,10 @@ extension PaneGroupStateTests {
     let placeholder = state.addNewTabPane()
     #expect(placeholder.kind == .newTab)
     #expect(state.selectedPaneId == placeholder.id)
-    // Group-locally closable — the cross-group rules (a lone
-    // placeholder only closes when its group can dissolve) live in the
-    // owning model's policies, which see the whole workspace.
     #expect(state.canClosePane(id: placeholder.id))
-    // Extraction (a MOVE) removes without consulting close rules.
     var moved = state
     #expect(moved.removePane(id: placeholder.id) != nil)
     #expect(moved.panes.isEmpty)
-    // Closing with company behaves like any tab: selection moves on.
     let terminal = state.addTerminalPane(sessionId: sessionId)
     #expect(state.closePane(id: placeholder.id) != nil)
     #expect(state.selectedPaneId == terminal.id)
@@ -77,8 +67,6 @@ extension PaneGroupStateTests {
 
   @Test("Dead chat panes heal: unbind back to draft, or reset to a placeholder")
   func chatPaneHealing() {
-    // Unbind: a failed first-send deleted the session; the pane keeps
-    // its slot and composer as a draft.
     var state = PaneGroupState.centerInitial(sessionId: sessionId)
     let chatId = state.panes[0].id
     state.unbindChatPane(paneId: chatId)
@@ -86,19 +74,14 @@ extension PaneGroupStateTests {
     #expect(state.panes[0].name == "New Chat")
     #expect(state.panes[0].id == chatId)
 
-    // Reset: a vanished session's pane becomes a New Tab placeholder
-    // in place, selection following.
     var dead = PaneGroupState.centerInitial(sessionId: sessionId)
     let deadId = dead.panes[0].id
     let placeholder = dead.resetChatPaneToPlaceholder(id: deadId)
     #expect(placeholder?.kind == .newTab)
     #expect(dead.panes.count == 1)
     #expect(dead.selectedPaneId == placeholder?.id)
-    // Only chat panes reset.
     #expect(dead.resetChatPaneToPlaceholder(id: placeholder!.id) == nil)
 
-    // The server's final-pane close transition works for every renderer
-    // and preserves its stable shared identity.
     var terminal = PaneGroupState()
     let original = terminal.addTerminalPane(sessionId: sessionId)
     let reset = terminal.replacePaneWithNewTab(id: original.id)
@@ -113,7 +96,6 @@ extension PaneGroupStateTests {
     state.addTerminalPane(sessionId: sessionId)
     let placeholder = state.addNewTabPane()
 
-    // Terminal conversion: same slot, the terminal name, selected.
     let terminal = state.convertNewTabPane(
       id: placeholder.id, to: .terminal, sessionId: sessionId
     )
@@ -123,15 +105,12 @@ extension PaneGroupStateTests {
     #expect(state.panes.map(\.id) == [state.panes[0].id, terminal?.id])
     #expect(state.selectedPaneId == terminal?.id)
 
-    // Chat conversion without a session produces a DRAFT (binds on
-    // first send)…
     let second = state.addNewTabPane()
     let draft = state.convertNewTabPane(id: second.id, to: .chat, sessionId: sessionId)
     #expect(draft?.kind == .chat)
     #expect(draft?.id == second.id)
     #expect(draft?.chatSessionId == nil)
 
-    // …and with an eagerly created session, an ESTABLISHED chat.
     let eager = state.addNewTabPane()
     let chatSession = UUID()
     let established = state.convertNewTabPane(
@@ -142,7 +121,6 @@ extension PaneGroupStateTests {
     #expect(established?.id == eager.id)
     #expect(established?.name == "New Chat")
 
-    // Only placeholders convert; a placeholder can't "convert" to one.
     #expect(state.convertNewTabPane(id: draft!.id, to: .terminal, sessionId: sessionId) == nil)
     let third = state.addNewTabPane()
     #expect(state.convertNewTabPane(id: third.id, to: .newTab, sessionId: sessionId) == nil)

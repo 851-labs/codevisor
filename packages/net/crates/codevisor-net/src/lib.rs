@@ -1,13 +1,3 @@
-//! Codevisor's peer-to-peer tunnel core.
-//!
-//! One QUIC connection per device pair over iroh: direct (LAN, tailnet,
-//! hole-punched) when possible, through our relays otherwise. Services are
-//! selected by ALPN:
-//!
-//! - [`ALPN_CHANNELS`]: the existing sealed cloud channel protocol, carried as
-//!   messages on one bidirectional stream ([`MessageStream`]).
-//! - [`ALPN_MEDIA`]: UDP media flows as QUIC datagrams ([`MediaFlow`]).
-
 pub mod config;
 pub mod endpoint;
 pub mod media;

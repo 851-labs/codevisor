@@ -18,7 +18,6 @@ struct CloudRelayCancellationTests {
     let receive = Task { try await socket.receive() }
     await clock.waitForSleep(.seconds(20))
     socket.cancel(with: .goingAway, reason: nil)
-    // No welcome, timeout advance, or upstream close is required to release it.
     switch await receive.result {
     case .success: Issue.record("Cancelled receive unexpectedly succeeded")
     case let .failure(error): #expect(error is CancellationError)

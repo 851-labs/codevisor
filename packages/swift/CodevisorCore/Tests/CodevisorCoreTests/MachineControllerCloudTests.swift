@@ -33,8 +33,6 @@ struct MachineControllerCloudTests {
     #expect(controller.machine(for: "cloud:dev-1") == nil)
   }
 
-  /// A controller whose local server's status probe advertises `deviceId`
-  /// — this Mac registered on the account — over a canned transport.
   private func makeRegisteredLocal(
     deviceId: String
   ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
@@ -61,17 +59,11 @@ struct MachineControllerCloudTests {
     let deviceId = "dev-this-mac"
     let (controller, _, provider) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [
-      // This Mac's registration (device id match after its status probe
-      // answers).
       makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)"),
-      // Name collision with this Mac.
       makeCloudMachine(deviceId: "dev-name-clash", name: CodevisorMachine.local.name),
-      // Genuinely another machine.
       makeCloudMachine(deviceId: "dev-only", name: "Only In Cloud"),
     ]
 
-    // Before the status probe answers, the device-id duplicate is still
-    // listed (name fallback doesn't match it).
     #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId, "dev-only"])
 
     await controller.refreshStatus(for: "local")
@@ -86,15 +78,12 @@ struct MachineControllerCloudTests {
     let (controller, projectList, provider) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)")]
 
-    // Records that synced under the twin id before the probe landed.
     let twinId = "cloud:\(deviceId)"
     await projectList.installProjectWithChat(machineId: twinId, folder: "/srv/studio-work", title: "twin chat")
     #expect(projectList.projects.contains { $0.serverId == twinId })
 
     await controller.refreshStatus(for: "local")
 
-    // The twin's records are gone, and drafts naming the twin land on
-    // this Mac.
     #expect(!projectList.projects.contains { $0.serverId == twinId })
     #expect(!projectList.sessions.contains { $0.serverId == twinId })
     #expect(controller.canonicalComposerMachineId(for: twinId) == "local")
@@ -165,9 +154,6 @@ extension MachineControllerCloudTests {
     var connectedMachineIds: [String] = []
     controller.onMachineConnected = { connectedMachineIds.append($0) }
 
-    // Let the twin pass its status probe and enter the authoritative list
-    // fetch. The configured local probe then discovers both ids are the
-    // same device and prunes the twin while that fetch is suspended.
     let connect = Task { await controller.connectMachine(twinId) }
     await awaitObserved { provider.requestTransport.requestCount(for: "/v1/navigation") == 1 }
     #expect(provider.requestTransport.requestCount(for: "/v1/navigation") == 1)
@@ -189,7 +175,6 @@ extension MachineControllerCloudTests {
   @Test("Dead cloud identities' records are pruned after a roster refresh")
   func deadCloudRecordPrune() async throws {
     let (controller, projectList, provider) = makeController()
-    // Live machine dev-1; dev-gone was wiped and re-registered long ago.
     provider.cloudMachines = [makeCloudMachine(deviceId: "dev-1")]
     let liveId = "cloud:dev-1"
     let deadId = "cloud:dev-gone"
@@ -200,21 +185,17 @@ extension MachineControllerCloudTests {
 
     controller.pruneDeadCloudRecords()
 
-    // Only the identity absent from the fetched roster is gone.
     #expect(!projectList.projects.contains { $0.serverId == deadId })
     #expect(!projectList.sessions.contains { $0.serverId == deadId })
     #expect(projectList.projects.contains { $0.serverId == liveId })
     #expect(projectList.sessions.contains { $0.serverId == liveId })
 
-    // An unverified (launch-cached) roster may be stale: a machine missing
-    // from it is not proof the machine is gone, so nothing is pruned.
     provider.isCloudRosterVerified = false
     provider.cloudMachines = []
     controller.pruneDeadCloudRecords()
     #expect(projectList.projects.contains { $0.serverId == liveId })
     provider.isCloudRosterVerified = true
 
-    // Signed out: the roster is unknown, not empty — nothing is pruned.
     provider.isCloudSignedIn = false
     controller.pruneDeadCloudRecords()
     #expect(projectList.projects.contains { $0.serverId == liveId })
@@ -229,14 +210,11 @@ extension MachineControllerCloudTests {
        "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
       """
 
-    // The client is a real CodevisorServerClient tunneling through the
-    // provider's relay transports.
     let info = try await controller.client(for: "cloud:dev-1").info()
     #expect(info.name == "Cloud Mac")
     #expect(provider.configRequests.contains("dev-1"))
     #expect(provider.requestTransport.paths.contains("/v1/info"))
 
-    // refreshStatus flows through the same relay client.
     await controller.refreshStatus(for: "cloud:dev-1")
     #expect(controller.statusByMachineId["cloud:dev-1"]?.isReachable == true)
     #expect(controller.statusByMachineId["cloud:dev-1"]?.cloudDeviceId == "dev-1")
@@ -245,18 +223,12 @@ extension MachineControllerCloudTests {
   @Test("A cloud id with no relay yields a failing client, never the local machine's")
   func unresolvedCloudIdNeverFallsBackToLocal() async {
     let (controller, _, provider) = makeController()
-    // The launch-time gap: the account looks signed out (or the roster
-    // hasn't loaded), so no relay config exists for the id yet. Falling
-    // back to the local client here once served the LOCAL harness
-    // catalog for a cloud machine — which the capability cache then
-    // persisted under the cloud machine's key.
     provider.isCloudSignedIn = false
     let client = controller.client(for: "cloud:dev-1")
     await #expect(throws: MachineUnreachableError.self) {
       _ = try await client.capabilities(cwd: "/tmp")
     }
 
-    // Once the roster lands, the same id resolves to the relay client.
     provider.isCloudSignedIn = true
     provider.cloudMachines = [makeCloudMachine()]
     provider.requestTransport.responsesByPath["/v1/info"] = """
@@ -288,21 +260,15 @@ extension MachineControllerCloudTests {
     let (controller, _, provider) = makeController()
     provider.cloudMachines = [makeCloudMachine()]
 
-    // Before the bridge is up: placeholder everywhere.
     #expect(
       controller.machine(for: "cloud:dev-1")?.baseURL
         == CodevisorMachine.cloudPlaceholderBaseURL
     )
 
-    // Once the bridge listens, baseURL consumers (the external terminal
-    // proxy reads machine.baseURL / serverConfig.baseURL) get the real
-    // loopback address.
     let loopback = URL(string: "http://127.0.0.1:54321")!
     provider.loopbackURLsByDeviceId["dev-1"] = loopback
     #expect(controller.machine(for: "cloud:dev-1")?.baseURL == loopback)
     #expect(controller.serverConfig(for: "cloud:dev-1").baseURL == loopback)
-    // The relay transports stay attached — the loopback URL is for
-    // external processes, in-app clients keep tunneling in-process.
     #expect(controller.serverConfig(for: "cloud:dev-1").requestTransport != nil)
   }
 
@@ -327,7 +293,6 @@ extension MachineControllerCloudTests {
       {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
        "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
       """
-    // Fresh registry: local placeholder selected.
     #expect(controller.selectedMachineId == "local")
 
     provider.cloudMachines = [makeCloudMachine()]
@@ -336,12 +301,10 @@ extension MachineControllerCloudTests {
     #expect(controller.selectedMachine.isCloud)
     #expect(controller.selectedMachineId == "cloud:dev-1")
     #expect(projectList.selectedServerId == "local")
-    // Explicit preparation connects through the relay client.
     await controller.prepareMachine(controller.selectedMachineId)
     #expect(provider.configRequests.contains("dev-1"))
     #expect(provider.requestTransport.paths.contains("/v1/info"))
 
-    // The auto-selection persists so a relaunch resolves the same machine.
     let persisted = try JSONDecoder().decode(
       MachineRegistry.self,
       from: #require(store.loadData(forKey: "machines"))
@@ -365,14 +328,12 @@ extension MachineControllerCloudTests {
   @Test("Auto-selection prefers an online machine over list order")
   func autoSelectPrefersOnlineMachine() {
     let (controller, _, provider) = makeController(localServer: nil)
-    // Offline machine first in list order, online machine second.
     provider.cloudMachines = [
       makeCloudMachine(deviceId: "dev-offline", name: "Offline Mac", online: false),
       makeCloudMachine(deviceId: "dev-online", name: "Online Mac", online: true),
     ]
     controller.reconcileCloudSelection()
 
-    // Online preference beats list order.
     #expect(controller.selectedMachineId == "cloud:dev-online")
   }
 
@@ -385,14 +346,12 @@ extension MachineControllerCloudTests {
     ]
     controller.reconcileCloudSelection()
 
-    // No online candidate: the first in list order wins.
     #expect(controller.selectedMachineId == "cloud:dev-a")
   }
 
   @Test("With no machines at all, a client-only platform stays on the placeholder")
   func autoSelectStaysLocalWithNoOtherMachines() {
     let (controller, projectList, _) = makeController(localServer: nil)
-    // No cloud machines, no remotes: nothing to prefer over local.
     controller.reconcileCloudSelection()
 
     #expect(controller.selectedMachineId == "local")
@@ -407,15 +366,11 @@ extension MachineControllerCloudTests {
       forKey: "machines"
     )
 
-    // Launch without a provider: selection stays persisted, but the
-    // resolved machine is local.
     let projectList = ProjectListModel.fixture()
     let controller = MachineController(store: store, projectList: projectList)
     #expect(controller.selectedMachineId == "cloud:dev-1")
     #expect(controller.selectedMachine == .local)
 
-    // Once the account's machines arrive, reconciliation rewires the
-    // selection to the now-available cloud machine.
     let provider = FakeCloudProvider()
     provider.cloudMachines = [makeCloudMachine()]
     controller.cloudProvider = provider
@@ -430,8 +385,6 @@ extension MachineControllerCloudTests {
     let cloud = makeCloudMachine()
     provider.cloudMachines = [cloud]
 
-    // The bridge publishes its port a beat after the first touch, like
-    // CloudAccountController does once the listener is up.
     let clock = AdvancingServerUpdateScheduler()
     clock.onSleep = {
       provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(string: "http://127.0.0.1:50505")!

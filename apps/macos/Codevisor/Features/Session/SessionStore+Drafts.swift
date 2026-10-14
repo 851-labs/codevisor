@@ -1,11 +1,6 @@
 import CodevisorCore
 
 extension SessionStore {
-  /// Returns the retained draft controller for the new-chat page, restoring
-  /// its disk snapshot first or seeding it from last-used composer defaults
-  /// if none exists. The draft is retained until its first send promotes it
-  /// to a real session, so unsent composer state survives navigation and
-  /// relaunches.
   func draft(project: Project) -> SessionController {
     if let draft = draftsByServer[project.serverId], draft.serverSession == nil {
       return draft
@@ -23,10 +18,6 @@ extension SessionStore {
     let draftSlotServerId = persistedMatch?.slotServerId ?? project.serverId
     let restoredProject =
       persisted.flatMap { saved in
-        // The saved draft may target ANOTHER machine's project (the
-        // picker is fleet-wide); older drafts carry no server id and
-        // mean this machine. A configured machine's now-hidden cloud
-        // twin is the same target under an obsolete identity.
         var canonical = saved
         let savedServerId = saved.projectServerId ?? project.serverId
         canonical.projectServerId =
@@ -38,9 +29,6 @@ extension SessionStore {
         )
       } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
         rememberedId in
-        // A scratch folder is single-use: the next chat never starts in
-        // the previous chat's folder. (A remembered "No project" is the
-        // placeholder id, which matches nothing and falls through.)
         environment.projectList.fleetActiveProjects.first {
           $0.serverId == project.serverId && $0.id == rememberedId && !$0.isScratch
         }
@@ -55,17 +43,12 @@ extension SessionStore {
       project: restoredProject,
       configCache: environment.configCache,
       composerDefaults: environment.composerDefaults,
-      // The restored project's OWN machine — a retargeted draft keeps
-      // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
       machines: environment.machines,
       notificationDelivery: notificationDelivery,
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
-    // Fresh drafts start from the project's remembered run-location
-    // choice (worktrees only apply to git projects). Retained drafts
-    // returned above keep whatever the user toggled.
     controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     enableDraftPersistence(for: controller, slotServerId: draftSlotServerId)

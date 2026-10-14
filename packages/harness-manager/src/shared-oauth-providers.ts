@@ -127,16 +127,12 @@ export const readNativeOAuth = async (options: {
 }): Promise<SharedTokenBundle | undefined> => {
   const { harnessId, directory, ownership } = options
   if (harnessId === "muse-code") {
-    // A managed Muse profile's file-backend sign-in; Muse's default
-    // Keychain sign-in stays with the user's own CLI.
     if (options.isDefault && options.env.META_API_KEY)
       return sharedApiKey(harnessId, options.env.META_API_KEY)
     const document = await jsonFile(museAuthPath(directory))
     return document === undefined ? undefined : parseMuseAuth(document, ownership)
   }
   if (harnessId === "antigravity") {
-    // A managed profile's file sign-in. The user's own agy keeps its
-    // Keychain sign-in, and a Gemini key needs agy's settings, not just env.
     if (options.isDefault) return undefined
     const document = await jsonFile(antigravityAuthPath(directory))
     return document === undefined ? undefined : parseAntigravityAuth(document, ownership)
@@ -163,9 +159,7 @@ export const readNativeOAuth = async (options: {
         { timeout: 5_000, maxBuffer: 100_000 }
       )
       document = object(JSON.parse(stored.stdout))
-    } catch {
-      /* A file-backed login remains usable when Keychain has no entry. */
-    }
+    } catch {}
   }
   if (document === undefined) return undefined
   if (harnessId === "codex") return parseCodexOAuth(document, ownership)
@@ -177,8 +171,6 @@ export const readNativeOAuth = async (options: {
   return parseClaudeOAuth(document, settings, ownership)
 }
 
-/// Endpoints and public client ids follow the installed Claude SDK 0.3.211 and
-/// openai/codex 8f31b64c. The only caller is the coordinated credential vault.
 export const refreshSharedOAuth = async (
   bundle: SharedTokenBundle,
   request: typeof fetch = fetch,

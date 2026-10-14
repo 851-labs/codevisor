@@ -9,25 +9,16 @@ export const DEFAULT_ALPHA_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/
 export const DEFAULT_LEGACY_RELEASE_BASE_URL =
   "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
-/// Server update channels. `alpha` sees alpha AND stable releases (newest
-/// wins); `stable` sees stable only.
 export type ServerUpdateChannel = "stable" | "alpha"
 
 export type ServerRelease = {
   readonly version: string
-  /// CI run number stamped into every build (matches the runtime's
-  /// BUILD.json and the Sparkle `sparkle:version`). Monotonic across all
-  /// releases, unlike version strings — successive alphas share a core
-  /// version, so channel comparisons prefer this when both sides have one.
   readonly buildNumber?: number | undefined
   readonly archiveURL: string
   readonly checksumURL?: string | undefined
   readonly releasePageURL?: string | undefined
 }
 
-/// Whether `candidate` is a newer release than the installed
-/// (version, buildNumber) pair: build numbers when both are known,
-/// falling back to semver-style version comparison.
 export const isNewerRelease = (
   candidate: Pick<ServerRelease, "version" | "buildNumber">,
   current: { readonly version: string; readonly buildNumber?: number | undefined }
@@ -190,12 +181,6 @@ export const fetchLegacyServerRelease = async (options: {
   return { version, archiveURL, checksumURL: `${archiveURL}.sha256` }
 }
 
-/// The first-party stable manifest is authoritative and avoids coupling Linux
-/// updates to GitHub's mutable "latest release" pointer. GitHub and the frozen
-/// bridge remain read-only fallbacks for installations crossing the cutover.
-/// On the alpha channel, the alpha manifest joins the stable one and the
-/// newest of the two wins — a stable cut after the last alpha must still be
-/// offered to alpha followers.
 export const fetchLatestServerRelease = async (options: {
   readonly channel?: ServerUpdateChannel | undefined
   readonly manifestURL?: string | undefined
@@ -224,9 +209,7 @@ export const fetchLatestServerRelease = async (options: {
         ? alphaRelease
         : release
     }
-  } catch {
-    // Continue through the migration fallbacks.
-  }
+  } catch {}
   if (alphaRelease !== undefined) return alphaRelease
   try {
     const release = await fetchLatestGitHubServerRelease({
@@ -235,9 +218,7 @@ export const fetchLatestServerRelease = async (options: {
       fetch: options.fetch
     })
     if (release !== undefined) return release
-  } catch {
-    // Continue to the immutable compatibility bridge.
-  }
+  } catch {}
   return fetchLegacyServerRelease({
     baseURL: options.legacyBaseURL ?? DEFAULT_LEGACY_RELEASE_BASE_URL,
     target: options.target,

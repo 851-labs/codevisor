@@ -1,13 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// Chooses a stable, geometry-based render window around the native viewport.
-///
-/// A small inner guard band provides hysteresis: scrolling inside an already
-/// prepared window does not churn hosts. Once the viewport reaches that guard,
-/// the window advances by a larger, directionally-biased runway. A bounded
-/// prediction term covers fast single-frame jumps without allowing one event
-/// to mount an unbounded portion of the transcript.
 public struct TranscriptVirtualWindowPolicy: Sendable, Equatable {
   public let guardBandViewportCount: CGFloat
   public let runwayBehindViewportCount: CGFloat
@@ -32,10 +25,6 @@ public struct TranscriptVirtualWindowPolicy: Sendable, Equatable {
     self.maximumPredictionViewportCount = max(0, maximumPredictionViewportCount)
   }
 
-  /// Returns the existing window while its guard band still contains the
-  /// viewport. Otherwise, returns a new pixel runway biased in the direction
-  /// of travel. `scrollDelta` uses document coordinates: negative moves
-  /// toward the transcript's start, positive toward its end.
   public func targetRange(
     layout: VirtualTranscriptLayout,
     distanceFromBottom: CGFloat,
@@ -87,9 +76,6 @@ public struct TranscriptVirtualWindowPolicy: Sendable, Equatable {
     )
   }
 
-  /// Splits mounting into mandatory viewport coverage and speculative runway
-  /// preparation. Adapters must mount every `visibleIndex` before presenting
-  /// the frame; only `runwayIndices` may be subject to a frame budget.
   public func mountPlan(
     targetRange: Range<Int>,
     visibleRange: Range<Int>,
@@ -119,9 +105,6 @@ public struct TranscriptVirtualWindowPolicy: Sendable, Equatable {
   }
 }
 
-/// Tracks scroll direction and a short velocity projection for runway work.
-/// The projection survives the individual bounds notifications that produced
-/// it, allowing follow-up display frames to keep preparing the same direction.
 public struct TranscriptRunwayMotion: Sendable, Equatable {
   public private(set) var pointsPerSecond: CGFloat = 0
   private var lastViewportTop: CGFloat?
@@ -170,8 +153,6 @@ public struct TranscriptRunwayMotion: Sendable, Equatable {
   }
 }
 
-/// Work for one virtual-window reconciliation. Viewport coverage is a
-/// correctness requirement; runway preparation is a performance optimization.
 public struct TranscriptVirtualWindowMountPlan: Sendable, Equatable {
   public static let empty = Self(visibleIndices: [], runwayIndices: [])
 
@@ -184,11 +165,6 @@ public struct TranscriptVirtualWindowMountPlan: Sendable, Equatable {
   }
 }
 
-/// Tracks a two-phase virtual-window transition without knowing anything
-/// about AppKit or UIKit hosts. The presented keys remain retained until every
-/// target key is ready. Replacing an unfinished target immediately drops that
-/// intermediate window from `retainedKeys`, so a fast scroll cannot accumulate
-/// an unbounded trail of partially prepared hosts.
 public struct TranscriptVirtualWindowHandoff: Sendable, Equatable {
   public private(set) var targetKeys: Set<String> = []
   public private(set) var presentedKeys: Set<String> = []

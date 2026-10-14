@@ -19,7 +19,6 @@ struct NavigationOutboxTests {
         .renameWorkspace(workspaceId: workspaceId, name: "B", hasCustomName: true),
         .setWorkspaceArchived(workspaceId: workspaceId, isArchived: true),
       ])
-    // The same key on another machine is a different record.
     outbox.enqueue(.renameWorkspace(workspaceId: workspaceId, name: "C", hasCustomName: true), machineId: "other")
     #expect(outbox.entries.count == 3)
   }
@@ -45,8 +44,6 @@ struct NavigationOutboxTests {
     #expect(!outbox.retire(machineId: "m", cursor: 9, snapshotRequestedAt: nil))
     #expect(outbox.retire(machineId: "m", cursor: 10, snapshotRequestedAt: nil))
     #expect(outbox.entries.count == 1)
-    // A snapshot requested before the server accepted the change may not
-    // contain it; one requested after must (even if the log was reset).
     #expect(!outbox.retire(machineId: "m", cursor: 1, snapshotRequestedAt: accepted.addingTimeInterval(-1)))
     #expect(outbox.retire(machineId: "m", cursor: 1, snapshotRequestedAt: accepted.addingTimeInterval(1)))
     #expect(outbox.entries.isEmpty)
@@ -135,8 +132,6 @@ struct NavigationOutboxExecutorTests {
     ready = true
     fixture.store.executor.resume(machineId: "m")
     await fixture.store.executor.idle(machineId: "m")
-    // Closing a pane whose create was never sent replaces that create: the
-    // server never sees the close ahead of it, and never sees the pane.
     #expect(fake.paneMutationLog == ["close"])
   }
 
@@ -157,7 +152,6 @@ struct NavigationOutboxExecutorTests {
     await fixture.store.executor.idle(machineId: "m")
     #expect(fake.paneMutationLog.isEmpty)
 
-    // Opening the draft's first chat creates it on the server.
     var created = draft
     created.isServerSynced = true
     await fixture.install(machineId: "m", workspaces: [created], cursor: 2)

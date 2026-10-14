@@ -134,7 +134,6 @@ struct HarnessSharedCredentialEditor: View {
 
   private func loadProviders() async {
     guard credential == nil, source.hasProviders, providers.isEmpty else { return }
-    // Common IDs remain usable offline. A reachable harness supplies its full catalog.
     for id in ["anthropic", "openai", "google", "openrouter", "groq", "xai"] {
       providers[id] = HarnessSharedCredentials.providerName(id)
     }

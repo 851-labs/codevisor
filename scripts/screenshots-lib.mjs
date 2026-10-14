@@ -33,7 +33,6 @@ export function selectedAppearances(options) {
   )
 }
 
-// Select named XCTest attachments, never incidental system/failure screenshots.
 export function screenshotAttachments(manifest) {
   const attachments = manifest.flatMap((test) => test.attachments)
   return scenes.map((scene) => {

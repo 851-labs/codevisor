@@ -3,11 +3,6 @@ import VideoToolbox
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// Advertise only codecs actually implemented by these adapters, in preference
-/// order: the primary codec, then fallbacks an older peer may be limited to
-/// (851-2372: HEVC, then H.264). A fallback is offered only when it captures in
-/// the primary's pixel format, since capture is configured before negotiation.
-/// Level 5.2 permits the probe's 4K60 ceiling; endpoints negotiate level asymmetry.
 final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVideoDecoderFactory {
   let recoveryCheck = ScreenSharingDecoderRecoveryCheck()
   let encoderDropCheck = ScreenSharingEncoderDropCheck()
@@ -15,7 +10,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   let encoderRefreshRequest = ScreenSharingEncoderRefreshRequest()
   let sourceIdleMonitor: ScreenSharingSourceIdleMonitor
   let deliveryAudit = ScreenSharingDeliveryAudit()
-  /// Receiver-only diagnostic frame-delivery audit (nil = disabled).
   let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
   let metrics: ScreenSharingMetrics
   let useLowLatencyRateControl: Bool
@@ -25,7 +19,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   let completeEachFrame: Bool
   let prioritizeSpeed: Bool
   let keyframeIntervalSeconds: Int
-  /// Negotiable codecs, most preferred first.
   let codecs: [ScreenSharingVideoCodec]
   var codec: ScreenSharingVideoCodec { codecs[0] }
 
@@ -49,9 +42,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     self.keyframeIntervalSeconds = keyframeIntervalSeconds
   }
 
-  /// The primary, then each fallback not already listed. HEVC Main 4:4:4 and Main share the
-  /// H265 payload name and are told apart by profile-id (851-2381). A host captures in the
-  /// pixel format of the codec the answer names (`ScreenSharingVideoCodec.negotiated`).
   static func negotiable(
     primary: ScreenSharingVideoCodec, fallbacks: [ScreenSharingVideoCodec]
   ) -> [ScreenSharingVideoCodec] {
@@ -60,9 +50,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     return codecs
   }
 
-  /// Only what this device can decode: HEVC needs VideoToolbox's hardware decoder (every iPhone
-  /// and Apple silicon Mac has one; the iOS Simulator doesn't, and would drop every frame), while
-  /// H.264 always decodes. WebRTC asks one list for both directions, so a sender offers the same.
   static func decodable(
     _ codecs: [ScreenSharingVideoCodec],
     hardwareDecodes: (CMVideoCodecType) -> Bool = { VTIsHardwareDecodeSupported($0) }
@@ -71,9 +58,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     return usable.isEmpty ? [.h264] : usable
   }
 
-  /// The low-latency encoder can't do 4:4:4 (it may reduce chroma). A peer that asked for low
-  /// latency and negotiated Main 4:4:4 gets the next fastest: standard rate control at the
-  /// encoder's speed preference, about 3 ms more encode time at 1080p (851-2381).
   static func rateControl(
     for codec: ScreenSharingVideoCodec, lowLatencyRequested: Bool, prioritizeSpeed: Bool
   ) -> (lowLatency: Bool, prioritizeSpeed: Bool) {
@@ -85,8 +69,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     codecs.map { RTCVideoCodecInfo(name: $0.payloadName, parameters: $0.sdpParameters) }
   }
 
-  /// The codec a negotiated format selects: by payload name, and for H265 by profile-id
-  /// (absent means Main, RFC 7798). Only codecs in `codecs` are ever selected.
   func codec(for info: RTCVideoCodecInfo) -> ScreenSharingVideoCodec? {
     let candidates = codecs.filter { $0.payloadName == info.name }
     guard candidates.count > 1 || info.name == "H265" else { return candidates.first }
@@ -116,8 +98,6 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   }
 }
 
-/// WebRTC serializes the encoder methods; only the callback crosses VT's
-/// output queue. It is copied under the lock before being invoked.
 private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @unchecked Sendable {
   let metrics: ScreenSharingMetrics
   private let lock = NSLock()
@@ -160,8 +140,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   func scalingSettings() -> RTCVideoEncoderQpThresholds? { nil }
   func setCallback(_ callback: RTCVideoEncoderCallback?) { lock.withLock { self.callback = callback } }
 
-  /// What the session was started with, and its latest rate: an encoder rebuilt for another
-  /// dynamic range (851-2380) continues from here.
   private var configuration: ScreenSharingVideoConfiguration?
 
   func startEncode(with settings: RTCVideoEncoderSettings, numberOfCores: Int32) -> Int {
@@ -191,8 +169,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
     return encoder
   }
 
-  /// The capture switched between 8-bit SDR and 10-bit HDR (851-2380): a new session in the
-  /// frame's range, at the current rate, starting with a keyframe (a new session always does).
   private func follow(_ range: ScreenSharingDynamicRange) throws -> ScreenSharingEncoder? {
     guard let encoder, encoder.dynamicRange != range, let configuration else { return encoder }
     encoder.stop()
@@ -216,7 +192,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
       guard let current = try follow(range) else { return -1 }
       encoder = current
     } catch { metrics.label("encoderError", error.localizedDescription); return -1 }
-    // WebRTC translated this frame's timestamp; identity rides on the buffer.
     guard let identity = ScreenSharingFrameIdentity.required(of: native.pixelBuffer, metrics: metrics) else {
       return -1
     }
@@ -249,7 +224,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
       let framesPerSecond = min(60, max(1, Int(framerate)))
       try encoder?.setBitrate(bitrate, framesPerSecond: framesPerSecond)
       if let configuration {
-        // Remembered for a rebuild only; the configuration's own bounds never refuse a rate here.
         self.configuration =
           (try? ScreenSharingVideoConfiguration(
             width: configuration.width, height: configuration.height, framesPerSecond: framesPerSecond,
@@ -278,21 +252,16 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
     } else {
       info = ScreenSharingHEVCInfo()
     }
-    // Qualify the property read: the new `callback` binding shadows it, which older compilers (Swift 6.3.3 on
-    // Xcode 26.6) cannot infer through `withLock`. Take the snapshot under the lock, call it outside — unchanged.
     let callback = lock.withLock { self.callback }
     let started = ScreenSharingMetrics.nowNs
     _ = callback?(image, info)
     metrics.observe("encodedDeliveryCallback", milliseconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000)
     guard callback != nil, let sourceTimestampNs = frame.sourceTimestampNs else { return }
-    // Only output handed to WebRTC can be announced as the host's newest content.
     idleMonitor.recordEncoded(timestampNs: sourceTimestampNs)
     metrics.label("latestEncodedSourceTimestampNs", String(sourceTimestampNs))
   }
 }
 
-/// M152's ObjC bridge has no HEVC-specific metadata type. Its native sender
-/// selects the H.265 packetizer from the negotiated payload, and parses Annex B.
 private final class ScreenSharingHEVCInfo: NSObject, RTCCodecSpecificInfo {}
 
 private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @unchecked Sendable {
@@ -301,7 +270,6 @@ private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @uncheck
   private let recoveryCheck: ScreenSharingDecoderRecoveryCheck
   private let refreshSignal: ScreenSharingRefreshSignal
   private let deliveryAudit: ScreenSharingDeliveryAudit
-  /// Receiver-only diagnostic frame-delivery audit (nil = disabled, no work).
   private let frameAudit: ScreenSharingFrameDeliveryAudit?
   private let lock = NSLock()
   private var callback: RTCVideoDecoderCallback?
@@ -327,7 +295,6 @@ private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @uncheck
       if let sourceTimestampNs = frame.sourceTimestampNs {
         self.deliveryAudit.decoded(sourceTimestampNs: sourceTimestampNs)
         self.metrics.label("latestDecodedSourceTimestampNs", String(sourceTimestampNs))
-        // The identity rides the decoded buffer to the renderer, as it rides the captured buffer to the encoder.
         ScreenSharingFrameIdentity.attach(sourceTimestampNs: sourceTimestampNs, to: frame.pixelBuffer)
       }
       let decoded = RTCVideoFrame(
@@ -369,7 +336,6 @@ private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @uncheck
       metrics.trace("decoderInput", "\(ScreenSharingMetrics.nowNs) rtp=\(image.timeStamp) key=true action=accept")
     }
     metrics.event("decoderInputInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
-    // decoder input after WebRTC reassembly/release
     let auditIdentity = frameAudit?.decoderInput(rtpTimestamp: image.timeStamp)
     do {
       try decoder.decode(

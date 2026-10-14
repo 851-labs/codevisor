@@ -4,7 +4,6 @@ import type { GitPullRequest, GitPullRequestChecks, GitPullRequestState } from "
 
 import { runGit } from "./git.js"
 
-/// `gh` talks to GitHub; a hung network call must not hold a request open.
 const ghTimeoutMs = 15_000
 
 const states: Readonly<Record<string, GitPullRequestState>> = {
@@ -13,7 +12,6 @@ const states: Readonly<Record<string, GitPullRequestState>> = {
   MERGED: "merged"
 }
 
-/// Check-run conclusions and commit-status states that mean a check failed.
 const failedResults = new Set([
   "FAILURE",
   "ERROR",
@@ -23,9 +21,6 @@ const failedResults = new Set([
   "STARTUP_FAILURE"
 ])
 
-/// Rolls `statusCheckRollup` up to one state. Its entries are check runs
-/// (`status` until COMPLETED, then a `conclusion`) and commit statuses (a
-/// `state`). Any failure wins; anything unfinished is pending.
 export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
   if (!Array.isArray(rollup) || rollup.length === 0) return "none"
   let pending = false
@@ -41,8 +36,6 @@ export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
   return pending ? "pending" : "passing"
 }
 
-/// `gh`'s output, or undefined when it fails for any reason: not installed,
-/// signed out, not a GitHub remote, no pull request, or offline.
 const gh = (
   args: ReadonlyArray<string>,
   cwd: string,
@@ -52,7 +45,6 @@ const gh = (
     execFile(
       "gh",
       args,
-      // Never block on an interactive prompt.
       {
         cwd,
         timeout: ghTimeoutMs,
@@ -62,8 +54,6 @@ const gh = (
     )
   })
 
-/// Reads `gh pr view --json number,title,state,isDraft,url,statusCheckRollup`.
-/// Null for anything that isn't a well-formed pull request.
 export const parseGitPullRequest = (json: string): GitPullRequest | null => {
   let value: unknown
   try {
@@ -93,9 +83,6 @@ export const parseGitPullRequest = (json: string): GitPullRequest | null => {
   }
 }
 
-/// The current branch's pull request, asked of the machine's own `gh` so it
-/// uses whatever GitHub account the user signed in with there. Null when
-/// HEAD is detached or `gh` can't answer; never throws.
 export const gitPullRequest = async (
   dir: string,
   env?: NodeJS.ProcessEnv

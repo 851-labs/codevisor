@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The machine settings sheet's edits (851-2367): only what changed is applied, and only a new
-/// display or new sign-in needs a new connection.
 struct ScreenSharingMachineSettingsTests {
   static let original = ScreenSharingMachineSettings(
     name: "tuftlord", connection: "VNC", address: "tuftlord.local:5900",
@@ -32,7 +30,6 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
-  /// HDR (851-2480) applies live and never reconnects.
   @Test func hdrChangesApplyWithoutReconnecting() {
     var withHDR = Self.original
     withHDR.highDynamicRange = false
@@ -42,7 +39,6 @@ struct ScreenSharingMachineSettingsTests {
     #expect(!draft.changes(from: withHDR).reconnects)
   }
 
-  /// Sound (851-2379) applies live, never reconnects, and only a connection with sound shows it.
   @Test func soundChangesApplyWithoutReconnecting() {
     var withSound = Self.original
     withSound.sound = .init(enabled: true, volume: 1)

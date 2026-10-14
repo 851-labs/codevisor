@@ -3,9 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The project directory vs. new worktree choice belongs to the project:
-/// picking it on one machine's checkout, from any client, is what every new
-/// chat in that project starts with.
 @MainActor
 @Suite("Project run location")
 struct ProjectRunLocationTests {
@@ -32,7 +29,6 @@ struct ProjectRunLocationTests {
 
     model.setDefaultRunLocation(.newWorktree, for: group)
 
-    // Shown at once, before any machine has it.
     #expect(model.fleetActiveProjectGroups.first?.defaultRunLocation == .newWorktree)
     let localClient = FakeServerClient(projects: [serverProject(from: local)])
     fixture.connect(localClient, machineId: "local")
@@ -40,7 +36,6 @@ struct ProjectRunLocationTests {
     #expect(
       await localClient.snapshot().runLocationUpdates
         == [FakeRunLocationUpdate(projectId: local.id.uuidString, location: .newWorktree)])
-    // The folder that isn't a repository has no worktrees to choose.
     let waiting = fixture.store.pendingIntents.filter {
       guard $0.state == .pending, case .setProjectDefaultRunLocation = $0.intent else { return false }
       return true
@@ -55,18 +50,14 @@ struct ProjectRunLocationTests {
     let plainFolder = checkout(on: "remote-c", isGit: false)
     let environment = AppEnvironment.preview(seedProjects: [local, remote, plainFolder], seedSessions: [])
     let composerDefaults = environment.composerDefaults
-    // Remembered on this client before choices were shared: only that
-    // machine's checkout knows it.
     composerDefaults.rememberNewWorkspaceWorktreePreference(
       serverId: local.serverId, projectId: local.id, createsWorktree: true)
     #expect(environment.prefersNewWorktree(for: local))
     #expect(!environment.prefersNewWorktree(for: remote))
 
-    // Sending shares it, since nobody has chosen for the project yet.
     environment.rememberSentRunLocation(newWorktree: true, for: local)
     #expect(environment.prefersNewWorktree(for: remote))
 
-    // A later send elsewhere doesn't override the choice; a pick does.
     environment.rememberSentRunLocation(newWorktree: false, for: remote)
     #expect(environment.prefersNewWorktree(for: local))
     environment.rememberRunLocation(newWorktree: false, for: remote)

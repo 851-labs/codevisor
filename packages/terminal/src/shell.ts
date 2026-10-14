@@ -19,7 +19,7 @@ const executableExists = (path: string): boolean => {
   }
 }
 
-/* v8 ignore start -- the failure branches depend on the host account database. */
+/* v8 ignore start */
 const userShellFromPasswd = (): string | undefined => {
   try {
     const shell = userInfo().shell
@@ -49,11 +49,6 @@ export const resolveDefaultShell = (
 export const resolveTerminalName = (platform: NodeJS.Platform): string =>
   platform === "darwin" ? GHOSTTY_TERM : PORTABLE_TERM
 
-/// A shell started without any locale falls back to "C", where zsh shows
-/// multibyte characters as raw bytes and TUIs mis-measure them. macOS apps
-/// and launchd services often have none, so, like Ghostty, default macOS
-/// shells to UTF-8 when nothing is set. Linux is left alone: its locales
-/// vary by install, and a service there normally inherits one.
 export const withDefaultLocale = (
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform

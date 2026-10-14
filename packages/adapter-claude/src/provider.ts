@@ -28,12 +28,9 @@ import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { claudeUsageLimitsFrom } from "./usage.js"
 
-/// Claude Code versions older than this predate the control-protocol features
-/// the Agent SDK relies on (streaming input, setModel/setPermissionMode).
 const MINIMUM_CLAUDE_VERSION = "2.0.0"
 
 export interface ClaudeProviderConfig {
-  /// Injectable for tests: scripted SDK message streams instead of a real CLI.
   readonly queryFn?: ClaudeQueryFn
   readonly getSessionInfo?: typeof sdkGetSessionInfo
   readonly listSdkSessions?: typeof sdkListSessions
@@ -125,8 +122,6 @@ export const makeClaudeProvider = (
         }
       }),
     id: "claude",
-    // Native sessions from ~/.claude/projects — workspace suggestions and
-    // "import existing chats" for users who ran the CLI before Codevisor.
     listAgentSessions: async (_definition, _account, options) => {
       const fallback = await scanAgentSessions()
       if (options?.titles === false) return fallback
@@ -172,8 +167,6 @@ export const makeClaudeProvider = (
           sessionId: session.key
         }
       }),
-    // A chat saved under an older release's Fable id (`claude-fable-5[1m]`)
-    // still means "Fable": land it on the row the current CLI offers.
     reconcileConfigValue: (option, value) => {
       if (option.category !== "model" && option.id !== "model") return undefined
       const offered = option.options.flatMap((entry) =>
@@ -240,7 +233,7 @@ const compareVersions = (left: string, right: string): number => {
   return 0
 }
 
-/* v8 ignore start -- exercised against a live claude binary, not in unit tests. */
+/* v8 ignore start */
 const runClaudeVersion = (claudePath: string): Promise<string> =>
   new Promise((resolvePromise, rejectPromise) => {
     execFile(claudePath, ["--version"], { timeout: 5000 }, (error, stdout) => {

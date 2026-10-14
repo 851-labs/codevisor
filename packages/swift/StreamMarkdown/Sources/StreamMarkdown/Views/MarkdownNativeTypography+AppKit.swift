@@ -19,8 +19,6 @@
         attributes[.link] = link
       }
     }
-    /// Each level's text style at that style's emphasized weight from the
-    /// HIG's macOS text style table (Headline is bold already).
     static func headingFont(for level: Int) -> NSFont {
       let (style, weight): (NSFont.TextStyle, NSFont.Weight) =
         switch level {

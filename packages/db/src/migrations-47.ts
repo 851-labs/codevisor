@@ -12,7 +12,6 @@ export const migrations47: ReadonlyArray<Migration> = [
     create index workspaces_sidebar_position on workspaces(sidebar_position);
   `,
     run(sqlite) {
-      // Start fresh from creation order. Never import device-local preferences.
       const rows = sqlite.prepare("select id, created_at from workspaces").all() as {
         id: string
         created_at: string

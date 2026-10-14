@@ -17,7 +17,6 @@ export const routeBrowserState = async (
   url: URL
 ): Promise<boolean> => {
   if (!url.pathname.startsWith("/v1/browser/state/")) return false
-  // Called after pairing authentication. Websites cannot use the loopback exception.
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined)
     throw new HttpFailure(403, "Native clients only")
   response.setHeader("Cache-Control", "no-store")

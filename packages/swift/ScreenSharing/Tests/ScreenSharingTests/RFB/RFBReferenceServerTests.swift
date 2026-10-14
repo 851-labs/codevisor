@@ -4,21 +4,13 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// `RFBLoopbackServer` as the reference implementation every VNC feature is
-/// checked against (VNC validation layer L2): it implements
-/// everything the client advertises, plays deterministic scenes, and echoes
-/// pointer input as a marker the client can find in its framebuffer.
 struct RFBReferenceServerTests {
   typealias Harness = RFBClientLoopbackTests.Harness
-
-  // MARK: Parity
 
   @Test func implementsEveryEncodingTheClientAdvertises() {
     let missing = RFBEncoding.supported.filter { !RFBLoopbackServer.implementedEncodings.contains($0) }
     #expect(missing.isEmpty, "The reference server lacks \(missing); add its side with the client's.")
   }
-
-  // MARK: Scenes
 
   @Test(arguments: RFBLoopbackScene.Kind.allCases)
   func aSceneIsAFunctionOfItsSeed(kind: RFBLoopbackScene.Kind) throws {
@@ -43,8 +35,6 @@ struct RFBReferenceServerTests {
     for _ in 0..<5 { #expect(try scene.next(on: framebuffer).isEmpty) }
   }
 
-  /// Every scene, played through the server to a real client, leaves the
-  /// client's framebuffer identical to the server's after every frame.
   @Test(arguments: RFBLoopbackScene.Kind.allCases.filter { $0 != .idle })
   func theClientConvergesOnEveryScene(kind: RFBLoopbackScene.Kind) async throws {
     var configuration = RFBLoopbackServer.Configuration()
@@ -60,7 +50,6 @@ struct RFBReferenceServerTests {
       let snapshot = try #require(await harness.nextUpdate(), "frame \(frame)")
       #expect(snapshot.width == harness.server.framebuffer.width, "frame \(frame)")
       #expect(snapshot.height == harness.server.framebuffer.height, "frame \(frame)")
-      // Depth 24 in 32 bits: the fourth byte is padding, undefined on the wire, so compare colour only.
       #expect(colour(snapshot.pixels) == colour(harness.server.framebuffer.pixels), "frame \(frame) of \(kind)")
     }
   }
@@ -69,7 +58,6 @@ struct RFBReferenceServerTests {
     let server = try await RFBLoopbackServer()
     defer { server.stop() }
     var scene = RFBLoopbackScene(kind: .scroll, seed: 3)
-    // No client has asked for an update, so the first frame stays unsent.
     #expect(try server.play(&scene))
     let afterFirst = server.framebuffer.pixels
     #expect(try server.play(&scene) == false)
@@ -80,8 +68,6 @@ struct RFBReferenceServerTests {
   private func colour(_ pixels: [UInt8]) -> [UInt8] {
     pixels.enumerated().compactMap { $0.offset % 4 == 3 ? nil : $0.element }
   }
-
-  // MARK: Input echo
 
   @Test func echoMarkersEncodeTheirSequence() {
     for sequence in [1, 2, 255, 256, 65535] {
@@ -112,7 +98,6 @@ struct RFBReferenceServerTests {
     let harness = try await Harness()
     defer { harness.stop() }
     _ = try #require(await harness.nextUpdate())
-    // The client's incremental request must be waiting before the pointer, or the check below proves nothing.
     #expect(await awaitPolled { harness.server.isRequestPending })
     try await harness.client.send(.pointerEvent(buttons: 0, x: 10, y: 20))
     #expect(await awaitPolled { harness.server.received.contains(.pointerEvent(buttons: 0, x: 10, y: 20)) })

@@ -3,11 +3,6 @@ import CodevisorUI
 import SwiftUI
 
 extension SessionContainerView {
-  /// Opens a subagent's thread as a read-only pane beside its parent chat.
-  /// The default is a split, so the parent stays in view; that split is the
-  /// chat's single agent viewer, so opening another of the chat's agents
-  /// replaces it rather than splitting again. Opening a subagent that's
-  /// already showing selects it.
   func openSubagent(
     parentSessionId: UUID, toolCallId: String, title: String, placement: OpenSubagentAction.Placement
   ) {
@@ -38,16 +33,12 @@ extension SessionContainerView {
       }
     }
     guard let inserted else { return }
-    // Device-local: this Mac's layout only; never published.
     environment.workspaces.save(workspace)
-    // A leaf already on screen holds its own model; new leaves build theirs
-    // from the saved state.
     store.reconcileMountedPaneGroups(in: workspace)
     store.selectDestination(.tab(inserted.tabId), in: workspace.id)
     focusSelectedCenterPane()
   }
 
-  /// The agent pane in a split beside the chat, if one is showing.
   private func agentViewer(
     for parentSessionId: UUID, besidePane parentPaneId: UUID, in workspace: Workspace
   ) -> UUID? {

@@ -1,11 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Converts MD4C's resolved semantic spans to `AttributedString`.
 public enum InlineMarkdown {
-  /// Compatibility entry point for standalone inline fragments. Production
-  /// block rendering uses the semantic overload so document-level reference
-  /// links are not reparsed out of context.
   public static func attributedString(from markdown: String) -> AttributedString {
     attributedString(from: MarkdownParser().parseInline(markdown))
   }
@@ -58,8 +54,6 @@ public enum InlineMarkdown {
         if let url = safeURL(source) { renderedAlt.link = url }
         result += renderedAlt
       case .softBreak:
-        // Source wrapping must not constrain the rendered paragraph width.
-        // Native text views treat a literal newline as a forced line break.
         result += attributed(" ", intent: intent)
       case .hardBreak:
         result += attributed("\n", intent: intent.union(.lineBreak))
@@ -77,9 +71,6 @@ public enum InlineMarkdown {
     return result
   }
 
-  /// Keep local project paths and the schemes Codevisor can safely hand to
-  /// the system. Raw `javascript:`/`data:` links remain visible text but are
-  /// deliberately not interactive.
   private static func safeURL(_ destination: String) -> URL? {
     guard !destination.isEmpty, let url = URL(string: destination) else { return nil }
     guard let scheme = url.scheme?.lowercased() else { return url }
@@ -89,7 +80,6 @@ public enum InlineMarkdown {
     }
   }
 
-  /// Styles inline code as rounded TextKit chips.
   public static func styleInlineCode(in attributed: AttributedString, theme: MarkdownTheme) -> AttributedString {
     guard attributed.runs.contains(where: { $0.inlinePresentationIntent?.contains(.code) == true })
     else { return attributed }

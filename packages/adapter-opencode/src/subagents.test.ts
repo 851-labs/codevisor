@@ -39,7 +39,6 @@ const input = {
 describe("OpenCode subagents", () => {
   it("shows a subagent as an agent with its own session nested under it", () => {
     const subagents = new OpenCodeSubagents()
-    // Pending: no input yet, so it stays inputless (a client shows it starting).
     const [pending] = payloads(subagents.mapNotification(subagentCall("pending", { rawInput: {} })))
     expect(pending).toMatchObject({ kind: "agent", toolCallId: "call_A" })
     expect(pending).not.toHaveProperty("rawInput")
@@ -86,7 +85,6 @@ describe("OpenCode subagents", () => {
         title: "Find auth code: read",
         toolCallId: "ses_child:call_x"
       },
-      // The child's own prompt echo and plan describe its session, not its work.
       { content: { text: "Find where…", type: "text" }, sessionUpdate: "user_message_chunk" },
       { entries: [], sessionUpdate: "plan" }
     ].flatMap((update) =>
@@ -119,7 +117,6 @@ describe("OpenCode subagents", () => {
       }
     ])
 
-    // The completion carries no tool name; the call is still the agent.
     const [completed] = payloads(
       subagents.mapNotification(
         subagentCall("completed", {

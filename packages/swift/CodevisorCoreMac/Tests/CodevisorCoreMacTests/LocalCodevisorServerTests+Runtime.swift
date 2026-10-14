@@ -147,7 +147,6 @@ extension LocalCodevisorServerTests {
     #expect(
       try String(contentsOf: logs.appendingPathComponent("server.log"), encoding: .utf8) == "log"
     )
-    // Client-side files stay behind; only server state moves.
     #expect(fm.fileExists(atPath: legacy.appendingPathComponent("themes.json").path))
     #expect(!fm.fileExists(atPath: legacy.appendingPathComponent("codevisor-server.sqlite").path))
   }

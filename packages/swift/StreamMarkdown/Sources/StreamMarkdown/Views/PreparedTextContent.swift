@@ -1,8 +1,6 @@
 #if canImport(AppKit) || canImport(UIKit)
   import SwiftUI
 
-  /// Value inputs for isolated text preparation. The immutable attributed
-  /// input is used by syntax highlighting; Markdown is converted on the worker.
   enum PreparedTextContent: @unchecked Sendable {
     case attributed(NSAttributedString)
     case markdown(blocks: [MarkdownBlock], theme: MarkdownTheme, foregroundColor: Color)

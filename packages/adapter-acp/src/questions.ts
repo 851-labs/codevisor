@@ -1,7 +1,6 @@
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
-/// One `session/request_permission` held open while the human answers.
 export interface PendingAcpQuestion {
   readonly sessionId: string
   readonly questions: ReadonlyArray<QuestionSpec>
@@ -10,9 +9,6 @@ export interface PendingAcpQuestion {
   readonly resolve: (response: unknown) => void
 }
 
-/// Adapter-owned client request mapped onto Codevisor's shared blocking-question
-/// flow. ACP-backed native adapters use this without teaching the generic ACP
-/// transport about their private request methods or response shapes.
 export interface AcpMappedQuestion<Response> {
   readonly sessionId: string
   readonly questions: ReadonlyArray<QuestionSpec>
@@ -25,10 +21,7 @@ export type AcpPermissionOutcome =
   | { outcome: { outcome: "cancelled" } }
   | { outcome: { optionId: string; outcome: "selected" } }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-/// Pure mapping from a permission request onto the question wire shape.
-/// Exported for unit tests — the live wiring runs inside the stdio connector.
-/// Returns undefined when the request carries no options (auto-cancel).
+/* v8 ignore start */
 export const acpPermissionQuestion = (
   params: unknown
 ):
@@ -56,9 +49,6 @@ export const acpPermissionQuestion = (
       ? (request.toolCall as Record<string, unknown>)
       : {}
   const title = typeof toolCall.title === "string" ? toolCall.title : undefined
-  // Plan-mode exits (claude-agent-acp's "Ready to code?") carry the proposed
-  // plan markdown as switch_mode tool-call content — surface it as the
-  // Proposed Plan card alongside the question.
   const planDocument =
     toolCall.kind === "switch_mode" ? textFromToolCallContent(toolCall.content) : undefined
   return {
@@ -91,8 +81,6 @@ const textFromToolCallContent = (content: unknown): string | undefined => {
   return text.length > 0 ? text : undefined
 }
 
-/// Maps the human's answer back onto the ACP permission outcome: the selected
-/// option label resolves to its optionId; anything else cancels.
 export const acpPermissionOutcome = (
   optionIds: ReadonlyMap<string, string>,
   answer: QuestionAnswer

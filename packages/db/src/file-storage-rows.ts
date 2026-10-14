@@ -16,7 +16,5 @@ export type FileStorageState = "sqlite" | "dual" | "disk"
 export interface FileStorageRecord {
   readonly metadata: FileMetadata
   readonly storageState: FileStorageState
-  /// Present for legacy/dual rows. Disk-only rows deliberately retain an empty
-  /// BLOB sentinel until a later schema migration removes the column.
   readonly data: Buffer
 }

@@ -1,5 +1,3 @@
-/// Locator descriptors as tools send them, validated into the internal shape.
-
 interface BrowserLocator {
   readonly ref?: string
   readonly css?: string
@@ -39,7 +37,7 @@ const parseTextMatcher = (value: unknown, label: string): BrowserTextMatcher => 
     throw new Error(`${label} must contain regex and optional flags strings`)
   }
   try {
-    // oxlint-disable-next-line no-new -- constructing the RegExp is how the pattern and flags are validated
+    // oxlint-disable-next-line no-new
     new RegExp(input.regex, input.flags)
   } catch (cause) {
     throw new Error(

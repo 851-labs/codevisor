@@ -1,8 +1,6 @@
 import CodevisorClient
 import Foundation
 
-/// The discovery document a Codevisor Cloud instance serves at
-/// `/.well-known/codevisor` — validated before a custom server is trusted.
 public struct CloudInstanceInfo: Codable, Equatable, Sendable {
   public var service: String
   public var instance: String?
@@ -24,23 +22,17 @@ public struct CloudInstanceInfo: Codable, Equatable, Sendable {
     self.authProviders = authProviders
   }
 
-  /// The service identifier a real Codevisor Cloud instance reports.
   public static let expectedService = "codevisor-cloud"
 }
 
-/// A machine connected to the signed-in cloud account, as reported by
-/// `GET /api/machines`.
 public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public var deviceId: String
   public var name: String
   public var os: String?
   public var appVersion: String?
   public var publicKey: String
-  /// The machine's tunnel endpoint and last reported addresses; absent for
-  /// machines that predate the tunnel.
   public var tunnel: CloudTunnelInfo?
   public var online: Bool
-  /// ISO timestamp of the last connect/disconnect the hub observed.
   public var lastSeenAt: String
 
   public var id: String { deviceId }
@@ -66,7 +58,6 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   }
 }
 
-/// The signed-in user, parsed from `GET /api/auth/get-session`.
 public struct CloudSessionUser: Equatable, Sendable {
   public var userId: String
   public var email: String?
@@ -116,48 +107,29 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
   }
 }
 
-/// The small REST surface the app needs from a Codevisor Cloud instance.
-/// Abstracted so the account controller is testable with a fake.
 public protocol CloudAccountClienting: Sendable {
   func emailAuthentication(_ request: CloudEmailAuthRequest) async throws -> String?
   func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data
-  /// `GET /.well-known/codevisor` — the discovery/validation document.
   func discover() async throws -> CloudInstanceInfo
-  /// Exchanges the browser handoff's one-time token for a session bearer
-  /// token (`POST /api/auth/one-time-token/verify`).
   func verifyOneTimeToken(_ ott: String) async throws -> String
   func generateOneTimeToken(token: String) async throws -> String
   func linkedProviders(token: String) async throws -> Set<CloudSignInProvider>
   func startAppleSignIn(link: Bool, token: String?) async throws -> CloudAppleChallenge
   func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String
   func deleteAccount(token: String) async throws
-  /// Dev-only: a real session for the cloud's seeded development user.
-  /// The instance advertises the capability via `authProviders: ["dev"]`;
-  /// elsewhere the route does not exist.
   func developmentLogin() async throws -> String
-  /// `GET /api/auth/get-session` — nil when the token no longer maps to a
-  /// live session.
   func session(token: String) async throws -> CloudSessionUser?
   func machines(token: String) async throws -> [CloudMachine]
   func rename(deviceId: String, name: String, token: String) async throws
   func removeMachine(deviceId: String, token: String) async throws
-  /// Approves a pending `codevisor auth login` device code on the account:
-  /// claims it (`GET /api/auth/device`), then `POST /api/auth/device/approve`.
   func approveDevice(userCode: String, token: String) async throws
-  /// Denies a pending device code (claim, then `POST /api/auth/device/deny`).
   func denyDevice(userCode: String, token: String) async throws
 }
 
-/// Minimal URLSession JSON client for one cloud instance.
 public final class CloudAccountClient: CloudAccountClienting, Sendable {
   private let baseURL: URL
   private let send: @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
-  /// Cookie-free by default: this client authenticates with bearer tokens
-  /// only. A shared URLSession would store the session cookie that
-  /// endpoints like one-time-token/verify also set — and Better Auth
-  /// rejects cookie-bearing POSTs without an Origin header (CSRF, 403), so
-  /// a stored cookie breaks every later sign-in.
   public static func makeCookieFreeSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpShouldSetCookies = false
@@ -179,8 +151,6 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
   public func discover() async throws -> CloudInstanceInfo {
     let (data, _) = try await perform("/.well-known/codevisor")
     guard let info = try? JSONDecoder().decode(CloudInstanceInfo.self, from: data) else {
-      // A reachable web server that isn't a cloud instance (a marketing
-      // page, a proxy error) answers 200 with something else entirely.
       throw CloudAccountClientError.notACloudInstance
     }
     return info
@@ -214,8 +184,6 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     _ = try await perform("/api/auth/delete-user", method: "POST", body: Data("{}".utf8), token: token)
   }
 
-  /// The bearer plugin returns the session token in a response header;
-  /// older instances put a `token` field in the body.
   static func sessionToken(
     fromHeader response: HTTPURLResponse, body data: Data
   ) throws
@@ -235,7 +203,6 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
 
   public func session(token: String) async throws -> CloudSessionUser? {
     let (data, _) = try await perform("/api/auth/get-session", token: token)
-    // No session is a 200 with a literal `null` body.
     let trimmed = String(decoding: data, as: UTF8.self)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, trimmed != "null" else { return nil }
@@ -287,8 +254,6 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
       token: token
     )
   }
-
-  // MARK: - Request plumbing
 
   private func escaped(_ pathComponent: String) -> String {
     pathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)

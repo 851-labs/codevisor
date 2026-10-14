@@ -18,23 +18,6 @@ import type {
 import { localLocationOrFail, run } from "./server-http.js"
 import { worktreeTrashRoot } from "./server-workspace-effects.js"
 
-/// Boot housekeeping for worktree archives.
-///
-/// Archiving destroys files, and nothing in a filesystem is transactional with
-/// SQLite. Rather than pretend otherwise, the archive path records its
-/// intention first and this pass converges whatever the last run left behind:
-///
-///  - `pending` archives finish their file removal,
-///  - archived workspaces whose teardown never ran (the server stopped
-///    between answering the archive and running its job) are archived now,
-///  - `worktrees` rows whose directory is gone stop occupying their name,
-///  - snapshot refs with no row are deleted, because nothing can ever restore
-///    them and they pin their objects against `git gc` forever.
-///
-/// Every step is best effort. This runs off the boot path and must never fail
-/// startup: a repository that is missing, unreadable, or busy is simply left
-/// for the next boot.
-
 const repoDirFor = async (
   services: CodevisorServerServices,
   serverId: string,
@@ -44,8 +27,7 @@ const repoDirFor = async (
     const project = (await run(services.db.listProjects)).find(
       (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
     )
-    /* v8 ignore next -- unreachable: archived_worktrees cascades with its
-       project, and the other caller iterates the list it just read. */
+    /* v8 ignore next */
     if (project === undefined) return undefined
     return localLocationOrFail(serverId, project).folderPath
   } catch {
@@ -53,11 +35,6 @@ const repoDirFor = async (
   }
 }
 
-/// Finishes archives interrupted between recording the snapshot and deleting
-/// the files. Re-running the removal is safe: the snapshot already holds the
-/// contents, and a path that is already gone counts as removed. The branch is
-/// released either way, since an archive interrupted after the files went but
-/// before the branch did would otherwise keep the name taken forever.
 const finishPendingArchives = async (
   services: CodevisorServerServices,
   serverId: string
@@ -81,8 +58,6 @@ const finishPendingArchives = async (
     )
     try {
       if (worktree === undefined) {
-        // Without the row the path is unknown, and the name may already be
-        // reused, so only the git bookkeeping is finished.
         await pruneWorktreeRegistrations(repoDir, environment)
         await releaseBranch(repoDir, archived.branch, environment)
       } else {
@@ -95,22 +70,10 @@ const finishPendingArchives = async (
       }
       await run(services.db.createArchivedWorktree({ ...archived, state: "complete" }))
       if (worktree !== undefined) await run(services.db.deleteWorktree(worktree.id))
-    } catch {
-      // Leave the row pending; the next boot tries again.
-    }
+    } catch {}
   }
 }
 
-/// Archives workspaces that were marked archived but whose worktree was never
-/// torn down: a `worktrees` row still names their directory. The archive
-/// request answers before its teardown job runs, so a server stopped in
-/// between leaves this; so does a teardown that failed.
-///
-/// This runs after the pending-archive pass, so a row still here is one that
-/// pass could not finish either. Archiving it again is safe: the job
-/// re-snapshots the same files (the snapshot ref is overwritten, not
-/// duplicated), and a directory that is already gone fails the snapshot
-/// before anything is written.
 const archiveStrandedWorkspaces = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -125,9 +88,6 @@ const archiveStrandedWorkspaces = async (
   }
 }
 
-/// Drops `worktrees` rows whose directory no longer exists. A stale row keeps
-/// its (finite) name reserved and makes restore report success for a workspace
-/// whose files are gone.
 const dropVanishedWorktrees = async (
   services: CodevisorServerServices,
   serverId: string
@@ -141,16 +101,12 @@ const dropVanishedWorktrees = async (
     for (const worktree of await run(services.db.listWorktrees(project.id))) {
       if (worktree.serverId !== serverId) continue
       if (existsSync(worktree.path)) continue
-      // An archive in flight owns this row; leave it to the pass above.
       if (archivedIds.has(worktree.id.toLowerCase())) continue
       await run(services.db.deleteWorktree(worktree.id))
     }
   }
 }
 
-/// Deletes snapshot refs no `archived_worktrees` row names. These are created
-/// when an archive is interrupted before its row is written; they are
-/// unreachable by restore and immune to ordinary garbage collection.
 const pruneOrphanSnapshots = async (
   services: CodevisorServerServices,
   serverId: string
@@ -183,11 +139,6 @@ export const reconcileWorktreeArchives = async (
   await pruneOrphanSnapshots(services, config.id)
 }
 
-/// Removes every worktree, branch and snapshot a project owns on this server.
-///
-/// Project deletion is permanent by design, so this is the one path that
-/// discards snapshots outright rather than preserving them. Row deletion
-/// cascades in SQLite; none of this does.
 export const discardProjectWorktrees = async (
   services: CodevisorServerServices,
   serverId: string,
@@ -206,9 +157,7 @@ export const discardProjectWorktrees = async (
         { trashRoot: worktreeTrashRoot(), worktreeId: worktree.id, env: environment }
       )
       archiveJobs(services).track(trashed.purged)
-    } catch {
-      // Keep going: one stubborn worktree must not strand the others.
-    }
+    } catch {}
   }
   for (const archived of await run(services.db.listArchivedWorktrees(project.id))) {
     if (archived.serverId !== serverId) continue

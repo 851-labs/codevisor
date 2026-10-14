@@ -13,7 +13,6 @@ public struct RigStatus: Codable, Equatable, Sendable {
   public let reconnects: Int
   public let capture: String?
   public let hud: Bool
-  /// Active engine tuning label; nil for product defaults.
   public let tuning: String?
 
   public init(
@@ -66,7 +65,6 @@ public struct RigHUDRequest: Codable, Equatable, Sendable {
   public init(enabled: Bool) { self.enabled = enabled }
 }
 
-/// Host control: replace the capture source, live if a session exists.
 public struct RigSourceRequest: Codable, Equatable, Sendable {
   public let capture: String
   public init(capture: String) { self.capture = capture }
@@ -83,7 +81,6 @@ public struct RigSourceResponse: Codable, Equatable, Sendable {
   }
 }
 
-/// Host clock responder: both values from the host's `CACurrentMediaTime` clock.
 public struct RigClockReply: Codable, Equatable, Sendable {
   public let receivedAtSeconds: Double
   public let sentAtSeconds: Double

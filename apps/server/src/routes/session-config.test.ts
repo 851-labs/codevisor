@@ -170,7 +170,6 @@ describe("session configuration routes", () => {
       }
     })
 
-    // The raw event is persisted for rich replay (nested transcripts)...
     const events = listSubjectEvents(services, session.id)
     expect(events).toEqual(
       expect.arrayContaining([
@@ -180,7 +179,6 @@ describe("session configuration routes", () => {
         })
       ])
     )
-    // ...but the text conversation snapshot only carries the main thread.
     const detail = await run(services.db.getSessionDetail(session.id))
     expect(detail.conversation.map((item) => item.text)).toContain("main agent text")
     expect(detail.conversation.map((item) => item.text)).not.toContain("subagent text")
@@ -188,8 +186,6 @@ describe("session configuration routes", () => {
 
   it("falls back to the session server's project location for branch diffs", async () => {
     const { services } = await makeServices("server-a")
-    // A committed repo with one untracked two-line file: only a real git
-    // directory yields totals, so null can only mean "no location resolved".
     const folder = mkdtempSync(join(tmpdir(), "codevisor-branch-diff-"))
     tempDirs.push(folder)
     execFileSync("git", ["init", "-b", "main"], { cwd: folder, stdio: "ignore" })

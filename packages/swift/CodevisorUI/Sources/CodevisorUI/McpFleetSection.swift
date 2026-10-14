@@ -1,15 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The shared MCP list: one row per server, then one row per machine beneath
-/// it. MCPs are the one plane with a real per-machine control, so a machine
-/// row carries its own switch.
-///
-/// Every server is switched per machine: each machine row carries "on
-/// here", and the server row carries no switch of its own — a fleet-wide
-/// switch above per-machine ones made two controls for one question. When
-/// the fleet is one machine that lone switch folds up onto the server's
-/// row, so a single-machine user still sees exactly one.
 public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
   #if os(iOS)
@@ -25,14 +16,6 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
   private let icon: (McpFleetEntry) -> Icon
   private let machineExtras: (McpFleetEntry, _ machineId: String) -> MachineExtras
 
-  /// - Parameters:
-  ///   - builtIn: renders the built-in tools rather than managed servers.
-  ///   - toggleDisabledReason: why one machine's switch cannot be turned on
-  ///     — Computer Use needs permissions that machine hasn't granted.
-  ///   - icon: the app supplies artwork it owns (the Codevisor mark lives in
-  ///     each app's asset catalog, not in this package).
-  ///   - machineExtras: content the host app puts under a machine row —
-  ///     macOS uses it for the local Mac's Computer Use permission rows.
   public init(
     model: McpGlobalModel,
     builtIn: Bool,
@@ -62,8 +45,6 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
     let entries = builtIn ? model.builtIns : model.managed
     ForEach(entries) { entry in
       #if os(iOS)
-        // A phone row holds a report and a disclosure; the controls live on
-        // the pushed screen. iPad has the width to stay inline, like the Mac.
         if horizontalSizeClass == .compact, machines.count > 1 {
           let rows = McpGlobalModel.machineRows(
             entry: entry, sync: environment.configSync, machines: machines)
@@ -98,7 +79,6 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
   }
 }
 
-/// One server across the fleet: its row, then its machines.
 private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -114,20 +94,12 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   @ViewBuilder let machineExtras: (McpFleetEntry, _ machineId: String) -> MachineExtras
 
   var body: some View {
-    // Overlay flips must re-derive every row immediately, not on the next
-    // report; reading the revision here is what subscribes this row to them.
     let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
     let rows = machineRows()
-    // With several machines, the machine rows are the only switches, so
-    // they list whatever the server's state — even one the fleet turned off.
     let live = entry.isMachineScoped || entry.enabled || machines.count > 1
     let onlyMachine = machines.count == 1 ? rows.first : nil
     let showsMachines = machines.count > 1
-    // One machine is the fleet: its status — and, for a built-in, its
-    // switch — folds up onto the server's row.
     let single = live ? onlyMachine : nil
-    // Authorizing is a fleet act: the material replicates, and every other
-    // machine adopts it. So the button belongs on the server's row.
     let needsAuthorization =
       entry.authType == "oauth"
       && rows.contains { if case .needsAuthorization = $0.status { true } else { false } }
@@ -136,8 +108,6 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
       caption: caption(rows: rows),
       isBusy: single?.status.rowStatus.isBusy ?? false,
       isEnabled: entryToggle(onlyMachine: onlyMachine),
-      // Missing permissions block turning it ON; turning it off is always
-      // allowed, so the reason only applies while the switch is off.
       toggleDisabledReason: onlyMachine.flatMap { row in
         row.status.isOnHere ? nil : toggleDisabledReason(entry, row.machineId)
       },
@@ -169,16 +139,10 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
         .id("\(entry.name)/\(row.machineId)")
       }
     } else if let only = rows.first, machines.count == 1 {
-      // The rows under a built-in are its live dependency status and carry
-      // the poll that notices a permission revoked in System Settings, so
-      // they render whether or not the server is switched on.
       machineExtras(entry, only.machineId)
     }
   }
 
-  /// The server row's switch, only when the fleet is one machine: the
-  /// machine rows carry it otherwise. A managed server's is the fleet's
-  /// wish; a built-in's is that machine's own switch.
   private func entryToggle(onlyMachine: McpFleet.MachineRow?) -> Binding<Bool>? {
     guard machines.count <= 1 else { return nil }
     guard entry.isMachineScoped else {
@@ -209,8 +173,6 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
       entryName: entry.name, reason: reason)
   }
 
-  /// The line under the name summarizes the fleet, not one machine: the tool
-  /// count the machines agree on, or the spread when they don't.
   private func caption(rows: [McpFleet.MachineRow]) -> String? {
     guard entry.isMachineScoped || entry.enabled else { return nil }
     let counts = rows.compactMap { row -> Int? in
@@ -237,8 +199,6 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   }
 }
 
-/// A machine row's controls: the per-machine switch, and the browser choice
-/// for the one built-in that has one.
 struct McpMachineTrailing: View {
   @Environment(AppEnvironment.self) private var environment
   let entry: McpFleetEntry
@@ -248,10 +208,6 @@ struct McpMachineTrailing: View {
 
   var body: some View {
     #if os(macOS)
-      // A phone row cannot fit a machine name, a browser menu, a switch and
-      // a mark — the name was truncating to "Dev Di…". The browser choice is
-      // a machine-local setting and already Mac-only in spirit, like adding
-      // and editing servers on this page.
       if entry.kind == "browserUse" {
         McpBrowserPicker(machineId: row.machineId, model: model)
       }
@@ -265,12 +221,6 @@ struct McpMachineTrailing: View {
       #endif
   }
 
-  /// A built-in is switched on the machine itself — it never replicates, so
-  /// there is no fleet definition for an overlay to override. A managed
-  /// server's off writes this machine's overlay only; on clears it. When
-  /// the fleet definition itself was off, turning one machine on turns only
-  /// that machine on: every other machine gets an off overlay first, so
-  /// re-enabling the definition doesn't switch the whole fleet on with it.
   private var availability: Binding<Bool> {
     Binding(
       get: { row.status.isOnHere && (entry.isMachineScoped || entry.enabled) },

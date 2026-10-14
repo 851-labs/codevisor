@@ -2,9 +2,6 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Renders `ErrorReporter` entries as transient banners in the window's
-/// top-trailing corner. Used only for errors with no better home; errors tied
-/// to a session, sheet, or control surface inline next to that UI instead.
 struct ErrorBannerLayer: View {
   var reporter: ErrorReporter = .shared
 
@@ -25,10 +22,6 @@ struct ErrorBannerLayer: View {
   }
 }
 
-/// The window-level error toast. It uses the same banner language as the
-/// chat's notices (`ComposerNoticeRail`): the composer card's shape, caption
-/// type, and an error tint over an opaque base. Only the floating shadow and
-/// fixed width are its own, because it overlays arbitrary window content.
 private struct ErrorBannerView: View {
   @Environment(\.theme) private var theme
   private var cardStyle = ComposerCardStyle()

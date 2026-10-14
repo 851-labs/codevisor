@@ -5,8 +5,6 @@ import SwiftUI
 import TranscriptKit
 
 extension TranscriptRowLeaves {
-  /// The AppKit row views. `errorRow` stays with the chat screen because its
-  /// sign-in action drives screen state.
   @MainActor
   static func macOS(
     errorRow: @escaping (String) -> AnyView
@@ -29,10 +27,6 @@ extension TranscriptRowLeaves {
             waitingOnBackgroundTask: waitingOnBackgroundTask,
             goalActivity: goalActivity
           )
-          // The outer active-row host's environment is frozen from
-          // when streaming began. Refresh hover suspension here so
-          // copy affordances wake up as soon as the turn ends into
-          // a background-task wait.
           .environment(\.hoverTrackingSuspended, controller.isSending))
       },
       assistantTurn: { message, isWaitingOnUser, waitingOnBackgroundTask, presentation in

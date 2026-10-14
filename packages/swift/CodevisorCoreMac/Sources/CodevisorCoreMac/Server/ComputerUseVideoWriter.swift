@@ -2,8 +2,6 @@ import AVFoundation
 import Foundation
 import ScreenCaptureKit
 
-/// ScreenCaptureKit sends frames only when content changes. Keep their timestamps
-/// and explicitly repeat the final frame so a still result remains visible until stop.
 final class ComputerUseVideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
   let queue = DispatchQueue(label: "com.codevisor.computer-use.video-writer")
   private let writer: AVAssetWriter
@@ -56,7 +54,6 @@ final class ComputerUseVideoWriter: NSObject, SCStreamOutput, @unchecked Sendabl
     append(frame, at: sampleBuffer.presentationTimeStamp)
   }
 
-  /// Called only on the output queue, including by the synthetic video regression.
   func append(_ frame: CVPixelBuffer, at time: CMTime) {
     guard !finishing, time.isNumeric else { return }
     if origin == nil {

@@ -8,23 +8,11 @@ import type {
 
 import type { CloudEnv } from "./env.js"
 
-/// The hub's tunnel control plane. Devices
-/// talk to each other directly over the tunnel; the hub only introduces them:
-///
-/// - machines report their endpoint id (hello) and address (`tunnel-addr`),
-///   which apps receive in machine presence;
-/// - apps report their endpoint id, and machines receive the account's app
-///   devices as `peer-devices` so their tunnel listener can admit them.
-///
-/// Durable state lives in the hub's SQLite (see HUB_MIGRATIONS).
-
 const ENDPOINT_ID = /^[0-9a-f]{64}$/
 
 export const isEndpointId = (value: unknown): value is string =>
   typeof value === "string" && ENDPOINT_ID.test(value)
 
-/// Instance relay map: `RELAY_MAP` (JSON array of CloudRelayInfo). Malformed
-/// or absent → no relays (the tunnel still works on direct paths).
 export const relayMap = (env: Pick<CloudEnv, "RELAY_MAP">): CloudRelayInfo[] => {
   if (env.RELAY_MAP === undefined || env.RELAY_MAP === "") return []
   try {
@@ -41,12 +29,6 @@ export const relayMap = (env: Pick<CloudEnv, "RELAY_MAP">): CloudRelayInfo[] => 
   }
 }
 
-/// Whether one connection gets the tunnel:
-/// - machines always do (their servers keep serving the hub relay too, for
-///   apps that still use it);
-/// - tunnel-only apps always do (they have no other data path);
-/// - apps that carry both paths (0.1.103) do on the Alpha update channel.
-/// Devices that predate these fields keep the hub relay.
 export const tunnelRollout = (
   device: Pick<CloudDeviceInfo, "kind" | "releaseChannel" | "tunnelOnly">
 ): CloudTunnelRollout =>
@@ -54,9 +36,6 @@ export const tunnelRollout = (
     ? "on"
     : "off"
 
-/// The device as the hub records it: a device whose connection doesn't get
-/// the tunnel has no tunnel identity, so peers never try to dial it (and
-/// machines never receive a vouch for it).
 export const tunnelScopedDevice = (
   device: CloudDeviceInfo,
   rollout: CloudTunnelRollout
@@ -66,7 +45,6 @@ export const tunnelScopedDevice = (
   return rest
 }
 
-/// Welcome fields shared by apps and machines.
 export const tunnelWelcome = (
   env: Pick<CloudEnv, "RELAY_MAP">,
   rollout: CloudTunnelRollout
@@ -75,7 +53,6 @@ export const tunnelWelcome = (
   tunnel: rollout
 })
 
-/// Presence `tunnel` block from the machine row's stored columns.
 export const machineTunnel = (
   endpointId: string | null,
   storedAddr: string | null
@@ -90,15 +67,11 @@ export const machineTunnel = (
       if (Array.isArray(parsed.directAddrs)) {
         directAddrs = parsed.directAddrs.filter((addr): addr is string => typeof addr === "string")
       }
-    } catch {
-      // A corrupt cache entry just means "no known address yet".
-    }
+    } catch {}
   }
   return { endpointId, ...(relayUrl === undefined ? {} : { relayUrl }), directAddrs }
 }
 
-/// Stores a machine's reported address. Returns false when the report is for
-/// a different endpoint than the machine registered (ignored).
 export const storeMachineTunnelAddr = (
   sql: SqlStorage,
   deviceId: string,
@@ -124,8 +97,6 @@ interface AppDeviceRow extends Record<string, SqlStorageValue> {
   endpoint_id: string
 }
 
-/// Records an app's tunnel identity from its hello. Returns true when the
-/// vouched set changed (machines must be told).
 export const recordAppDevice = (sql: SqlStorage, device: CloudDeviceInfo, now: string): boolean => {
   if (!isEndpointId(device.tunnelEndpointId)) return false
   const existing = sql

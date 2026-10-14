@@ -3,9 +3,6 @@
   import SwiftUI
   import UIKit
 
-  /// A read-only UIKit/TextKit surface whose storage contains the complete text
-  /// immediately. Streaming changes only glyph paint opacity, so wrapping,
-  /// selection, copying, accessibility, and transcript scrolling stay stable.
   public struct SelectableTextView: UIViewRepresentable {
     private let attributedText: NSAttributedString
     private let fillsWidth: Bool
@@ -80,8 +77,6 @@
         for: attributedText,
         animation: streamingAnimation
       )
-      // See the AppKit representable: measure the text this probe was
-      // given, not the view's previous content.
       uiView.setContent(
         prepared.text,
         latestAnimationEnd: prepared.latestAnimationEnd,
@@ -190,8 +185,6 @@
     }
   }
 
-  /// Value attached to inline-code ranges. The layout manager paints the chip
-  /// in the same pass as the selectable glyphs.
   final class UIKitTextKitRoundedBackground: NSObject, NSCopying {
     let color: UIColor
     let cornerRadius: CGFloat
@@ -307,8 +300,6 @@
 
   @MainActor
   public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient {
-    /// A native presentation copy uses the same text layout as the SwiftUI
-    /// transcript, so revealing the selectable view does not move its glyphs.
     public convenience init(attributedText: NSAttributedString) {
       self.init(preparedLayout: nil)
       setContent(attributedText)

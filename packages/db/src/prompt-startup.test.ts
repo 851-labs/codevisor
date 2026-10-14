@@ -28,7 +28,6 @@ describe("durable prompt startup", () => {
       expect(echo.payload).toMatchObject({ chatItemId: user.id })
       expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
-      // Harness initialization publishes idle metadata before it has a turn.
       await run(db.appendEvent("session.updated", session.id, { runtimeState: "idle" }))
       expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
       const started = await run(
@@ -39,7 +38,6 @@ describe("durable prompt startup", () => {
       )
       expect(started.payload).toMatchObject({ chatItemId: assistant.id })
       expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items).toHaveLength(2)
-      // An overlapping start must not steal a row already bound to a turn.
       await run(
         db.appendEvent("session.updated", session.id, {
           turnState: "started",
@@ -58,7 +56,6 @@ describe("durable prompt startup", () => {
         })
       )
 
-      // Identical text is a separate message, while late events keep their owner.
       await run(
         db.appendEvent("session.output", session.id, {
           role: "user",

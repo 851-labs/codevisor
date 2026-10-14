@@ -150,33 +150,23 @@ const responseError = async (spec: CodevisorApiToolSpec, response: Response): Pr
     {}
   try {
     const parsed = JSON.parse(text) as { readonly error?: unknown; readonly code?: unknown }
-    // Typed failures arrive as `{ error, code, details }` or
-    // `{ error: { message, code, details } }`.
     typed =
       typeof parsed.error === "object" && parsed.error !== null
         ? (parsed.error as typeof typed)
         : { ...parsed, message: parsed.error }
     if (typeof typed.message === "string") detail = typed.message
-  } catch {
-    // Plain-text failures retain the response body.
-  }
+  } catch {}
   const code = typeof typed.code === "string" ? typed.code : undefined
   const details =
     typeof typed.details === "object" && typed.details !== null
       ? (typed.details as Readonly<Record<string, unknown>>)
       : undefined
   const message = `${spec.name} failed (${response.status}${response.statusText.length === 0 ? "" : ` ${response.statusText}`}): ${detail || "Codevisor request failed"}`
-  // Coded failures (an unavailable client, say) reach sandbox code intact so
-  // it can catch them by class; everything else stays a plain error.
   return code === undefined
     ? new Error(message)
     : new CodeExecutionToolError(detail, { code, ...(details === undefined ? {} : { details }) })
 }
 
-/// Fills the defaults an agent-created chat needs: the calling project, and a
-/// fresh workspace. Native sidebars list workspaces, so a chat created without
-/// one runs but never appears to the user. Native clients may create
-/// workspace-less rows and attach them later; agents have no such follow-up.
 const sessionCreatePayload = (
   payload: Readonly<Record<string, unknown>>,
   context: AutomationProviderContext
@@ -185,7 +175,6 @@ const sessionCreatePayload = (
   ...("projectId" in payload || context.projectId === undefined
     ? {}
     : { projectId: context.projectId }),
-  // Sessions an agent starts belong to it, so it can find them again later.
   ...("parentSessionId" in payload || context.sessionId === undefined
     ? {}
     : { parentSessionId: context.sessionId }),
@@ -199,8 +188,6 @@ const invokeApiTool = async (
   context: AutomationProviderContext,
   args: Readonly<Record<string, unknown>>
 ): Promise<CallToolResult> => {
-  // The consent gate never reaches the server: `confirm` is not a body or
-  // query property, so it is dropped from the request after this check.
   if (spec.confirm === true && args.confirm !== true) {
     throw new Error(
       `${spec.name} requires confirm: true — show the user what this call will run ` +
@@ -221,8 +208,6 @@ const invokeApiTool = async (
   for (const parameter of spec.query ?? []) {
     const value = args[parameter.name]
     if (value === undefined) continue
-    // The update routes use refresh=1, while all other booleans use the
-    // conventional true/false representation.
     url.searchParams.set(
       parameter.name,
       spec.name === "server.update_status" && parameter.name === "refresh" && value === true
@@ -242,8 +227,6 @@ const invokeApiTool = async (
       "content-type",
       typeof args.mimeType === "string" ? args.mimeType : "application/octet-stream"
     )
-    // mimeType is represented as a query-like tool argument for schema
-    // ergonomics, but the server consumes it from Content-Type.
     url.searchParams.delete("mimeType")
   } else if (spec.body !== undefined) {
     const fields = (): Readonly<Record<string, unknown>> =>
@@ -296,11 +279,8 @@ const invokeApiTool = async (
   return textToolResult(text)
 }
 
-/// What `context.current` reports beyond the session and project ids. The
-/// gateway owns these facts (machine identity, turn origin, parent link).
 export interface CodevisorCurrentContext {
   readonly workspaceId?: string
-  /// The git worktree the calling session runs in; absent for the project folder.
   readonly worktreeName?: string
   readonly parentSessionId?: string
   readonly machine?: { readonly id: string; readonly name: string }

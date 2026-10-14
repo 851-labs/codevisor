@@ -21,7 +21,6 @@ const harness = (stored: ReadonlyArray<string | undefined>) => {
     maxItems: 4,
     maxBytes: 1_000,
     persistence: {
-      // Each stored artifact gets the next queued id; undefined means it wasn't kept.
       persist: async () => {
         const id = queue.shift()
         return id === undefined
@@ -91,10 +90,8 @@ describe("execution steps", () => {
     const prelude = await steps.begin("search", { internal: true, local: true })
     await prelude({ ok: true, value: {} })
 
-    // Pages that aren't sites leave the browser's icon alone.
     steps.onBrowserPage("about:blank")
 
-    // A desktop call is shown on the app it drove.
     const desktop = await steps.begin("computer.js", { internal: false, local: true })
     steps.onComputerApp({ bundleId: "com.apple.Music", name: "Music" })
     await desktop({ ok: true, value: null })

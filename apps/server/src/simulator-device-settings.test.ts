@@ -10,7 +10,6 @@ import type { SimulatorEnvironment } from "./simulators.js"
 
 const udid = "2BE37295-E5BE-4B04-A779-19AE566F0429"
 
-// What `devicectl … --json-output` writes under `result`, as Xcode 27's devicectl reports it.
 const results: Readonly<Record<string, unknown>> = {
   "device info appearance": {
     deviceIdentifier: udid,
@@ -179,7 +178,6 @@ describe("simulator device settings", () => {
       liquidGlass: 0,
       colorFilter: "grayscale"
     })
-    // A filter this version doesn't know, an enabled one without a type, or an opacity out of range.
     expect(filter({ enabled: true, filterType: { name: "ColorTint" } }, 1.5)).toEqual({})
     expect(filter({ enabled: true }, "0.5")).toEqual({})
     expect(filter(undefined)).toEqual({})

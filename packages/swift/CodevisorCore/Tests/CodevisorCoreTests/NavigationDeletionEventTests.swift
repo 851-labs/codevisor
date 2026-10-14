@@ -5,13 +5,9 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Deletions arrive as `navigation.changed` deltas and move the cache
-/// forward; nothing older -- a snapshot fetched before them -- can bring the
-/// deleted records back.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct NavigationDeletionEventTests {
-  /// The deletions the server's journal records for `kind`, cascades included.
   private func deletions(
     _ kind: String, fixture: WorkspaceSyncFixture, extra: [Workspace]
   ) -> [(table: String, id: String)] {
@@ -57,7 +53,6 @@ struct NavigationDeletionEventTests {
       #expect(fixture.projectList.projects.isEmpty)
     } else {
       #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) != nil)
-      // The chat outlives its workspace; its route no longer has anywhere to go.
       #expect(fixture.projectList.sessions.map(\.id) == [fixture.anchorSessionId])
       #expect(fixture.sync.routeDisposition(sessionId: fixture.anchorSessionId, serverId: "local") == .dismiss)
     }

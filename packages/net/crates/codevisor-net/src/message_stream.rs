@@ -1,19 +1,7 @@
-//! A message-oriented pipe over one QUIC bidirectional stream.
-//!
-//! The existing cloud channel protocol is message-based (it ran over
-//! WebSockets: text control frames + binary envelope batches), so the tunnel
-//! carries it unchanged as length-prefixed messages:
-//!
-//! ```text
-//! [kind: u8 (0 = text, 1 = binary)] [length: u32 BE] [payload]
-//! ```
-
 use anyhow::{Result, bail};
 use iroh::endpoint::{ReadExactError, RecvStream, SendStream};
 use tokio::sync::Mutex;
 
-/// Upper bound for one message. The cloud protocol caps a relay message at
-/// 2 MiB (`MAX_RELAY_MESSAGE_BYTES`); leave headroom, refuse anything absurd.
 pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,8 +26,6 @@ pub struct Message {
     pub payload: Vec<u8>,
 }
 
-/// Encodes one frame header. Split out so the framing is unit-testable
-/// without a QUIC connection.
 pub fn encode_header(kind: MessageKind, len: usize) -> Result<[u8; 5]> {
     if len > MAX_MESSAGE_BYTES {
         bail!("message of {len} bytes exceeds the {MAX_MESSAGE_BYTES}-byte limit");
@@ -69,8 +55,6 @@ impl MessageStream {
         Self { send: Mutex::new(send), recv: Mutex::new(recv) }
     }
 
-    /// Writes one message. Concurrent callers are serialized so frames never
-    /// interleave.
     pub async fn send(&self, kind: MessageKind, payload: &[u8]) -> Result<()> {
         let header = encode_header(kind, payload.len())?;
         let mut send = self.send.lock().await;
@@ -79,8 +63,6 @@ impl MessageStream {
         Ok(())
     }
 
-    /// Reads the next message; `None` when the peer finished the stream
-    /// cleanly between messages.
     pub async fn recv(&self) -> Result<Option<Message>> {
         let mut recv = self.recv.lock().await;
         let mut header = [0u8; 5];
@@ -95,7 +77,6 @@ impl MessageStream {
         Ok(Some(Message { kind, payload }))
     }
 
-    /// Gracefully ends our sending half; the peer's `recv` returns `None`.
     pub async fn finish(&self) -> Result<()> {
         self.send.lock().await.finish()?;
         Ok(())

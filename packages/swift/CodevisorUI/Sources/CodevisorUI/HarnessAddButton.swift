@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// A single presenter, placed in the iOS toolbar or the macOS section footer.
 public struct HarnessAddButton<Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
   @Bindable private var model: HarnessGlobalModel

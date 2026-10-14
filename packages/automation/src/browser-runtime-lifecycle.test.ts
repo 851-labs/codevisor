@@ -109,12 +109,10 @@ it("waits until closed tabs stop being listed, and no longer than the deadline",
   await waitForTargetsClosed(active, ["popup"], 2_000, 1)
   expect(send).toHaveBeenCalledTimes(2)
 
-  // Still listed at the deadline: give up rather than hold the turn's end.
   send.mockImplementation(async () => ({ targetInfos: [{ targetId: "stuck" }] }))
   await waitForTargetsClosed(active, ["stuck"], 0)
   expect(send).toHaveBeenCalledTimes(3)
 
-  // A browser that can't list its tabs, or lists none, has nothing left.
   send.mockImplementation(async () => {
     throw new Error("closed")
   })

@@ -24,8 +24,6 @@ extension SessionModelTests {
     await model.loadHistoryForInitialDisplay()
     #expect(model.updateGateHarnessName == "Codevisor")
 
-    // The server restarted between the `waiting` event and now, so no
-    // `released` ever arrived; the next page says nothing is held.
     client.initialTranscriptPage = ServerTranscriptPage(
       items: [],
       nextBefore: nil,
@@ -205,7 +203,6 @@ extension SessionModelTests {
     await model.loadHistoryForInitialDisplay()
     await settleUntil { !client.sessionEventSinceValues.isEmpty }
 
-    // The stream resumes the same provider message after the reopen.
     client.emit(
       ServerEventEnvelope(
         id: 3,
@@ -232,8 +229,6 @@ extension SessionModelTests {
       Issue.record("expected assistant")
       return
     }
-    // One merged span: the restored half must not survive as a separate
-    // entry that would demote it into "Worked for".
     guard case let .text(id, markdown) = message.turn.finalText else {
       Issue.record("expected final text")
       return

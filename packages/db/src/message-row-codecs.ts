@@ -19,7 +19,7 @@ export const parseAttachments = (raw: string | null): ReadonlyArray<AttachmentRe
 
 export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
   const attachments = parseAttachments(row.attachments)
-  /* v8 ignore next 3 -- the query filters roles and chat_items enforces the same CHECK constraint. */
+  /* v8 ignore next 3 */
   if (row.role !== "user" && row.role !== "assistant") {
     throw new Error(`Unsupported transcript role: ${row.role}`)
   }
@@ -28,8 +28,6 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     sessionId: row.session_id,
     sequence: row.position,
     role: row.role,
-    // User identity must survive optimistic echo -> durable history. Assistant
-    // messageId belongs to the current answer candidate and is mapped separately.
     ...(row.role === "user" && row.message_id !== null ? { messageId: row.message_id } : {}),
     text: row.text,
     createdAt: row.created_at,

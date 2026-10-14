@@ -12,8 +12,6 @@ const largestSize = (sizes: string | undefined): number | undefined => {
   return dimensions.length === 0 ? undefined : Math.max(...dimensions)
 }
 
-/// How well a declared color scheme fits the appearance: icons made for it
-/// first, icons made for the other one last.
 const themeRank = (declared: ToolIconTheme | undefined, theme: ToolIconTheme): number =>
   declared === undefined ? 0 : declared === theme ? -5000 : 5000
 
@@ -77,10 +75,6 @@ const appendPageIcon = (
   })
 }
 
-/// The icon links a page declares, best first: icons for the appearance,
-/// then sized raster icons nearest above 64px, then SVGs, then smaller
-/// rasters, then unsized icons, then touch icons (opaque squares that read
-/// heavier at row size). Monochrome mask icons are skipped.
 export const pageIconCandidates = (
   html: string,
   pageUrl: string,
@@ -95,8 +89,6 @@ export const pageIconCandidates = (
   return [...new Set(ranked.map((candidate) => candidate.url))]
 }
 
-/// Best first: icons for the appearance's background (MCP's `theme`), then
-/// theme-free ones, nearest 64px, SVGs as large.
 export const rankMcpIcons = (
   icons: ReadonlyArray<McpIcon>,
   theme: ToolIconTheme
@@ -111,8 +103,6 @@ export const rankMcpIcons = (
     .toSorted((lhs, rhs) => lhs.rank - rhs.rank || lhs.order - rhs.order)
     .map(({ icon }) => icon)
 
-/// Names that only resolve on a local or private network. Their hosts are
-/// never sent to a public favicon service.
 const PRIVATE_SUFFIXES = [
   ".localhost",
   ".local",
@@ -127,16 +117,11 @@ const PRIVATE_SUFFIXES = [
   ".invalid"
 ]
 
-/// Whether a host is a public internet name: dotted, not an IP address,
-/// and not under a local or private-use suffix.
 export const isPublicHost = (host: string): boolean => {
   const name = host.toLowerCase()
   if (!name.includes(".") || name.includes(":") || /^[\d.]+$/.test(name)) return false
   return !PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix))
 }
 
-/// A public favicon index, asked only when a site's own icons can't be
-/// fetched (bot protection turns away server-side requests to some sites).
-/// It answers 404 when it has no icon.
 export const publicFaviconUrl = (host: string): string =>
   `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`

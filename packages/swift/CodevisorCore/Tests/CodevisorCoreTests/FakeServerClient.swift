@@ -4,7 +4,6 @@ import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
-/// A reusable gate: `wait()` suspends callers until `open()` is called.
 actor Latch {
   private var isOpen = false
   private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -32,7 +31,6 @@ struct FakeServerSnapshot: Sendable {
   var deletedProjectIDs: [String]
   var deletedSessionIDs: [String]
   var readRequests: [FakeReadRequest]
-  /// Projects deleted along with their folder.
   var filesDeletedProjectIDs: [String] = []
   var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
   var runLocationUpdates: [FakeRunLocationUpdate] = []
@@ -74,12 +72,8 @@ actor FakeServerClient: CodevisorServerClienting {
   private var filesDeletedProjectIDs: [String] = []
   private var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
   private var runLocationUpdates: [FakeRunLocationUpdate] = []
-  /// When set, `listProjects` suspends on this first — lets tests hold a
-  /// "network" call in flight while the app state changes underneath it.
   private var listDelay: (@Sendable () async -> Void)?
   private var projectUpsertDelay: (@Sendable () async -> Void)?
-  /// When set, deleteProject/deleteSession suspend on this first — lets
-  /// tests hold the server DELETE in flight while refreshes race it.
   private var deleteDelay: (@Sendable () async -> Void)?
   private var readResponseDelay: (@Sendable () async -> Void)?
 

@@ -1,8 +1,6 @@
 #if os(macOS)
   import AppKit
 
-  /// Translucent monospaced overlay anchored to the top-left of its superview.
-  /// It is a sibling of the Metal view, never part of the render pass.
   @MainActor
   final class RigHUDView: NSView {
     private let label = NSTextField(labelWithString: "")

@@ -8,8 +8,6 @@ import {
 } from "../server-context.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 
-/// Publishes a chat's option list as its current one — what every client
-/// opening the chat is served — unless that is already what they get.
 export const publishSessionConfigOptions = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -31,7 +29,6 @@ export const publishSessionConfigOptions = async (
   )
 }
 
-/// Tells every client the chat's saved selections changed.
 export const publishSessionSelections = async (
   services: CodevisorServerServices,
   fanout: EventFanout,

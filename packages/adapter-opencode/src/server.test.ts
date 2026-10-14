@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest"
 
 import { OpenCodeServerError, startOpenCodeServer, type OpenCodeChild } from "./server.js"
 
-/// A scripted `opencode serve --stdio`: tests print its lines and decide
-/// whether closing stdin ends it.
 class FakeChild extends EventEmitter implements OpenCodeChild {
   readonly stdout = new EventEmitter()
   readonly stderr = new EventEmitter()
@@ -81,7 +79,6 @@ describe("OpenCode 2 server", () => {
     const password = h.spawned[0]?.env.OPENCODE_PASSWORD
     expect(password).toMatch(/^[\w-]{32}$/)
     expect(h.spawned[0]?.env.HOME).toBe("/home/test")
-    // Two "still booting" answers, one poll interval after each.
     expect(h.waits).toEqual([250, 250])
     expect(new Headers(h.requests[0]?.init.headers).get("authorization")).toBe(
       `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
@@ -133,7 +130,6 @@ describe("OpenCode 2 server", () => {
     const pending = h.start()
     h.child.print('{"url":"http://127.0.0.1:4100"}')
     await expect(pending).rejects.toThrow("did not start within 30 seconds")
-    // 30 seconds of 250ms polls (the last wait is the stop's grace period).
     expect(h.waits.filter((ms) => ms === 250)).toHaveLength(120)
     expect(h.child.stdinClosed).toBe(true)
 

@@ -1,5 +1,3 @@
-// CI planning step for deploy-relays.yml: emits GitHub step outputs —
-// `relays` (JSON id list, all or --only <id>) and `image` (SHA-tagged).
 import process from "node:process"
 
 import { readRelays } from "./gen-fly.mjs"

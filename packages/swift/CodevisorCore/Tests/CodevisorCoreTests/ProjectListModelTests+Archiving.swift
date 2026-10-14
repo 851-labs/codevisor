@@ -5,11 +5,6 @@ import ACPKit
 
 @MainActor
 extension ProjectListModelTests {
-  /// Clients used to keep a durable "this chat is archived" override that was
-  /// only ever retired once the server agreed. A failed upload -- or another
-  /// client restoring the chat first -- left it set forever, so one machine
-  /// hid a chat every other machine showed. Chats no longer carry archive
-  /// state at all, so the override is dropped on the first launch that sees it.
   @Test("Legacy archived-chat overrides are dropped so the server wins again")
   func purgesLegacyArchivedSessionMarkers() async throws {
     let persistence = InMemoryStore()
@@ -18,7 +13,6 @@ extension ProjectListModelTests {
       forKey: "pending-archived-sessions-v1"
     )
 
-    // Opening the app's navigation storage runs the one-time migration.
     let environment = AppEnvironment(
       navigationPersistence: persistence,
       configCache: ConfigOptionCache(store: InMemoryStore()),
@@ -29,9 +23,6 @@ extension ProjectListModelTests {
     #expect(environment.navigationStore.pendingIntents.isEmpty)
   }
 
-  /// Dropping a duplicate machine identity must take everything it owned
-  /// with it -- including changes still waiting to be sent -- or they would
-  /// re-apply to live rows if the identity came back.
   @Test("Dropping a machine's records drops its waiting changes too")
   func removingMachineRecordsDropsWaitingChanges() async throws {
     let fixture = NavigationFixture()

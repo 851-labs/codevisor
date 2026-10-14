@@ -20,7 +20,6 @@ export const makeHome = (): string => {
   return home
 }
 
-/// The test store lives beside the fake home's harness folders.
 export const storeDir = (home: string): string => join(home, "store")
 
 export const writeSkill = (

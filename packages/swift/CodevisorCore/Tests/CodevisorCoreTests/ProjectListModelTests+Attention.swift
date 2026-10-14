@@ -25,14 +25,11 @@ extension ProjectListModelTests {
     #expect(fixture.session(session.id)?.unreadCount == 1)
 
     model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
-    // Shown read at once, before the server has it.
     #expect(fixture.session(session.id)?.unreadCount == 0)
     await fixture.sync(with: fakeServer)
     #expect(await fakeServer.snapshot().readRequests.map(\.throughSequence) == [1])
     #expect(fixture.session(session.id)?.unreadCount == 0)
 
-    // Focus-read fires continuously while a chat stays focused; repeated
-    // triggers with nothing unseen must not spam the server.
     model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
     model.markSessionRead(session.id, serverId: session.serverId)
     #expect(fixture.store.pendingIntents.isEmpty)
@@ -45,9 +42,6 @@ extension ProjectListModelTests {
     let (fixture, fakeServer, session) = await attentionFixture("/tmp/presented-turn-read")
     #expect(fixture.session(session.id)?.latestAttentionSequence == 0)
 
-    // The terminal event has already reached the visible transcript and
-    // the server transaction has advanced attention, but the independent
-    // navigation socket has not delivered that summary to this model yet.
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 1, lastSeenSequence: 0)
     fixture.projectList.acknowledgePresentedTurnEnd(
       session.id,
@@ -66,9 +60,6 @@ extension ProjectListModelTests {
   func presentedTurnEndPreservesLaterAttention() async throws {
     let (fixture, fakeServer, session) = await attentionFixture("/tmp/presented-turn-bound")
 
-    // A second autonomous turn can finish before a delayed request reaches
-    // the server. The presented boundary is still sequence 1, so sequence
-    // 2 must remain unread.
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 2, lastSeenSequence: 0)
     fixture.projectList.acknowledgePresentedTurnEnd(
       session.id,
@@ -93,7 +84,6 @@ extension ProjectListModelTests {
 
     fixture.projectList.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
     await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1 }
-    // A newer turn finishes while the read's response is still in flight.
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 2, lastSeenSequence: 1)
     await fixture.refresh(from: fakeServer)
     await responseGate.open()

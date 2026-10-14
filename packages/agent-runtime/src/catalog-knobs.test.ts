@@ -4,8 +4,6 @@ import { describe, expect, it, vi } from "vitest"
 import { makeAgentRuntime } from "./index.js"
 import type { AgentProvider } from "./types.js"
 
-// Catalog knobs no shipped entry sets right now: pulling a broken
-// integration (`disabledReason`) and launching an adapter through npx.
 vi.mock("./harness-catalog.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./harness-catalog.js")>()
   return {

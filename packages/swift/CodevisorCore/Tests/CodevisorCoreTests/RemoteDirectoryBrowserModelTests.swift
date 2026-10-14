@@ -4,9 +4,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// A scripted remote filesystem: paths map to listings, failures map to the
-/// server's classified HTTP errors. Counts fetches so cache behavior is
-/// observable.
 private final class FakeRemoteFs: @unchecked Sendable {
   private let lock = NSLock()
   private var listings: [String: ServerFsListing]
@@ -131,7 +128,6 @@ struct RemoteDirectoryBrowserModelTests {
     await model.open("/home")
     #expect(model.columns[0].listing?.entries.map(\.name) == ["new"])
   }
-  /// A small tree: /home/user{src{alpha,beta},docs}, plus a hidden variant.
   private func makeFs() -> FakeRemoteFs {
     FakeRemoteFs(
       listings: [
@@ -210,8 +206,6 @@ struct RemoteDirectoryBrowserModelTests {
     await model.select("/home/user/locked", inColumn: "/home/user")
     #expect(model.columns.count == 2)
     #expect(model.columns[1].errorMessage?.contains("isn't allowed to read") == true)
-    // The unlistable folder is still the selection, so it can be chosen;
-    // the server remains the authority on whether it's usable.
     #expect(model.chosenPath == "/home/user/locked")
   }
 
@@ -222,7 +216,6 @@ struct RemoteDirectoryBrowserModelTests {
     await model.prependParent()
     #expect(model.columns.map(\.path) == ["/home", "/home/user"])
     #expect(model.columns[0].selectedEntryPath == "/home/user")
-    // chosenPath is unchanged: the deepest selection still wins.
     #expect(model.chosenPath == "/home/user")
   }
 
@@ -306,8 +299,6 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Toggling hidden truncates below a selection that disappeared")
   func showHiddenTruncatesDeadSelection() async {
     let fs = FakeRemoteFs(
-      // `.work` only exists in the hidden view: turning hidden *off*
-      // while browsing inside it must truncate back to home.
       listings: [
         "/home/user": listing("/home/user", children: ["src"]),
         "/home/user/.work": listing("/home/user/.work", children: []),

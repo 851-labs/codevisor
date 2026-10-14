@@ -5,10 +5,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Opening a chat this device has seen shows its saved page while the open
-/// request is in flight; the server's page then replaces it. The saved page
-/// is read off the main actor, so it races the request, and the server's page
-/// must win that race whatever the order.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct SessionControllerTranscriptCacheTests {
@@ -55,8 +51,6 @@ struct SessionControllerTranscriptCacheTests {
       fixture.controller.startCachedTranscriptLoad(
         in: model, transport: transport, sessionId: fixture.sessionId, serverId: "local",
         loadsExistingHistory: true))
-    // What `connect` does the moment the open response is in hand. The read
-    // has not even started: its task needs the main actor this test holds.
     fixture.controller.supersedeCachedTranscriptLoad()
     await load.value
 
@@ -102,7 +96,6 @@ struct SessionControllerTranscriptCacheTests {
       try? FileManager.default.removeItem(at: cacheDirectory)
     }
 
-    /// An open response holding one user message, as the server sends it.
     static func openResponse(sessionId: UUID, project: Project, text: String) -> Data {
       Data(
         """

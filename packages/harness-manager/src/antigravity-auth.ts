@@ -20,10 +20,6 @@ import { run } from "./harness-auth-support.js"
 
 export { ANTIGRAVITY_HARNESS_ID }
 
-/// Antigravity's Google sign-in, hosted by Codevisor: agy's own TUI runs in
-/// a hidden terminal on the account's data root, Codevisor shows its OAuth
-/// link, and the code Google's callback page shows comes back through the
-/// paste-code step. Works from a remote Codevisor server too.
 export const makeAntigravityAuth = (
   core: HarnessAuthCore,
   probeAccount: (accountId: string, force: boolean) => Promise<HarnessAccount>,
@@ -45,9 +41,6 @@ export const makeAntigravityAuth = (
     })
   }
 
-  /// The account a sign-in lands in. The user's own agy keeps its sign-in in
-  /// the Keychain, which only agy's own terminal login writes; signing in
-  /// from Codevisor makes (or reuses a signed-out) managed account instead.
   const managedAccount = async (account: HarnessAccountRecord): Promise<HarnessAccountRecord> => {
     if (account.profileKind === "managed") return account
     const accounts = await run(core.config.db.listHarnessAccounts(ANTIGRAVITY_HARNESS_ID))
@@ -79,10 +72,6 @@ export const makeAntigravityAuth = (
     return created
   }
 
-  /// Marks a sign-in done. With account sync on, the sign-in landed in a
-  /// fresh managed profile: sync seals its token file into the shared vault
-  /// and every machine gets it. Otherwise the account's state is re-read and,
-  /// signed in, it becomes the one chats use.
   const finish = async (accountId: string, flowId: string): Promise<HarnessAuthFlow> => {
     const shared = core.config.sharedAccounts?.()
     if (shared) await shared.captureLogin(accountId)
@@ -100,7 +89,6 @@ export const makeAntigravityAuth = (
     return done
   }
 
-  /// Tells account sync, when it's on, that this sign-in didn't land.
   const loginFailed = async (accountId: string): Promise<void> => {
     await core.config.sharedAccounts?.()?.loginFailed(accountId)
   }
@@ -111,7 +99,6 @@ export const makeAntigravityAuth = (
         entry.login.cancel()
         logins.delete(flowId)
       }
-    // Signed in already, agy skips its login screen: there's no link to show.
     if ((await agy(account, ["models"])).code === 0) return finish(account.id, randomUUID())
     let login: AgyLogin
     try {
@@ -144,7 +131,6 @@ export const makeAntigravityAuth = (
   const answer = async (flowId: string, code: string): Promise<HarnessAuthFlow> => {
     const entry = logins.get(flowId)
     if (entry === undefined) throw new Error("This sign-in attempt has expired — start again")
-    // The terminal closes either way: a rejected code needs a new link.
     logins.delete(flowId)
     try {
       await entry.login.submit(code)
@@ -163,7 +149,6 @@ export const makeAntigravityAuth = (
     await loginFailed(entry.accountId)
   }
 
-  /// agy answers its own slash commands in print mode.
   const logout = async (account: HarnessAccountRecord): Promise<void> => {
     const result = await agy(account, ["--print", "/logout"])
     if (result.code !== 0) throw new Error(result.stderr.trim() || "Antigravity couldn't sign out.")

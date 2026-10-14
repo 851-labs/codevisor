@@ -1,4 +1,3 @@
-// Shared internals for the split ACP provider modules.
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
 export const turnLifecycleEvent = (
@@ -21,10 +20,7 @@ export const turnLifecycleEvent = (
   }
 })
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-/// The ACP SDK's placeholder rejection for a connection that ended without a
-/// specific reason (`@agentclientprotocol/sdk`'s `jsonrpc` close path). It
-/// carries no diagnostic value, so callers substitute the child's stderr.
+/* v8 ignore start */
 export const isGenericConnectionClose = (message: string): boolean =>
   /^acp connection closed\.?$/i.test(message.trim())
 /* v8 ignore stop */

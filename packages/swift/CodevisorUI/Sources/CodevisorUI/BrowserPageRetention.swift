@@ -7,12 +7,9 @@ import Foundation
 public protocol RetainedBrowserPage: AnyObject {
   var hasLiveBrowserPage: Bool { get }
   var protectsBrowserPage: Bool { get }
-  /// Recheck visibility after any asynchronous activity check before discarding.
   func discardBrowserPage() async -> Bool
 }
 
-/// A live-page budget, separate from the engine's HTTP cache. Hidden pages keep
-/// their DOM, history and scroll position until idle expiry or memory pressure.
 @MainActor
 public final class BrowserPageRetention {
   public static let shared = BrowserPageRetention()
@@ -91,8 +88,6 @@ public final class BrowserPageRetention {
   }
 }
 
-/// Conservatively retain media and unfinished forms. Failure to inspect a page
-/// also retains it; WebKit/Chromium still have their own process memory policies.
 public enum BrowserPageActivity {
   public static let canDiscardScript = """
     (() => {

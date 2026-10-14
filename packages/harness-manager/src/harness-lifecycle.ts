@@ -38,10 +38,6 @@ export const makeHarnessLifecycleManager = (
       harnesses.map(async (harness) => {
         const info = current.get(harness.id)
         const lifecycle = operations.get(harness.id)
-        // Install methods are only rendered for harnesses that aren't
-        // installed — skip the availability resolution for ready ones so the
-        // list stays cheap (lazy: the machine's package managers are checked
-        // only where an Install button could appear).
         const definition =
           harness.readiness.state === "ready"
             ? undefined
@@ -82,8 +78,6 @@ export const makeHarnessLifecycleManager = (
           })
           if (shown) core.setOperation(harnessId, before)
         } catch (cause) {
-          // A check that can't run leaves readiness to report the harness;
-          // a setup that started and failed is the harness's failed update.
           if (!shown) return
           core.setOperation(harnessId, {
             error: cause instanceof Error ? cause.message : String(cause),
@@ -95,8 +89,6 @@ export const makeHarnessLifecycleManager = (
   }
 
   const startPeriodicChecks = (): (() => void) => {
-    // Jittered first run so boot-time work (env refresh, auth probes) wins
-    // the contention; then a steady cadence.
     const initialDelay = 20_000 + Math.floor(Math.random() * 40_000)
     const initial = setTimeout(() => {
       void detection.checkForUpdates(true).catch(() => undefined)
@@ -118,9 +110,6 @@ export const makeHarnessLifecycleManager = (
     ...makeHarnessUninstall(core, runner),
     beginInstall: runner.beginInstall,
     checkForUpdates: async (force = false, harnessIds) => {
-      // Explicit checks reset failed operations (of the harnesses they
-      // check). Periodic checks call detection directly and leave failures
-      // available for inspection.
       if (force) {
         for (const [id, operation] of operations) {
           if (operation.phase !== "failed") continue

@@ -48,7 +48,6 @@ describe("installProcessSafetyNet", () => {
     const net = install()
     for (let index = 0; index < UNCAUGHT_EXCEPTION_BUDGET * 3; index += 1) {
       net.throwUncaught()
-      // Spread out: never more than one inside any window.
       net.advance(UNCAUGHT_EXCEPTION_WINDOW_MS)
     }
     expect(net.exits).toEqual([])
@@ -60,7 +59,6 @@ describe("installProcessSafetyNet", () => {
     const net = install()
     for (let index = 0; index < UNCAUGHT_EXCEPTION_BUDGET; index += 1) net.throwUncaught()
     expect(net.exits).toEqual([])
-    // One past the budget inside the same window: something is spinning.
     net.advance(UNCAUGHT_EXCEPTION_WINDOW_MS - 1)
     net.throwUncaught("still broken")
     expect(net.exits).toEqual([1])

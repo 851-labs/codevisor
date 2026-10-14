@@ -1,10 +1,7 @@
 import Foundation
 
 package enum ScreenSharingVideoRefreshMessage: Sendable, Equatable {
-  /// Viewer to host: encode the newest source frame as a keyframe.
   case keyframe
-  /// Host to viewer: capture went idle; the newest encoded frame carries this
-  /// source timestamp. Sent once per idle transition over the reliable channel.
   case sourceIdle(latestTimestampNs: Int64)
 
   package func encoded() -> Data {
@@ -33,8 +30,6 @@ package enum ScreenSharingVideoRefreshMessage: Sendable, Equatable {
   }
 }
 
-/// Coalesces decoder notifications before scheduling work on the main actor.
-/// Revisions let the receiver reject notifications delivered out of order.
 package final class ScreenSharingRefreshSignal: @unchecked Sendable {
   package init() {}
   package struct Event: Sendable {
@@ -60,8 +55,6 @@ package final class ScreenSharingRefreshSignal: @unchecked Sendable {
   }
   package var keyframeGeneration: UInt64 { lock.withLock { generation } }
   package func request(resetDecoder: Bool = false) { change(to: true, resetDecoder: resetDecoder) }
-  /// A verified delivery shortfall needs recovery only when none is pending; it
-  /// must not invalidate a replacement keyframe that is already in flight.
   @discardableResult
   package func requestUnlessPending() -> Bool {
     let notification: ((@Sendable (Event) -> Void)?, Event)? = lock.withLock {
@@ -106,7 +99,6 @@ package final class ScreenSharingRefreshSignal: @unchecked Sendable {
   }
 }
 
-/// A request made on the peer actor is consumed on WebRTC's encoder queue.
 package final class ScreenSharingEncoderRefreshRequest: @unchecked Sendable {
   package init() {}
   private let lock = NSLock()
@@ -132,7 +124,6 @@ package struct ScreenSharingRefreshRateLimit {
   }
 }
 
-/// Retries only while keyframe recovery is pending. Normal idle video has no timer.
 @MainActor
 package final class ScreenSharingRefreshRequester {
   private let send: () -> Bool
@@ -188,19 +179,12 @@ package final class ScreenSharingRefreshRequester {
   }
 }
 
-/// Owns at most one capture buffer. Two independent orders: content follows
-/// actual capture timestamps (duplicates and out-of-order captures are
-/// rejected), while timestamps submitted to WebRTC stay strictly increasing
-/// across refreshes, so a synthetic refresh never discards a newer capture
-/// that arrives late. Clearing the cache releases its surface immediately.
 package struct ScreenSharingRefreshFrameStore {
   package init() {}
   private var frame: ScreenSharingVideoFrame?
   private var lastCapturedNs: Int64?
   private var lastSubmittedNs: Int64?
 
-  /// The frame to submit for a newer capture: same buffer and content
-  /// identity, submission timestamp above every earlier submission.
   package mutating func capture(_ frame: ScreenSharingVideoFrame) -> ScreenSharingVideoFrame? {
     guard frame.timestampNs >= 0 else { return nil }
     if let lastCapturedNs, frame.timestampNs <= lastCapturedNs { return nil }

@@ -1,19 +1,11 @@
 import Foundation
 
-/// Phase 18: the client-side view of the MCP plane's per-machine data.
-/// Read side: "mcp-readiness" (one single-writer entry per machine, listing
-/// every MCP's live state THERE). Write side: "mcp-overlays" per-machine
-/// disable entries — plain LWW writes that gossip like any other config.
-/// Key shapes mirror apps/server/src/infra/mcp-fleet.ts exactly.
 @MainActor
 public enum McpFleet {
-  /// One MCP's condition on one machine, as that machine reported it.
   public struct MachineReadiness: Identifiable, Equatable, Sendable {
     public let name: String
     public let state: String
     public let reason: String?
-    /// The raw connection state behind a blocked row, so the client picks
-    /// the action rather than matching on the reason's prose.
     public let code: String?
     public let toolCount: Int?
     public var id: String { name }
@@ -29,7 +21,6 @@ public enum McpFleet {
     }
   }
 
-  /// machineId → that machine's readiness rows, parsed from the replica.
   public static func readiness(_ sync: ConfigSync) -> [String: [MachineReadiness]] {
     var result: [String: [MachineReadiness]] = [:]
     for entry in sync.entries(namespace: "mcp-readiness") where entry.deleted != true {
@@ -58,7 +49,6 @@ public enum McpFleet {
     "enable|\(machineId)|\(name)"
   }
 
-  /// True when a live overlay disables `name` on `machineId`.
   public static func isDisabled(_ sync: ConfigSync, machineId: String, name: String) -> Bool {
     guard
       case .object(let value)? = sync.value(
@@ -69,13 +59,6 @@ public enum McpFleet {
     return value["enabled"] == .bool(false)
   }
 
-  /// Disables `name` on THIS machine — the per-machine escape hatch the
-  /// permission-skip flows use. Never touches the fleet definition. The
-  /// local server's sync key is only known once its /v1/info probe has
-  /// answered, so this waits (bounded) for it rather than writing under a
-  /// placeholder id every app-hosted machine would share. False when the
-  /// server never identified itself in time; `reconcileSkippedPermissions`
-  /// heals that on the next launch.
   @discardableResult
   public static func disableLocally(
     _ sync: ConfigSync,
@@ -95,8 +78,6 @@ public enum McpFleet {
     }
   }
 
-  /// Flips the per-machine disable overlay. Restoring deletes the entry
-  /// (a tombstone), so "no overlay" stays the fleet's normal state.
   public static func setDisabled(
     _ sync: ConfigSync,
     machineId: String,

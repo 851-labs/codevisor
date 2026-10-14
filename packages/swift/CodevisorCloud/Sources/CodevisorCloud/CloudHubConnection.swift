@@ -1,15 +1,6 @@
 import CodevisorClient
 import Foundation
 
-// MARK: - Hub connection
-
-/// The app's one WebSocket to its Codevisor Cloud hub — the control plane:
-/// hello/welcome handshake, presence, the tunnel config (relay map and
-/// rollout), and keepalive. Machine traffic never rides this socket; it goes
-/// peer-to-peer over the tunnel (`CloudDirectPathController`).
-///
-/// Reconnects with jittered exponential backoff; hub close codes 4200/4201
-/// are fatal (revoked token / unsupported protocol) and stop the loop.
 public actor CloudHubConnection {
   public static let protocolVersion = 2
   static let maximumMessageSize = 16 * 1024 * 1024
@@ -39,42 +30,22 @@ public actor CloudHubConnection {
   private var fatalFailure: CloudHubConnectionError?
   private var waiterSeq = 0
   var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
-  /// Keychain-backed values are immutable for this hub's lifetime. The
-  /// account controller destroys the hub on sign-out/server switch, so no
-  /// reconnect should ever return to the credential store.
   private var cachedSessionToken: Result<String, CloudHubConnectionError>?
   private var cachedIdentity: Result<CloudAppDeviceIdentity, CloudHubConnectionError>?
-  /// Serializes outbound socket writes so messages hit the wire in the order
-  /// they were sent, even when several tasks send concurrently.
   var sendChain: Task<Void, Never> = Task {}
-  /// Session resume: the token from the last welcome (offered in the next
-  /// hello) and the connection identity it names.
   var resumeToken: String?
   var lastConnectionId: String?
-  /// The machine presence list from welcome, kept fresh by presence frames.
   public internal(set) var machines: [CloudMachine] = []
-  /// Fired after the transport's machine list changes from a hub frame —
-  /// the welcome roster or a presence transition — with the full list. The
-  /// account layer compares it against the UI roster and refreshes from
-  /// REST on disagreement: this is what makes a machine signed in on
-  /// another device appear in the UI in realtime, instead of waiting for
-  /// the next foreground or a settings screen's poll.
   var machinesChangedHandler: (@Sendable ([CloudMachine]) -> Void)?
-  /// Fired on every welcome with the instance's tunnel relay map and rollout;
-  /// the latest is replayed to a handler installed after the welcome.
   var tunnelConfigHandler: (@Sendable (CloudTunnelConfig) -> Void)?
   var lastTunnelConfig: CloudTunnelConfig?
 
-  /// Installs the presence observer (actor-isolated setter for the field
-  /// above; the handler is invoked from the actor and must hop itself).
   public func setMachinesChangedHandler(
     _ handler: (@Sendable ([CloudMachine]) -> Void)?
   ) {
     machinesChangedHandler = handler
   }
 
-  /// Installs the tunnel config observer (fired on every welcome). A welcome
-  /// that already arrived is replayed, so installing late never misses it.
   public func setTunnelConfigHandler(_ handler: (@Sendable (CloudTunnelConfig) -> Void)?) {
     tunnelConfigHandler = handler
     if let lastTunnelConfig { handler?(lastTunnelConfig) }
@@ -128,17 +99,11 @@ public actor CloudHubConnection {
     #endif
   }
 
-  // MARK: Lifecycle
-
-  /// Starts the connection loop if it isn't already running. Safe to call
-  /// repeatedly.
   public func connect() {
     guard runTask == nil, fatalFailure == nil else { return }
     runTask = Task { await run() }
   }
 
-  /// Tears everything down (sign-out / server switch). The instance is done
-  /// after this — a new sign-in builds a new connection.
   public func shutdown() {
     runTask?.cancel()
     runTask = nil
@@ -152,9 +117,6 @@ public actor CloudHubConnection {
     failWaiters(with: CloudHubConnectionError.disconnected)
   }
 
-  /// Replaces the live socket without discarding account credentials. App
-  /// lifecycle recovery uses this after returning to the foreground, when
-  /// the old socket may be half-open after a suspension or network handoff.
   public func reconnect() {
     guard fatalFailure == nil else { return }
     guard let socket else {
@@ -167,8 +129,6 @@ public actor CloudHubConnection {
     socket.cancel(with: .goingAway, reason: nil)
   }
 
-  /// Waits until the hub has welcomed this connection (bounded by the ready
-  /// timeout), starting the loop if needed.
   public func waitUntilReady() async throws {
     connect()
     if isWelcomed { return }
@@ -218,12 +178,6 @@ public actor CloudHubConnection {
         self.socketID = socketID
         sendChain = Task {}
         try sendHello(identity: identity)
-        // Keepalive: Cloudflare's edge (and local workerd) closes
-        // idle WebSockets after ~100s, and URLSessionWebSocketTask
-        // sends nothing on its own — so an app that sat idle would
-        // find a dead hub the moment the user picks a machine.
-        // Protocol pings are answered by the hub's auto-response
-        // without even waking the Durable Object.
         let keepalive = Task { [weak self] in
           while !Task.isCancelled {
             guard let self else { return }
@@ -239,14 +193,8 @@ public actor CloudHubConnection {
           if isWelcomed { failures = 0 }
         }
       } catch let error as CloudHubConnectionError where error == .notSignedIn {
-        // No session: reconnecting cannot repair it. Signing in creates a
-        // fresh instance.
         becomeFatal(error)
       } catch let error as CloudHubConnectionError where error == .credentialsUnavailable {
-        // A Keychain read or write that failed (locked device, a transient
-        // error). Nothing was cached, so the backoff below retries it; a
-        // permanent failure here would leave every machine unreachable
-        // until the app relaunched.
         Log.cloud.error("Cloud hub credentials unavailable; retrying")
       } catch {
         if !Task.isCancelled {
@@ -264,7 +212,6 @@ public actor CloudHubConnection {
       }
       guard fatalFailure == nil, !Task.isCancelled else { break }
       failures += 1
-      // Same curve as the other sockets: 250ms · 2^n capped at 5s + jitter.
       try? await sleep(reconnectDelay(failures))
     }
   }
@@ -295,8 +242,6 @@ public actor CloudHubConnection {
       }
     } catch {
       Log.cloud.error("Cloud session credential load failed: \(String(describing: error), privacy: .public)")
-      // Not cached: a Keychain failure may be transient, so the next
-      // reconnect reads again.
       throw CloudHubConnectionError.credentialsUnavailable
     }
     cachedSessionToken = result
@@ -311,14 +256,10 @@ public actor CloudHubConnection {
       return identity
     } catch {
       Log.cloud.error("Cloud device credential load failed: \(String(describing: error), privacy: .public)")
-      // Not cached: a Keychain failure may be transient, so the next
-      // reconnect reads again.
       throw CloudHubConnectionError.credentialsUnavailable
     }
   }
 
-  /// RFC 3986 unreserved characters — everything else in the token is
-  /// percent-encoded so it survives the hub's WHATWG query parsing.
   private static let tokenQueryAllowed = CharacterSet(
     charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
   )
@@ -333,13 +274,6 @@ public actor CloudHubConnection {
       ? String(components.path.dropLast())
       : components.path
     components.path = "\(basePath)/connect"
-    // URLComponents.queryItems leaves "+" (and "/", "=") literal, but the
-    // hub reads the query per the WHATWG URL standard, where "+" decodes
-    // to a space. A session token containing "+" arrived corrupted, the
-    // bearer lookup failed, and the connection either got rejected or —
-    // worse — fell back to a stale session cookie in the shared cookie
-    // jar and joined the wrong account's hub. Encode strictly so the
-    // token round-trips verbatim.
     guard let encoded = token.addingPercentEncoding(withAllowedCharacters: Self.tokenQueryAllowed) else {
       throw CloudHubConnectionError.disconnected
     }

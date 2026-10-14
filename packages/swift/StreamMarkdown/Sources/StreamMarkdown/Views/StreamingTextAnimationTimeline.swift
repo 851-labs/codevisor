@@ -1,9 +1,6 @@
 import Foundation
 import QuartzCore
 
-/// One timeline is shared by every prose surface inside a single
-/// `StreamingMarkdownView`. This keeps words in adjacent Markdown blocks on
-/// one cadence instead of restarting the delay at every paragraph.
 @MainActor
 final class StreamingTextAnimationTimeline {
   private struct SourceObservation {
@@ -36,9 +33,6 @@ final class StreamingTextAnimationTimeline {
 
   var isSuspended: Bool { suspensionStartTime != nil }
 
-  /// Converts the system clock into the presentation clock. While suspended,
-  /// all provider updates share the frozen instant and accumulate behind the
-  /// same reveal playhead.
   func presentationTime(at time: TimeInterval) -> TimeInterval {
     suspensionStartTime ?? time
   }
@@ -70,11 +64,6 @@ final class StreamingTextAnimationTimeline {
     return true
   }
 
-  /// Enqueues one provider batch and rebalances only words that have not
-  /// started fading. The queue behaves like a small media jitter buffer: a
-  /// thin reserve slows down, backlog speeds up, and recent provider gaps
-  /// adjust the target lead. Started words never move, so cadence changes
-  /// cannot make opacity jump.
   func scheduleSegments(
     characterCounts: [Int],
     revealStyles: [StreamingTextRevealStyle]? = nil,
@@ -100,9 +89,6 @@ final class StreamingTextAnimationTimeline {
     return additions
   }
 
-  /// Extends the small composition window for a trailing emoji whose
-  /// grapheme changed before it became visible. Once an emoji is on screen
-  /// it is never hidden again.
   func restabilizeAtomicSegment(
     _ metadata: StreamingTextFadeMetadata,
     at now: TimeInterval
@@ -116,10 +102,6 @@ final class StreamingTextAnimationTimeline {
     rebalancePending(at: now)
   }
 
-  /// Records one semantic source revision. Calls from multiple native
-  /// Markdown surfaces deduplicate by source id and full document text, so
-  /// renderer churn cannot masquerade as a provider arrival. Only append-only
-  /// live changes teach the generic gap/jitter estimator.
   func observeSource(
     _ text: String,
     sourceID: String,
@@ -129,8 +111,6 @@ final class StreamingTextAnimationTimeline {
     var observation = sourceObservations[sourceID] ?? SourceObservation()
     guard observation.text != text else { return }
 
-    // Compare source code units rather than grapheme clusters so adding a
-    // modifier to the trailing emoji remains an append-only observation.
     let isAppendOnly = text.utf8.starts(with: observation.text.utf8)
     let deltaCharacterCount =
       isAppendOnly
@@ -190,8 +170,6 @@ final class StreamingTextAnimationTimeline {
     rebalancePending(at: now)
   }
 
-  /// Records already-presented text without treating a mount, navigation, or
-  /// Reduce Motion transition as a provider arrival sample.
   func baselineSource(_ text: String, sourceID: String) {
     sourceObservations[sourceID] = SourceObservation(
       text: text,
@@ -199,9 +177,6 @@ final class StreamingTextAnimationTimeline {
     )
   }
 
-  /// Adds a whole native Markdown block to the same visual cadence as the
-  /// streamed glyphs. Callers wait for the timeline to become idle before
-  /// inserting the block, then wait again before mounting later content.
   func scheduleBlockEntrance(at now: TimeInterval = CACurrentMediaTime()) {
     _ = scheduleSegments(
       characterCounts: [1],
@@ -209,9 +184,6 @@ final class StreamingTextAnimationTimeline {
     )
   }
 
-  /// Removes fades whose rendered words were replaced, finalized, or
-  /// baselined. Settling their metadata also makes any still-mounted native
-  /// surface show those glyphs immediately.
   func discard(
     _ metadata: [StreamingTextFadeMetadata],
     at now: TimeInterval = CACurrentMediaTime()
@@ -226,9 +198,6 @@ final class StreamingTextAnimationTimeline {
     refreshActivity(at: now)
   }
 
-  /// Suspends through the current animation tail. Newly scheduled work can
-  /// extend that tail while this method sleeps, so the deadline is checked
-  /// again after every wakeup.
   func waitUntilIdle() async throws {
     await Task.yield()
     while true {
@@ -259,9 +228,6 @@ final class StreamingTextAnimationTimeline {
     reportActivity(false)
   }
 
-  /// Lets the SwiftUI layer mirror the exact lifetime of the native glyph
-  /// fade. The transcript uses that signal to avoid claiming it is waiting
-  /// while commentary text is still visibly entering.
   func observeActivity(_ observer: ((Bool) -> Void)?) {
     observerGeneration &+= 1
     activityObserver = observer
@@ -307,9 +273,6 @@ final class StreamingTextAnimationTimeline {
     if let lastStarted {
       firstStart = max(now, lastStarted + StreamingTextAnimationSpec.queueHeadSpacing)
     } else if let earliestPending {
-      // A second provider update can arrive during the initial reserve.
-      // Keep the original playback deadline instead of pushing it back
-      // on every pre-roll update.
       firstStart = max(now, earliestPending)
     } else {
       firstStart =
@@ -392,8 +355,6 @@ final class StreamingTextAnimationTimeline {
   private func deliverActivity(_ active: Bool) {
     guard let observer = activityObserver else { return }
     let generation = observerGeneration
-    // Segment scheduling runs inside a representable update. Deferring the
-    // state write avoids mutating SwiftUI state during that render pass.
     Task { @MainActor [weak self] in
       guard let self,
         self.observerGeneration == generation,
@@ -404,6 +365,3 @@ final class StreamingTextAnimationTimeline {
     }
   }
 }
-
-/// Per-text-surface inputs. The timeline is message-wide while the identity
-/// and reconciler live with the native text view that owns a rendered block.

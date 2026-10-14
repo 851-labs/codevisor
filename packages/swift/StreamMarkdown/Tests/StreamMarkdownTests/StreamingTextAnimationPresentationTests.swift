@@ -19,11 +19,9 @@ struct StreamingTextAnimationPresentationTests {
   func projectionArrivalPolicy() {
     let registry = StreamingTextAnimationRegistry()
 
-    // The first projection predates this presentation and starts opaque.
     registry.observeProjectedStreams(["existing"], animatesNewStreams: true)
     #expect(!registry.presentation.claimInitialAnimation(for: "existing"))
 
-    // A followed live-edge arrival reserves exactly one entrance.
     registry.observeProjectedStreams(
       ["existing", "visible-live"],
       animatesNewStreams: true
@@ -31,7 +29,6 @@ struct StreamingTextAnimationPresentationTests {
     #expect(registry.presentation.claimInitialAnimation(for: "visible-live"))
     #expect(!registry.presentation.claimInitialAnimation(for: "visible-live"))
 
-    // An arrival while the reader is away is opaque on first mount.
     registry.observeProjectedStreams(
       ["existing", "visible-live", "offscreen-live"],
       animatesNewStreams: false
@@ -158,9 +155,6 @@ struct StreamingTextAnimationPresentationTests {
   func delayedInitialProjectionBaseline() {
     let registry = StreamingTextAnimationRegistry()
 
-    // UIKit configures the new transcript surface before its active-row
-    // projection is ready. That placeholder must not consume the one
-    // baseline boundary for this presentation.
     registry.observeProjectedStreams(
       [],
       animatesNewStreams: true,

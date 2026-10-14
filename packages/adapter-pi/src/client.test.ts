@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 
 import { PiExitedError, wirePiClient } from "./client.js"
 
-/// An in-memory transport: records what the client sends and lets a test
-/// write Pi's lines or fail the pipe.
 const transport = () => {
   const sent: Array<Record<string, unknown>> = []
   let line: ((line: string) => void) | undefined
@@ -43,7 +41,6 @@ describe("Pi RPC client", () => {
       { id: "codevisor-1", type: "get_state" },
       { id: "codevisor-2", type: "set_model", provider: "x", modelId: "y" }
     ])
-    // Out of order, and with responses for nobody in between.
     pipe.write({ type: "response", id: "codevisor-2", success: false, error: "Model not found" })
     pipe.write({ type: "response", id: "someone-else", success: true })
     pipe.write({ type: "response", command: "parse", success: false, error: "bad json" })
@@ -67,7 +64,6 @@ describe("Pi RPC client", () => {
     client.respond({ id: "d1", confirmed: true })
     expect(pipe.sent).toEqual([{ id: "d1", confirmed: true, type: "extension_ui_response" }])
 
-    // A handler that throws is logged, not allowed to escape the stream.
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
     client.onEvent(() => {
       throw new Error("boom")
@@ -87,7 +83,6 @@ describe("Pi RPC client", () => {
     pipe.fail(new Error("again"))
     await expect(pending).rejects.toThrow("pi exited")
     expect(closes).toEqual(["pi exited"])
-    // A command after Pi exited still says why it exited.
     const late = client.command("get_state")
     await expect(late).rejects.toThrow("pi exited")
     await expect(late).rejects.toBeInstanceOf(PiExitedError)

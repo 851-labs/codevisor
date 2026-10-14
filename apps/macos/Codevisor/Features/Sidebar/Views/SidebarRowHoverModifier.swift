@@ -2,7 +2,6 @@ import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
-/// The background-only variant for rows without hover-revealed content.
 struct SidebarRowHoverModifier: ViewModifier {
   var isSelected = false
   var isEnabled = true
@@ -25,7 +24,6 @@ struct SidebarRowHoverModifier: ViewModifier {
 }
 
 extension View {
-  /// Sidebar row hover/selection background with row-local hover state.
   func sidebarRowHover(isSelected: Bool = false, isEnabled: Bool = true) -> some View {
     modifier(SidebarRowHoverModifier(isSelected: isSelected, isEnabled: isEnabled))
   }

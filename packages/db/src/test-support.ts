@@ -40,7 +40,6 @@ const readDatabase = <A>(filename: string, read: (sqlite: Database.Database) => 
   }
 }
 
-/** The raw global event log after `since`, read straight from the events table. */
 export const listEvents = (filename: string, since = 0): ReadonlyArray<EventEnvelope> =>
   readDatabase(filename, (sqlite) =>
     sqlite
@@ -49,10 +48,6 @@ export const listEvents = (filename: string, since = 0): ReadonlyArray<EventEnve
       .map((row) => eventFromRow(row as EventRow))
   )
 
-/**
- * The raw event log of one subject after `since`: a session's own revisions,
- * or the global events filed under any other subject.
- */
 export const listSubjectEvents = (
   filename: string,
   rawSubjectId: string,
@@ -75,7 +70,6 @@ export const listSubjectEvents = (
           .map((row) => eventFromRow(row as EventRow))
   })
 
-/** Recreates the on-disk shape of a database last touched by migration 4. */
 export const buildV4Fixture = (filename: string): void => {
   const sqlite = new Database(filename)
   sqlite.exec(`

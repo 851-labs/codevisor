@@ -7,20 +7,12 @@ private struct FilePaneKey: FocusedValueKey {
   typealias Value = FilePaneModel
 }
 
-/// Scene-scoped creation and navigation actions published by the sidebar (via
-/// `.focusedSceneValue`) so menu commands drive the same code paths as
-/// the sidebar's own rows. Absent during onboarding — the sidebar isn't on
-/// screen — which leaves the menu items disabled.
 struct SidebarActions: Equatable {
   let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
-  /// The refreshed sidebar steps workspaces; the classic one steps its tab
-  /// rows. Each sidebar supplies its own.
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var stepTab: (@MainActor (Int) -> Void)? = nil
 
-  /// The closures capture stable references (bindings and the app
-  /// environment), so any published instance is interchangeable.
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
 }
 
@@ -28,9 +20,6 @@ private struct SidebarActionsKey: FocusedValueKey {
   typealias Value = SidebarActions
 }
 
-/// Published by the new-chat page so ⌘N moves first-responder focus into the
-/// composer even when that page is already on screen (navigating to it covers
-/// the other case: the composer grabs focus as it appears).
 struct NewChatComposerFocus: Equatable {
   let focus: @MainActor () -> Void
 
@@ -51,7 +40,6 @@ extension FocusedValues {
     set { self[FilePaneKey.self] = newValue }
   }
 
-  /// The focused chat pane's find-in-chat state.
   var transcriptFind: TranscriptFindModel? {
     get { self[TranscriptFindKey.self] }
     set { self[TranscriptFindKey.self] = newValue }
@@ -68,8 +56,6 @@ extension FocusedValues {
   }
 }
 
-/// The File > New items. Replaces the default "New Window" so ⌘N creates a
-/// chat — the app's primary "new document" action.
 struct FileCommands: Commands {
   @FocusedValue(\.filePane) private var file
   @FocusedValue(\.transcriptFind) private var chatFind
@@ -82,11 +68,6 @@ struct FileCommands: Commands {
 
       Divider()
 
-      // Lives in THIS group, not a `CommandGroup(after: .newItem)` of its own:
-      // a sibling group at the same placement holds a conditional item, and the
-      // resulting `_ConditionalContent` costs every item in the sibling group
-      // its key equivalent — the item renders, but ⌘W never attaches to it. See
-      // the note on `View.shortcut(_:)` in ShortcutButton.swift.
       CloseWindowMenuItem()
       CloseTabMenuItems()
     }
@@ -113,8 +94,6 @@ struct FileCommands: Commands {
         Button("Go to Line…") { file.showsGoToLine = true }
           .keyboardShortcut("g", modifiers: .control)
       } else if let chatFind {
-        // In this group, not a sibling: see the note on `CloseWindowMenuItem`'s
-        // group above about conditional items costing key equivalents.
         Button("Find in Chat…") { chatFind.present() }
           .keyboardShortcut("f", modifiers: .command)
         Button("Find Next") { chatFind.findNext() }
@@ -126,14 +105,6 @@ struct FileCommands: Commands {
   }
 }
 
-/// File > Close: Close Split while a workspace is focused, else the window.
-///
-/// Replacing `.newItem` above drops the standard Close along with "New Window",
-/// so this is the only ⌘W item. It must never be disabled: a disabled menu
-/// item SWALLOWS its key equivalent — AppKit does not fall through to the next
-/// matching item — and ⌘W would do nothing in the Settings window. Only the
-/// title follows focus; the item's structure stays static (see the note on
-/// `View.shortcut(_:)` in ShortcutButton.swift).
 private struct CloseWindowMenuItem: View {
   @FocusedValue(\.workspaceLayoutActions) private var workspace
 
@@ -156,8 +127,6 @@ private struct NewChatMenuItem: View {
   var body: some View {
     ShortcutButton(.newChat) {
       actions?.newChat()
-      // Already on the new-chat page: navigation is a no-op, so move
-      // focus into the composer directly.
       composerFocus?.focus()
     }
     .disabled(actions == nil)

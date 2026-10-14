@@ -1,7 +1,5 @@
 import Foundation
 
-/// Wait for SwiftUI's dismissal callback before accepting the next command.
-/// A returned logical nil alone does not mean UIKit has released the sheet.
 @MainActor
 public final class ClientPresentationCompletion {
   private let timeout: @Sendable () async throws -> Void

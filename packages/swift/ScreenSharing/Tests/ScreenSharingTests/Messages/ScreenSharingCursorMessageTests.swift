@@ -4,10 +4,8 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The cursor stream's wire format and the host's publisher (851-2377).
 @MainActor
 struct ScreenSharingCursorMessageTests {
-  /// A 4 × 6 image: opaque red, hotspot (1, 2), drawn by the host at 2× of a 2 × 3-point cursor.
   static func redImage() throws -> ScreenSharingCursorImage {
     let png = try #require(
       ScreenSharingCursorImage.png(pixelWidth: 4, pixelHeight: 6) { context in
@@ -55,9 +53,6 @@ struct ScreenSharingCursorMessageTests {
     #expect(ScreenSharingCursorImage(png: big, hotspotX: 0, hotspotY: 0, width: 1, height: 1).shape() == nil)
   }
 
-  // MARK: Publisher
-
-  /// What the scripted system reports. The publisher reads it on its own queue.
   final class System: @unchecked Sendable {
     private let lock = NSLock()
     private var _pointer = ScreenSharingCursorPublisher.Pointer(
@@ -88,7 +83,6 @@ struct ScreenSharingCursorMessageTests {
     let clock = TestClock()
     var sent: [ScreenSharingCursorMessage] = []
     var refuse = false
-    /// A 1000 × 500-point display at (100, 100), 2×.
     lazy var publisher = ScreenSharingCursorPublisher(
       bounds: { CGRect(x: 100, y: 100, width: 1000, height: 500) }, scale: { [system] in system.readScale() },
       pointer: { [system] in system.pointer }, metrics: metrics, clock: clock,
@@ -110,14 +104,12 @@ struct ScreenSharingCursorMessageTests {
       get { system.pointer.hotSpot }
       set { system.pointer.hotSpot = newValue }
     }
-    /// Shapes drawn and PNG-encoded, as the host's diagnostics count them.
     var drawn: Int { metrics.counter("cursorShapesDrawn") }
 
     func tick(_ count: Int = 1) async {
       for _ in 0..<count { await publisher.tick() }
     }
 
-    /// Drawn on whatever thread asks for it: the publisher draws on its own queue.
     nonisolated static func cursor(width: CGFloat, height: CGFloat, color: NSColor = .black) -> NSImage {
       NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
         color.setFill()
@@ -140,7 +132,6 @@ struct ScreenSharingCursorMessageTests {
     let shape = try #require(host.shapes.first)
     #expect(host.sent.count == 2)
     #expect(host.positions == [ScreenSharingPointer(x: 0.05, y: 0.05)])
-    // 2×: 20 × 32 pixels with the hotspot doubled, sized as a share of the display.
     let drawn = try #require(shape.shape())
     #expect(drawn.width == 20 && drawn.height == 32)
     #expect(shape.hotspotX == 4 && shape.hotspotY == 6)
@@ -150,7 +141,6 @@ struct ScreenSharingCursorMessageTests {
   @Test func onlyChangesAreSentAndOnlyANewLookIsDrawn() async {
     let host = Host()
     await host.tick()
-    // The system hands out a new image every poll: one that looks the same is not drawn again.
     host.image = Host.cursor(width: 10, height: 16)
     await host.tick(2 * ScreenSharingCursorPublisher.shapeEvery)
     #expect(host.sent.count == 2, "nothing moved, nothing changed")
@@ -158,7 +148,6 @@ struct ScreenSharingCursorMessageTests {
     host.location = CGPoint(x: 600, y: 350)
     await host.tick()
     #expect(host.positions.last == ScreenSharingPointer(x: 0.5, y: 0.5))
-    // Shapes are looked at every third tick: a change shows up within three.
     host.image = Host.cursor(width: 10, height: 16, color: .white)
     await host.tick(ScreenSharingCursorPublisher.shapeEvery)
     #expect(host.shapes.count == 2)
@@ -226,7 +215,6 @@ struct ScreenSharingCursorMessageTests {
     #expect(host.positions.last == ScreenSharingPointer(x: 0.5, y: 0.5))
 
     host.publisher.stop()
-    // The poll's sleep is cancelled, so nothing is left to wake it.
     while true {
       let revision = host.clock.changed.value
       if host.clock.pendingCount == 0 { break }

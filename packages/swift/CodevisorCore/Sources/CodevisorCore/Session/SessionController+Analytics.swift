@@ -2,8 +2,6 @@ import Foundation
 import ACPKit
 
 extension SessionController {
-  // MARK: - Analytics
-
   func captureChatCreatedIfNeeded(model: SessionModel, harnessId: String) {
     guard pendingNewChatAnalytics else { return }
     pendingNewChatAnalytics = false

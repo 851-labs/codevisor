@@ -25,22 +25,16 @@ export type CloneSkillSource = (
 ) => Promise<void>
 
 export interface SkillStoreConfig {
-  /// The store directory, inside Codevisor's data directory.
   readonly dir: string
   readonly overrides?: { readonly clone?: CloneSkillSource }
 }
 
-/// What the gateway's `skills` tool reads for one skill.
 export interface SkillDocumentView {
   readonly content: string
   readonly path: string
-  /// Supporting files, relative to `path`.
   readonly files: ReadonlyArray<string>
 }
 
-/// Codevisor's own skill store: one folder per skill under the data
-/// directory. Agents read skills through the tool gateway, so nothing here
-/// ever writes into a harness's skills folder.
 export interface SkillStore {
   readonly dir: string
   readonly list: () => Promise<SkillsList>
@@ -49,7 +43,6 @@ export interface SkillStore {
     directoryName: string,
     request: { readonly content: string }
   ) => Promise<SkillsList>
-  /// Create a skill from a template or pasted SKILL.md content.
   readonly create: (request: {
     readonly name: string
     readonly description: string
@@ -68,11 +61,9 @@ export interface SkillStore {
     readonly source: string
     readonly skillNames?: ReadonlyArray<string> | undefined
   }) => Promise<SkillsList>
-  /// Sync seams: swap in a replicated skill, or move one aside.
   readonly replace: (directoryName: string, source: string) => Promise<void>
   readonly rename: (from: string, to: string) => Promise<void>
   readonly document: (directoryName: string) => Promise<SkillDocumentView | undefined>
-  /// Notified after every change to the store's contents.
   readonly subscribe: (listener: () => void) => () => void
 }
 
@@ -130,8 +121,6 @@ export const makeSkillStore = (config: SkillStoreConfig): SkillStore => {
 
   const list = async (): Promise<SkillsList> => ({ dir, skills: await listSkills() })
 
-  /// The SKILL.md of a stored skill, resolved and proven to live inside the
-  /// store (a symlinked SKILL.md must not let edits escape it).
   const skillFile = async (directoryName: string): Promise<string> => {
     const path = assertSafeChild(dir, directoryName)
     let file

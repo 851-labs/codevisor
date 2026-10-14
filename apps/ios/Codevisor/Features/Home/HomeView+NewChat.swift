@@ -3,15 +3,9 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The New Chat sheet, its first-send promotion into a real workspace
-/// route, and the canonical workspace destination.
 extension HomeView {
   func presentNewChat(serverId: String? = nil) {
     if layoutMode == .split {
-      // The unfolded display shows New Chat as the detail page, like
-      // macOS; the sheet and its promotion stay compact-only. Already on
-      // an unsent draft, the button just brings the keyboard back.
-      // From a floating sidebar, get it out of the composer's way.
       defer { dismissOverlaySidebarAfterSelection() }
       if navigation.selection?.isNewChat ?? false, promotedDraftSessionId == nil {
         detailComposerFocusRequest = UUID()
@@ -23,13 +17,6 @@ extension HomeView {
       selectDetail(.newChat(serverId: serverId))
       return
     }
-    // One New Chat presentation at a time. `newChatFlow` outlives
-    // `presentedNewChatFlow` until the sheet's dismissal finishes, so this
-    // also covers a sheet that is still zooming back into the compose
-    // button. Starting a second zoom on that button while the first is
-    // mid-morph aborts inside UIKit (`_morphPreviewFromCurrentState`):
-    // a quick double tap, or reopening during the dismissal, did exactly
-    // that. The New Chat command and client control reach here too.
     guard newChatFlow == nil else {
       IOSNavigationDiagnostics.record(
         "home.newChat.presentIgnored",
@@ -45,8 +32,6 @@ extension HomeView {
   }
 
   #if DEBUG || NAVIGATION_DIAGNOSTICS
-    /// Presents the sheet and, once its draft controller exists, types the
-    /// text into it (the composer mirrors model-initiated changes).
     func presentDiagnosticNewChat(text: String) {
       presentNewChat()
       Task { @MainActor in
@@ -61,9 +46,6 @@ extension HomeView {
     }
   #endif
 
-  /// The first send is creating its session: the sheet's bubble may already
-  /// be airborne, so the expansion starts here, before the send publishes
-  /// the session and workspace and Home re-renders under the sheet.
   private func beginNewChatExpansion(_ flow: NewChatFlow) {
     guard newChatFlow === flow, flow.phase == .composing else { return }
     flow.phase = .animating
@@ -73,15 +55,8 @@ extension HomeView {
   private func beginNewChatPromotion(_ sessionId: UUID, flow: NewChatFlow) {
     guard newChatFlow === flow, flow.sessionId == nil else { return }
     guard
-      // Fleet-wide: the draft may have been sent to ANOTHER machine's
-      // project (session ids are unique across the fleet).
       let session = projectList.sessions.first(where: { $0.id == sessionId })
     else { return }
-    // Deliberately NO machine switch here: the promotion animation is
-    // mid-flight, and flipping the selected machine re-renders Home under
-    // the sheet and churns availability. iOS routes carry the
-    // session's serverId end to end, so the selected machine simply
-    // doesn't need to follow a send.
     flow.sessionId = sessionId
     let workspace = ensureWorkspace(for: session)
     flow.promotionServerId = session.serverId
@@ -103,20 +78,14 @@ extension HomeView {
       "home.newChatPromotion",
       "workspace=\(shortID(workspace.id)) session=\(shortID(sessionId)) pathBefore=\(navigationPathSummary(path))"
     )
-    // Normally already under way from `beginNewChatExpansion`; this is the
-    // path for a bubble that took off after the session existed.
     expandPromotionSurfaceIfReady(flow)
     flow.promotionSurface?.transitionNavigationTitle(navigationTitle) { [weak flow] in
       guard let flow else { return }
       finishNewChatPromotionIfReady(flow)
     }
-    // Mounting the second transcript is deferred until the flight lands.
-    // The live sheet covers that work without blocking the animation.
     if flow.didFinishFirstSendAnimation { pushCanonicalNewChatRoute(flow) }
   }
 
-  /// Mounts Home's canonical workspace route. The local send owns the
-  /// route; animation only reveals it.
   private func pushCanonicalNewChatRoute(_ flow: NewChatFlow) {
     guard newChatFlow === flow, !flow.didPushCanonicalRoute,
       let sessionId = flow.sessionId,
@@ -124,9 +93,6 @@ extension HomeView {
       let workspaceId = flow.promotionWorkspaceId
     else { return }
     flow.didPushCanonicalRoute = true
-    // The live sheet has already performed the visible transition. An
-    // ordinary NavigationStack push keeps moving after the destination's
-    // onAppear, so it would briefly slide the chat when the sheet is removed.
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
@@ -145,7 +111,6 @@ extension HomeView {
     )
   }
 
-  /// The resting sheet grows into the full-screen route.
   private static let promotionExpansionDuration: TimeInterval = 0.35
 
   private func prepareNewChatPromotionSurface(_ flow: NewChatFlow) {
@@ -168,8 +133,6 @@ extension HomeView {
     guard newChatFlow === flow, !flow.didStartFirstSendAnimation else { return }
     IOSNavigationDiagnostics.record("home.newChatPromotion.sheetSendStarted")
     flow.didStartFirstSendAnimation = true
-    // Reported from inside the transcript's layout pass: continue on the
-    // next turn, never re-entrantly inside layout.
     Task { @MainActor [weak flow] in
       await Task.yield()
       guard let flow, newChatFlow === flow else { return }
@@ -178,16 +141,11 @@ extension HomeView {
     }
   }
 
-  /// Morph the live navigation controls as the sheet grows.
   private func beginPromotionChromeMorph(_ flow: NewChatFlow) {
     guard !flow.hasStartedExpansion else { return }
-    // The toolbar owns its animations. A transaction around the whole
-    // sheet also animates keyboard avoidance as the hosting view expands.
     flow.hasStartedExpansion = true
   }
 
-  /// Expand before session publication starts expensive route work. The
-  /// sheet's live transcript resolves the flight target in its new geometry.
   private func expandPromotionSurfaceIfReady(_ flow: NewChatFlow) {
     guard newChatFlow === flow,
       flow.phase == .animating,
@@ -213,9 +171,6 @@ extension HomeView {
     IOSNavigationDiagnostics.record("home.newChatPromotion.sheetSendSettled")
     flow.didFinishFirstSendAnimation = true
     pushCanonicalNewChatRoute(flow)
-    // Fallback ordering (reduce motion, an instant flight): this arrives
-    // from the transcript's Core Animation completion, inside a transaction
-    // with implicit actions disabled, so expand on the next turn.
     Task { @MainActor [weak flow] in
       await Task.yield()
       guard let flow else { return }
@@ -224,9 +179,6 @@ extension HomeView {
     finishNewChatPromotionIfReady(flow)
   }
 
-  /// Destination construction is deliberately read-only. Normal row taps
-  /// populate the cache before pushing, while promoted drafts are registered
-  /// there before this route appears.
   func workspaceDestination(
     serverId: String,
     workspaceId: UUID,
@@ -253,8 +205,6 @@ extension HomeView {
       preferredLeafId: preferredLeafId,
       initialController: controller,
       onWorkspaceReady: markPromotedWorkspaceReady,
-      // The canonical route lays out under the sheet but does not
-      // consume shared transcript presentation state until commit.
       transcriptPresentationRole: promotion == nil ? .foreground : .prewarming,
       composerTextEditorHandoffRole: promotion == nil
         ? .none
@@ -274,9 +224,6 @@ extension HomeView {
       )
     else { return }
 
-    // Home's canonical destination becomes the input owner before either
-    // temporary surface is removed. It receives the exact first responder
-    // from the sheet, preserving the keyboard through the structural swap.
     flow.phase = .committing
     _ = flow.promotionSurface?.completeStableEditorHandoff()
     commitNewChatPromotion(flow)
@@ -287,10 +234,6 @@ extension HomeView {
       guard newChatFlow === flow else { return }
       flow.promotionWatchdog.cancel()
 
-      // This terminal state removes every promotion-owned surface. The
-      // already-mounted Home route switches to a normal foreground
-      // workspace, and its composer adopts the exact portaled editor
-      // back into the pane hierarchy during the same reconciliation.
       var transaction = Transaction()
       transaction.disablesAnimations = true
       let editorSettled = withTransaction(transaction) {
@@ -312,8 +255,6 @@ extension HomeView {
       )
     }
 
-    // The expanded live sheet stays visible until UIKit reveals the ready
-    // workspace. Both hierarchies use the same model and surface colors.
     if let presentationSession = flow.presentationSession {
       presentationSession.dismissWithoutAnimation(completion: complete)
     } else {
@@ -326,8 +267,6 @@ extension HomeView {
     IOSNavigationDiagnostics.record("home.newChatPromotion.fallback", "reason=\(reason)")
     flow.promotionWatchdog.cancel()
     pushCanonicalNewChatRoute(flow)
-    // Drive the SwiftUI sheet binding directly: a missing UIKit resolver
-    // or dismissal completion must never become another wait condition.
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
@@ -361,16 +300,10 @@ extension HomeView {
               beginNewChatPromotion($0, flow: liveFlow)
             },
             onDismissNewChat: { cancelNewChat(liveFlow) },
-            // Keep the presented hierarchy structurally inert
-            // through first send. Changing this role reconciled
-            // the source text view before the destination editor
-            // existed, which ended the keyboard session.
             transcriptPresentationRole: .foreground,
             onSendAnimationCompleted: {
               markFirstSendAnimationCompleted($0, flow: liveFlow)
             },
-            // The sheet flies its own bubble; Home only learns when it
-            // has left the composer, to time the expansion.
             onSendAnimationStarted: { _ in
               markFirstSendAnimationStarted(liveFlow)
             },
@@ -412,7 +345,6 @@ extension HomeView {
     presentedNewChatFlow = nil
   }
 
-  /// Retire transition state outside UIKit's dismissal callback.
   private func discardPromotionSurface(_ flow: NewChatFlow) {
     guard let surface = flow.promotionSurface else { return }
     flow.promotionSurface = nil
@@ -426,16 +358,7 @@ extension HomeView {
       resetNewChatPresentation()
       return
     }
-    // Promotion keeps its state alive while the expanded live surface is
-    // handed to the workspace route. A normal X/gesture dismissal clears
-    // only presentation/editor ownership after the system transition;
-    // the retained controller still owns the unsent draft value.
     guard flow.phase == .composing else {
-      // UIKit is already inside SheetBridge's presentation preference
-      // update here. Never force layout or first-responder traversal
-      // from this callback; doing so is re-entrant and trips Swift's
-      // exclusivity checker. Promotion state is finalized by the
-      // dismissal completion and surface animation callbacks.
       return
     }
     ComposerTextViewHandoffRegistry.cancel(flow.id)
@@ -451,16 +374,9 @@ extension HomeView {
   func shortID(_ id: UUID) -> String {
     String(id.uuidString.prefix(8))
   }
-
-  /// Folder rows add type-erased values to the sheet's own NavigationPath.
-  /// Selecting one keeps the draft sheet alive and removes only those
-  /// browser pushes.
 }
 
 extension View {
-  /// Zooms the New Chat sheet out of its source only when that source is
-  /// on screen; otherwise the sheet keeps the standard slide-up. Fixed for
-  /// a presentation's lifetime, so the branch never changes identity.
   @ViewBuilder
   fileprivate func newChatZoomTransition(
     _ enabled: Bool,

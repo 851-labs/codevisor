@@ -21,7 +21,6 @@ export async function openOwnedXcodeWindow(projectPath, appPath) {
       else reject(new Error(`Xcode window owner exited (${signal ?? code}).`))
     })
   })
-  // Attach immediately: startup and shutdown can both observe this rejection.
   exited.catch(() => {})
   const close = async () => {
     child.stdin.end()

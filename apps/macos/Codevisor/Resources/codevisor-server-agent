@@ -2,7 +2,6 @@
 set -euo pipefail
 
 resources_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The app bundles only the Apple silicon runtime.
 runtime_dir="$resources_dir/server/darwin-arm64"
 node_bin="$runtime_dir/bin/node"
 entrypoint="$runtime_dir/main.js"
@@ -15,8 +14,6 @@ update_request_path="$data_dir/app-update-request.json"
 mkdir -p "$data_dir" "$logs_dir"
 exec >>"$logs_dir/server.log" 2>&1
 
-# Every step of the agent script lands in the same timeline the app and the
-# server write to, so a boot that never reaches `node` is still explained.
 log() {
   printf '[%s] [agent %s] %s\n' "$(/bin/date -u +%FT%TZ)" "$$" "$*"
 }
@@ -27,12 +24,7 @@ if [[ ! -x "$node_bin" || ! -f "$entrypoint" ]]; then
   exit 78
 fi
 
-# The LaunchAgent can be resolved from a Sparkle installation bundle that is
-# moved or deleted after startup. Keep the daemon and every child process
-# anchored in durable application data instead of that transient bundle.
 cd "$data_dir"
-# The server resolves the user's shell environment asynchronously. Shell rc
-# files must never hold launchd's process open before Node can report progress.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 log "starting with fallback PATH; shell discovery runs in the server"
 export CODEVISOR_APP_HOSTED=1

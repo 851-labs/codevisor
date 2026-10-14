@@ -49,7 +49,6 @@ extension LocalCodevisorServer {
     startupProgress = progress
   }
 
-  /// Only fresh, boot-scoped checkpoints can describe or extend this attempt.
   func refreshStartupProgress(expectedBootId: String?) -> Bool {
     guard let data = try? Data(contentsOf: startupStatusURL),
       let next = try? JSONDecoder().decode(LocalServerStartupProgress.self, from: data),
@@ -84,7 +83,6 @@ extension LocalCodevisorServer {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try JSONEncoder().encode(diagnostic).write(to: path, options: .atomic)
       lifecycleLog.error("Startup diagnostics saved to \(path.path)")
-      // Keep diagnostics bounded across repeated failed updates.
       let files = try FileManager.default.contentsOfDirectory(
         at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
       )

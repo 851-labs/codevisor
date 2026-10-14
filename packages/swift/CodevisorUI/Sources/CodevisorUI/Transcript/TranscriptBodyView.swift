@@ -2,8 +2,6 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// Tool output reads as one scrollable document. Only visible storage blocks
-/// fetch and retain their text; leaving a block releases its body.
 public struct TranscriptBodyView: View {
   let resource: ToolDetailResource
   public init(resource: ToolDetailResource) { self.resource = resource }

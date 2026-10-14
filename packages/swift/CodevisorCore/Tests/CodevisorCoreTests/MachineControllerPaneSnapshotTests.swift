@@ -5,9 +5,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A machine's pane registry projected onto this device's layout as the
-/// controller syncs: snapshots materialize remote panes, live deltas remove
-/// them, and this device's own New Tab pages never leave it.
 @MainActor
 @Suite("MachineController pane snapshots", .timeLimit(.minutes(1)))
 struct MachineControllerPaneSnapshotTests {
@@ -64,8 +61,6 @@ struct MachineControllerPaneSnapshotTests {
     let fake = makeFake()
     let navigation = NavigationFixture()
     let repository = navigation.workspaces
-    // This device's layout from before: the chat under an older pane id,
-    // a duplicate of it, and a local New Tab page.
     var legacyState = PaneGroupState.centerInitial(sessionId: sessionId)
     _ = legacyState.addChatPane(sessionId: sessionId)
     let localNewTab = legacyState.addNewTabPane()
@@ -81,7 +76,6 @@ struct MachineControllerPaneSnapshotTests {
     #expect(materialized.tabId(containingPane: remoteTabId) != nil)
     #expect(materialized.pane(containingChat: sessionId)?.id == chatPaneId)
     #expect(materialized.allPanes.filter { $0.chatSessionId == sessionId }.count == 1)
-    // The local New Tab page stays beside the server's panes and is never uploaded.
     #expect(materialized.tabId(containingPane: localNewTab.id) != nil)
     #expect(fake.workspacePanes?.contains(where: { $0.id == localNewTab.id.uuidString }) == false)
     #expect(fake.paneMutationLog.isEmpty)
@@ -132,7 +126,6 @@ struct MachineControllerPaneSnapshotTests {
     #expect(fake.workspacePanes?.contains { $0.id == terminal.id.uuidString } == true)
     #expect(fake.workspacePanes?.contains { $0.id == newTab.id.uuidString } == false)
     #expect(fake.workspacePanes?.contains { $0.id == subagent.id.uuidString } == false)
-    // The server's event for the new pane lands; the layout keeps both tabs.
     fake.emit(kind: "workspace.pane.created", subjectId: terminal.id.uuidString)
     await awaitObserved {
       _ = navigation.workspaceSync.revision
@@ -141,7 +134,6 @@ struct MachineControllerPaneSnapshotTests {
     let synced = try #require(repository.workspace(id: workspaceId))
     #expect(synced.tabId(containingPane: terminal.id) != nil)
     #expect(synced.tabId(containingPane: newTab.id) != nil)
-    // Server reconciliation never prunes a pane the server was never told of.
     #expect(synced.tabId(containingPane: subagent.id) != nil)
     #expect(navigation.store.pendingIntents.isEmpty)
   }

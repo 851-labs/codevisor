@@ -8,15 +8,7 @@
 
   @testable import ScreenSharing
 
-  /// The capture's whole lifecycle over a stream the test owns: start, reconfigure, stop, restart
-  /// after an error, and a source that goes away. Only the two ScreenCaptureKit objects are
-  /// replaced — the target that resolves the content and the stream itself. The generation counter,
-  /// the validated interval request, the label writes and the ordering of every step are production
-  /// code. None of it needs Screen Recording consent, which is why this state machine could not be
-  /// covered before.
   @Suite @MainActor struct ScreenSharingCaptureStateMachineTests {
-    // MARK: Starting
-
     @Test func startPublishesTheResolvedContentAndTheValidatedRequestBeforeTheStreamStarts() async throws {
       let fixture = CaptureFixture()
       try await fixture.start()
@@ -91,8 +83,6 @@
       await #expect(throws: CaptureFailure.makeStream) { try await fixture.start() }
       try await fixture.capture.stop()
       #expect(fixture.stream.calls.isEmpty)
-      // The capture never took ownership of the metrics sink (that happens with the stream), so the
-      // stop has nowhere to record itself and stays silent rather than inventing a skip.
       #expect(fixture.metrics.snapshot().counters.isEmpty)
     }
 
@@ -108,8 +98,6 @@
     }
 
     @Test func anInvalidIntervalRequestIsRefusedBeforeTheStreamIsBuilt() async throws {
-      // The override is below the video rate. It must fail on the start path rather than quietly
-      // become the video rate while the telemetry still claims the override.
       let fixture = CaptureFixture(captureIntervalFPS: 30)
       await #expect(throws: ScreenSharingError.self) {
         try await fixture.start(configuration: .init(framesPerSecond: 60))
@@ -118,8 +106,6 @@
       #expect(fixture.metrics.snapshot().labels["captureRequestedMinimumFrameIntervalFPS"] == nil)
     }
 
-    // MARK: Reconfiguring
-
     @Test func anIntervalUpdateReconfiguresTheLiveStreamAndThenCommitsItsRequest() async throws {
       let fixture = CaptureFixture(captureIntervalFPS: 120)
       try await fixture.start()
@@ -127,7 +113,6 @@
       #expect(fixture.stream.calls == [.start, .update])
       let updated = try #require(fixture.stream.updated)
       #expect(updated.width == 1280 && updated.height == 720)
-      // The no-argument update keeps whatever request is in force, so the override survives.
       #expect(updated.interval == CMTime(value: 1, timescale: 120))
       #expect(fixture.capture.requestState.overrideFramesPerSecond == 120)
       try await fixture.capture.update(configuration: .init(framesPerSecond: 30), captureIntervalFPS: nil)
@@ -140,7 +125,6 @@
       let fixture = CaptureFixture(captureIntervalFPS: 120)
       try await fixture.start()
       let before = fixture.metrics.snapshot().labels
-      // 30 fps video with a 20 fps request: invalid, and the stream is never called.
       await #expect(throws: ScreenSharingError.self) {
         try await fixture.capture.update(configuration: .init(framesPerSecond: 30), captureIntervalFPS: 20)
       }
@@ -162,8 +146,6 @@
       await #expect(throws: ScreenSharingError.self) { try await fixture.capture.update(configuration: .init()) }
       #expect(fixture.stream.calls == [.start, .stop])
     }
-
-    // MARK: Stopping
 
     @Test func aCompletedStopRecordsBothBoundariesAndReleasesTheCaptureOnce() async throws {
       let fixture = CaptureFixture()
@@ -209,7 +191,6 @@
       #expect(snapshot.labels["captureStopFailed"] != nil)
       #expect(snapshot.counters["captureStopFailures"] == 1)
       #expect(snapshot.counters["captureStops"] == nil)
-      // A failed stop still releases the stream, so the source can be started again, not wedged.
       fixture.stream.stopFailure = nil
       try await fixture.start()
       #expect(fixture.stream.calls == [.start, .stop, .start])
@@ -222,24 +203,18 @@
       let start = Task { @MainActor in try await fixture.start() }
       await held.entered.wait()
       try await fixture.capture.stop()
-      // The stop found the stream the held start had already installed and stopped it.
       #expect(fixture.stream.calls == [.stop])
       held.release()
       await #expect(throws: CancellationError.self) { try await start.value }
-      // The start then saw the newer generation and stopped the stream it had just started.
       #expect(fixture.stream.calls == [.stop, .start, .stop])
     }
 
-    /// tuftlord over Tailscale (851-2379): the viewer's audio subscription arrived while the capture
-    /// was starting; restarting for audio stopped the stream and cancelled the start, ending every
-    /// session. The change now waits for the start, then restarts with audio.
     @Test func turningAudioOnDuringAHeldStartWaitsForItThenRestartsWithAudio() async throws {
       let fixture = CaptureFixture()
       let held = CaptureGate()
       fixture.stream.holdStart = held
       let start = Task { @MainActor in try await fixture.start() }
       await held.entered.wait()
-      // Only the first start is held; any later one runs straight through.
       fixture.stream.holdStart = nil
       let waiting = TestSignal()
       fixture.capture.onWaitingForStart = { waiting.signal() }
@@ -253,8 +228,6 @@
       #expect(fixture.target.settings?.capturesAudio == true)
     }
 
-    /// tuftlord (851-2376): the host moved the capture right after a slow start, while the audio
-    /// subscription was restarting it; the second start failed with "Capture is already running".
     @Test func settledWaitsForAnAudioRestartInProgress() async throws {
       let fixture = CaptureFixture()
       try await fixture.start()
@@ -277,7 +250,6 @@
       await waiter.value
       #expect(settled.value == 1)
       #expect(fixture.stream.calls == [.start, .stop, .start])
-      // Settled: moving the capture now starts cleanly.
       try await fixture.capture.stop()
       try await fixture.start()
     }
@@ -299,8 +271,6 @@
       #expect(fixture.stream.updated?.showsCursor == false)
     }
 
-    // MARK: A source that goes away
-
     @Test func aStreamErrorIsReportedOnceAndOnlyForTheGenerationThatIsStillLive() async throws {
       let fixture = CaptureFixture()
       try await fixture.start()
@@ -316,9 +286,6 @@
       #expect(messages == ["Source disappeared."])
       #expect(fixture.metrics.snapshot().labels["captureError"] == "Source disappeared.")
 
-      // A restart takes a new generation. `captureError` is written synchronously by the stale
-      // output's callback, which proves it ran and was dropped by the generation guard before the
-      // live generation's notification is awaited.
       try await fixture.capture.stop()
       try await fixture.start()
       first.handleStop(error: ScreenSharingError.unavailable("Stale."))
@@ -343,8 +310,6 @@
       #expect(labels["captureContentPixelScale"] == "1.0")
     }
 
-    // MARK: Sample delivery
-
     @Test func onlyScreenSamplesReachTheSinkAndTheyCarryTheCapturePresentationTime() async throws {
       let fixture = CaptureFixture()
       try await fixture.start()
@@ -357,8 +322,6 @@
       #expect(fixture.metrics.snapshot().counters["captureCallbacksComplete"] == 1)
     }
 
-    /// One ready 16x16 BGRA sample marked complete: what ScreenCaptureKit hands the output for a
-    /// frame it actually captured.
     private static func screenSample(presentationNs: Int64) throws -> CMSampleBuffer {
       var pixel: CVPixelBuffer?
       #expect(
@@ -388,8 +351,6 @@
 
   private enum CaptureFailure: Error, Equatable { case start, stop, update, makeStream }
 
-  /// One capture, one target and one stream created together, so no test ever observes a
-  /// half-configured capture.
   @MainActor private final class CaptureFixture {
     let capture: ScreenSharingCapture
     let metrics = ScreenSharingMetrics()
@@ -408,7 +369,6 @@
     }
   }
 
-  /// Everything the capture reads from an `SCContentFilter`, and the stream it would have built.
   private final class CaptureTargetDouble: ScreenSharingCaptureTarget {
     let stream = CaptureStreamDouble()
     let captureContent: ScreenSharingCaptureContent
@@ -431,13 +391,9 @@
     }
   }
 
-  /// The stream the capture drives. The recorded calls are lock-guarded because the protocol keeps
-  /// the caller's isolation rather than promising the main actor.
   private final class CaptureStreamDouble: ScreenSharingCaptureStream, @unchecked Sendable {
     enum Call: Equatable { case start, stop, update }
 
-    /// The scalars the capture asks ScreenCaptureKit for, captured when the stream is built or
-    /// reconfigured. `SCStreamConfiguration` is mutable, so its values are read immediately.
     struct Settings {
       let width: Int
       let height: Int
@@ -518,8 +474,6 @@
     }
   }
 
-  /// A stream call held open until the test releases it, so an operation can be observed in flight
-  /// instead of racing against it.
   private final class CaptureGate: @unchecked Sendable {
     let entered = TestSignal()
     private let lock = NSLock()

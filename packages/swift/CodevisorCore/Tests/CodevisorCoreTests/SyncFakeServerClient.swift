@@ -5,34 +5,22 @@ import Foundation
 
 @testable import CodevisorCore
 
-/// The workspace and pane registry a `SyncFakeServerClient` navigation
-/// snapshot carries.
 struct FakeWorkspaceSnapshot: Sendable {
   var workspaces: [ServerWorkspace]
   var panes: [ServerWorkspacePane]
 }
 
-/// A fake server whose event stream and list endpoints are test-driven.
-/// Shared by the MachineController suites (sync, panes, self-updates).
 @Observable
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   var _infoCloudDeviceId: String?
   var _infoFeatures: [String]?
   var _infoMaxUploadBytes: Int?
-  /// Tests that need capability responses (or to delay them) install one.
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
-  /// The Codevisor store skills `listSkills` answers with.
   var skillsList = ServerSkillsList()
-  /// Answers `composerSkills` with the requested project and session; nil
-  /// answers 404 like a server that predates the endpoint.
   var composerSkillsHandler: (@Sendable (UUID?, UUID?) async throws -> [ServerComposerSkill])?
-  /// Tests exercising composer attachments install one; the protocol
-  /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
   var workspaceOrderHandler: (@Sendable (UUID, String, Int) async throws -> ServerWorkspace)?
-  /// Overrides the workspace half of `navigationSnapshot`, e.g. to fail it
-  /// or to serve a stale registry.
   var workspaceSnapshotHandler: (@Sendable () async throws -> FakeWorkspaceSnapshot)?
   var workspaceRenameHandler: (@Sendable (UUID, String, Bool) async throws -> Void)?
   var sessionRenameHandler: (@Sendable (ChatSession) async throws -> Void)?
@@ -42,8 +30,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var sessionRenameNames: [String] { lock.withLock { _sessionRenameNames } }
 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
-  /// Awaited before every harness inventory read answers, so tests can hold
-  /// a read in flight.
   var harnessReadGate: (@Sendable () async -> Void)?
   var _harnessCheckScopes: [[String]?] = []
   var pluginPrepareError: String?
@@ -105,7 +91,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
 
   var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
-  /// How many event-stream subscriptions are currently attached.
   var eventStreamSubscriberCount: Int { lock.withLock { continuations.count } }
   var workspaceSnapshotCallCount: Int { lock.withLock { _workspaceSnapshotCallCount } }
   var sessions: [ServerSession] { lock.withLock { _sessions } }
@@ -147,8 +132,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     for continuation in targets { continuation.finish(throwing: error) }
   }
 
-  /// Mirrors the real server: replays the event log from `since`, then
-  /// streams new events.
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
     AsyncThrowingStream { continuation in
       let backlog: [ServerEventEnvelope] = lock.withLock {
@@ -174,7 +157,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       workspaces: state.workspaces, panes: state.panes)
   }
 
-  /// Test mutations emit the same entity delta as the database journal.
   private func navigationEvent(kind: String, subjectId: String, payload: JSONValue) -> JSONValue? {
     let table: String
     if kind.hasPrefix("workspace.pane.") {
@@ -335,30 +317,19 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
           panes[$0].id.caseInsensitiveCompare(paneId.uuidString) == .orderedSame
         })
       else { return nil }
-      // Like the server: a close is a deletion, even of the last pane. The
-      // New Tab page a client shows for an empty workspace is its own.
       _panes?.remove(at: index)
       return nil
     }
   }
 
-  // MARK: - Simulated server versioning / self-update
-
   var currentVersion = "0.1.0"
   var latestVersion = "0.1.0"
   var installedVersionAfterUpdate: String?
-  /// The build the simulated restart lands on when it differs from the
-  /// accepted target (an installer that resumed an older download).
   var installedBuildNumberAfterUpdate: Int?
   var updateApplied = false
   var bootId = "boot-before-update"
   var downtimeRemaining = 0
-  /// How many `info()` probes a simulated restart refuses before answering.
   var restartDowntime = 3
-  /// Simulated boot listener: while active, `health()` answers with the
-  /// next migration report (`ok: false`, `database: "migrating"`) and every
-  /// other route is refused with 503, exactly as a server booting through
-  /// its data upgrades does. Armed reports activate on the next restart.
   var _migrationReports: [ServerMigrationProgress] = []
   var _migrationFailure: String?
   var _migrationArmed = false
@@ -369,11 +340,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _updateInfoRefreshes: [Bool] = []
   var _appliedChannels: [ServerUpdateChannel] = []
   var _busy = false
-  /// Simulated restart drain: `applyServerUpdate` accepts but the server
-  /// reports "draining" for this many update-info polls before restarting.
   var _drainPollsRemaining = 0
-  /// Simulated in-flight harness update: inventory reads report the
-  /// harness as "updating" for this many reads after a trigger.
   var _harnessLifecycleActivePolls = 0
   var _harnessLifecycleReads = 0
   var currentBuildNumber: Int?

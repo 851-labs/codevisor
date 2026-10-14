@@ -5,29 +5,12 @@ import process from "node:process"
 import { readCloudDevVariables } from "./dev-host-tools.mjs"
 import { delay, findAvailablePort, isPortAvailable, parsePort } from "./dev-shared.mjs"
 
-/// Environment for every wrangler bundle of apps/cloud. Wrangler's esbuild
-/// ignores tsconfig customConditions, so the "@codevisor/source" condition
-/// (workspace packages export their TypeScript source under it) is passed
-/// here. The variable replaces wrangler's default condition list, so those
-/// defaults are repeated after it. Keep in sync with apps/cloud/package.json
-/// and .github/workflows/deploy-cloud.yml.
 export const CLOUD_WRANGLER_BUILD_CONDITIONS = "@codevisor/source,workerd,worker,browser"
 
 export function cloudWranglerEnvironment(environment = process.env) {
   return { ...environment, WRANGLER_BUILD_CONDITIONS: CLOUD_WRANGLER_BUILD_CONDITIONS }
 }
 
-/// The cloud dev instance (apps/cloud on `wrangler dev`): auth + relay hub,
-/// running fully locally with DEV_AUTH enabled and state under tmp/.
-
-// Like the server and www ports, the cloud's preferred port is stable for
-// this worktree and it scans its own range when that port is occupied. Pin
-// CODEVISOR_DEV_CLOUD_PORT only when testing real GitHub OAuth — OAuth apps
-// allow exactly one callback URL, so it must match the registered
-// http://localhost:<port>/api/auth/callback/github exactly.
-// Optional cloud dev vars live in apps/cloud/.dev.vars — gitignored, created
-// once in the MAIN clone. Worktrees read the main clone's copy automatically;
-// a worktree-local .dev.vars takes precedence. See .dev.vars.example.
 export async function resolveCloudDevInstance({ environment, instanceHash, layout, repoRoot }) {
   const cloudDevVariables = await readCloudDevVariables(repoRoot)
   const preferredCloudPort = 41_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
@@ -45,7 +28,6 @@ export async function resolveCloudDevInstance({ environment, instanceHash, layou
     requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000))
   return {
     cloudExtraVariables: Object.entries(cloudDevVariables)
-      // Keys prefixed CODEVISOR_DEV_ configure this script, not the Worker.
       .filter(([key]) => !key.startsWith("CODEVISOR_DEV_"))
       .flatMap(([key, value]) => ["--var", `${key}:${value}`]),
     cloudPersistPath: layout.wrangler,
@@ -54,10 +36,6 @@ export async function resolveCloudDevInstance({ environment, instanceHash, layou
   }
 }
 
-// cwd apps/cloud so bunx resolves the workspace's wrangler version — a
-// stray/global wrangler brings its own (older) workerd, which cannot read
-// local D1/DO state written by the workspace version. Failures fall through
-// to prepareCloudSession's "continuing without it" path instead of crashing.
 export async function applyCloudDevMigrations({ cloudPersistPath, repoRoot, run }) {
   await run(
     "bun",
@@ -78,8 +56,6 @@ export async function applyCloudDevMigrations({ cloudPersistPath, repoRoot, run 
   })
 }
 
-/// Real Workers runtime (workerd) with local D1 and Durable Objects,
-/// persisted under tmp/ like all other dev state.
 export function spawnCloudDev({ cloud, containerized, repoRoot, worktreeName }) {
   return spawn(
     "bun",
@@ -87,8 +63,6 @@ export function spawnCloudDev({ cloud, containerized, repoRoot, worktreeName }) 
       "x",
       "wrangler",
       "dev",
-      // Containers reach the hub through the host gateway, which needs a
-      // non-loopback bind. Same-host mode keeps the loopback default.
       ...(containerized ? ["--ip", "0.0.0.0"] : []),
       "--port",
       String(cloud.cloudPort),
@@ -107,10 +81,6 @@ export function spawnCloudDev({ cloud, containerized, repoRoot, worktreeName }) 
   )
 }
 
-// Wait for the cloud Worker, sign in as the dev user, and hand the session
-// token to the app (Settings → Account works with zero GitHub OAuth setup).
-// Non-fatal throughout: local dev must keep working when the cloud piece is
-// broken or slow — it's additive, never required.
 export async function prepareCloudSession({ cloudProcess, cloudUrl, sharedEnvironment }) {
   try {
     for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -118,9 +88,7 @@ export async function prepareCloudSession({ cloudProcess, cloudUrl, sharedEnviro
       try {
         const health = await fetch(`${cloudUrl}/health`)
         if (health.ok) break
-      } catch {
-        // wrangler is still starting.
-      }
+      } catch {}
       await delay(250)
     }
     const response = await fetch(`${cloudUrl}/dev/login`, { method: "POST" })

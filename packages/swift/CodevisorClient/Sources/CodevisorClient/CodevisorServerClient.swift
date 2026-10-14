@@ -16,7 +16,6 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
     case .invalidResponse:
       "The Codevisor server sent an unexpected response. Try again in a moment."
     case let .httpStatus(_, body):
-      // Server failures are `{"error": "…"}`: show the sentence, not the JSON (851-2391).
       body.isEmpty ? "The Codevisor server rejected the request." : serverErrorMessage(body) ?? body
     case .invalidDate, .invalidUUID:
       "The Codevisor server sent data this version of Codevisor couldn't read. Updating Codevisor may fix this."
@@ -24,7 +23,6 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
   }
 }
 
-/// The `error` sentence of a server error body (`{"error": …}`), if the body is one.
 func serverErrorMessage(_ body: String) -> String? {
   guard let data = body.data(using: .utf8),
     let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -33,9 +31,6 @@ func serverErrorMessage(_ body: String) -> String? {
   return message
 }
 
-/// The machine-readable failure category from a server error body
-/// (`{"error": …, "code": …}`), when the server classified the failure —
-/// clone errors use this to pick actionable guidance.
 public func serverErrorCode(_ error: any Error) -> String? {
   guard case let CodevisorServerClientError.httpStatus(_, body) = error,
     let data = body.data(using: .utf8),
@@ -44,28 +39,14 @@ public func serverErrorCode(_ error: any Error) -> String? {
   return payload["code"] ?? nil
 }
 
-/// The one message used for connection-level failures. Views compare an
-/// error string against this to pair the message with a "Restart" recovery
-/// action (HIG: offer the way out right where the error appears).
 public let serverUnreachableErrorMessage = "Can't connect to the Codevisor server."
 
-/// True when an error only says "the surrounding task was cancelled" —
-/// Swift task cancellation or the URLSession request it tore down. These are
-/// lifecycle noise (a pane was re-hosted, a view disappeared mid-load), not
-/// failures: callers should return silently instead of surfacing them, since
-/// whatever remounts the view reloads from scratch anyway. Without this
-/// filter, every workspace-layout churn painted "cancelled" error rows into
-/// otherwise healthy chats.
 public func isTaskCancellation(_ error: any Error) -> Bool {
   if error is CancellationError { return true }
   if let urlError = error as? URLError, urlError.code == .cancelled { return true }
   return false
 }
 
-/// A human-readable message for errors surfaced in the UI (HIG: say what
-/// happened and what to do next, in plain language — never a raw NSError
-/// dump). HTTP failures carry a JSON `{"error": "..."}` body from the
-/// server — show that sentence, not the wrapped enum description.
 public func serverErrorMessage(_ error: any Error) -> String {
   if case let CodevisorServerClientError.httpStatus(_, body) = error {
     if let data = body.data(using: .utf8),
@@ -76,8 +57,6 @@ public func serverErrorMessage(_ error: any Error) -> String {
     }
     return body.isEmpty ? "The Codevisor server rejected the request." : body
   }
-  // Connection-level failures: the URL, task ids, and CFNetwork internals
-  // mean nothing to the user — reduce to the situation and the way out.
   if let urlError = error as? URLError {
     switch urlError.code {
     case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
@@ -92,8 +71,6 @@ public func serverErrorMessage(_ error: any Error) -> String {
   if let localized = error as? LocalizedError, let description = localized.errorDescription {
     return description
   }
-  // Cocoa/POSIX errors carry a system-provided sentence; anything else
-  // falls back to its description rather than showing nothing.
   let nsError = error as NSError
   if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSURLErrorDomain
     || nsError.domain == NSPOSIXErrorDomain
@@ -113,10 +90,6 @@ public struct CodevisorServerConfig: Equatable, Sendable {
 
   public var baseURL: URL
   public var bearerToken: String?
-  /// Optional transport overrides. Nil keeps the URLSession defaults; cloud
-  /// machines carry relay-backed transports here so every consumer of a
-  /// config (server client, terminal transport) tunnels automatically.
-  /// Excluded from Equatable: transports are plumbing, not identity.
   public var requestTransport: (any ServerRequestTransport)?
   public var webSocketTransport: (any ServerWebSocketTransport)?
 
@@ -140,9 +113,6 @@ public struct CodevisorServerConfig: Equatable, Sendable {
 }
 
 public final class CodevisorServerClient: CodevisorServerClienting, @unchecked Sendable {
-  /// Foundation defaults WebSocket messages to 1 MiB. Tool results can
-  /// legitimately exceed that (for example a broad repository search), so
-  /// leave bounded headroom without altering the event payload.
   static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
   static let requestGateTimeout: Duration = .seconds(60)
   let config: CodevisorServerConfig
@@ -234,8 +204,6 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     return data
   }
 
-  /// Sibling of `perform` for raw (non-JSON) bodies and responses — file
-  /// uploads and downloads.
   func performRaw(
     _ path: String,
     method: String,
@@ -265,8 +233,6 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     return (data, httpResponse)
   }
 
-  /// Sibling of `performRaw` whose body streams from a file, so an upload's
-  /// size never becomes the app's memory footprint.
   func performUpload(
     _ path: String,
     fileURL: URL,
@@ -327,9 +293,6 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
   }
 
-  /// Lifecycle requests are what establish/re-establish readiness and must
-  /// never wait on the gate they drive. Every other HTTP and WebSocket
-  /// request waits before dispatch while startup/update downtime is known.
   func waitForServerIfNeeded(path: String) async throws {
     guard !Self.isLifecyclePath(path), let requestGate, let machineId else { return }
     #if DEBUG || NAVIGATION_DIAGNOSTICS

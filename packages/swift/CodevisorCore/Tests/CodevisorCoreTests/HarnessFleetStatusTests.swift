@@ -6,7 +6,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Phase 24's client half: parsing each machine's reported harness states.
 @MainActor
 @Suite("HarnessFleetStatus")
 struct HarnessFleetStatusTests {
@@ -67,7 +66,7 @@ struct HarnessFleetStatusTests {
                 "state": .string("notInstalled"),
                 "reason": .string("CLI not found on PATH"),
               ]),
-              .object(["state": .string("orphan")]),  // malformed: no id
+              .object(["state": .string("orphan")]),
             ])
           ]),
           timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")
@@ -107,7 +106,6 @@ struct HarnessFleetStatusTests {
     sync.applyRemoteChange(
       namespace: "harness-readiness",
       entries: [
-        // A current server reports display identity and that Codex needs no sign-in.
         ServerSyncEntry(
           key: "studio",
           value: .object([
@@ -118,7 +116,6 @@ struct HarnessFleetStatusTests {
               ])
             ])
           ]), timestamp: stamp),
-        // An older server reports ids only.
         ServerSyncEntry(
           key: "laptop",
           value: .object([

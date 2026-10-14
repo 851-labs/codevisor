@@ -54,8 +54,6 @@ const parseProfiles = (value: unknown): Profiles => {
 const fingerprint = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex")
 
-/// Shared profiles are applied in one direction. A local edit that differs
-/// from the last applied value remains an override, including a removed key.
 export const sharedProfileCredentialSource = (id: string, directory: string): CredentialSource => {
   const path = join(directory, "data", "opencode", "auth.json")
   const baselinePath = join(directory, ".shared-credentials.json")
@@ -137,7 +135,7 @@ export const reconcileSharedOpenCodeProfiles = async (
   for (const profile of desired.profiles) {
     const account = await run(deps.db.getHarnessAccount(profile.id))
     const prior = previous.profiles.find((item) => item.id === profile.id)
-    if (account === undefined && prior !== undefined) continue // Removed on this machine.
+    if (account === undefined && prior !== undefined) continue
     if (
       account !== undefined &&
       (account.harnessId !== "opencode" ||

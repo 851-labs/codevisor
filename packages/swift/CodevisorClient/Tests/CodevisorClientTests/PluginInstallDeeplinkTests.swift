@@ -32,11 +32,8 @@ struct PluginInstallDeeplinkTests {
 
   @Test("Accepts per-instance dev schemes")
   func parsesInstanceScheme() {
-    // `bun run dev` registers codevisor-dev-<instance hash> so parallel
-    // dev worktrees never race for one handler.
     let url = URL(string: "codevisor-dev-ab12cd34ef://install-plugin?repo=octocat/notes")!
     #expect(PluginInstallDeeplink.parse(url) == PluginInstallDeeplink(repo: "octocat/notes"))
-    // The family is codevisor-dev-*: other codevisor-ish schemes stay foreign.
     #expect(
       PluginInstallDeeplink.parse(
         URL(string: "codevisor-evil://install-plugin?repo=octocat/notes")!
@@ -61,8 +58,6 @@ struct PluginInstallDeeplinkTests {
   @Test("Rejects sources that are not a bare GitHub owner/name")
   func rejectsNonRepoSources() {
     let rejected = [
-      // Free-form install sources stay a manual, in-app affair: a link
-      // must never point at a local path or an arbitrary git remote.
       "codevisor://install-plugin?repo=/usr/local/evil",
       "codevisor://install-plugin?repo=../../etc",
       "codevisor://install-plugin?repo=owner/name/extra",

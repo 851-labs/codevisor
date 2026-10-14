@@ -70,8 +70,6 @@ export const routeSessions = async (
 
   if (request.method === "POST" && url.pathname === "/v1/sessions/wait") {
     const payload = await readSchema(request, WaitForSessionsRequestSchema)
-    // A caller that gives up (harness tool timeout, closed socket) releases
-    // the wait; after a normal reply this abort is a no-op.
     const abort = new AbortController()
     response.once("close", () => abort.abort())
     writeJson(response, 200, await waitForSessions(services.db, fanout, payload, abort.signal))
@@ -187,8 +185,6 @@ export const routeSessions = async (
   if (sessionId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateSessionRequestSchema)
     if (payload.projectId !== undefined) {
-      // A project move re-homes the session's working directory, which is
-      // only safe while the agent hasn't started (its cwd binds at spawn).
       const before = await run(services.db.getSessionSummary(sessionId))
       if (before.agentSessionId !== undefined && before.agentSessionId !== "") {
         throw new HttpFailure(
@@ -197,8 +193,6 @@ export const routeSessions = async (
         )
       }
       const project = await getProjectOrFail(services.db, payload.projectId)
-      // Fail the move up front if the destination doesn't resolve on this
-      // machine (missing folder, unknown worktree) rather than at first send.
       await resolveSessionCwdOrFail(services, config.id, project, payload.worktreeName)
     }
     const session = await applySessionUpdate(services, fanout, sessionId, payload)
@@ -207,10 +201,6 @@ export const routeSessions = async (
   }
 
   if (sessionId !== undefined && request.method === "DELETE") {
-    // Capture the workspace link before the row disappears: deleting the
-    // LAST session of a workspace deletes the workspace too, mirroring the
-    // client's archive-last-chat behavior. Without this, out-of-band session
-    // deletion strands empty workspaces in every client's sidebar.
     const workspaceId = (await run(services.db.listSessions)).find(
       (session) => session.id === sessionId
     )?.workspaceId

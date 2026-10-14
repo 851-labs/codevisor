@@ -3,20 +3,11 @@ import type { CloudMachinePresence, RelayFrameHeader } from "@codevisor/api"
 import { ChannelOpener, type OutgoingChannel } from "./channel-opener.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
-/// The machine-plane peer state a CloudMachineConnection keeps for its
-/// account: the machine list (welcome + presence, from hubs that support
-/// MACHINE_PEERS_FEATURE) and the channels this machine opens toward the
-/// others. Presence transitions end the channels they doom.
-
-/// Why a machine→machine channel could not be opened (nothing was sent).
 export type ChannelOpenFailure =
-  /// No hub connection (or resumable session) to send through.
   | "not-connected"
-  /// The hub predates machine→machine channels (no machine list).
   | "peers-unsupported"
   | "unknown-machine"
   | "machine-offline"
-  /// The target runs a version that takes no channels from other machines.
   | "machine-outdated"
 
 export class ChannelOpenError extends Error {
@@ -39,7 +30,6 @@ export interface MachinePeersOptions {
 }
 
 export class MachinePeers {
-  /// By device id; undefined until a peer-aware hub welcomed us.
   #machines: Map<string, CloudMachinePresence> | undefined
   readonly #opener: ChannelOpener
 
@@ -54,9 +44,6 @@ export class MachinePeers {
     })
   }
 
-  /// The account's machines (this one included) as the hub last reported
-  /// them (kept through reconnects); undefined before the first welcome,
-  /// after clear(), or when the hub predates machine peers.
   list(): ReadonlyArray<CloudMachinePresence> | undefined {
     return this.#machines === undefined ? undefined : [...this.#machines.values()]
   }
@@ -103,7 +90,6 @@ export class MachinePeers {
     if (!machine.online) this.#opener.dropMachine(machine.deviceId)
   }
 
-  /// The machine restarted: its channel state is gone.
   reset(machineId: string): void {
     this.#opener.dropMachine(machineId)
   }
@@ -116,7 +102,6 @@ export class MachinePeers {
     this.#opener.handleRelay(machineId, frame, payload)
   }
 
-  /// This machine's own pipe died for good.
   dropChannels(): void {
     this.#opener.dropAll()
   }

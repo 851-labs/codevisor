@@ -25,10 +25,7 @@ export class GitError extends Error {
 }
 
 export interface GitRunOptions {
-  /// Throttles heavy commands (snapshots, removals) so they do not starve the
-  /// rest of the machine. Omitted means normal priority.
   readonly priority?: CommandPriority | undefined
-  /// Node's 1MB default truncates listings of large checkouts.
   readonly maxBuffer?: number
 }
 
@@ -44,7 +41,6 @@ const git = (
     execFile(
       command.command,
       command.args,
-      // 1MB is Node's own default.
       { cwd, maxBuffer: options.maxBuffer ?? 1024 * 1024, ...(env === undefined ? {} : { env }) },
       (error, stdout, stderr) => {
         if (error !== null) {
@@ -77,9 +73,6 @@ const gitRaw = (
     )
   })
 
-/// Escape hatch for callers that need plumbing commands this module does not
-/// wrap individually (see worktree-archive.ts). Shares `git`'s GitError
-/// contract so failures classify identically.
 export const runGit = (
   operation: string,
   args: ReadonlyArray<string>,
@@ -96,24 +89,15 @@ export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   }
 }
 
-/// The URL of the repository's `origin` remote, falling back to the first
-/// configured remote when there is no `origin`. Undefined for a directory
-/// that is not a git work tree or has no remotes at all. This is the raw
-/// configured string; @codevisor/api's `repoIdentityKey` normalizes it so
-/// the same repository checked out on several machines lines up.
 export const gitRemoteUrl = async (
   dir: string,
   env?: NodeJS.ProcessEnv
 ): Promise<string | undefined> => {
-  // `git remote get-url` fails (rather than printing nothing) for an
-  // unknown remote, so a resolved value is always a non-empty URL.
   const remoteUrl = (remote: string): Promise<string> =>
     git("remote-url", ["remote", "get-url", remote], dir, env)
   try {
     return await remoteUrl("origin")
-  } catch {
-    // No origin (or not a repository): fall through to the remote list.
-  }
+  } catch {}
   try {
     const first = (await git("list-remotes", ["remote"], dir, env))
       .split("\n")
@@ -125,9 +109,6 @@ export const gitRemoteUrl = async (
   }
 }
 
-/// Returns the names already occupying Codevisor's shared local branch
-/// namespace. Worktree directories and server databases may be isolated, but
-/// every server operating on the same repository still shares these refs.
 export const listCodevisorWorktreeBranchNames = async (
   repoDir: string
 ): Promise<ReadonlyArray<string>> => {
@@ -142,13 +123,9 @@ export const listCodevisorWorktreeBranchNames = async (
     .filter((name) => name.length > 0)
 }
 
-/// A preflight branch scan closes the normal stale-ref case; this classifier
-/// closes the remaining race where another server creates the branch between
-/// that scan and our atomic `git worktree add -b`.
 export const isWorktreeBranchCollision = (cause: unknown): boolean =>
   cause instanceof GitError && /branch named ['"].+['"] already exists/i.test(cause.message)
 
-/// Default-branch refs, most specific first; branch totals and reviews use the first found.
 export const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
 
 export const parseGitNumstat = (numstat: string): BranchDiffTotals => {
@@ -177,9 +154,6 @@ async function untrackedLineCount(path: string): Promise<number> {
   }
 }
 
-// Mirrors GitBranchDiff.totals on macOS: compare the merge-base with the
-// default branch through the working tree, then count text lines in untracked
-// files as additions. Non-git directories and command failures stay hidden.
 export const gitBranchDiffTotals = async (
   directory: string
 ): Promise<BranchDiffTotals | undefined> => {
@@ -193,9 +167,7 @@ export const gitBranchDiffTotals = async (
           base = candidate
           break
         }
-      } catch {
-        // Try the next conventional default-branch ref.
-      }
+      } catch {}
     }
     const totals = parseGitNumstat(await git("branch-diff", ["diff", "--numstat", base], directory))
     const untracked = await gitRaw(
@@ -216,10 +188,6 @@ export const gitBranchDiffTotals = async (
   }
 }
 
-/// Runs `git worktree add`, streaming stdout/stderr lines (including output
-/// from post-checkout hooks) to `onOutput` as they arrive. Rejects with a
-/// GitError carrying the collected stderr when git exits non-zero. When
-/// `startPoint` is given the new branch is cut from that ref instead of HEAD.
 export const addWorktree = (
   repoDir: string,
   path: string,
@@ -264,9 +232,6 @@ export const addWorktree = (
     })
   })
 
-/// Failure categories for clone errors, matched against git's stderr. The
-/// server maps these onto HTTP responses and project.setup events so clients
-/// can show actionable guidance instead of raw git output.
 export type CloneFailureCode =
   | "auth_failed"
   | "repo_not_found"
@@ -319,10 +284,6 @@ export class CloneError extends GitError {
   }
 }
 
-/// Clones a remote into `destination`, streaming progress lines. Credential
-/// prompts are the top failure mode on headless machines: GIT_TERMINAL_PROMPT
-/// and ssh BatchMode make an auth-challenged clone fail fast with a
-/// classifiable error instead of hanging the request forever.
 export const cloneRepository = (
   url: string,
   destination: string,
@@ -370,11 +331,6 @@ export const removeWorktree = (
 ): Promise<string> =>
   git("worktree", ["worktree", "remove", path, "--force"], repoDir, env, { priority })
 
-/// Rolls back a `git worktree add -b` that failed after Git had already
-/// registered the checkout (checkout hooks run at exactly that point). The
-/// branch is deleted only after Git confirms ownership by successfully
-/// removing the exact worktree path; failures before registration therefore
-/// cannot delete a branch created by another process.
 export const rollbackFailedWorktree = async (
   repoDir: string,
   path: string,
@@ -385,9 +341,6 @@ export const rollbackFailedWorktree = async (
     try {
       return realpathSync(candidate)
     } catch {
-      // A failure before checkout creation legitimately leaves no path. Using
-      // an absolute lexical path lets the ownership check return false without
-      // turning the best-effort rollback into a second error.
       return resolve(candidate)
     }
   }

@@ -22,7 +22,6 @@ extension ProjectListModelTests {
 
     let snapshot = await fakeServer.snapshot()
     #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
-    // The create, then the rename (sent as an upsert by this fake).
     #expect(snapshot.upsertedSessionIDs == [session.id.uuidString, session.id.uuidString])
     #expect(snapshot.deletedSessionIDs == [session.id.uuidString])
     #expect(snapshot.deletedProjectIDs == [project.id.uuidString])
@@ -53,7 +52,6 @@ extension ProjectListModelTests {
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/proj"))
     #expect(project.name == "proj")
     #expect(model.projects.count == 1)
-    // The waiting request is saved: a fresh store reads it back.
     PersistenceEncoding.drain()
     #expect(NavigationFixture(persistence: persistence).projectList.projects.count == 1)
   }
@@ -74,8 +72,6 @@ extension ProjectListModelTests {
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     #expect(model.fleetActiveProjects.count == 1)
 
-    // Projects are deleted rather than archived: there is no hidden section
-    // they can fall into and be recovered from.
     model.removeProject(project)
     #expect(model.fleetActiveProjects.isEmpty)
     #expect(model.isProjectDeleted(id: project.id, serverId: project.serverId))
@@ -148,7 +144,6 @@ extension ProjectListModelTests {
     ]
 
     model.importSessions(imported, into: project)
-    // Importing the same discoveries again must not duplicate anything.
     model.importSessions(imported, into: project)
 
     let sessions = model.fleetSessions(in: project)
@@ -166,11 +161,8 @@ extension ProjectListModelTests {
     let model = fixture.projectList
     model.showsImportedSessions = true
     let oldTimestamp = "2026-06-01T00:00:00Z"
-    // Native scanners return JavaScript ISO strings with fractional
-    // seconds, so exercise the exact format used by the server endpoint.
     let newTimestamp = "2026-06-03T00:00:00.123Z"
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/a"), origin: .imported)
-    // The server already has this import, with a title the user edited.
     let known = ChatSession(
       projectId: project.id, harnessId: "codex", agentSessionId: "ext-1", title: "My title",
       origin: .imported, createdAt: ISO8601DateFormatter().date(from: oldTimestamp)!,
@@ -192,7 +184,6 @@ extension ProjectListModelTests {
     let fractionalFormatter = ISO8601DateFormatter()
     fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     #expect(refreshed.updatedAt == fractionalFormatter.date(from: newTimestamp))
-    // The advance is a waiting upsert of the known record.
     guard case let .upsertSession(sent, _)? = fixture.store.pendingIntents.last?.intent else {
       Issue.record("Expected a waiting upsert")
       return
@@ -200,7 +191,6 @@ extension ProjectListModelTests {
     #expect(sent.id == known.id)
     #expect(sent.updatedAt == refreshed.updatedAt)
 
-    // An older scanner result must never roll server/app activity back.
     model.importSessions(
       [
         ImportedSession(

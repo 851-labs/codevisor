@@ -2,9 +2,6 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-/// A decoded `worktree.setup` event envelope: progress the server publishes
-/// while it materializes a worktree (subjectId = the worktree id supplied by
-/// the client at creation time).
 public enum WorktreeSetupEvent: Equatable, Sendable {
   case started
   case log(stream: String, line: String)

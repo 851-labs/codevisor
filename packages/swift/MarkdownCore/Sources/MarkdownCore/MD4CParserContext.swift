@@ -2,9 +2,6 @@ import CMD4C
 import Foundation
 
 final class MD4CParserContext {
-  /// Callback stacks retain these builders while a block is open. A value
-  /// array extracted from an enum payload would copy its whole prefix on
-  /// every append because the stack still owns the previous array.
   final class Children<Element>: ExpressibleByArrayLiteral {
     var values: [Element]
 
@@ -52,7 +49,6 @@ final class MD4CParserContext {
   var inlineStack: [InlineState] = []
   var tableSections: [TableSection] = []
   var tableByteRanges: [Range<Int>] = []
-  // Valid only during md_parse; no borrowed pointers escape the parser.
   var sourceBytes: UnsafeBufferPointer<UInt8>?
   var pendingSourceBlockOrdinal: Int?
   var reusableBlockCount = 0
@@ -69,9 +65,6 @@ final class MD4CParserContext {
     return blocks.values
   }
 
-  /// MD4C establishes the block boundary. The first text callback locates
-  /// its source line; scanning syntax ourselves would misclassify nested
-  /// lists, fenced code, and setext headings.
   func noteTextSource(_ pointer: UnsafePointer<MD_CHAR>?) {
     guard let ordinal = pendingSourceBlockOrdinal,
       let pointer, let bytes = sourceBytes, let base = bytes.baseAddress
@@ -112,8 +105,6 @@ final class MD4CParserContext {
     }
   }
 
-  /// MD4C omits paragraph enter/leave callbacks inside tight lists. Start an
-  /// implicit paragraph when its first inline callback arrives.
   func ensureTightListInlineRoot() {
     guard inlineStack.isEmpty,
       let itemIndex = blockStack.lastIndex(where: {
@@ -227,13 +218,6 @@ final class MD4CParserContext {
       ))
   }
 
-  // An item with no blocks is one whose marker has arrived but whose
-  // text has not (`- ` at the live edge of a stream). Treat it as an
-  // empty paragraph so a tight simple list keeps the simple shape while
-  // it grows; flipping to the recursive shape on every new item and
-  // back once its text lands changed the block's identity twice per
-  // item, which re-partitioned transcript rows and replayed the reveal
-  // animation of the whole list.
   private static func simpleListTexts(_ items: [MarkdownListItem]) -> [MarkdownText]? {
     return items.reduce(into: []) { result, item in
       guard !item.isTask else { result = nil; return }

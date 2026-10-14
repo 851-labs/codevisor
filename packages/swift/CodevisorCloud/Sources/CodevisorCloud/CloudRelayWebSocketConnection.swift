@@ -2,9 +2,6 @@ import ACPKit
 import CodevisorClient
 import Foundation
 
-/// Tunnels WebSocket connections through a flow-controlled "ws" relay
-/// channel — the socket sibling of `CloudRelayRequestTransport`, used for
-/// event streams and terminals.
 public struct CloudRelayWebSocketTransport: ServerWebSocketTransport {
   private let endpoint: any CloudChannelTransport
 
@@ -17,13 +14,6 @@ public struct CloudRelayWebSocketTransport: ServerWebSocketTransport {
   }
 }
 
-/// One relayed WebSocket: lazily opens a "ws" channel for the request's path
-/// and adapts `{kind: text|binary}` frames to `ServerWebSocketMessage`.
-/// Flow control is consumer-paced both ways: outbound sends gate on the
-/// machine's grants, and the machine's window replenishes only as `receive`
-/// actually consumes messages — a slow app stalls the machine's local socket
-/// instead of ballooning buffers on any hop. Single-consumer, like a
-/// URLSessionWebSocketTask receive loop.
 final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
   private struct WsFrame: Codable {
     var kind: String
@@ -32,13 +22,9 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
 
   private struct Inbound {
     var message: ServerWebSocketMessage
-    /// Ciphertext bytes to replenish once the consumer has this message.
     var credit: Int
   }
 
-  /// Accumulates chunked-message byte slices between `part` frames and the
-  /// typed end frame. Accessed only from the hub actor's onMessage calls;
-  /// @unchecked Sendable covers the closure capture, not concurrent use.
   private final class PartAccumulator: @unchecked Sendable {
     private var bytes = Data()
 
@@ -60,9 +46,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     }
   }
 
-  /// Immediate (non-consumer-paced) grants — `part` frames and skipped
-  /// unknown kinds — accumulate here until the channel handle exists, so a
-  /// frame racing the open's return can never leak window.
   private final class ImmediateGrants: @unchecked Sendable {
     private let lock = NSLock()
     private var channel: CloudRelayChannel?
@@ -96,7 +79,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
   private let continuation: AsyncThrowingStream<Inbound, any Error>.Continuation
   private var cancelled = false
   private var unanswered = false
-  /// Set once the machine has sent any frame on the channel.
   private let answered = AnsweredFlag()
 
   private final class AnsweredFlag: @unchecked Sendable {
@@ -121,12 +103,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
       }
     }
     let decoder = JSONDecoder()
-    // Reassembly buffer for chunked messages: `part` frames accumulate
-    // byte slices until a typed end frame closes the message. Machines
-    // split anything above the chunk cap so a single huge event cannot
-    // exceed the hub's relay frame limit (whose dropped-frame seq gap
-    // would abort the channel and livelock cursor replay). Calls arrive
-    // serialized through the hub actor, so plain state suffices.
     let pendingParts = PartAccumulator()
     let immediate = ImmediateGrants()
     let gate = gate
@@ -152,9 +128,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
               continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
             }
           case "part":
-            // Slices replenish immediately: the reassembly buffer
-            // is bounded by one message, and holding the window
-            // hostage to a half-arrived message would deadlock it.
             if pendingParts.append(base64URL: frame.data) {
               immediate.grant(sealedBytes)
             } else {
@@ -177,8 +150,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
               continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
             }
           default:
-            // Future kinds are skipped, but their cost must not
-            // leak out of the machine's window.
             immediate.grant(sealedBytes)
           }
         },
@@ -214,15 +185,10 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
   }
 
   func receive() async throws -> ServerWebSocketMessage {
-    // Ensure the channel is (being) opened before waiting for frames.
     let channel = try await openTask.value
     guard let inbound = try await iterator.next() else {
-      // The peer finished cleanly; a socket consumer expects a throw
-      // (like URLSession's receive on a closed socket) to trigger its
-      // reconnect/teardown path.
       throw CloudRelayTransportError.channelClosed(.done)
     }
-    // Consumed: the machine may now put this many bytes back in flight.
     try? await channel.grantCredit(bytes: inbound.credit)
     return inbound.message
   }
@@ -245,8 +211,6 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     let openTask = openTask
     Task {
       if let channel = try? await openTask.value {
-        // Report before closing: the host judges the channel by its
-        // traffic, which the close would discard.
         if unanswered { await channel.reportUnanswered() }
         await channel.close(reason: .done)
       }

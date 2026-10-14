@@ -1,5 +1,3 @@
-// Kept inline with the server-rendered page: no client framework or external assets.
-// All dynamic user-facing values enter the DOM through textContent or input.value.
 export const loginScript = String.raw`
 (() => {
   const el = (id) => document.getElementById(id);
@@ -171,8 +169,6 @@ export const loginScript = String.raw`
     }
   });
   window.addEventListener("popstate", () => {
-    // A request may have committed already; don't let its result overwrite a different screen.
-    // Reload abandons this document and resumes from the server's safe entry screens.
     if (busy) { location.reload(); return; }
     let next = new URLSearchParams(location.search).get("step") || "sign-in";
     if (!Object.hasOwn(screens, next) || ((next === "verify-email" || next === "reset-password") && !email.value)) next = "sign-in";
@@ -226,7 +222,6 @@ export const loginScript = String.raw`
         try {
           await request("sign-up/email", { email: email.value, password: password.value, name: email.value.split("@")[0] });
         } catch (failure) {
-          // Mail failure can leave a pending account. Keep verification/resend reachable.
           if (failure.code === "EMAIL_DELIVERY_FAILED") navigate("verify-email");
           throw failure;
         }

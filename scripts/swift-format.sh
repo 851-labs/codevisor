@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Run swift-format over first-party Swift sources.
-#   scripts/swift-format.sh fix    — format in place
-#   scripts/swift-format.sh check  — lint mode; non-zero exit on findings
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

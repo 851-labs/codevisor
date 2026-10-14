@@ -106,14 +106,10 @@ struct AppEnvironmentTests {
     environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
     environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
 
-    // Only the restarted/re-imported plugin's panes reload; a different
-    // plugin (or the same plugin on another machine) stays put.
     #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.a") == 2)
     #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.b") == 0)
     #expect(environment.pluginUpdateRevision(forServer: "remote", pluginId: "owner.a") == 0)
 
-    // The machine-scoped plugin-state revision is a separate channel:
-    // runtime-state chips must never trigger pane reloads.
     #expect(environment.pluginStateRevision(for: "local") == 0)
   }
 
@@ -121,9 +117,6 @@ struct AppEnvironmentTests {
   func onboardingImportsProjectSessions() async {
     let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
 
-    // PreviewHarnessService reports importable sessions for this folder,
-    // but onboarding must NOT pull them in — the first project opens
-    // fresh; importing old chats stays an explicit user action.
     let project = await environment.finishOnboarding(
       projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
     )
@@ -141,7 +134,6 @@ struct AppEnvironmentTests {
     let first = await environment.finishOnboarding(projectFolders: [
       URL(fileURLWithPath: "/Users/me/src/website"),
       URL(fileURLWithPath: "/Users/me/src/Codevisor"),
-      // Duplicates collapse into the existing project.
       URL(fileURLWithPath: "/Users/me/src/website"),
     ])
 
@@ -160,8 +152,6 @@ struct AppEnvironmentTests {
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: AppSettingsModel(store: settingsStore)
     )
-    // What the first render after onboarding will read, sampled at the
-    // moment completion is published.
     settingsStore.beforeCompletion = { [weak environment] in
       MainActor.assumeIsolated {
         if environment?.projectList.projects.isEmpty == false { events.record("projects registered") }
@@ -186,7 +176,6 @@ struct AppEnvironmentTests {
     #expect(found.map(\.info.sessionId) == ["ext-1", "ext-1"])
     #expect(found.allSatisfy { $0.info.cwd == "/Users/me/src/website" })
 
-    // Once imported, the same discovery is no longer offered.
     let project = environment.projectList.addProject(
       folderURL: URL(fileURLWithPath: "/Users/me/src/website")
     )
@@ -203,8 +192,6 @@ struct AppEnvironmentTests {
   func projectRecommendations() async {
     let environment = AppEnvironment.preview(seedProjects: [])
 
-    // PreviewHarnessService's sessions live in folders that don't exist on
-    // the test machine, so the default directory filter drops them.
     let recommendations = await environment.recommendedProjectsWithFallback(
       serverId: "local"
     )
@@ -212,8 +199,6 @@ struct AppEnvironmentTests {
     #expect(recommendations.isEmpty)
   }
 
-  /// An environment whose machine already has `project`, `sessions`, and one
-  /// workspace showing the first chat (plus any extra chats given).
   private func environmentWithWorkspace(
     _ path: String, sessions titles: [String]
   ) async -> (AppEnvironment, Workspace, [ChatSession]) {
@@ -238,8 +223,6 @@ struct AppEnvironmentTests {
 
     environment.closeSession(session)
 
-    // Closing is pane removal: the chat itself is untouched and its
-    // workspace stays live with a New Tab page.
     #expect(environment.projectList.sessions.count == 1)
     let retainedWorkspace = environment.workspaces.workspace(id: workspace.id)
     #expect(retainedWorkspace?.isArchived == false)
@@ -259,8 +242,6 @@ struct AppEnvironmentTests {
     #expect(afterFirst?.pane(containingChat: first.id) == nil)
     #expect(afterFirst?.pane(containingChat: second.id) != nil)
 
-    // Auto-archiving on the last close was old behavior from when a
-    // workspace could not exist without a chat. It stays live now.
     environment.closeSession(second)
     let afterFinal = environment.workspaces.workspace(id: workspace.id)
     #expect(afterFinal?.isArchived == false)
@@ -275,9 +256,6 @@ struct AppEnvironmentTests {
 
     environment.archiveWorkspace(try #require(environment.workspaces.workspace(id: workspace.id)))
 
-    // The workspace carries the archive on its own: its chats have no such
-    // state to cascade to, and their panes survive for the restore. The
-    // request waits for the machine; the sidebar shows it at once.
     #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
     #expect(environment.workspaces.workspace(id: workspace.id)?.pane(containingChat: sessions[0].id) != nil)
     #expect(
@@ -297,8 +275,6 @@ struct AppEnvironmentTests {
     let archived = try #require(environment.workspaces.workspace(id: workspace.id))
     environment.unarchiveWorkspace(archived)
 
-    // Pane layout is retained across the round trip — restoring must give
-    // back the same surface, not a fresh empty one.
     let restored = environment.workspaces.workspace(id: workspace.id)
     #expect(restored?.isArchived == false)
     #expect(restored?.id == workspace.id)

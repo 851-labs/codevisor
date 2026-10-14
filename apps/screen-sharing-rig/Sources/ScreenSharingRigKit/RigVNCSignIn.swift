@@ -1,21 +1,12 @@
 import Foundation
 import ScreenSharing
 
-/// Where a direct VNC machine's password comes from.
 public enum RigVNCPassword: Sendable, Equatable, Hashable {
-  /// The server needs none.
   case none
-  /// Known to the rig: the loopback server's, which the rig itself set.
   case fixed(String)
-  /// Asked for once and kept in the login Keychain under the machine's id;
-  /// forgotten when the server rejects it, so the next attempt asks again.
   case keychain
 }
 
-/// What a direct VNC machine signs in with: a macOS account (username and
-/// password: Apple's account sign-in, security type 30, 851-2342) or the VNC
-/// password alone. Stored in the Keychain as the password itself when there's
-/// no username (as before), else as JSON, so passwords saved earlier still read.
 public struct RigVNCCredential: Sendable, Equatable {
   public var username: String?
   public var password: String
@@ -42,11 +33,7 @@ public struct RigVNCCredential: Sendable, Equatable {
   }
 }
 
-/// Choosing the credential a direct VNC machine connects with, and keeping the
-/// Keychain in step with what the server accepts. `verify` is one handshake
-/// (TCP, security negotiation, authentication) with the given credential.
 public enum RigVNCSignIn {
-  /// A credential the user typed into the rig, and whether to keep it.
   public struct Typed: Sendable, Equatable {
     public var credential: RigVNCCredential
     public var remember: Bool
@@ -58,9 +45,7 @@ public enum RigVNCSignIn {
   }
 
   public enum Outcome: Sendable, Equatable {
-    /// Connect with this credential (nil: the server needs none).
     case signedIn(RigVNCCredential?)
-    /// Ask the user; `reason` is the server's rejection, nil when nothing was stored.
     case needsPassword(reason: String?)
   }
 
@@ -91,23 +76,17 @@ public enum RigVNCSignIn {
 }
 
 extension RigVNCSignIn {
-  /// A change to a Keychain machine's saved sign-in from the settings sheet (851-2367).
   public enum PasswordChange: Sendable, Equatable {
     case keep, forget
     case replace(String)
   }
 
-  /// The saved user name and whether a password is saved, for the sheet; the password stays in the store.
   public static func saved(machineId: String, store: any RigSecretStore) -> (userName: String, hasPassword: Bool) {
     guard let stored = store.read(machineId) else { return ("", false) }
     let credential = RigVNCCredential.decode(stored)
     return (credential.username ?? "", !credential.password.isEmpty)
   }
 
-  /// Applies the sheet's sign-in changes to the store. Forgetting removes the credential; a new
-  /// password is saved with the (possibly new) user name; a new user name alone rewrites the saved
-  /// credential, and is kept for the next prompt only when nothing is saved. True when anything
-  /// saved changed, so the next connection must sign in again.
   @discardableResult
   public static func update(
     machineId: String, userName: String?, password: PasswordChange, store: any RigSecretStore

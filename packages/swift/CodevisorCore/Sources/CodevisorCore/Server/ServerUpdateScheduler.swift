@@ -1,7 +1,5 @@
 import Foundation
 
-/// Supplies one monotonic time source for server-update deadlines and sleeps.
-/// Tests advance virtual time; production keeps the continuous-clock deadline.
 public struct ServerUpdateScheduler: Sendable {
   typealias Instant = ContinuousClock.Instant
   typealias Now = @MainActor @Sendable () -> Instant

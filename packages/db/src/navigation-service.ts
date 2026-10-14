@@ -19,8 +19,6 @@ import type {
 import type { ServiceContext } from "./service-context.js"
 import { readSessionSkills } from "./session-skills.js"
 
-/** A single SQLite read transaction binds all navigation records to one cursor.
- * No filesystem, agent startup, Git process, or historical event replay runs here. */
 export const makeNavigationService = (context: ServiceContext) => ({
   listSessionsRequiringResume: attempt("listSessionsRequiringResume", () =>
     (

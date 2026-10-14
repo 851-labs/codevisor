@@ -25,8 +25,6 @@ for (const category of ["packages", "apps"]) {
   }
 }
 
-// Run each distinct workspace typecheck command against a real composite project.
-// Cold checks must not publish JS; warm checks must not poison the build's cache.
 for (const command of commands) {
   test(`typecheck leaves runtime output and build metadata alone: ${command}`, (t) => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-typecheck-"))
@@ -67,7 +65,6 @@ for (const command of commands) {
       before
     )
 
-    // The next build must still see the source change and publish its new value.
     run(["-b", "tsconfig.json"])
     assert.match(readFileSync(join(directory, "dist/index.js"), "utf8"), /"after"/)
 

@@ -84,9 +84,6 @@ struct StreamingTextAnimationStateTests {
     }
     #expect(originalPrefixFades.count == 2)
 
-    // Once the image destination becomes a native preview, this surface
-    // retains only the Markdown before it. Those words were already fully
-    // visible and must not be scheduled again.
     let contracted = state.prepare(
       NSAttributedString(string: "Before image "),
       context: StreamingTextAnimationContext(

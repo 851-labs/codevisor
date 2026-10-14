@@ -7,10 +7,8 @@ struct StreamingTextHiddenStreamTests {
   func hiddenStreams() {
     let registry = StreamingTextAnimationRegistry()
     registry.observeProjectedStreams(["header"], animatesNewStreams: true)
-    // Two parts stream in while their section is collapsed.
     registry.observeProjectedStreams(["header"], animatesNewStreams: true)
     registry.observeHiddenStreams(["part-1", "part-2"])
-    // The reader opens the section, then a third part streams in.
     registry.observeProjectedStreams(["header", "part-1", "part-2"], animatesNewStreams: true)
     registry.observeProjectedStreams(["header", "part-1", "part-2", "part-3"], animatesNewStreams: true)
 

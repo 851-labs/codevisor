@@ -59,22 +59,10 @@ const linkResource = async (source: string, destination: string) => {
   }
 }
 
-/// OpenCode re-reads auth.json on every request, and its built-in OAuth
-/// plugins (openai/codex.ts, xai.ts) refresh only once a token is nearly
-/// expired. Keeping the file ahead of that means OpenCode never refreshes on
-/// its own: the rotating grant stays in the vault, and the file holds an inert
-/// placeholder where a refresh token would be. The importer already ignores
-/// anything under the managed prefix.
 const OPENCODE_MANAGED_REFRESH = `${MANAGED_REFRESH_PREFIX}managed`
-/// The vault serves OpenCode tokens with over six minutes left. Rewriting once
-/// seven remain stays clear of xAI's two-minute refresh skew between ticks.
 const OPENCODE_REFRESH_AHEAD_MS = 7 * 60_000
-/// Wall-clock polling rather than one timer per expiry: a Mac's timers stop
-/// while it sleeps, so a long timer can fire well after its token expired.
 const OPENCODE_TICK_MS = 30_000
 const OPENCODE_RETRY_MS = 60_000
-/// A profile no turn has used for this long stops being refreshed in the
-/// background; the next turn catches it up before it starts.
 const OPENCODE_IDLE_MS = 24 * 60 * 60_000
 
 interface OpenCodeProfile {
@@ -94,7 +82,6 @@ export const makeSharedProviderRuntime = (options: {
   const openCode2 = options.openCode2 ?? makeOpenCode2Deps()
   const url = `${options.baseUrl}/harness/provider-token`
   const preparing = new Map<string, Promise<unknown>>()
-  /// One profile's files are written by one operation at a time.
   const serialize = <A>(key: string, operation: () => Promise<A>): Promise<A> => {
     const previous = preparing.get(key) ?? Promise.resolve()
     const pending = previous
@@ -107,10 +94,6 @@ export const makeSharedProviderRuntime = (options: {
     return pending
   }
 
-  /// Puts the profile's current shared credentials into an OpenCode auth
-  /// document, and returns when they next need rewriting. A provider the
-  /// vault can't serve right now keeps whatever entry it has, which may still
-  /// be valid; one no longer shared loses its managed entry.
   const withOpenCodeCredentials = async (
     profile: string,
     document: Record<string, unknown>
@@ -170,9 +153,6 @@ export const makeSharedProviderRuntime = (options: {
       ticker.unref()
     }
   }
-  /// The broker capability standing in for one provider row's grant: kept
-  /// while the row keeps its credential, replaced (revoking the old one)
-  /// when the credential changes.
   const capabilityFor = async (
     harness: ProviderOAuthHarness,
     profile: string,
@@ -217,8 +197,6 @@ export const makeSharedProviderRuntime = (options: {
       providers: {}
     }
     const auth = await readProviderDocument(nativePath)
-    // Uninspected plugins own their refresh behavior. Duplicating their grant
-    // into a second writable file would create another independent refresher.
     if (harness !== "grok-build") {
       for (const [id, value] of Object.entries(auth)) {
         if (
@@ -242,13 +220,8 @@ export const makeSharedProviderRuntime = (options: {
     if (harness === "opencode" && ((await openCode2.majorVersion(env)) ?? 1) >= 2)
       return materializeOpenCode2(profile, root, base, env, rows, auth)
     let grokApiKey: string | undefined
-    // OpenCode 1 never refreshes for itself (see OPENCODE_MANAGED_REFRESH),
-    // so it gets no broker capability.
     for (const row of harness === "opencode" ? [] : rows) {
       const cap = await capabilityFor(harness, profile, row)
-      // An expired or unavailable provider must not prevent the other
-      // providers in the same profile from working. Its native credential is
-      // omitted so the harness requests sign-in instead of using stale auth.
       const token = await vault.token(row.credential).catch(() => undefined)
       if (!token) continue
       if (harness === "grok-build" && token.authMethod === "apiKey") grokApiKey = token.accessToken
@@ -270,8 +243,6 @@ export const makeSharedProviderRuntime = (options: {
     if (harness === "pi") {
       const source = dirname(nativePath)
       await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
-      // Keep transcripts and user resources in their existing locations. Only
-      // authentication and our extension use the managed agent directory.
       for (const name of ["sessions", "skills", "prompts", "themes", "models.json", "AGENTS.md"]) {
         await linkResource(join(source, name), join(root, name))
       }
@@ -293,12 +264,7 @@ export const makeSharedProviderRuntime = (options: {
       await script(join(root, "extensions", "codevisor-auth.ts"), piAuthExtension)
       runtimeEnv.PI_CODING_AGENT_DIR = root
     } else if (harness === "opencode") {
-      // A default profile also gets isolated credential storage: no managed
-      // placeholder or refreshed token is written into a terminal's auth file.
       runtimeEnv.XDG_DATA_HOME = join(root, "data")
-      // Keep existing conversations and repository state when authentication
-      // moves to an isolated directory. Relative database paths are native-data
-      // relative; an explicit in-memory database must remain in memory.
       const source = dirname(nativePath)
       const database = env.OPENCODE_DB || "opencode.db"
       runtimeEnv.OPENCODE_DB = database === ":memory:" ? database : resolve(source, database)
@@ -307,14 +273,10 @@ export const makeSharedProviderRuntime = (options: {
         await mkdir(join(source, name), { recursive: true, mode: 0o700 })
         await linkResource(join(source, name), join(root, "data", "opencode", name))
       }
-      // OPENCODE_AUTH_CONTENT is read before auth.json; override inherited
-      // snapshots so they cannot bypass the credentials kept current here.
       runtimeEnv.OPENCODE_AUTH_CONTENT = ""
       const path = join(root, "data", "opencode", "auth.json")
       const dueAt = await withOpenCodeCredentials(profile, auth)
       await atomicWriteJson(path, auth)
-      // One entry per profile for the server's lifetime (its path depends
-      // only on the profile), so every context's hook keeps the same one.
       const entry = openCode.get(profile) ?? { path, dueAt, usedAt: 0 }
       entry.dueAt = dueAt
       openCode.set(profile, entry)
@@ -322,8 +284,6 @@ export const makeSharedProviderRuntime = (options: {
       return {
         ...base,
         env: runtimeEnv,
-        // The background tick can't run while the machine sleeps; a turn
-        // that starts right after waking catches up first.
         beforeTurn: async () => {
           keepOpenCodeCurrent(entry)
           await refreshOpenCode(profile)
@@ -332,10 +292,6 @@ export const makeSharedProviderRuntime = (options: {
     } else {
       runtimeEnv.GROK_HOME = root
       runtimeEnv.GROK_AUTH_PATH = join(root, "auth.json")
-      // Grok treats an empty-but-present `GROK_AUTH` (or provider command) as
-      // a supplied credential, ignores its external provider, and refuses
-      // `session/new` with "Authentication required". Anything inherited from
-      // the user's shell is removed from the process environment instead.
       const grokUnset = [
         "GROK_AUTH",
         ...(grokApiKey ? ["GROK_AUTH_PROVIDER_COMMAND"] : ["XAI_API_KEY"])
@@ -355,9 +311,6 @@ export const makeSharedProviderRuntime = (options: {
         return { ...base, env: runtimeEnv, unsetEnv }
       }
       const managed = manifest.providers.xai!
-      // curl reads the capability from a private config, never command-line
-      // arguments (Grok logs the provider command). No shell interpolation of
-      // credentials or provider-controlled values is involved.
       const curlConfig = join(root, "curl.conf")
       await script(
         curlConfig,
@@ -441,8 +394,6 @@ export const makeSharedProviderRuntime = (options: {
           JSON.stringify({
             credential: providerCredential(token, MANAGED_REFRESH_PREFIX + cap.capability),
             ...(token.idToken ? { idToken: token.idToken } : {}),
-            // Grok's external-provider contract ignores other fields. Issuer
-            // preserves first-party subscription behavior; no refresh_token.
             access_token: token.accessToken,
             expires_in: Math.max(1, Math.floor((token.expiresAt - Date.now()) / 1000)),
             issuer: "https://auth.x.ai"

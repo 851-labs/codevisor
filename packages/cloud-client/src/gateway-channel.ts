@@ -5,22 +5,8 @@ import type { ChannelHandler } from "./incoming-channel.js"
 import { ChannelOpenError } from "./machine-peers.js"
 import type { CancelTimeout } from "./machine-socket.js"
 
-/// One request/response exchange per GATEWAY_CHANNEL_TYPE channel: the way
-/// a machine runs a Codevisor gateway call on another machine through the
-/// hub. Bodies are opaque text (the server sends POST /v1/gateway/invoke JSON)
-/// split into frames that stay far below the relay's message cap.
-///
-/// Opener → responder: `{kind:"chunk",data}`* then `{kind:"end"}`.
-/// Responder → opener: `{kind:"accepted"}` once the whole request arrived and
-///   the handler starts, then `{kind:"chunk",data}`* and
-///   `{kind:"end",status}`, then close "done".
-/// The opener closes the channel to cancel; the responder aborts its handler.
-
-/// Characters per chunk frame (≤ 3 bytes each in UTF-8, far under the cap).
 export const GATEWAY_CHUNK_CHARS = 128 * 1024
-/// Upper bound for either body; larger exchanges are refused.
 export const MAX_GATEWAY_BODY_CHARS = 32 * 1024 * 1024
-/// How long the opener waits for "accepted" before giving up on the target.
 export const GATEWAY_ACCEPT_TIMEOUT_MS = 20_000
 
 export interface GatewayExchange {
@@ -28,8 +14,6 @@ export interface GatewayExchange {
   readonly body: string
 }
 
-/// "before-send": the target provably never started the request (it was
-/// refused, or never delivered). "in-flight": it may have run.
 export type GatewayChannelPhase = "before-send" | "in-flight"
 
 export class GatewayChannelError extends Error {
@@ -37,8 +21,6 @@ export class GatewayChannelError extends Error {
   constructor(
     readonly phase: GatewayChannelPhase,
     readonly reason: string,
-    /// Set when the target itself closed the channel (e.g. "unsupported":
-    /// it runs a version without gateway channels).
     readonly closeReason?: ChannelCloseReason
   ) {
     super(`gateway channel failed ${phase}: ${reason}`)
@@ -56,14 +38,10 @@ const chunks = (text: string): string[] => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
 
-/// Responder refusals that happen before the handler runs.
 const REFUSALS: ReadonlySet<string> = new Set(["unsupported", "rejected", "crypto-error"])
 
-/// Whether a channel end proves the request never reached the handler.
 const endedBeforeSend = (end: OutgoingChannelEnd, accepted: boolean): boolean => {
   if (accepted) return false
-  // Undelivered frames: the request's final frame never reached the target
-  // (a later frame could only be a cancel, which this side never sent).
   if (end.kind === "undeliverable") return true
   return end.kind === "peer-closed" && REFUSALS.has(end.reason)
 }
@@ -77,10 +55,6 @@ export interface GatewayRequestOptions {
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
 }
 
-/// Runs one exchange. `open` sends the channel open; if it throws, nothing
-/// was sent (before-send). Resolves with
-/// the responder's answer; rejects with GatewayChannelError, or with the
-/// signal's reason when aborted (the responder is told to cancel).
 export const requestOverGatewayChannel = (
   open: () => OutgoingChannel,
   body: string,
@@ -104,7 +78,6 @@ export const requestOverGatewayChannel = (
         new GatewayChannelError(
           "before-send",
           cause instanceof Error ? cause.message : String(cause),
-          // An outdated target answers like one that refuses the channel type.
           cause instanceof ChannelOpenError && cause.reason === "machine-outdated"
             ? "unsupported"
             : undefined
@@ -175,10 +148,6 @@ export const requestOverGatewayChannel = (
     channel.send({ kind: "end" })
   })
 
-/// Serves gateway channels: buffers the request, runs `handle` with an
-/// AbortSignal that fires if the opener cancels or vanishes, and streams the
-/// answer back. Handler failures answer 502 so the opener always learns the
-/// outcome of a request that ran.
 export const gatewayChannelHandler =
   (
     handle: (request: string, signal: AbortSignal) => Promise<GatewayExchange>,

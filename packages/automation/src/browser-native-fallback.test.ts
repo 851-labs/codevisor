@@ -121,7 +121,6 @@ describe("built-in browser recovery", () => {
       expect(browserResultValue(await provider.invoke(context, "js", { code: "retained" }))).toBe(7)
       const native = connection("recovered-local-tab")
       mocks.connect.mockResolvedValue({ connection: native })
-      // Availability changing in the middle of a response does not switch it.
       expect(JSON.stringify(await provider.invoke(context, "openTabs", {}))).toContain(
         "independent-tab"
       )

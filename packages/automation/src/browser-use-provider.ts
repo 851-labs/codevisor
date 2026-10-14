@@ -148,8 +148,6 @@ export const makeBrowserUseProvider = (
     const key = runtimeKey(context, backend)
     const existing = runtimes.get(key)
     if (existing !== undefined) {
-      // A managed browser can exit on its own (closing its last window quits
-      // Chromium on Linux); launch a fresh one instead of failing every call.
       return existing.then((active) => {
         if (active.native || !active.connection.closed || runtimes.get(key) !== existing)
           return active
@@ -246,8 +244,6 @@ export const makeBrowserUseProvider = (
           const native = await createRuntime(context, "builtin", true)
           if (native || current.connection.closed) {
             runtimes.delete(key)
-            // Retain managed processes and handoff tabs until provider shutdown.
-            // Another session may be using the same fallback profile.
             retiredRuntimes.add(current)
             if (native) runtimes.set(key, Promise.resolve(native))
             changed = true
@@ -352,7 +348,6 @@ export const makeBrowserUseProvider = (
       }
       const backend = sessionBackends.get(context.sessionId) ?? "builtin"
       sessionBackends.set(context.sessionId, backend)
-      // Nothing to finalize: answer without starting a browser for it.
       if (
         toolName === "finalizeTabs" &&
         args.native === true &&
@@ -394,7 +389,6 @@ export const makeBrowserUseProvider = (
           await ready.synchronizeCookies?.().catch(() => undefined)
           return result
         })
-        // The live preview follows the tab the call named, else the selected tab.
         const key = `${runtimeKey(context, backend)}:${context.sessionId}`
         const named = effectiveArgs.tabId
         const shown = typeof named === "string" ? named : selectedTargets.get(key)
@@ -434,7 +428,6 @@ export const makeBrowserUseProvider = (
       const nativeKey = contexts.has(sessionId)
         ? runtimeKey(contexts.get(sessionId)!, "builtin")
         : undefined
-      // Closing the session still releases everything if cleanup failed.
       await provider.finishTurn?.(sessionId).catch(() => undefined)
       await previews.close(sessionId)
       contexts.delete(sessionId)
@@ -469,8 +462,6 @@ export const makeBrowserUseProvider = (
       }
       if (nativeKey) {
         const active = await runtimes.get(nativeKey)?.catch(() => undefined)
-        // Native connections belong to the agent session. Closing them detaches
-        // automation while leaving the user's panes and the app running.
         if (active?.native) {
           runtimes.delete(nativeKey)
           await closeBrowserRuntime(active)

@@ -3,23 +3,16 @@ import ComposableArchitecture
 import Foundation
 @testable import CodevisorCoreMac
 
-/// A scripted `ScreenSharingEndpointClient`: records every call by endpoint
-/// id and lets a test push control events into any endpoint's stream, also
-/// before the reducer subscribes (the stream buffers).
 @MainActor
 final class FakeEndpointClient {
   private(set) var beginInputs: [(endpoint: ScreenSharingViewerEndpoint.ID, lease: UUID)] = []
   private(set) var endInputs: [ScreenSharingViewerEndpoint.ID] = []
   private(set) var sent: [(endpoint: ScreenSharingViewerEndpoint.ID, message: ScreenSharingControlMessage)] = []
-  /// Dynamic Resolution calls (851-2340): on/off and the default size passed.
   private(set) var dynamicResolutions:
     [(endpoint: ScreenSharingViewerEndpoint.ID, enabled: Bool, defaultSize: [Int]?)] =
       []
-  /// Apps, Mission Control and Desktop presses (851-2479).
   private(set) var systemKeys: [(endpoint: ScreenSharingViewerEndpoint.ID, key: ScreenSharingSystemKey)] = []
-  /// The failure `beginInput` reports; nil grants capture.
   var beginInputFailure: String?
-  /// What `sendControl` answers.
   var sendSucceeds = true
   private var streams:
     [ScreenSharingViewerEndpoint.ID: (

@@ -17,25 +17,10 @@ import {
 } from "@codevisor/cloud-client"
 import { loadNet, type NetModule, type PathPolicy } from "@codevisor/net"
 
-/// The machine's tunnel endpoint, wired to
-/// the cloud bridge: the hub connection registers the endpoint and delivers
-/// relay config + vouched app devices; the endpoint serves the same channel
-/// handlers as the relay and the LAN pipe. Integration glue over the native
-/// addon and the filesystem — the logic it composes is covered in
-/// @codevisor/cloud-client (tunnel-host) and packages/net.
-///
-/// Configuration (production and development alike; only values differ):
-/// - CODEVISOR_NET_DISABLED=1   — never start the tunnel on this machine
-/// - CODEVISOR_NET_CA_FILE      — extra PEM trust anchors (local dev relays)
-/// - CODEVISOR_NET_CA_PEM       — the same, inline (dev containers)
-/// - CODEVISOR_NET_PATH_POLICY  — auto | relay-only | direct-only
-/// - CODEVISOR_NET_BIND         — comma-separated UDP binds (fixed port)
-
 export interface MachineTunnelBridge {
   readonly endpointId: string
   readonly onTunnelConfig: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   readonly onPeerDevices: (devices: readonly CloudVouchedDevice[]) => void
-  /// Screen-sharing media: bridge a viewer's flow to the host's candidate.
   readonly bridgeMedia: (
     request: TunnelMediaRequest,
     answer: string
@@ -56,14 +41,9 @@ interface TunnelOptions {
   readonly log: (line: string) => void
 }
 
-/// The tunnel secret key lives beside cloud.json. It is separate from the
-/// X25519 device key (Ed25519, iroh's identity) and survives restarts so the
-/// endpoint id — which apps pin — stays stable.
 export const tunnelKeyPath = (credentialsPath: string): string =>
   join(dirname(credentialsPath), "cloud-tunnel.json")
 
-/// App endpoint pins (deviceId → endpoint id), the tunnel's companion to
-/// cloud-peers.json. Deleting it is the manual recovery path, like pins.
 export const tunnelPinsPath = (credentialsPath: string): string =>
   join(dirname(credentialsPath), "cloud-tunnel-peers.json")
 
@@ -73,9 +53,7 @@ const loadOrCreateSecretKey = async (net: NetModule, path: string): Promise<stri
     if (typeof parsed.secretKeyHex === "string" && /^[0-9a-f]{64}$/.test(parsed.secretKeyHex)) {
       return parsed.secretKeyHex
     }
-  } catch {
-    // Missing or unreadable: generate below.
-  }
+  } catch {}
   const secretKeyHex = net.generateSecretKeyHex()
   await writeFile(path, JSON.stringify({ secretKeyHex }, null, 2), { mode: 0o600 })
   return secretKeyHex
@@ -96,9 +74,6 @@ const loadEndpointPins = async (options: TunnelOptions): Promise<PeerKeyPinStore
 const pathPolicy = (value: string | undefined): PathPolicy =>
   value === "relay-only" || value === "direct-only" ? value : "auto"
 
-/// Prepares the tunnel for a bridge. Returns undefined — and the bridge runs
-/// relay-only exactly as before — when disabled or the native addon is
-/// unavailable on this platform.
 export const prepareMachineTunnel = async (
   options: TunnelOptions
 ): Promise<MachineTunnelBridge | undefined> => {
@@ -112,8 +87,6 @@ export const prepareMachineTunnel = async (
   }
   const secretKeyHex = await loadOrCreateSecretKey(net, tunnelKeyPath(options.credentialsPath))
   const endpointPins = await loadEndpointPins(options)
-  // A bad trust-anchor setting costs the tunnel its custom relays at most;
-  // it must never take the cloud bridge down with it.
   const caFile = options.env.CODEVISOR_NET_CA_FILE
   const fileAnchor =
     caFile === undefined || caFile === ""
@@ -127,8 +100,6 @@ export const prepareMachineTunnel = async (
     ...(options.env.CODEVISOR_NET_CA_PEM ? [options.env.CODEVISOR_NET_CA_PEM] : [])
   ]
   let vouched = new Map<string, CloudVouchedDevice>()
-  // Endpoints whose channels hello this machine admitted; only they may open
-  // media connections (the viewer always signals over channels first).
   const admittedEndpoints = new Set<string>()
   const admitHello = admitTunnelHello(
     { keys: options.peerKeyPins, endpoints: endpointPins },
@@ -175,7 +146,6 @@ export const prepareMachineTunnel = async (
     onTunnelConfig: (config) => {
       tunnel.configure(config).then(
         () => {
-          // A reconnected hub may have missed changes while we were away.
           if (config.enabled && lastAddr !== undefined) options.sendAddr(lastAddr)
         },
         (cause: unknown) => options.log(`Tunnel: failed to start: ${String(cause)}`)
@@ -186,8 +156,6 @@ export const prepareMachineTunnel = async (
     },
     bridgeMedia: (request, answer) => media.bridge(request, answer),
     stop: () => {
-      // Fire-and-forget, so a failing native close must be caught here: an
-      // unhandled rejection would exit the server.
       void tunnel
         .stop()
         .catch((cause: unknown) => options.log(`Tunnel: failed to stop: ${String(cause)}`))

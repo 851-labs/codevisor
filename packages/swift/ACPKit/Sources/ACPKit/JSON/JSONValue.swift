@@ -1,8 +1,5 @@
 import Foundation
 
-/// A type-erased JSON value used for the dynamic portions of the ACP protocol
-/// (e.g. `_meta`, `rawInput`, `rawOutput`) and for shuttling arbitrary
-/// request/response payloads through the JSON-RPC connection layer.
 public enum JSONValue: Sendable, Hashable {
   case null
   case bool(Bool)
@@ -11,7 +8,6 @@ public enum JSONValue: Sendable, Hashable {
   case array([JSONValue])
   case object([String: JSONValue])
 
-  /// Convenience accessor for object members.
   public subscript(key: String) -> JSONValue? {
     if case .object(let dictionary) = self { return dictionary[key] }
     return nil

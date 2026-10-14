@@ -3,8 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The client half of Phase 18: parsing fleet readiness and flipping the
-/// per-machine disable overlay through the config plane.
 @MainActor
 @Suite("McpFleetStatus")
 struct McpFleetStatusTests {
@@ -38,7 +36,7 @@ struct McpFleetStatusTests {
                 "state": .string("blocked"),
                 "reason": .string("Needs Screen Recording"),
               ]),
-              .object(["state": .string("orphan")]),  // malformed: no name
+              .object(["state": .string("orphan")]),
             ])
           ]),
           timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")
@@ -65,9 +63,7 @@ struct McpFleetStatusTests {
 
     McpFleet.setDisabled(sync, machineId: "studio", name: "GitHub", disabled: true)
     #expect(McpFleet.isDisabled(sync, machineId: "studio", name: "GitHub") == true)
-    // The overlay names one machine only.
     #expect(McpFleet.isDisabled(sync, machineId: "laptop", name: "GitHub") == false)
-    // The entry is a plain LWW write in the shared key shape.
     let entry = sync.entries(namespace: "mcp-overlays").first
     #expect(entry?.key == "enable|studio|GitHub")
 

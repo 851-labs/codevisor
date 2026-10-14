@@ -26,7 +26,6 @@ describe("ClaudeProvider", () => {
         text: "look at these",
         attachments: [
           {
-            // The server re-encoded an oversized PNG, so the inline type wins.
             inline: { data: Buffer.from("jpeg-bytes"), mimeType: "image/jpeg" },
             kind: "image",
             mimeType: "image/png",

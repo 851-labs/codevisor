@@ -111,8 +111,6 @@
 
       for separator in separators {
         let strip = NSRect(x: 0, y: separator - 1, width: textView.bounds.width, height: 1)
-        // AppKit paints cell decorations only alongside glyphs; the
-        // separator's own strip has none.
         #expect(layoutManager.glyphRange(forBoundingRect: strip, in: container).length == 0)
         let redraw = TableTextView.redrawRect(covering: strip, in: textView.bounds)
         #expect(layoutManager.glyphRange(forBoundingRect: redraw, in: container).length > 0)

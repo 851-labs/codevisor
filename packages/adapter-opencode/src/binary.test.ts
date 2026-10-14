@@ -25,11 +25,9 @@ describe("Which OpenCode runs", () => {
         "/home/me/.opencode/bin/opencode"
       ])
     ).toBe("/usr/local/bin/opencode")
-    // A tie keeps the one PATH lists first.
     expect(locate(["/home/me/.opencode/bin/opencode", "/tie/opencode"])).toBe(
       "/home/me/.opencode/bin/opencode"
     )
-    // The same binary listed twice is one candidate.
     expect(locate(["/opt/homebrew/bin/opencode", "/opt/homebrew/bin/opencode"])).toBe(
       "/opt/homebrew/bin/opencode"
     )

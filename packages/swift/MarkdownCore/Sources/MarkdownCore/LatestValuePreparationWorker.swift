@@ -1,8 +1,5 @@
 import Foundation
 
-/// One preparation in flight and one replaceable waiting input. A continuous
-/// stream can publish useful results without waiting for silence, while fast
-/// producers cannot accumulate an unbounded queue of obsolete layout work.
 @MainActor
 public final class LatestValuePreparationWorker<Input: Sendable, Output: Sendable> {
   private struct Work {

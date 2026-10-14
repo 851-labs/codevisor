@@ -1,8 +1,6 @@
 import Foundation
 import Observation
 
-/// One browse/install flow stays on the machine chosen when it opened.
-/// Resolve its client for each request so relay recovery still applies.
 @MainActor
 @Observable
 public final class PluginSettingsSession: Identifiable {
@@ -19,8 +17,6 @@ public final class PluginSettingsSession: Identifiable {
   private let machines: MachineController
   private let catalog: PluginCatalogClient
 
-  /// Use the actual roster. Client-only platforms have no local machine,
-  /// even while their legacy selected machine id is still "local".
   public static func availableMachines(in machines: MachineController) -> [CodevisorMachine] {
     machines.allMachines.filter { machine in
       guard machines.statusByMachineId[machine.id]?.isReachable != false else { return false }
@@ -50,8 +46,6 @@ public final class PluginSettingsSession: Identifiable {
 
   public func fetchRegistry() async throws -> ServerPluginRegistryIndex {
     let registry = try await catalog.index()
-    // Installed markers are supplementary; a failure to load them should
-    // not turn a successfully loaded registry into an unavailable screen.
     if let plugins = try? await client.listPlugins() {
       installedPlugins = plugins
     }

@@ -5,7 +5,6 @@
   import Foundation
   import SwiftUI
 
-  /// Offline inputs for the production views. Never compiled into release builds.
   enum AppStoreScreenshotData {
     static var isEnabled: Bool {
       ProcessInfo.processInfo.environment["CODEVISOR_APP_STORE_SCREENSHOTS"] == "1"
@@ -29,13 +28,11 @@
       environment.composerDefaults.rememberNewWorkspaceServer(serverId: machineID)
       environment.composerDefaults.rememberNewWorkspaceProject(serverId: machineID, projectId: projectID)
       environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: "claude-code")
-      // New Chat never auto-picks a model; seed the pick a user would have made.
       environment.composerDefaults.rememberConfigSelections(
         in: .newWorkspace(serverId: machineID), harnessId: "claude-code",
         configValues: ["model": "claude-sonnet-4-6"]
       )
       environment.configCache.store(capabilities, forServer: machineID)
-      // No server ever answers offline; without this, Home reads "Syncing…".
       environment.markNavigationCurrentForPreview(machineIds: [machineID])
       return environment
     }

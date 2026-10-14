@@ -41,9 +41,6 @@ extension ServerEventEnvelope {
       createdAt: "", payload: .object(["state": .string(state.rawValue)]))
   }
 
-  /// Navigation events carry the authoritative session summary as their
-  /// payload. Decode that summary directly so a one-session change does not
-  /// require refetching and rebuilding the entire navigation snapshot.
   public func sessionRecord() throws -> ServerSession {
     let data = try JSONEncoder().encode(payload)
     return try JSONDecoder().decode(ServerSession.self, from: data)
@@ -55,9 +52,6 @@ extension CodevisorServerClient {
     let cursor: Int
   }
 
-  /// Captures the durable global-log tip before navigation snapshots are
-  /// fetched. Subscribing from this cursor afterward replays every event that
-  /// raced those snapshots without replaying the server's lifetime log.
   public func latestShellEventCursor() async throws -> Int {
     let response: ShellEventCursorResponse = try await get("/v1/events/cursor")
     return response.cursor
@@ -68,8 +62,6 @@ extension CodevisorServerClient {
   }
 
   public func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-    // listProjects/listSessions is the snapshot; only events after the
-    // socket attaches are needed here.
     makeEventStream(path: "/v1/events/socket", since: ServerSessionTransport.liveOnlyEventCursor)
   }
 
@@ -96,10 +88,6 @@ extension CodevisorServerClient {
     makeEventStream(path: "/v1/sessions/\(id.uuidString)/events/socket", since: since)
   }
 
-  /// Just enough of the envelope to advance the cursor and decide whether
-  /// the full payload is worth decoding. `session.output` chunks dominate
-  /// the global socket during streaming; skipping their `JSONValue` tree
-  /// build here is the difference between O(tokens) and O(handled events).
   private struct ServerEventKindProbe: Decodable {
     var id: Int
     var kind: String
@@ -130,10 +118,6 @@ extension CodevisorServerClient {
             )
             defer { socket.cancel(with: .goingAway, reason: nil) }
 
-            // Both shell and chat streams must recover from a half-open
-            // path, including one that never delivers its first frame.
-            // Older servers ignore sync=1; quiet ones safely reconnect
-            // from the same cursor even if they do not send heartbeats.
             var receivedFirstFrame = false
             var needsConnectionConfirmation = scoped
             while !Task.isCancelled {
@@ -141,8 +125,6 @@ extension CodevisorServerClient {
               let message = try await receiveEventMessage(socket, deadline: deadline)
               receivedFirstFrame = true
               guard let data = Self.data(from: message) else { continue }
-              // Chat streams need every payload. Decode them only once;
-              // the small shell probe avoids building discarded payloads.
               let decodedEvent = scoped ? try decoder.decode(ServerEventEnvelope.self, from: data) : nil
               let probe: ServerEventKindProbe
               if let decodedEvent {
@@ -154,8 +136,6 @@ extension CodevisorServerClient {
                 throw EventSnapshotRequiredError()
               }
               if probe.kind == Self.keepaliveEventKind {
-                // Check even filtered shell streams. A heartbeat beyond
-                // our received tail is a missed update, not proof of sync.
                 if cursor < ServerSessionTransport.liveOnlyEventCursor, probe.id != cursor {
                   throw EventStreamGapError(expected: cursor, received: probe.id)
                 }
@@ -168,9 +148,6 @@ extension CodevisorServerClient {
               }
               if cursor < ServerSessionTransport.liveOnlyEventCursor {
                 guard probe.id > cursor else { continue }
-                // Shell ids may have legitimate holes after migrations.
-                // The server links deliveries to their predecessor so a
-                // missing frame is detected without assuming id + 1.
                 if let previous = probe.previousEventId, previous != cursor {
                   throw EventStreamGapError(expected: cursor, received: previous)
                 }
@@ -188,18 +165,10 @@ extension CodevisorServerClient {
                   throw EventStreamGapError(expected: cursor + 1, received: event.id)
                 }
               }
-              // Valid replay/live traffic proves the connection is working,
-              // even on older servers whose first heartbeat is 25s away.
-              // Keep this distinct from caughtUp: only a checkpoint can
-              // certify that the durable tail has arrived without gaps.
               if needsConnectionConfirmation {
                 try emit(.synchronization(.catchingUp, cursor: cursor))
                 needsConnectionConfirmation = false
               }
-              // A live-only sentinel cursor means "no real cursor
-              // yet". Once the first event arrives, retain its real
-              // cursor so a reconnect can replay anything missed
-              // afterward.
               cursor = Self.advanceEventCursor(cursor, to: event.id)
               failures = 0
               try emit(event)
@@ -212,9 +181,6 @@ extension CodevisorServerClient {
             if scoped {
               try? emit(.synchronization(.reconnecting, cursor: cursor))
             }
-            // A shell gap can replay from the unchanged cursor, preserving
-            // live attention edges. Invalid envelopes need the machine's
-            // authoritative snapshot recovery rather than endless replay.
             if error is EventSnapshotRequiredError || (scoped && error is EventStreamGapError)
               || (!scoped && error is DecodingError)
             {
@@ -241,17 +207,9 @@ extension CodevisorServerClient {
     }
   }
 
-  /// Liveness frames the server interleaves on shell and session sockets
-  /// (~every 25s). Never yielded or cursor-advancing; they prove liveness
-  /// and check that the delivered tail matches the client's cursor.
   static let keepaliveEventKind = "keepalive"
 
-  /// How long a keepalive-bearing socket may stay silent before the path is
-  /// declared dead and the stream reconnects from its cursor. A few
-  /// multiples of the server cadence, so ordinary jitter never trips it.
   static let eventReceiveDeadline: Duration = .seconds(90)
-  // Older servers send their first heartbeat at 25 seconds instead of an
-  // immediate checkpoint. Leave room for that additive compatibility path.
   static let eventOpenDeadline: Duration = .seconds(35)
 
   struct EventStreamStalledError: Error {}
@@ -260,10 +218,6 @@ extension CodevisorServerClient {
     let received: Int
   }
 
-  /// Races `operation` against the receive deadline. On timeout the thrown
-  /// error unwinds through the reconnect path exactly like a socket failure:
-  /// the connection's `defer` cancels the socket (tearing down a relayed
-  /// channel with it) and the stream re-dials from its cursor.
   private func receiveEventMessage(
     _ socket: any ServerWebSocketConnecting,
     deadline: Duration
@@ -273,11 +227,7 @@ extension CodevisorServerClient {
         group.addTask { try await socket.receive() }
         group.addTask {
           try await self.eventSleep(deadline)
-          // A relayed socket that never produced a frame tells its pipe,
-          // which can then replace a pipe that stopped answering opens.
           socket.markUnanswered()
-          // Close before joining the receive task: cancellation alone may
-          // not release a native receive or a channel still being opened.
           socket.cancel(with: .goingAway, reason: nil)
           throw EventStreamStalledError()
         }
@@ -289,12 +239,6 @@ extension CodevisorServerClient {
     }
   }
 
-  /// Advances the reconnect-replay cursor past a received event id. Cursors
-  /// at or above `ServerSessionTransport.liveOnlyEventCursor` are live-only
-  /// sentinels, not positions (the server treats any `since` >= JS
-  /// `Number.MAX_SAFE_INTEGER` as a live-only subscription) — adopt the
-  /// first real event id outright so later reconnects replay missed events
-  /// instead of resubscribing live-only forever.
   static func advanceEventCursor(_ cursor: Int, to id: Int) -> Int {
     cursor >= ServerSessionTransport.liveOnlyEventCursor ? id : max(cursor, id)
   }

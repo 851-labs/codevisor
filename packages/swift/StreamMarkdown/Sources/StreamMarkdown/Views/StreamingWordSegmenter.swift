@@ -16,12 +16,6 @@ struct StreamingWordSegment: Equatable {
   }
 }
 
-/// Matches the desktop app's word-like segmentation contract:
-///
-/// - ASCII alphanumeric runs start segments.
-/// - Punctuation and whitespace attach to the preceding segment.
-/// - Non-ASCII strings use the platform Unicode word breaker, with every
-///   non-word gap attached to the preceding word.
 enum StreamingWordSegmenter {
   static func segments(in text: String) -> [StreamingWordSegment] {
     guard !text.isEmpty else { return [] }
@@ -119,10 +113,6 @@ enum StreamingWordSegmenter {
     (48...57).contains(unit) || (65...90).contains(unit) || (97...122).contains(unit)
   }
 
-  /// TextKit draws color emoji as indivisible glyphs, so keep every extended
-  /// grapheme cluster containing emoji scalars in its own atomic segment.
-  /// Punctuation and whitespace following an emoji stay attached to that
-  /// segment, matching the word segmenter's existing attachment contract.
   private static func splitEmojiClusters(
     in text: String,
     segments: [StreamingWordSegment]
@@ -199,15 +189,12 @@ enum StreamingWordSegmenter {
   private static func isEmoji(_ character: Character) -> Bool {
     character.unicodeScalars.contains { scalar in
       scalar.properties.isEmojiPresentation
-        || scalar.value == 0xFE0F  // emoji variation selector
-        || scalar.value == 0x20E3  // combining enclosing keycap
+        || scalar.value == 0xFE0F
+        || scalar.value == 0x20E3
     }
   }
 }
 
-/// CSS cubic-bezier(.37, .55, .86, .88), evaluated as y for a supplied time
-/// fraction x. Newton iteration handles the common case; bisection makes the
-/// result deterministic near flat tangents.
 enum StreamingTextFadeCurve {
   private static let x1 = StreamingTextAnimationSpec.fadeCurveX1
   private static let y1 = StreamingTextAnimationSpec.fadeCurveY1

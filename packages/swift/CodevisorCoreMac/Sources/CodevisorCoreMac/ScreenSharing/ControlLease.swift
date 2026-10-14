@@ -2,10 +2,6 @@ import ScreenSharing
 import ComposableArchitecture
 import Foundation
 
-/// The viewer's side of the control lease over one endpoint's control
-/// channel: request, grant, denial, revocation, the 3 s grant deadline and the
-/// 1 s heartbeat. The endpoint forwards input under the lease on the data
-/// plane; this reducer only decides when that forwarding starts and stops.
 @Reducer
 public struct ControlLease {
   public enum Phase: Equatable, Sendable { case controlling, requesting, viewing }
@@ -18,7 +14,6 @@ public struct ControlLease {
     public var message: String?
     public var phase: Phase = .viewing
     public var requestID: UUID?
-    /// Control was asked for before the channel opened; request once it does.
     public var wantsControl = false
 
     public init(endpoint: ScreenSharingViewerEndpoint.ID) { self.endpoint = endpoint }
@@ -32,13 +27,10 @@ public struct ControlLease {
     case event(ScreenSharingControlEvent)
     case heartbeatTick
     case requestTimedOut
-    /// The pane was hidden: input stops and a held lease goes back, quietly, and control isn't
-    /// asked for again until the pane is shown and asks.
     case suspended
 
     @CasePathable
     public enum Delegate: Equatable {
-      /// A request or lease was given up; not sent for a release while merely viewing.
       case released
     }
   }
@@ -78,7 +70,6 @@ public struct ControlLease {
       case .event(.inputLost(let reason)):
         return release(&state, reason: reason)
 
-      // Shown over the live video, not a release: control works, with that caveat.
       case .event(.inputNotice(let notice)):
         guard state.phase == .controlling else { return .none }
         state.message = notice
@@ -86,7 +77,6 @@ public struct ControlLease {
 
       case .event(.message(.grant(let request, let lease))):
         guard state.requestID == request, state.phase == .requesting, state.available else {
-          // Cancellation or the deadline can cross the host's grant. Release that grant immediately.
           let id = state.endpoint
           return .run { [endpoint] _ in _ = await endpoint.sendControl(id, .release(lease: lease)) }
         }
@@ -159,11 +149,6 @@ public struct ControlLease {
       .cancellable(id: CancelID.requestDeadline, cancelInFlight: true))
   }
 
-  /// The channel went away (the connection is closing or reconnecting): input stops and a held
-  /// lease is given back, but the wish to control stays, so control is asked for again when a
-  /// channel is available. Not a release: no message and no `released`, which switched the pane
-  /// to View for good after any reconnect (851-2472) and showed "Control is unavailable on this
-  /// connection." over the connecting spinner (851-2470).
   private func pause(_ state: inout State) -> Effect<Action> {
     let lease = state.lease
     state.wantsControl = state.wantsControl || state.phase != .viewing

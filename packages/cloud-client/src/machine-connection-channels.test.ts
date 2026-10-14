@@ -53,7 +53,6 @@ describe("incoming channels", () => {
       frame: { t: "close", channelId: "ch-1", seq: 3, reason: "done" }
     })
     expect(closes).toEqual(["done"])
-    // Every outbound operation after close is a no-op: still just the two data frames.
     channel.send({ late: true })
     expect(channel.sendBytes(new Uint8Array([1]))).toBeUndefined()
     channel.deferInboundCredit()
@@ -100,7 +99,6 @@ describe("incoming channels", () => {
     })
     const response = envelopes[1]!
     expect(response.header.frame).toEqual({ t: "data", channelId: "ch-bytes", seq: 1 })
-    // Ciphertext cost = plaintext + 16-byte tag, no encoding expansion.
     expect(sentCost).toBe(response.payload.byteLength)
     expect(sentCost).toBe(3 + 16)
     expect([...opened.cipher.open("ch-bytes", "responder-to-opener", 1, response.payload)]).toEqual(
@@ -129,8 +127,6 @@ describe("incoming channels", () => {
       opened.cipher.seal("ch-overrun", "opener-to-responder", 1, new Uint8Array([1]))
     )
     expect(closes).toEqual(["protocol-error"])
-    // The credit grant used responder seq 0, so the abort continues at 1 —
-    // a close at seq 0 would read as a seq gap and hide its reason.
     expect(socket.lastClose()).toMatchObject({ t: "close", seq: 1, reason: "protocol-error" })
   })
 
@@ -140,7 +136,7 @@ describe("incoming channels", () => {
     openEcho(socket, "peer-1", "ch-1")
     const channel = h.channels[0]!
     channel.close("done")
-    channel.close("done") // second close is a no-op
+    channel.close("done")
     expect(socket.closeFrames()).toHaveLength(1)
   })
 
@@ -148,9 +144,6 @@ describe("incoming channels", () => {
     const h = harness()
     const socket = connect(h)
 
-    // The app kept this channel alive across a machine reconnect: we never saw
-    // its open, so its frames must be answered with a close — not dropped —
-    // or the app waits forever on a channel we no longer know about.
     socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "credit", channelId: "ch-lost", seq: 7, bytes: 1024 }
@@ -159,7 +152,6 @@ describe("incoming channels", () => {
     expect(socket.closeFrames()[0]!.channelId).toBe("ch-lost")
     expect(socket.closeFrames()[0]!.reason).toBe("peer-disconnected")
 
-    // Data frames get the same treatment (the check precedes decryption).
     socket.receiveRelay(
       { peerId: "peer-1", frame: { t: "data", channelId: "ch-lost-2", seq: 3 } },
       new Uint8Array([0, 0, 0, 0])
@@ -168,7 +160,6 @@ describe("incoming channels", () => {
     expect(socket.closeFrames()[1]!.channelId).toBe("ch-lost-2")
     expect(socket.closeFrames()[1]!.reason).toBe("peer-disconnected")
 
-    // A close for an unknown channel is ignored — no close-for-close loops.
     socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "close", channelId: "ch-lost-3", seq: 0, reason: "done" }
@@ -186,7 +177,6 @@ describe("incoming channels", () => {
     const sealedOpen = (channelType: unknown, channelId: string) =>
       sealJson(opened.cipher, channelId, "opener-to-responder", 0, { channelType })
 
-    // Open relayed without the peer's public key.
     socket.receiveRelay(
       {
         peerId: "p",
@@ -196,7 +186,6 @@ describe("incoming channels", () => {
     )
     expect(socket.lastClose().reason).toBe("protocol-error")
 
-    // Undecryptable open payload.
     socket.receiveRelay(
       {
         peerId: "p",
@@ -207,7 +196,6 @@ describe("incoming channels", () => {
     )
     expect(socket.lastClose().reason).toBe("crypto-error")
 
-    // Non-string channelType.
     socket.receiveRelay(
       {
         peerId: "p",
@@ -218,7 +206,6 @@ describe("incoming channels", () => {
     )
     expect(socket.lastClose().reason).toBe("protocol-error")
 
-    // Unknown channel type.
     socket.receiveRelay(
       {
         peerId: "p",
@@ -246,7 +233,7 @@ describe("incoming channels", () => {
     const gapCloses: string[] = []
     h.channels[0]!.onClosed = (reason) => gapCloses.push(reason)
     socket.receiveRelay(
-      { peerId: "peer-1", frame: { t: "data", channelId: "ch-gap", seq: 5 } }, // expected 1
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-gap", seq: 5 } },
       sealJson(first.opened.cipher, "ch-gap", "opener-to-responder", 5, {})
     )
     expect(gapCloses).toEqual(["protocol-error"])
@@ -262,9 +249,6 @@ describe("incoming channels", () => {
   })
 
   it("keeps the channel alive across interleaved credit frames (shared seq counter)", () => {
-    // The keystroke-echo pattern: apps allocate credit seqs from the same
-    // opener→responder counter as data seqs, so data(1), credit(2), data(3)
-    // is a healthy channel — not a gap.
     const h = harness()
     const socket = connect(h)
     const { opened } = openEcho(socket, "peer-1", "ch-credit")
@@ -297,7 +281,7 @@ describe("incoming channels", () => {
     h.channels[0]!.onClosed = (reason) => closes.push(reason)
     socket.receiveRelay({
       peerId: "peer-1",
-      frame: { t: "credit", channelId: "ch-credit-gap", seq: 4, bytes: 64 } // expected 1
+      frame: { t: "credit", channelId: "ch-credit-gap", seq: 4, bytes: 64 }
     })
     expect(closes).toEqual(["protocol-error"])
     expect(socket.lastClose()).toMatchObject({ t: "close", reason: "protocol-error" })
@@ -313,7 +297,6 @@ describe("incoming channels", () => {
     h.channels[1]!.onClosed = (reason) => gone.push(`peer-2:${reason}`)
     socket.receive({ t: "peer-gone", peerId: "peer-1" })
     expect(gone).toEqual(["peer-1:peer-gone"])
-    // Survivor still works.
     h.channels[1]!.send({ still: "alive" })
     expect(socket.sentRelay).toHaveLength(1)
   })
@@ -357,7 +340,6 @@ describe("relay coalescing", () => {
     h.channels[0]!.send({ output: "never" })
     const flushTimer = activeTimeout(h, 5)
     socket.onclose?.(1006)
-    // Even a queued flush callback firing late must not resurrect the frames.
     flushTimer.invoke()
     expect(socket.relayMessages).toHaveLength(0)
   })
@@ -386,7 +368,6 @@ describe("negotiated compression", () => {
     const received: unknown[] = []
     channel.onData = (value) => received.push(value)
 
-    // Inbound RAW-framed and DEFLATE-framed payloads both decode.
     socket.receiveRelay(
       { peerId: "peer-1", frame: { t: "data", channelId: "ch-z", seq: 1 } },
       opened.cipher.seal(
@@ -407,8 +388,6 @@ describe("negotiated compression", () => {
     )
     expect(received).toEqual([{ input: "raw" }, { input: "deflated" }])
 
-    // Outbound: a large repetitive body goes out DEFLATE-framed and smaller;
-    // a small one stays RAW.
     channel.send({ output: "x".repeat(4096) })
     channel.send({ output: "tiny" })
     const [big, small] = socket.sentRelay
@@ -426,8 +405,6 @@ describe("negotiated compression", () => {
   })
 
   it("honours the framing without a compressor and kills bad framing", () => {
-    // No compressor wired: outbound stays RAW-framed; inbound DEFLATE frames
-    // cannot be inflated and abort the channel like any undecodable payload.
     const h = harness()
     const socket = connect(h)
     const { opened } = openEcho(socket, "peer-1", "ch-z", { hello: true }, { compress: true })
@@ -449,7 +426,6 @@ describe("negotiated compression", () => {
     )
     expect(closes).toEqual(["crypto-error"])
 
-    // Unknown framing byte and empty plaintexts are refused the same way.
     const again = compressingHarness()
     const socket2 = connect(again)
     const second = openEcho(socket2, "peer-1", "ch-y", { hello: true }, { compress: true })

@@ -24,7 +24,6 @@ const fixture = async () => {
       resourceId: "term-1"
     })
   )
-  // The manager's settling is its own; this drives its listener directly.
   let listener: TerminalTitleListener | undefined
   const terminal = {
     ...services.terminal,
@@ -44,7 +43,6 @@ const fixture = async () => {
 
 it("puts settled titles and activity on the terminal's panes and wakes event readers", async () => {
   const { db, terminal, fanout, published, pane, emit } = await fixture()
-  // A status left by the previous boot's terminal no longer applies.
   await run(db.setTerminalPaneStatus("term-1", "stale", "idle"))
 
   const close = forwardTerminalTitles(db, terminal, fanout)
@@ -57,13 +55,10 @@ it("puts settled titles and activity on the terminal's panes and wakes event rea
     liveTitle: "Claude Code",
     terminalActivity: "working"
   })
-  // Only the journaled changes are published (the boot clear and the new
-  // status), not a second event per change.
   expect(published.map((event) => [event.kind, event.payload])).toEqual([
     ["navigation.changed", { table: "workspace_panes" }],
     ["navigation.changed", { table: "workspace_panes" }]
   ])
-  // Detached on close.
   expect(emit()).toBeUndefined()
 })
 

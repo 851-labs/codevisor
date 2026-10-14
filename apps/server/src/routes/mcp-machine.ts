@@ -21,8 +21,6 @@ import {
 } from "../server-context.js"
 import { refreshMcpReadiness } from "./sync-readiness.js"
 
-/// Mirrors the native switch: off suppresses only this machine; on clears
-/// that override and, if necessary, enables the shared definition as well.
 export const routeMachineMcps = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -39,8 +37,6 @@ export const routeMachineMcps = async (
   if (server === undefined) throw new HttpFailure(404, "MCP server not found")
   if (request.method === "PUT") {
     const { enabled } = await readSchema(request, SetMachineMcpEnabledRequest)
-    // Re-enable before removing suppression. A failed update leaves the
-    // existing per-machine disable intact.
     if (enabled && !server.enabled) server = await manager.update(id, { enabled: true })
     const entries = await run(services.db.getSyncEntries(MCP_OVERLAYS_NAMESPACE))
     const result = await run(

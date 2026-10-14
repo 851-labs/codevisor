@@ -1,6 +1,5 @@
 import Foundation
 
-/// Preserve fractional trackpad movement when sending integral pixel deltas.
 public struct ScreenSharingScrollAccumulator {
   private var x = 0.0
   private var y = 0.0

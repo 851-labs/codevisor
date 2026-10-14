@@ -1,24 +1,17 @@
 import Foundation
 import Security
 
-/// Secrets the rig keeps per machine id: a server's bearer token, a VNC
-/// server's password. The login Keychain in the app, memory in tests.
 public protocol RigSecretStore: Sendable {
   func read(_ account: String) -> String?
   func save(_ secret: String, for account: String) throws
   func delete(_ account: String)
 }
 
-/// Generic passwords in the login Keychain under one service. Readable only
-/// while this Mac is unlocked, never synced to iCloud. The rig is signed with a
-/// stable identity, so the Keychain does not ask again after a rebuild.
 public struct RigKeychain: RigSecretStore {
   public let service: String
   public init(service: String) { self.service = service }
 
-  /// `ssh <target> codevisor token`, per Codevisor server machine.
   public static let machineTokens = RigKeychain(service: "com.codevisor.ScreenSharingRig.machine-token")
-  /// The VNC Authentication password, per direct VNC machine.
   public static let vncPasswords = RigKeychain(service: "com.codevisor.ScreenSharingRig.vnc-password")
 
   public func read(_ account: String) -> String? {

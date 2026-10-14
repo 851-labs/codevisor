@@ -4,8 +4,6 @@ import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 
-/// RFB bytes over a scripted WebSocket: message boundaries never leak into
-/// reads, the peer's close is an empty read, and closing fails what follows.
 struct RFBWebSocketTransportTests {
   final class ScriptedSocket: ServerWebSocketConnecting, @unchecked Sendable {
     private let lock = NSLock()
@@ -49,8 +47,6 @@ struct RFBWebSocketTransportTests {
     #expect(try await transport.read(maximum: 8) == [])
   }
 
-  /// 851-2338: text frames are the server's control lease, handed to `onControlText`; the
-  /// RFB bytes around them read on untouched, and lease messages go out as text.
   @Test func textFramesAreTheControlLeaseAndBytesReadOnAroundThem() async throws {
     let socket = ScriptedSocket(inbound: [
       .data(Data([1, 2])), .string(#"{"type":"granted"}"#), .data(Data([3])),
@@ -84,13 +80,10 @@ struct RFBWebSocketTransportTests {
     transport.close()
     transport.close()
     #expect(socket.cancelled == .normalClosure)
-    // Bytes already buffered still drain; then the closed transport fails.
     await #expect(throws: RFBError.connectionClosed) { try await transport.read(maximum: 1) }
     await #expect(throws: RFBError.connectionClosed) { try await transport.write([1]) }
   }
 
-  /// 851-2320: reading a 1 MiB message in 64 KiB pieces moves each byte at
-  /// most once (it moved ~8 MiB with `removeFirst`), and the bytes are intact.
   @Test func readingALargeMessageInPiecesMovesEachByteAtMostOnce() async throws {
     let message = (0..<(1 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 31) }
     let socket = ScriptedSocket(inbound: [.data(Data(message))])

@@ -31,7 +31,6 @@ struct ThemeCatalogTests {
     #expect(themes[0].id == ThemeCatalog.systemLightID)
     #expect(themes[1].id == ThemeCatalog.systemDarkID)
     let groups = themes.map(\.group)
-    // Groups appear in section order with no interleaving.
     #expect(
       groups
         == groups.sorted { a, b in
@@ -53,17 +52,12 @@ struct ThemeCatalogTests {
         ColorMath.contrastRatio(bgL, palette.textPrimary.relativeLuminance)
           >= ColorMath.minReadableRatio,
         "\(descriptor.id) primary text below 3:1")
-      // Muted text clears 4.5:1, or falls back to the primary foreground
-      // on extreme palettes (the documented PaletteDeriver.mutedFg tradeoff).
       #expect(
         ColorMath.contrastRatio(bgL, palette.textSecondary.relativeLuminance)
           >= ColorMath.minMutedRatio
           || palette.textSecondary == palette.textPrimary,
         "\(descriptor.id) muted text below 4.5:1 and not the primary fallback")
       #expect(palette.isDark == (descriptor.type == .dark), "\(descriptor.id) type mismatch")
-      // A fenced code block is borderless: its fill is the only thing
-      // separating it from the page, so it has to clear the window
-      // surface on every theme we ship.
       let page = palette.windowBackground
       let code = palette.codeBackground
       #expect(
@@ -86,10 +80,8 @@ struct ThemeCatalogTests {
     #expect(descriptor.type == .dark)
     #expect(descriptor.group == .custom)
     #expect(catalog.availableThemes.contains(descriptor))
-    // Original bytes on disk.
     let stored = try Data(contentsOf: dir.appendingPathComponent("my-theme.json"))
     #expect(stored == validThemeJSON)
-    // A fresh catalog re-scans it.
     let rescanned = ThemeCatalog(customThemesDirectory: dir)
     #expect(rescanned.descriptor(for: "custom:my-theme") != nil)
   }
@@ -140,7 +132,6 @@ struct ThemeCatalogTests {
     #expect(throws: ThemeCatalogError.unknownTheme(descriptor.id)) {
       try catalog.deleteCustomTheme(id: descriptor.id)
     }
-    // Bundled/system entries can't be deleted.
     #expect(throws: ThemeCatalogError.unknownTheme("pierre:pierre-dark")) {
       try catalog.deleteCustomTheme(id: "pierre:pierre-dark")
     }

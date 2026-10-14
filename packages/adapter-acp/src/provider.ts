@@ -40,9 +40,6 @@ const missingRequiredBinary = (
     (binary) => !environment.executableExists(binary, environment.env)
   )
 
-/// The first detect binary or installer location that exists. A login
-/// shell that skips ~/.bashrc misses the PATH entry an installer added there,
-/// so a harness's own install directory counts too.
 const installedBinary = (
   definition: HarnessDefinition,
   environment: ProviderEnvironment
@@ -81,7 +78,7 @@ const resolveLaunch = (
       if (located !== undefined) {
         return { args: launch.args, command: located }
       }
-      /* v8 ignore next 3 -- installed executable catalog entries currently use the launch command as their detect binary. */
+      /* v8 ignore next 3 */
       if (environment.executableExists(launch.command, environment.env)) {
         return { args: launch.args, command: launch.command }
       }
@@ -100,7 +97,7 @@ const unavailableReadiness = (
   }
   const missing = missingRequiredBinary(definition, environment)
   if (missing !== undefined) return { detail: `Requires ${missing}`, state: "unavailable" }
-  /* v8 ignore next 3 -- installed executable catalog entries are ready before unavailableReadiness is called. */
+  /* v8 ignore next 3 */
   if (definition.launch?.kind === "npx") {
     return { detail: "Requires npx", state: "unavailable" }
   }
@@ -110,33 +107,21 @@ const unavailableReadiness = (
   return { detail: `${command} not found on PATH`, state: "unavailable" }
 }
 
-/// What a launch is for: a chat session gets the tool gateway; auth probes
-/// and session listing don't.
 export interface AcpLaunchContext {
   readonly toolGateway?: ToolGatewayConfig
 }
 
 export interface AcpProviderConfig {
-  /// Provider identity for an ACP-backed native adapter. The generic provider
-  /// keeps `acp`; packages that compose its transport register their own id.
   readonly providerId?: ProviderId
   readonly connector?: AcpConnector
-  /// Adjusts the agent's environment at launch, after the account's.
   readonly launchEnv?: (env: NodeJS.ProcessEnv, launch: AcpLaunchContext) => NodeJS.ProcessEnv
 }
 
-/// How long session setup waits for the skills an agent pushes right after
-/// it (most send them on the next tick). Events emitted while setup is still
-/// running never reach the runtime, so the metadata has to carry them; a
-/// later list still arrives as session output.
 const skillGraceMs = 250
 
 const skillListTimeoutMs = (sessionOptions: CreateSessionOptions | undefined): number =>
   sessionOptions?.skillListTimeoutMs ?? skillGraceMs
 
-/// Bounds the authentication-only ACP session used during discovery. Some
-/// agents accept initialize but never answer session/new; discovery must
-/// still settle and tear down their process.
 const authProbeTimeoutMs = 10_000
 
 export const makeAcpProvider = (
@@ -213,9 +198,6 @@ export const makeAcpProvider = (
       }),
     cancel: Effect.gen(function* () {
       yield* connection.cancel(sessionId)
-      // Cancelling without a locally tracked prompt can otherwise leave a
-      // replayed assistant chunk generating forever. A terminal event is
-      // idempotent if the prompt also resolves with its own cancellation event.
       yield* adapterPromise("cancelTurnEnd", () =>
         emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
       )
@@ -282,8 +264,6 @@ export const makeAcpProvider = (
               handle: handleFor(connection, metadata.sessionId, emit, account),
               metadata
             })),
-            // A failed or interrupted setup never enters the runtime's managed
-            // session map, so the provider owns cleaning up its process.
             Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
           )
       }),
@@ -306,8 +286,6 @@ export const makeAcpProvider = (
               metadata,
               sessionId: metadata.sessionId
             })),
-            // Like createSession: a session that never loads is never managed,
-            // so its agent process is ours to close.
             Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
           )
       }),
@@ -326,8 +304,6 @@ export const makeAcpProvider = (
           })
         )
       } catch {
-        // Older/non-conforming adapters may not implement session/list. Keep
-        // the previous empty discovery result rather than failing imports.
         return []
       }
     },

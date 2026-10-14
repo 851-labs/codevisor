@@ -3,7 +3,6 @@ import CodevisorNet
 import CryptoKit
 import Foundation
 
-/// How to reach a machine's tunnel endpoint, from machine presence.
 public struct CloudTunnelInfo: Codable, Equatable, Sendable {
   public var endpointId: String
   public var relayUrl: String?
@@ -16,7 +15,6 @@ public struct CloudTunnelInfo: Codable, Equatable, Sendable {
   }
 }
 
-/// The instance's relay map and rollout switch, from the hub's welcome.
 public struct CloudTunnelConfig: Equatable, Sendable {
   public struct Relay: Codable, Equatable, Sendable {
     public var url: String
@@ -37,9 +35,6 @@ public struct CloudTunnelConfig: Equatable, Sendable {
   }
 }
 
-/// The app's tunnel identity. Derived from the device's X25519 secret with
-/// HKDF and a dedicated label, so it is stable per install, needs no extra
-/// Keychain item, and rotates exactly when the device identity does.
 enum CloudTunnelIdentity {
   private static let label = Data("codevisor-tunnel-ed25519-v1".utf8)
 
@@ -59,13 +54,6 @@ enum CloudTunnelIdentity {
   }
 }
 
-/// The app's single tunnel endpoint. Bound while the hub reports the tunnel
-/// enabled, rebound when the relay map changes, closed on sign-out. Machines
-/// are dialed by key; the endpoint picks direct or relayed paths itself.
-///
-/// Every bind is chained behind its predecessor: a new binding first closes
-/// the endpoint it replaces, so at most one is ever live and every handle
-/// gets closed by whichever binding supersedes it.
 public actor CloudTunnelEndpoint {
   public static let channelsALPN = "codevisor/channels/1"
 
@@ -75,8 +63,6 @@ public actor CloudTunnelEndpoint {
   private var config: CloudTunnelConfig?
   private var binding: Task<NetEndpointHandle?, Never>?
   private var generation: UInt64 = 0
-  /// Callers that asked for the endpoint before the first hub welcome
-  /// configured it; resumed by `configure` or their bounded wait.
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   private let firstConfigWait: Duration
 
@@ -94,8 +80,6 @@ public actor CloudTunnelEndpoint {
     self.firstConfigWait = firstConfigWait
   }
 
-  /// Extra trust anchors for local development relays: the dev CA that
-  /// `bun run dev` hands every process (production passes none).
   public static func environmentTrustAnchors(
     _ environment: [String: String] = ProcessInfo.processInfo.environment
   ) -> [String] {
@@ -108,7 +92,6 @@ public actor CloudTunnelEndpoint {
     return []
   }
 
-  /// Applies a welcome's tunnel config. Idempotent for an unchanged config.
   public func configure(_ newConfig: CloudTunnelConfig) async {
     guard newConfig != config else { return }
     config = newConfig
@@ -118,41 +101,22 @@ public actor CloudTunnelEndpoint {
     for waiter in waiters { waiter.resume() }
   }
 
-  /// The bound endpoint (waiting for an in-flight bind), or nil when the
-  /// tunnel is off or can't start. Before the first hub welcome has
-  /// configured the tunnel, waits for it (bounded): machine probes start at
-  /// sign-in, racing that welcome, and must not conclude "no tunnel" early.
-  ///
-  /// A failed bind is retried here, on the next caller's behalf: one bad
-  /// moment (no network at launch, a missing identity) must not leave the
-  /// tunnel down until the relay map happens to change.
   public func endpoint() async -> NetEndpointHandle? {
     if config == nil { await waitForFirstConfig() }
     let attempt = binding
     if let handle = await attempt?.value { return handle }
-    // Superseded while waiting (rebuild, reconfiguration): use the newer one.
     guard binding == attempt else { return await binding?.value }
     guard let config, config.enabled else { return nil }
     replaceBinding(with: config)
     return await binding?.value
   }
 
-  /// Replaces the endpoint with a freshly bound one on the same config.
-  ///
-  /// The recovery for an endpoint that stopped working without iroh
-  /// noticing: iOS can reclaim a suspended app's sockets, and coming back
-  /// on the same network is not an interface change iroh reacts to. Live
-  /// connections on the old endpoint end; dials made after this call use
-  /// the new one.
   public func rebuild() {
     guard let config, config.enabled else { return }
     Log.cloud.notice("Rebuilding the tunnel endpoint")
     replaceBinding(with: config)
   }
 
-  /// Hints that the network may have changed (the app came back to the
-  /// foreground, the OS reported a new path). iroh re-checks its interfaces
-  /// and rebinds and re-homes when they changed. Never starts a bind.
   public func networkChanged() async {
     guard let handle = await binding?.value else { return }
     await handle.networkChange()
@@ -181,9 +145,6 @@ public actor CloudTunnelEndpoint {
     _ = await binding?.value
   }
 
-  /// Starts the binding that supersedes the current one: it closes the
-  /// previous endpoint first, then binds `config` (nil = tunnel off) unless
-  /// a newer binding has superseded it meanwhile.
   private func replaceBinding(with config: CloudTunnelConfig?) {
     generation &+= 1
     let requestGeneration = generation
@@ -222,14 +183,9 @@ public actor CloudTunnelEndpoint {
   }
 }
 
-/// One screen-sharing media route over the tunnel: a `codevisor/media/1`
-/// connection to the machine plus a local UDP port bridged to one flow. The
-/// viewer's WebRTC dials `localPort`; the machine bridges the same flow to the
-/// host's WebRTC socket. Closing drops both.
 public final class CloudTunnelMediaRoute: Sendable {
   public static let mediaALPN = "codevisor/media/1"
 
-  /// This app's own endpoint id, which the machine keys the flow by.
   public let endpointId: String
   public let flowId: UInt32
   public let localPort: UInt16
@@ -244,7 +200,6 @@ public final class CloudTunnelMediaRoute: Sendable {
     localPort = flow.localPort()
   }
 
-  /// Largest UDP payload the flow carries right now (nil until measured).
   public var maxPayload: Int? { connection.maxMediaPayload().map(Int.init) }
 
   public func close() {
@@ -254,8 +209,6 @@ public final class CloudTunnelMediaRoute: Sendable {
 }
 
 extension CloudTunnelEndpoint {
-  /// Opens a media route to a machine's tunnel endpoint, or nil when the
-  /// tunnel is off or the machine can't be reached over it.
   public func openMediaRoute(to address: CloudTunnelInfo, flowId: UInt32 = 1) async -> CloudTunnelMediaRoute? {
     guard let handle = await endpoint() else { return nil }
     let addr = NetTunnelAddr(

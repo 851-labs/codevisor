@@ -2,16 +2,11 @@ import Foundation
 import CodevisorCore
 import ScreenSharing
 
-/// Adapts the existing authenticated Unix socket to the main-actor media host.
-/// The socket's client queue may wait; the app's main thread never blocks.
 final class NativeScreenSharingBridge: @unchecked Sendable {
   @MainActor private var host: ScreenSharingHostService?
   @MainActor private var hostGeneration = 0
-  /// Live views of Computer Use windows (`computer-use:` targets). Separate
-  /// from display sharing: view-only, several viewers, no exclusive lease.
   @MainActor private var computerUseHost: ComputerUseLivePreviewHost?
   @MainActor private var computerUseObservation: UUID?
-  /// Apple simulators (`simulator:` targets): several viewers per device, shared input.
   @MainActor private var simulatorHost: SimulatorStreamHost?
   private let lock = NSLock()
   private var generation = 0
@@ -67,8 +62,6 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
     do { return try result.wait() } catch { task.cancel(); throw error }
   }
 
-  /// Input for a simulator from a viewer without a stream: `{udid, message}` in, the device's
-  /// state out.
   func stop() {
     let generation = lock.withLock {
       enabled = false; return self.generation

@@ -3,8 +3,6 @@ import Foundation
 extension WorkspaceSyncModel {
   private struct BrowserPaneMetadata: Codable { var url: String? }
 
-  /// Terminal metadata older clients published. `attachOnly` marked a hidden
-  /// tab for an agent's background command, which no longer exists.
   private struct LegacyTerminalMetadata: Decodable { var attachOnly: Bool? }
 
   nonisolated static func serverPane(
@@ -30,7 +28,6 @@ extension WorkspaceSyncModel {
       resourceKind = nil
       resourceId = nil
     case .subagent:
-      // Never published (`isDeviceLocal`); mapped only for exhaustiveness.
       paneType = "subagent"
       resourceKind = nil
       resourceId = nil
@@ -67,10 +64,6 @@ extension WorkspaceSyncModel {
       resourceKind = "file"
       resourceId = pane.documentPath
     case .plugin:
-      // Plugin panes publish under a plugin-scoped provider so old
-      // clients (which only accept "codevisor") drop them silently
-      // instead of misrendering. Metadata carries the plugin identity
-      // redundantly, so future providers can evolve the id scheme.
       let pluginId = pane.pluginId ?? "unknown"
       let type = pane.pluginPaneType ?? "pane"
       return ServerWorkspacePane(
@@ -109,8 +102,6 @@ extension WorkspaceSyncModel {
         pluginPaneType: record.paneType
       )
     }
-    // Unknown providers still drop silently: the registry remains
-    // forward-compatible; renderer support is a client capability.
     guard record.providerId == "codevisor" else { return nil }
     switch record.paneType {
     case "screen-sharing":
@@ -164,7 +155,6 @@ extension WorkspaceSyncModel {
       let legacy = record.metadata
         .flatMap { $0.data(using: .utf8) }
         .flatMap { try? JSONDecoder().decode(LegacyTerminalMetadata.self, from: $0) }
-      // A server that predates their cleanup may still list agent tabs.
       if legacy?.attachOnly == true { return nil }
       return PaneDescriptorState(
         id: id,
@@ -175,13 +165,8 @@ extension WorkspaceSyncModel {
         terminalActivity: record.terminalActivity.flatMap(TerminalActivity.init(rawValue:))
       )
     case "new-tab":
-      // A row a client that predates local-only New Tab pages may still
-      // publish. The page is device-local now; the registry entry means
-      // nothing here.
       return nil
     default:
-      // The registry remains forward-compatible; renderer support is a
-      // separate client capability and arrives with extension panes.
       return nil
     }
   }

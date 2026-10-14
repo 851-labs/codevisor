@@ -99,7 +99,7 @@ const expandRequestedFilePath = (url: URL): string => {
 }
 
 const throwFilesystemFileFailure = (path: string, lastError: unknown): never => {
-  /* v8 ignore next -- every failed candidate records the filesystem error that determines the response. */
+  /* v8 ignore next */
   const code = (lastError as NodeJS.ErrnoException | undefined)?.code ?? ""
   if (code === "ENOENT") {
     throw new HttpFailure(404, `No such file: ${path}`, "not_found")
@@ -141,9 +141,6 @@ const writeFilesystemFileHeaders = (
   range: ByteRange | undefined,
   contentLength: number
 ): void => {
-  // Size plus sub-millisecond mtime precision is a cheap stable validator
-  // for device-local preview caches. The file remains `no-store`: clients
-  // explicitly revalidate it rather than treating a path as immutable.
   const entityTag = `"${info.size.toString(16)}-${Math.round(info.mtimeMs * 1_000).toString(16)}"`
   response.writeHead(range === undefined ? 200 : 206, {
     "Accept-Ranges": "bytes",
@@ -181,7 +178,7 @@ const streamFilesystemFile = (
     return true
   }
   const stream = createReadStream(resolved, range === undefined ? {} : range)
-  /* v8 ignore next -- requires the live file to disappear after validation but before the stream opens. */
+  /* v8 ignore next */
   stream.once("error", (cause) => response.destroy(cause))
   stream.pipe(response)
   return true
@@ -200,7 +197,7 @@ const serveFilesystemFile = async (
       throw new HttpFailure(400, "sessionId is required for a relative file path", "invalid_path")
     }
     const session = await run(services.db.getSessionSummary(sessionId.toLowerCase()))
-    /* v8 ignore next -- server-created local sessions always retain their project working directory. */
+    /* v8 ignore next */
     if (session.cwd === undefined) {
       throw new HttpFailure(409, `Session has no working directory: ${sessionId}`, "missing_cwd")
     }
@@ -236,23 +233,19 @@ const serveFilesystemFile = async (
 }
 
 const throwFilesystemMkdirFailure = (path: string, cause: unknown): never => {
-  /* v8 ignore next -- mkdir errno failures always carry a code. */
+  /* v8 ignore next */
   const code = (cause as NodeJS.ErrnoException).code ?? ""
   if (["EACCES", "EPERM"].includes(code)) {
     throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
   }
-  // macOS reports EEXIST where Linux reports ENOTDIR for a file in the way.
-  /* v8 ignore next -- the no-match fall-through is the ignored generic rethrow below. */
+  /* v8 ignore next */
   if (["EEXIST", "ENOTDIR"].includes(code)) {
     throw new HttpFailure(409, `A file is in the way: ${path}`, "not_a_directory")
   }
-  /* v8 ignore next 2 -- other mkdir failures (EIO etc.) fall through to the generic 500. */
+  /* v8 ignore next 2 */
   throw cause
 }
 
-// Creates a directory on this machine — the remote browser's "New
-// Folder". Same path rules as /v1/fs/list; recursive and idempotent for
-// directories, 409 when a non-directory occupies the path.
 const createFilesystemDirectory = async (
   request: IncomingMessage,
   response: ServerResponse
@@ -269,7 +262,7 @@ const createFilesystemDirectory = async (
 }
 
 const throwFilesystemListFailure = (path: string, cause: unknown): never => {
-  /* v8 ignore next -- readdir errno failures always carry a code. */
+  /* v8 ignore next */
   const code = (cause as NodeJS.ErrnoException).code ?? ""
   if (code === "ENOENT") {
     throw new HttpFailure(404, `No such directory: ${path}`, "not_found")
@@ -277,7 +270,7 @@ const throwFilesystemListFailure = (path: string, cause: unknown): never => {
   if (["EACCES", "EPERM"].includes(code)) {
     throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
   }
-  /* v8 ignore start -- the not-ENOTDIR arm covers other readdir failures (EIO etc.) falling through to the generic 500. */
+  /* v8 ignore start */
   if (code === "ENOTDIR") {
     throw new HttpFailure(400, `Not a directory: ${path}`, "not_a_directory")
   }

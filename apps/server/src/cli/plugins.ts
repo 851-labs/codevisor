@@ -1,19 +1,11 @@
-/// `codevisor plugin …` — install, link, list, and remove plugins by talking
-/// to the RUNNING server over its loopback API (never by touching the store
-/// directly, so scans, supervision, and events stay consistent). Same
-/// injectable-seam style as support.ts; the confirm prompt is wired in
-/// cli.ts.
 import { resolve } from "node:path"
 
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface PluginsCliDeps extends CliDeps {
-  /// Install consent prompt; resolves false to abort. `--yes` skips it.
   readonly confirm: (message: string) => Promise<boolean>
 }
 
-/// Clone + dependency install can be slow; give server-side installs the
-/// same generous window the harness installers get.
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 
 interface DiscoveredPlugin {
@@ -87,7 +79,6 @@ const notRunning = (deps: CliDeps, port: number): number => {
 
 export interface PluginInstallOptions extends CommandOptions {
   readonly source: string
-  /// Skip the consent prompt (scripting / CI).
   readonly yes?: boolean | undefined
 }
 
@@ -113,7 +104,6 @@ export const pluginInstallCommand = async (
   for (const pane of plugin.panes ?? []) {
     deps.log(`  pane:    ${pane.title} (${pane.type})`)
   }
-  // Declared agent tools are part of what the user consents to.
   for (const tool of plugin.tools ?? []) {
     deps.log(`  tool:    ${tool.name} — ${tool.description}`)
   }
@@ -157,8 +147,6 @@ export const pluginLinkCommand = async (
 ): Promise<number> => {
   const port = await resolvePort(deps, options.port)
   const linked = await deps.fetchJson(`http://127.0.0.1:${port}/v1/plugins/link`, {
-    // The server needs an absolute path; resolve relative ones against the
-    // caller's working directory (CLI and server share a machine).
     body: { path: resolve(options.path) },
     method: "POST"
   })
@@ -292,7 +280,6 @@ const printUpdatePlan = (deps: PluginsCliDeps, plan: PluginUpdatePlan): void => 
 
 export interface PluginUpdateOptions extends CommandOptions {
   readonly pluginId: string
-  /// Skip the prepared-plan confirmation (scripting / CI).
   readonly yes?: boolean | undefined
 }
 

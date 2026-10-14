@@ -1,26 +1,16 @@
 import ACPKit
 import Foundation
 
-/// What a transcript row draws beside a tool call: an SF Symbol, optionally
-/// replaced by artwork the server resolves — the favicon of a site a browser
-/// workflow visited, the icon of an app a desktop workflow drove, or the
-/// icon of the MCP server a workflow called. The symbol is always set, so a
-/// row never waits on (or loses) its icon.
 public struct ToolCallIcon: Equatable, Hashable, Sendable {
   public enum Artwork: Equatable, Hashable, Sendable {
-    /// A site's favicon, by origin (`https://linear.app`).
     case site(origin: String)
-    /// An MCP server's icon. `host` resolves servers this machine lacks.
     case mcpServer(id: String, host: String?)
-    /// A macOS app's icon, by bundle ID; `path` is where it ran from.
     case app(bundleId: String, path: String?)
   }
 
   public var symbol: String
   public var artwork: Artwork?
 
-  /// Not an SF Symbol: views draw Codevisor's own mark for it, tinted like
-  /// the symbols around it. Calls to Codevisor's own tools use it.
   public static let codevisorMark = "codevisor.mark"
 
   public init(symbol: String, artwork: Artwork? = nil) {
@@ -29,8 +19,6 @@ public struct ToolCallIcon: Equatable, Hashable, Sendable {
   }
 }
 
-/// What a gateway workflow touched (`_meta.codevisorExecution.icon` and
-/// `.activeIcon`), as the gateway reports it.
 public enum CodevisorExecutionIconRef: Equatable, Sendable {
   case site(origin: String)
   case mcp(serverId: String, host: String?)
@@ -75,11 +63,8 @@ public enum CodevisorExecutionIconRef: Equatable, Sendable {
 
 extension ToolCall {
   static let integrationSymbol = "puzzlepiece.extension"
-  /// The symbol Settings uses for MCP servers without artwork.
   static let mcpServerSymbol = "point.3.connected.trianglepath.dotted"
 
-  /// This call's own icon. A running workflow shows what it is touching
-  /// now; a settled one, the first thing it touched (what it was about).
   public var icon: ToolCallIcon {
     if isToolDiscoveryCall { return ToolCallIcon(symbol: "magnifyingglass") }
     switch codevisorGatewayOperation {

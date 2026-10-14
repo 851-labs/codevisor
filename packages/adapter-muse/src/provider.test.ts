@@ -47,7 +47,6 @@ describe("Muse provider", () => {
       skills: { skills: [] }
     })
 
-    // The handle drives the chat.
     const { handle } = created
     await expect(run(handle.setMode("plan"))).rejects.toThrow()
     expect(await run(handle.setConfigOption("thought_level", "low"))).toEqual(
@@ -92,7 +91,6 @@ describe("Muse provider", () => {
       excludeItems: true,
       config: { mcpServers: { codevisor: { url: "http://127.0.0.1:1/mcp" } } }
     })
-    // Spawning a real muse is the default.
     expect(makeMuseProvider(environment).readiness(definition)).toEqual({ state: "ready" })
   })
 
@@ -101,7 +99,6 @@ describe("Muse provider", () => {
     client.replies.initialize = { serverInfo: { version: "1.0.0" } }
     await expect(run(provider.createSession(definition, "/repo", emit))).rejects.toThrow(/too old/)
     expect(client.closed).toBe(true)
-    // A Muse that can't list skills still chats.
     const skillless = setup()
     skillless.client.replies["skill/list"] = new Error("no skills")
     const created = await run(skillless.provider.createSession(definition, "/repo", skillless.emit))
@@ -147,7 +144,6 @@ describe("Muse provider", () => {
     expect(spawned[0]).toMatchObject({ args: ["--no-session-log"], cwd: "/home/me" })
     expect(client.closed).toBe(true)
 
-    // A listing that never ends stops after a bounded number of pages.
     client.replies["session/list"] = { sessions: "bad", nextCursor: "more" }
     await provider.listAgentSessions!(definition)
     expect(client.sent("session/list")).toHaveLength(2 + 5)
@@ -160,7 +156,6 @@ describe("Muse provider", () => {
       state: "unavailable",
       windows: []
     })
-    // As Muse 1.4.7 reported it after a reply.
     client.replies["usage/read"] = {
       window: { usedPercent: 12, windowDurationMins: 300, resetsAtMs: 1791924961000 },
       weekly: { usedPercent: 140, resetsAtMs: 1792368000000 },
@@ -226,7 +221,6 @@ describe("Muse provider", () => {
     expect(await run(provider.probeAuth!(definition))).toMatchObject({
       detail: "Couldn't check Muse Code's sign-in."
     })
-    // A host that fails its handshake is closed, not leaked.
     const old = new FakeMuseClient()
     old.replies.initialize = new Error("handshake failed")
     const stale = setup({}, old)

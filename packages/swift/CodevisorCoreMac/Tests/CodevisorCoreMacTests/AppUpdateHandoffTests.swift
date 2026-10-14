@@ -138,19 +138,14 @@ struct AppUpdateProgressThrottleTests {
     }
 
     #expect(report("Downloading…", 0.001, at: 0))
-    // Sub-percent chunks inside the interval are dropped…
     #expect(!report("Downloading…", 0.002, at: 10))
     #expect(!report("Downloading…", 0.009, at: 249))
-    // …until the interval has passed since the last published report.
     #expect(report("Downloading…", 0.0095, at: 250))
     #expect(!report("Downloading…", 0.0095, at: 900))
-    // A new whole percent publishes at once.
     #expect(report("Downloading…", 0.01, at: 901))
     #expect(!report("Downloading…", 0.011, at: 902))
-    // So does the next phase, even at the same fraction.
     #expect(report("Preparing…", 0.011, at: 903))
     #expect(!report("Preparing…", 0.012, at: 904))
-    // A lifecycle report resets it: the next progress always publishes.
     throttle.reset()
     #expect(report("Preparing…", 0.012, at: 905))
   }

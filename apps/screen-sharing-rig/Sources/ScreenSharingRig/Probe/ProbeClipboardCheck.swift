@@ -2,8 +2,6 @@ import ScreenSharing
 import ScreenSharingWebRTC
 import Foundation
 
-/// Exercises the real encrypted channel using in-memory clipboards. Never
-/// reads or writes the diagnostic machine's general pasteboard.
 @MainActor
 final class ProbeClipboardCheck {
   private let hostChannel: ScreenSharingClipboardChannel

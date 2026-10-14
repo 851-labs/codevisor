@@ -58,7 +58,6 @@ describe("sandboxSuccessfulToolResult", () => {
         }
       ]
     })
-    // The bytes still reach the model as content.
     expect(collector.content).toEqual([{ type: "image", data: png, mimeType: "image/png" }])
   })
 

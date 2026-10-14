@@ -5,14 +5,11 @@ import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 
-/// A pane hidden and shown again, on the viewer's helpers.
 @MainActor
 struct ScreenSharingViewerVisibilityTests {
   private let display = ScreenSharingViewerFixtures.display
   private let viewer = ScreenSharingViewerTests()
 
-  /// Hiding keeps the connection, as Apple's Screen Sharing keeps a window's: the held lease goes
-  /// back at once, and showing the pane asks for control again without reconnecting.
   @Test func hidingKeepsTheConnectionAndShowingAsksForControlAgain() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
@@ -52,8 +49,6 @@ struct ScreenSharingViewerVisibilityTests {
     }
   }
 
-  /// A pane hidden for `hiddenGrace` lets its connection (and the host's capture) go; showing it
-  /// afterwards connects afresh.
   @Test func aPaneHiddenPastTheGraceLetsItsConnectionGo() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])

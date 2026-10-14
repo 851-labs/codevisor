@@ -1,21 +1,14 @@
 import CodevisorCore
 import SwiftUI
 
-/// The detail for a chat route. A view of its own so the chat, its workspace
-/// entry and the route policy are observed here and not by `RootView`: a tab
-/// click re-evaluates this small body, never the window's root.
 struct SessionRouteView: View {
   @Environment(AppEnvironment.self) private var environment
   let store: SessionStore
   let serverId: String
   let sessionId: UUID
   let onFocusedChatChanged: (UUID) -> Void
-  /// The shared keep/sibling/dismiss policy's answer whenever the route's
-  /// chat or workspace changes.
   let onDisposition: (WorkspaceRouteDisposition) -> Void
 
-  /// What the route policy depends on, cheap to compare: the chat's presence
-  /// and its workspace's identity and generation.
   private struct DispositionKey: Equatable {
     let hasSession: Bool
     let workspaceId: UUID?
@@ -28,9 +21,6 @@ struct SessionRouteView: View {
     let entry = workspaceId.map { environment.navigationStore.workspaceEntries.entry($0) }
     Group {
       if let session, let project = project(for: session) {
-        // The mount's workspace is chosen here, once per route: the entry's
-        // live value when the chat has one, else the store resolves (and for
-        // a brand-new chat creates) it.
         let workspace = entry?.workspace ?? store.workspace(for: session, project: project)
         let controller = store.controller(for: session, project: project)
         SessionContainerView(
@@ -40,8 +30,6 @@ struct SessionRouteView: View {
           onFocusedChatChanged: onFocusedChatChanged
         )
         .id("\(session.serverId):\(workspace.id.uuidString)")
-        // Recency bookkeeping (and the eviction it can trigger) runs after
-        // the render that shows the chat, never inside it.
         .task(id: SessionStore.SessionKey(session)) {
           store.noteAccess(SessionStore.SessionKey(session))
         }
@@ -59,9 +47,6 @@ struct SessionRouteView: View {
         )
       }
     }
-    // A server refresh can invalidate the route from another device. Apply
-    // the shared sibling-or-dismiss policy even though the archived session
-    // remains in the local model for the archive section.
     .onChange(
       of: DispositionKey(hasSession: session != nil, workspaceId: workspaceId, generation: entry?.generation),
       initial: true
@@ -79,9 +64,6 @@ struct SessionRouteView: View {
   }
 }
 
-/// A workspace shown without a chat: the same container, mounted on the
-/// workspace itself. Its panes, splits, toolbar and New Tab page are the
-/// shared ones; nothing here creates a session, a worktree or an agent.
 struct WorkspaceRouteView: View {
   @Environment(AppEnvironment.self) private var environment
   let store: SessionStore
@@ -100,9 +82,6 @@ struct WorkspaceRouteView: View {
         mount: .workspace(workspace),
         project: project,
         store: store,
-        // The moment a chat exists in this workspace (New Tab → New Chat), the
-        // selection moves to it: the container remounts as `.chat`, which is
-        // what upgrades the cached leaf group and restores chat affordances.
         onFocusedChatChanged: onFocusedChatChanged
       )
       .id("\(serverId):\(workspaceId.uuidString)")

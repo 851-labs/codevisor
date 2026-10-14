@@ -7,9 +7,6 @@ import ACPKit
 @Suite("SessionModel")
 struct SessionModelTests {
   init() {
-    // Production coalesces stream events into per-frame batches; these
-    // tests should not wait on the production frame cadence, so flush on
-    // the next main-actor turn instead.
     SessionModel.eventFlushInterval = .zero
     SessionModel.cancellationTerminalEventWaitDelay = .zero
   }
@@ -78,10 +75,7 @@ struct SessionModelTests {
     )
     await model.send("run pwd")
     let optimisticId = userMessages(model).first!.id
-    // The wire carried the optimistic id.
     #expect(client.promptedMessageIds == [optimisticId.uuidString.lowercased()])
-    // The echo comes back with that id — EVEN with different text (the
-    // server may normalize whitespace), identity wins and nothing dups.
     client.emit(
       ServerEventEnvelope(
         id: 1,
@@ -152,8 +146,6 @@ struct SessionModelTests {
       sessionId: sessionId.uuidString
     )
     await model.send("run pwd")
-    // The harness dies right after the prompt (e.g. codex app-server
-    // exiting on its first spawn) — the active bubble is torn down…
     client.emit(
       ServerEventEnvelope(
         id: 1,
@@ -163,9 +155,6 @@ struct SessionModelTests {
         createdAt: "2026-07-18T00:00:00.000Z",
         payload: .object(["message": .string("codex app-server exited")])
       ))
-    // …and the reconnected stream then delivers the server's echo of
-    // the message. It must stamp onto the optimistic append, not
-    // duplicate it.
     client.emit(
       ServerEventEnvelope(
         id: 2,
@@ -293,7 +282,6 @@ struct SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    // Idle: neither recovery hook touches the server.
     await model.reconcileIfInFlight()
     await model.reconcileIfStalled()
     #expect(client.transcriptPageRequests.isEmpty)
@@ -302,18 +290,13 @@ struct SessionModelTests {
     #expect(model.isSending)
     let baseline = client.transcriptPageRequests.count
 
-    // Streaming healthily (not stalled): re-entry must not restart the
-    // consumer on every navigation.
     await model.reconcileIfStalled()
     #expect(client.transcriptPageRequests.count == baseline)
 
-    // Foreground recovery re-verifies any in-flight turn; durable history
-    // still reports it live, so the reload is non-destructive.
     await model.reconcileIfInFlight()
     #expect(client.transcriptPageRequests.count == baseline + 1)
     #expect(model.isSending)
 
-    // Once stalled, re-entry heals a turn that finished on the server.
     model.isTakingLongerThanExpected = true
     client.initialTranscriptPage = cancellationTranscriptPage(
       sessionId: sessionId,

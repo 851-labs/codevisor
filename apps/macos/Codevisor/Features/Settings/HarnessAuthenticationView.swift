@@ -9,9 +9,6 @@ struct HarnessAuthenticationView: View {
   @Environment(\.harnessMachineSignIn) var machineSignIn
   @Environment(\.settingsMachineId) var settingsMachineId
 
-  /// The machine this view operates on — pinned by the machine-scoped
-  /// Settings page that presented it, else the app's selected machine
-  /// (onboarding, previews).
   var scopedServerId: String {
     settingsMachineId ?? environment.defaultComposerServerId
   }
@@ -25,9 +22,6 @@ struct HarnessAuthenticationView: View {
 
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
-  /// Settings/onboarding render this view standalone and want its own
-  /// title and Done footer. The composer's sign-in sheet brings its own
-  /// chrome (with machine context) and turns this off.
   var showsHeader = true
   var signInRequest: HarnessMachineSignIn?
 
@@ -38,7 +32,6 @@ struct HarnessAuthenticationView: View {
   @State var pollingTask: Task<Void, Never>?
   @State var methods: [ServerHarnessAuthMethod] = []
   @State var flow: ServerHarnessAuthFlow?
-  /// The focused modal step a sign-in attempt runs in.
   @State var loginStep: HarnessLoginStep?
 
   @ViewBuilder
@@ -80,9 +73,6 @@ struct HarnessAuthenticationView: View {
     .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
       if isShared { Task { await load() } }
     }
-    // Each sign-in attempt is one focused task in its own sheet. Pushing it
-    // onto the host's stack was tried and reverted — the transition runs
-    // inside AppKit's layout pass, where a model mutation makes AppKit raise.
     .sheet(item: $loginStep, onDismiss: { Task { await cancelFlow() } }) { step in
       HarnessLoginStepSheet(
         harness: harness,
@@ -133,15 +123,8 @@ struct HarnessAuthenticationView: View {
           HarnessSharedAccountRows(source: source)
         }
         ForEach(model.accounts) { account in accountRow(account) }
-        // A trailing row, not a Section footer: footers are for explanatory
-        // text, render small and secondary (hence the `.font(.body)` this
-        // replaces), and sit outside the expected keyboard order.
         if harness.auth?.supportsMultipleAccounts == true {
           addAccountControl("Add Account")
-            // Plain, so it carries the same weight as the account rows above
-            // it and as the "Add Provider…" row in the OpenCode and Pi
-            // sheets. A bordered button here would make one add-affordance
-            // in the family look unlike the other two.
             .buttonStyle(.plain)
             .menuStyle(.borderlessButton)
             .settingsActionTint(theme)
@@ -196,10 +179,6 @@ struct HarnessAuthenticationView: View {
         } label: {
           Label("More account actions", systemImage: "ellipsis.circle")
         }
-        // An ellipsis glyph already means "more actions"; a disclosure
-        // chevron beside it is a second, redundant affordance. Matches
-        // HarnessSettingsRow, which is the same control in the list behind
-        // this sheet.
         .labelStyle(.iconOnly)
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -245,8 +224,6 @@ struct HarnessAuthenticationView: View {
     case "authenticated", "notRequired": return nil
     case "checking": return "Checking sign-in…"
     case "expired": return account.id.hasPrefix("shared-") ? (account.detail ?? "Sign-in expired") : "Sign-in expired"
-    // Plain language, never the probe's `detail` — that carries a crashed
-    // CLI's stderr. The cause is summarized and persisted server-side.
     case "error": return "Something went wrong starting the CLI"
     default: return "Not signed in"
     }

@@ -1,8 +1,4 @@
 extension TranscriptAssistantRowProjection {
-  /// A turn that ended abnormally without a final answer has no response
-  /// rows — and it is the response projection that owns the epilogue slice
-  /// where `stopDetail` renders. Give the failure its own independently
-  /// measured row so it is never drawn into a neighbour's frame.
   static func hasStopDetailWithoutAnswer(_ message: AssistantMessage) -> Bool {
     !message.turn.isGenerating
       && message.turn.finalText == nil

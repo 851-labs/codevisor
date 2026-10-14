@@ -2,15 +2,10 @@ import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-/// A skill shipped inside Codevisor and served by the gateway's `skills`
-/// tool. `path` is its SKILL.md.
 export interface PackagedSkill {
   readonly name: string
-  /// One line for the `skills` tool description.
   readonly summary: string
   readonly path: string
-  /// One line for the composer's skill palette, for skills users invoke
-  /// themselves. Absent keeps the skill out of the palette.
   readonly composer?: string
 }
 

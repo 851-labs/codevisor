@@ -21,7 +21,6 @@ import { makeMcpManager } from "./mcp-manager.js"
 
 afterEach(cleanupMcpManagerTests)
 
-// These cases exercise Codevisor itself; desktop/browser state is irrelevant.
 const providers = {
   makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
   makeComputerProvider: () => unavailableComputerProvider("Not used in this test")
@@ -61,7 +60,6 @@ describe("Codevisor built-in tools", () => {
     expect((await restarted.tools(undefined)).some((tool) => tool.serverId === "codevisor")).toBe(
       false
     )
-    // Settings can still explain what this disabled provider offers.
     expect(await restarted.tools("codevisor")).toEqual(tools)
     expect(await restarted.update("codevisor", { enabled: true })).toMatchObject({
       enabled: true,

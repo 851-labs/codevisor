@@ -2,11 +2,6 @@ import CodevisorCore
 import CodevisorCoreMac
 import SwiftUI
 
-/// Heals a half-applied "Set Up Later": the skip choice persists locally
-/// but the Computer Use disable is a server call that can be lost (the
-/// app may quit before it lands). Skipped + permissions missing means
-/// Computer Use must be off; skipped + permissions granted means the
-/// skip is obsolete.
 @MainActor
 func reconcileSkippedPermissions(environment: AppEnvironment) async {
   guard !AppPreview.isRunning, environment.settings.permissionsSetupSkipped else { return }

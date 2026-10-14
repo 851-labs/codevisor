@@ -6,19 +6,12 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-/// A UIKit port of the macOS document-view virtualizer. UIScrollView owns only
-/// touch tracking and momentum; this view is the single owner of document
-/// geometry, row mounting, measurement, restoration, and anchor compensation.
 @MainActor
 final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate {
   static let rowSpacing: CGFloat = 20
   static let topPadding: CGFloat = 12
   static let horizontalPadding: CGFloat = 16
   static let maxRowWidth: CGFloat = 832
-  /// Initial layout prepares this much content on both sides of the viewport
-  /// without holding first display for offscreen work. The mounted runway makes the
-  /// first fast swipe consume prepared TextKit/SwiftUI rows rather than
-  /// synchronously constructing them under the user's finger.
   static let initialRunwayViewportCount: CGFloat = 1.5
   static let atBottomThreshold: CGFloat = 2
   let canvasView = UIView()
@@ -26,7 +19,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
   weak var hostingParent: UIViewController?
 
-  /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
   var rows: [TranscriptVirtualRow] { rowSet.rows }
   var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
   var projectedRows: [TranscriptVirtualRow] {
@@ -42,8 +34,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     set { rowSet.activeRowsRange = newValue }
   }
   var projectedRowsVersion: TranscriptRowSetRevision?
-  /// Received and applied projection revisions differ while UIKit defers a
-  /// prepend until an active drag/deceleration ends.
   var receivedProjectionRevision: UInt64?
   var appliedProjectionRevision: UInt64?
   var activeRowsVersion: TranscriptRowSetRevision?
@@ -86,26 +76,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
   var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
   var isLoadingInitialHistory = false
-  /// Row projection runs off the main actor. A retained session controller can
-  /// already own exact scroll geometry while its newly mounted SwiftUI screen
-  /// still has a temporary empty row array. Do not consume that geometry or
-  /// validate its caches until the first displayable projection arrives
-  /// after any initial history hydration.
   var isPreparingInitialProjection = true
-  /// The outer row projection initially contains one aggregate `.active` row.
-  /// Keep first paint closed until its independently parsed block rows replace
-  /// that provisional topology; otherwise an uncached chat visibly jumps from
-  /// the aggregate estimate to the final block layout.
   var isActiveProjectionPending = false
   var isAwaitingFirstActiveProjection = false
-  /// The aggregate `.active` placeholder mounted with a clear root while
-  /// the surface is still hidden and its precise rows have not published.
-  /// Laying out the whole streamed item once as SwiftUI only to discard it a
-  /// frame later dominated cold open; the reveal gate already waits for the
-  /// first publication, so nothing is ever visible in that window.
   var deferredActivePlaceholderKey: String?
   var scrollCommand = TranscriptScrollCommand()
-  /// Every send presentation on this surface; see `TranscriptSendTransitions`.
   let sendTransitions = TranscriptSendTransitions<VirtualizedTranscriptScrollView>()
   var sendAnimationSourceFrame: CGRect?
   var isSendTransitionCleanupScheduled = false
@@ -137,8 +112,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var isNativeScrollInteractionActive: Bool {
     isTracking || isDragging || isDecelerating || isExplicitUserScroll
   }
-  /// UIKit momentum can begin at any moment, so the interactive budget
-  /// always applies.
   var frameBudget: TranscriptFrameBudget {
     TranscriptFrameBudget(
       maximumFramesPerSecond: window?.screen.maximumFramesPerSecond ?? 60,
@@ -173,12 +146,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     isDirectionalLockEnabled = true
     keyboardDismissMode = .interactive
     contentInsetAdjustmentBehavior = .never
-    // The navigation bar floats over the transcript. Fade content under it
-    // with the soft edge effect instead of a hard cutoff and divider.
     topEdgeEffect.style = .soft
     scrollsToTop = false
-    // Keep estimated row frames out of the first visible paint. The
-    // hosted rows still mount and measure normally underneath this canvas.
     canvasView.alpha = 0
     canvasView.accessibilityElementsHidden = true
     isScrollEnabled = false
@@ -224,8 +193,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
   override func willMove(toWindow newWindow: UIWindow?) {
     if newWindow == nil, window != nil {
-      // Capture before detachment changes geometry. Accessibility scrolling
-      // can advance the viewport without UIKit's touch delegate callbacks.
       emitViewportSnapshot()
     }
     super.willMove(toWindow: newWindow)
@@ -280,16 +247,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       updateMountedRows()
     }
     if resizeAdjustment == .pinToBottom {
-      // SwiftUI keyboard avoidance changes this view's height in the
-      // keyboard's own animation transaction. Following every layout
-      // step keeps the newest transcript pixels moving with the
-      // composer instead of jumping only after the keyboard settles.
       setDistanceFromBottom(0, synchronizesWithActiveLayoutAnimation: true)
       updateMountedRows()
     } else if heightChanged, initialPositionApplied {
-      // The raw content offset deliberately stays fixed away from the
-      // bottom. Refresh the derived coordinate so a later resize does
-      // not mistake the old distance for a bottom-pinned viewport.
       lastDistanceFromBottom = currentDistanceFromBottom()
       publishBottomState(lastDistanceFromBottom <= Self.atBottomThreshold)
     }
@@ -298,14 +258,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     resolveBottomJumpIfPossible()
   }
 
-  // MARK: - Rows and geometry
-
   var effectiveRowWidth: CGFloat {
     let availableWidth = max(1, bounds.width - Self.horizontalPadding * 2)
     return min(Self.maxRowWidth, availableWidth)
   }
-
-  // MARK: - Viewport
 
   var viewportHeight: CGFloat {
     max(0, bounds.height)
@@ -325,13 +281,4 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var transcriptRowsOrigin: CGFloat {
     paginationHeaderLayout.rowOrigin(topPadding: Self.topPadding, rowOffset: 0)
   }
-
-  // MARK: - Native scrolling
-
-  // MARK: - Virtual row mounting
-
-  // MARK: - Disclosure and send presentation
-
-  // MARK: - State and pagination
-
 }

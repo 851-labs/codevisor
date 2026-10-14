@@ -3,11 +3,6 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { ToolIconAsset } from "../infra/tool-icons.js"
 import { HttpFailure, matchRoute, type CodevisorServerServices } from "../server-context.js"
 
-/// Artwork for transcript workflow rows: `GET /v1/tool-icons/site?origin=`
-/// for a site a browser call visited, `GET /v1/tool-icons/mcp/:id?host=`
-/// for an MCP server, each with `theme=light|dark`, and
-/// `GET /v1/tool-icons/app?bundleId=&path=` for an app Computer Use drove.
-/// 404 when there is none, so clients draw their symbol.
 export const routeToolIcons = async (
   services: CodevisorServerServices,
   request: IncomingMessage,

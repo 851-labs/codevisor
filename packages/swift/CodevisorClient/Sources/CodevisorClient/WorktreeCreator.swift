@@ -1,17 +1,7 @@
-//  Eager worktree creation for the new-workspace flows. Under the
-//  "1 workspace == 1 working directory" model, a worktree is created BEFORE
-//  its workspace exists — there is no session yet, so this helper owns the
-//  whole request/progress lifecycle that used to live on SessionController's
-//  first-send path.
-
 import CodevisorProtocol
 import Foundation
 import Observation
 
-/// Creates a git worktree on the server and mirrors its live setup progress
-/// (git output, checkout hooks, failures) into an observable
-/// `SessionSetupPhase` that the new-workspace UIs render with the existing
-/// setup-phase views.
 @MainActor
 @Observable
 public final class WorktreeCreator {
@@ -25,29 +15,16 @@ public final class WorktreeCreator {
     }
   }
 
-  /// The live "Setting up worktree" phase. Nil until a creation starts;
-  /// after a failure it holds the failed phase (message + logs) so the UI
-  /// can keep it expanded next to a Try Again button.
   public private(set) var phase: SessionSetupPhase?
-  /// Latches re-entry: a second activation while a request is in flight is
-  /// ignored by callers guarding on this.
   public private(set) var isRunning = false
 
   public init() {}
 
-  /// Clears the previous phase (e.g. when the user backs out of a failed
-  /// creation and returns to the picker).
   public func reset() {
     guard !isRunning else { return }
     phase = nil
   }
 
-  /// Asks the server to create a git worktree for the project. The server
-  /// owns the fixed location (~/codevisor/{projectId}/{name}) and picks a
-  /// random memorable name; the app never computes either. The worktree id
-  /// is generated client-side so the server's `worktree.setup` events can
-  /// be followed live into `phase` while the request is in flight — no
-  /// session id is needed.
   public func create(
     projectId: UUID,
     client: (any CodevisorServerClienting)?
@@ -66,10 +43,6 @@ public final class WorktreeCreator {
 
     let worktreeId = UUID().uuidString.lowercased()
     phase = .worktree()
-    // Best-effort live tail: the WebSocket usually opens well before git
-    // (and any long checkout hooks) produce output. Terminal state comes
-    // from the HTTP response, not from these events. Only this worktree's
-    // log lines reach the main actor.
     let log = WorktreeSetupEvent.liveLog(client, worktreeId: worktreeId)
     let follow = Task { [weak self] in
       for await entry in log {
@@ -97,7 +70,6 @@ public final class WorktreeCreator {
     }
   }
 
-  /// The server reports worktree failures as `{"error": "…"}` bodies.
   public static func failureMessage(from body: String) -> String {
     guard let data = body.data(using: .utf8),
       let payload = try? JSONDecoder().decode([String: String].self, from: data),

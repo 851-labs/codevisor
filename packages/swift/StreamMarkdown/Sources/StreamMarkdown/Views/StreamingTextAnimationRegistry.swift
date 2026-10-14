@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Animation ownership shared by every virtual Markdown row on one retained
-/// transcript surface. Row hosts are free to remount or change renderer while
-/// semantic stream claims and response-wide pacing remain stable.
 @MainActor
 public final class StreamingTextAnimationRegistry {
   public let presentation = StreamingTextAnimationPresentation()
@@ -29,22 +26,11 @@ public final class StreamingTextAnimationRegistry {
     coordinators.removeValue(forKey: semanticStreamID)?.reset()
   }
 
-  /// Marks the next authoritative projection as navigation state. Provider
-  /// events can continue while a transcript is detached, so the registry
-  /// must baseline the complete snapshot on reattachment before it resumes
-  /// treating later projection deltas as live arrivals.
   public func prepareForPresentation() {
     awaitsPresentationBaseline = true
     baselineProjectionRevision = lastProjectionRevision
   }
 
-  /// Observes the complete active Markdown row set before a virtualizer can
-  /// mount any of it. The first snapshot is navigation state and therefore
-  /// starts opaque. Later rows animate only at the followed live edge;
-  /// offscreen arrivals are already presented when scrolling reaches them.
-  /// A restoration identity belongs to the published snapshot and remains
-  /// unchanged on later live appends. Its first projection settles both new
-  /// historical rows and restored text in already-mounted rows.
   public func observeProjectedStreams<S: Sequence>(
     _ streamIDs: S,
     animatesNewStreams: Bool,
@@ -59,14 +45,6 @@ public final class StreamingTextAnimationRegistry {
         settledRestorationIDs.insert($0).inserted
       } ?? false
 
-    // A retained transcript can miss several provider projections while
-    // detached. Its first authoritative snapshot after reappearing is a
-    // navigation baseline, not a live arrival: settle both new rows and
-    // appended content in retained rows before accepting later animation.
-    // Hydration can finish after the compact navigation baseline. Its
-    // published rows are authoritative even if a newer provider revision
-    // is already being projected; waiting for the stream to go quiet
-    // would let restored text animate on its first native frame.
     if awaitsPresentationBaseline || isRestoredProjection {
       let publishedSinceBoundary =
         projectionRevision != nil
@@ -85,11 +63,6 @@ public final class StreamingTextAnimationRegistry {
     }
 
     guard hasObservedProjection else {
-      // An asynchronously projected transcript first configures its
-      // native surface with an empty active-row placeholder. Waiting
-      // here makes the first authoritative projection the navigation
-      // baseline instead of mistaking already-present text for live
-      // output when that projection arrives.
       guard !initialProjectionIsPending else { return }
       hasObservedProjection = true
       knownProjectedStreamIDs.formUnion(current)
@@ -107,15 +80,10 @@ public final class StreamingTextAnimationRegistry {
     }
   }
 
-  /// Streams projected but deliberately not shown, such as text inside a
-  /// collapsed disclosure. Whatever arrives unseen is already presented
-  /// when the reader reveals it; only text streamed after that animates.
   public func observeHiddenStreams<S: Sequence>(_ streamIDs: S) where S.Element == String {
     presentation.settleUnpresentedStreams(streamIDs)
   }
 
-  /// Hidden arrivals are navigation state. Rebaseline retained rows as well
-  /// as new rows when the next authoritative foreground snapshot arrives.
   public func suspendPlayback() {
     guard !isPlaybackSuspended else { return }
     isPlaybackSuspended = true

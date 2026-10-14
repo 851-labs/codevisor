@@ -1,17 +1,7 @@
 import AppKit
 import CodevisorCore
 
-// MARK: - Close confirmation
-
 extension SessionStore {
-  /// Runs `close` right away unless it would close a chat whose agent is
-  /// still working. In that case it asks first, the way ⌘Q does. Confirming
-  /// stops those agents' turns (like pressing Stop) and then runs `close`;
-  /// closing a pane alone would leave the agent running with no tab.
-  ///
-  /// "Working" is the sidebar spinner's test (`isInProgress`): mid-turn,
-  /// running setup, or waiting on its own background work. Closing an idle
-  /// chat stays instant.
   func confirmClosingWorkingChats(
     _ panes: [PaneDescriptorState],
     serverId: String,
@@ -26,8 +16,6 @@ extension SessionStore {
       stopAndClose(working, then: close)
       return
     }
-    // Repeated ⌘W while the sheet is up must not stack alerts or close
-    // anything behind it.
     guard !isConfirmingChatClose else { return }
     isConfirmingChatClose = true
     let alert = Self.makeCloseWorkingChatAlert()
@@ -35,8 +23,6 @@ extension SessionStore {
     let finish: @MainActor (NSApplication.ModalResponse) -> Void = { [weak self] response in
       self?.isConfirmingChatClose = false
       guard response == .alertFirstButtonReturn else { return }
-      // Record "Do not ask me again" only on an actual close, so a ticked
-      // box on a cancelled alert doesn't silently turn the guard off.
       if alert.suppressionButton?.state == .on {
         settings.setConfirmBeforeClosingWorkingChat(false)
       }
@@ -61,10 +47,6 @@ extension SessionStore {
     }
   }
 
-  /// Closes immediately, then cancels each chat's in-flight turn. A cached
-  /// controller cancels through its model so its own state settles; a chat
-  /// with no controller here (working on another device's behalf) is
-  /// cancelled directly on its machine.
   private func stopAndClose(_ chats: [ChatSession], then close: @MainActor () -> Void) {
     close()
     for chat in chats {
@@ -87,7 +69,6 @@ extension SessionStore {
     alert.alertStyle = .warning
     alert.showsSuppressionButton = true
     alert.suppressionButton?.title = "Do not ask me again"
-    // First button is the default (Return); "Cancel" also binds Escape.
     alert.addButton(withTitle: "Close")
     alert.addButton(withTitle: "Cancel")
     return alert

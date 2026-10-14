@@ -3,9 +3,6 @@ import { discoverOAuthProtectedResourceMetadata } from "@modelcontextprotocol/sd
 
 import { requireHttpUrl, suggestedMcpName } from "./mcp-support.js"
 
-/// Probes an HTTP MCP endpoint with a bare initialize request and classifies
-/// its authorization challenge: none, OAuth (protected-resource metadata),
-/// or a plain bearer token.
 export const detectMcpAuth = async (value: string): Promise<McpAuthDetection> => {
   const url = requireHttpUrl(value)
   const parsedUrl = new URL(url)
@@ -29,7 +26,7 @@ export const detectMcpAuth = async (value: string): Promise<McpAuthDetection> =>
     })
   })
   const challenge = response.headers.get("www-authenticate")?.toLowerCase() ?? ""
-  /* v8 ignore next -- best-effort cleanup after reading only the authorization challenge. */
+  /* v8 ignore next */
   await response.body?.cancel().catch(() => undefined)
   if (response.status !== 401 && response.status !== 403) {
     return {

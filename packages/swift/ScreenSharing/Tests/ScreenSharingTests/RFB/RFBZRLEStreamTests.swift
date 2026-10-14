@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// ZRLE through the client's read loop, where one zlib stream spans the whole
-/// connection: a rectangle is only decodable after every rectangle before it.
 struct RFBZRLEStreamTests {
   private func zrle(_ rect: RFBRectangle, _ compressed: [UInt8]) -> [UInt8] {
     RFBScript.rectangle(rect, 16, u32(UInt32(compressed.count)) + compressed)
@@ -24,9 +22,6 @@ struct RFBZRLEStreamTests {
     #expect(session.updates[1].pixel(x: 1, y: 1) == [22, 0, 0, 255])
   }
 
-  /// The second rectangle's bytes are meaningless on their own — they continue
-  /// a stream whose window and header are in the first. Replaying them alone
-  /// must fail rather than paint something arbitrary.
   @Test func aRectangleIsUndecodableWithoutTheOnesBeforeIt() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let deflater = try RFBZlibDeflater()
@@ -38,8 +33,6 @@ struct RFBZRLEStreamTests {
     #expect(session.updates.isEmpty)
   }
 
-  /// Two rectangles inside one update use the same stream in wire order, so
-  /// the later one decodes only because the earlier one already did.
   @Test func rectanglesWithinOneUpdateAlsoShareTheStream() async throws {
     let left = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let right = RFBRectangle(x: 2, y: 0, width: 2, height: 2)
@@ -55,8 +48,6 @@ struct RFBZRLEStreamTests {
     #expect(snapshot.pixel(x: 3, y: 1) == [6, 0, 0, 255])
   }
 
-  /// A rectangle spanning several tiles at an offset, compressed as one blob:
-  /// the decoder's tile walk and the stream boundary are independent.
   @Test func aMultiTileRectangleArrivesAsOneCompressedBlob() async throws {
     let rect = RFBRectangle(x: 10, y: 6, width: 70, height: 70)
     let tiles = solidTile(1) + solidTile(2) + solidTile(3) + solidTile(4)
@@ -71,8 +62,6 @@ struct RFBZRLEStreamTests {
     #expect(snapshot.pixel(x: 9, y: 6) == [0, 0, 0, 0])
   }
 
-  /// An empty ZRLE rectangle is a zero-length blob, which decodes to no tiles
-  /// and leaves the stream in step for the next rectangle.
   @Test func aZeroLengthZRLERectangleIsAccepted() async throws {
     let empty = RFBRectangle(x: 0, y: 0, width: 0, height: 0)
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
@@ -84,8 +73,6 @@ struct RFBZRLEStreamTests {
     #expect(snapshot.pixel(x: 0, y: 0) == [9, 0, 0, 255])
   }
 
-  /// Compressed bytes that inflate to more tile data than the rectangle needs
-  /// are a protocol error, not extra pixels for the next rectangle.
   @Test func tileDataBeyondTheRectangleIsMalformed() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let session = try await ScriptedSession.play(
@@ -102,8 +89,6 @@ struct RFBZRLEStreamTests {
     #expect(session.error as? RFBError == .malformed("ZRLE truncated"))
   }
 
-  /// The compressed length is read before the bytes, so a blob cut short by a
-  /// dropped connection is a closed connection rather than a decode failure.
   @Test func aTruncatedCompressedBlobEndsTheConnection() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let compressed = try RFBZlibDeflater().deflate(solidTile(3))

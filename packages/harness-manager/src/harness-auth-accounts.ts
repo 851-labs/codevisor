@@ -15,8 +15,6 @@ export type HarnessAccountOperations = Pick<
   "activateAccount" | "createAccount" | "removeAccount" | "renameAccount"
 >
 
-/// Managed-account bookkeeping: creating and naming isolated profiles,
-/// removing them with their secrets, and switching the active account.
 export const makeHarnessAccountOperations = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes,
@@ -91,11 +89,6 @@ export const makeHarnessAccountOperations = (
       throw new Error("Sign in to this account before selecting it")
     }
     await run(config.db.setActiveHarnessAccount(harnessId, accountId))
-    // Claude account selection applies to every chat on its next turn. A turn
-    // already running keeps its live process and finishes on the previous
-    // account; the runtime reloads the session with this binding before the
-    // next prompt. Usage limits leave an exhausted account authenticated, so
-    // Claude cannot rely on the dead-account sweep used by other harnesses.
     const rebindAuthenticatedSiblings = harnessId === "claude-code"
     const siblings = await run(config.db.listHarnessAccounts(harnessId))
     await Promise.all(

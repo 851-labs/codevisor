@@ -160,8 +160,6 @@ describe("provider token broker", () => {
 
 describe("OpenCode credentials kept current", () => {
   const access = `header.${Buffer.from(JSON.stringify({ sub: "alice" })).toString("base64url")}.signature`
-  /// One OpenCode default profile sharing an OpenAI sign-in that expires at
-  /// 3,600,000, materialized at time 1000 under the given fake timers.
   const openCodeProfile = async (
     toFake: Parameters<typeof vi.useFakeTimers>[0] = { toFake: ["Date"] }
   ) => {
@@ -197,7 +195,6 @@ describe("OpenCode credentials kept current", () => {
     const document = async () => JSON.parse(await readFile(path, "utf8"))
     return { f, host, account, context, path, document }
   }
-  // Five minutes left: past the rewrite point, as after a machine slept.
   const nearExpiry = 3_600_000 - 5 * 60_000
 
   it("rewrites them before a turn once they near expiry, never exposing the grant", async () => {

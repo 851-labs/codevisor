@@ -18,8 +18,6 @@ import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
 
-/// The synchronous upsert behind `upsertWorkspace`, exported so the atomic
-/// workspace create can run it inside its own transaction.
 export const upsertWorkspaceRow = (
   context: ServiceContext,
   request: UpsertWorkspaceRequest
@@ -124,9 +122,6 @@ export const makeWorkspacesService = (
           throw new Error(`Workspace not found: ${id}`)
         }
         const wasArchived = existing.is_archived === 1
-        // `archivedStamp` returns a moment exactly when the row ends up
-        // archived, so the stamp doubles as the archived flag — deriving both
-        // from it keeps them from ever disagreeing.
         const stamp = archivedStamp(
           request.isArchived,
           wasArchived,

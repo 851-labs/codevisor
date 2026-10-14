@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import { run, setup } from "./test-support.js"
 
-/// A multi-agent v2 activity item for the child agent at `/root/map_server_storage`.
 const activity = (kind: string, id: string, turnId = "turn-1") => ({
   item: {
     agentPath: "/root/map_server_storage",
@@ -26,7 +25,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turn: { id: "turn-1", status: "inProgress" }
     })
-    // spawnAgent opens the Agent tool call and registers the child thread.
     client.emit("item/started", {
       item: {
         agentsStates: {},
@@ -54,7 +52,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    // The child thread works: its turn lifecycle must NOT drive the session's.
     client.emit("turn/started", {
       threadId: "thread-child",
       turn: { id: "turn-child", status: "inProgress" }
@@ -70,7 +67,6 @@ describe("CodexProvider", () => {
       threadId: "thread-child",
       turnId: "turn-child"
     })
-    // Traffic from a thread we can't attribute is dropped, not mixed in.
     client.emit("item/agentMessage/delta", {
       delta: "stranger danger",
       itemId: "stray-msg",
@@ -81,7 +77,6 @@ describe("CodexProvider", () => {
       threadId: "thread-child",
       turn: { id: "turn-child", status: "completed" }
     })
-    // closeAgent settles the spawn row.
     client.emit("item/completed", {
       item: {
         agentsStates: {},
@@ -134,8 +129,6 @@ describe("CodexProvider", () => {
         toolCallId: "collab-spawn"
       })
     )
-    // No visible rows for the close call itself, no stray-thread leakage, and
-    // exactly one turn end — the child's turn never ended the session's.
     expect(payloads.some((payload) => payload.toolCallId === "collab-close")).toBe(false)
     expect(JSON.stringify(payloads)).not.toContain("stranger danger")
     expect(payloads.filter((payload) => payload.turnState === "ended")).toHaveLength(1)
@@ -167,7 +160,6 @@ describe("CodexProvider", () => {
 
   it("shows multi-agent v2 subagents, named by task, with their thread nested and finish settling them", async () => {
     const { client, events } = await setup()
-    // Each activity arrives as a started/completed pair.
     client.emit("item/started", activity("started", "call-spawn"))
     client.emit("item/completed", activity("started", "call-spawn"))
     client.emit("item/started", {
@@ -176,7 +168,6 @@ describe("CodexProvider", () => {
       turnId: "turn-child"
     })
     client.emit("item/completed", activity("completed", "subagent-completed-turn-child"))
-    // Messaged again in the same turn: the same chip runs again.
     client.emit("item/started", activity("interacted", "call-message"))
     client.emit("item/completed", activity("interacted", "call-message"))
 
@@ -243,7 +234,6 @@ describe("CodexProvider", () => {
         toolCallId: "call-followup"
       })
     ])
-    // The new run nests under, and settles, the later chip.
     expect(payloads).toContainEqual(
       expect.objectContaining({ parentToolCallId: "call-followup", toolCallId: "child-cmd-2" })
     )

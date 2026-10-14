@@ -1,7 +1,3 @@
-/// `codevisor machines …` — the account's machines from this one. Each
-/// command is the same /v1/machines route the `machines.*` agent tools call,
-/// so the CLI and the tools behave identically. Pure logic against CliDeps;
-/// wiring lives in wiring.ts.
 import type { MachineInviteResponse, MachineSummary } from "@codevisor/api"
 
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
@@ -9,8 +5,6 @@ import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 const machinesUrl = (port: number, path = ""): string =>
   `http://127.0.0.1:${port}/v1/machines${path}`
 
-/// The server's error message from a failed response (the machines routes
-/// answer `{ error: string }`), or why there was no response at all.
 const failure = (
   response: { readonly status: number; readonly body: unknown } | undefined,
   port: number
@@ -63,8 +57,6 @@ export const machinesInviteCommand = async (
     return 1
   }
   const invite = response.body as MachineInviteResponse
-  // The code alone on stdout, so it can be piped:
-  //   codevisor machines invite | ssh box 'codevisor auth login --invite -'
   deps.log(invite.code)
   deps.error(`One-time invite, valid until ${invite.expiresAt}. On the new machine run:`)
   deps.error("  codevisor auth login --invite <code>   (or pass - and pipe the code on stdin)")
@@ -85,7 +77,6 @@ export const machinesAddCommand = async (
   deps.log(`Installing Codevisor on ${options.ssh} and adding it to your account…`)
   const response = await deps.fetchJson(machinesUrl(port, "/add"), {
     method: "POST",
-    // The host downloads and installs Codevisor, then joins (server cap: 10 min).
     timeoutMs: 11 * 60 * 1000,
     body: {
       ssh: options.ssh,

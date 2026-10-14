@@ -23,8 +23,6 @@ extension SessionStore {
       browser.model.adoptPopup(popup)
     } else {
       browser.model.automationInitialURL = url
-      // Load background tabs immediately, using the same hidden native host as
-      // Browser Use. Selecting the pane later reuses the live page.
       Task { _ = try? await browser.model.readyView() }
     }
     environment.workspaceSync.publishPane(

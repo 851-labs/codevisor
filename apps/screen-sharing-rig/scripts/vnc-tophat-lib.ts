@@ -1,5 +1,3 @@
-// Pure helpers for `bun run vnc:tophat` (apps/screen-sharing-rig/scripts/vnc-tophat.ts).
-
 export const machineFlows = ["loopback", "contabo"]
 
 export interface TophatOptions {
@@ -40,7 +38,6 @@ export function parseTophatArguments(argv: string[]): TophatOptions {
   return options
 }
 
-/// Steps are { name, ok, detail }; the run passes only if every step did.
 export function summarize(steps: Step[]): { ok: boolean; passed: number; failed: Step[] } {
   const failed = steps.filter((step) => !step.ok)
   return {
@@ -50,7 +47,6 @@ export function summarize(steps: Step[]): { ok: boolean; passed: number; failed:
   }
 }
 
-/// `rig-ax window` prints "title<TAB>number<TAB>width<TAB>height".
 export function parseWindow(line: string): RigWindow {
   const [title, number, width, height] = line.trim().split("\t")
   const window = {
@@ -64,8 +60,6 @@ export function parseWindow(line: string): RigWindow {
   return window
 }
 
-/// A marker the loopback server's input log shows when the clipboard arrives;
-/// non-Latin-1 on purpose, so it only survives the UTF-8 clipboard (851-2316).
 export function clipboardToken(seed: number): string {
   return `codevisor-tophat-${seed.toString(36)} 日本語 😀`
 }

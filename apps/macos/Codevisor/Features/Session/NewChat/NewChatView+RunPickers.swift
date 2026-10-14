@@ -18,9 +18,6 @@ extension NewChatView {
     case newWorktree
   }
 
-  /// Hairline between two chips. It hides (instantly, like the hover fill
-  /// itself) while either neighbour is hovered: the chip's hover capsule
-  /// bleeds past its layout and would otherwise touch the line.
   func runPickerDivider(between leading: RunPicker, and trailing: RunPicker) -> some View {
     Divider()
       .frame(height: 14)
@@ -37,14 +34,8 @@ extension NewChatView {
     }
   }
 
-  /// The pickers only exist on the standalone page: they decide the
-  /// workspace's one working directory, which is fixed the moment the
-  /// first message creates it. Drafts inside an existing workspace always
-  /// run in that workspace's directory.
   var showsRunPickers: Bool { paneDraftId == nil }
 
-  /// Every machine's projects, most recently used first (scratch backing
-  /// projects, when a server has any, are internal and never listed).
   private var pickerProjects: [Project] {
     environment.projectList.fleetActiveProjectsByWorkspaceRecency(
       environment.workspaces.loadAll()
@@ -52,9 +43,6 @@ extension NewChatView {
     .filter { !$0.isScratch }
   }
 
-  /// The picker's entries for one machine: the linked projects that have
-  /// a checkout there, one row per repository. The machine chip is the
-  /// first choice, so the project list never reaches past it.
   private func pickerGroups(on serverId: String) -> [ProjectGroup] {
     environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(
       environment.workspaces.loadAll()
@@ -62,21 +50,14 @@ extension NewChatView {
     .filter { $0.member(on: serverId) != nil }
   }
 
-  /// The machine picker shows only when there is a choice to make.
   var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
 
-  /// The live project record. The controller holds a snapshot from when
-  /// the project was picked; the server's git probe lands on the list
-  /// afterwards, and the worktree picker must follow the probed value.
   func liveProject(for controller: SessionController) -> Project {
     environment.projectList.projects.first {
       $0.serverId == controller.project.serverId && $0.id == controller.project.id
     } ?? controller.project
   }
 
-  /// Choose the machine this chat runs on. Picking one re-points the draft
-  /// at that machine's remembered (or most recent) project; the project
-  /// picker then lists that machine's projects.
   func machinePicker(_ controller: SessionController) -> some View {
     let machines = environment.machines.allMachines
     let selectedServerId = controller.project.serverId
@@ -122,7 +103,6 @@ extension NewChatView {
     .accessibilityValue(selectedMachine?.name ?? "Machine")
   }
 
-  /// No project is an ordinary choice, including its favorite state.
   func projectPicker(_ controller: SessionController) -> some View {
     let selected = controller.project
     let isNoProject = selected.isRunTargetPlaceholder || selected.isScratch
@@ -179,16 +159,10 @@ extension NewChatView {
     .accessibilityValue(chipText)
   }
 
-  /// The outline folder: a chat with no repository behind it.
   static let noProjectSymbol = EntitySystemSymbol.projectList
   private static let noProjectTitle = "No project"
-  /// Project group IDs use repo| or project| prefixes; this key cannot
-  /// collide with a repository and is shared across all machines.
   private static let noProjectFavoriteID = "no-project"
 
-  /// "Project directory" vs "New worktree" for where the chat (and its
-  /// workspace) runs. Only rendered for git projects; the worktree itself
-  /// is created on the first send.
   func runLocationPicker(_ controller: SessionController) -> some View {
     let current = RunLocationOption.all.first { $0.newWorktree == controller.wantsNewWorktree } ?? .projectDirectory
     let selection = Binding(
@@ -216,12 +190,6 @@ extension NewChatView {
     .accessibilityValue(current.title)
   }
 
-  /// Re-points the draft at another machine, keeping the current run
-  /// target when that machine can honor it: the same linked project (via
-  /// its checkout there) with the same run location — a worktree only if
-  /// that checkout is a git repository — or "No project", which every
-  /// machine can do. Only when the machine lacks the project does the
-  /// draft fall back to that machine's last-used project and location.
   func selectTargetMachine(_ machine: CodevisorMachine, controller: SessionController) {
     let current = controller.project
     guard machine.id != current.serverId else { return }
@@ -241,9 +209,6 @@ extension NewChatView {
     let isNoProject = current.isRunTargetPlaceholder || current.isScratch
     guard !isNoProject, let project = scoped.first(where: { $0.id == remembered })
     else {
-      // "No project" is a stable run-target state: keep the draft and
-      // composer in place rather than guessing a project or opening a
-      // dialog.
       selectedProjectId = nil
       Task {
         await controller.retarget(
@@ -256,9 +221,6 @@ extension NewChatView {
     selectTargetProject(project, controller: controller)
   }
 
-  /// Picking a linked project uses its checkout on the draft's machine
-  /// (the picker only lists such projects); the recency fallback covers a
-  /// stale menu.
   func selectTargetGroup(_ group: ProjectGroup, controller: SessionController) {
     let project =
       group.member(on: controller.project.serverId)
@@ -266,11 +228,7 @@ extension NewChatView {
     selectTargetProject(project, controller: controller)
   }
 
-  /// Untie the draft from any project: its first send will run in a
-  /// fresh single-use folder on the current machine.
   func selectNoProject(_ controller: SessionController) {
-    // Already there (a retained scratch-backed draft counts): nothing to
-    // re-point.
     guard !controller.project.isRunTargetPlaceholder, !controller.project.isScratch else { return }
     let serverId = controller.project.serverId
     selectedProjectId = nil
@@ -283,9 +241,6 @@ extension NewChatView {
     }
   }
 
-  /// A picked project carries its own remembered worktree preference
-  /// (worktrees only make sense for git projects) unless the caller pins
-  /// the run location — a machine switch keeping the draft's own choice.
   func selectTargetProject(
     _ project: Project,
     controller: SessionController,
@@ -299,9 +254,6 @@ extension NewChatView {
     let prefersWorktree = wantsWorktree ?? environment.prefersNewWorktree(for: project)
     Task {
       if project.serverId != controller.project.serverId {
-        // Another machine's project: the draft re-points there in
-        // place — client, catalog and all. The eventual route carries
-        // this machine id; no app-wide selection changes.
         await controller.retarget(
           to: project,
           serverClient: environment.machines.client(for: project.serverId)
@@ -314,8 +266,6 @@ extension NewChatView {
       else { return }
       controller.wantsNewWorktree = prefersWorktree
     }
-    // Re-probe git capability on the picked project's machine so the
-    // run-location picker appears/disappears with fresh data.
     Task {
       await environment.projectList.refreshFromServer(
         serverId: project.serverId,
@@ -324,8 +274,6 @@ extension NewChatView {
     }
   }
 
-  /// Settings can delete the checkout while this standalone draft stays
-  /// mounted. A missing cache entry during refresh is not a deletion.
   var selectedDraftProjectIsDeleted: Bool {
     guard showsRunPickers, let controller else { return false }
     return environment.projectList.isProjectDeleted(
@@ -340,7 +288,6 @@ extension NewChatView {
   }
 }
 
-/// One row of the run-location picker.
 private struct RunLocationOption: Identifiable {
   let id: NewChatView.RunLocationPickerTarget
   let title: String

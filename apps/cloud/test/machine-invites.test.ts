@@ -43,7 +43,6 @@ describe("machine invites", () => {
     const { key } = (await redeemed.json()) as { key: string }
     expect(key).not.toBe(inviter.apiKey)
 
-    // The new machine connects with its own key and is labeled with its inviter.
     const joined = await connectMachine(session, "hetzner-1", deviceId, { apiKey: key })
     expect(joined.welcome.t).toBe("welcome")
     const listed = await machines(session)
@@ -78,7 +77,6 @@ describe("machine invites", () => {
     const inviter = await connectMachine(session, "mac-studio")
     const token = await inviteToken(inviter.apiKey)
     expect((await redeem(token, "hetzner-1", "not-a-uuid")).status).toBe(400)
-    // A malformed request never burns the invite.
     expect((await redeem(token)).status).toBe(200)
   })
 
@@ -104,7 +102,6 @@ describe("machine invites", () => {
     for (let index = 0; index < 25; index += 1) await inviteToken(inviter.apiKey)
     expect(await invites()).toBeGreaterThanOrEqual(25)
 
-    // Once they've expired, the next invite clears them out.
     vi.setSystemTime(Date.now() + 11 * 60 * 1000)
     const live = await inviteToken(inviter.apiKey)
     expect(await invites()).toBe(1)

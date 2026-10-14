@@ -3,10 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// On main, opening or listing a chat whose workspace was archived minted a
-/// new, live, device-only workspace for it -- the archived chats users saw
-/// back in their sidebars on every platform. The chat's workspace is the
-/// server's, archived or not.
 @MainActor
 struct ArchivedWorkspaceChatTests {
   @Test("A chat in an archived workspace resolves to that workspace and never mints a live one")

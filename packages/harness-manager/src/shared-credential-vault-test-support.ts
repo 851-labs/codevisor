@@ -1,5 +1,3 @@
-// Shared scaffolding for the shared-credential vault tests: token bundles and an in-memory
-// coordinator, receipt store and clock.
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
 import { vi } from "vitest"
 

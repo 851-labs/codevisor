@@ -1,12 +1,5 @@
 import Foundation
 
-/// The workspace repository the app reads and writes layouts through, backed
-/// by the navigation projection instead of a stored copy of server state.
-///
-/// Reads return the projected workspaces. `save` records only what this
-/// device owns -- tabs, splits, selection -- because everything else on a
-/// workspace comes from the server and changes only through the outbox.
-/// Saving a workspace the server doesn't have yet makes it a draft.
 public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked Sendable {
   private let lock = NSLock()
   private var workspacesById: [UUID: Workspace] = [:]
@@ -28,8 +21,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
       ordered = projection.workspaces
       sessionIndex = projection.sessionIndex
     }
-    // The clock keeps a running minimum, so only positions that changed can
-    // move it.
     WorkspaceOrderClock.shared.observe(
       changed.compactMap { projection.workspacesById[$0]?.effectiveSidebarPosition }.min())
     store?.workspaceEntries.apply(projection, changed: changed, removed: removed)
@@ -64,18 +55,12 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     }
     layouts.setLayout(DeviceLayout(updated), for: updated.id)
     let reordered = current.centerTabs.map(\.id) != updated.centerTabs.map(\.id)
-    // The views showing this workspace update in the same transaction as the
-    // click that changed its layout.
     onMain { [weak self] store in
       store.workspaceEntries.update(updated) { self?.workspaceId(forSession: $0) }
-      // Tab order is shared: a local reorder (a drag, an agent's layout
-      // action) becomes the order every device shows.
       if reordered { store.publishTabOrder(of: updated) }
     }
   }
 
-  /// Automatic names follow the workspace's context (a new worktree), so the
-  /// change goes to the server like any rename, without pinning the name.
   public func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID) {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let workspace = workspace(id: workspaceId), !workspace.hasCustomName,
@@ -93,9 +78,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     }
   }
 
-  /// Discards a draft, or forgets this device's layout for a workspace.
-  /// Removing a workspace from the server is archiving it, which goes
-  /// through the outbox.
   public func delete(id: UUID) {
     lock.withLock {
       workspacesById.removeValue(forKey: id)
@@ -118,11 +100,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     onMain { $0.rebuild() }
   }
 
-  /// The workspace a chat belongs to. A chat the server has placed opens in
-  /// that workspace; a brand-new chat gets a draft workspace whose chat pane
-  /// uses the chat's id, which is the id the server gives that pane when
-  /// opening the chat creates the workspace -- so the mounted view keeps its
-  /// identity when the server's copy arrives.
   public func ensureWorkspace(
     for seed: WorkspaceSessionSeed,
     legacyGroups: (any PaneGroupRepository)?
@@ -139,8 +116,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     for index in center.panes.indices where center.panes[index].kind == .chat {
       if center.panes[index].chatSessionId == nil { center.panes[index].chatSessionId = seed.sessionId }
     }
-    // An id another machine's workspace already uses can't be this draft's:
-    // the draft would take over that workspace's layout.
     let workspace = Workspace(
       id: seed.assignedWorkspaceId.flatMap { self.workspace(id: $0) == nil ? $0 : nil } ?? UUID(),
       name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
@@ -165,7 +140,6 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     onMain { $0.rebuild() }
   }
 
-  /// Store changes happen on the main actor, where every caller runs.
   private func onMain(_ body: @escaping @MainActor (NavigationStore) -> Void) {
     if Thread.isMainThread {
       MainActor.assumeIsolated {

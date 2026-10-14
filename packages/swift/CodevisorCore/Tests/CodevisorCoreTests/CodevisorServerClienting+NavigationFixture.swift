@@ -1,7 +1,5 @@
 import CodevisorClient
 
-// Compose fixture state only; production clients use the atomic endpoint.
-// Fakes that store workspaces or panes implement `navigationSnapshot` themselves.
 extension CodevisorServerClienting {
   func navigationSnapshot() async throws -> ServerNavigationSnapshot {
     let cursor = try await latestShellEventCursor()

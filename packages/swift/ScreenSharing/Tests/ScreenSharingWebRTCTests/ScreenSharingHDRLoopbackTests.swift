@@ -6,10 +6,6 @@ import Testing
 @testable import ScreenSharing
 @testable import ScreenSharingWebRTC
 
-/// HDR end to end inside one process (851-2380): a viewer whose screen can show HDR says so on the
-/// video format channel, and a 10-bit Display P3 PQ capture crosses WebRTC as Main 4:4:4 10 and
-/// reaches the viewer's mailbox still 10-bit. The time limit is a deadlock guard for the hardware
-/// codec and the loopback transport; every wait is on a callback.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingHDRLoopbackTests {
@@ -44,7 +40,6 @@ struct ScreenSharingHDRLoopbackTests {
     let arrived = TestSignal()
     receiver.mailbox.onFrameAvailable { arrived.signal() }
 
-    // Reported before the channel exists: held, and sent once it opens.
     receiver.setDisplayHighDynamicRange(true)
     let offer = try await receiver.makeDescription(offer: true)
     try await sender.accept(offer)
@@ -68,7 +63,6 @@ struct ScreenSharingHDRLoopbackTests {
     CMTimeConvertScale(CMClockGetTime(CMClockGetHostTimeClock()), timescale: 1_000_000_000, method: .default).value
   }
 
-  /// What ScreenCaptureKit's HDR preset delivers: 10-bit full-range 4:4:4, here a flat mid grey.
   static func hdrPicture(width: Int, height: Int) throws -> CVPixelBuffer {
     var created: CVPixelBuffer?
     let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary

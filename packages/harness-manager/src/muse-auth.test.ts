@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from "vitest"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import { makeMuseAuth } from "./muse-auth.js"
 
-/// A scripted `muse serve` for the account surface.
 const host = (replies: Record<string, unknown> = {}) => {
   const requests: Array<{ method: string; params: unknown }> = []
   let notification: ((method: string, params: unknown) => void) | undefined
@@ -53,7 +52,6 @@ const account = (fields: Partial<HarnessAccountRecord> = {}) =>
 
 const setup = (
   options: {
-    /// Account sync: on (default), unconfigured, or configured without an account.
     shared?: "absent" | "empty" | "broken"
     deadlineMs?: number
     probeError?: Error
@@ -133,7 +131,6 @@ const setup = (
 
 describe("Muse Code sign-in", () => {
   it("hands out Muse's device code and activates the account once Muse grants it", async () => {
-    // Without account sync the sign-in stays on this machine.
     const { auth, hosts, spawned, events, probe, setActive, completed } = setup({
       home: "/home/me",
       shared: "empty"
@@ -159,7 +156,6 @@ describe("Muse Code sign-in", () => {
     expect(events).toEqual([
       { kind: "harness.authFlow.updated", subjectId: "muse-code", payload: flow }
     ])
-    // The host stays up for the flow.
     expect(hosts[0]!.state.closed).toBe(false)
 
     const done = completed()
@@ -191,7 +187,6 @@ describe("Muse Code sign-in", () => {
     await expect(done).resolves.toMatchObject({ success: false })
     expect(unverified.setActive).not.toHaveBeenCalled()
 
-    // Re-reading the account can fail too; the flow still ends, as a failure.
     const broken = setup({ probeError: new Error("db locked"), shared: "absent" })
     await broken.auth.begin(account(), "deviceCode", undefined)
     const ended = broken.completed()
@@ -201,7 +196,6 @@ describe("Muse Code sign-in", () => {
     const flow = await unshared.auth.begin(account(), "deviceCode", undefined)
     await unshared.auth.cancel(flow.id)
     expect(unshared.hosts[0]!.state.closed).toBe(true)
-    // Another account's sign-in is its own flow.
     await unshared.auth.begin(account({ id: "acct-2" }), "deviceCode", undefined)
     await unshared.auth.begin(account(), "deviceCode", undefined)
     expect(unshared.hosts[1]!.methods()).not.toContain("account/loginCancel")
@@ -240,7 +234,6 @@ describe("Muse Code sign-in", () => {
     await auth.begin(account(), "deviceCode", undefined)
     expect(hosts[0]!.methods()).toContain("account/loginCancel")
     expect(hosts[0]!.state.closed).toBe(true)
-    // Muse confirming the cancellation afterwards changes nothing.
     hosts[0]!.complete("cancelled")
     await auth.cancel(first.id)
     await auth.cancel("unknown")
@@ -248,7 +241,6 @@ describe("Muse Code sign-in", () => {
       events.filter((event) => (event.payload as { completed?: boolean }).completed === true)
     ).toEqual([])
     expect(loginFailed).toHaveBeenCalledTimes(1)
-    // A host that already went away still cancels cleanly.
     const gone = setup({ replies: { "account/loginCancel": new Error("muse exited") } })
     const flow = await gone.auth.begin(account(), "deviceCode", undefined)
     await gone.auth.cancel(flow.id)
@@ -283,14 +275,12 @@ describe("Muse Code sign-in", () => {
     expect(captureLogin).toHaveBeenCalledWith("acct-1")
     expect(probe).not.toHaveBeenCalled()
 
-    // A synced API key never goes into Muse: every machine gets it as META_API_KEY.
     await expect(auth.begin(account(), "apiKey", " sk-meta ")).resolves.toMatchObject({
       kind: "complete"
     })
     expect(saveApiKey).toHaveBeenCalledWith("acct-1", "sk-meta")
     expect(hosts).toHaveLength(1)
 
-    // A sign-in sync can't save ends as a failed flow.
     const unsaved = setup({ captureError: new Error("Sign-in could not be saved") })
     await unsaved.auth.begin(account(), "deviceCode", undefined)
     const failed = unsaved.completed()
@@ -318,10 +308,8 @@ describe("Muse Code sign-in", () => {
       const done = completed()
       await vi.advanceTimersByTimeAsync(1000)
       await expect(done).resolves.toMatchObject({ completed: true, success: false })
-      // Muse is told to stop waiting, and its host goes away.
       expect(hosts[0]!.methods()).toContain("account/loginCancel")
       expect(hosts[0]!.state.closed).toBe(true)
-      // A Muse already gone can't be told; the flow still ends.
       const gone = setup({
         deadlineMs: 1000,
         replies: { "account/loginCancel": new Error("muse exited") }

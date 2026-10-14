@@ -1,7 +1,5 @@
 import Foundation
 
-/// One window's authenticated control channel. Uses the same transport seams
-/// as sessions, including cloud relay. No navigation is retried or replayed.
 @MainActor
 public enum ClientControlConnection {
   public typealias ContextReader = @MainActor () -> NativeClientContext
@@ -63,8 +61,6 @@ public enum ClientControlConnection {
             try await socket.send(.data(JSONEncoder().encode(response)))
           }
         } catch {
-          // A lost channel has no durable command queue. Re-register only;
-          // the caller receives a disconnect/timeout from the server.
         }
       } onCancel: {
         socket.cancel(with: .goingAway, reason: nil)

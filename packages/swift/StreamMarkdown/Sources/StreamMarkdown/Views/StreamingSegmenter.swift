@@ -1,10 +1,6 @@
 import Combine
 import Foundation
 
-/// Computes render segments from a complete MD4C parse of each presented text
-/// snapshot. Full-document parsing is intentional: CommonMark reference links
-/// and container structure can change the interpretation of earlier text, so
-/// independently parsing a supposedly settled tail is not semantics-preserving.
 @MainActor
 final class StreamingSegmenter {
   private let parser = MarkdownParser()
@@ -20,9 +16,6 @@ final class StreamingSegmenter {
       ? MarkdownSegmentCache.shared.segments(for: text)
       : MarkdownSegment.segments(from: parser.parse(text))
 
-    // Reuse the value storage of the equal prefix. MD4C parses the whole
-    // snapshot, but SwiftUI only needs to invalidate the first semantically
-    // changed segment and what follows it.
     let sharedCount = min(segments.count, lastSegments.count)
     var index = 0
     while index < sharedCount, segments[index] == lastSegments[index] {
@@ -45,9 +38,6 @@ final class StreamingSegmenter {
   }
 }
 
-/// Observable asynchronous parser owned by one `StreamingMarkdownView`
-/// identity. Initial content is parsed synchronously to avoid a blank mount;
-/// later streamed snapshots never run MD4C or build the Swift IR on MainActor.
 @MainActor
 final class StreamingMarkdownParseCoordinator: ObservableObject {
   typealias SnapshotParser = @Sendable (String, Bool) async -> [MarkdownSegment]
@@ -77,7 +67,6 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
     requestedText = text
     requestedIsComplete = isComplete
     self.snapshotParser = snapshotParser
-    // Only streamed updates use the asynchronous parser seam; mounting stays synchronous.
     let segments =
       isComplete
       ? MarkdownSegmentCache.shared.segments(for: text)
@@ -132,8 +121,6 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
     )
   }
 
-  /// Preserves the equal prefix and suffix, plus the first changing tail
-  /// block. That tail is the steady-state append target while streaming.
   private func reconcile(
     _ parsed: [MarkdownSegment],
     with previous: [MarkdownRenderSegment]

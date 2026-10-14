@@ -8,13 +8,8 @@ import ScreenSharingDiagnostics
   import ScreenCaptureKit
   @preconcurrency import WebRTC
 
-  /// `screen-sharing-rig probe …`: the single-process diagnostic — both peers in this
-  /// process over a loopback exchange, with the measurement and recovery experiments
-  /// described in packages/swift/ScreenSharing/README.md. Owns the process
-  /// once dispatched: it installs the field trials and runs its own application loop.
   @MainActor
   enum ProbeCommand {
-    /// `arguments` are the words after `probe`.
     static func main(arguments: [String]) {
       if arguments.contains("--help") { print(ProbeOptions.usage); return }
       do {
@@ -39,12 +34,8 @@ import ScreenSharingDiagnostics
           return
         }
         let options = try ProbeOptions(arguments: arguments)
-        // This standalone executable owns its process. M152 exposes these experiments through process-wide trials;
-        // they are installed once, through the single boundary, before any RTC call.
         try ScreenSharingFieldTrials.process.install(options.fieldTrialSelection)
         let app = NSApplication.shared
-        // Headless stays prohibited (no windows); only the owned-window capture
-        // mode runs as an accessory so it may own one window without activation.
         app.setActivationPolicy(options.captureOwnedWindow ? .accessory : options.headless ? .prohibited : .regular)
         let runner = ProbeRunner(options: options)
         Task { @MainActor in
@@ -73,21 +64,15 @@ import ScreenSharingDiagnostics
     var synthetic: SyntheticSource?
     var capture: ScreenSharingCapture?
     var ownedWorkload: ProbeOwnedWorkloadWindow?
-    /// Owned-window mode: bounded first-observed delivery state, nil until
-    /// measurement begins; kept on the runner so failure evidence keeps it.
     var firstObservation: ScreenSharingFirstObservation?
     var measurementStartedNs: Int64?
-    /// Media start (every mode) on the metrics uptime clock; the event-log diagnostic's measured seconds use it.
     var mediaStartedNs: Int64?
     var picker: ProbeCapturePicker?
     var window: NSWindow?
     var metalView: ScreenSharingMetalView?
     var deliveryAudit: ScreenSharingFrameDeliveryAudit?
-    /// Receiver-only diagnostic RTC event-log lifecycle (nil = nothing allocated or scheduled).
     var rtcEventLog: ScreenSharingRtcEventLogDiagnostic?
-    /// Sender-only diagnostic RTC event-log lifecycle on the sending peer (nil = nothing allocated or scheduled).
     var senderRtcEventLog: ScreenSharingRtcEventLogDiagnostic?
-    /// Outcome of each role's RTC event-log sidecar write made in stop() ("written …" or "write failed: …"); absent = not requested.
     var rtcEventLogSidecarOutcomes: [ScreenSharingRtcEventLogDiagnostic.Role: String] = [:]
     var displayLink: ProbeMetalDisplayLink?
     var encoderLogger: RTCCallbackLogger?
@@ -102,14 +87,10 @@ import ScreenSharingDiagnostics
       if let window = options.jitterWindowFrames {
         receiverMetrics.label("jitterEstimatorExperiment", "frame-size p95 over \(window) frames")
       }
-      // `playoutExperiment` is published by the peer from the INSTALLED trial selection (identical native string),
-      // so the label can never describe an option that failed to install.
       if options.requestScreenRecording {
         NSApplication.shared.activate()
         if !CGPreflightScreenCaptureAccess() {
           _ = CGRequestScreenCaptureAccess()
-          // Keep the app/run loop alive while the system presents its prompt.
-          // Exiting immediately can dismiss the asynchronous permission UI.
           let deadline = ContinuousClock.now.advanced(by: .seconds(options.duration))
           while !CGPreflightScreenCaptureAccess(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .seconds(1))
@@ -164,8 +145,6 @@ import ScreenSharingDiagnostics
           "captureSelection", options.capturePickerWindow ? "macOS system window picker" : "macOS system display picker"
         )
       }
-      // Keep the activity scoped to this finite media run, including error exits.
-      // This isolates background scheduling without changing system sleep policy.
       let activity =
         options.userInitiatedActivity
         ? ProcessInfo.processInfo.beginActivity(
@@ -190,9 +169,6 @@ import ScreenSharingDiagnostics
           for (name, count) in ScreenSharingEncoderDropLog.counters(in: message) {
             metrics.increment(name, by: count)
           }
-          // Bounded boundary diagnostic: which WebRTC path dropped or held a
-          // submitted frame before it reached the native encoder. Addresses are
-          // stripped; only the pinned drop/pause messages are retained.
           if tracing, let sanitized = ScreenSharingEncoderDropLog.dropDiagnostic(in: message) {
             metrics.trace("webrtcDropLog", "\(ScreenSharingMetrics.nowNs) \(sanitized)")
           }
@@ -216,7 +192,6 @@ import ScreenSharingDiagnostics
         }
         sender?.onConnectionChanged = { print("Sender: \($0)") }
         if let window = options.senderRtcEventLogWindow, let path = options.senderRtcEventLogPath, let peer = sender {
-          // Sender-only diagnostic: the same lifecycle on the sending peer (bracket A on its own start/stop calls).
           let log = ScreenSharingRtcEventLogDiagnostic(
             window: try .init(beginSeconds: window.beginSeconds, durationSeconds: window.durationSeconds), path: path,
             role: .sender,
@@ -232,7 +207,6 @@ import ScreenSharingDiagnostics
         }
       }
       if options.mode != .send {
-        // Receiver-only diagnostic frame-delivery audit: allocated only when requested; nil means no work anywhere.
         let deliveryAudit = try options.deliveryAuditWindow.map { window in
           ScreenSharingFrameDeliveryAudit(
             window: try .init(beginSeconds: window.beginSeconds, durationSeconds: window.durationSeconds))
@@ -259,14 +233,12 @@ import ScreenSharingDiagnostics
         }
         self.receiver = receiver
         if let window = options.rtcEventLogWindow, let path = options.rtcEventLogPath {
-          // Bracket A only: the two synchronous shipped API calls through the peer's narrow boundary, timed on
-          // CACurrentMediaTime by the diagnostic itself; driven from the measurement ticks below.
           let log = ScreenSharingRtcEventLogDiagnostic(
             window: try .init(beginSeconds: window.beginSeconds, durationSeconds: window.durationSeconds), path: path,
             boundaries: .init(
               clock: { ScreenSharingRtcEventLogDiagnostic.defaultClock() },
               start: { path, maxSizeBytes in receiver.startRtcEventLog(path: path, maxSizeBytes: maxSizeBytes) },
-              stop: { receiver.stopRtcEventLog() }))  // Bool: true only when the native stop API ran
+              stop: { receiver.stopRtcEventLog() }))
           rtcEventLog = log
           receiverMetrics.label(
             "rtcEventLog",
@@ -338,7 +310,6 @@ import ScreenSharingDiagnostics
       switch options.mode {
       case .loopback:
         guard let sender, let receiver else { throw ScreenSharingError.invalid("Missing loopback peers.") }
-        // Exercise the product flow: the viewer initiates negotiation.
         try await sender.accept(receiver.makeDescription(offer: true))
         try await receiver.accept(sender.makeDescription(offer: false))
       case .send:
@@ -362,8 +333,6 @@ import ScreenSharingDiagnostics
       }
       if let sender {
         if options.captureOwnedWindow {
-          // One owned window, shown without activation; capture starts only
-          // after its first draw completed and it is confirmed visible.
           let capture = ScreenSharingCapture(
             queueDepth: options.captureQueueDepth, pixelFormat: options.capturePixelFormat,
             copySurface: options.copyCaptureSurface, captureIntervalFPS: options.captureIntervalFPS)
@@ -374,18 +343,14 @@ import ScreenSharingDiagnostics
             try await capture.stop()
           }
           ownedWorkload = workload
-          // show → first draw (cancellation-safe gate) → visible → capture start;
-          // any failure hides only this window once and surfaces the error.
           var beforeStart: [String: Any] = [:]
           var ready = try await workload.start(timeoutSeconds: 10) {
-            // Immediately before OUR capture.start call; the framework's own
-            // SCStream.start moment is not observable without shared changes.
             beforeStart = workload.observation("immediately before capture.start (probe call, not the framework start)")
             try await capture.start(
               ownedWindowID: workload.windowID, configuration: options.configuration,
               sink: sender.frameSender, metrics: senderMetrics)
           }
-          ready["observationBeforeCaptureStart"] = beforeStart  // also retained in workload.snapshots
+          ready["observationBeforeCaptureStart"] = beforeStart
           var afterStart = workload.observation("after capture.start returned")
           let startLabels = senderMetrics.snapshot().labels
           afterStart["sckSelectionAndStartLabels"] = Dictionary(

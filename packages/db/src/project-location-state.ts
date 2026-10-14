@@ -21,7 +21,6 @@ export const detectGitLocation = (folder: string): boolean => {
   }
 }
 
-/** One-time metadata migration. Navigation reads never probe the filesystem. */
 export const migrateProjectLocationState = (db: Database.Database): void => {
   const rows = db
     .prepare("select id, folder_path from project_locations where is_git_repository is null")

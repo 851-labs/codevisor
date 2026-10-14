@@ -2,19 +2,8 @@ import AppKit
 import ScreenSharing
 import CoreGraphics
 
-/// The diagnostic's one owned workload window, the only thing its
-/// ScreenCaptureKit stream may capture: exact backing-pixel size at the main
-/// display's top-left corner, normal level, never activated, never key, ignores
-/// input, no presentation-option or Space changes, never touches other windows.
-/// Its lifecycle is finite and recorded: show → ready (first draw completed)
-/// → capturing → optional animation pause (static content stays captured)
-/// → capture stopped → closed.
-/// The owned window can never become key or main, so showing it steals
-/// nothing from the console user's session.
 @MainActor
 package final class OwnedWorkloadWindow: NSWindow {
-  /// Off by default: the workload never takes focus on a desktop someone uses. A rig host on a virtual
-  /// display turns it on so injected key events can reach the workload's `keyDown`.
   package var acceptsKeys = false
   package override var canBecomeKey: Bool { acceptsKeys }
   package override var canBecomeMain: Bool { acceptsKeys }
@@ -30,15 +19,8 @@ package final class ProbeOwnedWorkloadWindow {
   package let recordDrawTimes: Bool
   private let gate = ScreenSharingFirstDrawGate()
   public private(set) var session: ScreenSharingOwnedWindowSession!
-  /// Bounded named snapshots: each label is stored once (overwritten if taken
-  /// again) as soon as it is taken, so pre-start facts survive a later throw.
   public private(set) var snapshots: [String: [String: Any]] = [:]
 
-  /// `stopCapture` stops the stream this window feeds; the session awaits it on
-  /// every path where the stream may have started before hiding the window.
-  /// `recordDrawTimes` is the explicit opt-in for the bounded first-draw-start
-  /// record (off by default; nothing is retained otherwise).
-  /// `screen` places the window on a specific display (for example a virtual one); the main display otherwise.
   package init(
     configuration: ScreenSharingVideoConfiguration, recordDrawTimes: Bool = false, screen: NSScreen? = nil,
     stopCapture: @escaping @MainActor () async throws -> Void
@@ -73,7 +55,6 @@ package final class ProbeOwnedWorkloadWindow {
     view.onFirstDraw = { gate.signal() }
     session = ScreenSharingOwnedWindowSession(
       show: {
-        // On screen without activating the app or taking key/main.
         window.orderFrontRegardless()
         view.start()
       },
@@ -87,12 +68,6 @@ package final class ProbeOwnedWorkloadWindow {
   package var windowID: UInt32 { UInt32(max(0, window.windowNumber)) }
   package var lifecycle: ScreenSharingOwnedWorkloadLifecycle { session.lifecycle }
 
-  /// Shows the window, waits for its first completed draw CALL — not a display
-  /// presentation — (deadline = deadlock guard; cancellation, timeout or
-  /// teardown resumes the wait once and blocks capture), confirms visibility,
-  /// then starts capture through `startCapture`. Any failure hides this window
-  /// once and rethrows; no lifecycle evidence is invented. Returns the
-  /// readiness record.
   package func start(timeoutSeconds: Double, startCapture: () async throws -> Void) async throws -> [String: Any] {
     var ready: [String: Any] = [:]
     try await session.start(
@@ -124,8 +99,6 @@ package final class ProbeOwnedWorkloadWindow {
     return ready
   }
 
-  /// Stops the animation and freezes the frame code; the window and its last
-  /// frame stay on screen and stay captured. Returns the boundary record.
   package func pauseAnimation() throws -> [String: Any] {
     try session.pauseWorkload { view.pause() }
     return [
@@ -139,25 +112,15 @@ package final class ProbeOwnedWorkloadWindow {
     ]
   }
 
-  /// Stops the stream through the session so success or failure is preserved.
   @discardableResult
   package func stopCapture() async -> Bool { await session.stopCapture() }
 
-  /// The single cleanup used on every exit path; hides only this window, once.
   @discardableResult
   package func cleanUp() -> ScreenSharingOwnedWorkloadLifecycle.CleanupOutcome {
-    // Resolve a still-pending readiness wait by teardown (not task cancellation).
     gate.teardown()
     return session.finish()
   }
 
-  /// One timestamped, read-only observation of the facts the missing-delivery
-  /// investigation needs. Nothing here prompts, activates, or changes state:
-  /// `CGPreflightScreenCaptureAccess()` is the GLOBAL non-prompting preflight
-  /// (false does not prove this owned-window filter must be refused); the CG
-  /// window record is restricted to this exact window number and pid; the
-  /// display predicates are for the window's own screen (unknown if none).
-  /// Coordinate conventions are kept raw and the single conversion is labelled.
   @discardableResult
   package func observation(_ label: String) -> [String: Any] {
     let record = takeObservation(label)
@@ -187,14 +150,13 @@ package final class ProbeOwnedWorkloadWindow {
     record["windowFrameTopLeftConverted"] = [converted.x, converted.y, converted.width, converted.height]
     record["windowFrameTopLeftConversion"] =
       "y' = mainDisplayHeight - (y + height) with CGDisplayBounds(CGMainDisplayID()).height = \(mainBounds.height)"
-    // Own-window CG record: exact window number AND pid, or an explicit non-result.
     let number = CGWindowID(max(0, window.windowNumber))
     var entries: [ScreenSharingOwnedWindowGeometry.WindowListEntry]?
     if let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], number) as? [[String: Any]] {
       entries = []
       for item in list {
         guard let itemNumber = item[kCGWindowNumber as String] as? UInt32 else { continue }
-        let owner = item[kCGWindowOwnerPID as String] as? Int32  // may be unreported
+        let owner = item[kCGWindowOwnerPID as String] as? Int32
         var bounds: ScreenSharingOwnedWindowGeometry.Rect?
         if let dictionary = item[kCGWindowBounds as String] as? [String: Double], let x = dictionary["X"],
           let y = dictionary["Y"], let width = dictionary["Width"], let height = dictionary["Height"]
@@ -225,7 +187,6 @@ package final class ProbeOwnedWorkloadWindow {
     case .ownerMismatch(let pid): record["cgWindowRecord"] = "owner mismatch: reported pid \(pid); fields not persisted"
     case .duplicate(let count): record["cgWindowRecord"] = "duplicate: \(count) entries; fields not persisted"
     }
-    // Display predicates for the window's own screen; a missing screen is unknown.
     if let screen = window.screen,
       let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     {
@@ -243,15 +204,6 @@ package final class ProbeOwnedWorkloadWindow {
     return record
   }
 
-  /// The owned workload's draw-timestamp report in the SAME schema as the
-  /// desktop workload report the image-age analyzer consumes (`drawSamples`
-  /// of `{code, startedAtSeconds}` + `drawSamplesTruncated`), plus the
-  /// owned-window facts. Nil unless recording was opted in.
-  /// `mediaMeasuredSeconds` is the probe's media measurement (its origin is the
-  /// media-ready boundary); the workload's own interval is computed here from
-  /// its start (`WorkloadView.start()` sets `startedAt` before scheduling the
-  /// first draw; the first draw start is recorded separately in the readiness
-  /// record) to now, so the two origins are never mixed.
   package func workloadTimesReport(mediaMeasuredSeconds: Double) -> [String: Any]? {
     guard recordDrawTimes else { return nil }
     let endedAt = CACurrentMediaTime()

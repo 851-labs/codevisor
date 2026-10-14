@@ -3,10 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The iOS accessory composition is touch-specific, while every source of
-/// truth and reusable surface remains shared with macOS. Keeping this in a
-/// child view also confines plan/fallback/stall Observation invalidations to
-/// the small bottom-chrome subtree instead of the virtual transcript host.
 struct IOSComposerAccessoryStack: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
@@ -50,8 +46,6 @@ struct IOSComposerAccessoryStack: View {
             glassNamespace: glassNamespace,
             maximumExpandedHeight: maximumTodoHeight
           )
-          // The content fades while `glassEffectTransition` owns
-          // the material morph inside the shared container.
           .transition(.opacity)
         }
 
@@ -61,9 +55,6 @@ struct IOSComposerAccessoryStack: View {
             goal: goal,
             glassNamespace: glassNamespace
           )
-          // Entering edit mode removes the old goal content
-          // immediately; its glass can still morph while the
-          // replacement composer chrome animates in.
           .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
 
@@ -88,8 +79,6 @@ struct IOSComposerAccessoryStack: View {
           .transition(.opacity)
         }
 
-        // The model was withdrawn: shown until the user picks another
-        // model or dismisses it.
         if let message = controller.modelUnavailableMessage {
           ComposerNoticeRail(
             message,
@@ -142,8 +131,6 @@ struct IOSComposerAccessoryStack: View {
       Motion.quick(reduceMotion: reduceMotion),
       value: controller.configurationAdjustmentMessage
     )
-    // A popover over the queue on iPad; compact width adapts it to the
-    // same half-height sheet as before.
     .popover(isPresented: $isPresentingQueue) {
       IOSPromptQueueSheet(controller: controller)
         .frame(idealWidth: 400, idealHeight: 480)

@@ -17,7 +17,6 @@ interface FakeWorld {
 }
 
 interface FakeOptions {
-  /// Keyed by "METHOD url" → responses returned in order (last repeats).
   readonly http?: Record<string, ReadonlyArray<{ status: number; body?: unknown } | undefined>>
   readonly confirmAnswer?: boolean
 }
@@ -100,7 +99,6 @@ describe("codevisor plugin install", () => {
     expect(output).toContain("id:      acme.git-diff")
     expect(output).toContain("about:   Live git diff viewer")
     expect(output).toContain("pane:    Git Diff (diff)")
-    // Declared agent tools appear in the consent output next to the commands.
     expect(output).toContain("tool:    diff_summary — Summarize the working tree diff")
     expect(output).toContain("Installing will run these commands on your machine:")
     expect(output).toContain("install: bun install")
@@ -110,7 +108,6 @@ describe("codevisor plugin install", () => {
   })
 
   it("aborts without installing when consent is declined", async () => {
-    // A nameless manifest falls back to the id in the prompt.
     const world = makeWorld({
       confirmAnswer: false,
       http: {
@@ -179,7 +176,6 @@ describe("codevisor plugin link", () => {
       http: {
         [LINK]: [
           { body: { id: "local.dev", version: "0.0.1" }, status: 201 },
-          // Older servers may omit the version; the output stays tidy.
           { body: { id: "local.dev" }, status: 201 }
         ]
       }

@@ -2,9 +2,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The native compose sheet stays live throughout its first-send expansion.
-/// Its controller is dismissed only after the message has landed and the
-/// canonical workspace can take over the same editor.
 @MainActor
 final class NewChatPresentationSession {
   private weak var presentedController: UIViewController?
@@ -29,19 +26,14 @@ final class NewChatPresentationSession {
     presentedController?.viewIfLoaded?.window
   }
 
-  /// The stable app window that also hosts Home's navigation stack.
   var presentingWindow: UIWindow? {
     presentedController?.presentingViewController?.viewIfLoaded?.window
   }
 
-  /// Where the promotion surface should live: the presenting window when
-  /// it resolves, else the sheet's own.
   var promotionHostWindow: UIWindow? {
     presentingWindow ?? presentationWindow
   }
 
-  /// The sheet's visible frame converted into an EXPLICIT window's
-  /// coordinate space (UIKit converts across windows via screen space).
   func visibleFrame(in window: UIWindow) -> CGRect? {
     guard let view = presentedController?.viewIfLoaded,
       !view.bounds.isEmpty
@@ -61,9 +53,6 @@ final class NewChatPresentationSession {
 
 }
 
-/// Resolves the real presentation controller from inside SwiftUI's `.sheet`.
-/// It does not present or alter anything, preserving the platform's native
-/// chrome, dimming, keyboard coordination, and drag gesture.
 @MainActor
 struct NewChatPresentationReader: UIViewControllerRepresentable {
   let onResolve: (NewChatPresentationSession) -> Void
@@ -146,9 +135,6 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
   }
 }
 
-/// Expands the actual sheet hierarchy in its existing window. No image of
-/// the transcript, composer, or backdrop is retained. Only the outgoing
-/// navigation title is briefly retained while its replacement fades in.
 @MainActor
 final class NewChatPromotionSurface {
   private weak var sourceWindow: UIWindow?
@@ -205,15 +191,8 @@ final class NewChatPromotionSurface {
     container.accessibilityViewIsModal = true
     sourceWindow.addSubview(container)
 
-    // Reparent within the same UIWindow so the text view's first-responder
-    // session and the live transcript survive. The sheet controller remains
-    // alive until the normal workspace has mounted behind this hierarchy.
     container.addSubview(view)
     view.transform = .identity
-    // Lay out once at the final window size. Resizing a hosting view while
-    // its keyboard safe area is changing briefly pushes the composer below
-    // the keyboard. Instead expand the clip around a stationary live view;
-    // opposite container/content offsets keep its window position fixed.
     view.autoresizingMask = []
     view.frame = sourceWindow.bounds.offsetBy(dx: -sourceFrame.minX, dy: -sourceFrame.minY)
     UIView.performWithoutAnimation {
@@ -260,8 +239,6 @@ final class NewChatPromotionSurface {
 
   @discardableResult
   func completeStableEditorHandoff() -> Bool {
-    // The editor stays visible inside the live composer during the flight.
-    // Its window portal exists only for the final structural replacement.
     _ = ComposerTextViewHandoffRegistry.beginStablePortalTransition(id: editorHandoffID)
     return ComposerTextViewHandoffRegistry.completeStablePortalHandoff(id: editorHandoffID)
   }

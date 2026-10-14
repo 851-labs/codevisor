@@ -22,9 +22,6 @@ const value = <T = unknown>(result: CallToolResult): T => {
   }
 }
 
-/// One Chrome for the whole file: managed Chrome is shared per project, so
-/// each test gets its own agent session and tab (the production model)
-/// instead of paying a cold browser start inside its own time budget.
 const projectId = "reliability"
 let provider: ReturnType<typeof makeBrowserUseProvider>
 let cdp: ReturnType<typeof observeCdp>
@@ -53,7 +50,6 @@ const server = createServer((request, response) => {
 })
 
 beforeAll(async () => {
-  // Installed before the browser exists so every connection and tab is observed.
   emulateBrowserFocus()
   cdp = observeCdp()
   directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
@@ -65,7 +61,6 @@ beforeAll(async () => {
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")
   origin = `http://127.0.0.1:${address.port}`
-  // Start Chrome here, under the hook budget, rather than inside a test.
   const warmup = { sessionId: "warmup", projectId }
   value(await provider.invoke(warmup, "use_backend", { backend: "managed" }))
   value(await provider.invoke(warmup, "tabs", { action: "list" }))
@@ -98,14 +93,11 @@ const it = baseIt.extend<{
     const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
     try {
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
-      // Establish the fixture document before testing tab reads. Page.navigate
-      // can return while the previous about:blank document is still interactive.
       await cell(
         `var first = await browser.tabs.new(); await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin)}), {waitUntil: 'domcontentloaded'})`
       )
       await use({ provider, context, origin, cell, cdp, slowResponse: slow.promise })
     } finally {
-      // Closes this session's tabs so the next test starts clean.
       await provider.closeSession(context.sessionId)
     }
   }
@@ -127,9 +119,6 @@ describe("Browser session reliability", () => {
     ).toBe("Shallow second")
   })
 
-  // Handle persistence, concurrent routing, and stale refs have controlled
-  // fixtures in browser-repl.test.ts and browser-tab-routing.test.ts. Keep the
-  // real Chrome assertion here for its accessibility tree and DOM integration.
   it("snapshots deeply nested controls without duplicate accessibility text", async ({
     browser: { cell }
   }) => {
@@ -220,8 +209,6 @@ describe("Browser session reliability", () => {
   })
 
   it("supports cross-origin frames", async ({ browser: { cell, origin } }) => {
-    // The load event includes the child frame's navigation and process swap.
-    // Reading immediately after Page.navigate can still see its blank document.
     await cell(
       `await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin + "/cross")}), {waitUntil: 'load'})`
     )

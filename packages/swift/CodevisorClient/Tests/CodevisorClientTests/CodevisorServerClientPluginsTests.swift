@@ -62,8 +62,6 @@ struct CodevisorServerClientPluginsTests {
         )
       ])
 
-    // Optional fields (manifest description, route-enriched pane count)
-    // stay optional for older servers.
     let bare = Data(
       """
       {"id":"a.b","name":"B","version":"1.0.0","panes":[],"source":"managed",
@@ -86,7 +84,6 @@ struct CodevisorServerClientPluginsTests {
     #expect(tokenResponse.path.hasPrefix("/v1/plugins/codevisor.git-diff/app/panes/diff/"))
     #expect(tokenResponse.url == "http://127.0.0.1:49871\(tokenResponse.path)")
 
-    // The absolute URL is route-layer enrichment; older servers omit it.
     let bareToken = Data(
       """
       {"token":"abc","path":"/v1/plugins/a.b/app/panes/main/?codevisorPaneToken=abc",
@@ -119,15 +116,11 @@ struct CodevisorServerClientPluginsTests {
     #expect(entry.repo == "acme/git-diff")
     #expect(entry.stars == 12)
     #expect(entry.tools?.first?.name == "diff_summary")
-    // Description/tools stay optional, exactly like installed summaries;
-    // `verified` is curation groundwork the indexer never sets yet.
     let bare = try #require(index.entries.last)
     #expect(bare.description == nil)
     #expect(bare.tools == nil)
     #expect(bare.verified == nil)
 
-    // Before the indexer's first poll, the cloud serves an honest empty
-    // index whose generatedAt is null.
     let empty = Data(#"{"generatedAt":null,"entries":[],"rejected":[]}"#.utf8)
     let emptyIndex = try JSONDecoder().decode(ServerPluginRegistryIndex.self, from: empty)
     #expect(emptyIndex.generatedAt == nil)
@@ -217,7 +210,6 @@ struct CodevisorServerClientPluginsTests {
     #expect(discovery.runCommand == "bun run start")
     #expect(discovery.alreadyInstalled)
     #expect(discovery.panes.count == 1)
-    // Declared agent tools decode (the opaque inputSchema is skipped).
     #expect(
       discovery.tools == [
         ServerPluginToolDescriptor(
@@ -226,8 +218,6 @@ struct CodevisorServerClientPluginsTests {
         )
       ])
 
-    // Zero-dependency plugins have no install command, description, or
-    // tools — all stay optional for older servers too.
     let bare = Data(
       """
       {"id":"a.b","name":"B","version":"1.0.0","panes":[],

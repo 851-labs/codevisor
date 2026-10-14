@@ -4,17 +4,6 @@ export const migrations50: ReadonlyArray<Migration> = [
   {
     id: 50,
     name: "archive belongs to the workspace",
-    // Archiving used to be three independent bits (project, workspace, chat)
-    // plus `archive_cascade_from` provenance to undo the cascades. The bits
-    // drifted from each other and from other clients, and a chat whose
-    // provenance was cleared by an unrelated write could never be restored.
-    //
-    // The workspace is now the only archivable thing. A chat is CLOSED, which
-    // means it has no `workspace_panes` row — state the server already owns and
-    // already ships to every client (including a fresh install) in
-    // `GET /v1/navigation`. Projects are deleted rather than archived.
-    //
-    // Existing intent is translated before the columns go, in this order.
     sql: `
       -- 1. An archived project archived everything under it. Push that down to
       --    the workspaces, which are now the unit that carries the state. Keep

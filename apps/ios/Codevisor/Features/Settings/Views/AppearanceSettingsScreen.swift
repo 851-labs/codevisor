@@ -5,8 +5,6 @@ import CodevisorUI
 import SwiftUI
 import os
 
-// MARK: - Appearance
-
 struct AppearanceSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
 

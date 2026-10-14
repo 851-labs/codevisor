@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import CodevisorCore
 
-/// The pane<->server-record mapping behind workspace sync: plugin panes ride
-/// a `plugin:`-prefixed provider without icon metadata; unknown providers
-/// still drop silently.
 @MainActor
 @Suite("WorkspaceSyncModel pane mapping")
 struct WorkspaceSyncPaneMappingTests {
@@ -31,8 +28,6 @@ struct WorkspaceSyncPaneMappingTests {
     let paneId = try #require(group.selectedPaneId)
     let tabId = workspace.selectedCenterTabId
     let leafId = workspace.centerTree.allGroups.first?.id
-    // A new workspace's first chat is created by /open using the session
-    // id. An existing draft is promoted with its already-published pane id.
     let record = ServerWorkspacePane(
       id: (promotedDraft ? paneId : sessionId).uuidString.lowercased(),
       workspaceId: workspace.id.uuidString.lowercased(), providerId: "codevisor",
@@ -58,8 +53,6 @@ struct WorkspaceSyncPaneMappingTests {
       id: id,
       kind: .plugin,
       name: "Git Diff",
-      // Plugin panes key on their own id (there is no PTY); the
-      // restored descriptor rebuilds exactly this.
       terminalKey: id.uuidString,
       pluginId: "codevisor.git-diff",
       pluginPaneType: "diff"
@@ -74,9 +67,6 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(record.resourceKind == nil)
     #expect(record.resourceId == nil)
 
-    // The server echoes the record verbatim; the descriptor it rebuilds
-    // must equal the one that was published (identical terminalKey is
-    // what makes the optimistic sync barrier acknowledge the echo).
     let restored = WorkspaceSyncModel.descriptor(from: record)
     #expect(restored == pane)
   }
@@ -110,9 +100,7 @@ struct WorkspaceSyncPaneMappingTests {
       )
     }
     #expect(WorkspaceSyncModel.descriptor(from: record(providerId: "somebody-else")) == nil)
-    // A bare "plugin:" carries no plugin identity.
     #expect(WorkspaceSyncModel.descriptor(from: record(providerId: "plugin:")) == nil)
-    // Unknown codevisor pane types remain forward-compatible drops.
     #expect(
       WorkspaceSyncModel.descriptor(
         from: record(providerId: "codevisor", paneType: "hologram")
@@ -136,8 +124,6 @@ struct WorkspaceSyncPaneMappingTests {
     let browser = WorkspaceSyncModel.descriptor(from: record(paneType: "browser", title: "Browser"))
     #expect(browser?.kind == .browser)
     #expect(browser?.id == id)
-    // The New Tab page is device-local. A row from a client that still
-    // publishes it means nothing here.
     #expect(WorkspaceSyncModel.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
   }
 
@@ -160,10 +146,8 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(user?.kind == .terminal)
     #expect(user?.terminalKey == "shell")
     #expect(WorkspaceSyncModel.descriptor(from: record("shell", metadata: nil))?.kind == .terminal)
-    // An older server may still list one until its cleanup runs.
     let agent = record("chat:bg:tool-1", metadata: #"{"attachOnly":true,"ownerChatSessionId":"\#(UUID())"}"#)
     #expect(WorkspaceSyncModel.descriptor(from: agent) == nil)
-    // Published terminals no longer carry any metadata.
     let pane = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "shell")
     let published = WorkspaceSyncModel.serverPane(
       from: pane, workspaceId: workspaceId, createdAt: Date(timeIntervalSince1970: 0))
@@ -181,8 +165,6 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(record.paneType == "review")
     #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
 
-    // A newer build may publish a mode this one doesn't know; the pane
-    // still renders rather than vanishing from the workspace.
     let future = ServerWorkspacePane(
       id: id.uuidString, workspaceId: workspaceId.uuidString, providerId: "codevisor",
       paneType: "review", title: "Review", metadata: #"{"mode":"sinceRelease","base":"v2"}"#,

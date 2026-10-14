@@ -11,7 +11,6 @@ struct UserSendAnimationCoordinatorTests {
 
     let firstClaim = coordinator.claim(request)
     #expect(firstClaim)
-    // A rebuilt transcript receives the same controller-owned request.
     let remountClaim = coordinator.claim(request)
     #expect(!remountClaim)
   }
@@ -21,7 +20,6 @@ struct UserSendAnimationCoordinatorTests {
     var coordinator = UserSendAnimationCoordinator()
     let request = coordinator.issue(for: UUID())
 
-    // There is deliberately no wall-clock expiry between issue and claim.
     let delayedClaim = coordinator.claim(request)
     #expect(delayedClaim)
   }

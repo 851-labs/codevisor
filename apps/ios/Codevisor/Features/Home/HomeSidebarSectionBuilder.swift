@@ -2,14 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import Foundation
 
-/// Turns Core's precomputed sidebar -- workspaces in display order, with
-/// superseded automatic workspaces removed and routing chats resolved -- into
-/// the sidebar's plain section values.
-///
-/// Every lookup is O(1): the order and routing come from
-/// `NavigationWorkspaces.sidebar`, each workspace from its own entry, and each
-/// chat from `ProjectListModel.session(_:serverId:)`. Reading an entry
-/// observes only that workspace.
 @MainActor
 struct HomeSidebarSectionBuilder {
   let environment: AppEnvironment
@@ -17,15 +9,11 @@ struct HomeSidebarSectionBuilder {
   func sections() -> [HomeSidebarSection] {
     let entries = environment.navigationStore.workspaceEntries
     let machines = environment.machines
-    // Machines this device knows about. Their cached workspaces show at
-    // launch; records from a machine that has since been removed do not.
     let knownMachineIDs = Set(machines.allMachines.map(\.id))
     return entries.sidebar.compactMap { item -> HomeSidebarSection? in
       guard knownMachineIDs.contains(item.serverId),
         let workspace = entries.entry(item.id).workspace, !workspace.isArchived
       else { return nil }
-      // The first routing chat that still exists anchors the workspace; a
-      // terminal-only workspace routes through a closed chat Core retained.
       let anchor = item.routingChatIds.first { session($0, serverId: item.serverId) != nil }
       let rows = rows(for: workspace)
       return HomeSidebarSection(
@@ -44,7 +32,6 @@ struct HomeSidebarSectionBuilder {
     environment.projectList.session(id, serverId: serverId)
   }
 
-  /// Navigable panes in the same order as the workspace's tab grid.
   private func rows(for workspace: Workspace) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
@@ -116,21 +103,16 @@ struct HomeSidebarSectionBuilder {
     case .newTab:
       .newTab
     case .subagent:
-      // Device-local to a Mac; iOS pushes subagents and never lists one.
       .newTab
     }
   }
 
-  /// Fallback SF symbol from the machine's cached capabilities, for
-  /// harnesses without a bundled brand icon.
   private func harnessSymbol(for session: ChatSession) -> String {
     environment.configCache.capabilities(forServer: session.serverId)
       .first { $0.harness.id == session.harnessId }?
       .harness.symbolName ?? "cpu"
   }
 
-  /// Classification follows the status-icon precedence (error → attention
-  /// → in progress → unread), the same order the macOS sidebar uses.
   private func status(for session: ChatSession) -> HomeSessionStatus {
     if session.hasUnreadError { return .error }
     if session.actionRequired || session.pendingPlanApproval { return .actionRequired }
@@ -139,8 +121,6 @@ struct HomeSidebarSectionBuilder {
     return .idle
   }
 
-  /// A terminal shows the chat indicator for what its program reports; any
-  /// other pane stays idle.
   private func status(forTerminal pane: PaneDescriptorState) -> HomeSessionStatus {
     switch pane.terminalAgentStatus {
     case .working: .inProgress

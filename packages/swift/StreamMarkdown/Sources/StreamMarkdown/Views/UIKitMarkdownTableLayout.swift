@@ -2,11 +2,6 @@
   import SwiftUI
   import UIKit
 
-  /// Prepare scalar geometry without constructing thousands of SwiftUI cell
-  /// trees. Repeated cell values share their attributed text and measurements.
-  // The worker owns all mutable builders. Only immutable attributed strings
-  // and numeric geometry cross back to the UI actor; no text views or shared
-  // layout managers are created here.
   final class UIKitMarkdownTableLayout: @unchecked Sendable {
     struct CellKey: Hashable {
       let text: MarkdownText

@@ -1,8 +1,5 @@
 import Foundation
 
-/// Focus follows selection and native attachment. A pane that is still
-/// loading parks its request until attachment, without polling or holding
-/// up navigation. Every attempt rechecks the current destination.
 @MainActor
 public final class DeferredPaneFocus {
   public typealias Schedule = (@escaping @MainActor () -> Void) -> Void
@@ -21,8 +18,6 @@ public final class DeferredPaneFocus {
     self.schedule = schedule
   }
 
-  /// Returning false from `focus` means the native target has not attached
-  /// yet. Its attachment callback calls `retry`; no timer keeps it alive.
   public func request(isCurrent: @escaping () -> Bool, focus: @escaping () -> Bool) {
     generation &+= 1
     pending = Request(generation: generation, isCurrent: isCurrent, focus: focus)

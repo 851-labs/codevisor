@@ -3,8 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Project settings act on the project, not on one machine's checkout: one
-/// choice reaches every machine that has it.
 @MainActor
 @Suite("Project settings across machines")
 struct ProjectSettingsFleetTests {
@@ -33,12 +31,10 @@ struct ProjectSettingsFleetTests {
     let model = fixture.projectList
     let group = try #require(model.fleetActiveProjectGroups.first)
     #expect(group.members.count == 3)
-    // The project's one base branch is the one that was chosen.
     #expect(group.worktreeBase == develop)
 
     model.setWorktreeBase(release, for: group)
 
-    // Shown at once, before any machine has it.
     #expect(model.fleetActiveProjectGroups.first?.worktreeBase == release)
     let localClient = FakeServerClient(projects: [serverProject(from: local)])
     fixture.connect(localClient, machineId: "local")
@@ -46,8 +42,6 @@ struct ProjectSettingsFleetTests {
     #expect(
       await localClient.snapshot().worktreeBaseUpdates
         == [FakeWorktreeBaseUpdate(projectId: local.id.uuidString, worktreeBase: release)])
-    // The offline machine keeps the change until it reconnects; the folder
-    // that isn't a repository has no base branch to set.
     let waiting = fixture.store.pendingIntents.filter {
       guard $0.state == .pending, case .setProjectWorktreeBase = $0.intent else { return false }
       return true

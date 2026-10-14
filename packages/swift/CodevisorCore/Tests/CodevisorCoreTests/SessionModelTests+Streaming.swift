@@ -134,7 +134,6 @@ extension SessionModelTests {
     }
     #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Echo: hello server"))
     #expect(assistant.turn.stopReason == .endTurn)
-    // A clean completion carries no reason — the transcript stays quiet.
     #expect(assistant.turn.stopDetail == nil)
   }
 
@@ -199,8 +198,6 @@ extension SessionModelTests {
       ))
     await settleUntil { model.queuedPrompts.count == 1 }
 
-    // Claiming removes the item from the visible queue immediately before
-    // the server materializes that same id as a user transcript message.
     client.emit(
       ServerEventEnvelope(
         id: 2,
@@ -228,8 +225,6 @@ extension SessionModelTests {
     #expect(promotedMessageIDs == [queueItemId])
     #expect(userMessages(model).last?.id == queueItemId)
 
-    // Explicit deletion creates the same queue diff, but a later remote
-    // row has a different id and therefore must not look like a promotion.
     client.emit(
       ServerEventEnvelope(
         id: 4,
@@ -286,8 +281,6 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    // The harness re-triggered itself off a finished background task: an
-    // agent-initiated turn starts and adopts the server item identity.
     let agentItemId = UUID()
     model.apply(.assistantItemStarted(agentItemId))
     model.apply(
@@ -300,12 +293,8 @@ extension SessionModelTests {
         )))
     #expect(model.isSending)
 
-    // A user message interleaves before the turn's terminal event —
-    // it settles the still-generating agent bubble mid-transcript.
     model.apply(.userMessage(id: UUID().uuidString, text: "and another thing", attachments: []))
 
-    // The agent turn's terminal event routes to its (now settled) bubble
-    // by identity instead of closing whatever happens to be active.
     model.apply(
       .finished(.endTurn, stopDetail: nil, chatItemId: agentItemId))
 
@@ -319,10 +308,8 @@ extension SessionModelTests {
     }
     #expect(agentMessage.turn.isGenerating == false)
     #expect(agentMessage.turn.stopReason == .endTurn)
-    // The user's follow-up turn is still live: the session stays busy.
     #expect(model.isSending)
 
-    // The follow-up's own terminal event clears the session busy state.
     model.apply(
       .update(
         .agentMessageChunk(

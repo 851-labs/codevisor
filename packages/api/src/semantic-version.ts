@@ -8,8 +8,6 @@ export interface SemanticVersion {
 const CORE_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/
 
-/// Parses strict SemVer 2.0.0. A leading `v`, missing core component, or a
-/// numeric prerelease identifier with a leading zero is invalid.
 export const parseSemanticVersion = (value: string): SemanticVersion | undefined => {
   if (value !== value.trim()) return undefined
   const parts = value.split("+")
@@ -49,7 +47,6 @@ export const parseSemanticVersion = (value: string): SemanticVersion | undefined
 export const isSemanticVersion = (value: string): boolean =>
   parseSemanticVersion(value) !== undefined
 
-/// Compares two valid semantic versions. Build metadata has no precedence.
 export const compareSemanticVersions = (left: string, right: string): number => {
   const parsedLeft = parseSemanticVersion(left)
   const parsedRight = parseSemanticVersion(right)

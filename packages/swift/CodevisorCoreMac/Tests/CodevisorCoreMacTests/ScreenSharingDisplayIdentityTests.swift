@@ -23,7 +23,6 @@ struct ScreenSharingDisplayIdentityTests {
 
   @Test("A renumbered display is found by its hardware identity, never the host's virtual display")
   func renumbered() {
-    // The Mac Studio case: 188 came back as 190 after the virtual display came and went.
     let online = [
       Self.online(191, Self.virtual, virtual: true),
       Self.online(190, Self.studioDisplay, main: true),
@@ -35,7 +34,6 @@ struct ScreenSharingDisplayIdentityTests {
   @Test("Displays that can't be told apart fall back to the only physical one, then the main one")
   func indistinguishable() {
     let dummy = ScreenSharingDisplayIdentity(vendor: 0, model: 0, serial: 0)
-    // A headless Mac's dummy display reports no identity at all.
     #expect(
       ScreenSharingDisplayIdentity.follow(188, identity: dummy, online: [Self.online(190, dummy, main: true)]) == 190)
     let twins = [Self.online(190, dummy), Self.online(191, dummy, main: true)]
@@ -49,8 +47,6 @@ struct ScreenSharingDisplayIdentityTests {
     #expect(ScreenSharingDisplayIdentity.follow(188, identity: Self.studioDisplay, online: onlyVirtual) == nil)
   }
 
-  /// tuftlord, alpha 1118: a late display-change notification from the host's own virtual display
-  /// ended a session 3 s in. A change that leaves the shared and virtual displays online doesn't.
   @Test("A display change that keeps both displays online doesn't end the session")
   func survivesOwnChange() {
     let online = [Self.online(1, Self.studioDisplay, main: true), Self.online(129, Self.virtual, virtual: true)]

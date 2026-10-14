@@ -8,7 +8,6 @@ import Foundation
   import AppKit
 #endif
 
-/// Owns provider authentication sheets and returns all account UI to the app.
 @MainActor
 public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
   private var webSession: ASWebAuthenticationSession?
@@ -97,8 +96,6 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
     }
   }
 
-  // AuthenticationServices can call back on a background queue. Keep the SDK
-  // callback nonisolated and move all authentication state access to the main actor.
   nonisolated static func webAuthenticationCompletion(
     _ completion: @escaping @MainActor @Sendable (URL?, (any Error)?) -> Void
   ) -> ASWebAuthenticationSession.CompletionHandler {
@@ -129,7 +126,6 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
     #if os(iOS)
       let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
       if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) { return keyWindow }
-      // Sign-in always starts from on-screen UI, so a window scene exists; prefer the active one.
       guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
         preconditionFailure("Sign-in was requested with no connected window scene to present from")
       }

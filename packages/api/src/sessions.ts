@@ -14,11 +14,8 @@ import {
 import { WorkspacePosition } from "./workspace-position.js"
 
 export const SessionUsage = Schema.Struct({
-  /** Tokens currently occupying the model's context window. */
   used: Schema.optional(Schema.Number),
-  /** Total model context-window size. */
   size: Schema.optional(Schema.Number),
-  /** Cumulative token accounting for the whole harness session. */
   inputTokens: Schema.optional(Schema.Number),
   cachedInputTokens: Schema.optional(Schema.Number),
   outputTokens: Schema.optional(Schema.Number),
@@ -26,7 +23,6 @@ export const SessionUsage = Schema.Struct({
   totalTokens: Schema.optional(Schema.Number),
   costAmount: Schema.optional(Schema.Number),
   costCurrency: Schema.optional(Schema.String),
-  /** Whether the harness reported the amount or Codevisor estimated it. */
   costKind: Schema.optional(Schema.Literals(["reported", "estimated"]))
 })
 export type SessionUsage = typeof SessionUsage.Type
@@ -47,7 +43,6 @@ export const HarnessUsageCredits = Schema.Struct({
 })
 export type HarnessUsageCredits = typeof HarnessUsageCredits.Type
 
-/** Account-level subscription limits for the harness account bound to a session. */
 export const HarnessUsageLimits = Schema.Struct({
   state: Schema.Literals(["available", "unavailable"]),
   harnessId: Schema.String,
@@ -68,10 +63,6 @@ export const BranchDiffTotals = Schema.Struct({
 })
 export type BranchDiffTotals = typeof BranchDiffTotals.Type
 
-/** The mutually exclusive state rendered by native session sidebars. The
- *  ordering priority is a presentation concern; this value records only what
- *  the row currently shows so repeated events inside one state do not refresh
- *  its ordering timestamp. */
 export const SessionSidebarState = Schema.Literals([
   "idle",
   "inProgress",
@@ -91,41 +82,22 @@ export const SessionSummary = Schema.Struct({
   title: Schema.String,
   origin: SessionOrigin,
   worktreeName: Schema.optional(Schema.String),
-  /// The client-assigned pane workspace; absent for pre-workspace sessions.
   workspaceId: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
-  /// The user's picks for this chat (clients paint the composer from them
-  /// while the harness validates), and the saved picks the runtime no longer
-  /// offers: kept saved, recorded by restore, cleared by picking that option.
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   unavailableConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
-  /** Native-sidebar state and when it was entered; optional for old servers. */
   sidebarState: Schema.optional(SessionSidebarState),
   sidebarStateChangedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage),
-  /** Monotonic server-owned attention revision: every settled turn advances
-   * it by one. Unread = revision ahead of `lastSeenAttentionSequence`.
-   * Optional for compatibility with servers that predate durable
-   * cross-device read state. */
   latestAttentionSequence: Schema.optional(Schema.Number),
-  /** The latest attention revision read by the owner on any device. Clients
-   * advance it when the chat is the focused pane (macOS) or the foregrounded
-   * screen (iOS) — there is no per-row read receipt. */
   lastSeenAttentionSequence: Schema.optional(Schema.Number),
   unreadCount: Schema.optional(Schema.Number),
-  /** The last settled turn errored and has not been acknowledged. Ranks in
-   * the action-required tier (sidebarState `errored`) but clears on read —
-   * it is the urgent flavor of unread, not a lock. */
   hasUnreadError: Schema.optional(Schema.Boolean),
-  /** Intrinsic blocking state (question/plan approval); reading the session
-   * does not clear it. */
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
-  /** Durable form of Codex's synthetic post-plan approval prompt. */
   pendingPlanApproval: Schema.optional(Schema.Boolean),
-  /** The session that created this one (an orchestrating agent). */
   parentSessionId: Schema.optional(Schema.String),
   labels: Schema.optional(Labels)
 })
@@ -137,8 +109,6 @@ export type ConversationRole = typeof ConversationRole.Type
 export const AttachmentKind = Schema.Literals(["image", "file"])
 export type AttachmentKind = typeof AttachmentKind.Type
 
-/// A reference to an immutable file (`POST /v1/files`) carried by either side
-/// of the conversation; bytes are fetched via `GET /v1/files/:id`.
 export const AttachmentRef = Schema.Struct({
   fileId: Schema.String,
   name: Schema.String,
@@ -148,10 +118,6 @@ export const AttachmentRef = Schema.Struct({
 })
 export type AttachmentRef = typeof AttachmentRef.Type
 
-/** Durable semantic replacement for the assistant's terminal Markdown. The
- * server emits it immediately before turn completion after promoting local
- * artifact links into immutable files. Clients that do not know this update
- * safely ignore it and still receive the ordinary assistant stream. */
 export const AssistantMessageFinalizedPayload = Schema.Struct({
   sessionUpdate: Schema.Literal("assistant_message_finalized"),
   markdown: Schema.String,
@@ -182,9 +148,6 @@ export const ConversationItem = Schema.Struct({
 })
 export type ConversationItem = typeof ConversationItem.Type
 
-/// A lightweight, stable row in the session transcript. Historical worked
-/// details deliberately do not ride this payload; clients fetch those only
-/// when the disclosure is opened.
 export const TranscriptBodyResource = Schema.Struct({
   itemId: Schema.String,
   entryKey: Schema.String,
@@ -216,25 +179,13 @@ export const TranscriptItem = Schema.Struct({
   endedAt: Schema.optional(Schema.String),
   stopReason: Schema.optional(Schema.String),
   stopDetail: Schema.optional(Schema.String),
-  /** Machine-readable end classification (see TurnStopKind); absent means
-   * unclassified. */
   stopKind: Schema.optional(TurnStopKind),
   retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
-  /** When the latest plan document was proposed: the end of the turn's
-   * planning "Worked for…" section. */
   planProposedAt: Schema.optional(Schema.String),
-  /** When the user answered the proposed plan and the same turn resumed
-   * working: the start of the "Worked for…" section below the plan. */
   planResumedAt: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
-  /** Provider message id of the still-streaming answer candidate. Present only
-   * while an assistant item is generating, so a client restoring mid-stream
-   * can give the snapshot text the same identity live deltas use and merge
-   * them into one span instead of splitting the message in two. */
   messageId: Schema.optional(Schema.String),
-  /** Provider-asserted finality of the answer candidate. Absent means the
-   * candidate is optimistic and must not settle the worked section yet. */
   phase: Schema.optional(MessagePhase),
   textResource: Schema.optional(TranscriptBodyResource),
   planResource: Schema.optional(TranscriptBodyResource),
@@ -245,10 +196,6 @@ export const TranscriptItem = Schema.Struct({
 })
 export type TranscriptItem = typeof TranscriptItem.Type
 
-/// Reverse-paginated transcript page. `items` are always oldest-to-newest for
-/// direct display; `nextBefore` is opaque to clients.
-/// The update gate a session is held behind: the harness whose update is in
-/// progress, or the server itself ("codevisor-server") during a restart drain.
 export const SessionUpdateGate = Schema.Struct({
   harnessId: Schema.String,
   harnessName: Schema.String
@@ -264,31 +211,17 @@ export const TranscriptPage = Schema.Struct({
   eventCursor: Schema.Number,
   stateUpdates: Schema.Array(Schema.Unknown),
   setupActivities: Schema.Array(Schema.Unknown),
-  /** Current blocking question, snapshotted at the same revision as
-   * `eventCursor` so a reconnect cannot skip the event that created it. */
   pendingQuestion: Schema.optional(QuestionPayload),
-  /** Always emitted by current servers. Optional in the decoder so clients
-   * can still open sessions hosted by a pre-attention-state server. */
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
-  /** Latest durable goal snapshot at the same revision as `eventCursor`. */
   goal: Schema.optional(SessionGoal),
   skills: Schema.optional(SessionSkills),
-  /** Latest full todo/checklist snapshot at the same revision as
-   * `eventCursor`. Completed plans remain durable; clients decide whether the
-   * pinned checklist is useful enough to show. */
   sessionPlan: Schema.optional(SessionPlan),
-  /** Durable usage snapshot at the same revision as the transcript. */
   usage: Schema.optional(SessionUsage),
-  /** The gate holding this session's prompts while its harness or the
-   * server itself updates, at the same revision as `eventCursor`. Absent when
-   * nothing is held — a reconnecting client clears its marker from this. */
   updateGate: Schema.optional(SessionUpdateGate)
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
-/// A bounded page of persisted semantic entries. These are current entity
-/// states, not provider event history. Large bodies have separate references.
 export const TranscriptItemDetails = Schema.Struct({
   itemId: Schema.String,
   revision: Schema.Number,
@@ -334,8 +267,6 @@ export const SessionDetail = Schema.Struct({
   promptQueue: Schema.Array(PromptQueueItem),
   eventCursor: Schema.Number,
   pendingQuestion: Schema.optional(QuestionPayload),
-  /** Always emitted by current servers; optional only for rolling-upgrade
-   * compatibility with servers that predate durable plan approval. */
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   goal: Schema.optional(SessionGoal),
@@ -351,19 +282,13 @@ export const CreateSessionRequest = Schema.Struct({
   harnessId: Schema.String,
   harnessAccountId: Schema.optional(Schema.String),
   agentSessionId: Schema.optional(Schema.String),
-  /// Create only the Codevisor session row. The server starts and persists the
-  /// agent session on the first prompt/config/goal action.
   deferAgentSession: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
   worktreeName: Schema.optional(Schema.String),
-  /// Create the session already belonging to a pane workspace.
   workspaceId: Schema.optional(Schema.String),
   parentSessionId: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
-  /// The chat's starting picks (config id → value), saved as its own and
-  /// used to start its agent. Omitted, a chat with a parent running the same
-  /// harness starts on the parent's picks.
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
@@ -374,55 +299,26 @@ export const UpdateSessionRequest = Schema.Struct({
   sidebarOrderHead: Schema.optional(WorkspacePosition),
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
-  /// Native snapshot sync may fill a placeholder, but only Rename owns the title.
-  /// Omitted preserves the legacy PATCH behavior for older clients.
   titleIntent: Schema.optional(Schema.Literals(["fallback", "rename"])),
   worktreeName: Schema.optional(Schema.String),
-  /// Move the session to another project before its agent starts. Used when a
-  /// scratch workspace locks in its real project on the first send; the server
-  /// rejects the move once an agent session exists (the cwd is already bound).
   projectId: Schema.optional(Schema.String),
-  /// Assign an existing session to its server-owned pane workspace. Native
-  /// clients create chats before their first connection, so this must be
-  /// accepted on update as well as create.
   workspaceId: Schema.optional(Schema.String),
-  /// Sessions created EAGERLY (before the composer chose a harness) carry
-  /// harnessId "" — the first send patches the real choice here so the
-  /// deferred agent starts under the right harness/account.
   harnessId: Schema.optional(Schema.String),
   harnessAccountId: Schema.optional(Schema.String),
-  labels: Schema.optional(Labels), // replaces; {} clears
-  /// Explicit activity stamp, sent only when a turn finishes; plain metadata
-  /// updates must omit it so recency ordering ignores opens/renames.
+  labels: Schema.optional(Labels),
   updatedAt: Schema.optional(Schema.String)
 })
 export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 
 export const MarkSessionReadRequest = Schema.Struct({
-  /** Advance through exactly the state the client rendered. Required so a
-   * delayed request can never consume attention created after the view closed. */
   throughSequence: Schema.Number
 })
 export type MarkSessionReadRequest = typeof MarkSessionReadRequest.Type
 
-/// One-round-trip chat open: ensure the project and session records exist and
-/// return the first transcript page together. Replaces the discrete
-/// listProjects → createProject → listSessions → create/update → transcript
-/// sequence, whose 3–4 serial round-trips delayed the first transcript paint
-/// on every chat open (whole seconds over high-latency remote links).
 export const OpenSessionRequest = Schema.Struct({
-  /// Create-if-missing. An existing project is deliberately never updated
-  /// from this snapshot: it was taken when the client's draft was created,
-  /// and pushing it on open could revert changes made in the meantime
-  /// (e.g. un-archiving an archived project).
   project: Schema.optional(CreateProjectRequest),
-  /// Used only when the session does not exist yet. Its `id`, when present,
-  /// must match the id in the path.
   session: CreateSessionRequest,
-  /// Applied when the session already exists — the same fields the discrete
-  /// PATCH used to send while opening.
   update: Schema.optional(UpdateSessionRequest),
-  /// First transcript page size (same default as GET …/transcript).
   transcriptLimit: Schema.optional(Schema.Number)
 })
 export type OpenSessionRequest = typeof OpenSessionRequest.Type
@@ -438,12 +334,7 @@ export const PromptRequest = Schema.Struct({
   text: Schema.String,
   clientActionId: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
-  /// The client's id for its optimistic user message. It becomes the queue
-  /// item id — and therefore the `messageId` on the user echo event — so
-  /// clients can reconcile the echo with the optimistic append by IDENTITY
-  /// instead of content matching.
   messageId: Schema.optional(Schema.String),
-  /// The sending window's client-control id (the turn's origin client).
   clientId: Schema.optional(Schema.String)
 })
 export type PromptRequest = typeof PromptRequest.Type
@@ -470,9 +361,6 @@ export const CancelRequest = Schema.Struct({
 })
 export type CancelRequest = typeof CancelRequest.Type
 
-/// Partial goal update mirroring codex `thread/goal/set` semantics: omitted
-/// fields keep their current value. `tokenBudget` is a double-option — omit
-/// to keep, `null` to clear the budget, a positive number to set it.
 export const SetGoalRequest = Schema.Struct({
   objective: Schema.optional(Schema.String),
   status: Schema.optional(GoalStatus),
@@ -481,8 +369,6 @@ export const SetGoalRequest = Schema.Struct({
 })
 export type SetGoalRequest = typeof SetGoalRequest.Type
 
-/// Answers (or dismisses) a blocking agent question. `answers` is keyed by
-/// the per-question id from the QuestionPayload; omitted for `cancelled`.
 export const SetQuestionAnswerRequest = Schema.Struct({
   outcome: Schema.Literals(["answered", "cancelled"]),
   answers: Schema.optional(Schema.Record(Schema.String, QuestionAnswerEntry)),

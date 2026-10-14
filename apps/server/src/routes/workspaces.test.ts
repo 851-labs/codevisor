@@ -247,11 +247,8 @@ describe("workspace routes", () => {
       "/v1/workspaces/workspace-panes/panes/pane-1/close",
       { method: "POST" }
     )
-    // Closing the last pane leaves the workspace empty: no placeholder row is
-    // written for it, clients render their own New Tab page.
     expect(finalClose).toEqual({ status: 200, body: {} })
     expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([])
-    // Retrying a close of a deleted pane is a no-op.
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1/close", {
@@ -313,8 +310,6 @@ describe("workspace routes", () => {
       isArchived: false
     })
 
-    // A body id matching the path is allowed; the second PUT updates in place
-    // and publishes the same workspace.updated kind as the create.
     const replayBeforePut = listEvents(services)
     const livePut = readSseEvents(server, 1, replayBeforePut.at(-1)?.id ?? 0)
     const renamed = await jsonRequest(server, "/v1/workspaces/workspace-1", {
@@ -346,7 +341,6 @@ describe("workspace routes", () => {
       { id: "workspace-1", name: "Renamed" }
     ])
 
-    // Sessions can be created directly into a workspace.
     const session = (
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
@@ -359,7 +353,6 @@ describe("workspace routes", () => {
     ).body as { readonly id: string; readonly workspaceId?: string }
     expect(session.workspaceId).toBe("workspace-1")
 
-    // A body id that disagrees with the path is rejected before any write.
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/workspace-1", {
@@ -374,7 +367,6 @@ describe("workspace routes", () => {
       ).status
     ).toBe(400)
 
-    // Missing rows surface exactly like the project routes' database errors.
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/workspace-2", {
@@ -383,16 +375,10 @@ describe("workspace routes", () => {
         })
       ).status
     ).toBe(500)
-    // Deleting something already gone is a completed no-op, so an outbox
-    // retry stops instead of failing forever.
     expect((await jsonRequest(server, "/v1/workspaces/missing", { method: "DELETE" })).status).toBe(
       204
     )
 
-    // A workspace that still owns chats detaches them first, so the delete
-    // succeeds instead of raising a foreign-key error after its worktree has
-    // already been reclaimed. `sessions.workspace_id` has no ON DELETE clause,
-    // so without that detach this is a 500 with the files already gone.
     await jsonRequest(server, "/v1/workspaces/occupied", {
       body: JSON.stringify({ projectId: project.id, name: "Occupied", hasCustomName: false }),
       method: "PUT"
@@ -415,7 +401,6 @@ describe("workspace routes", () => {
       (await run(services.db.listSessions)).find((candidate) => candidate.id === occupant.id)
         ?.workspaceId
     ).toBeUndefined()
-    // A sessionless workspace deletes explicitly — the plain route path.
     await jsonRequest(server, "/v1/workspaces/solo", {
       body: JSON.stringify({ projectId: project.id, name: "Solo", hasCustomName: false }),
       method: "PUT"
@@ -424,8 +409,6 @@ describe("workspace routes", () => {
       204
     )
 
-    // Deleting the workspace's LAST session cascades: the workspace is
-    // removed and announced without a separate DELETE call.
     const replayBeforeDelete = listEvents(services)
     const liveDelete = readSseEvents(server, 2, replayBeforeDelete.at(-1)?.id ?? 0)
     await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })
@@ -437,8 +420,6 @@ describe("workspace routes", () => {
         payload: { id: "workspace-1" }
       })
     ])
-    // The cascade already removed the row; an explicit DELETE is then a
-    // completed no-op, like any other delete of a missing workspace.
     expect(
       (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
     ).toBe(204)
@@ -453,7 +434,6 @@ describe("workspace routes", () => {
       ])
     )
 
-    // Unmatched workspace methods fall through to the 404 handler.
     expect((await jsonRequest(server, "/v1/workspaces", { method: "PATCH" })).status).toBe(404)
   })
 })

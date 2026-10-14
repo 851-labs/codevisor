@@ -1,5 +1,3 @@
-// The AppKit/TextKit rendering layer. iOS uses the matching UIKit/TextKit
-// implementation in `SelectableTextView+UIKit.swift`.
 #if canImport(AppKit)
   import AppKit
   import QuickLookUI
@@ -27,11 +25,6 @@
     private var pendingServerFileLinkClick: PendingServerFileLinkClick?
     private(set) var hoveredLinkRange: NSRange?
 
-    /// `NSTextView` normally claims the shared Quick Look panel so it can
-    /// preview its own selected content. Transcript links are presented by
-    /// the host's SwiftUI preview controller instead; declining here lets
-    /// that controller remain the panel's data source after a link click
-    /// makes this text view first responder.
     public override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
       false
     }
@@ -44,13 +37,6 @@
 
     public override func updateTrackingAreas() {
       super.updateTrackingAreas()
-      // Install the hover tracking area ONLY when there is a link to hover.
-      // AppKit calls this after every layout/scroll pass for every mounted
-      // text view; unconditionally removing and re-adding an area forced a
-      // structural tracking-region rebuild per view per scroll tick, and a
-      // `.mouseMoved` area on link-free text ran a TextKit hit test at
-      // pointer-move rate for nothing. The area uses `.inVisibleRect`, so
-      // once installed it needs no per-layout refresh at all.
       if textStorageContainsLinks {
         guard linkHoverTrackingArea == nil else { return }
         let area = NSTrackingArea(
@@ -68,10 +54,6 @@
       }
     }
 
-    /// Whether the current content has any `.link` run. Early-exits at the
-    /// first link; link-free text (the vast majority of a transcript) costs
-    /// one bounded attribute-run walk, far cheaper than the tracking-region
-    /// rebuild it replaces.
     private var textStorageContainsLinks: Bool {
       guard let textStorage, textStorage.length > 0 else { return false }
       var found = false
@@ -131,9 +113,6 @@
 
       super.nativeMouseDown(with: event)
 
-      // NSTextView usually tracks the entire drag inside mouseDown. Keep the
-      // mouseDragged/mouseUp overrides below as well for OS versions that
-      // dispatch the tracking events through NSResponder instead.
       correctVisualLineEndSelection(at: currentMouseLocation)
       if NSEvent.pressedMouseButtons & 1 == 0 {
         finishMouseSelectionRepaint()
@@ -173,10 +152,6 @@
         stillSelecting: stillSelectingFlag
       )
 
-      // NSTextView updates the selection repeatedly inside its mouse-down
-      // tracking loop. Clean up each portion as soon as it leaves the live
-      // selection; waiting for mouse-up makes the stale antialiased edge
-      // pixels visible for the rest of the gesture.
       for range in removedRanges {
         repaintRemovedSelection(range, immediately: true)
       }
@@ -186,8 +161,6 @@
       let didResign = super.resignFirstResponder()
       guard didResign else { return false }
 
-      // Keep the selected text available for copying until focus actually
-      // moves, then collapse the range to its trailing edge.
       let selection = selectedRange()
       if selection.length > 0 {
         setSelectedRange(NSRange(location: NSMaxRange(selection), length: 0))
@@ -196,9 +169,6 @@
       return true
     }
 
-    /// Underlines only the link directly beneath the pointer. A temporary
-    /// layout attribute keeps the source Markdown and its measured geometry
-    /// unchanged while still repainting immediately as the pointer moves.
     func updateLinkHover(at point: NSPoint?) {
       let nextRange = point.flatMap(linkRange(at:))
       guard nextRange != hoveredLinkRange else { return }
@@ -223,8 +193,6 @@
       linkHit(at: viewPoint)?.range
     }
 
-    /// Glyph-precise: the transcript-wide selection only yields to native
-    /// handling when the pointer is actually over link glyphs.
     public override func transcriptLinkHitTest(at point: NSPoint) -> Bool {
       linkHit(at: point) != nil
     }
@@ -239,9 +207,6 @@
       let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
       guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
 
-      // TextKit clamps points in surrounding whitespace to the nearest
-      // glyph. Require the pointer to be inside the glyph's actual bounds so
-      // a link does not remain underlined beyond its visible text.
       let glyphRect = layoutManager.boundingRect(
         forGlyphRange: NSRange(location: glyphIndex, length: 1),
         in: textContainer
@@ -327,11 +292,6 @@
       repaintRemovedSelection(dirtyRange)
     }
 
-    /// TextKit invalidates the exact selection geometry when a range changes.
-    /// In a transparent layer-backed text view, antialiased edge pixels can
-    /// land just outside those rectangles and survive as one-pixel blue lines.
-    /// Repaint only the old selection rects with a small margin, once after
-    /// AppKit has finished updating its temporary selection attributes.
     private func repaintRemovedSelection(
       _ characterRange: NSRange,
       immediately: Bool = false
@@ -373,13 +333,6 @@
       }
     }
 
-    /// TextKit's drag tracker resolves points past the visual end of a line to
-    /// its rightmost insertion point. In an LTR paragraph containing an RTL
-    /// run, that point can be the RTL boundary in the middle of the logical
-    /// string. `characterIndexForInsertion(at:)` does the right thing for a
-    /// click, but multiline drag tracking does not. When the pointer is truly
-    /// outside a different line from the anchor, use that line's logical
-    /// boundary instead. Points inside the glyphs retain native bidi behavior.
     func logicalBoundaryOutsideVisualLine(at viewPoint: NSPoint, anchor: Int) -> Int? {
       guard let layoutManager, let textContainer,
         layoutManager.numberOfGlyphs > 0
@@ -393,8 +346,6 @@
         forGlyphAt: min(glyph, layoutManager.numberOfGlyphs - 1),
         effectiveRange: &lineGlyphRange
       )
-      // `glyphIndex(for:in:)` clamps points above or below the text to the
-      // nearest line. Never turn that clamped result into a selection jump.
       guard point.y >= usedRect.minY, point.y <= usedRect.maxY else { return nil }
       let lineCharacters = layoutManager.characterRange(
         forGlyphRange: lineGlyphRange, actualGlyphRange: nil
@@ -413,10 +364,6 @@
     }
   }
 
-  /// Tracks the full span painted by one mouse-selection gesture. The range can
-  /// grow across the transcript and then shrink all the way back to its anchor,
-  /// so comparing only the selection before and after mouseDown misses every
-  /// rectangle that was selected in between.
   struct SelectionRepaintTracker {
     private var paintedRange: NSRange?
     private var currentRange = NSRange(location: 0, length: 0)
@@ -446,9 +393,6 @@
   }
 
   extension NSRange {
-    /// Returns the portions of this range that are not covered by `other`.
-    /// Selection ranges are contiguous, so removing their intersection can
-    /// yield at most one prefix and one suffix.
     fileprivate func removingIntersection(with other: NSRange) -> [NSRange] {
       guard length > 0 else { return [] }
       let intersection = NSIntersectionRange(self, other)

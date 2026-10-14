@@ -24,10 +24,6 @@ import {
   type EventFanout
 } from "../server-context.js"
 
-/// Pane webview traffic: `ANY /v1/plugins/:pluginId/app/*`. Routed BEFORE
-/// bearer authorization — webview subresource loads cannot carry the machine
-/// token (and the cloud relay strips Authorization), so the proxy
-/// authenticates with per-pane tokens and scoped cookies instead.
 export const routePluginProxy = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -40,8 +36,6 @@ export const routePluginProxy = async (
   return services.plugins.handleProxyRequest(request, response, url)
 }
 
-/// The workspace pane records rendering this plugin, across all workspaces.
-/// Pane records carry the plugin as `providerId: "plugin:<pluginId>"`.
 const listPluginPanes = async (
   services: CodevisorServerServices,
   pluginId: string
@@ -52,9 +46,6 @@ const listPluginPanes = async (
   )
 }
 
-/// Plugin summaries leave the manager without database knowledge; the route
-/// layer adds how many open pane records point at each plugin so clients can
-/// warn before an uninstall closes them.
 const withOpenPaneCount = async (
   services: CodevisorServerServices,
   summary: PluginSummary
@@ -63,9 +54,6 @@ const withOpenPaneCount = async (
   openPaneCount: (await listPluginPanes(services, summary.id)).length
 })
 
-/// Uninstalling a plugin orphans its pane records — clients would show dead
-/// tabs forever. Delete each record and publish the same events the pane
-/// close flow does, so every connected client closes those tabs.
 const deletePluginPanes = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -80,9 +68,6 @@ const deletePluginPanes = async (
   }
 }
 
-/// Management routes (list, detail, pane-token issue, install pipeline).
-/// These sit behind the normal bearer authorization like every other /v1
-/// route.
 export const routePlugins = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -94,9 +79,6 @@ export const routePlugins = async (
     return false
   }
 
-  // Registry passthrough: the machine (not the client) talks to the hosted
-  // index, so apps browse plugins with no cloud connectivity of their own.
-  // Independent of the runtime manager — handled before its 501 gate.
   if (url.pathname === "/v1/plugins/registry" && request.method === "GET") {
     const registry = services.pluginRegistry
     if (registry === undefined) {
@@ -141,7 +123,6 @@ export const routePlugins = async (
     const imported = await manager.importRemote(
       await readSchema(request, ImportRemotePluginRequestSchema)
     )
-    // The plugin's code changed on disk: tell clients to reload open panes.
     await appendAndPublish(services.db, fanout, "plugin.updated", imported.id, imported)
     writeJson(response, 201, imported)
     return true
@@ -149,7 +130,6 @@ export const routePlugins = async (
 
   if (url.pathname === "/v1/plugins/link" && request.method === "POST") {
     const linked = await manager.link(await readSchema(request, LinkPluginRequestSchema))
-    // Re-linking a dev checkout is the "I changed the code" gesture too.
     await appendAndPublish(services.db, fanout, "plugin.updated", linked.id, linked)
     writeJson(response, 201, linked)
     return true
@@ -158,22 +138,19 @@ export const routePlugins = async (
   const tokenRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneId/token")
   if (tokenRoute !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PluginPaneTokenRequestSchema)
-    /* v8 ignore next 5 -- both pattern captures are guaranteed by the matched route. */
+    /* v8 ignore next 5 */
     const issued = await manager.issuePaneToken(
       tokenRoute.pluginId ?? "",
       tokenRoute.paneId ?? "",
       payload
     )
-    // The manager only knows server-relative paths; the route layer knows the
-    // origin the caller actually reached (Host header), so it adds the
-    // absolute URL browser tooling can open directly.
     writeJson(response, 201, { ...issued, url: `${url.origin}${issued.path}` })
     return true
   }
 
   const paneIconRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneType/icon")
   if (paneIconRoute !== undefined && request.method === "GET") {
-    /* v8 ignore next 2 -- both captures exist when the route matches. */
+    /* v8 ignore next 2 */
     const icon = await manager.fetchIcon(paneIconRoute.pluginId ?? "", paneIconRoute.paneType ?? "")
     response.writeHead(200, {
       "Cache-Control": "private, max-age=300",
@@ -204,22 +181,19 @@ export const routePlugins = async (
       ...(payload.cwd === undefined ? {} : { cwd: payload.cwd }),
       ...(payload.workspaceId === undefined ? {} : { workspaceId: payload.workspaceId })
     }
-    /* v8 ignore next 2 -- both pattern captures are guaranteed by the matched route. */
+    /* v8 ignore next 2 */
     const result = await manager.invokeTool(
       toolRoute.pluginId ?? "",
       toolRoute.toolName ?? "",
       args,
       context
     )
-    // The tool's own response body, verbatim — plugins define their shapes.
     writeJson(response, 200, result)
     return true
   }
 
   const unlinkId = matchRoute(url.pathname, "/v1/plugins/:pluginId/link")
   if (unlinkId !== undefined && request.method === "DELETE") {
-    // Same pane cleanup as an uninstall: the plugin stops resolving either
-    // way, so its panes must not be left pointing at nothing.
     const summary = await manager.get(unlinkId)
     await deletePluginPanes(services, fanout, summary.id)
     writeJson(response, 200, await manager.unlink(unlinkId))
@@ -229,9 +203,6 @@ export const routePlugins = async (
   const restartId = matchRoute(url.pathname, "/v1/plugins/:pluginId/restart")
   if (restartId !== undefined && request.method === "POST") {
     const restarted = await manager.restart(restartId)
-    // Restart is the manual "pick up my changes" action; open panes reload.
-    // Runtime state transitions stay separate because crash recovery should
-    // not reload a healthy webview unless the user explicitly restarts it.
     await appendAndPublish(services.db, fanout, "plugin.updated", restarted.id, restarted)
     writeJson(response, 200, restarted)
     return true
@@ -275,7 +246,6 @@ export const routePlugins = async (
     return true
   }
   if (pluginId !== undefined && request.method === "DELETE") {
-    // Ensure the plugin exists (404s propagate) before touching pane records.
     const summary = await manager.get(pluginId)
     await deletePluginPanes(services, fanout, summary.id)
     writeJson(response, 200, await manager.remove(pluginId))

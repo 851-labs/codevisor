@@ -3,13 +3,6 @@
   import ScreenSharing
   import ScreenSharingRigKit
 
-  /// `screen-sharing-rig vnc-sample`: measures a real VNC server (851-2322),
-  /// where `vnc-bench` measures the reference server. It connects the product's
-  /// `RFBClient` (continuous updates, fences, Tight) and, while whatever runs on
-  /// the desktop changes it, reports updates/s, Mbit/s and the round trip. With
-  /// `--keys N` it then types N keys (alternately "x" and BackSpace, so a focused
-  /// terminal's line stays clean) and times each from send to the next update
-  /// that carries pixels: the keystroke-to-screen latency a user feels.
   enum VNCSampleCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-sample --host H --port P [--password P | --keychain MACHINE]
@@ -108,7 +101,6 @@
         run.cancel()
         client.close()
       }
-      // The first full frame isn't part of the steady state.
       await log.firstUpdate()
       if let size = options.desktopSize, size.count == 2 {
         try await client.send(
@@ -124,7 +116,7 @@
       var missed = 0
       for index in 0..<options.keys {
         let keysym: UInt32 = index.isMultiple(of: 2) ? 0x78 : RFBKeysym.backSpace
-        try await Task.sleep(for: options.keyGap)  // let the previous echo settle
+        try await Task.sleep(for: options.keyGap)
         let sent = ContinuousClock.now
         let echo = log.armEcho(after: sent)
         try await client.send(.keyEvent(keysym: keysym, down: true))
@@ -146,8 +138,6 @@
         "bytesPerUpdate": passive.updates > 0 ? passive.bytes / passive.updates : 0,
         "encodings": passive.encodings.map { "\($0.key):\($0.value)" }.sorted().joined(separator: " "),
         "latencyP50Ms": rounded(VNCBenchStatistics.percentile(passive.latencies, 0.5)),
-        // Per stage: request → first byte (round trip + the server's own time), then the
-        // network's share of reading the update, then the rest of applying it (decode).
         "serverWaitP50Ms": rounded(VNCBenchStatistics.percentile(passive.serverWaits, 0.5)),
         "serverWaitP95Ms": rounded(VNCBenchStatistics.percentile(passive.serverWaits, 0.95)),
         "transferP50Ms": rounded(VNCBenchStatistics.percentile(passive.linkWaits, 0.5)),
@@ -169,7 +159,6 @@
     }
   }
 
-  /// What the read loop saw, behind a lock (it runs on the client's actor).
   private final class SampleLog: @unchecked Sendable {
     struct Snapshot {
       var updates = 0
@@ -230,7 +219,6 @@
           first = firstWaiter
           firstWaiter = nil
         }
-        // Only an update with pixels can be the keystroke's echo.
         let armed = update.rectangles.isEmpty ? nil : echo
         if armed != nil { echo = nil }
         return (first, armed)
@@ -264,7 +252,6 @@
     }
   }
 
-  /// One keystroke's wait for its echo; resolves once, by an update or the timeout.
   private final class Echo: @unchecked Sendable {
     private let lock = NSLock()
     private let sent: ContinuousClock.Instant

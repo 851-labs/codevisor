@@ -5,8 +5,6 @@ import StreamMarkdown
 import TranscriptKit
 import UIKit
 
-/// Owns the native row window independently of a SwiftUI navigation lifetime.
-/// The container controller can go away while these measured views remain.
 @MainActor
 @Observable
 final class TranscriptPresentationSurface {
@@ -35,8 +33,6 @@ final class TranscriptPresentationSurface {
     let controller = TranscriptViewController()
     retainedController = controller
     controller.onInitialPresentationReady = { [weak self, weak controller] in
-      // UIKit can reveal from inside a SwiftUI update. Publish the loading
-      // state after that transaction, and ignore a discarded surface's work.
       Task { @MainActor [weak self, weak controller] in
         guard let self, let controller, self.retainedController === controller else { return }
         self.hasPresentedContent = true
@@ -72,7 +68,6 @@ final class TranscriptPresentationSurfaceCache {
   struct Key: Hashable {
     let paneID: UUID
     let isNewChat: Bool
-    /// Each iPad window mounts its own transcript for the same chat.
     let windowID: UUID
   }
 

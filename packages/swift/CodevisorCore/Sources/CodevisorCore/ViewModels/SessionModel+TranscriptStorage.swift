@@ -2,11 +2,6 @@ import Foundation
 import ACPKit
 
 extension SessionModel {
-  // MARK: - Settled/active storage
-
-  /// Moves the active bubble into the settled list. Called only at bubble
-  /// boundaries, so `settledConversation` (and the boundary-guarded
-  /// `hasActiveItem`) never change on a token flush.
   func settleActiveItem() {
     guard let item = activeItem else { return }
     appendSettled(item)
@@ -26,26 +21,17 @@ extension SessionModel {
     )
   }
 
-  /// Starts a fresh generating assistant bubble as the active item.
   func startActiveBubble(startedAt: Date? = nil) {
     stopConnectionRecovery()
-    // A new turn (user- or agent-initiated) clears any lingering session-
-    // level error banner so it can't outlive the failure it described —
-    // including a stale one replayed from history on reconnect.
     errorMessage = nil
     harnessAuthenticationErrorMessage = nil
     activeItem = .assistant(
       AssistantMessage(
-        // Waiting for the first provider event is not itself reasoning.
-        // Explicit thought chunks flip this to true in TranscriptReducer.
         turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: startedAt ?? now())
       ))
     if !hasActiveItem { hasActiveItem = true }
   }
 
-  /// Reconciles the optimistic/live bubble with the canonical semantic item
-  /// created by the server for this turn. Tool ownership is re-keyed too so
-  /// late background updates continue routing into the same settled bubble.
   func adoptActiveAssistantItemIdentity(_ id: UUID) {
     guard case let .assistant(message) = activeItem, message.id != id else { return }
     let previousId = message.id
@@ -58,12 +44,7 @@ extension SessionModel {
     }
   }
 
-  /// Replaces conversation state wholesale (history load, previews). The
-  /// trailing assistant bubble stays active so live streaming resumes into
-  /// the same storage slot the transcript's active row renders.
   func setConversation(_ items: [ConversationItem]) {
-    // A canonical snapshot supersedes any locally inferred echo state.
-    // Events after its cursor carry enough identity to reconcile normally.
     pendingOptimisticUserMessageIDs.removeAll()
     let items =
       items
@@ -82,10 +63,6 @@ extension SessionModel {
     rebuildSettledIndex()
   }
 
-  /// Live-only turn state the server never stores — where the model reasoned
-  /// between tool calls, and when the user sent it — carried onto a server
-  /// copy of the same turn, so its worked timeline doesn't regroup and its
-  /// timer doesn't jump the moment the turn settles.
   func carryingLiveTurnState(_ incoming: ConversationItem) -> ConversationItem {
     guard case var .assistant(message) = incoming else { return incoming }
     let current: AssistantMessage? =
@@ -104,9 +81,6 @@ extension SessionModel {
       message.turn.callsAfterReasoning.formUnion(current.turn.callsAfterReasoning)
       carried = true
     }
-    // A turn is timed from its send; the server stamps it only once the
-    // harness starts it. The earlier start keeps the timer from jumping
-    // back when the server's copy lands.
     if let localStart = current.turn.startedAt, message.turn.startedAt.map({ localStart < $0 }) ?? true {
       message.turn.startedAt = localStart
       carried = true
@@ -114,11 +88,6 @@ extension SessionModel {
     return carried ? .assistant(message) : incoming
   }
 
-  /// A snapshot taken before the provider reported the turn started carries
-  /// no `startedAt` for the running turn. Adopting that nil resets an elapsed
-  /// timer that is already counting correctly, so a value we already hold for
-  /// the SAME item wins over the server's absence. Identity must match: a
-  /// different turn's start time would be a fabricated elapsed duration.
   private func preservingLocalTurnStart(_ incoming: ConversationItem?) -> ConversationItem? {
     guard case let .assistant(incomingMessage)? = incoming,
       incomingMessage.turn.startedAt == nil,
@@ -131,8 +100,6 @@ extension SessionModel {
     return .assistant(message)
   }
 
-  /// Read/replace by display index (settled items first, then the active
-  /// bubble) — the addressing `owningItemIndex` hands back.
   func item(at index: Int) -> ConversationItem? {
     if index < settledConversation.count { return settledConversation[index] }
     if index == settledConversation.count { return activeItem }
@@ -148,8 +115,6 @@ extension SessionModel {
     }
   }
 
-  /// Reuses hydrated details before publishing a replacement history page,
-  /// so the UI never projects a deferred loading row for cached content.
   func restoringCachedTranscriptDetails(_ item: ConversationItem) -> ConversationItem {
     guard case let .assistant(message) = item,
       let itemId = message.turn.deferredDetailItemId,
@@ -163,7 +128,6 @@ extension SessionModel {
     settledConversation.count + (activeItem == nil ? 0 : 1)
   }
 
-  /// Seeds conversation state for previews. Not for production use.
   public func applyPreviewState(conversation: [ConversationItem], isSending: Bool, usage: SessionUsage? = nil) {
     setConversation(conversation)
     self.isSending = isSending

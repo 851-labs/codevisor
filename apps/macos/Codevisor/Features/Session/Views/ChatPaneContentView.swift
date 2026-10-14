@@ -1,19 +1,11 @@
 import CodevisorCore
 import SwiftUI
 
-/// A chat pane's content: the referenced session's chat, or (for a
-/// draft) the in-pane new-chat composer that creates the session and
-/// binds it to the pane on first send. Multi-chat workspaces resolve
-/// each pane's controller independently.
 struct ChatPaneContentView: View {
   let descriptor: PaneDescriptorState
   let group: PaneGroupModel?
   let focus: TerminalFocusController
-  /// The container's anchor chat, when it has one. Nil for a workspace that
-  /// has never hosted a chat: identity below comes from `hostWorkspace`.
   let session: ChatSession?
-  /// The workspace hosting this pane — its server identity and id, which exist
-  /// with or without a chat.
   let hostWorkspace: Workspace
   let project: Project
   let store: SessionStore
@@ -27,10 +19,6 @@ struct ChatPaneContentView: View {
         })
       {
         if isUnstarted(chatSession) {
-          // An eagerly created chat that hasn't had its first
-          // message: still the new-chat composer (harness choice
-          // and all) — the session record just already exists for
-          // the sidebar. First send fills it in.
           NewChatView(
             store: store,
             selection: .constant(nil),
@@ -73,15 +61,9 @@ struct ChatPaneContentView: View {
           .onChange(of: chatProject) { _, updatedProject in
             store.reconcile(controller, for: chatSession, project: updatedProject)
           }
-          // Keep this as the final visual modifier so the hover
-          // overlay sits above the transcript and floating composer,
-          // while remaining scoped to this chat pane.
           .attachmentDropTarget(controller)
         }
       } else {
-        // The referenced session was deleted (e.g. from another
-        // device). Offer a fresh start in place instead of a
-        // dead end.
         VStack(spacing: 12) {
           Text("This chat no longer exists")
             .foregroundStyle(.secondary)
@@ -98,8 +80,6 @@ struct ChatPaneContentView: View {
         initialProjectTarget: NewChatTarget(project),
         paneDraftId: descriptor.id,
         onCreatedInPane: { created in
-          // Bind through the pane's OWNING group (the draft may
-          // live in any split leaf, not just the primary).
           (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
             .assignChatSession(
               paneId: descriptor.id,
@@ -112,15 +92,10 @@ struct ChatPaneContentView: View {
     }
   }
 
-  /// Whether an established chat should use the centered New Chat treatment.
-  /// First-send setup transitions into the transcript immediately; a failed
-  /// setup explicitly returns here without deleting the session or workspace.
   private func isUnstarted(_ chatSession: ChatSession) -> Bool {
     guard let live = store.activeController(for: chatSession) else {
       return !chatSession.hasAgentSession
     }
-    // Capability preparation may finish before the first send, but only an
-    // accepted send moves the pane into the transcript.
     if live.shouldShowNewChatComposer { return true }
     if live.hasAcceptedFirstSend { return false }
     guard !chatSession.hasAgentSession else { return false }

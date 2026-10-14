@@ -1,6 +1,6 @@
 import { listProcessIdentities, processTree, sameProcess, stopProcesses } from "./index.mjs"
 
-/** Drop argv and detach strings, including for injected process readers.
+/**
  * @param {import('./index.mjs').ProcessIdentity} entry
  * @returns {import('./index.mjs').ProcessIdentity}
  */
@@ -12,7 +12,7 @@ const identity = (entry) => ({
   state: Buffer.from(entry.state).toString()
 })
 
-/** Keep the initial full table out of the long-lived tracker's closure.
+/**
  * @param {number} pid
  * @param {import('./index.mjs').ProcessIdentity[]} table
  * @param {boolean} detached
@@ -38,15 +38,11 @@ const initialState = (pid, table, detached) => {
 
 const POLL_MS = 250
 
-/** Keep identities while a child runs so cleanup can still find descendants
- * after their parent exits. Dedicated groups also retain orphaned shells.
- * Polling ends on its own once nothing is left to follow, so a tree whose
- * owner never calls `stop` or `dispose` does not poll `ps` forever.
+/**
  * @param {number} pid
  * @param {{detached?: boolean, list?: (options?: import('./index.mjs').ListOptions) => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses}} [options]
  */
 export async function trackProcessTree(pid, options = {}) {
-  // Every running chat and terminal polls; share each listing between them.
   const list = options.list ?? listProcessIdentities
   const stop = options.stop ?? stopProcesses
   const { owner, known, group } = initialState(pid, await list(), options.detached ?? false)
@@ -63,13 +59,9 @@ export async function trackProcessTree(pid, options = {}) {
       ).map((entry) => entry.pid)
     )
     const root = table.find((entry) => entry.pid === pid)
-    // A dedicated group survives its leader, but must never attach to a new
-    // owner after the group disappears or its leader's PID is reused.
     trackGroup &&=
       (root === undefined || root.startedAt === owner?.startedAt) &&
       table.some((entry) => entry.pgid === pid && !entry.state.startsWith("Z"))
-    // Discover surviving descendants before pruning dead identities. This
-    // preserves reparented children without accumulating every exited command.
     known.clear()
     for (const entry of table) {
       if (
@@ -85,8 +77,6 @@ export async function trackProcessTree(pid, options = {}) {
   let timer
   /** @returns {void} */
   const schedule = () => {
-    // With no live identities and no group claim, no later snapshot can add
-    // one: everything this tree owned has exited.
     if (disposed || (known.size === 0 && !trackGroup)) return
     timer = setTimeout(() => {
       polling = capture({ maxAgeMs: POLL_MS })
@@ -123,9 +113,7 @@ export async function trackProcessTree(pid, options = {}) {
   }
 }
 
-/** Stop a tracked tree when its root child exits. The first snapshot can take
- * long enough on a busy machine that the child already exited (and emitted
- * `exit`) before the tracker existed; that tree is stopped right away.
+/**
  * @param {Pick<import('node:child_process').ChildProcess, 'exitCode' | 'signalCode' | 'once'>} child
  * @param {{stop: () => Promise<void>}} tree
  */

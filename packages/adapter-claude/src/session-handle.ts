@@ -26,20 +26,13 @@ import {
   finishActiveTurn
 } from "./turn-lifecycle.js"
 
-/// Bounded wait for Claude to produce its normal terminal result after an
-/// interrupt before the session is force-ended and retired.
 const CANCEL_GRACE_MS = 1_500
 
-/// Session-handle wiring extracted from makeClaudeProvider as a factory (the
-/// makeSkillsOperations pattern).
 export const makeClaudeSessionHandle = () => {
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
       if (session.cancelInFlight !== undefined) return session.cancelInFlight
       const cancellation = (async (): Promise<CancelResult> => {
-        // Slash commands (notably /goal) can be queued before Claude emits
-        // the first observable message. Materialize their user turn so
-        // cancellation has a durable lifecycle to settle.
         if (!session.turnActive && session.pendingUserCommands > 0) {
           await ensureObservedTurnStarted(session)
         }
@@ -53,14 +46,10 @@ export const makeClaudeSessionHandle = () => {
         }
 
         session.interruptRequested = true
-        // A held question was cancelled above so it cannot block the SDK from
-        // processing the interrupt.
         let timeout: ReturnType<typeof setTimeout> | undefined
         const timedOut = new Promise<"timeout">((resolvePromise) => {
           timeout = setTimeout(() => resolvePromise("timeout"), CANCEL_GRACE_MS)
         })
-        // Acknowledgement is not completion. Keep waiting for the captured
-        // terminal event; an interrupt rejection forces recovery immediately.
         const interruptFailed = Promise.resolve()
           .then(() => session.q.interrupt())
           .then(
@@ -76,9 +65,6 @@ export const makeClaudeSessionHandle = () => {
         if (timeout !== undefined) clearTimeout(timeout)
         await questionsCancelled
 
-        // The SDK result may have won a same-tick race after the timeout
-        // callback fired. It is reusable only while the iterator itself
-        // remains alive; a closed stream cannot accept another prompt.
         if (
           outcome !== "interruptFailed" &&
           (outcome === "settled" || !session.turnActive || session.turnId !== capturedTurnId) &&
@@ -88,9 +74,6 @@ export const makeClaudeSessionHandle = () => {
           return { runtimeState: "reusable" }
         }
 
-        // No terminal result arrived. Locally finish and persist the turn
-        // before closing the poisoned query; retired sessions ignore late SDK
-        // messages, preventing an observed/phantom follow-up turn.
         session.retired = true
         failDeferredPrompts(session, new Error("Claude runtime was retired"))
         if (session.backgroundTasks.size > 0) {
@@ -136,12 +119,6 @@ export const makeClaudeSessionHandle = () => {
           throw new Error("Claude runtime was retired")
         }
         const pending = deferred<{ stopReason: string }>()
-        // A turn is already running (typically an agent-initiated
-        // task-notification follow-up that the dispatcher raced). Binding
-        // `pendingPrompt` now would let that turn's terminal event resolve
-        // this prompt before it ever ran, and pushing the message now would
-        // fold it into the live turn. Defer instead: `finishActiveTurn`
-        // dispatches it as its own user-initiated turn.
         if (session.turnActive) {
           session.deferredPrompts.push({ input, pending })
           return pending.promise
@@ -162,20 +139,14 @@ export const makeClaudeSessionHandle = () => {
           const model = resolveRequestedClaudeModel(session, value)
           await session.q.setModel(model)
           session.currentModel = model
-          // Effort validity depends on the model; reset rather than carry an
-          // unsupported level over.
           if (!effortLevelsFor(session).includes(session.currentEffort)) {
             session.currentEffort = "default"
           }
-          // Same for speed: switch fast mode off rather than carry it to a
-          // model that doesn't support it.
           if (session.currentSpeed === "fast" && !supportsFastMode(session)) {
             await session.q.applyFlagSettings({ fastMode: false })
             session.currentSpeed = "standard"
           }
         } else if (configId === "effort") {
-          // Cast: the CLI accepts "max" but the SDK Settings type doesn't
-          // list it yet.
           await session.q.applyFlagSettings({
             effortLevel: value === "default" ? null : value
           } as Parameters<Query["applyFlagSettings"]>[0])
@@ -210,10 +181,6 @@ export const makeClaudeSessionHandle = () => {
       }),
     answerQuestion: (questionId, answer) =>
       adapterPromise("answerQuestion", () => answerClaudeQuestion(session, questionId, answer)),
-    // Claude Code's goal mode has no SDK API yet — it's driven by the CLI's
-    // `/goal` slash command, which the SDK forwards like any prompt. The
-    // snapshots Codevisor emits are therefore client-side bookkeeping (no token
-    // accounting); the CLI's own reply narrates the goal state in the chat.
     setGoal: (update) =>
       adapterPromise("setGoal", async () => {
         if (update.objective !== undefined) {

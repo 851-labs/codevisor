@@ -12,7 +12,5 @@ if [[ ! -f "$source_icon" ]]; then
   exit 1
 fi
 
-# The ICNS is Xcode/Icon Composer's final output, so the website receives the
-# exact same lighting, glass, shadow, background, and artwork sizing as the app.
 sips -s format png "$source_icon" --out "$destination" >/dev/null
 print "Updated $destination from $source_icon"

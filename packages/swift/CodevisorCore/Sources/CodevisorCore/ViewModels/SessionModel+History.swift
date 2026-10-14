@@ -14,35 +14,18 @@ extension SessionModel {
     try await transport.transcriptBodyPage(resource: resource, field: field, position: position)
   }
 
-  // MARK: - History
-
-  /// Loads the server's conversation snapshot and begins live streaming from
-  /// its event cursor. A `preloaded` page (fetched by the combined open
-  /// call) skips the transcript round-trip entirely; the consumer still
-  /// resumes from the page's own event cursor, so nothing between the
-  /// page's snapshot and "now" is skipped.
-  ///
-  /// Initial navigation only needs the transcript page to paint. Queue state
-  /// is auxiliary composer chrome, so fetch it after streaming has started
-  /// without extending selection-to-transcript latency.
   func loadHistoryForInitialDisplay(preloaded: TranscriptHistoryPage? = nil) async {
     surfaceHistoryLoadFailure(
       await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: true)
     )
   }
 
-  /// Installs the server's fresh page over a cached one shown while the chat
-  /// opened. Items are matched by id, so what is on screen updates in place
-  /// rather than reloading.
   func loadHistoryReplacingCachedDisplay(preloaded: TranscriptHistoryPage?) async {
     surfaceHistoryLoadFailure(
       await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: true, preservingContent: true)
     )
   }
 
-  /// One non-presenting snapshot attempt for connection recovery. The
-  /// recovery loop owns retry timing and decides when a failure becomes
-  /// user-visible; ordinary history loads keep their immediate error UI.
   func loadHistoryForConnectionRecovery() async -> SessionHistoryLoadOutcome {
     await loadHistoryOnce(preloaded: nil, defersPromptQueue: false, preservingContent: true)
   }
@@ -63,12 +46,6 @@ extension SessionModel {
       }
       usesPaginatedHistory = true
       if appliedStateIsCurrent(through: page.eventCursor) {
-        // Everything this snapshot describes has already been applied
-        // from the live stream (and possibly more). Installing it would
-        // rewind the visible turn to an older prefix and then replay the
-        // difference — the transcript "shrinks and re-types" — for no
-        // information gain. Keep the applied state and just make sure the
-        // stream is running from where it left off.
         Log.session.notice(
           "Skipped a history snapshot at cursor \(page.eventCursor, privacy: .public); live stream already applied through \(String(describing: self.serverEventCursor), privacy: .public)"
         )
@@ -100,7 +77,6 @@ extension SessionModel {
         }
       }
       try Task.checkCancellation()
-      // Keep already loaded older pages (and their pagination cursor).
       let prefix =
         preservingContent
         ? page.conversation.first.flatMap { first in
@@ -134,15 +110,9 @@ extension SessionModel {
       }
       pendingQuestion = page.pendingQuestion
       pendingPlanApproval = page.pendingPlanApproval
-      // The page is authoritative for the update gate: a `waiting` event
-      // whose `released` this client never received (the server restarted
-      // in between) must not keep the chat marked as held.
       updateGateHarnessName = page.updateGateHarnessName
       if let tasks = page.backgroundTasks { backgroundTasks = tasks }
       goal = page.goal
-      // The page and cursor form one durable session snapshot. Seed the
-      // latest full checklist before subscribing after that cursor so a
-      // plan event can never be skipped on reopen or another device.
       sessionPlan = page.sessionPlan
       isSending = lastTurnIsGenerating
       if isSending { noteProviderActivity() }
@@ -157,22 +127,11 @@ extension SessionModel {
       }
       return .loaded
     } catch {
-      // A cancelled load is the view going away (pane re-hosted, tab
-      // switched), not a failure — the remounted view reloads history
-      // itself. Surfacing it painted "cancelled" errors into every chat
-      // whenever the workspace layout churned during a reload.
       return historyLoadOutcome(for: error)
     }
 
   }
 
-  /// Whether the live stream has already carried this model strictly past a
-  /// snapshot taken at `cursor`. True only for a model that has applied
-  /// live events (its resume cursor is set) and whose cursor is beyond the
-  /// snapshot's. A fresh model, a legacy stream, or a snapshot at or after
-  /// the applied cursor all still load normally — an equal-cursor snapshot
-  /// carries the same text, and it is also how a server-side repair that
-  /// produced no event (a stuck row marked finished) reaches the client.
   func appliedStateIsCurrent(through cursor: Int) -> Bool {
     guard let applied = serverEventCursor,
       applied < ServerSessionTransport.liveOnlyEventCursor,
@@ -197,8 +156,6 @@ extension SessionModel {
         retryable = false
       }
     } else {
-      // Transport failures (including cloud relay channel loss) are
-      // transient unless the server supplied a terminal HTTP response.
       retryable = true
     }
     return .failed(message: serverErrorMessage(error), retryable: retryable)
@@ -223,8 +180,6 @@ extension SessionModel {
       promptQueueRevision &+= 1
     } catch {
       guard !isTaskCancellation(error) else { return }
-      // Best-effort: history still renders without the queue. Only clear
-      // the snapshot when no newer stream event has already replaced it.
       Log.session.error(
         "Failed to load prompt queue: \(String(describing: error), privacy: .public)"
       )
@@ -234,22 +189,6 @@ extension SessionModel {
     }
   }
 
-  /* Usage-limit loading only feeds the temporarily disabled usage popover.
-  public func loadUsageLimits(force: Bool = false) async {
-      if isLoadingUsageLimits || (!force && usageLimits != nil) { return }
-      isLoadingUsageLimits = true
-      usageLimitsError = nil
-      defer { isLoadingUsageLimits = false }
-      do {
-          usageLimits = try await transport.usageLimits()
-      } catch {
-          usageLimitsError = serverErrorMessage(error)
-      }
-  }
-  */
-
-  /// Prepends one bounded page of older semantic rows. Requests are
-  /// deduplicated and stable ids prevent overlap if a retry races a prior load.
   @discardableResult
   public func loadOlderHistory() async -> Int {
     guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
@@ -282,17 +221,9 @@ extension SessionModel {
   }
 
   private var lastTurnIsGenerating: Bool {
-    // The merged conversation's last item is the active bubble if present,
-    // else the last settled one — read directly to avoid allocating the
-    // whole merged array just for `.last`.
     if case let .assistant(message) = activeItem {
       if message.turn.isGenerating { return true }
     }
-    // A generating bubble can also sit mid-transcript: a user row that
-    // landed after an agent-initiated turn's bubble pushes it off the
-    // tail while its turn is still live. Any generating bubble means the
-    // session is busy; the server heals genuinely stale rows itself, so
-    // this cannot latch on dead history.
     return settledConversation.reversed().contains { item in
       if case let .assistant(message) = item { return message.turn.isGenerating }
       return false

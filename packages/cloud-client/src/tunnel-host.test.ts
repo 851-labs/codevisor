@@ -18,7 +18,6 @@ import {
   tunnelSocket
 } from "./tunnel-host.js"
 
-/// Resolvable queue standing in for the native async calls.
 class Pending<Item> {
   #items: Item[] = []
   #waiters: ((item: Item) => void)[] = []
@@ -53,7 +52,6 @@ class FakeStream implements TunnelMessageStream {
   finish = async (): Promise<void> => undefined
 }
 
-/// A QUIC connection; closing it ends `ends` (its stream), like the real one.
 const connection = (
   alpn: string,
   remoteId = "e".repeat(64),
@@ -81,10 +79,9 @@ class FakeEndpoint {
   }
 }
 
-/// Resolves with the socket's close code.
 const closeCode = (socket: { onclose: ((code: number) => void) | null }): Promise<number> =>
   new Promise((resolve) => {
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     socket.onclose = resolve
   })
 
@@ -94,7 +91,7 @@ describe("tunnelSocket", () => {
     const conn = connection(TUNNEL_ALPN_CHANNELS)
     const socket = tunnelSocket(stream, conn)
     const received: (string | Uint8Array)[] = []
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     socket.onmessage = (data) => received.push(data)
     const closed = closeCode(socket)
 
@@ -103,7 +100,6 @@ describe("tunnelSocket", () => {
     stream.incoming.push({ value: { kind: 0, payload: Buffer.from('{"t":"hello"}') } })
     stream.incoming.push({ value: { kind: 1, payload: Buffer.from([9, 8]) } })
     stream.incoming.push({ value: null })
-    // The stream only ends after both messages were delivered in order.
     expect(await closed).toBe(1000)
 
     expect(stream.sent).toEqual([
@@ -150,19 +146,16 @@ describe("tunnelSocket", () => {
     const conn = connection(TUNNEL_ALPN_CHANNELS, undefined, undefined, stream)
     const socket = tunnelSocket(stream, conn)
     const received: (string | Uint8Array)[] = []
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     socket.onmessage = (data) => {
       received.push(data)
       throw new Error("tunnel stream is closed")
     }
     const closed = closeCode(socket)
-    // Both arrive before the loop runs: the second is already queued when
-    // the first handler's failure closes the socket.
     stream.incoming.push({ value: { kind: 0, payload: Buffer.from('{"t":"ping"}') } })
     stream.incoming.push({ value: { kind: 0, payload: Buffer.from('{"t":"ping"}') } })
     expect(await closed).toBe(1011)
     expect(conn.close).toHaveBeenCalledExactlyOnceWith(1011, "message handler failed")
-    // A closed socket delivers nothing further.
     expect(received).toEqual(['{"t":"ping"}'])
   })
 })
@@ -208,7 +201,6 @@ describe("admitTunnelHello", () => {
       false
     )
 
-    // Pins win over the hub: a changed key or endpoint is refused even if vouched.
     const pinned = setup([voucher])
     pinned.admit(device, { endpointId: "e1" })
     expect(pinned.admit({ ...device, publicKey: "swapped" }, { endpointId: "e1" })).toBe(false)
@@ -294,8 +286,6 @@ describe("MachineTunnel", () => {
     const endpoint = endpoints[0]!
     const unsupported = connection("other/1")
     const mediaConnection = connection(TUNNEL_ALPN_MEDIA)
-    // The accept loop handles connections in order; the last one reaching
-    // the host proves every earlier one was dispatched.
     endpoint.incoming.push({ error: new Error("bad handshake") })
     endpoint.incoming.push({ value: mediaConnection })
     endpoint.incoming.push({ value: unsupported })
@@ -317,8 +307,6 @@ describe("MachineTunnel", () => {
     const tunnel = new MachineTunnel({
       bind: async () => {
         const endpoint = new FakeEndpoint()
-        // Replaced endpoints' closes don't end their loops, so late results
-        // still arrive after they were replaced.
         if (endpoints.length < 2) endpoint.close = async () => undefined
         endpoints.push(endpoint)
         return endpoint as unknown as TunnelEndpoint
@@ -331,7 +319,6 @@ describe("MachineTunnel", () => {
     await tunnel.configure({ relays: [], enabled: true })
     await tunnel.configure({ relays: [{ url: "https://relay-c.test" }], enabled: true })
     const [staleA, staleB, current] = [endpoints[0]!, endpoints[1]!, endpoints[2]!]
-    // Queued first, so the stale loops run (and bail) before the current ones.
     staleA.addrs.push({ value: { endpointId: "stale", directAddrs: [] } })
     staleA.incoming.push({ error: new Error("handshake after replacement") })
     staleB.incoming.push({ value: connection(TUNNEL_ALPN_CHANNELS, "stale") })

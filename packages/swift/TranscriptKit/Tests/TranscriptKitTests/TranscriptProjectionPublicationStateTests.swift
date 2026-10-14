@@ -16,9 +16,6 @@ struct TranscriptProjectionPublicationStateTests {
     publication.publish(loading)
     #expect(!publication.isPending(currentRequest: loading))
 
-    // The controller has advanced to hydrated history, but the async row
-    // projection has not committed yet. The obsolete empty rows must not
-    // be eligible for the transcript's one-way initial reveal.
     #expect(publication.isPending(currentRequest: history))
 
     publication.publish(history)

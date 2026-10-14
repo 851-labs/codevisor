@@ -1,13 +1,3 @@
-// SwiftPM unpacks every binary artifact (WebRTC and Sentry, ~1.4 GB) into
-// each directory it resolves packages into: both apps' SourcePackages and
-// every SwiftPM package's .build, in every worktree. The bytes are identical
-// (the zip's checksum is pinned), so after resolution each unpacked file is
-// replaced by an APFS clone of one copy in a machine-wide store, keyed by
-// that checksum. Builds see the same files; the disk holds them once.
-//
-// Replacement happens right after resolution and before the build so the
-// build's own copies (Products/, which Xcode clones from these) share the
-// same blocks and its dependency tracking never sees the files change.
 import { spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import { lstat, readFile, readdir, readlink, rename, rm, utimes, writeFile } from "node:fs/promises"
@@ -19,14 +9,6 @@ const LEDGER = "codevisor-shared-artifacts.json"
 const LEDGER_VERSION = 1
 const STAGING_PREFIX = ".codevisor-clone-"
 
-/// Resolves packages into `stateDirectory` (SwiftPM's .build or Xcode's
-/// SourcePackages) when their inputs changed, then shares the unpacked
-/// binary artifacts. When nothing changed since the last run, this costs a
-/// few stat calls and skips `resolve` entirely, so it adds nothing to boots.
-///
-/// `inputs` are the files that decide what gets resolved (manifests and
-/// Package.resolved files). Sharing is best effort: a failure is logged and
-/// the build continues with SwiftPM's own unshared files.
 export async function prepareSwiftArtifacts({
   stateDirectory,
   store,
@@ -59,15 +41,11 @@ export async function prepareSwiftArtifacts({
   try {
     await writeLedger(stateDirectory, { version: LEDGER_VERSION, fingerprint, artifacts: recorded })
   } catch (error) {
-    // Without a ledger the next run resolves again; the build is unaffected.
     log(`warning: could not record shared Swift artifacts: ${error.message}`)
   }
   return { resolved: true, shared }
 }
 
-/// The checksum-pinned (downloaded) artifacts SwiftPM recorded as unpacked
-/// under `stateDirectory`. Local artifacts (CodevisorNetFFI) already live in
-/// a shared cache and are not listed with a checksum.
 export async function readResolvedArtifacts(stateDirectory) {
   let state
   try {
@@ -91,11 +69,7 @@ export async function readResolvedArtifacts(stateDirectory) {
     }))
 }
 
-/// Replaces every file of one unpacked artifact with a clone of the stored
-/// copy. Each file is swapped by an atomic rename, so a concurrent reader
-/// sees either the old file or the identical clone, never a missing one.
 async function shareArtifact(artifact, stateDirectory, store, now) {
-  // APFS clones (cp -c) are macOS-only; elsewhere SwiftPM's files stay as-is.
   if (process.platform !== "darwin") return false
   const name = basename(artifact.path)
   const entry = await ensureStoreEntry(
@@ -116,8 +90,6 @@ async function shareArtifact(artifact, stateDirectory, store, now) {
     for (const [path, file] of local) {
       if (file.type !== "file") continue
       const clone = join(staging, path)
-      // Keep the unpacked file's timestamps so build systems that compare
-      // them see nothing new.
       await utimes(clone, file.atime, file.mtime)
       await rename(clone, join(artifact.path, path))
     }
@@ -128,7 +100,6 @@ async function shareArtifact(artifact, stateDirectory, store, now) {
   return true
 }
 
-/// Relative path → { type, size, mode, target } for every entry in a tree.
 export async function listTree(root) {
   const entries = new Map()
   const visit = async (directory) => {
@@ -156,8 +127,6 @@ export async function listTree(root) {
   return entries
 }
 
-/// Why two listed trees are not interchangeable, or undefined when every
-/// path has the same kind, size, permissions, and link target.
 export function describeDifference(local, reference) {
   if (local.size !== reference.size) return `${local.size} entries, store has ${reference.size}`
   for (const [path, file] of local) {
@@ -183,11 +152,6 @@ async function artifactsUnchanged(artifacts) {
   return true
 }
 
-/// SwiftPM unpacks into a fresh directory whenever it (re)extracts an
-/// artifact, so the directory's identity tells whether the files are still
-/// the ones that were shared. Sharing swaps files, never the directory.
-/// The inode alone is not enough: Linux file systems reuse a freed inode
-/// number for the next directory created, so include its creation time.
 async function directoryIdentity(path) {
   try {
     const info = await lstat(path, { bigint: true })
@@ -233,7 +197,6 @@ function isInside(directory, path) {
   return offset !== "" && !isAbsolute(offset) && offset.split(sep)[0] !== ".."
 }
 
-/// Staging trees left by a process that died mid-swap.
 async function removeAbandonedStaging(stateDirectory) {
   const names = await readdir(stateDirectory).catch(() => [])
   await Promise.all(
@@ -243,8 +206,6 @@ async function removeAbandonedStaging(stateDirectory) {
   )
 }
 
-/// Prepares a SwiftPM package for `swift build`/`swift test`: resolves it
-/// into its .build when its manifests changed and shares the artifacts.
 export async function prepareSwiftPackage({ repoRoot, packagePath, store, inputs = [], log }) {
   const absolute = join(repoRoot, packagePath)
   return prepareSwiftArtifacts({
@@ -253,7 +214,6 @@ export async function prepareSwiftPackage({ repoRoot, packagePath, store, inputs
     inputs: [
       join(absolute, "Package.swift"),
       join(absolute, "Package.resolved"),
-      // The local CodevisorKit package declares the Sentry binary target.
       join(repoRoot, "packages/swift/Package.swift"),
       join(repoRoot, "packages/swift/Package.resolved"),
       ...inputs

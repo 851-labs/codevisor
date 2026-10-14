@@ -70,7 +70,6 @@ describe("@codevisor/db", () => {
       })
     )
 
-    // Malformed optional fields must not erase the last valid projection.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "usage_update",
@@ -100,18 +99,13 @@ describe("@codevisor/db", () => {
     const project = await run(db.createProject({ folderPath: "/tmp/coalesce" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
-    // Token-sized chunks sharing a messageId extend the same row — one row
-    // per message, not one per token (a 3000-word answer used to persist as
-    // thousands of rows).
     await run(db.appendConversationItem(session.id, "user", "user-1", "tell me", false))
     await run(db.appendConversationItem(session.id, "assistant", "msg-1", "Hel", true))
     await run(db.appendConversationItem(session.id, "assistant", "msg-1", "lo ", true))
     await run(db.appendConversationItem(session.id, "assistant", "msg-1", "world", false))
-    // A new messageId starts a new row; a chunk without one never coalesces.
     await run(db.appendConversationItem(session.id, "assistant", "msg-2", "Next", false))
     await run(db.appendConversationItem(session.id, "assistant", undefined, "loose", false))
     await run(db.appendConversationItem(session.id, "assistant", undefined, "loose2", false))
-    // Role changes break a run even with a matching id shape.
     await run(db.appendConversationItem(session.id, "user", "msg-2", "reply", false))
 
     const detail = await run(db.getSessionDetail(session.id))
@@ -362,7 +356,6 @@ describe("@codevisor/db", () => {
         stopKind: "usageLimit"
       })
     )
-    // A terminal event with no active item is a harmless no-op.
     await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
     await run(
       db.appendEvent("session.created", session.id, {

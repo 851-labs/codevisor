@@ -4,7 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Records sent frames; never delivers any.
 private final class SilentSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
   private var sent: [String] = []
@@ -42,7 +41,6 @@ private final class SilentSocket: ServerWebSocketConnecting, @unchecked Sendable
   }
 }
 
-/// A fresh socket per connection attempt, recording each replay cursor.
 private final class FreshSockets: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var opened: [SilentSocket] = []
@@ -71,8 +69,6 @@ private struct CreatedTerminal: ServerRequestTransport {
   }
 }
 
-/// Keystrokes typed while the socket is down (the app coming back from the
-/// background, a network handoff) must still reach the shell, in order.
 @MainActor
 @Suite("Terminal transport reconnect")
 struct TerminalTransportReconnectTests {
@@ -132,7 +128,6 @@ struct TerminalTransportReconnectTests {
     #expect(!sockets.sockets[1].isCancelled)
     #expect(sockets.connectQueries == ["lastOutputSeq=0&protocol=2", "lastOutputSeq=0&protocol=2"])
 
-    // Detached transports stay down.
     transport.detach()
     transport.reconnectNow()
     transport.sendInput("ignored")

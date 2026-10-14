@@ -11,7 +11,6 @@ const handshake = (security = 1): Buffer =>
     Buffer.from([1])
   ])
 
-/// Every client message the viewer sends, in wire form.
 const messages = {
   setPixelFormat: Buffer.concat([Buffer.from([0]), Buffer.alloc(19, 1)]),
   setEncodings: Buffer.from([2, 0, 0, 2, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0x21]),

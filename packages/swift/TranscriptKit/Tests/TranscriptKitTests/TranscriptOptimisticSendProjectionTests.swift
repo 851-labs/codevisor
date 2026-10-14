@@ -6,10 +6,6 @@ import CodevisorProtocol
 
 @Suite("Optimistic first-send projection")
 struct TranscriptOptimisticSendProjectionTests {
-  /// A brand-new chat's first send shows its "Working for…" header the moment
-  /// the worktree is up — before the model exists — in the slot the live
-  /// active row will take over, and nowhere while setup is still running
-  /// or has failed.
   @Test func optimisticSendWaitsOnTheHarnessOnceSetupSucceeds() throws {
     let user = UserMessage(text: "hi")
     var worktree = SessionSetupPhase.worktree()
@@ -49,8 +45,6 @@ struct TranscriptOptimisticSendProjectionTests {
     #expect(!withoutPending.contains { $0.id == .startingAgent })
   }
 
-  /// Once the model adopts the message the placeholder yields to the real
-  /// active row in the same position, so nothing above it moves.
   @Test func liveActiveTurnReplacesTheOptimisticHarnessPlaceholderInPlace() throws {
     let user = UserMessage(text: "hi")
     var worktree = SessionSetupPhase.worktree()

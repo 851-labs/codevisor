@@ -42,7 +42,6 @@ describe("server boot identity", () => {
         expect.objectContaining({ key: "enable|local|GitHub", deleted: true })
       ])
     })
-    // The adopted overlay is enforced, not just recorded.
     await waitFor(async () =>
       (await services.mcp!.resolved()).every((candidate) => candidate.name !== "GitHub")
     )
@@ -73,7 +72,6 @@ describe("server boot identity", () => {
     runningServers.push(running)
 
     await waitFor(async () => (await mcp.oauthSyncState(server.id))?.owner === "machine-abc")
-    // The republish carries the new owner to every mirror.
     await waitFor(async () =>
       (await run(services.db.getSyncEntries(MCPS_SYNC_NAMESPACE))).some(
         (entry) =>

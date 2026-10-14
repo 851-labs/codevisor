@@ -5,10 +5,6 @@ import IOSurface
 import ObjectiveC
 import XPC
 
-/// Xcode's simulator frameworks (CoreSimulator, SimulatorKit), reached at run time: loaded with
-/// `dlopen` from the active developer directory and called through the Objective-C runtime, so
-/// the app neither links them nor fails to launch without Xcode. Everything here is what
-/// Simulator.app and Device Hub themselves use to show a device's screen and send it input.
 enum SimulatorRuntime {
   struct Failure: LocalizedError {
     let message: String
@@ -16,7 +12,6 @@ enum SimulatorRuntime {
     var errorDescription: String? { message }
   }
 
-  /// The developer directory `xcode-select` points at (or `DEVELOPER_DIR`).
   static let developerDirectory: String? = {
     if let env = ProcessInfo.processInfo.environment["DEVELOPER_DIR"], !env.isEmpty { return env }
     let pipe = Pipe()
@@ -30,11 +25,9 @@ enum SimulatorRuntime {
     guard process.terminationStatus == 0 else { return nil }
     let path = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    // Command Line Tools alone have no simulators.
     return path.hasSuffix("/Contents/Developer") ? path : nil
   }()
 
-  /// Loads the frameworks once; false without a full Xcode.
   static let loaded: Bool = {
     guard let developer = developerDirectory else { return false }
     let coreSimulator = "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator"
@@ -47,8 +40,6 @@ enum SimulatorRuntime {
     else { return false }
     return NSClassFromString("SimServiceContext") != nil
   }()
-
-  // MARK: Objective-C messaging
 
   static func selector(_ name: String) -> Selector { NSSelectorFromString(name) }
 
@@ -72,9 +63,6 @@ enum SimulatorRuntime {
       ?? 0
   }
 
-  // MARK: Devices
-
-  /// The user's default device set (what `simctl` and Device Hub show).
   static func deviceSet() throws -> NSObject {
     guard loaded, let developer = developerDirectory, let cls = NSClassFromString("SimServiceContext") else {
       throw Failure("Xcode's simulators aren't available on this Mac.")
@@ -107,7 +95,6 @@ enum SimulatorRuntime {
     return device
   }
 
-  /// simctl's state values: 1 shutdown, 3 booted, others in between.
   static func isBooted(_ device: NSObject) -> Bool { uint64(device, "state") == 3 }
 
   static func productFamily(_ device: NSObject) -> String {
@@ -115,7 +102,6 @@ enum SimulatorRuntime {
     return object(type, "productFamily") as? String ?? "iPhone"
   }
 
-  /// The device type's capabilities.plist `displays`, by device name ("primary", "primary-1").
   static func displayCapabilities(_ device: NSObject) -> [String: [String: Any]] {
     guard let displays = capabilities(device)?["displays"] as? [[String: Any]] else { return [:] }
     var byName: [String: [String: Any]] = [:]
@@ -125,8 +111,6 @@ enum SimulatorRuntime {
     return byName
   }
 
-  /// Clockwise quarter turns each screen is mounted at in the device, by device name: how far
-  /// its framebuffer is turned from the device held upright.
   static func screenTurns(_ device: NSObject) -> [String: Int] {
     let main = (capabilities(device)?["ScreenDimensionsCapability"] as? [String: Any])?["main-screen-orientation"]
     return displayCapabilities(device).mapValues {
@@ -134,10 +118,6 @@ enum SimulatorRuntime {
     }
   }
 
-  /// A screen's `nativeRotation` (degrees, counterclockwise) with the device's
-  /// `main-screen-orientation` (radians) added: an iPad's panel is rotated 270° and its main screen
-  /// another 90°, back upright, as a Watch's is; the iPhone Duo's inner screen ends up a quarter
-  /// turn from its body, which is why Device Hub shows it open in landscape.
   static func screenTurns(nativeRotation: Int, mainScreenOrientation: Double) -> Int {
     let degrees = nativeRotation + Int((mainScreenOrientation * 180 / .pi).rounded())
     let counterclockwise = ((degrees % 360) + 360) % 360 / 90
@@ -151,8 +131,6 @@ enum SimulatorRuntime {
     return plist["capabilities"] as? [String: Any]
   }
 
-  /// The device type's capabilities.plist. CoreSimulator 1174 (Xcode 27.1) made `bundle` a
-  /// SimProfileBundle rather than an NSBundle, so it's found from `bundlePath`, which both have.
   private static func capabilitiesURL(_ type: AnyObject) -> URL? {
     if let path = object(type, "bundlePath") as? String {
       let url = URL(fileURLWithPath: path).appending(path: "Contents/Resources/capabilities.plist")
@@ -161,15 +139,10 @@ enum SimulatorRuntime {
     return (object(type, "bundle") as? Bundle)?.url(forResource: "capabilities", withExtension: "plist")
   }
 
-  // MARK: Screens
-
-  /// One of the device's integrated screens and its live framebuffer.
   struct Screen {
     let descriptor: NSObject
     let screenID: UInt32
-    /// The device-type display it is ("primary", "primary-1").
     let name: String
-    /// 0 integrated, 1 TV out, 2 CarPlay, 4 a resizable scene.
     let type: UInt64
 
     var surface: IOSurfaceRef? {
@@ -178,7 +151,6 @@ enum SimulatorRuntime {
     }
   }
 
-  /// The device's screens. An Apple TV's only screen is its TV output.
   static func screens(_ device: NSObject) -> [Screen] {
     guard let io = object(device, "io") as? NSObject else { return [] }
     io.perform(selector("updateIOPorts"))
@@ -194,8 +166,6 @@ enum SimulatorRuntime {
     }
   }
 
-  /// Registers for a screen's frames; the returned token unregisters. Registering is also
-  /// what wires the screen's framebuffer to this process.
   static func observe(
     _ screen: Screen, queue: DispatchQueue, frame: @escaping @convention(block) () -> Void,
     surfacesChanged: @escaping @convention(block) () -> Void
@@ -219,11 +189,6 @@ enum SimulatorRuntime {
     implementation(screen.descriptor, name, as: Unregister.self)?(screen.descriptor, selector(name), token as NSUUID)
   }
 
-  // MARK: Guest services
-
-  /// A connection to a CoreDevice feature service inside the simulated OS (iOS 27 and later),
-  /// over the simulator's host bridge. Kept open: the guest tears its virtual HID devices down
-  /// when the host side disconnects, and drops what hadn't drained.
   final class GuestService: @unchecked Sendable {
     let feature: String
     private let connection: xpc_connection_t
@@ -240,14 +205,13 @@ enum SimulatorRuntime {
         let lookup = SimulatorRuntime.implementation(device, "lookup:error:", as: Lookup.self)
       else { throw Failure("CoreSimulator changed.") }
       let port = lookup(device, SimulatorRuntime.selector("lookup:error:"), feature as NSString, &error)
-      let handle = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT
+      let handle = UnsafeMutableRawPointer(bitPattern: -2)
       guard port != 0, let endpointSymbol = dlsym(handle, "xpc_endpoint_create_mach_port_4sim"),
         let connectionSymbol = dlsym(handle, "xpc_connection_create_from_endpoint"),
         let bridgeSymbol = dlsym(handle, "xpc_connection_enable_sim2host_4sim"),
         let endpoint = unsafeBitCast(endpointSymbol, to: EndpointFromPort.self)(port, 0, 0),
         let connection = unsafeBitCast(connectionSymbol, to: ConnectionFromEndpoint.self)(endpoint)
       else { throw Failure(error?.localizedDescription ?? "The simulator doesn't offer \(feature).") }
-      // Without this the guest never sees the payload.
       unsafeBitCast(bridgeSymbol, to: EnableHostBridge.self)(connection)
       xpc_connection_set_event_handler(connection) { _ in }
       xpc_connection_resume(connection)
@@ -270,15 +234,11 @@ enum SimulatorRuntime {
       xpc_connection_send_message(connection, envelope(type, payload))
     }
 
-    /// A request with a reply; blocks, so call it off the main thread.
     func request(_ type: String, _ payload: xpc_object_t) -> xpc_object_t {
       xpc_connection_send_message_with_reply_sync(connection, envelope(type, payload))
     }
   }
 
-  // MARK: Legacy HID (runtimes before iOS 27)
-
-  /// SimulatorKit's HID client and its Indigo message builders.
   final class LegacyHID: @unchecked Sendable {
     typealias Mouse =
       @convention(c) (
@@ -327,7 +287,6 @@ enum SimulatorRuntime {
         client, SimulatorRuntime.selector(name), message, true, queue, { _ in })
     }
 
-    /// Fingers in framebuffer-normalized coordinates; `down` false lifts them.
     func touch(_ first: CGPoint, _ second: CGPoint?, down: Bool, edge: UInt32) {
       var one = first
       if var two = second {
@@ -341,8 +300,6 @@ enum SimulatorRuntime {
     func key(_ usage: UInt32, down: Bool) { send(keyboard(usage, down ? 1 : 2)) }
   }
 
-  /// Turns the device the pre-CoreDevice way: a GSEvent to SpringBoard's workspace port.
-  /// Values: 1 portrait, 2 upside down, 3 landscape right, 4 landscape left.
   static func sendOrientationEvent(device: NSObject, value: UInt32) {
     typealias Lookup =
       @convention(c) (AnyObject, Selector, NSString, AutoreleasingUnsafeMutablePointer<NSError?>)
@@ -359,7 +316,6 @@ enum SimulatorRuntime {
       header.pointee.msgh_size = 108
       header.pointee.msgh_remote_port = port
       header.pointee.msgh_id = 0x7B
-      // GSEventTypeDeviceOrientationChanged with the host flag, then the record.
       base.storeBytes(of: UInt32(50 | 0x20000), toByteOffset: 0x18, as: UInt32.self)
       base.storeBytes(of: UInt32(4), toByteOffset: 0x48, as: UInt32.self)
       base.storeBytes(of: value, toByteOffset: 0x4C, as: UInt32.self)

@@ -7,8 +7,6 @@ import os
 import CodevisorUI
 
 extension OnboardingView {
-  // MARK: - Content
-
   @ViewBuilder
   var content: some View {
     switch step {
@@ -21,12 +19,6 @@ extension OnboardingView {
     }
   }
 
-  // MARK: - Permissions
-
-  /// Continue unlocks when both Computer Use permissions are granted;
-  /// "Set Up Later" skips and turns Computer Use off until the user
-  /// re-enters setup from the Computer Use toggle in Settings. Full Disk
-  /// Access is optional and managed in System Settings.
   private var permissionsStep: some View {
     VStack(spacing: 20) {
       stepHeader(
@@ -39,8 +31,6 @@ extension OnboardingView {
     }
     .frame(maxWidth: .infinity)
   }
-
-  // MARK: - Welcome
 
   private var welcomeStep: some View {
     VStack(spacing: 0) {
@@ -63,10 +53,6 @@ extension OnboardingView {
     .frame(maxWidth: .infinity)
   }
 
-  // MARK: - Privacy
-
-  /// A compact final-step consent card. Both choices start selected, remain
-  /// independent, and are not persisted until the user finishes.
   private var analyticsStep: some View {
     VStack(spacing: 0) {
       Image(systemName: "chart.line.uptrend.xyaxis")
@@ -146,13 +132,6 @@ extension OnboardingView {
     .frame(maxWidth: .infinity)
   }
 
-  // MARK: - Cloud account
-
-  /// Sign-in is required on the Mac and GitHub is the one provider: the
-  /// same credential later drives repository access, and the harness step
-  /// that follows reads the account's fleet. A dev environment may already
-  /// be signed in (bootstrap adopts the dev cloud token), in which case the
-  /// confirmation shows instead of the button.
   private var accountStep: some View {
     VStack(spacing: 20) {
       stepHeader(
@@ -216,10 +195,6 @@ extension OnboardingView {
               RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(theme.cardBackground)
             )
-            // Escape hatch for switching accounts mid-onboarding —
-            // in dev the app arrives pre-signed-in (dev-token
-            // adoption), and this is how you reach the real
-            // sign-in flow.
             Button("Use a Different Account…") {
               environment.cloud.signOut()
             }
@@ -240,8 +215,6 @@ extension OnboardingView {
       isSigningInToCloud = false
     }
   }
-
-  // MARK: - Step header
 
   func stepHeader(symbol: String, title: String, subtitle: String) -> some View {
     VStack(spacing: 0) {
@@ -265,8 +238,6 @@ extension OnboardingView {
     .frame(maxWidth: .infinity)
   }
 
-  // MARK: - Projects
-
   private var projectStep: some View {
     VStack(spacing: 20) {
       stepHeader(
@@ -275,8 +246,6 @@ extension OnboardingView {
         subtitle: "Select the folders you want to work in."
       )
 
-      // The same selection grid the new-chat empty state renders, so
-      // both surfaces look and behave identically.
       ProjectSetupSelectionView(
         model: projectSetup,
         isLocalMachine: true,

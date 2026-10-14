@@ -72,7 +72,6 @@ export const routeSharedHarnessAccounts = async (
         })
         break
       case "activate":
-        // Grok has one provider slot; sign-in already selects it in this scope.
         writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
         break
       case "logout":
@@ -95,9 +94,6 @@ export const routeSharedHarnessAccounts = async (
       )
     let account = harnessId === "opencode" ? await findProfile() : undefined
     if (harnessId === "opencode" && !account && auth.sharedOpenCodeProfiles) {
-      // A profile added a moment ago only reaches this machine's accounts on
-      // its next credentials pass. Create it from the synced list now rather
-      // than answer a fresh profile with "not found".
       const saved = (await run(services.db.getSyncEntries("harness-credentials"))).find(
         (entry) => entry.key === "profiles:opencode" && entry.deleted !== true
       )

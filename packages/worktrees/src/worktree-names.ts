@@ -9,7 +9,6 @@ import {
   proteinNames
 } from "./worktree-names-ingredients.js"
 
-// Production worktrees draw from the combined single-word food vocabulary.
 export const productionFoodWorktreeNames: ReadonlyArray<string> = [
   ...produceNames,
   ...grainNutNames,
@@ -36,8 +35,6 @@ const randomNameAt = (random: () => number): string =>
 
 const defaultRandomId = (): string => randomUUID().replaceAll("-", "").slice(0, 8)
 
-/// Tries inexpensive random picks first, then scans the complete food pool from
-/// a random offset. A random ID is appended only when every base name is in use.
 export const availableProductionWorktreeName = (
   existing: ReadonlySet<string>,
   random: () => number = Math.random,

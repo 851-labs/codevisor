@@ -1,34 +1,19 @@
 import TranscriptKit
 
-/// How much of one folded run the reader has opened, from each end: `top`
-/// lines just below the previous hunk ("Show next lines"), `bottom` lines
-/// just above the next hunk (expand up from its `@@` header).
 struct ReviewGapExpansion: Equatable {
   var top = 0
   var bottom = 0
 }
 
-/// A whole-file diff folded for review: changed lines keep a few lines of
-/// context, and longer unchanged runs collapse into gaps the reader opens a
-/// step at a time from either end, as on GitHub.
 enum ReviewDiffSegment: Identifiable, Equatable {
-  /// Visible rows. The id is the first row's id.
   case rows([LineDiff.Row])
-  /// Folded unchanged rows.
   case gap(Gap)
 
   struct Gap: Equatable {
-    /// The first row of the whole folded run: stable while the reader
-    /// opens lines from either end.
     let id: Int
-    /// The rows still folded.
     let rows: [LineDiff.Row]
-    /// Folded before the first change (nothing above) or after the last
-    /// (nothing below).
     let isLeading: Bool
     let isTrailing: Bool
-    /// The hunk header (`@@ -a,b +c,d @@`) of the visible rows that follow,
-    /// nil for a trailing gap.
     let nextHunkHeader: String?
   }
 
@@ -39,12 +24,8 @@ enum ReviewDiffSegment: Identifiable, Equatable {
     }
   }
 
-  /// Unchanged lines around each change that stay visible.
   static let context = 3
-  /// Shorter unchanged runs stay visible: a fold row that hides one or two
-  /// lines costs as much space as showing them.
   static let minimumFold = 4
-  /// Lines one expand step reveals.
   static let expandStep = 20
 
   static func segments(
@@ -59,8 +40,6 @@ enum ReviewDiffSegment: Identifiable, Equatable {
       for near in lower...upper { visible[near] = true }
     }
 
-    // Open whatever the reader expanded from each end of each run, noting
-    // for every line left folded which run it came from.
     var runStart = [Int](repeating: -1, count: rows.count)
     var index = 0
     while index < rows.count {
@@ -85,8 +64,6 @@ enum ReviewDiffSegment: Identifiable, Equatable {
     let firstChange = rows.firstIndex { $0.kind != .context } ?? rows.count
     let lastChange = rows.lastIndex { $0.kind != .context } ?? -1
 
-    // Visible runs become row segments; each remaining folded run a gap,
-    // identified by the start of its original run.
     var segments: [ReviewDiffSegment] = []
     var shown: [LineDiff.Row] = []
     index = 0
@@ -115,8 +92,6 @@ enum ReviewDiffSegment: Identifiable, Equatable {
     return segments
   }
 
-  /// `@@ -oldStart,oldCount +newStart,newCount @@` for the visible rows
-  /// starting at `start`, as git prints hunk headers.
   private static func hunkHeader(in rows: [LineDiff.Row], from start: Int, visible: [Bool]) -> String? {
     guard start < rows.count else { return nil }
     var end = start

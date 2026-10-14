@@ -16,7 +16,6 @@ runs:
         rustup toolchain install "$toolchain" --profile minimal
         rustup default "$toolchain"
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-    # Linux addons link against an old glibc with cargo-zigbuild (scripts/net-artifact.mjs).
     - shell: bash
       if: runner.os == 'Linux'
       run: |

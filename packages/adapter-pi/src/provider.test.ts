@@ -199,7 +199,6 @@ describe("Pi provider", () => {
       ["ended", "user", "cancelled"]
     ])
     expect(client.commands.some((command) => command.type === "abort")).toBe(true)
-    // Cancelling with nothing running just asks Pi to stop.
     await run(handle.cancel)
   })
 
@@ -221,7 +220,6 @@ describe("Pi provider", () => {
       ["ended", "user", "end_turn", "No model selected"],
       ["ended", "user", "end_turn"]
     ])
-    // A settle with no turn running changes nothing.
     client.emit({ type: "agent_settled" })
     expect(turnStates(events)).toHaveLength(6)
   })
@@ -292,7 +290,6 @@ describe("Pi provider", () => {
       modelId: "sonnet"
     })
     expect(afterModel.map((option) => option.currentValue)).toEqual(["anthropic/sonnet", "high"])
-    // Pi answering set_model without a model keeps the previous one.
     client.replies.set_model = null
     client.replies.get_state = { sessionId: "pi-1" }
     expect(
@@ -395,7 +392,6 @@ describe("Pi provider", () => {
     expect(await provider.listAgentSessions!(definition)).toEqual([
       { sessionId: "undefined", cwd: "/" }
     ])
-    // By default sessions are read from the account's agent dir.
     const agentDir = await mkdtemp(join(tmpdir(), "codevisor-pi-sessions-"))
     onTestFinished(() => rm(agentDir, { recursive: true, force: true }))
     expect(
@@ -432,7 +428,6 @@ describe("Pi provider", () => {
       state: "error",
       detail: "No API key for anthropic"
     })
-    // A Pi that can't even run says why, not that its sign-in failed.
     client.replies.get_available_models = new PiExitedError(
       "Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib, needed by /usr/local/bin/node"
     )

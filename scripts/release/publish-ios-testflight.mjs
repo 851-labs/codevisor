@@ -72,8 +72,6 @@ try {
   result = await deliverInternalBuild(client, { ...configuration, appId: app.id }, upload)
 } catch (error) {
   if (!(error instanceof UploadLimitReached)) throw error
-  // Apple's per-app daily upload limit is not a build failure. No marker is
-  // attached, so the next Publish Alpha run retries after the limit resets.
   const message = `Skipped TestFlight upload of ${configuration.version} (${configuration.buildNumber}): Apple's daily upload limit is reached.`
   console.log(`::warning title=TestFlight upload skipped::${message}`)
   if (process.env.GITHUB_STEP_SUMMARY)

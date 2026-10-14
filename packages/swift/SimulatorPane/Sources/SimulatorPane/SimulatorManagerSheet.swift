@@ -2,10 +2,6 @@ import CodevisorClient
 import CodevisorUI
 import SwiftUI
 
-/// Every simulator on the Mac, to add, rename and delete. On a Mac it's laid out as the app's
-/// settings lists are: a grouped list whose rows keep their actions in a ⋯ menu, New Simulator…
-/// under it, and Done in the sheet's footer. On an iPhone or iPad it's an inset grouped list with
-/// swipe actions, + in the navigation bar and the system close button.
 struct SimulatorManagerSheet: View {
   let model: SimulatorPaneModel
   let done: () -> Void
@@ -76,7 +72,6 @@ struct SimulatorManagerSheet: View {
             ForEach(devices) { device in row(device) }
           }
         } footer: {
-          // Under the list it acts on, trailing, as the settings lists' Add buttons are.
           HStack {
             Spacer(minLength: 0)
             Button {
@@ -154,7 +149,6 @@ struct SimulatorManagerSheet: View {
   }
 }
 
-/// A simulator in a list: its name, then its OS and whether it's running or being deleted.
 struct SimulatorManagerRow: View {
   let device: ServerSimulatorDevice
   let deleting: Bool

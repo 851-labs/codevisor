@@ -1,5 +1,3 @@
-/// Bounds the synchronous text path. UTF-8 storage lengths avoid joining and
-/// recounting rendered strings simply to choose a preparation strategy.
 public enum MarkdownLayoutPolicy {
   public static let maximumSynchronousTextBytes = 16_384
   public static let maximumSynchronousTableRows = 64

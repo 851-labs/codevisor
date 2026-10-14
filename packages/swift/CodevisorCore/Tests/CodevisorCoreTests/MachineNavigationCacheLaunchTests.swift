@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A relaunch shows each machine's last known navigation from disk at once,
-/// then catches up with the machine and sends what the user changed while
-/// it was away.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct MachineNavigationCacheLaunchTests {
@@ -25,7 +22,6 @@ struct MachineNavigationCacheLaunchTests {
     #expect(workspace.chatSessionIds == [launch.session.id])
     #expect(launch.fixture.projectList.sessions.map(\.id) == [launch.session.id])
     #expect(launch.fixture.projectList.projects.map(\.id) == [launch.project.id])
-    // Nothing above waited on (or even asked) the machine.
     #expect(fake.workspaceSnapshotCallCount == 0)
     #expect(fake.listSessionCallCount == 0)
   }
@@ -39,7 +35,6 @@ struct MachineNavigationCacheLaunchTests {
     defer { controller.stopEventSync() }
     let store = launch.fixture.store
 
-    // Renamed while the machine is only cached: shown at once, not sent.
     store.enqueue(
       .renameWorkspace(workspaceId: launch.workspace.id, name: "Renamed offline", hasCustomName: true),
       machineId: "local")
@@ -58,8 +53,6 @@ struct MachineNavigationCacheLaunchTests {
   }
 }
 
-/// A navigation cache written by a previous launch, read back by a fresh
-/// store over the same persistence.
 @MainActor
 private struct CachedLaunch {
   let fixture: NavigationFixture
@@ -78,7 +71,6 @@ private struct CachedLaunch {
     let snapshot = ServerNavigationSnapshot.fixture(
       projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
 
-    // The previous launch: synced once, then quit after its saves landed.
     let previous = NavigationFixture(persistence: persistence)
     await previous.install(projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
     PersistenceEncoding.drain()
@@ -88,7 +80,6 @@ private struct CachedLaunch {
       workspace: workspace, snapshot: snapshot)
   }
 
-  /// The machine, still holding exactly what the cache recorded.
   func serverClient() -> SyncFakeServerClient {
     SyncFakeServerClient(
       projects: snapshot.projects, sessions: snapshot.sessions, workspaces: snapshot.workspaces,

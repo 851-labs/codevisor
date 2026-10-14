@@ -28,8 +28,6 @@ struct TranscriptSurfacePointerTests {
     view.setContent(text)
     view.setFrameSize(NSSize(width: 320, height: view.contentHeight(forWidth: 320)))
     window.contentView!.addSubview(view)
-    // A sibling added later is frontmost, like the composer floating over
-    // a transcript scrolled beneath it.
     let cover = NSView(frame: view.frame)
     window.contentView!.addSubview(cover)
 

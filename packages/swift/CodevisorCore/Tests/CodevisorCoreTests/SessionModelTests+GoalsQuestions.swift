@@ -26,7 +26,6 @@ extension SessionModelTests {
     #expect(await model.pauseGoal())
     #expect(model.goal?.status == .paused)
     #expect(client.goalUpdates.last?.1 == .paused)
-    // Pause must not touch the budget (keep semantics).
     #expect(client.goalUpdates.last?.2 == .keep)
 
     #expect(await model.resumeGoal())
@@ -79,9 +78,6 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    // No send(), no history load — setting the goal must be enough to
-    // subscribe to the event stream (goal auto-continuation turns are
-    // agent-initiated).
     await model.setGoal(objective: "count to ten")
     client.emit(
       ServerEventEnvelope(
@@ -168,7 +164,6 @@ extension SessionModelTests {
     #expect(model.goal?.tokenBudget == nil)
     #expect(model.goal?.tokensUsed == 1200)
 
-    // Later accounting snapshot replaces, never accumulates.
     client.emit(
       ServerEventEnvelope(
         id: 2,
@@ -243,14 +238,12 @@ extension SessionModelTests {
     #expect(model.pendingQuestion?.questionId == "q-1")
     #expect(model.pendingQuestion?.questions.first?.options.count == 2)
 
-    // Answer posts to the server and clears optimistically.
     await model.answerQuestion(answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"])])
     #expect(model.pendingQuestion == nil)
     #expect(client.questionAnswers.count == 1)
     #expect(client.questionAnswers.first?.0 == "q-1")
     #expect(client.questionAnswers.first?.1 == "answered")
 
-    // The provider's resolution event renders an inline question tool call.
     client.emit(
       ServerEventEnvelope(
         id: 2,
@@ -381,8 +374,6 @@ extension SessionModelTests {
     #expect(model.pendingQuestion == nil)
     #expect(client.questionAnswers.first?.1 == "cancelled")
 
-    // A stale question is dropped when the turn finishes, even if the
-    // resolution event was lost.
     client.emit(questionEnvelope(2, "q-stale"))
     await settleUntil { model.pendingQuestion != nil }
     client.emit(

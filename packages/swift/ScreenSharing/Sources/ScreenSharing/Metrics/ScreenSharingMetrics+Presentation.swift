@@ -1,8 +1,6 @@
 import Foundation
 
 extension ScreenSharingMetrics {
-  /// Metal calls presented handlers for skipped drawables too. Only a positive
-  /// presentedTime establishes on-screen presentation. All times use CA's clock.
   @discardableResult
   public func recordPresentation(
     isNewFrame: Bool, presentedAt: Double, submittedAt: Double, receivedAt: Double?

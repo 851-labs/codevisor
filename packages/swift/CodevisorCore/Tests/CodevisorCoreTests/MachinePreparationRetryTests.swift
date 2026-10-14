@@ -5,9 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// A failed remote preparation must not park the machine forever: one relay
-/// timeout used to latch the request gate `.failed` (every later request
-/// failed instantly, offline) with nothing scheduled to retry.
 @MainActor
 struct MachinePreparationRetryTests {
   @Test("A failed remote preparation retries automatically and recovers")
@@ -30,13 +27,10 @@ struct MachinePreparationRetryTests {
       Issue.record("A failed preparation should keep its connection warning visible")
       return
     }
-    // Latched: the gate fails instantly without touching the network.
     await #expect(throws: ServerRequestGateError.self) {
       try await controller.requestGate.waitUntilReady(for: remote.id)
     }
 
-    // The machine comes back; the scheduled retry recovers on its own —
-    // no foreground event, no user retry.
     let probeStarted = TestSignal()
     let probeGate = TestSignal()
     fake.setInfoDelay {
@@ -66,7 +60,6 @@ struct MachinePreparationRetryTests {
       controller.navigationSyncStateByMachineId[remote.id] == .current
     }
     await controller.connection(for: remote.id).preparationTask?.value
-    // And the latch is gone: requests flow again.
     try await controller.requestGate.waitUntilReady(for: remote.id)
   }
 
@@ -84,8 +77,6 @@ struct MachinePreparationRetryTests {
       try await controller.requestGate.waitUntilReady(for: remote.id)
     }
 
-    // The user retries (Home's alert / pull-to-refresh both route here):
-    // a full preparation, which re-arms and then clears the gate.
     fake.setInfoFails(false)
     await controller.retryMachine(remote.id)
     try await controller.requestGate.waitUntilReady(for: remote.id)
@@ -115,7 +106,6 @@ struct MachinePreparationRetryTests {
       return
     }
 
-    // It starts on a later attempt, with nothing for the user to do.
     local.state = .started
     await clock.waitForSleep(.seconds(2))
     clock.advance(by: .seconds(2))

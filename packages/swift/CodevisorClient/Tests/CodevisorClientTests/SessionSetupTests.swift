@@ -51,7 +51,6 @@ struct SessionSetupTests {
       payload: ["state": "completed", "durationMs": 1200]
     )
     #expect(ProjectSetupEvent.from(completed, projectId: projectId) == .completed(durationMs: 1200))
-    // Wrong kind, wrong subject, and unknown states decode to nil.
     #expect(ProjectSetupEvent.from(envelope(payload: ["state": "started"]), projectId: projectId) == nil)
     #expect(ProjectSetupEvent.from(started, projectId: "other") == nil)
     let unknown = envelope(kind: "project.setup", subjectId: projectId, payload: ["state": "nope"])
@@ -72,7 +71,6 @@ struct SessionSetupTests {
       ProjectCloneOutcome.from(failed, projectId: projectId)
         == .failed(message: "Authentication failed", code: "auth_failed")
     )
-    // Progress, and other projects' events, decide nothing.
     let log = envelope(
       kind: "project.setup", subjectId: projectId, payload: ["state": "log", "line": "Receiving"])
     #expect(ProjectCloneOutcome.from(log, projectId: projectId) == nil)
@@ -145,7 +143,6 @@ struct SessionSetupTests {
     #expect(phase.logs.map(\.id) == [0, 1])
     #expect(phase.logs.map(\.text) == ["Preparing worktree", "git submodule update"])
 
-    // A server-measured duration wins over local clocks.
     phase.succeed(durationMs: 60_000, at: start.addingTimeInterval(99))
     #expect(!phase.isRunning)
     #expect(phase.outcome == .succeeded)

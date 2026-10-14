@@ -21,9 +21,6 @@ import {
 } from "./models.js"
 import { dialogQuestion, type PiDialogQuestion } from "./questions.js"
 
-/// One chat's Pi process: its state, turn lifecycle and controls.
-
-/// The oldest Pi whose RPC mode has everything a chat needs.
 export const MINIMUM_PI_VERSION = "0.81.0"
 
 interface OpenQuestion {
@@ -41,7 +38,6 @@ interface Turn {
 export interface PiSession {
   readonly key: string
   readonly configOptions: () => Array<SessionConfigOption>
-  /// The skills `get_commands` listed when the session started.
   readonly skills: SessionSkills | undefined
   readonly prompt: (input: string | PromptInput) => Promise<{ stopReason: string }>
   readonly cancel: () => Promise<void>
@@ -62,8 +58,6 @@ const piModel = (value: unknown): PiModel | undefined => {
 
 const SKILL_PREFIX = "skill:"
 
-/// The skills among Pi's commands (prompt templates and extension commands
-/// are not skills). Pi names each `skill:<name>` and runs it as `/skill:<name>`.
 export const piSkills = (response: unknown): SessionSkills => {
   const commands = record(response).commands
   return sessionSkills(
@@ -87,7 +81,6 @@ export const piSkills = (response: unknown): SessionSkills => {
   )
 }
 
-/// Pi's prompt: images inline, other attachments as path notes.
 export const piPrompt = (input: PromptInput): Record<string, unknown> => {
   const attachments = input.attachments ?? []
   const images = attachments.flatMap((attachment) =>
@@ -186,7 +179,6 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         ask(event)
         return
       case "agent_start":
-        // Pi can start work on its own (extension follow-ups, queued messages).
         if (turn === undefined) startTurn("agent")
         break
       case "thinking_level_changed":
@@ -249,10 +241,8 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         const accepted = record(
           await client.command("prompt", piPrompt(normalizePromptInput(input)))
         )
-        // An extension command can handle the prompt without starting a run.
         if (accepted.disposition === "handled") await endTurn()
       } catch (cause) {
-        // The client rejects with Pi's error.
         await endTurn((cause as Error).message)
       }
       return finished
@@ -266,7 +256,6 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         const target = parseModelValue(value)
         if (target === undefined) throw new Error(`Unknown model: ${value}`)
         model = piModel(await client.command("set_model", target)) ?? model
-        // Thinking levels depend on the model.
         levels = await thinkingLevels()
         level = String(record(await client.command("get_state")).thinkingLevel ?? level)
       } else if (configId === THINKING_OPTION_ID) {

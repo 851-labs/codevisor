@@ -124,14 +124,8 @@ const linuxContainerRuntime = (): boolean => {
   })
 }
 
-/// How long a freshly spawned Chromium gets to publish DevToolsActivePort.
-/// A cold first launch into an empty profile is normally a second or two,
-/// but on a loaded CI runner — every package's suite in parallel, headless
-/// Chromium competing for the same cores — 30s was occasionally not enough.
 export const managedBrowserStartupTimeoutMs = 90_000
 
-/// Profiles whose browser this server process launched. A browser found
-/// running on any other profile was left by an earlier server.
 const launchedProfiles = new Set<string>()
 
 export const launchManagedBrowser = async (
@@ -140,7 +134,6 @@ export const launchManagedBrowser = async (
 ): Promise<{
   connection: CdpConnection
   processHandle?: ChildProcess
-  /// Still running from an earlier server process, whose tab tracking died with it.
   inherited?: boolean
 }> => {
   const existing = await connectExistingProfile(profileDir)
@@ -160,8 +153,6 @@ export const launchManagedBrowser = async (
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
-      // Automation addresses tabs independently of window focus. Keep background
-      // renderers responsive, as Playwright does for its managed Chromium.
       "--disable-background-timer-throttling",
       "--disable-backgrounding-occluded-windows",
       "--disable-renderer-backgrounding",
@@ -171,8 +162,6 @@ export const launchManagedBrowser = async (
         containerized: linuxContainerRuntime()
       }),
       ...(managedBrowserHeadless(process.platform, process.env) ? ["--headless=new"] : []),
-      // No startup page: every tab is an agent's, opened and closed by Browser
-      // Use, so none is left sitting at about:blank after a turn.
       "--no-startup-window"
     ],
     { stdio: "ignore" }
@@ -191,9 +180,7 @@ export const launchManagedBrowser = async (
     if (endpoint !== undefined) {
       try {
         return { connection: await CdpConnection.connect(endpoint), processHandle }
-      } catch {
-        // DevToolsActivePort can appear one event-loop turn before the socket accepts.
-      }
+      } catch {}
     }
     await delay(100)
   }

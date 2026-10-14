@@ -52,7 +52,6 @@ const reset = (otp = code()) =>
 const session = (token: string) =>
   worker.fetch(
     new Request(`${BASE}/api/auth/get-session`, {
-      // Cloudflare's edge sets cf-connecting-ip on every request.
       headers: { ...authed(token), "cf-connecting-ip": clientIP }
     }),
     configured
@@ -112,7 +111,6 @@ describe("native email authentication", () => {
 
   it("invalidates the previous code when resending", async () => {
     await signup()
-    // Fix the old stored code so the assertion cannot depend on random collisions.
     await env.DB.prepare(
       "UPDATE verification SET value = 'invalid-old-code:0' WHERE identifier = ?"
     )

@@ -27,8 +27,6 @@ extension CloudHubConnection {
   }
 
   func handle(_ message: ServerWebSocketMessage) {
-    // Binary messages are relay envelope batches for hub data channels,
-    // which this app never opens.
     guard case let .string(text) = message else { return }
     let data = Data(text.utf8)
     guard let probe = try? decoder.decode(TypeProbe.self, from: data) else { return }
@@ -70,16 +68,12 @@ extension CloudHubConnection {
         (machine \(failure.machineId ?? "-", privacy: .public), channel \(failure.channelId ?? "-", privacy: .public))
         """
       )
-      // Only the grace-expiry broadcast has no channel id and therefore
-      // carries machine-wide offline authority; a channel-scoped failure
-      // says nothing about the machine's presence.
       if failure.code == "machine-offline", failure.channelId == nil, let machineId = failure.machineId {
         markMachineOffline(machineId)
       }
     case "pong":
       receivePong()
     default:
-      // Future message kinds.
       break
     }
   }
@@ -90,10 +84,6 @@ extension CloudHubConnection {
     machinesChangedHandler?(machines)
   }
 
-  /// Applies the REST roster back to the hub's presence view. REST and
-  /// WebSocket presence come from the same Durable Object, but either
-  /// notification path can be lost during a reconnect; this keeps a stale
-  /// local value from leaking into the next presence notification.
   public func reconcileAuthoritativeMachines(_ authoritative: [CloudMachine]) {
     machines = authoritative
   }

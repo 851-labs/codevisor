@@ -3,12 +3,6 @@ import Foundation
 
 @testable import CodevisorCore
 
-/// The navigation stack wired the way `AppEnvironment` wires it, over an
-/// in-memory store: a `NavigationStore` and the models that render it.
-///
-/// Tests put server state in place with `install`, which does what a
-/// machine's snapshot does. They never assign `projectList.sessions` or save
-/// server fields through the repository -- the app can't either.
 @MainActor
 final class NavigationFixture {
   let persistence: InMemoryStore
@@ -32,9 +26,6 @@ final class NavigationFixture {
     store.attach(projectList: projectList, repository: workspaces)
   }
 
-  /// Installs a machine's snapshot built from app records. A workspace's
-  /// chat panes assign those chats to it, its panes become server panes, and
-  /// its tab arrangement becomes this device's layout.
   func install(
     machineId: String = "local",
     projects: [Project] = [],
@@ -81,8 +72,6 @@ extension ServerNavigationSnapshot {
 }
 
 extension ProjectListModel {
-  /// A project list rendering its own navigation store, for tests that only
-  /// need one to hand to another component.
   @MainActor
   static func fixture() -> ProjectListModel { NavigationFixture().projectList }
 }

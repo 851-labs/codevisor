@@ -65,7 +65,6 @@ public enum ServerHarnessLifecyclePhase: Equatable, Sendable {
 public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
   public var state: String
   public var detail: String?
-  /// Resolved binary location and probed version for ready harnesses.
   public var path: String?
   public var version: String?
 
@@ -79,13 +78,10 @@ public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
   public var resolvedState: ServerHarnessReadinessState { .init(rawValue: state) }
 }
 
-/// One way the server can install a harness CLI on its machine, mirroring
-/// `HarnessInstallMethod` in @codevisor/api.
 public struct ServerHarnessInstallMethod: Codable, Equatable, Sendable {
   public var id: String
   public var kind: String
   public var label: String
-  /// The exact shell command that would run — shown verbatim before install.
   public var command: String
   public var available: Bool
   public var recommended: Bool
@@ -107,8 +103,6 @@ public struct ServerHarnessInstallMethod: Codable, Equatable, Sendable {
   }
 }
 
-/// Latest-version knowledge for an installed harness, mirroring
-/// `HarnessUpdateInfo` in @codevisor/api.
 public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
   public var installedVersion: String?
   public var latestVersion: String?
@@ -117,7 +111,6 @@ public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
   public var installOrigin: String?
   public var channel: String?
   public var checkedAt: String?
-  /// What changes when the update crosses a major version; nil otherwise.
   public var notes: String?
 
   public init(
@@ -141,14 +134,10 @@ public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
   }
 }
 
-/// Live install/update state for one harness, mirroring
-/// `HarnessLifecycleState` in @codevisor/api. `phase` is one of
-/// idle/installing/updating/pendingUpdate/failed.
 public struct ServerHarnessLifecycleState: Codable, Equatable, Sendable {
   public var phase: String
   public var targetVersion: String?
   public var methodId: String?
-  /// Background terminal streaming the operation's output ("Show Output").
   public var terminalId: String?
   public var error: String?
   public var startedAt: String?
@@ -172,8 +161,6 @@ public struct ServerHarnessLifecycleState: Codable, Equatable, Sendable {
   public var resolvedPhase: ServerHarnessLifecyclePhase { .init(rawValue: phase) }
 }
 
-/// Dual-install: a desktop app bundling a copy of the harness CLI, with its
-/// own Sparkle-fed update state. Mirrors `HarnessBundledApp` in @codevisor/api.
 public struct ServerHarnessBundledApp: Codable, Equatable, Sendable {
   public var appName: String
   public var bundlePath: String
@@ -196,13 +183,10 @@ public struct ServerHarnessBundledApp: Codable, Equatable, Sendable {
   }
 }
 
-/// 202 ack for install/update starts.
 public struct ServerHarnessOperationStarted: Codable, Equatable, Sendable {
   public var accepted: Bool
   public var terminalId: String?
   public var queued: Bool?
-  /// Authoritative state installed by the server before it acknowledges the
-  /// operation. Optional for compatibility with older servers.
   public var lifecycle: ServerHarnessLifecycleState?
 
   public init(
@@ -229,15 +213,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
   public var settings: ServerHarnessSettings?
   public var readiness: ServerHarnessReadiness
   public var auth: ServerHarnessAuth?
-  /// Copyable shell command that installs the harness CLI; present only for
-  /// harnesses with a well-known installer.
   public var installHint: String?
-  /// Ways the server can install this harness on its machine. Absent on
-  /// servers that predate lifecycle management.
   public var installMethods: [ServerHarnessInstallMethod]?
-  /// Latest-version knowledge from the server's periodic update check.
   public var updateInfo: ServerHarnessUpdateInfo?
-  /// Live install/update operation state.
   public var lifecycle: ServerHarnessLifecycleState?
 
   public init(
@@ -272,8 +250,6 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     self.lifecycle = lifecycle
   }
 
-  /// The user's effective machine preference. Older servers only return the
-  /// effective value, so preserve that as a compatibility fallback.
   public var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
 }
 
@@ -420,16 +396,8 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
   public var harness: ServerHarness
   public var modes: SessionModeState?
   public var configOptions: [SessionConfigOption]
-  /// Whether the harness supports persistent session goals (codex goal mode).
   public var supportsGoals: Bool?
-  /// Skills a fresh session in the inspected directory can invoke. Specific
-  /// to the request's `cwd` (project skills differ per folder); nil when
-  /// the harness cannot list them and for servers predating the field.
   public var skills: SessionSkills?
-  /// Requested `configId -> value` pairs the server could not apply when
-  /// this inspection was made with `configSelections` (for example, a
-  /// remembered model the harness no longer offers). Nil for inspections
-  /// without selections and for servers predating the field.
   public var unappliedConfigSelections: [String: String]?
 
   public init(

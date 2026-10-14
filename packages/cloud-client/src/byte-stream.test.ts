@@ -25,7 +25,6 @@ describe("byte stream protocol", () => {
   })
 
   it("calculates ciphertext credit exactly", () => {
-    // Raw box = plaintext + 16-byte tag; no encoding expansion on the wire.
     expect(byteStreamSealedBytes(0)).toBe(16)
     expect(byteStreamSealedBytes(1)).toBe(17)
     expect(byteStreamSealedBytes(BYTE_STREAM_MAX_CHUNK_BYTES)).toBe(65_552)

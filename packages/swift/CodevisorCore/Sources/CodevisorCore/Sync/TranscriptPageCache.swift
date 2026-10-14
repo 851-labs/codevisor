@@ -1,16 +1,5 @@
 import Foundation
 
-/// The latest page of recently opened chats, kept on disk so a chat can show
-/// its history the moment it opens -- even offline, or after the system ended
-/// the app -- and update in place when the server's fresh page arrives.
-///
-/// It stores the open response's bytes as the server sent them. It lives in
-/// Caches: the system may clear it, and nothing is lost if it does.
-///
-/// Every file operation runs on one serial utility queue. Saving and removing
-/// return at once (opening a chat saves its page on the main actor); a read
-/// waits for every operation queued before it, so it always sees the latest
-/// save.
 public final class TranscriptPageCache: @unchecked Sendable {
   public static let defaultLimit = 30
 
@@ -24,28 +13,21 @@ public final class TranscriptPageCache: @unchecked Sendable {
     self.limit = limit
   }
 
-  /// The app's shared cache under the user's Caches directory.
   public static let shared = TranscriptPageCache(
     directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("transcripts", isDirectory: true))
 
-  /// Reads once earlier saves and removals have landed. Suspends rather than
-  /// blocking: a `queue.sync` here would park a Swift concurrency thread (a
-  /// small, fixed pool) for the whole wait and the disk read.
   public func load(machineId: String, sessionId: UUID) async -> Data? {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
     return await withCheckedContinuation { continuation in
-      // `.enforceQoS` lifts queued utility work ahead of it to the reader's priority.
       queue.async(qos: .userInitiated, flags: .enforceQoS) { [self] in
         guard let data = try? Data(contentsOf: url) else { return continuation.resume(returning: nil) }
-        // Reading counts as use, so the chats opened most recently stay.
         try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
         continuation.resume(returning: data)
       }
     }
   }
 
-  /// Queues the write and the trim that follows it.
   public func store(_ data: Data, machineId: String, sessionId: UUID) {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
     queue.async { [self] in
@@ -74,7 +56,6 @@ public final class TranscriptPageCache: @unchecked Sendable {
     return directory.appendingPathComponent("\(machine)_\(sessionId.uuidString.lowercased()).json")
   }
 
-  /// Keeps only the most recently used pages.
   private func trim() {
     guard
       let files = try? fileManager.contentsOfDirectory(

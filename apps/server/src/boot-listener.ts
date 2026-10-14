@@ -6,16 +6,6 @@ import type { DataUpgradeProgress, HealthResponse } from "@codevisor/api"
 
 import { hasExistingListener } from "./infra/listener-probe.js"
 
-/// The server's listener, bound before the blocking data upgrades run.
-///
-/// Migrations complete before the real router exists, so without this a
-/// migrating machine is simply unreachable and a remote client cannot tell
-/// "updating chat history, 40%" from "hung". While booting, the listener
-/// answers `/v1/health` with `ok: false`, `database: "migrating" | "failed"`
-/// and the latest upgrade report; every other request is refused. Once the
-/// services exist, `startCodevisorServer` detaches these handlers and takes
-/// over the same socket, so clients never see a refused-connection gap.
-
 export interface BootListenerOptions {
   readonly host: string
   readonly port: number
@@ -31,20 +21,11 @@ export interface BootListenerOptions {
 
 export interface BootListener {
   readonly server: Server
-  /// Records the newest upgrade report for the health answer.
   readonly report: (progress: DataUpgradeProgress) => void
-  /// Removes the boot handlers so the real server can install its own.
   readonly detach: () => void
-  /// Stops accepting and drops every open connection (failure path only).
-  /// `afterMs` keeps answering that long first: a boot that failed its data
-  /// upgrade is restarted by launchd/systemd within seconds, and a remote
-  /// client polling every couple of seconds would otherwise only ever see
-  /// the flap, never the reason.
   readonly close: (options?: { readonly afterMs?: number }) => Promise<void>
 }
 
-/// How long a boot that failed its data upgrade keeps answering /v1/health
-/// with the failure before exiting.
 export const FAILED_UPGRADE_GRACE_MS = 10_000
 
 const BOOT_REFUSED = JSON.stringify({ error: "Server is updating its data" })
@@ -55,10 +36,6 @@ const onSocket = (_request: IncomingMessage, socket: Socket): void => {
   socket.destroy()
 }
 
-/// Binds the boot listener unless something already serves the port — the
-/// same shadow-bind guard the real start applies, so an accidental second
-/// `serve` never hijacks a live server's clients with 503s. Ephemeral
-/// ports (tests) skip it: nothing could be waiting on an unknown port.
 export const startBootListenerIfPortFree = async (
   options: BootListenerOptions
 ): Promise<BootListener | undefined> => {
@@ -78,8 +55,6 @@ export const bootHealth = (
   latest: DataUpgradeProgress | undefined
 ): HealthResponse => ({
   ok: false,
-  // Mirrors defaultServerConfig's fallback: dev runs have no VERSION file
-  // and the client decodes `version` as a required string.
   version: options.version ?? "0.1.0",
   database: latest?.state === "failed" ? "failed" : "migrating",
   bootId: options.bootId,
@@ -101,9 +76,6 @@ export const bootHealth = (
       })
 })
 
-/// Binds the listener. Resolves undefined (after one log line) when the
-/// port cannot be bound: the real start later is the authoritative check,
-/// so an early bind failure must never fail boot on its own.
 export const startBootListener = (
   options: BootListenerOptions
 ): Promise<BootListener | undefined> =>
@@ -111,9 +83,6 @@ export const startBootListener = (
     const log = options.log ?? defaultLog
     let latest: DataUpgradeProgress | undefined
     const onRequest = (request: IncomingMessage, response: ServerResponse): void => {
-      // Tokenless like the real health route; the payload carries nothing
-      // about projects, sessions, or tokens. `Connection: close` keeps a
-      // client from reusing this socket after the real server takes over.
       if (request.method === "GET" && request.url?.split("?")[0] === "/v1/health") {
         response.writeHead(200, { "Content-Type": "application/json", Connection: "close" })
         response.end(JSON.stringify(bootHealth(options, latest)))
@@ -129,8 +98,6 @@ export const startBootListener = (
       log(`Early health listener unavailable on ${options.host}:${options.port}: ${error.message}`)
       resolve(undefined)
     }
-    // Once bound, the server still emits 'error' for a failed accept (EMFILE
-    // when descriptors run out); unheard, that would exit the process.
     const onServerError = (error: Error): void => {
       log(`Early health listener error: ${error.message}`)
     }
@@ -154,9 +121,6 @@ export const startBootListener = (
             await new Promise<void>((done) => setTimeout(done, closeOptions.afterMs))
           }
           await new Promise<void>((done) => {
-            // Stop accepting first, then drop what is open: a socket
-            // accepted between the two calls would otherwise hold the
-            // close callback until its request completed.
             server.close(() => done())
             server.closeAllConnections()
           })

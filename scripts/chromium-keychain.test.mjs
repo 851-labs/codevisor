@@ -13,9 +13,6 @@ test(
   () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-keychain-test-"))
     try {
-      // A fake Security implementation is the actual link target of BOTH the
-      // executable and the dlopened client. No path can reach the real Keychain,
-      // even if interposition breaks. Test the same dyld boundary CEF crosses.
       const mock = join(directory, "MockSecurity.mm")
       writeFileSync(
         mock,
@@ -79,8 +76,6 @@ int main(int argc, char **argv) {
       assert([captured[(__bridge id)kSecReturnAttributes] isEqual:@YES]);
       assert([query[(__bridge id)kSecAttrService] isEqual:@"Chromium Safe Storage"]);
     }
-    // Unrelated generic passwords, Chrome, certificates and partial queries
-    // must pass through unchanged, including Codevisor's other credentials.
     for (NSDictionary *patch in @[
       @{(__bridge id)kSecAttrService: @"com.codevisor.cloud"},
       @{(__bridge id)kSecAttrService: @"Chrome Safe Storage", (__bridge id)kSecAttrAccount: @"Chrome"},
@@ -136,8 +131,6 @@ int main(int argc, char **argv) {
         executable
       )
       const entitlements = join(directory, "AdHoc.entitlements")
-      // Ad-hoc fixtures have no Team ID. Production signs all these dependencies
-      // with the app's Team ID; this test-only exception lets ad-hoc dylibs load.
       writeFileSync(
         entitlements,
         '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.disable-library-validation</key><true/></dict></plist>'

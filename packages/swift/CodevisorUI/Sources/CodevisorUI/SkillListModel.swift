@@ -2,15 +2,12 @@ import CodevisorCore
 import Foundation
 import Observation
 
-/// Codevisor's skill store as one machine reports it. The store syncs
-/// across devices, so any reachable machine's list is the list.
 @MainActor @Observable
 public final class SkillListModel {
   public private(set) var skills: [ServerSkill] = []
   public private(set) var isLoading = true
   public private(set) var loadFailed = false
 
-  /// Discards answers from a load that a newer one has replaced.
   @ObservationIgnored private var loadGeneration = 0
 
   public init() {}
@@ -29,8 +26,6 @@ public final class SkillListModel {
     }
   }
 
-  /// Adopts the list a mutation returned, so the page reflects the change
-  /// without another round trip. It supersedes any load still in flight.
   public func show(_ skills: [ServerSkill]) {
     loadGeneration &+= 1
     isLoading = false

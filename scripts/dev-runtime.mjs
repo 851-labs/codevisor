@@ -11,8 +11,6 @@ export async function claimDevelopmentRunner(manifestPath, manifest) {
       const temporary = `${manifestPath}.${randomUUID()}.tmp`
       try {
         await writeFile(temporary, serializedManifest)
-        // Publish a complete manifest atomically; contenders never mistake
-        // a partially written live claim for a crashed owner.
         await link(temporary, manifestPath)
       } finally {
         await rm(temporary, { force: true })

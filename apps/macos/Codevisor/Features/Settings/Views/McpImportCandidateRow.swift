@@ -2,8 +2,6 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// A native server found in a harness config that isn't managed by the
-/// gateway yet, with a one-tap Import action (spinner while in flight).
 struct McpImportCandidateRow: View {
   @Environment(\.theme) private var theme
   let candidate: ServerNativeMcpImportCandidate

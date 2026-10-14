@@ -19,8 +19,6 @@ import {
   settleSessionAttention
 } from "./session-attention.js"
 
-/// The synchronous insert behind `createSession`, exported so the atomic
-/// workspace create can run it inside its own transaction.
 export const insertSessionRow = (
   context: ServiceContext,
   request: CreateSessionRequest
@@ -28,11 +26,6 @@ export const insertSessionRow = (
   const { sqlite, config, getSession } = context
 
   const now = isoTimestamp()
-  // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
-  // write (mirroring createProject) so ids stay consistent no matter
-  // which client created the session (Swift uppercases, Node lowercases)
-  // — a case-only difference must not spawn a duplicate session row for
-  // the same chat.
   const id = (request.id ?? randomUUID()).toLowerCase()
   sqlite
     .prepare(
@@ -184,10 +177,6 @@ export const makeSessionsService = (
         if (row === undefined) throw new Error(`Session not found: ${id}`)
         return sessionConfigSelectionsFromRaw(row.config_selections)
       }),
-    // Metadata updates deliberately leave updated_at alone: recency ordering
-    // tracks conversation activity (chat events stamp it as items
-    // land, the last being the finished assistant response), so opening or
-    // renaming a session must not reshuffle the sidebar.
     updateSession: (rawId, request) =>
       attempt("updateSession", () => {
         const id = canonicalUuid(rawId)
@@ -223,9 +212,6 @@ export const makeSessionsService = (
             request.title ?? null,
             request.title ?? null,
             request.agentSessionId ?? current.agentSessionId ?? null,
-            // A project move re-homes the session's directory: a stale
-            // worktree name from the old project must not survive it, so the
-            // move applies exactly the worktree the request names (or none).
             request.projectId === undefined
               ? (request.worktreeName ?? current.worktreeName ?? null)
               : (request.worktreeName ?? null),
@@ -255,8 +241,6 @@ export const makeSessionsService = (
           )
           .run(JSON.stringify(selections), JSON.stringify(unavailable), id)
       }),
-    // This condition lives in the UPDATE itself so a user rename and a
-    // harness title arriving concurrently cannot pass a stale read/check.
     updateSessionTitleFromHarness: (rawId, title) =>
       attempt("updateSessionTitleFromHarness", () => {
         const id = canonicalUuid(rawId)
@@ -267,8 +251,6 @@ export const makeSessionsService = (
           )
           .run(title, id, title)
         if (result.changes === 0) {
-          // Preserve updateSession's missing-id behavior while returning no
-          // value for protected and idempotent title updates.
           getSession(id)
           return undefined
         }
@@ -278,9 +260,6 @@ export const makeSessionsService = (
       attempt("deleteSession", () => {
         const id = canonicalUuid(rawId)
         sqlite.transaction(() => {
-          // The chat's pane goes with it. An emptied workspace is a valid
-          // state; clients render it locally rather than the registry
-          // holding a placeholder row.
           sqlite
             .prepare(
               "delete from workspace_panes where resource_kind = 'session' and resource_id = ?"
@@ -326,9 +305,6 @@ const acknowledgeReadAttentionError = (
   id: string,
   requested: number
 ): void => {
-  // Reading through the newest revision acknowledges an error too:
-  // errored is the urgent flavor of unread, not a lock. A read that
-  // was in flight when a *newer* errored turn landed keeps the flag.
   sqlite
     .prepare(
       "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"

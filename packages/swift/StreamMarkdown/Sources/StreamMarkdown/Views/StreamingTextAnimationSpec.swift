@@ -1,28 +1,12 @@
 import Foundation
 
-/// Provider-neutral streamed-text presentation for native Markdown surfaces.
-///
-/// Text is already present in the text storage and therefore participates in
-/// layout, selection, copying, and accessibility immediately. Only glyph
-/// painting is delayed: each newly rendered word-like range fades from
-/// transparent to opaque on this timeline.
 enum StreamingTextAnimationSpec {
   static let fadeDuration: TimeInterval = 0.150
-  /// Color emoji are assembled from one or more Unicode scalars. Provider
-  /// chunks can append a variation selector, skin tone, or ZWJ component to
-  /// the trailing grapheme after its base scalar has arrived. Keep that
-  /// grapheme pending for a few frames, then reveal the completed glyph in
-  /// one paint instead of alpha-blending several transient glyph shapes.
   static let emojiStabilizationDelay: TimeInterval = 0.050
   static let minimumTargetQueueLead: TimeInterval = 0.055
   static let defaultTargetQueueLead: TimeInterval = 0.100
   static let maximumTargetQueueLead: TimeInterval = 0.350
-  /// No per-word floor: pacing comes only from the backlog, so a large burst
-  /// drains in roughly one queue lead instead of crawling at a fixed rate
-  /// while its fully laid-out (but still transparent) height sits on screen.
   static let fastestSegmentDelay: TimeInterval = 0
-  /// Spacing between the most recently started word and the head of the
-  /// pending queue, so trickled appends still enter after the prior word.
   static let queueHeadSpacing: TimeInterval = 0.008
   static let minimumSlowestSegmentDelay: TimeInterval = 0.032
   static let maximumSlowestSegmentDelay: TimeInterval = 0.120
@@ -47,8 +31,6 @@ enum StreamingTextAnimationSpec {
     min(maximumTargetQueueLead, max(minimumTargetQueueLead, lead))
   }
 
-  /// Uses the shape of the first live update as a provider-neutral cold-start
-  /// estimate. Later source arrivals replace it with measured gap and jitter.
   static func initialTargetQueueLead(forCharacterCount count: Int) -> TimeInterval {
     clampedTargetQueueLead(
       min(
@@ -71,9 +53,6 @@ enum StreamingTextAnimationSpec {
     )
   }
 
-  /// Chooses the delay after revealing one word-like range. Character
-  /// backlog, rather than provider/model identity, controls playback: a deep
-  /// queue accelerates and a thin queue preserves the measured jitter lead.
   static func segmentDelay(
     revealedCharacterCount: Int,
     backlogCharacterCount: Int,

@@ -30,7 +30,6 @@ const directory = async () => {
   return path
 }
 
-// The shape Muse 1.4.7 writes with its file backend (values are fakes).
 const meta = {
   access_token: "access-1",
   obtained_via: "device_code",
@@ -56,7 +55,6 @@ describe("Muse credentials", () => {
       credential: { meta }
     })
     expect(bundle).not.toHaveProperty("refreshToken")
-    // The same account signed in again (new token, other casing) is one account.
     const again = parseMuseAuth(
       {
         providers: { meta: { ...meta, access_token: "access-2", user_email: "person@example.com" } }
@@ -65,7 +63,6 @@ describe("Muse credentials", () => {
     )!
     expect(again.subject).toBe(bundle.subject)
     expect(bundle.subject).not.toContain("person")
-    // Without an email the key identifies it; with no credential there's nothing.
     const keyOnly = parseMuseAuth({ providers: { meta: { api_key: "LLM|2|k" } } }, "external")!
     expect(keyOnly).toMatchObject({ accessToken: "LLM|2|k", ownership: "external" })
     expect(keyOnly).not.toHaveProperty("email")
@@ -81,7 +78,6 @@ describe("Muse credentials", () => {
     const path = museAuthPath(profile)
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(document)
     expect((await stat(path)).mode & 0o777).toBe(0o600)
-    // Read back the way account sync captures it.
     const captured = await readNativeOAuth({
       harnessId: "muse-code",
       directory: profile,
@@ -93,7 +89,6 @@ describe("Muse credentials", () => {
       }
     })
     expect(captured).toMatchObject({ accessToken: "access-1", credential: { meta } })
-    // A bundle without the Meta entry still writes a well-formed document.
     const { credential: _credential, ...bare } = captured!
     await writeMuseAuth(profile, bare)
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
@@ -137,7 +132,6 @@ describe("Muse credentials", () => {
     await writeFile(join(own, "muse", "auth.json"), "{}")
     await writeFile(join(own, "muse", ".settings.json.lock"), "")
     const profile = join(home, "profile")
-    // Something the account already has of its own is kept.
     await mkdir(join(profile, "config", "muse"), { recursive: true })
     await writeFile(join(profile, "config", "muse", "trust.json"), "{}")
     await writeFile(join(own, "muse", "trust.json"), "{}")
@@ -159,17 +153,14 @@ describe("Muse credentials", () => {
       code: "ENOENT"
     })
 
-    // XDG_CONFIG_HOME names the user's config; a missing one links nothing.
     const elsewhere = join(home, "xdg")
     await mkdir(join(elsewhere, "git"), { recursive: true })
     await linkMuseConfigHome(join(home, "second"), { XDG_CONFIG_HOME: elsewhere })
     expect(await readlink(join(home, "second", "config", "git"))).toBe(join(elsewhere, "git"))
     await linkMuseConfigHome(join(home, "third"), { XDG_CONFIG_HOME: join(home, "missing") })
     expect((await stat(join(home, "third", "config", "muse"))).isDirectory()).toBe(true)
-    // With no config to find, the managed home is still ready for Muse.
     await linkMuseConfigHome(join(home, "fourth"), {})
     expect((await stat(join(home, "fourth", "config", "muse"))).isDirectory()).toBe(true)
-    // A link that can't be made is skipped; the others still come.
     const locked = join(home, "locked")
     await mkdir(join(locked, "config", "muse"), { recursive: true })
     await chmod(join(locked, "config"), 0o500)

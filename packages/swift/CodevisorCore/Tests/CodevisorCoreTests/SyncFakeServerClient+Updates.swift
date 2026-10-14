@@ -3,8 +3,6 @@ import Foundation
 
 @testable import CodevisorCore
 
-// MARK: - Simulated update surfaces (same file so `private` storage stays
-// reachable; a separate extension keeps the class body within size limits).
 extension SyncFakeServerClient {
 
   var appliedUpdates: Int { lock.withLock { _appliedUpdates } }
@@ -12,7 +10,6 @@ extension SyncFakeServerClient {
   var updateInfoRefreshes: [Bool] { lock.withLock { _updateInfoRefreshes } }
   var appliedChannels: [ServerUpdateChannel] { lock.withLock { _appliedChannels } }
 
-  /// Makes the fake report an available update to `latest`.
   func configureUpdate(
     current: String,
     latest: String,
@@ -35,11 +32,6 @@ extension SyncFakeServerClient {
     }
   }
 
-  /// Makes the server boot through a data upgrade: one health report per
-  /// poll, then ready — or, with `failure`, a failed upgrade that never
-  /// recovers. `immediately` models a machine found mid-migration by a
-  /// client that did not ask for the update; otherwise the migration
-  /// begins with the next simulated restart.
   func configureMigration(
     reports: [ServerMigrationProgress],
     failure: String? = nil,
@@ -53,55 +45,37 @@ extension SyncFakeServerClient {
     }
   }
 
-  /// A migrating server refuses every route but health.
   static let migratingFailure = CodevisorServerClientError.httpStatus(
     503, "{\"error\":\"Server is updating its data\"}")
 
-  /// Whether the simulated boot is still inside its data upgrade. Once the
-  /// reports are spent (and no failure is configured) the real server takes
-  /// the socket over, so every route answers again — regardless of which
-  /// route a client happens to try first. Callers hold `lock`.
   private func migrationStillRunning() -> Bool {
     guard _migrationActive else { return false }
     if _migrationReports.isEmpty, _migrationFailure == nil { _migrationActive = false }
     return _migrationActive
   }
 
-  /// How long the simulated restart stays unreachable, in `info()` probes.
   func configureRestartDowntime(polls: Int) {
     lock.withLock { restartDowntime = polls }
   }
 
-  /// Makes `applyServerUpdate()` decline as busy (chats still running).
   func configureBusy(_ value: Bool) {
     lock.withLock { _busy = value }
   }
 
-  /// Makes the next apply accept with `draining: true` and report a
-  /// "draining" `lastApply` for `polls` update-info reads before the
-  /// simulated restart happens.
   func configureDrain(polls: Int) {
     lock.withLock { _drainPollsRemaining = polls }
   }
 
-  /// After a harness update is triggered, inventory reads report it as
-  /// still updating for `polls` reads, then as finished.
   func configureHarnessUpdateInProgress(polls: Int) {
     lock.withLock { _harnessLifecycleActivePolls = polls }
   }
 
   var harnessLifecycleReads: Int { lock.withLock { _harnessLifecycleReads } }
 
-  /// Makes the next apply accept the handoff but fail on the machine:
-  /// nothing restarts and updateInfo starts reporting the failure.
   func configureApplyFailure(message: String) {
     lock.withLock { applyFailureMessage = message }
   }
 
-  // MARK: - Simulated harness / plugin inventories
-
-  /// Every mutating update operation in call order, across kinds — the
-  /// update-all ordering assertions read this.
   var operationLog: [String] { lock.withLock { _operationLog } }
 
   func configureHarnesses(_ harnesses: [ServerHarness]) {
@@ -167,8 +141,6 @@ extension SyncFakeServerClient {
     }
   }
 
-  // MARK: - Simulated config-plane replica
-
   func seedSyncEntries(namespace: String, _ entries: [ServerSyncEntry]) {
     lock.withLock { _syncEntries[namespace] = entries }
   }
@@ -191,8 +163,6 @@ extension SyncFakeServerClient {
     }
   }
 
-  /// Marks a skill this machine's replica wants; reconciles apply it once
-  /// the blob arrives.
   func configureWantedSkill(directoryName: String, hash: String) {
     lock.withLock { _wantedSkills.append((directoryName, hash)) }
   }
@@ -352,8 +322,6 @@ extension SyncFakeServerClient {
         }
       }
       if lastApply?.state == "draining" {
-        // Still draining for a while; the last poll performs the restart
-        // the accepted apply deferred.
         if _drainPollsRemaining > 1 {
           _drainPollsRemaining -= 1
         } else {
@@ -386,9 +354,6 @@ extension SyncFakeServerClient {
         return ServerUpdateApplied(accepted: false, targetVersion: currentVersion)
       }
       if let applyFailureMessage {
-        // The handoff was accepted but the machine's unattended
-        // install failed: nothing restarts, and the failure
-        // surfaces through updateInfo's lastApply.
         lastApply = ServerUpdateApplyState(
           state: "failed",
           message: applyFailureMessage,
@@ -404,7 +369,6 @@ extension SyncFakeServerClient {
       _operationLog.append("server.apply")
       let targetVersion = latestVersion
       if _drainPollsRemaining > 0 {
-        // Chats are mid-turn: accepted, but the restart waits for them.
         lastApply = ServerUpdateApplyState(
           state: "draining",
           message: "Waiting for 2 chats to finish",
@@ -427,14 +391,10 @@ extension SyncFakeServerClient {
     }
   }
 
-  /// The server restarts: unreachable for a few probes, then back on the
-  /// new version. Callers hold `lock`.
   private func performSimulatedRestart() {
     downtimeRemaining = restartDowntime
     currentVersion = installedVersionAfterUpdate ?? latestVersion
     if let installedBuildNumberAfterUpdate {
-      // Landed on a build of its own choosing; still "behind" when short
-      // of the target, so the next check keeps offering the update.
       currentBuildNumber = installedBuildNumberAfterUpdate
       updateApplied = targetBuildNumber.map { installedBuildNumberAfterUpdate >= $0 } ?? true
     } else {
@@ -443,8 +403,6 @@ extension SyncFakeServerClient {
     }
     bootId = "boot-after-update"
     if _migrationArmed {
-      // The replacement binds its port and reports its data upgrade in
-      // place of plain downtime.
       _migrationArmed = false
       _migrationActive = true
       downtimeRemaining = 0
@@ -477,7 +435,6 @@ extension SyncFakeServerClient {
   }
   func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
 
-  /// The `harnessIds` scope of every forced harness check, in call order.
   var harnessCheckScopes: [[String]?] { lock.withLock { _harnessCheckScopes } }
 
   func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] {
@@ -488,8 +445,6 @@ extension SyncFakeServerClient {
     }
   }
 
-  /// Inventory with lifecycle: while a simulated harness update is in
-  /// progress, every harness reports phase "updating".
   func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
     await harnessReadGate?()
     return lock.withLock {

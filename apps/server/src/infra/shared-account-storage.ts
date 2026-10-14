@@ -34,8 +34,6 @@ export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordin
       },
       write: async (id, value) => {
         await atomicWriteJson(path(id), value)
-        // The receipt is the only recovery path after a rotating provider
-        // grant is consumed. Flush both file contents and the rename.
         for (const location of [path(id), join(dataDir, "shared-credentials")]) {
           const handle = await open(location, "r")
           try {

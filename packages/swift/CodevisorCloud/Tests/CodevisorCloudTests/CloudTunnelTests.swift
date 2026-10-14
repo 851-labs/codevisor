@@ -6,10 +6,6 @@ import Testing
 
 @testable import CodevisorCloud
 
-/// The app side of the tunnel control plane:
-/// the device's derived tunnel identity, its registration in hello, and the
-/// relay config each welcome delivers. The tunnel data path itself is covered
-/// by packages/net and scripts/net-e2e.mjs.
 @Suite("Cloud tunnel control plane")
 struct CloudTunnelTests {
   private final class ConfigRecorder: @unchecked Sendable {
@@ -107,7 +103,6 @@ struct CloudTunnelTests {
 
   @Test("Asking for the endpoint before the first welcome waits for its config")
   func endpointWaitsForFirstConfig() async {
-    // A 60 s wait: if configure failed to release the waiter, this would hang.
     let tunnel = CloudTunnelEndpoint(
       credentialStore: InMemoryCloudCredentialStore(token: "t"), trustAnchorsPem: [],
       firstConfigWait: .seconds(60))

@@ -20,9 +20,6 @@ fi
 work_directory="$(mktemp -d "${TMPDIR:-/tmp}/CodevisorBrowserIcons.XXXXXX")"
 trap 'rm -rf "$work_directory"' EXIT
 
-# Icon Composer leaves presentation padding around the macOS app icon. That
-# padding makes the same artwork undersized in Chrome's fixed 16-DIP toolbar
-# slot, so remove it before generating the extension-specific raster sizes.
 sips --cropToHeightWidth 218 218 "$source_icon" \
   --out "$work_directory/source.png" >/dev/null
 

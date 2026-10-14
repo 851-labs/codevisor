@@ -3,9 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Touch-sized goal summary above the composer. The compact surface is one
-/// target; tapping it moves the existing objective directly into the composer
-/// for editing instead of inserting an intermediate management sheet.
 struct IOSGoalAccessory: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var cardStyle = ComposerCardStyle()
@@ -19,8 +16,6 @@ struct IOSGoalAccessory: View {
 
   var body: some View {
     Button {
-      // The accessory and composer live in one GlassEffectContainer;
-      // one transaction lets their identified materials morph together.
       withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
         controller.editGoal()
       }

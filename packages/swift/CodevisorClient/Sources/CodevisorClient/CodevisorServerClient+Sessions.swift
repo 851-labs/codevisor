@@ -2,8 +2,6 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-/// Only the archived flag: every other field is omitted so the server keeps
-/// whatever it already has (see `UpdateWorkspaceRequest`).
 private struct UpdateWorkspaceBody: Encodable {
   var isArchived: Bool
 }
@@ -12,9 +10,7 @@ private struct PromptBody: Encodable {
   var text: String
   var clientActionId = UUID().uuidString
   var attachments: [ServerAttachmentRef]?
-  /// The optimistic user message's id (see the protocol's doc).
   var messageId: String?
-  /// The sending window's client-control id (see the protocol's doc).
   var clientId: String?
 }
 
@@ -46,10 +42,6 @@ private struct SetConfigResponse: Decodable {
   var configOptions: [SessionConfigOption]?
 }
 
-/// Custom encoding because synthesized Codable cannot express the token-budget
-/// double-option: `.keep` omits the key, `.clear` encodes a literal `null`,
-/// `.set` encodes the number. Internal (not private) so tests can pin the
-/// wire shape.
 struct SetGoalBody: Encodable {
   var objective: String?
   var status: GoalStatus?
@@ -95,11 +87,6 @@ struct CreateSessionBody: Encodable {
   var workspaceId: String?
   var createdAt: String
   var updatedAt: String?
-  /// True for sessions that don't have an agent yet: without it the server
-  /// spawns the agent AT CREATE with the cwd derived at that moment, which
-  /// pins eagerly-created chats to the project root — a worktree chosen in
-  /// the composer afterwards could never move it. Deferred agents are
-  /// created lazily on the first prompt, from the CURRENT worktree name.
   var deferAgentSession: Bool?
 
   init(session: ChatSession, workspaceId: UUID? = nil) {
@@ -123,16 +110,8 @@ struct UpdateSessionBody: Encodable {
   var agentSessionId: String?
   var title: String
   var titleIntent = "fallback"
-  /// Sessions created EAGERLY (before their worktree exists) get the
-  /// worktree onto the server record through this PATCH — POST
-  /// /v1/sessions is create-or-return, so a later create can't. The
-  /// server keeps its current value when nil (no clobbering).
   var worktreeName: String?
   var workspaceId: String?
-  /// Same eager-session gap for the harness: the record is created with
-  /// harnessId "" before the composer's choice, and the deferred agent
-  /// must start under the harness/account picked at first send. Empty
-  /// maps to nil so an unset choice never clobbers the server's value.
   var harnessId: String?
   var harnessAccountId: String?
 
@@ -155,10 +134,6 @@ private struct MarkSessionReadBody: Encodable {
   var throughSequence: Int
 }
 
-/// Mirrors the legacy discrete open sequence in one payload: `session` is
-/// the create-if-missing snapshot, `update` carries the same fields the
-/// discrete PATCH used to apply to an existing record, and `project` is
-/// created only when the server doesn't know it yet.
 private struct OpenSessionBody: Encodable {
   var project: CreateProjectBody?
   var session: CreateSessionBody
@@ -272,7 +247,6 @@ extension CodevisorServerClient {
 
   public func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
     let remoteSessions = try await listSessions()
-    // UUID comparison for the same case-mismatch reason as upsertProject.
     if remoteSessions.contains(where: { UUID(uuidString: $0.id) == session.id }) {
       return try await updateSession(session, workspaceId: workspaceId)
     }
@@ -284,8 +258,6 @@ extension CodevisorServerClient {
   }
 
   public func renameSession(_ session: ChatSession) async throws -> ServerSession {
-    // Drafts may still need creation. Existing chats need only a title PATCH;
-    // a full upsert could overwrite another client's archive or config changes.
     let remoteSessions = try await listSessions()
     if !remoteSessions.contains(where: { UUID(uuidString: $0.id) == session.id }) {
       _ = try await createSession(session, workspaceId: nil)
@@ -336,7 +308,6 @@ extension CodevisorServerClient {
         method: "DELETE"
       )
     } catch CodevisorServerClientError.httpStatus(404, _) {
-      // Older servers only had the client-local synthetic prompt.
     }
   }
 
@@ -378,18 +349,6 @@ extension CodevisorServerClient {
     )
   }
 
-  /// Mirrors a workspace's archived flag to the server.
-  ///
-  /// Archive state used to live only in this machine's `workspaces.json`,
-  /// so a workspace archived here stayed active everywhere else and the
-  /// server never cascaded the archive to its chats. PATCH is a partial
-  /// update by design: sending the whole record via PUT would race a
-  /// concurrent rename or icon change from another device.
-  ///
-  /// A 404 means the server has no row for this workspace yet (it is
-  /// created lazily), and a 405 means the server predates the PATCH route.
-  /// Neither is worth surfacing: the local flag is already correct, so the
-  /// archive still works on this machine.
   public func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {
     do {
       try await sendNoResponse(
@@ -424,8 +383,6 @@ extension CodevisorServerClient {
   }
 
   private static func uploadPath(name: String) -> String {
-    // Conservative encoding: percent-encode everything non-alphanumeric so
-    // names with `&`, `+`, or `=` survive the query round-trip.
     let encodedName = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"
     return "/v1/files?name=\(encodedName)"
   }
@@ -539,9 +496,6 @@ extension CodevisorServerClient {
       "/v1/sessions/\(id.uuidString)/config",
       method: "POST",
       body: SetConfigBody(configId: configId, value: value),
-      // A model change can wait on the harness's own availability check
-      // (Claude runs one per pick, with a deadline of its own). Bound the
-      // wait instead of inheriting URLSession's 60-second default.
       timeout: Self.configRequestTimeout
     )
     return response.configOptions

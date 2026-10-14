@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// The play glyph overlaid on video attachment thumbnails.
 public struct VideoPlayBadge: View {
   public init() {}
 

@@ -96,8 +96,6 @@ extension SessionModelTests {
     )
   }
 
-  /// Waits until the model's last assistant turn satisfies the predicate,
-  /// so emitted stream events land before assertions run.
   func settleAssistant(_ model: SessionModel, until predicate: (AssistantMessage) -> Bool) async {
     await settleUntil {
       guard case let .assistant(assistant) = model.conversation.last else {

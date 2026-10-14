@@ -64,9 +64,6 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     await createPromise
 
-    // The SDK reports file creations with an empty structuredPatch — there
-    // was nothing to patch. Counting its hunks yields an authoritative
-    // +0 −0 that used to beat the content-derived totals in the client.
     const hooks = fake.options?.hooks?.PostToolUse?.[0]?.hooks
     expect(hooks).toBeDefined()
     await hooks?.[0]?.(

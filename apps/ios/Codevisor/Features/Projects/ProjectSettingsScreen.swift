@@ -2,15 +2,10 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One project's settings, pushed onto a navigation stack. A project on
-/// several machines is still one project with one base branch, applied to
-/// every checkout. Changes apply as soon as they're made, like the Settings
-/// app.
 struct ProjectSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   let groupId: ProjectGroup.ID
-  /// Runs after the project is deleted, before this screen closes.
   var onDeleted: (ProjectGroup) -> Void = { _ in }
 
   @State private var branches = ProjectBaseBranchModel()
@@ -33,9 +28,7 @@ struct ProjectSettingsScreen: View {
     }
     .navigationTitle(group?.name ?? "Project")
     .navigationBarTitleDisplayMode(.inline)
-    // Reload as checkouts come and go or their machines come online.
     .task(id: branchSources) { await loadBranches() }
-    // One project, one base branch: bring along any checkout that differs.
     .task(id: group?.id) {
       if let group { environment.projectList.alignWorktreeBase(for: group) }
     }
@@ -74,7 +67,6 @@ struct ProjectSettingsScreen: View {
             .foregroundStyle(.red)
             .frame(maxWidth: .infinity)
         }
-        // Anchored to the button so the iPad popover points at it.
         .confirmationDialog(
           "Delete “\(group.name)”?",
           isPresented: $confirmingDelete,
@@ -88,9 +80,6 @@ struct ProjectSettingsScreen: View {
     }
   }
 
-  /// The shared base-branch sheet, listing every remote branch any
-  /// checkout has. The saved branch stays listed even when no reachable
-  /// machine has it right now.
   private func branchPicker(_ group: ProjectGroup) -> some View {
     let current = group.worktreeBase
     var choices = branches.branches.map {
@@ -114,8 +103,6 @@ struct ProjectSettingsScreen: View {
     )
   }
 
-  // MARK: Actions
-
   private var branchSources: [String] {
     (group?.members ?? []).filter(\.isGitRepository).map {
       "\($0.serverId)|\($0.id.uuidString)|\(isReady($0.serverId))"
@@ -125,7 +112,6 @@ struct ProjectSettingsScreen: View {
   private func loadBranches() async {
     guard let group else { return }
     let checkouts = group.members.filter(\.isGitRepository)
-    // Offline machines are skipped, not reported as failures.
     var clients: [String: any CodevisorServerClienting] = [:]
     for project in checkouts where isReady(project.serverId) {
       clients[project.serverId] = environment.machines.client(for: project.serverId)
@@ -147,7 +133,6 @@ struct ProjectSettingsScreen: View {
   }
 }
 
-/// Project settings presented on their own, outside Settings.
 struct ProjectSettingsSheet: View {
   @Environment(\.dismiss) private var dismiss
   let groupId: ProjectGroup.ID
@@ -171,7 +156,6 @@ struct ProjectSettingsSheet: View {
 }
 
 #if DEBUG
-  /// One repository checked out on two machines, plus a folder on one.
   enum ProjectSettingsPreviewData {
     static let projects: [Project] = {
       func checkout(_ name: String, on serverId: String, path: String, repo: String?) -> Project {

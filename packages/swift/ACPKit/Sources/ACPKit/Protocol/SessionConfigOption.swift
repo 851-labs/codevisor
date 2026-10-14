@@ -1,6 +1,5 @@
 import Foundation
 
-/// A selectable value for a session configuration option.
 public struct SessionConfigSelectOption: Sendable, Codable, Equatable, Identifiable {
   public var value: String
   public var name: String
@@ -15,7 +14,6 @@ public struct SessionConfigSelectOption: Sendable, Codable, Equatable, Identifia
   }
 }
 
-/// A group of selectable values (when an agent groups options under headers).
 public struct SessionConfigSelectGroup: Sendable, Codable, Equatable {
   public var group: String
   public var name: String
@@ -28,9 +26,6 @@ public struct SessionConfigSelectGroup: Sendable, Codable, Equatable {
   }
 }
 
-/// A configurable, single-select session option such as the model, reasoning
-/// effort, or approval mode. The `category` is a UX hint and may be absent or
-/// unknown.
 public struct SessionConfigOption: Sendable, Codable, Equatable, Identifiable {
   public var id: String
   public var name: String
@@ -66,7 +61,6 @@ public struct SessionConfigOption: Sendable, Codable, Equatable, Identifiable {
     description = try container.decodeIfPresent(String.self, forKey: .description)
     category = try container.decodeIfPresent(String.self, forKey: .category)
     currentValue = try container.decode(String.self, forKey: .currentValue)
-    // Options may be a flat list or grouped; flatten either way.
     if let flat = try? container.decode([SessionConfigSelectOption].self, forKey: .options) {
       options = flat
     } else if let grouped = try? container.decode([SessionConfigSelectGroup].self, forKey: .options) {
@@ -92,11 +86,9 @@ public struct SessionConfigOption: Sendable, Codable, Equatable, Identifiable {
     try container.encode(options, forKey: .options)
   }
 
-  /// The display name of the currently selected option.
   public var currentName: String {
     options.first { $0.value == currentValue }?.name ?? currentValue
   }
-  /// Well-known category identifiers.
   public enum Category {
     public static let mode = "mode"
     public static let model = "model"

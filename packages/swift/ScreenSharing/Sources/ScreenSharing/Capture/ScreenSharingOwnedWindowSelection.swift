@@ -1,11 +1,5 @@
 import Foundation
 
-/// Pure decision types for the diagnostic owned-window capture mode. They are
-/// platform-neutral so the boundaries are testable without ScreenCaptureKit.
-
-/// Exact selection of the process's own window from current-process shareable
-/// content: the window ID must match and the owning process must be this one.
-/// Anything else fails closed; there is no display or broader-window fallback.
 public enum ScreenSharingOwnedWindowSelection {
   public struct Candidate: Equatable, Sendable {
     public let windowID: UInt32
@@ -34,9 +28,6 @@ public enum ScreenSharingOwnedWindowSelection {
   }
 }
 
-/// Bounded accounting of ScreenCaptureKit sample callbacks by frame status.
-/// Only a complete sample with an image buffer is delivered; every other
-/// callback is counted under a fixed name and never treated as a pool drop.
 public enum ScreenSharingCaptureCallbackAccounting {
   public enum Status: Int, CaseIterable, Sendable {
     case complete = 0, idle = 1, blank = 2, suspended = 3, started = 4, stopped = 5
@@ -59,17 +50,11 @@ public enum ScreenSharingCaptureCallbackAccounting {
   public static let missingImageCounter = "captureSamplesWithoutImage"
   public static let latestStatusLabel = "captureLatestStatus"
 
-  /// Total number of sample callbacks from the counters: every status bucket
-  /// plus the unknown-status, invalid-sample and missing-status buckets — which
-  /// are mutually exclusive per callback. `captureSamplesWithoutImage` is NOT
-  /// added: it is a sub-count of complete callbacks (a complete sample without
-  /// an image increments both) and would count such a callback twice.
   public static func callbackTotal(counters: [String: Int]) -> Int {
     let buckets = Status.allCases.map(\.counterName) + [otherStatusCounter, invalidSampleCounter, missingStatusCounter]
     return buckets.reduce(0) { $0 + counters[$1, default: 0] }
   }
 
-  /// Records one callback and returns whether its frame may be delivered.
   @discardableResult
   public static func record(
     valid: Bool, rawStatus: Int?, hasImage: Bool, metrics: ScreenSharingMetrics
@@ -89,14 +74,9 @@ public enum ScreenSharingCaptureCallbackAccounting {
   }
 }
 
-/// Finite lifecycle of the diagnostic's one owned workload window and its
-/// capture stream, with the boundaries the report must record. Transitions
-/// are explicit; an out-of-order request is refused rather than reordered.
 public struct ScreenSharingOwnedWorkloadLifecycle: Sendable {
   public enum State: String, Sendable {
     case created, shown, ready, capturing, workloadPaused, captureStopped, closed
-    /// Closed during cleanup without a completed capture stop (setup failed or
-    /// was cancelled after the window was shown, or the stop did not complete).
     case abandoned
   }
 
@@ -126,12 +106,8 @@ public struct ScreenSharingOwnedWorkloadLifecycle: Sendable {
     .ready: [.shown],
     .startCapture: [.ready],
     .pauseWorkload: [.capturing],
-    // Capture stops from the animating or the paused state; the window may
-    // only close after its stream has stopped so no callback outlives it.
     .stopCapture: [.capturing, .workloadPaused],
     .close: [.captureStopped],
-    // Cleanup of a shown window whose capture never started, never stopped
-    // completely, or failed: the window still closes, without claiming a stop.
     .abandon: [.shown, .ready, .capturing, .workloadPaused],
   ]
 
@@ -151,11 +127,6 @@ public struct ScreenSharingOwnedWorkloadLifecycle: Sendable {
     timestampsNs[transition] = timestamp
   }
 
-  /// The one cleanup boundary the probe uses on every exit path. A capture
-  /// stop is credited only when the capture itself recorded its completion;
-  /// the window closes in order only from `captureStopped`, otherwise it is
-  /// abandoned from wherever setup or the run got to. A never-shown window
-  /// needs nothing.
   public mutating func cleanUp(captureStopCompleted: Bool, atNs timestamp: Int64) -> CleanupOutcome {
     switch state {
     case .created: return .neverShown
@@ -173,8 +144,6 @@ public struct ScreenSharingOwnedWorkloadLifecycle: Sendable {
     return .abandoned(from: from)
   }
 
-  /// True when the window went through every boundary in order and the
-  /// capture stopped before the window closed.
   public var completedInOrder: Bool {
     guard state == .closed, let stop = timestampsNs[.stopCapture], let close = timestampsNs[.close] else {
       return false
@@ -183,12 +152,6 @@ public struct ScreenSharingOwnedWorkloadLifecycle: Sendable {
   }
 }
 
-/// Time-driven frame code of the diagnostic workload that can be frozen at a
-/// pause boundary. Draws record the code they rendered; `freezeAtLastDrawn`
-/// holds exactly that code — never a newly time-derived one — so a pause that
-/// lands between frames freezes what was actually drawn last, and every later
-/// query (including incidental redraws requested by the window server) returns
-/// it. Freezing is distinct from stopping a capture stream.
 public struct ScreenSharingWorkloadSequence: Sendable {
   public let framesPerSecond: Int
   public let startedAtSeconds: Double
@@ -202,15 +165,12 @@ public struct ScreenSharingWorkloadSequence: Sendable {
 
   public var isFrozen: Bool { frozenCode != nil }
 
-  /// The code a draw starting at `now` renders; recorded as the last drawn.
   public mutating func drawn(atSeconds now: Double) -> Int {
     let code = frozenCode ?? Int(max(0, now - startedAtSeconds) * Double(framesPerSecond))
     lastDrawnCode = code
     return code
   }
 
-  /// Freezes at the last DRAWN code (0 if nothing was drawn yet). Idempotent:
-  /// the first boundary wins.
   public mutating func freezeAtLastDrawn() {
     guard frozenCode == nil else { return }
     frozenCode = lastDrawnCode ?? 0

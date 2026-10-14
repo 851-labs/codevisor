@@ -22,18 +22,12 @@ enum SettingsDestination: Hashable, Identifiable {
   }
 }
 
-/// App settings, mirroring the macOS settings window's tabs as an iOS
-/// navigation list. Agents, MCPs, skills, and plugins are fleet-synced
-/// config, so they sit at the top level (rendered from the selected
-/// machine, whose content converges with every other machine); Machines
-/// keeps what is genuinely per machine — connections, status, removal.
 struct SettingsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var path: [SettingsDestination]
-  /// The regular-width sidebar's selection.
   @State private var selection: SettingsDestination?
   @State private var showsEmailFallback = false
   var onSectionChange: ((String) -> Void)?
@@ -56,7 +50,6 @@ struct SettingsSheet: View {
     switch initialDestination {
     case .root:
       _path = State(initialValue: [])
-      // The regular-width sidebar opens on Account, highlighted.
       _selection = State(initialValue: .section("account"))
     case .machines, .section:
       _path = State(initialValue: [initialDestination])
@@ -66,8 +59,6 @@ struct SettingsSheet: View {
 
   var body: some View {
     Group {
-      // Regular width (iPad) shows the sections beside their content, as
-      // the macOS settings window does; compact keeps the pushed list.
       if horizontalSizeClass == .regular {
         splitSettings
       } else {
@@ -125,7 +116,6 @@ struct SettingsSheet: View {
         destinationScreen(selectedDetail)
           .toolbar { doneButton }
       }
-      // A new section starts at its own root.
       .id(selectedDetail)
     }
     .navigationSplitViewStyle(.balanced)
@@ -164,8 +154,6 @@ struct SettingsSheet: View {
     }
     Section {
       NavigationLink(value: SettingsDestination.section("updates")) {
-        // badge(0) hides itself — the ambient signal simply
-        // is not there when everything is current.
         settingsLabel("Updates", systemImage: "arrow.down.circle")
           .badge(environment.updateCenter.availableCount)
       }

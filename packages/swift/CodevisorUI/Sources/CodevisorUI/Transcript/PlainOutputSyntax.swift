@@ -7,11 +7,7 @@ import Foundation
   import UIKit
 #endif
 
-/// Syntax colors for a plain code block's text storage.
 enum PlainOutputSyntax {
-  /// Colors `storage` with highlighter `lines`, whose tokens tile its text
-  /// line by line. Lines past the text, or tokens that don't fit, are left
-  /// in the block's own color.
   static func apply(_ lines: [[CodeHighlighter.Token]], to storage: NSMutableAttributedString) {
     let text = storage.string as NSString
     var lineStart = 0

@@ -1,10 +1,5 @@
 import Foundation
 
-/// Offset between the host's and the viewer's monotonic clocks (both mach-based, as
-/// `CACurrentMediaTime` and the capture timestamps are), derived from request-bracketed
-/// samples without assuming symmetric network delay: for one exchange the viewer sends at
-/// `t0`, the host receives at `r` and replies at `s`, and the viewer receives at `t1`, so
-/// `host - viewer` lies in `[s - t1, r - t0]`. The tightest interval wins.
 public struct RigClockOffset: Equatable, Sendable {
   public struct Sample: Equatable, Sendable {
     public let sentAtSeconds: Double
@@ -19,7 +14,6 @@ public struct RigClockOffset: Equatable, Sendable {
       self.hostSentAtSeconds = hostSentAtSeconds
       self.receivedAtSeconds = receivedAtSeconds
     }
-    /// The interval `[low, high]` containing `host - viewer`, or nil for an unusable sample.
     public var interval: (low: Double, high: Double)? {
       guard receivedAtSeconds >= sentAtSeconds, hostSentAtSeconds >= hostReceivedAtSeconds else { return nil }
       let low = hostSentAtSeconds - receivedAtSeconds
@@ -28,9 +22,7 @@ public struct RigClockOffset: Equatable, Sendable {
     }
   }
 
-  /// `host - viewer`, seconds.
   public let offsetSeconds: Double
-  /// Half the width of the tightest interval, seconds; the uncertainty of every derived age.
   public let errorSeconds: Double
   public let sampleCount: Int
 
@@ -42,7 +34,6 @@ public struct RigClockOffset: Equatable, Sendable {
     sampleCount = intervals.count
   }
 
-  /// Age of content captured at `sourceTimestampNs` on the host, seen on the viewer at `presentedAtSeconds`.
   public func imageAgeSeconds(sourceTimestampNs: Int64, presentedAtSeconds: Double) -> Double {
     presentedAtSeconds - (Double(sourceTimestampNs) / 1_000_000_000 - offsetSeconds)
   }

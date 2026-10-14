@@ -135,8 +135,6 @@ extension ComputerUseBridgeTests {
         targetPID: targetPID,
         windowInfo: visibleWindows
       ))
-    // A different app may be ahead in the WindowServer list. Visibility
-    // remains attached to the target; panel ordering handles occlusion.
     let withUnrelatedFrontWindow: [[String: Any]] =
       [
         [
@@ -265,7 +263,6 @@ extension ComputerUseBridgeTests {
       paletteCount: paletteCount
     )
 
-    // Deterministic: the same session always prefers the same color.
     #expect(
       preferred
         == computerUseCursorColorIndex(
@@ -275,7 +272,6 @@ extension ComputerUseBridgeTests {
         ))
     #expect((0..<paletteCount).contains(preferred))
 
-    // A concurrent session holding that color pushes this one elsewhere.
     let probed = computerUseCursorColorIndex(
       sessionID: "session-a",
       takenIndices: [preferred],
@@ -284,7 +280,6 @@ extension ComputerUseBridgeTests {
     #expect(probed != preferred)
     #expect((0..<paletteCount).contains(probed))
 
-    // With every color in use, stability wins over uniqueness.
     #expect(
       computerUseCursorColorIndex(
         sessionID: "session-a",
@@ -304,10 +299,7 @@ extension ComputerUseBridgeTests {
     ]
     let idle = computerUseIdleSessions(lastActivity: lastActivity, now: now)
 
-    // A gap between tool calls inside a turn must not drop the share, or
-    // the sharing indicator would blink through normal work.
     #expect(idle == ["abandoned", "finished"])
-    // The threshold is long enough to span a model's thinking pause.
     #expect(computerUseIdleReleaseAfter >= 30)
   }
 

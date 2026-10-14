@@ -1,9 +1,6 @@
 import CodevisorClient
 import Foundation
 
-/// Decodes Chromium's `Network.getAllCookies` replies for cookie sync. The
-/// previous decode is reused while the cookie list's bytes are unchanged, which
-/// is the steady state of a profile polled every few seconds.
 public struct BrowserProtocolCookies: Sendable {
   private var result: Data?
   private var cookies: [BrowserCookie] = []
@@ -18,7 +15,6 @@ public struct BrowserProtocolCookies: Sendable {
     return decoded
   }
 
-  /// Partitioned cookies stay local; the shared store has no partition key.
   static func decode(_ result: Data) throws -> [BrowserCookie] {
     let object = try JSONSerialization.jsonObject(with: result) as? [String: Any] ?? [:]
     return (object["cookies"] as? [[String: Any]] ?? []).compactMap { raw in

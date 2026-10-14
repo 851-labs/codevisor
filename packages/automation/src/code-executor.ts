@@ -1,28 +1,3 @@
-/*
- * Codevisor's QuickJS bridge is adapted from @executor-js/runtime-quickjs and
- * @executor-js/codemode-core, originally published under the MIT License:
- *
- * Copyright (c) 2026 Rhys Sullivan
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 import { getQuickJS, newQuickJSWASMModule } from "quickjs-emscripten"
 import type {
   QuickJSContext,
@@ -165,15 +140,10 @@ const createStatusBridge = (
     const text = context.getString(textHandle)
     try {
       onStatus(text)
-    } catch {
-      // Status is a best-effort progress label; it never fails the script.
-    }
+    } catch {}
     return context.undefined
   })
 
-/// The rejection handed to sandbox code. Only intentional tool errors keep
-/// their message, code, and details; anything else is masked. The prelude
-/// turns `code` + `detailsJson` into MachineUnavailableError and friends.
 const newSandboxToolError = (context: QuickJSContext, cause: unknown): QuickJSHandle => {
   if (!(cause instanceof CodeExecutionToolError)) return context.newError("Internal tool error")
   const errorHandle = context.newError(cause.message)
@@ -419,7 +389,6 @@ export const makeCodeExecutor = (options: CodeExecutorOptions = {}): CodeExecuto
     evaluate(options, code, toolInvoker, executeOptions)
 })
 
-/** One isolated QuickJS realm per desktop session; cells are strictly ordered. */
 export const makePersistentCodeExecutor = (
   sourceBuilder: (code: string) => string,
   options: CodeExecutorOptions = {}
@@ -437,8 +406,6 @@ export const makePersistentCodeExecutor = (
       const cell = tail.then(async () => {
         if (closed) return { result: null, error: "Computer Use REPL is closed" }
         if (session === undefined) {
-          // The bundled Bellard engine leaks its context when large JSON tool
-          // results are parsed after await. NG passes the screenshot stress test.
           const engine = await newQuickJSWASMModule(
             import("@jitl/quickjs-ng-wasmfile-release-sync")
           )

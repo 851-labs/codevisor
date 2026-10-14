@@ -155,7 +155,6 @@ it("forwards Chromium's absolute-form WebSocket upgrade with the original host a
   const { port, auth } = await fixture()
   const client = new WebSocket(`ws://127.0.0.1:${port}`, {
     finishRequest: (req) => {
-      // ws passes ClientRequest here; @types/ws currently calls it IncomingMessage.
       const outgoing = req as unknown as ClientRequest
       outgoing.path = `http://localhost:${target}/hmr`
       outgoing.end()

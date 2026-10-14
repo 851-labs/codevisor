@@ -35,9 +35,6 @@ export const sessionMetadata = (
   }
 }
 
-/// Best-effort mapping from agent-defined ACP mode ids/names onto Codevisor's
-/// canonical vocabulary. Order matters: the first matching pattern wins.
-/// Unmapped modes stay native-only and render in the picker's overflow section.
 const CANONICAL_MODE_PATTERNS: ReadonlyArray<{
   readonly canonicalId: CanonicalModeId
   readonly pattern: RegExp
@@ -69,9 +66,6 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
   })
 })
 
-/// Thought-level pickers should read like Codex/Claude: "Reasoning" with
-/// "High", not "Reasoning Effort" with "High Effort". Agents often send both
-/// a "Thinking:"/"Reasoning:" prefix and a trailing "Effort" suffix.
 const conciseThoughtLevelName = (name: string, category: string | null | undefined): string => {
   if (category !== "thought_level") return name
   const withoutPrefix = name.replace(/^(?:Thinking|Reasoning):\s*/i, "").trim()

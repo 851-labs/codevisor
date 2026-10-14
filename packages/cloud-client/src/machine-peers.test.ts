@@ -69,7 +69,6 @@ describe("machine peers", () => {
     const answer = await gatewayRequest(a, b, body)
 
     expect(answer).toEqual({ status: 200, body: body.toUpperCase() })
-    // Request and answer both spanned two chunk frames.
     const dataFrames = a.socket.relayFrames().filter((frame) => frame.t === "data")
     expect(dataFrames).toHaveLength(3)
     expect(aPins.get("b")).toBe(b.keys.publicKey)
@@ -90,14 +89,11 @@ describe("machine peers", () => {
     expect(reasonOf("a")).toBe("unknown-machine")
     a.socket.receive({ t: "presence", machine: presence(b, false) })
     expect(reasonOf("b")).toBe("machine-offline")
-    // A target that never advertised machine peers would not restrict a
-    // machine opener to the gateway: never open to it.
     a.socket.receive({ t: "presence", machine: { ...presence(b), machinePeers: undefined } })
     expect(reasonOf("b")).toBe("machine-outdated")
     const outdated = await failure(gatewayRequest(a, b, "{}"))
     expect(outdated).toMatchObject({ phase: "before-send", closeReason: "unsupported" })
 
-    // A hub that predates machine peers sends no machine list.
     const legacy = makePeer("legacy")
     welcome(legacy)
     expect(() => legacy.h.connection.openChannel("b", GATEWAY_CHANNEL_TYPE)).toThrow(
@@ -140,7 +136,6 @@ describe("machine peers", () => {
       { deviceId: "b", pinned: keys.publicKey, presented: b.keys.publicKey }
     ])
     expect(h.sockets[0]!.relayFrames()).toEqual([])
-    // Surfaced to gateway callers as a before-send failure.
     welcome(a, [presence(b)])
     const error = await failure(gatewayRequest(a, b, "{}"))
     expect(error.phase).toBe("before-send")
@@ -170,7 +165,6 @@ describe("machine peers", () => {
 describe("channel opener framing", () => {
   it("rejects out-of-order, undecryptable, and stray answers", () => {
     const { a, hub } = pair()
-    // Nothing reaches b: the test scripts b's answers by hand.
     hub.holding = true
     const next = () => {
       const fresh = a.h.connection.openChannel("b", GATEWAY_CHANNEL_TYPE)
@@ -197,8 +191,6 @@ describe("channel opener framing", () => {
     expect(garbled.events).toEqual([{ kind: "protocol-error" }])
     expect(a.socket.lastClose().reason).toBe("crypto-error")
 
-    // Frames for channels this side no longer holds get a close back; a
-    // stray close gets nothing.
     const before = a.socket.closeFrames().length
     a.socket.receiveRelay({ machineId: "b", frame: { t: "data", channelId: "gone", seq: 0 } })
     a.socket.receiveRelay({
@@ -208,7 +200,6 @@ describe("channel opener framing", () => {
     expect(a.socket.closeFrames().slice(before)).toEqual([
       { t: "close", channelId: "gone", seq: 0, reason: "peer-disconnected" }
     ])
-    // Sends and closes after the end are no-ops.
     const sentBefore = a.socket.relayFrames().length
     gap.fresh.send({ late: true })
     gap.fresh.close()

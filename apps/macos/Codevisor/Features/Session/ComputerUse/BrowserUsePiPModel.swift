@@ -1,7 +1,3 @@
-//  Drives the picture-in-picture preview of the browser tab a chat's agent
-//  drives through Browser Use. The chat's server streams the tab, whichever
-//  browser it lives in; this model decides when the card shows.
-
 import CodevisorCore
 import CodevisorCoreMac
 import Foundation
@@ -11,8 +7,6 @@ import SwiftUI
 @MainActor
 @Observable
 final class BrowserUsePiPModel {
-  /// A dismissal lasts until the agent stops using the browser and starts
-  /// again, as with the Computer Use preview.
   private static var dismissedSessions: Set<UUID> = []
   private static var cornerBySession: [UUID: ComputerUseLivePreviewCorner] = [:]
   private static var areaBySession: [UUID: CGFloat] = [:]
@@ -31,12 +25,9 @@ final class BrowserUsePiPModel {
       if let area { Self.lastArea = area }
     }
   }
-  /// True from a stop until the hide delay elapses, so the card shows the
-  /// stopped state briefly instead of vanishing mid-glance.
   private(set) var isLingering = false
   @ObservationIgnored private var hideTask: Task<Void, Never>?
 
-  /// Cheap: connects only once the card appears.
   init(chatSessionID: UUID, client: any CodevisorServerClienting) {
     self.chatSessionID = chatSessionID
     connection = LivePreviewConnection(client: client, chatSession: chatSessionID)
@@ -49,10 +40,8 @@ final class BrowserUsePiPModel {
     connection.status?.state ?? .inactive
   }
 
-  /// The tool the agent touched last, Browser Use or Computer Use.
   var lastUsedTool: LivePreviewConnection.Tool? { connection.lastUsedTool }
 
-  /// Stops frames while another view has the card, keeping this one ready.
   func setPaused(_ paused: Bool) {
     connection.isPaused = paused
   }
@@ -77,7 +66,6 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
   }
 
   var tint: Color { .accentColor }
-  /// The agent's pointer is drawn into the page, so it's already in the frames.
   var cursor: CGPoint? { nil }
   var cursorWindowWidth: CGFloat { 0 }
   var showsTarget: Bool { false }
@@ -106,8 +94,6 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
   }
 
   func sync() {
-    // Once the closed activity goes idle or stops, the agent's next use of
-    // the browser is a new request for attention.
     if state != .active, isDismissed {
       isDismissed = false
       Self.dismissedSessions.remove(chatSessionID)
@@ -155,8 +141,6 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
 
   func activateTarget() {}
 
-  /// Recovers a frozen or blank preview: a fresh viewer asks the server to
-  /// restart the tab's screencast.
   func reload() {
     guard canReload else { return }
     releaseViewer()

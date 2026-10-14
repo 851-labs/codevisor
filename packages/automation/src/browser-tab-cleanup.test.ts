@@ -5,8 +5,6 @@ import { finishSessionTabs, trackPopups, type SessionTargets } from "./browser-t
 
 const context = { projectId: "project", sessionId: "session" }
 
-/// Only the parts these helpers touch: event subscription, the closed flag,
-/// and the operation queue they serialize on.
 const runtime = (closed = false) => {
   const handlers = new Map<string, (params: Readonly<Record<string, unknown>>) => void>()
   const active = {

@@ -54,12 +54,10 @@ describe("CodexProvider", () => {
     const options = created?.metadata.configOptions ?? []
     const modelOption = options.find((option) => option.id === "model")
     expect(modelOption?.currentValue).toBe("gpt-5.2-codex")
-    // Full catalog minus hidden models.
     expect(modelOption?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
       "gpt-5.2-codex",
       "gpt-5.5"
     ])
-    // Efforts come from the current model's capabilities, defaulted per model.
     const effortOption = options.find((option) => option.id === "effort")
     expect(effortOption?.currentValue).toBe("medium")
     expect(effortOption?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
@@ -67,8 +65,6 @@ describe("CodexProvider", () => {
       "medium",
       "xhigh"
     ])
-    // Approval/sandbox presets are exposed as session modes; full access is
-    // the default posture.
     expect(created?.metadata.modes?.currentModeId).toBe("agent-full-access")
     expect(created?.metadata.modes?.availableModes.map((mode) => mode.id)).toEqual([
       "plan",
@@ -82,8 +78,6 @@ describe("CodexProvider", () => {
       "ask",
       "fullAccess"
     ])
-    // Experimental APIs (collaborationMode, requestUserInput) are opted into
-    // at initialize.
     expect(client.requests[0]).toMatchObject({
       method: "initialize",
       params: { capabilities: { experimentalApi: true } }
@@ -171,7 +165,6 @@ describe("CodexProvider", () => {
     }
     const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
 
-    // Readiness sees the bundled binary even though PATH has nothing.
     const provider = makeCodexProvider(appOnly)
     expect(provider.readiness(withFallback)).toEqual({ state: "ready" })
     expect(provider.readiness(definition)).toEqual({
@@ -179,7 +172,6 @@ describe("CodexProvider", () => {
       state: "unavailable"
     })
 
-    // Sessions spawn the bundled binary.
     const client = new FakeCodexClient()
     const spawns: Array<CodexSpawnRequest> = []
     const spawning = makeCodexProvider(appOnly, {
@@ -191,7 +183,6 @@ describe("CodexProvider", () => {
     await run(spawning.createSession(withFallback, "/tmp/project", async () => {}))
     expect(spawns[0]).toMatchObject({ command: bundled, cwd: "/tmp/project" })
 
-    // Neither PATH nor a bundle: session creation fails with a clear error.
     await expect(
       run(spawning.createSession(definition, "/tmp/project", async () => {}))
     ).rejects.toThrow("codex not found on PATH or in the Codex app")

@@ -6,16 +6,6 @@ import Network
 import OSLog
 import Synchronization
 
-/// A 0600 Unix socket in this installation's data namespace. It is never exposed
-/// through the HTTP server, cloud relay, or a client on a different machine.
-///
-/// Threading: socket I/O, line framing, JSON, and per-session routing for every
-/// client run on `queue`. The main actor owns the pane registry and is used only
-/// where AppKit or CEF require it: CEF accepts commands only on its UI thread
-/// (the main thread here) and delivers replies and events there, which are
-/// copied and handed to `queue` in arrival order without being parsed. Page
-/// commands and their (possibly multi-megabyte) results are forwarded as bytes,
-/// with only the request `id` and `sessionId` rewritten.
 @MainActor
 final class ChromiumAutomationBridge {
   static let shared = ChromiumAutomationBridge()
@@ -32,7 +22,6 @@ final class ChromiumAutomationBridge {
   private var listener: NWListener?
   private var token = ""
   private nonisolated let hub = ChromiumAutomationHub()
-  /// Models each connection controls, readable synchronously by page retention.
   nonisolated let controlled = Mutex<[UUID: Set<ObjectIdentifier>]>([:])
 
   func isControlling(_ model: ChromiumBrowserModel) -> Bool {
@@ -93,8 +82,6 @@ final class ChromiumAutomationBridge {
     model.onClose?()
     return true
   }
-  /// Closes Browser Use tabs that never loaded a page. Tabs that did may be
-  /// the agent's result, so they stay for the user.
   fileprivate func closeUnusedTabs(_ targetIds: [String]) {
     for targetId in targetIds {
       guard let model = model(targetId), !model.hasLoadedPage else { continue }
@@ -156,8 +143,6 @@ nonisolated struct ChromiumTargetInfo: Sendable {
 }
 
 extension ChromiumBrowserModel {
-  /// Viewport emulation goes through the pane so its scaled host view follows
-  /// the page. These commands are small; their params are decoded here.
   fileprivate func automationViewport(_ method: String, params: Data?) async throws -> Data {
     let params = params.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
     switch method {
@@ -175,8 +160,6 @@ extension ChromiumBrowserModel {
   }
 }
 
-/// Every connection, confined to the automation queue. Each browser event is
-/// scanned once here, then routed by each connection.
 private actor ChromiumAutomationHub {
   nonisolated enum TargetEvent: Sendable {
     case targetCreated(ChromiumTargetInfo)
@@ -209,8 +192,6 @@ private actor ChromiumAutomationHub {
   }
 }
 
-/// One validated request line. Only the routing members are decoded; page
-/// commands forward `params` as the client's bytes.
 private nonisolated struct ChromiumAutomationRequest {
   var id: Data
   var method: String?
@@ -219,7 +200,6 @@ private nonisolated struct ChromiumAutomationRequest {
   var rawParams: Data?
 
   init?(_ line: Data) {
-    // A full parse rejects malformed requests, as CEF would drop them silently.
     guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
       let message = BrowserProtocolMessage(line)
     else { return nil }
@@ -263,8 +243,6 @@ private actor ChromiumAutomationConnection {
     didSet { publishControl() }
   }
   private var childSessions: [String: ChromiumBrowserModel] = [:]
-  /// Tabs this agent connection opened. When the connection ends without the
-  /// server closing them (a server restart or crash), blank ones are closed.
   private var createdTabs: [String] = []
   private var closed = false
 
@@ -379,8 +357,6 @@ private actor ChromiumAutomationConnection {
     }
   }
 
-  /// Requests reach CEF in arrival order: each hop is FIFO (this queue, then
-  /// the main actor), and replies return through `queue` in CEF's order.
   private func forward(_ id: Data, _ method: String, _ params: Data?, to model: ChromiumBrowserModel, session: String) {
     let connection = self
     Task { @MainActor in
@@ -420,7 +396,6 @@ private actor ChromiumAutomationConnection {
       do {
         _ = try await model.readyView()
       } catch {
-        // The agent never learns this tab's id, so nothing else would close it.
         await bridge.closeUnusedTabs([targetId])
         throw error
       }
@@ -468,8 +443,6 @@ private actor ChromiumAutomationConnection {
   }
   private func targets() async throws -> [[String: Any]] {
     let models = await bridge.liveModels
-    // One tab that can't start must not fail every agent's browser call. It is
-    // still listed, and attaching to it reports its own error.
     var ready: CVChromiumView?
     var failure: Error?
     for model in models {
@@ -489,8 +462,6 @@ private actor ChromiumAutomationConnection {
     guard let ready else { throw failure ?? ChromiumProtocolError("Browser tab closed") }
     let all = try await ready.cdp("Target.getTargets")
     let infos = all["targetInfos"] as? [[String: Any]] ?? []
-    // Only include popups whose opener descends from an admitted local pane.
-    // Other CEF profiles (remote workspaces and the DevTools frontend) stay private.
     var changed = true
     while changed {
       changed = false
@@ -514,8 +485,6 @@ private actor ChromiumAutomationConnection {
     return result
   }
 
-  /// Routes one browser event. Session events are forwarded as their bytes with
-  /// only `sessionId` rewritten; only small Target events are decoded.
   func event(_ message: BrowserProtocolMessage, method: String, model: ChromiumBrowserModel) {
     guard authenticated else { return }
     guard let native = message.string("sessionId") else {

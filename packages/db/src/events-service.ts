@@ -21,7 +21,6 @@ const questionResolutionDelivery = (
   chatItemId: string,
   update: JsonRecord
 ): JsonRecord => {
-  // projectChatEvent just saved this entry, so the row exists.
   const row = sqlite
     .prepare("select position from transcript_entries where item_id = ? and entry_key = ?")
     .get(chatItemId, `question_resolved:${update.questionId}`) as { position: number }
@@ -83,8 +82,6 @@ export const makeEventsService = (
     rawSubjectId: string,
     payload: unknown
   ) {
-    // Subjects are usually uuid resource ids (sessions, projects); harness
-    // ids and other non-uuid subjects pass through canonicalUuid untouched.
     const subjectId = canonicalUuid(rawSubjectId)
     return yield* attempt("appendEvent", () => {
       const createdAt = isoTimestamp()

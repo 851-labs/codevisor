@@ -53,7 +53,6 @@ struct TranscriptAutoscrollTests {
     #expect(view.currentDistanceFromBottom() <= 0.5)
     #expect(view.lastBottomState == true)
 
-    // Text measurement can arrive on a later display frame after both sizes.
     let key = view.rows.last!.layoutKey
     view.recordMeasuredHeight(300, for: key)
     view.commitPendingMeasurements()
@@ -77,8 +76,6 @@ struct TranscriptAutoscrollTests {
     let view = makeView()
     defer { view.prepareForDismantle() }
     view.markRecentUserInput()
-    // Exercise the clip notification before NSScrollView.layout(), which is
-    // where AppKit first exposes the new split/header size to the observer.
     view.contentView.setFrameSize(CGSize(width: 900, height: 460))
     view.viewportDidScroll()
     #expect(view.followsLatest)
@@ -191,7 +188,6 @@ struct TranscriptAutoscrollTests {
         ) == nil
       )
     }
-    // The final answer becomes taller during the former 450 ms anchor hold.
     view.recordMeasuredHeight(420, for: answer.layoutKey)
     view.commitPendingMeasurements()
     #expect(view.currentDistanceFromBottom() <= 0.5)

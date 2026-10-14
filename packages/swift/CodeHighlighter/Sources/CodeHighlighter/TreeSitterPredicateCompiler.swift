@@ -1,7 +1,6 @@
 import CTreeSitter
 import Foundation
 
-/// Copies C predicate steps and compiles regexes once, during query initialization.
 enum TreeSitterPredicateCompiler {
   enum Argument {
     case capture(UInt32)

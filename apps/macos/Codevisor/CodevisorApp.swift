@@ -7,8 +7,6 @@ import CodevisorUI
 
 struct CodevisorApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  /// Started by the app delegate at launch, not by a window (851-2386); a window that appears
-  /// first starts it too.
   @State private var runtime = AppRuntime.shared
 
   var body: some Scene {
@@ -19,9 +17,6 @@ struct CodevisorApp: App {
           .themedRoot()
           .modifier(DebugMetricsOverlayModifier())
           .environment(environment)
-          // Deeplinks (codevisor://cloud-auth, install-plugin) should land
-          // in the window that's already open; without this, macOS spawns
-          // a fresh window scene for every external URL event.
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(
@@ -42,9 +37,6 @@ struct CodevisorApp: App {
     }
     .defaultSize(width: 1280, height: 820)
     .windowResizability(.contentMinSize)
-    // Keep the native zoom target stable while responsive side panels
-    // mount and unmount as the window crosses their width thresholds.
-    // AppKit still owns saving and restoring the user's previous frame.
     .windowIdealSize(.maximum)
     .commands {
       if let environment = runtime.environment {
@@ -102,8 +94,6 @@ private struct ClientDataStartupFailureView: View {
   }
 }
 
-/// The top-level split view: collapsible sidebar plus the active session or the
-/// new-chat page.
 struct RootView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
@@ -122,15 +112,10 @@ struct RootView: View {
       if environment.settings.hasCompletedOnboarding {
         mainSplit
       } else {
-        // Resumes where a mid-flow relaunch left off (granting Screen
-        // Recording asks for one) instead of restarting the flow.
         OnboardingView(
           initialStep: OnboardingView.resumeStep(from: environment.settings)
         ) { project in
           requiresInitialNewChatProjectResolution = true
-          // Land on the new-workspace page (picker) rather than the
-          // quick-create fast path — the user should name/configure
-          // their first workspace, not get a random one auto-made.
           selection = .newChat(project.map { NewChatTarget($0) })
         }
       }
@@ -150,19 +135,13 @@ struct RootView: View {
         set: { quickLook.updatePreviewURL($0) }
       )
     )
-    // Locks the composer's submit action while this app installs its own
-    // update (it is about to restart).
     .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
-    // App-level fallback surface for errors with no natural home in the
-    // UI (background sync, persistence).
     .overlay { ErrorBannerLayer() }
     .onGeometryChange(for: CGFloat.self) { proxy in
       proxy.size.width
     } action: { width in
       panelLayout.updateWindowWidth(width)
     }
-    // Keep the selected route out of the controller LRU. Read state is
-    // acknowledged separately by the transcript viewport.
     .onChange(of: selection) { _, newValue in
       panelLayout.dismissDrawer(.leading)
       guard let store else { return }
@@ -183,11 +162,6 @@ struct RootView: View {
       openNotificationSession(sessionId, serverId: serverId)
     }
     .task { await reconcileSkippedPermissions(environment: environment) }
-    // An update arrived and the Computer Use permissions are not set up:
-    // ask once per version, as a dialog over the app rather than a
-    // takeover. An overlay rather than a sheet — see the gate view; a
-    // modal sheet would block the "Quit & Reopen" that granting Screen
-    // Recording ends in.
     .overlay {
       if environment.requiresPermissionsReview {
         ComputerUsePermissionsGateView {
@@ -198,12 +172,8 @@ struct RootView: View {
           environment.settings.setPermissionsReviewInProgress(false)
           environment.requiresPermissionsReview = false
         } onSkip: {
-          // Computer Use turns off so nothing half-works; the
-          // Computer Use toggle in Settings re-enters setup.
           environment.settings.setPermissionsSetupSkipped(true)
           environment.settings.setPermissionsReviewInProgress(false)
-          // Per-machine truth: skipping permissions disables
-          // Computer Use HERE, never across the fleet.
           Task {
             await McpFleet.disableLocally(
               environment.configSync,
@@ -223,39 +193,17 @@ struct RootView: View {
         store?.setWindowFocused(controlActiveState == .key)
       }
       if !AppPreview.isRunning {
-        // A remote client updated this machine's server: the bundled
-        // server hands the update back here. Sparkle installs the
-        // signed app update and replaces app + bundled server
-        // together — unattended, because the person who asked is at
-        // ANOTHER machine's screen and nobody here could accept a
-        // prompt.
         environment.localServer?.onUpdateRequested = { [environment] in
           Task { @MainActor in
             await environment.appUpdate.installUpdateUnattended()
           }
         }
-        // Restore the cloud account session (or adopt the dev cloud
-        // token) in the background; nothing at boot depends on it.
         await environment.cloud.bootstrap()
       }
     }
-    // Fleet update upkeep: the periodic sweep behind the sidebar footer
-    // count and Settings › Updates, and the resume of an update-all the
-    // app's own restart interrupted.
     .modifier(UpdateCenterUpkeep())
-    // The local server's blocking data upgrade: a non-dismissable sheet
-    // over the whole window, wherever the user is, instead of a card only
-    // the New Chat page used to show.
     .modifier(ServerDataUpgradePresentation())
-    // Deeplink handling lives in modifiers: inlining the alerts here pushed
-    // this already-large chain past the Swift type checker's budget on
-    // release builds.
-    // codevisor://cloud-auth deeplinks — the browser handoff's fallback
-    // path when sign-in ran in the default browser instead of the
-    // ASWebAuthenticationSession sheet.
     .modifier(CloudAuthDeeplinkHandling())
-    // codevisor://install-plugin deeplinks — the web plugin directory's
-    // "Open in Codevisor" button.
     .modifier(PluginInstallDeeplinkHandling())
   }
 
@@ -265,9 +213,6 @@ struct RootView: View {
     selection = .session(serverId: serverId, id: sessionId)
   }
 
-  /// Shared Core policy keeps both native navigation surfaces aligned when
-  /// an event archives, unarchives, moves, or removes the current chat. The
-  /// chat route computes it when its chat or workspace changes.
   private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {
     guard case let .session(serverId, sessionId) = selection else { return }
     switch disposition {
@@ -284,15 +229,8 @@ struct RootView: View {
     }
   }
 
-  /// The top-level split: the NATIVE NavigationSplitView + NSToolbar pair
-  /// (Finder's model) — sidebar tracking, the collapse animation, window
-  /// dragging, and fullscreen are all system behavior. The pane tab bar is
-  /// ordinary content BELOW the toolbar (see SessionContainerView).
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      // No per-machine remount and no machine switcher: the sidebar is
-      // the FLEET's. Selection is a routing detail that follows the
-      // chat you open (or send), and machines are managed in Settings.
       WorkspaceSidebar(selection: $selection, store: store)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
@@ -317,7 +255,6 @@ struct RootView: View {
           .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
       }
     }
-    // ⇧⌘[ / ⇧⌘] step the sidebar's rows while it shows, tabs otherwise.
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in
       store?.isSidebarVisible = visible
     }
@@ -326,9 +263,6 @@ struct RootView: View {
     }
   }
 
-  /// At compact widths the system sidebar remains collapsed and its normal
-  /// toggle opens our transient drawer instead. Automatic collapse doesn't
-  /// touch the persisted `sidebarCollapsed` preference.
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
     Binding(
       get: {
@@ -373,8 +307,6 @@ struct RootView: View {
         self.selection = .session(serverId: serverId, id: chatId)
       },
       onDisposition: { disposition in
-        // The route reports for the chat it shows; a stale report from a
-        // route being replaced must not act on the new selection.
         guard selection == .session(serverId: serverId, id: sessionId) else { return }
         applySelectedSessionDisposition(disposition)
       }
@@ -406,17 +338,12 @@ struct RootView: View {
       serverId: serverId,
       workspaceId: workspaceId,
       onRestored: { workspace, tabId in
-        // The route reports for the workspace it shows; a stale report from
-        // a route being replaced must not act on the new selection.
         guard selection == .archivedWorkspace(serverId: serverId, id: workspaceId) else { return }
         openRestoredWorkspace(workspace, tabId: tabId)
       }
     )
   }
 
-  /// Leaves the read-only view for the live workspace, on the tab it was
-  /// showing -- opened the way the sidebar opens a tab: through the tab's
-  /// chat when it has one, else the workspace, with its layout untouched.
   private func openRestoredWorkspace(_ workspace: Workspace, tabId: UUID?) {
     let fallback = SidebarSelection.workspace(serverId: workspace.serverId, id: workspace.id)
     guard
@@ -439,10 +366,6 @@ struct RootView: View {
     }
   }
 
-  /// The standalone new-chat page. Creates NOTHING until the first message
-  /// is sent — sending resolves the picked directory (project folder or a
-  /// fresh worktree) and materializes the workspace around the started
-  /// chat. A sidebar per-project button preselects that project.
   private func newChat(_ store: SessionStore, target: NewChatTarget?) -> some View {
     NewChatView(
       store: store,
@@ -456,25 +379,15 @@ struct RootView: View {
   }
 }
 
-/// Identifies the current sidebar selection.
 enum SidebarSelection: Hashable {
   case session(serverId: String, id: UUID)
-  /// A workspace shown on its own. Workspaces own their layout and server
-  /// identity independently of any chat, so one that has never hosted a chat
-  /// is still somewhere the user can be.
   case workspace(serverId: String, id: UUID)
-  /// An archived workspace, shown read-only until it is restored.
   case archivedWorkspace(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
 }
 
-/// A project id is only unique inside one machine snapshot: synced machines
-/// deliberately carry the same logical project ids. Navigation therefore
-/// keeps the machine and project together instead of guessing from UUID alone.
 struct NewChatTarget: Hashable {
   let serverId: String
-  /// Nil targets the machine alone (a sidebar machine row's New Chat): the
-  /// draft moves there the way the composer's machine picker moves it.
   let projectId: UUID?
 
   init(serverId: String, projectId: UUID?) {

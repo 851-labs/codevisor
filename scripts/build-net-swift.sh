@@ -1,20 +1,11 @@
 #!/usr/bin/env bash
-# Builds CodevisorNetFFI.xcframework (static libraries for macOS arm64/x64,
-# iOS device, iOS simulator arm64/x64) plus the uniffi-generated Swift
-# bindings, into the output directory. Called by scripts/net-artifact.mjs
-# (ensure-swift), which caches the result per source stamp.
 set -euo pipefail
 out="${1:?usage: build-net-swift.sh <output-dir>}"
 net_root="$(cd "$(dirname "$0")/../packages/net" && pwd)"
 cd "$net_root"
 export IPHONEOS_DEPLOYMENT_TARGET=17.0 MACOSX_DEPLOYMENT_TARGET=14.0
-# Optimize the app builds for size: 7.6 MB installed / 3.2 MB download on
-# iOS arm64 versus 9.2 / 4.0 MB at opt-level 3 (measured 2026-09-26); the
-# plan's budget is 8 MB. The server's Node addon keeps opt-level 3.
 export CARGO_PROFILE_RELEASE_OPT_LEVEL=s
 targets=(aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
-# net-artifact.mjs selects the pinned toolchain through rustup; the targets go to that toolchain,
-# and cargo below must be its proxy, not another Rust on PATH.
 : "${RUSTUP_TOOLCHAIN:?run through scripts/net-artifact.mjs ensure-swift}"
 rustup target add "${targets[@]}" >/dev/null
 for target in "${targets[@]}"; do
@@ -31,7 +22,6 @@ lipo -create target/aarch64-apple-ios-sim/release/$lib target/x86_64-apple-ios/r
 cargo run --release --locked -p codevisor-net-ffi --bin uniffi-bindgen -- generate \
   --library target/aarch64-apple-darwin/release/$lib --language swift --out-dir "$work/swift"
 cp "$work/swift/codevisor_net_ffiFFI.h" "$work/headers/"
-# SwiftPM finds the C module through a module.modulemap in the headers.
 cp "$work/swift/codevisor_net_ffiFFI.modulemap" "$work/headers/module.modulemap"
 
 rm -rf "$out/CodevisorNetFFI.xcframework"

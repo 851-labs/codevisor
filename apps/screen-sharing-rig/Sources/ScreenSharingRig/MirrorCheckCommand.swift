@@ -5,11 +5,6 @@
   import ScreenCaptureKit
   import UniformTypeIdentifiers
 
-  /// `screen-sharing-rig mirror-check WIDTH HEIGHT [--png PATH]` (851-2376): the experiment
-  /// behind a virtual display sized to the viewer. Creates a HiDPI virtual display of
-  /// WIDTH×HEIGHT points, mirrors the main display onto it, reports what macOS did to both,
-  /// optionally saves one frame of the virtual display, then undoes the mirror and releases the
-  /// display.
   enum MirrorCheckCommand {
     static func main(arguments: [String]) {
       guard arguments.count >= 2, let width = Int(arguments[0]), let height = Int(arguments[1]) else {

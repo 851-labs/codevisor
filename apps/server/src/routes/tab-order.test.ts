@@ -40,8 +40,6 @@ describe("shared tab order over HTTP", () => {
     expect(reordered.status).toBe(200)
     expect(await titles()).toEqual(["Terminal", "Chat", "Browser"])
 
-    // A client drag sends one pane's new key; a reorder is not a content
-    // change, so the pane's revision stays put.
     const panes = (await jsonRequest(server, "/v1/workspace-panes")).body as WorkspacePane[]
     const browser = panes[2]!
     const moved = await jsonRequest(server, `/v1/workspaces/alpha/panes/${browser.id}`, {

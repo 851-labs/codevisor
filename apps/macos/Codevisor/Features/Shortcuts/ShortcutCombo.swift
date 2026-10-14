@@ -1,12 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The non-modifier half of a shortcut.
-///
-/// Characters are stored lowercase and matched against
-/// `charactersIgnoringModifiers`; arrows are matched against
-/// `NSEvent.specialKey`, and Escape/Return against their key codes — the three
-/// ways AppKit actually reports these keys.
 enum ShortcutKey: Equatable, Hashable, Sendable {
   case character(Character)
   case leftArrow
@@ -16,7 +10,6 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
   case escape
   case `return`
 
-  /// The SwiftUI equivalent, for `.keyboardShortcut(_:modifiers:)`.
   var keyEquivalent: KeyEquivalent {
     switch self {
     case let .character(character): KeyEquivalent(character)
@@ -29,7 +22,6 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
     }
   }
 
-  /// The glyph shown in menus and the Shortcuts settings list.
   var displaySymbol: String {
     switch self {
     case let .character(character): String(character).uppercased()
@@ -42,7 +34,6 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
     }
   }
 
-  /// The spelled-out name VoiceOver reads, e.g. "J" or "Left Arrow".
   var accessibilityName: String {
     switch self {
     case let .character(character): String(character).uppercased()
@@ -55,15 +46,12 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
     }
   }
 
-  /// Whether `event`'s key — modifiers aside — is this one.
   func matches(_ event: NSEvent) -> Bool {
     switch self {
     case .leftArrow: return event.specialKey == .leftArrow
     case .rightArrow: return event.specialKey == .rightArrow
     case .upArrow: return event.specialKey == .upArrow
     case .downArrow: return event.specialKey == .downArrow
-    // The same key codes `SubmittingTextView` and the question picker
-    // match: 53 = Escape, 36 = Return, 76 = keypad Enter.
     case .escape: return event.keyCode == 53
     case .return: return event.keyCode == 36 || event.keyCode == 76
     case let .character(character):
@@ -71,13 +59,10 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
         return false
       }
       if characters == String(character) { return true }
-      // AppKit keeps Shift applied in `charactersIgnoringModifiers` for
-      // punctuation and digits, so ⇧⌘[ arrives as "{" and ⇧⌘7 as "&".
       return characters == Self.shiftedAliases[character].map(String.init)
     }
   }
 
-  /// US-layout shifted forms of the keys a shortcut can use.
   private static let shiftedAliases: [Character: Character] = [
     "`": "~", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^",
     "7": "&", "8": "*", "9": "(", "0": ")", "-": "_", "=": "+",
@@ -86,13 +71,6 @@ enum ShortcutKey: Equatable, Hashable, Sendable {
   ]
 }
 
-/// A key plus its modifiers: one bindable shortcut.
-///
-/// This is the single representation the whole app uses — SwiftUI menus render
-/// it through `keyboardShortcut`, the AppKit key-equivalent paths match raw
-/// events through `matches(_:)`, and the Settings ▸ Shortcuts list renders
-/// `displayString`. Keeping all three off one value is what stops the menu, the
-/// terminal handler, and the documentation from drifting apart.
 struct ShortcutCombo: Equatable, Sendable {
   let key: ShortcutKey
   let modifiers: EventModifiers
@@ -110,7 +88,6 @@ struct ShortcutCombo: Equatable, Sendable {
     KeyboardShortcut(key.keyEquivalent, modifiers: modifiers)
   }
 
-  /// e.g. "⇧⌘[", "⌥⌘←". Modifier order follows the macOS HIG: ⌃⌥⇧⌘.
   var displayString: String {
     var result = ""
     if modifiers.contains(.control) { result += "⌃" }
@@ -120,7 +97,6 @@ struct ShortcutCombo: Equatable, Sendable {
     return result + key.displaySymbol
   }
 
-  /// e.g. "Command-J" — the form VoiceOver reads naturally.
   var accessibilityDescription: String {
     var parts: [String] = []
     if modifiers.contains(.control) { parts.append("Control") }
@@ -140,11 +116,6 @@ struct ShortcutCombo: Equatable, Sendable {
     return flags
   }
 
-  /// Whether `event` is exactly this shortcut.
-  ///
-  /// Modifiers must match exactly, so ⌘[ never fires on ⇧⌘[. Arrow keys carry
-  /// implicit `.function`/`.numericPad` flags — stripped here, or the
-  /// comparison could never match.
   func matches(_ event: NSEvent) -> Bool {
     let modifierFlags = event.modifierFlags
       .intersection(.deviceIndependentFlagsMask)

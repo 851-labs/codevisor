@@ -55,24 +55,17 @@ export interface HarnessAuthManagerConfig {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly preferDeviceCode?: boolean
-  /// Test seam: replaces Grok's device-code authorization client.
   readonly grokOAuth?: OAuthAuth
-  /// Test seam: replaces the SDK-backed Claude OAuth client factory.
   readonly claudeAuth?: typeof spawnClaudeAuthClient
-  /// Overrides the login-shell environment resolver in tests and embedded hosts.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
-  /// Overrides non-interactive authentication commands in tests.
   readonly execFile?: HarnessAuthExec
-  /// Test seams for OpenCode 2: its version check and its account API.
   readonly openCode?: {
     readonly majorVersion?: (command: string) => Promise<number | undefined>
-    /// The OpenCode accounts run; the newest installed by default.
     readonly locate?: (env: NodeJS.ProcessEnv) => string | undefined
     readonly accounts?: Pick<
       ReturnType<typeof makeOpenCode2Accounts>,
       "providers" | "hold" | "removeIntegration"
     >
-    /// Starts the throwaway server a captured sign-in runs on.
     readonly start?: typeof startOpenCodeServer
     readonly logins?: ReturnType<typeof makeOpenCode2Logins>
   }
@@ -84,7 +77,6 @@ export interface HarnessAuthManager {
     harnesses: ReadonlyArray<Harness>,
     force?: boolean
   ) => Promise<ReadonlyArray<Harness>>
-  /// Decorates harnesses from durable auth state without launching auth probes.
   readonly decorateHarnessesFromStoredState: (
     harnesses: ReadonlyArray<Harness>
   ) => Promise<ReadonlyArray<Harness>>
@@ -106,7 +98,6 @@ export interface HarnessAuthManager {
     shared?: boolean
   ) => Promise<HarnessAuthFlow>
   readonly cancelLogin: (flowId: string) => Promise<void>
-  /// Completes a pasteCode flow with the user's pasted code.
   readonly answerLogin: (flowId: string, code: string) => Promise<HarnessAuthFlow>
   readonly logout: (accountId: string, shared?: boolean) => Promise<HarnessAccount>
   readonly accountContext: (accountId: string) => Promise<HarnessAccountContext>

@@ -21,8 +21,6 @@ export const routeSkills = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  // The composer's Codevisor skills follow the chat's enabled MCP servers,
-  // so the gateway answers; without one, no Codevisor skill can load.
   if (url.pathname === "/v1/composer-skills" && request.method === "GET") {
     const param = (name: string) => url.searchParams.get(name)?.trim() || undefined
     writeJson(response, 200, {

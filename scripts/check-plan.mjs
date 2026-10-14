@@ -1,9 +1,3 @@
-// Decides which pre-commit checks a change needs. Pure: scripts/check.mjs
-// gathers the changed files and repository facts, this module maps them to
-// checks. A check runs when one of its inputs changed; a check missing from
-// this table never runs, so every input a check reads must be listed.
-
-// Changing these can change what any check does, so they run everything.
 const toolingInputs = [
   "package.json",
   "bun.lock",
@@ -11,7 +5,6 @@ const toolingInputs = [
   "scripts/check.mjs",
   "scripts/check-plan.mjs"
 ]
-// Shared TypeScript and Vitest configuration: every workspace package.
 const javascriptInputs = [
   ".node-version",
   "tsconfig.base.json",
@@ -19,7 +12,6 @@ const javascriptInputs = [
   "turbo.json",
   "vitest.config.ts"
 ]
-// The tunnel xcframework CodevisorNet links, built from packages/net.
 const nativeInputs = [
   "packages/net/**",
   "scripts/net-build.lock.json",
@@ -33,7 +25,6 @@ const alwaysStep = (name) => ({
   command: () => ["bun", "run", name]
 })
 
-/// Turbo tasks run for the changed workspace packages and their dependents.
 const turboStep = (name) => ({
   name,
   lane: "javascript",
@@ -53,7 +44,6 @@ const turboStep = (name) => ({
   }
 })
 
-/// A check whose inputs are fixed path patterns.
 const pathStep = (name, lane, patterns, command = ["bun", "run", name]) => ({
   name,
   lane,
@@ -66,9 +56,6 @@ const pathStep = (name, lane, patterns, command = ["bun", "run", name]) => ({
   }
 })
 
-/// A Swift build that links some packages/swift products. A packages/swift
-/// change affects it only when the changed file belongs to a module those
-/// products depend on.
 const swiftStep = (name, command, { lane = "swift", products, patterns }) => ({
   name,
   lane,
@@ -93,10 +80,9 @@ const swiftStep = (name, command, { lane = "swift", products, patterns }) => ({
 const swiftTestScript = (context) => context.scriptInputs["scripts/test-swift.mjs"] ?? []
 
 const checkSteps = [
-  // Fast whole-repository checks run every time. The script tests also read
-  // files from across the repository.
   alwaysStep("format:check"),
   alwaysStep("lint"),
+  alwaysStep("comments:check"),
   alwaysStep("ratchet:check"),
   alwaysStep("boundaries"),
   alwaysStep("dev:scripts:test"),
@@ -108,7 +94,6 @@ const checkSteps = [
     "apps/macos/ChromiumHelper/**",
     ...(context.scriptInputs["scripts/release"] ?? [])
   ]),
-  // Quick, so their own lane keeps them off the builds' critical path.
   pathStep("swift:format:check", "swift-style", [
     "**/*.swift",
     ".swift-format",
@@ -135,8 +120,6 @@ const checkSteps = [
       ]
     }
   ),
-  // A separate build in its own directory: its own lane overlaps it with the
-  // packages/swift tests.
   swiftStep("swift:build:ios", ["bun", "run", "swift:build:ios"], {
     lane: "swift-ios",
     products: (context) => context.iosProducts,
@@ -151,10 +134,7 @@ const checkSteps = [
   })
 ]
 
-/// Every check, with whether this change needs it and why.
 export function planChecks({ files: changed, all = false, context }) {
-  // packages/swift builds and tests some app folders through symlinks; an edit
-  // there is also an edit to the package.
   const files = changed.flatMap((file) => [
     file,
     ...context.swiftLinks
@@ -175,7 +155,6 @@ export function planChecks({ files: changed, all = false, context }) {
   })
 }
 
-/// The packages/swift modules (non-test targets) the given products link.
 function swiftModules(manifest, products) {
   const targets = new Map(manifest.targets.map((target) => [target.name, target]))
   const modules = new Set()
@@ -194,8 +173,6 @@ function swiftModules(manifest, products) {
   return modules
 }
 
-/// Whether a file inside packages/swift can change a build of `modules`.
-/// Without the manifest, every file counts.
 function swiftFileAffects(path, manifest, modules) {
   if (manifest === undefined || modules === undefined) return true
   if (path === "Package.swift" || path === "Package.resolved") return true
@@ -203,8 +180,6 @@ function swiftFileAffects(path, manifest, modules) {
     .map((target) => ({ target, directory: targetDirectory(target) }))
     .filter(({ directory }) => directory !== undefined && path.startsWith(`${directory}/`))
     .toSorted((left, right) => right.directory.length - left.directory.length)[0]
-  // Files outside every module (docs, test configuration) count unless they
-  // are documentation.
   if (owner === undefined) return !path.endsWith(".md")
   return modules.has(owner.target.name)
 }
@@ -215,8 +190,6 @@ function targetDirectory(target) {
   return `${target.type === "test" ? "Tests" : "Sources"}/${target.name}`
 }
 
-/// The packages/swift products an Xcode project links, from its
-/// XCSwiftPackageProductDependency entries for that package.
 export function xcodeSwiftProducts(projectFile) {
   const section = projectFile.match(
     /\/\* Begin XCSwiftPackageProductDependency section \*\/([\s\S]*?)\/\* End XCSwiftPackageProductDependency section \*\//
@@ -230,8 +203,6 @@ export function xcodeSwiftProducts(projectFile) {
   return products.length === 0 ? undefined : products
 }
 
-/// The relative module paths a script imports, followed transitively by the
-/// caller. Only literal relative specifiers count.
 export function relativeImports(source) {
   return [...source.matchAll(/(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)].map(
     (match) => match[1]

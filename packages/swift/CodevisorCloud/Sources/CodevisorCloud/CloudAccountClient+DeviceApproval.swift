@@ -1,13 +1,10 @@
 import Foundation
 
-/// Why a device-approval (RFC 8628 verification) request didn't go through.
 public enum CloudDeviceApprovalError: Error, Equatable, Sendable, LocalizedError {
   case invalidCode
   case expiredCode
   case alreadyProcessed
-  /// Another signed-in account opened this code first.
   case claimedByAnotherAccount
-  /// The link came from a cloud other than the account's own server.
   case differentServer(machineHost: String, accountHost: String)
   case signInRequired
 
@@ -42,8 +39,6 @@ extension CloudAccountClient {
     try await respondToDevice(userCode: userCode, decision: "deny", token: token)
   }
 
-  /// better-auth only lets the session that claimed a code act on it, so
-  /// the code is claimed (`GET /device`) before it is approved or denied.
   private func respondToDevice(userCode: String, decision: String, token: String) async throws {
     var allowed = CharacterSet.urlQueryAllowed
     allowed.remove(charactersIn: "&=+#?")
@@ -61,9 +56,6 @@ extension CloudAccountClient {
     )
   }
 
-  /// Maps the device plugin's OAuth-style errors (`error`,
-  /// `error_description`) to messages that say what to do next. Returns
-  /// nil for failures the generic HTTP handling words better (401, 429).
   static func deviceApprovalError(status: Int, body: Data) -> CloudDeviceApprovalError? {
     struct ErrorBody: Decodable {
       var error: String?
@@ -94,22 +86,16 @@ extension CloudAccountClient {
 }
 
 extension CloudAccountController {
-  /// Why a device-approval link can't be approved from this account, when
-  /// it came from a cloud other than the account's own server. The
-  /// approval carries the account's session token, so it is only ever sent
-  /// to that same origin.
   public func deviceApprovalServerMismatch(for link: CloudDeviceApprovalLink) -> CloudDeviceApprovalError? {
     guard !CloudDeviceApprovalLink.sameOrigin(link.serverURL, serverURL) else { return nil }
     return .differentServer(machineHost: link.host, accountHost: CloudDeviceApprovalLink.displayHost(of: serverURL))
   }
 
-  /// Approves a machine's `codevisor auth login` request on this account.
   public func approveDevice(_ link: CloudDeviceApprovalLink) async throws {
     let token = try deviceApprovalToken(for: link)
     try await client.approveDevice(userCode: link.userCode, token: token)
   }
 
-  /// Rejects a machine's `codevisor auth login` request.
   public func denyDevice(_ link: CloudDeviceApprovalLink) async throws {
     let token = try deviceApprovalToken(for: link)
     try await client.denyDevice(userCode: link.userCode, token: token)

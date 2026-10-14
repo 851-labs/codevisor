@@ -5,11 +5,7 @@ import UniformTypeIdentifiers
 import os
 import CodevisorUI
 
-/// The Settings ▸ Appearance tab: color mode, per-scheme theme pickers over
-/// the System/Pierre/Shiki/Custom catalog, a live preview, and custom theme
-/// import/removal.
 struct AppearanceSettingsView: View {
-  /// A failed theme action (import/delete), pending display in an alert.
   private struct ThemeError: Identifiable {
     let id = UUID()
     let title: String
@@ -125,13 +121,9 @@ struct AppearanceSettingsView: View {
     }
   }
 
-  // MARK: - Pickers
-
   private func themePicker(label: String, scheme: ThemeDescriptor.SchemeType) -> some View {
     LabeledContent(label) {
       Menu {
-        // One flat list in catalog order (system, pierre, shiki,
-        // custom) — no group headers or dividers.
         ForEach(manager.availableThemes.filter { $0.type == scheme }) { descriptor in
           Button {
             manager.setThemeId(descriptor.id, for: scheme)
@@ -166,8 +158,6 @@ struct AppearanceSettingsView: View {
   }
 }
 
-/// Five small squares summarizing a palette: window, sidebar, text, accent,
-/// status. System entries (nil palette) render the current dynamic colors.
 struct ThemeSwatchView: View {
   let palette: DerivedPalette?
 
@@ -194,7 +184,6 @@ struct ThemeSwatchView: View {
 }
 
 extension Color {
-  /// Optional-friendly RGBA bridge used by the swatches.
   fileprivate init?(rgba: RGBA?) {
     guard let rgba else { return nil }
     self.init(rgba: rgba)

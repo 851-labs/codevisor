@@ -11,9 +11,7 @@ struct MarkdownParserTests {
     #expect(parser.parse("# One") == [.heading(level: 1, text: "One")])
     #expect(parser.parse("### Three") == [.heading(level: 3, text: "Three")])
     #expect(parser.parse("###### Six") == [.heading(level: 6, text: "Six")])
-    // Seven hashes is not a heading.
     #expect(parser.parse("####### Nope") == [.paragraph("####### Nope")])
-    // No space after hashes is not a heading.
     #expect(parser.parse("#NoSpace") == [.paragraph("#NoSpace")])
   }
 

@@ -50,7 +50,6 @@ const list = {
   }
 }
 
-/// A Mac whose `xcrun simctl` answers from `list`, recording every command.
 const fakeMac = (overrides: Partial<SimulatorEnvironment> = {}) => {
   const commands: string[][] = []
   let now = 0
@@ -131,7 +130,6 @@ describe("simulator list", () => {
         hasDigitizer: true
       }
     ])
-    // An Apple TV has no integrated screen; its powered TV output is the screen.
     expect(
       parseDisplays(
         [
@@ -204,7 +202,6 @@ describe("simulator commands", () => {
       "enabled"
     ])
     expect(mac.commands).toContainEqual(["xcrun", "simctl", "location", udid, "run", "City Run"])
-    // Unsupported settings are left out; the location is what this server last set.
     expect(settings).toEqual({ appearance: "dark", location: "city-run" })
   })
 

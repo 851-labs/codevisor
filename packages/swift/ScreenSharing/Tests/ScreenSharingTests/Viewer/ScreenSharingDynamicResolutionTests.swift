@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// 851-2340: how many remote pixels per point Dynamic Resolution asks for.
 struct ScreenSharingDynamicResolutionTests {
   @Test func aRetinaPaneGets2xUntilTheLinkSaysOtherwise() {
     var resolution = ScreenSharingDynamicResolution()

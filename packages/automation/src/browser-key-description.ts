@@ -1,9 +1,3 @@
-/**
- * Trusted keyboard input for Browser Use, shaped after Playwright's `Keyboard`: chords parse to
- * CDP key descriptions, keydown and keyup dispatch separately, and modifiers held through
- * key_down apply to later presses.
- */
-
 export const browserKeyDescription = (
   value: string
 ): {

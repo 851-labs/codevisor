@@ -21,15 +21,11 @@ describe("@codevisor/db", () => {
         })
       )
 
-      // A project move re-homes the session's directory: the old project's
-      // worktree name must not survive it.
       const moved = await run(db.updateSession(session.id, { projectId: destination.id }))
       expect(moved.projectId).toBe(destination.id)
       expect(moved.worktreeName).toBeUndefined()
       expect(moved.cwd).toBe("/tmp/move-destination")
 
-      // A move can carry the destination worktree explicitly, and Swift's
-      // uppercase ids canonicalize like every other write.
       await run(db.createWorktree(destination.id, "spry-otter", "codevisor/spry-otter"))
       const movedBack = await run(
         db.updateSession(session.id, {
@@ -69,8 +65,6 @@ describe("@codevisor/db", () => {
         reasoning: "high",
         speed: "standard"
       })
-      // Unavailable entries replace only when given; a plain selection write
-      // leaves them in place.
       await run(
         db.replaceSessionConfigSelections(
           session.id,
@@ -134,7 +128,6 @@ describe("@codevisor/db", () => {
       await Effect.runPromise(db.close)
     }
 
-    // A project whose folder is gone from this server cannot derive a cwd.
     const sqlite = new Database(filename)
     try {
       sqlite.prepare("delete from project_locations where project_id = ?").run(project.id)

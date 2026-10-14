@@ -51,7 +51,6 @@ struct CodevisorWorkflowDetailsTests {
       .codevisorWorkflowDetails)
     #expect(failed.failure == "Error: boom\n\(long)")
     #expect(failed.result == nil)
-    // Only frames, or nothing at all, still says the workflow failed.
     let bare = try #require(
       workflow(status: .failed, rawOutput: .string("    at <anonymous> (x.js:1:2)")).codevisorWorkflowDetails)
     #expect(bare.failure == "The workflow failed")
@@ -83,7 +82,6 @@ struct CodevisorWorkflowDetailsTests {
 
   @Test("A script's stringified results are unpacked, without the file references shown above them")
   func cleanedResult() throws {
-    // Codex returned its browser cells' results as JSON strings.
     let returned: JSONValue = [
       #"{"value":"Page URL: https://news.ycombinator.com/","artifacts":[{"type":"artifact_ref","fileId":"f1"}]}"#,
       #"[{"title":"Cloudflare acquires Deno","points":1116}]"#,
@@ -104,7 +102,6 @@ struct CodevisorWorkflowDetailsTests {
           ]
         ]
         """)
-    // A result that was only a file reference leaves nothing to show.
     let onlyFile = try #require(
       workflow(rawOutput: .string(#"{"result":{"fileId":"f1","name":"shot.png"}}"#)).codevisorWorkflowDetails)
     #expect(onlyFile.result == nil)

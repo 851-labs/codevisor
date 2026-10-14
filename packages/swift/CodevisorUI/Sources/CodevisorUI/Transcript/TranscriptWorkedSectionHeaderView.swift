@@ -22,15 +22,9 @@ public struct TranscriptRowSetRevision: Equatable, Sendable {
 public struct TranscriptWorkedRowsPresentation: Sendable {
   public let rows: [TranscriptPresentationRow]
   public let visibilityRevision: TranscriptWorkedRowsVisibilityRevision
-  /// Live text streams a collapsed section is hiding. Text that arrives
-  /// unseen is already presented once the section opens; only what streams
-  /// in while it is open should animate.
   public var hiddenStreamIDs: [String] = []
 }
 
-/// Settled transcript rows change far less often than the active turn. Keep
-/// their disclosure projection out of the token-flush path while still
-/// invalidating immediately for a user toggle or subagent activity change.
 @MainActor
 public final class TranscriptWorkedRowsVisibilityCache {
   private struct Key: Equatable {
@@ -70,9 +64,6 @@ public final class TranscriptWorkedRowsVisibilityCache {
   }
 }
 
-/// Removes collapsed worked-content rows before they reach the native layout
-/// ledger. Headers stay mounted, while expanded sections retain ordinary
-/// block-level virtualization regardless of their total length.
 @MainActor
 public enum TranscriptWorkedRowsVisibility {
   public static func present(
@@ -149,12 +140,7 @@ public enum TranscriptWorkedRowsVisibility {
   }
 }
 
-/// Stable chrome for one virtualized worked section. Its timer is intentionally
-/// a plain Text driven by a small task rather than a TimelineView nested in a
-/// root that may be reconciled during streaming.
 public struct TranscriptWorkedSectionHeaderView: View {
-  /// The header's line, chevron or not. A turn's opening line keeps it too,
-  /// so whatever it shows, the header replacing it moves nothing.
   static let lineHeight: CGFloat = 18
 
   public let turn: AssistantTurn
@@ -190,8 +176,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
     }
   }
 
-  /// A live section shows its header from the turn's first event, before
-  /// there is any work to disclose.
   private var hasContent: Bool {
     if turn.defersWorkedSection(kind) { return true }
     switch kind {
@@ -247,11 +231,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
     }
   }
 
-  /// Collapsed, the header stands in for the hidden work: what the turn is
-  /// doing now, shimmering, then for how long. Expanded, the work is
-  /// visible, so the header just times it. Once the answer is streaming the
-  /// work is done, so the header already reads as settled. The subject is
-  /// paced (see `WorkedActivityLabelSmoother`) so fast work doesn't flicker.
   @ViewBuilder
   private var liveLabel: some View {
     let activity = turn.workedSectionActivity
@@ -269,7 +248,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
       case .step, .pending, .starting:
         TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
       case .answering:
-        // One run of text, so the label doesn't shift when the turn ends.
         TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Worked for ")
       }
     }
@@ -293,9 +271,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 }
 
-/// Worked-section labels should read as stable transcript chrome. Unlike a
-/// general button, pressing or hovering the disclosure does not recolor or
-/// dim its label.
 public struct TranscriptWorkedSectionButtonStyle: ButtonStyle {
   public init() {}
 
@@ -304,9 +279,6 @@ public struct TranscriptWorkedSectionButtonStyle: ButtonStyle {
   }
 }
 
-/// Loads deferred historical work from the chevron slot. Both states occupy
-/// the chevron's exact 10×10 footprint, so a network request never creates a
-/// temporary transcript row or changes the header's line height.
 public struct TranscriptWorkedDisclosureIndicator: View {
   public let expanded: Bool
   public let deferredDetailItemID: String?
@@ -358,8 +330,6 @@ private struct TranscriptWorkingDurationLabel: View {
   @State private var now = Date()
 
   var body: some View {
-    // Beside an activity, fixed-width digits keep the label from jittering
-    // each second; with a prefix, the digits match the settled title.
     Text(prefix + turn.workedSectionElapsed(kind, now: now))
       .font(prefix.isEmpty ? .callout.monospacedDigit() : .callout)
       .task(id: turn.workedSectionStart(kind)) {
@@ -374,8 +344,6 @@ private struct TranscriptWorkingDurationLabel: View {
 }
 
 extension AssistantTurn {
-  /// Sections start collapsed, live ones included: their header says what
-  /// is running. Once the turn ends, a running subagent keeps its work open.
   fileprivate func workedSectionDefaultsExpanded(
     _ kind: TranscriptWorkedSectionKind,
     runningSubagentRunToolCallIDs: Set<String>
@@ -393,9 +361,6 @@ private extension TranscriptWorkedSectionKind {
   }
 }
 
-/// A turn's opening line before its harness's first event, including a new
-/// chat's before the harness exists. Timed from the send and drawn as the
-/// worked header that takes over from it, so the count never restarts.
 struct TranscriptStartingWorkedHeader: View {
   let startedAt: Date
   @State private var now = Date()

@@ -1,11 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The shared detail-area state used while a machine's server is starting
-/// or reconnecting. Keeping this at the navigation boundary means cached
-/// sidebars/lists stay useful without mounting views that would issue
-/// requests before the server is ready. (The local server's blocking data
-/// upgrade is presented app-wide by the macOS app, not here.)
 public struct ServerAvailabilityView: View {
   private let machineId: String
   private let availability: ServerAvailability
@@ -13,17 +8,9 @@ public struct ServerAvailabilityView: View {
   private let isLocal: Bool
   private let startupProgress: LocalServerStartupProgress?
   private let appUpdateInProgress: Bool
-  /// Re-points the caller at this Mac. Offered only for remote machines
-  /// whose wait is open-ended (see `ServerAvailabilityFallbackPolicy`);
-  /// nil when the caller has no local machine to fall back to.
   private let useLocalMachine: (() -> Void)?
-  /// Relaunches the app, which starts the local server again the normal
-  /// way. Local machine only; offered when the start failed or is taking
-  /// longer than `slowStartThreshold`.
   private let restart: (() -> Void)?
 
-  /// After this long on "Starting Codevisor Server", offer a restart: a
-  /// healthy start takes seconds, so waiting longer means something stuck.
   public static let slowStartThreshold: Duration = .seconds(20)
 
   @State private var startIsSlow = false
@@ -90,10 +77,6 @@ public struct ServerAvailabilityView: View {
           .frame(maxWidth: 360)
         }
 
-        // No "Try Again": reconnecting is the app's job. A failed remote
-        // machine keeps being retried, and this page opens on its own once
-        // it answers. Only the local server, which the app itself starts,
-        // offers a remedy (Restart).
         if (isFailed && isLocal && restart != nil) || offersLocalMachine || offersSlowStartRestart {
           HStack(spacing: 10) {
             if isFailed, let restart, isLocal {
@@ -144,7 +127,6 @@ public struct ServerAvailabilityView: View {
       )
   }
 
-  /// The local server is starting (not updating).
   private var isLocalStartWait: Bool {
     guard isLocal, !appUpdateInProgress else { return false }
     if case .waiting(.starting) = availability { return true }
@@ -161,9 +143,6 @@ public struct ServerAvailabilityView: View {
     return false
   }
 
-  /// Keep fast startup/reconnects visually quiet. Requests are gated for the
-  /// entire wait, but the explanatory progress UI only appears when the wait
-  /// lasts long enough to be useful.
   private var isActivelyWaiting: Bool {
     if appUpdateInProgress { return true }
     if case .waiting = availability { return true }
@@ -252,9 +231,6 @@ private struct DelayedServerStatus<Content: View>: View {
   }
 }
 
-/// Whole-window startup state for the client database. Unlike server waiting,
-/// no app content is mounted because repositories cannot safely open until
-/// this work completes.
 public struct ClientDataStartupView: View {
   public init() {}
 

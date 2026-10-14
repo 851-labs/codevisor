@@ -11,8 +11,6 @@ vi.mock("node:http", () => ({ request: vi.fn() }))
 vi.mock("node:net", () => ({ connect: vi.fn() }))
 afterEach(() => vi.clearAllMocks())
 
-// Drive socket lifecycle events explicitly, including failures that are otherwise
-// dependent on OS timing. No listening ports or connection deadlines are needed.
 class Endpoint extends EventEmitter {
   headers: IncomingMessage["headers"] = {}
   method = "GET"

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Column alignment in a GFM table.
 public enum ColumnAlignment: Sendable, Equatable, Hashable {
   case leading
   case center
@@ -8,11 +7,6 @@ public enum ColumnAlignment: Sendable, Equatable, Hashable {
   case none
 }
 
-/// Semantic inline Markdown produced by MD4C.
-///
-/// Keeping the resolved span tree with the block is important: reference-style
-/// links can be defined later in the document, so reparsing each rendered block
-/// independently would not be CommonMark-correct.
 public struct MarkdownText: Sendable, Equatable, Hashable, ExpressibleByStringLiteral {
   public let spans: [MarkdownSpan]
 
@@ -35,9 +29,6 @@ public struct MarkdownText: Sendable, Equatable, Hashable, ExpressibleByStringLi
   public var characterCount: Int { plainText.count }
 }
 
-/// A resolved inline Markdown node. Text is materialized while parsing; this
-/// deliberately favors simple ownership and safe reconciliation over retaining
-/// unsafe pointers into MD4C's temporary input buffer.
 public indirect enum MarkdownSpan: Sendable, Equatable, Hashable {
   case text(String)
   case emphasis([MarkdownSpan])
@@ -65,7 +56,6 @@ public indirect enum MarkdownSpan: Sendable, Equatable, Hashable {
   }
 }
 
-/// An ordered-list item with its rendered number.
 public struct OrderedListItem: Sendable, Equatable, Hashable {
   public let number: Int
   public let text: MarkdownText
@@ -80,7 +70,6 @@ public struct OrderedListItem: Sendable, Equatable, Hashable {
   }
 }
 
-/// A list item that can contain arbitrary nested block content.
 public struct MarkdownListItem: Sendable, Equatable, Hashable {
   public let blocks: [MarkdownBlock]
   public let isTask: Bool
@@ -93,8 +82,6 @@ public struct MarkdownListItem: Sendable, Equatable, Hashable {
   }
 }
 
-/// A CommonMark list. Unlike the compatibility list cases, this form retains
-/// nesting, loose-list blocks, task state, start number, and delimiter.
 public struct MarkdownList: Sendable, Equatable, Hashable {
   public let isOrdered: Bool
   public let start: Int
@@ -116,8 +103,6 @@ public struct MarkdownList: Sendable, Equatable, Hashable {
     self.items = items
   }
 
-  /// Disc, circle, then square: nested bullet lists stay distinguishable
-  /// from their parent the way browsers vary unordered markers by depth.
   public static func bullet(depth: Int) -> String {
     switch depth {
     case 0: "•"
@@ -126,36 +111,27 @@ public struct MarkdownList: Sendable, Equatable, Hashable {
     }
   }
 
-  /// Bullets are drawn bold; at body size the regular glyphs are too small
-  /// to tell a nested circle from a disc.
   public static func isBullet(_ marker: String) -> Bool {
     marker == "•" || marker == "◦" || marker == "▪"
   }
 
-  /// `depth` counts the lists enclosing this one; it only affects bullets.
   public func marker(for item: MarkdownListItem, at index: Int, depth: Int = 0) -> String {
     if item.isTask { return item.isChecked ? "☑" : "☐" }
     return isOrdered ? "\(start + index)\(delimiter)" : Self.bullet(depth: depth)
   }
 }
 
-/// A semantic Markdown block produced by MD4C.
 public indirect enum MarkdownBlock: Sendable, Equatable, Hashable, Identifiable {
   case heading(level: Int, text: MarkdownText)
   case paragraph(MarkdownText)
   case codeBlock(language: String?, code: String, isComplete: Bool)
-  /// Compatibility shape retained for simple tight lists.
   case bulletList([MarkdownText])
-  /// Compatibility shape retained for simple tight ordered lists.
   case orderedList([OrderedListItem])
-  /// Full recursive list representation used for nested, loose, and task lists.
   case list(MarkdownList)
   case blockQuote([MarkdownBlock])
   case table(headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]])
   case thematicBreak
 
-  /// Convenience overloads keep callers with dynamically-created strings
-  /// source-compatible with the pre-MD4C model.
   public static func heading(level: Int, text: String) -> MarkdownBlock {
     .heading(level: level, text: MarkdownParser().parseInline(text))
   }

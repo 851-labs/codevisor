@@ -5,9 +5,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The in-memory channel pair keeps the native channel's contract: ordered
-/// delivery through a hop (never reentrant), availability that both ends
-/// observe, and refused sends once either end has closed.
 @MainActor
 struct ScreenSharingLocalChannelTests {
   @Test func deliversInOrderThroughTheHopAndNeverReentrantly() {
@@ -17,7 +14,7 @@ struct ScreenSharingLocalChannelTests {
     var viewerReceived: [Int] = []
     host.onMessage = { value in
       hostReceived.append(value)
-      #expect(host.send(value * 10))  // a reply from inside delivery is queued, not delivered inline
+      #expect(host.send(value * 10))
     }
     viewer.onMessage = { viewerReceived.append($0) }
     #expect(viewer.isAvailable && host.isAvailable)
@@ -47,7 +44,7 @@ struct ScreenSharingLocalChannelTests {
     #expect(viewerAvailability.isEmpty)
     hop.drain()
     #expect(viewerAvailability == [false])
-    #expect(hostReceived.isEmpty)  // a message in flight to a closed end is dropped, never delivered late
+    #expect(hostReceived.isEmpty)
     host.close()
     hop.drain()
     #expect(hostAvailability == [false] && viewerAvailability == [false])
@@ -75,7 +72,6 @@ struct ScreenSharingLocalChannelTests {
     }
     for value in 1...3 { #expect(viewer.send(value)) }
     hop.drain()
-    // The third message was already queued; a channel that closed mid-batch never delivers it.
     #expect(received == [1, 2])
     hop.drain()
     #expect(received == [1, 2])
@@ -95,7 +91,6 @@ struct ScreenSharingLocalChannelTests {
     hop.drainAll()
   }
 
-  /// The default hop is a main-actor task, so delivery is asynchronous even without a test hop.
   @Test func theDefaultHopDeliversOnTheMainActorAfterTheSendReturns() async {
     let (viewer, host) = ScreenSharingLocalChannel<Int>.pair()
     let delivered = TestSignal()

@@ -13,9 +13,6 @@ import { Effect } from "effect"
 import { observableFixture } from "./changes-test-support.js"
 import { dependencyConfigOptions } from "./test-support-config-options.js"
 
-/// The fake agent runtime the server tests drive: scripted harnesses,
-/// sessions, prompts, and the event emitter tests use to simulate agents.
-
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 export const configSelectionsFromTestOptions = (
@@ -49,7 +46,6 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
   readonly inspectionConfigs: Array<Readonly<Record<string, string>> | undefined>
-  /// Saved selections each create/load was asked to start the process with.
   readonly startSelections: Array<Readonly<Record<string, string>> | undefined>
   readonly creations: Array<readonly [string, string]>
   readonly environmentRefreshes: Array<number>
@@ -80,8 +76,6 @@ export const makeAgents = (): AgentRuntimeService & {
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
     await sinks.get(sessionId)?.(event)
   }
-  /// Turns that run until `cancel` ("prompt until cancelled"): lets tests
-  /// exercise interrupt paths deterministically instead of racing a timer.
   const cancellable = new Map<string, () => void>()
   const promptGate = Promise.withResolvers<void>()
   return {
@@ -154,8 +148,6 @@ export const makeAgents = (): AgentRuntimeService & {
             }
           }
         }
-        // A requested model the harness does not offer is reported back,
-        // not substituted.
         const unapplied = configSelections?.model === "gpt-gone"
         const model = unapplied ? "gpt-5" : (configSelections?.model ?? "gpt-5")
         return {
@@ -200,13 +192,10 @@ export const makeAgents = (): AgentRuntimeService & {
         loads.push([harnessId, agentSessionId, cwd])
         startSelections.push(sessionOptions?.configSelections)
         sinks.set(agentSessionId, sink)
-        // A runtime whose option list never arrived (Claude's model list
-        // losing its startup race) reports no options at all.
         if (cwd.includes("no-config-options")) {
           configOptionsBySession.set(agentSessionId, [])
           return { configOptions: [], sessionId: agentSessionId }
         }
-        // A harness that lists the skills it found while starting.
         if (cwd.includes("native-skills")) {
           configOptionsBySession.set(agentSessionId, [])
           return {
@@ -220,7 +209,6 @@ export const makeAgents = (): AgentRuntimeService & {
         }
         if (cwd.includes("session-config")) {
           dependencyConfigSessions.add(agentSessionId)
-          // Claude starts its process on the chat's saved picks.
           const saved = cwd.includes("starts-on-saved") ? sessionOptions?.configSelections : {}
           const configOptions = dependencyConfigOptions(
             saved?.model,

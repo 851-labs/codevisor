@@ -1,6 +1,3 @@
-//! Swift (uniffi) binding for the tunnel, used by the macOS and iOS apps
-//! (packages/swift/CodevisorNet). Mirrors the Node binding's surface.
-
 use std::{sync::Arc, time::Duration};
 
 use codevisor_net as net;
@@ -38,7 +35,6 @@ pub struct NetEndpointConfig {
     pub secret_key_hex: String,
     pub relays: Vec<NetRelay>,
     pub trust_anchors_pem: Vec<String>,
-    /// "auto" | "relay-only" | "direct-only"
     pub path_policy: String,
     pub alpns: Vec<String>,
 }
@@ -72,7 +68,6 @@ pub struct NetPath {
 
 #[derive(uniffi::Record)]
 pub struct NetMessage {
-    /// 0 = text, 1 = binary.
     pub kind: u8,
     pub payload: Vec<u8>,
 }
@@ -125,9 +120,6 @@ impl NetEndpointHandle {
         self.inner.online(Duration::from_millis(timeout_ms.into())).await.map_err(failure)
     }
 
-    /// Dials `addr`. Swift's async glue never cancels the Rust future, so a
-    /// caller that may abandon the dial passes `cancel` and fires it; the
-    /// handshake then stops at once instead of running to its timeout.
     pub async fn connect(
         &self,
         addr: NetTunnelAddr,
@@ -143,7 +135,6 @@ impl NetEndpointHandle {
         Ok(Arc::new(NetConnectionHandle { inner: connection }))
     }
 
-    /// Hints that the network may have changed (foreground, path change).
     pub async fn network_change(&self) {
         self.inner.network_change().await;
     }
@@ -153,7 +144,6 @@ impl NetEndpointHandle {
     }
 }
 
-/// Cancels a `connect` from Swift (see `NetEndpointHandle::connect`).
 #[derive(uniffi::Object, Default)]
 pub struct NetCancelToken {
     inner: net::CancelToken,
@@ -195,12 +185,10 @@ impl NetConnectionHandle {
             .collect()
     }
 
-    /// Largest UDP payload a media flow can carry, or `None`.
     pub fn max_media_payload(&self) -> Option<u32> {
         self.inner.media().max_payload().map(|size| size as u32)
     }
 
-    /// Viewer side: a local UDP port (all interfaces) bridged to flow `flow_id`.
     pub async fn bind_media(&self, flow_id: u32) -> Result<Arc<NetMediaFlowHandle>, NetError> {
         let flow = net::MediaFlow::bind(self.inner.media(), flow_id).await.map_err(failure)?;
         Ok(Arc::new(NetMediaFlowHandle { inner: std::sync::Mutex::new(Some(flow)) }))
@@ -223,7 +211,6 @@ impl NetMessageStreamHandle {
         self.inner.send(kind, &payload).await.map_err(failure)
     }
 
-    /// The next message, or `None` once the peer finished the stream.
     pub async fn recv(&self) -> Result<Option<NetMessage>, NetError> {
         let message = self.inner.recv().await.map_err(failure)?;
         Ok(message.map(|message| NetMessage { kind: message.kind as u8, payload: message.payload }))

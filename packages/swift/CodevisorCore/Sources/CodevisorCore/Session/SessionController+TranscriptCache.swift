@@ -1,15 +1,9 @@
 import Foundation
 
 extension SessionController {
-  /// The chat's model, built before its open request so a cached page can be
-  /// on screen while that request is in flight.
   func makeServerSessionModel(
     transport: ServerSessionTransport, harnessId: String, sessionId: UUID
   ) -> SessionModel {
-    // The model starts without options: only the chat's runtime reports
-    // them. Until it does, the composer shows the chat's saved values over
-    // catalog option lists (`existingChatConfigOptions`) — never a
-    // catalog or inspection default.
     let model = SessionModel(
       serverTransport: transport,
       sessionId: sessionId.uuidString,
@@ -29,9 +23,6 @@ extension SessionController {
     model.onLocalUserMessageAppended = { [weak self] messageID in
       guard let self, pendingUserMessage?.id == messageID else { return }
       pendingUserMessage = nil
-      // Ordinary sends already own a request before their optimistic row
-      // is published. Keep this as a fallback for any model attachment
-      // race; a first send retains its existing optimistic destination.
       guard userSendAnimationRequest?.messageID != messageID else { return }
       requestUserSendAnimation(for: messageID)
     }
@@ -45,16 +36,6 @@ extension SessionController {
     return model
   }
 
-  /// Starts reading the chat's last saved page off the main actor. When it
-  /// arrives, and this connect still owns the chat, the page is shown and the
-  /// model published, so opening a chat never waits on the network when this
-  /// device has seen it before. Sending waits for the open request like it
-  /// always has. Returns nil when there is nothing to read (or a first-send
-  /// setup owns the model).
-  ///
-  /// The read races the open request. Whichever wins, the server's page is
-  /// what remains: `supersedeCachedTranscriptLoad()` drops a read still in
-  /// flight once the open response is in hand.
   func startCachedTranscriptLoad(
     in model: SessionModel, transport: ServerSessionTransport, sessionId: UUID, serverId: String,
     loadsExistingHistory: Bool
@@ -77,13 +58,10 @@ extension SessionController {
     }
   }
 
-  /// Drops any cached-page read still in flight: fresher data owns the chat.
   func supersedeCachedTranscriptLoad() {
     transcriptCacheLoadGeneration &+= 1
   }
 
-  /// Reads, decodes, and converts the saved open response. A page that no
-  /// longer decodes is removed; an empty one is not worth showing.
   @concurrent
   nonisolated static func loadCachedTranscriptPage(
     cache: TranscriptPageCache, transport: ServerSessionTransport, machineId: String, sessionId: UUID

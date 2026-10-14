@@ -1,9 +1,6 @@
 import Foundation
 import MarkdownCore
 
-/// Serializes live-row projection with the same bounded preparation queue
-/// used by native content layout. New input replaces only waiting work, so
-/// continuous streaming cannot starve presentation.
 @MainActor
 public final class TranscriptActiveProjectionWorker {
   public struct Request: Equatable, Sendable {

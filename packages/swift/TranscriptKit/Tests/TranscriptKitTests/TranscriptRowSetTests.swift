@@ -30,8 +30,6 @@ struct TranscriptRowSetTests {
     Row(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height)
   }
 
-  // MARK: resolve
-
   @Test func resolveWithoutActivePlaceholderReturnsProjectedRows() {
     let rows = [settled(UUID()), settled(UUID())]
     let resolution = TranscriptRowSet.resolve(projectedRows: rows, activeRows: [])
@@ -62,8 +60,6 @@ struct TranscriptRowSetTests {
     #expect(resolution.activeRange == 1..<3)
   }
 
-  // MARK: reversePrependCount
-
   @Test func reversePrependCountDetectsOlderHistoryPrepend() {
     let old = [settled(UUID()), settled(UUID())]
     let new = [settled(UUID()), settled(UUID()), settled(UUID())] + old
@@ -77,8 +73,6 @@ struct TranscriptRowSetTests {
     #expect(TranscriptRowSet.reversePrependCount(from: old, to: old + [settled(UUID())]) == nil)
     #expect(TranscriptRowSet.reversePrependCount(from: old, to: [settled(UUID()), old[1], settled(UUID())]) == nil)
   }
-
-  // MARK: geometryChanged
 
   @Test func geometryChangedIgnoresContentButTracksIdentityAndEstimates() {
     let id = UUID()
@@ -94,8 +88,6 @@ struct TranscriptRowSetTests {
     #expect(!TranscriptRowSet.geometryChanged(from: [base], to: [sameGeometryDifferentContent]))
   }
 
-  // MARK: replaceRows
-
   @Test func replaceRowsReturnsPreviousIndexAndRebuildsKeyIndex() {
     var set = TranscriptRowSet()
     let a = settled(UUID())
@@ -106,8 +98,6 @@ struct TranscriptRowSetTests {
     #expect(set.rows == [a, b])
     #expect(set.rowByKey[b.layoutKey] == b)
   }
-
-  // MARK: replaceActiveRows
 
   @Test func replaceActiveRowsPatchesInPlaceWhenKeysAreStable() {
     let turn = UUID()
@@ -162,8 +152,6 @@ struct TranscriptRowSetTests {
     }
   }
 
-  // MARK: transferActiveHeightIfNeeded
-
   @Test func historyRefreshNeverTransfersWaitingHeightToReplacementUser() {
     let user = settled(UUID(), height: 90)
     let waiting = active(UUID(), height: 19.333)
@@ -217,8 +205,6 @@ struct TranscriptRowSetTests {
   }
 
   @Test func doesNotTransferWhenActiveSettlesUnderItsOwnKey() {
-    // `.active(id)` and `.message(id)` share `message:<id>`: the settled
-    // row inherits the active host's exact height directly.
     let turn = UUID()
     var ledger = TranscriptMeasurementLedger()
     ledger.setExact(123, for: active(turn).layoutKey)

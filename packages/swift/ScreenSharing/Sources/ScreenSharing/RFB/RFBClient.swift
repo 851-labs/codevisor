@@ -1,48 +1,30 @@
 import Foundation
 
-/// One RFB connection: `connect` negotiates and configures the framebuffer,
-/// `run` reads server messages until the peer closes or a message is
-/// invalid, keeping exactly one incremental update request in flight — or,
-/// once the server confirms ContinuousUpdates, none: the server pushes
-/// changes as they happen (851-2312), paced by Fence replies — and
-/// `send` carries input and clipboard from any task. Reentrant at its
-/// awaits, so input flows while a large update is being read.
 public actor RFBClient {
   public nonisolated let framebuffer: RFBFramebuffer
   private let transport: any RFBTransport
-  /// The transport's control-lease side channel, if it has one (the WebSocket, 851-2338).
   public nonisolated var controlChannel: (any RFBControlChannel)? { transport as? any RFBControlChannel }
   private let stream: RFBInputStream
   private var inflater: RFBZlibInflater?
   private let tight = RFBTightDecoder()
-  /// Tight JPEG quality 0…9 (the -32…-23 pseudo-encodings); nil asks for lossless.
   public private(set) var qualityLevel: Int?
   private var closed = false
   private let now: @Sendable () -> ContinuousClock.Instant
-  /// When each outstanding update request went out, oldest first (an update answers the oldest).
   private var requestsSentAt: [ContinuousClock.Instant] = []
-  /// Update requests kept outstanding without continuous updates (851-2360). 1 is the classic
-  /// request → update → request loop.
   public var requestDepth = 1
-  /// Send the next request when an update's header arrives, before reading and applying it.
   public var requestsBeforeApplying = false
   public func setRequestPipelining(depth: Int, beforeApplying: Bool) {
     requestDepth = max(1, depth)
     requestsBeforeApplying = beforeApplying
   }
-  /// Pushed updates are on; no requests are sent.
   private var continuous = false
-  /// The server confirmed ContinuousUpdates (its first EndOfContinuousUpdates).
   private var continuousConfirmed = false
-  /// The server speaks Fence (it sent one); the client then measures the round trip with its own.
   private var serverFences = false
   private var pingToken: UInt32 = 0
   private var pingSentAt: ContinuousClock.Instant?
   private var lastPingAt: ContinuousClock.Instant?
-  /// How often the client measures the round trip with a fence of its own.
   static let pingInterval: Duration = .seconds(1)
 
-  /// `now` times each update against its request; tests script it.
   public init(
     transport: any RFBTransport, framebuffer: RFBFramebuffer? = nil,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
@@ -55,7 +37,6 @@ public actor RFBClient {
     self.framebuffer = try framebuffer ?? RFBFramebuffer(width: 1, height: 1)
   }
 
-  /// Handshake, then SetPixelFormat and SetEncodings; the framebuffer takes the server's size.
   @discardableResult
   public func connect(
     password: String?, username: String? = nil, shared: Bool = true
@@ -70,16 +51,12 @@ public actor RFBClient {
     return outcome
   }
 
-  /// What the client advertises: its encodings, then a Tight quality level when it accepts JPEG.
   private var encodings: [Int32] {
     advertisedEncodings ?? RFBEncoding.supported.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
   }
-  /// Replaces the advertised list, for measuring what a server sends for it (851-2361).
-  /// An encoding the client can't decode ends the session with `unsupportedEncoding`.
   public var advertisedEncodings: [Int32]?
   public func advertise(_ encodings: [Int32]?) { advertisedEncodings = encodings }
 
-  /// Switches Tight JPEG on (quality 0…9) or off (nil) mid-session.
   public func setQualityLevel(_ level: Int?) async throws {
     let clamped = level.map { min(max($0, 0), 9) }
     guard clamped != qualityLevel else { return }
@@ -92,10 +69,6 @@ public actor RFBClient {
     try await transport.write(message.encoded)
   }
 
-  /// Requests the whole framebuffer, then applies updates as they arrive.
-  /// `onUpdate` runs on the actor after each update; the framebuffer is stable
-  /// for its duration. Returns only by throwing: `RFBError.connectionClosed`
-  /// after a clean close, or the failure that ended the session.
   public func run(
     onUpdate: @Sendable (RFBFramebuffer, RFBUpdate) -> Void, onEvent: @Sendable (RFBServerEvent) -> Void
   ) async throws -> Never {
@@ -128,7 +101,6 @@ public actor RFBClient {
         }
         try await pingIfDue()
       case 150:
-        // EndOfContinuousUpdates: the first confirms support; a later one ends pushed updates.
         if !continuousConfirmed {
           continuousConfirmed = true
           continuous = true
@@ -143,7 +115,6 @@ public actor RFBClient {
         let (flags, payload) = try await RFBFence.read(from: stream)
         serverFences = true
         if flags & RFBFence.request != 0 {
-          // Messages are handled strictly in order, so every ordering flag is already honoured.
           try await send(.fence(flags: flags & RFBFence.understood, payload: payload))
         } else if let sent = pingSentAt, payload == pingPayload {
           pingSentAt = nil
@@ -164,7 +135,6 @@ public actor RFBClient {
           guard size <= RFBExtendedClipboard.maximumBytes else {
             throw RFBError.malformed("extended clipboard message of \(size) bytes")
           }
-          // A clipboard message we can't read is dropped, not fatal to the session.
           if let message = try? RFBExtendedClipboard.decode(try await stream.bytes(size)) {
             onEvent(.extendedClipboard(message))
           }
@@ -177,7 +147,6 @@ public actor RFBClient {
 
   public nonisolated func close() { transport.close() }
 
-  /// What carries the connection ("TCP", "WebSocket"), for diagnostics.
   public nonisolated var transportName: String { transport.name }
 
   private var pingPayload: [UInt8] {
@@ -187,7 +156,6 @@ public actor RFBClient {
     ]
   }
 
-  /// One fence of the client's own in flight at a time, at most every `pingInterval`.
   private func pingIfDue() async throws {
     guard serverFences, pingSentAt == nil else { return }
     let current = now()
@@ -203,7 +171,6 @@ public actor RFBClient {
     try await send(.framebufferUpdateRequest(incremental: incremental, fullFrame))
   }
 
-  /// Incremental requests until `requestDepth` are outstanding.
   private func topUpRequests() async throws {
     while requestsSentAt.count < requestDepth { try await request(incremental: true) }
   }
@@ -252,7 +219,6 @@ public actor RFBClient {
         try framebuffer.resize(width: width, height: height)
         resized = true
       case .cursor:
-        // x and y are the hotspot; the payload is sized before it is read.
         guard width <= RFBCursorShape.maximumDimension, height <= RFBCursorShape.maximumDimension else {
           throw RFBError.malformed("cursor \(width) × \(height)")
         }
@@ -262,7 +228,6 @@ public actor RFBClient {
       case .pointerPosition:
         pointer = RFBPoint(x: x, y: y)
       case .extendedDesktopSize:
-        // x: why, y: status; the size applies only when the status is ok.
         let count = Int(try await stream.u8())
         try await stream.skip(3)
         let screens = try await RFBScreenLayout.read(count, from: stream)
@@ -277,7 +242,6 @@ public actor RFBClient {
         desktopSize = RFBDesktopSizeResult(
           reason: reason, status: status, width: width, height: height, screens: screens)
       case .fence, .continuousUpdates, .extendedClipboard, nil:
-        // Negotiation-only pseudo-encodings never arrive as rectangles.
         throw RFBError.unsupportedEncoding(encoding)
       }
     }

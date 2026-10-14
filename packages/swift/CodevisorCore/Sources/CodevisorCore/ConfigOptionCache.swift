@@ -1,18 +1,6 @@
 import Foundation
 import ACPKit
 
-/// A persisted cache of an agent's selectable config options (model, reasoning
-/// effort, …) keyed by server and harness id. Enables a stale-while-revalidate flow: the
-/// composer shows the last-known options instantly, then background capability
-/// inspection refreshes them when the snapshot is stale.
-/// Observable: SwiftUI surfaces derive picker content (capabilities, the
-/// sign-in-pending list) straight from this cache, so any store on any
-/// machine re-renders every mounted consumer — no per-view revision
-/// watchers, no controller-held copies to go stale.
-///
-/// It also holds the composer palette's in-memory skill catalogs: the
-/// harness skills each capability inspection reports for its directory, and
-/// the Codevisor skills each machine offers per project and chat.
 @MainActor
 @Observable
 public final class ConfigOptionCache {
@@ -27,9 +15,6 @@ public final class ConfigOptionCache {
     let harnessId: String
   }
 
-  /// Which built-in guides a chat may use depends on the MCP servers its
-  /// project (and, once it exists on the server, the chat itself) enables.
-  /// A "No project" draft has neither yet: the machine's defaults apply.
   public struct CodevisorSkillsScope: Hashable, Sendable {
     public let serverId: String
     public let projectId: UUID?
@@ -55,35 +40,16 @@ public final class ConfigOptionCache {
   @ObservationIgnored private let capabilitiesKey: String
   private var cache: [String: [String: [SessionConfigOption]]]
   private var capabilitiesCache: [String: [ServerHarnessCapability]]
-  /// Fleet-enabled harnesses blocked on sign-in, per server — the
-  /// pickers' "sign in required" rows.
   private var signInRequiredCache: [String: [ServerHarness]] = [:]
-  /// In-memory generations prevent a capability request started before an
-  /// authentication or catalog change from restoring the stale snapshot
-  /// after invalidation. They do not need persistence: no request survives
-  /// a process launch.
   @ObservationIgnored private var capabilityRevisions: [String: UInt64] = [:]
-  /// Capability inspection can launch a temporary CLI process. Share one
-  /// request across every draft for the same machine/directory and keep a
-  /// short in-memory freshness window so opening tabs is a cache read, not
-  /// another process launch.
   @ObservationIgnored private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
   @ObservationIgnored private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
   private static let capabilityFreshnessInterval: TimeInterval = 5 * 60
-  /// In-memory catalog-only seeds used to make the first composer render
-  /// immediately. They are intentionally not persisted and may be replaced
-  /// by the speculative onboarding warm.
   @ObservationIgnored private var provisionalCapabilityServers: Set<String> = []
-  /// Harness skills by machine, directory, and harness. Project skills
-  /// differ per folder while the persisted snapshot above is server-wide,
-  /// so these never ride on it; a relaunch re-inspects before first use.
   private var harnessSkillsCache: [HarnessSkillsKey: SessionSkills] = [:]
-  /// The Codevisor skills each machine offers per project and chat.
   private var codevisorSkillsCache: [CodevisorSkillsScope: [ServerComposerSkill]] = [:]
   @ObservationIgnored private var codevisorSkillRefreshes: [CodevisorSkillsScope: CodevisorSkillsRefresh] = [:]
 
-  /// The persisted catalogs, decoded. Built off the main actor at launch
-  /// (see `ClientLaunchSnapshot`).
   struct Persisted: Sendable {
     var options: [String: [String: [SessionConfigOption]]] = [:]
     var capabilities: [String: [ServerHarnessCapability]] = [:]
@@ -94,15 +60,10 @@ public final class ConfigOptionCache {
 
   public nonisolated static let defaultKey = "harness-config"
 
-  /// Reads `store` synchronously. Saves are queued (see `persist()`), so a
-  /// store reopened in the same process sees them only after
-  /// `PersistenceEncoding.drain()`.
   public convenience init(store: any PersistenceStore, key: String = ConfigOptionCache.defaultKey) {
     self.init(store: store, key: key, persisted: Self.loadPersisted(from: store, key: key))
   }
 
-  /// Opens the default-keyed cache from what launch already decoded off the
-  /// main actor; without a snapshot it reads `store` synchronously.
   public convenience init(store: any PersistenceStore, launchSnapshot: ClientLaunchSnapshot?) {
     guard let launchSnapshot else {
       self.init(store: store)
@@ -123,8 +84,6 @@ public final class ConfigOptionCache {
   private nonisolated static func capabilitiesKey(for key: String) -> String { "\(key)-server-capabilities" }
   private nonisolated static func signInRequiredKey(for key: String) -> String { "\(key)-sign-in-required" }
 
-  /// Reads and decodes the whole persisted catalog. Unreadable parts decode
-  /// as empty: the cache only seeds pickers until the next live inspection.
   nonisolated static func loadPersisted(from store: any PersistenceStore, key: String = defaultKey) -> Persisted {
     let decoder = JSONDecoder()
     var persisted = Persisted()
@@ -146,12 +105,10 @@ public final class ConfigOptionCache {
     return persisted
   }
 
-  /// The cached options for a harness, or an empty list if none are cached.
   public func options(forHarness harnessId: String, onServer serverId: String) -> [SessionConfigOption] {
     cache[serverId]?[harnessId] ?? []
   }
 
-  /// Stores the latest options for a harness and persists them.
   public func store(_ options: [SessionConfigOption], forHarness harnessId: String, onServer serverId: String) {
     cache[serverId, default: [:]][harnessId] = options
     persist()
@@ -161,22 +118,16 @@ public final class ConfigOptionCache {
     capabilitiesCache[serverId] ?? []
   }
 
-  /// Fleet-enabled harnesses on this server that are blocked on sign-in.
   public func signInRequired(forServer serverId: String) -> [ServerHarness] {
     signInRequiredCache[serverId] ?? []
   }
 
-  /// Captures the current validity generation for an asynchronous
-  /// capability request. Store the result only if this value still matches.
   public func capabilityRevision(forServer serverId: String) -> UInt64 {
     if let revision = capabilityRevisions[serverId] { return revision }
     capabilityRevisions[serverId] = 0
     return 0
   }
 
-  /// Whether the stale snapshot should be revalidated for this project.
-  /// Freshness is intentionally process-local: relaunching performs one
-  /// live check, while subsequent tabs share that result for a few minutes.
   func needsCapabilityRevalidation(forServer serverId: String, cwd: String) -> Bool {
     let key = CapabilityRefreshKey(serverId: serverId, cwd: cwd)
     guard !capabilities(forServer: serverId).isEmpty,
@@ -185,11 +136,6 @@ public final class ConfigOptionCache {
     return Date().timeIntervalSince(validatedAt) >= Self.capabilityFreshnessInterval
   }
 
-  /// Fetches one live capability snapshot per machine/directory at a time.
-  /// Empty inspection results retain usable stale picker definitions: the
-  /// server uses an empty option list for both "no options" and a best-effort
-  /// inspection failure, so replacing a populated snapshot would make an
-  /// open picker disappear even though its models may still work.
   func revalidateCapabilities(
     forServer serverId: String,
     cwd: String,
@@ -242,10 +188,6 @@ public final class ConfigOptionCache {
     _ response: [ServerHarnessCapability],
     forServer serverId: String
   ) -> [ServerHarnessCapability] {
-    // The response carries BOTH the usable catalog and the
-    // fleet-enabled-but-unauthenticated harnesses (optionless
-    // entries); the split lives here so every consumer sees one
-    // truth.
     let fetched = response.filter { $0.harness.enabled && $0.harness.isReady }
     signInRequiredCache[serverId] =
       response
@@ -257,19 +199,12 @@ public final class ConfigOptionCache {
   }
 
   private func recordCapabilityValidation(for key: CapabilityRefreshKey, serverId: String) {
-    // The persisted snapshot is server-wide. A project-specific
-    // refresh therefore makes other directories stale rather than
-    // pretending their previous validation still describes the newly
-    // stored snapshot.
     capabilityValidatedAt = capabilityValidatedAt.filter {
       $0.key.serverId != serverId || $0.key == key
     }
     capabilityValidatedAt[key] = Date()
   }
 
-  /// Seeds the picker from a harness catalog that is already on screen. The
-  /// expensive model/mode inspection can then fill in the rest in the
-  /// background without making new chat wait on an empty cache.
   public func seedHarnesses(_ harnesses: [ServerHarness], forServer serverId: String) {
     guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
       return
@@ -303,8 +238,6 @@ public final class ConfigOptionCache {
     persist()
   }
 
-  /// Merges one freshly inspected harness without discarding the cached
-  /// catalog for every other harness on the same server.
   public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
     provisionalCapabilityServers.remove(serverId)
     var capabilities = capabilitiesCache[serverId] ?? []
@@ -319,9 +252,6 @@ public final class ConfigOptionCache {
     persist()
   }
 
-  /// Stores a speculative warm only while this server has no capability
-  /// snapshot. A project-specific composer refresh is more authoritative;
-  /// if it wins the race, a generic onboarding warm must not overwrite it.
   @discardableResult
   public func storeIfEmpty(
     _ capabilities: [ServerHarnessCapability],
@@ -340,10 +270,6 @@ public final class ConfigOptionCache {
     return true
   }
 
-  /// Marks one server's snapshot stale without deleting it. Authentication,
-  /// account selection, enablement, and discovery all require a live check,
-  /// but mounted composers keep rendering their last usable values until the
-  /// replacement arrives.
   public func invalidateCapabilities(forServer serverId: String) {
     capabilityRevisions[serverId, default: 0] &+= 1
     capabilityValidatedAt = capabilityValidatedAt.filter { $0.key.serverId != serverId }
@@ -354,7 +280,6 @@ public final class ConfigOptionCache {
     }
   }
 
-  /// Clears all cached config (used by "Delete all data").
   public func clear() {
     let servers = Set(capabilityRevisions.keys)
       .union(cache.keys)
@@ -376,18 +301,10 @@ public final class ConfigOptionCache {
     persist()
   }
 
-  // MARK: - Composer skills
-
-  /// The skills a fresh session of this harness reported for `cwd` at its
-  /// latest capability inspection; nil until one arrives or when the
-  /// harness (or an older server) cannot list them.
   public func skills(forHarness harnessId: String, onServer serverId: String, cwd: String) -> SessionSkills? {
     harnessSkillsCache[HarnessSkillsKey(serverId: serverId, cwd: cwd, harnessId: harnessId)]
   }
 
-  /// Records the skill lists a capability response carried for `cwd`. A
-  /// harness without a list keeps its previous one, matching how empty
-  /// option inspections keep stale picker data.
   func storeSkills(from capabilities: [ServerHarnessCapability], forServer serverId: String, cwd: String) {
     for capability in capabilities {
       guard let skills = capability.skills else { continue }
@@ -395,10 +312,6 @@ public final class ConfigOptionCache {
     }
   }
 
-  /// The Codevisor skills offered in `scope` as of the last successful
-  /// fetch for exactly that scope.
-  /// A chat's list once fetched; until then its project's, which a draft
-  /// fetched before its first send turned it into a chat.
   public func codevisorSkills(for scope: CodevisorSkillsScope) -> [ServerComposerSkill] {
     codevisorSkillsCache[scope]
       ?? codevisorSkillsCache[
@@ -406,9 +319,6 @@ public final class ConfigOptionCache {
       ] ?? []
   }
 
-  /// Refetches `scope`'s Codevisor skills in the background, sharing one
-  /// request among concurrent callers. A failure keeps the last list (or
-  /// none): the palette simply omits what it cannot load.
   @discardableResult
   func refreshCodevisorSkills(
     for scope: CodevisorSkillsScope,
@@ -434,8 +344,6 @@ public final class ConfigOptionCache {
     return task
   }
 
-  /// Skills describe one inspected directory, so they stay out of the
-  /// server-wide snapshot (see `harnessSkillsCache`).
   private static func withoutSkills(_ capability: ServerHarnessCapability) -> ServerHarnessCapability {
     var stripped = capability
     stripped.skills = nil
@@ -469,10 +377,6 @@ public final class ConfigOptionCache {
     }
   }
 
-  /// Updates in memory are already visible; only the encode and the SQLite
-  /// writes run later, coalesced on the shared persistence queue, so opening
-  /// a chat never encodes every server's catalog or waits on the database
-  /// lock the background navigation saves also take.
   private func persist() {
     let store = store
     let key = key

@@ -13,10 +13,6 @@ import {
 import type { SandboxArtifactCollector } from "./mcp-sandbox-results.js"
 import type { UpstreamConnection } from "./mcp-support.js"
 
-/// The steps of one `execute` run as the transcript shows them: what each
-/// sandbox call touched (its icon), what it is called, and the files it
-/// produced, recorded on the run's annotation as each call settles.
-
 const isBuiltin = (icon: CodevisorExecutionIcon | undefined, id: "browser" | "computer"): boolean =>
   icon?.kind === "builtin" && icon.id === id
 
@@ -32,20 +28,14 @@ export const makeExecutionSteps = (deps: {
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
 }) => {
   const { recorder, collector } = deps
-  // The site the session's tab is on, so later browser calls keep showing
-  // it instead of flashing back to the bare browser.
   let browserSite: CodevisorExecutionIcon | undefined
-  // Likewise the app Computer Use last drove.
   let computerApp: CodevisorExecutionIcon | undefined
-  /// What a call reaching a bare surface shows: where it last was.
   const surface = (touched: CodevisorExecutionIcon | undefined) =>
     isBuiltin(touched, "browser")
       ? browserSite
       : isBuiltin(touched, "computer")
         ? computerApp
         : undefined
-  // Files the script stores (screenshots, exports) join the step that
-  // stored them, even when the script stringifies their references.
   const storedFiles: Array<CodevisorExecutionFile> = []
   const artifacts: SandboxArtifactCollector = {
     ...collector,
@@ -64,7 +54,6 @@ export const makeExecutionSteps = (deps: {
     return server.url === undefined ? undefined : new URL(server.url).hostname
   }
 
-  /// A step's label: the tool's declared title, else its name in words.
   const toolTitle = async (path: string, local: boolean): Promise<string | undefined> => {
     const separator = path.indexOf(".")
     if (separator <= 0) return undefined
@@ -90,20 +79,16 @@ export const makeExecutionSteps = (deps: {
 
   return {
     artifacts,
-    /// A browser call left its tab on `url`.
     onBrowserPage: (url: string): void => {
       const site = siteIcon(url)
       if (site === undefined) return
       browserSite = site
       recorder.touch(site)
     },
-    /// A Computer Use observation resolved `app`.
     onComputerApp: (app: ComputerUseApp): void => {
       computerApp = appIcon(app)
       recorder.touch(computerApp)
     },
-    /// A call is starting: show what it touches, and return how to record
-    /// it once it settles. The prelude's own lookups are never steps.
     begin: async (
       path: string,
       call: { readonly internal: boolean; readonly local: boolean; readonly machine?: string }
@@ -114,8 +99,6 @@ export const makeExecutionSteps = (deps: {
       if (touched !== undefined) recorder.touch(surface(touched) ?? touched)
       return async (outcome) => {
         const title = await toolTitle(path, call.local)
-        // A browser call is shown on the site it left its tab on, and a
-        // desktop call on the app it drove.
         const icon = surface(touched) ?? touched
         const files = callFiles(outcome.ok ? outcome.value : undefined)
         recorder.call({

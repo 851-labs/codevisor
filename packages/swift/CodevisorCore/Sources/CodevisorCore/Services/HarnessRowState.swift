@@ -1,7 +1,6 @@
 import ACPKit
 import Foundation
 
-/// List rows read cached facts. Opening a list never probes an account.
 public struct HarnessRowState: Equatable, Sendable {
   public var status: String?
   public var needsSignIn: Bool
@@ -41,14 +40,10 @@ public struct HarnessRowState: Equatable, Sendable {
     }
   }
 
-  /// Whether accounts for this harness live in the fleet (shared account
-  /// rows or shared credentials) rather than on each machine.
   public static func sharesFleetAccounts(harnessId: String) -> Bool {
     HarnessRegistry.descriptor(for: harnessId).sharesFleetAccounts
   }
 
-  /// Whether the replica holds a usable fleet-shared account for the harness.
-  /// No secrets leave the replica.
   @MainActor
   public static func hasSharedAccounts(harnessId: String, sync: ConfigSync) -> Bool {
     let source = HarnessSharedCredentials(rawValue: harnessId)
@@ -67,7 +62,6 @@ public struct HarnessRowState: Equatable, Sendable {
         case .object(let fields) = entry.value,
         fields["harnessId"] == .string(harnessId)
       else { return false }
-      // Saved accounts remain manageable without credentials.
       if entry.key.hasPrefix("shared-"), fields["id"] == .string(entry.key), case .string = fields["label"] {
         return true
       }
@@ -96,8 +90,6 @@ public struct HarnessRowState: Equatable, Sendable {
   private static func hasSharedCredentialDocuments(
     harnessId: String, source: HarnessSharedCredentials, sync: ConfigSync
   ) -> Bool {
-    // OpenCode can have credentials in any shared profile, including a
-    // profile other than Default. An empty default profile is a discovery slot.
     let contents = sync.entries(namespace: HarnessSharedCredentials.namespace).compactMap { entry -> String? in
       guard entry.deleted != true,
         entry.key == source.sourceKey || (harnessId == "opencode" && entry.key.hasPrefix("opencode-profile:")),
@@ -108,9 +100,6 @@ public struct HarnessRowState: Equatable, Sendable {
     return contents.contains(where: { (try? source.credentials(from: $0).isEmpty) == false })
   }
 
-  /// When the fleet last signed the harness in: the newest shared account or
-  /// provider sign-in that carries a credential. Machines that haven't
-  /// reported since are still picking it up.
   @MainActor
   public static func latestSharedSignIn(harnessId: String, sync: ConfigSync) -> Date? {
     _ = sync.revisionsByNamespace["harness-shared-accounts"]
@@ -127,8 +116,6 @@ public struct HarnessRowState: Equatable, Sendable {
     .map(\.timestamp.date).max()
   }
 
-  /// Presence of shared accounts is independent of any machine's local
-  /// probe result, installation, or account override.
   @MainActor
   public static func shared(harnessId: String, sync: ConfigSync, authRequired: Bool = true) -> Self {
     guard authRequired else { return .init(supportsAccounts: false) }
@@ -136,8 +123,6 @@ public struct HarnessRowState: Equatable, Sendable {
     let usesOAuth = HarnessRegistry.descriptor(for: harnessId).fleetSignInNeedsMachine
     let source = HarnessSharedCredentials(rawValue: harnessId)
     guard usesOAuth || source != nil else {
-      // Machine-bound providers retain Accounts in the menu. Their readiness
-      // belongs to the machine, not to a synthetic global signed-out state.
       return .init()
     }
     guard (!usesOAuth || sync.hasSnapshot(namespace: "harness-shared-accounts")),
@@ -148,8 +133,6 @@ public struct HarnessRowState: Equatable, Sendable {
 }
 
 public extension ServerHarnessAccount {
-  /// Discovery creates a default slot even when no account exists. Keep its
-  /// ID for sign-in, but don't present it as an account the user configured.
   var isEmptyDefaultAccount: Bool {
     profileKind == "default" && authState == "unauthenticated"
       && email == nil && organizationId == nil && !canLogout

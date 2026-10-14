@@ -1,20 +1,11 @@
 import { isNewerVersion } from "./harness-update-sources.js"
 
-/// Minimal Sparkle appcast reader for the ChatGPT/Codex app feed. Only the
-/// fields the harness updater needs; delta enclosures are deliberately
-/// ignored (the bundle swap always downloads the full zip).
-
 export interface AppcastItem {
-  /// sparkle:shortVersionString — the human version (CFBundleShortVersionString).
   readonly shortVersion?: string
-  /// sparkle:version — the monotonically increasing build number.
   readonly build?: string
   readonly minimumSystemVersion?: string
-  /// sparkle:channel — absent on the default (stable) channel.
   readonly channel?: string
-  /// The item's <link>: the release page.
   readonly link?: string
-  /// Full-zip enclosure.
   readonly url: string
   readonly length?: number
   readonly edSignature?: string
@@ -32,15 +23,10 @@ const attribute = (element: string, name: string): string | undefined => {
   return value === undefined || value.length === 0 ? undefined : value
 }
 
-/// Parses an appcast XML document into items, newest first by short version.
-/// Regex-based on purpose: the feed is machine-generated RSS with a fixed
-/// shape, and pulling in an XML parser for it isn't worth the dependency.
 export const parseAppcast = (xml: string): ReadonlyArray<AppcastItem> => {
   const items: Array<AppcastItem> = []
   for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
-    // Strip delta enclosures so the enclosure scan below only sees the full
-    // zip (deltas live inside <sparkle:deltas>…</sparkle:deltas>).
-    /* v8 ignore next -- the capture group always exists on a match; ?? guards the type only. */
+    /* v8 ignore next */
     const block = (match[1] ?? "").replace(/<sparkle:deltas>[\s\S]*?<\/sparkle:deltas>/g, "")
     const enclosure = /<enclosure\b[^>]*\/?>/.exec(block)?.[0]
     if (enclosure === undefined) continue
@@ -67,8 +53,6 @@ export const parseAppcast = (xml: string): ReadonlyArray<AppcastItem> => {
   return items
 }
 
-/// The newest item in the feed by short version (falls back to feed order —
-/// Sparkle feeds are newest-first by convention).
 export const selectLatestAppcastItem = (
   items: ReadonlyArray<AppcastItem>
 ): AppcastItem | undefined => {

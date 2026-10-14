@@ -5,11 +5,6 @@ import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-/// The `codevisor` CLI: control the server from a terminal (start, stop,
-/// status, token, update, logs) plus `codevisor serve` for the daemon itself.
-/// All command logic lives in cli/support.ts behind the CliDeps seam; this
-/// file only wires real Node implementations and the effect/unstable/cli
-/// command tree.
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
@@ -246,8 +241,6 @@ const makeSetupDeps = (): SetupDeps => {
   return {
     ...deps,
     isInteractive: process.stdin.isTTY === true && process.stdout.isTTY === true,
-    // The running server saves the credential and connects immediately;
-    // login succeeds only after the relay handshake completes.
     cloudLogin: (port) => authLoginCommand(deps, { port, machineName: hostname() })
   }
 }
@@ -260,8 +253,6 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Command.withDescription("Onboard this machine: start the server and sign it into Codevisor Cloud")
 )
 
-/// Plugin commands talk to the running server over the loopback API; the
-/// consent prompt is the only interactive piece.
 const makePluginsDeps = (): PluginsCliDeps => ({
   ...makeDeps(),
   confirm: (message) => runPrompt(Prompt.confirm({ message }))

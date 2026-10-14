@@ -30,8 +30,6 @@ export type {
   BrowserToolSessionState
 } from "./browser-use-invoke-types.js"
 
-/// Tool families tried in order for every page-scoped tool call; the first
-/// handler that owns the tool name answers.
 const toolHandlers = [
   invokeNavigationTools,
   invokePlaywrightTools,
@@ -72,8 +70,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
   const cursors = makeBrowserCursorRegistry()
   const names = new Map<string, string>()
   const groups = new Map<string, number>()
-  // Per-session pointer and held-modifier state, so mouse_down/mouse_move/mouse_up and
-  // key_down/key_up compose the way Playwright's Mouse and Keyboard do.
   const pointers = new Map<string, PointerState>()
   const pointerFor = (sessionKey: string): PointerState => {
     const existing = pointers.get(sessionKey)
@@ -87,7 +83,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
     active: BrowserRuntime,
     toolName: string,
     args: Readonly<Record<string, unknown>>,
-    /// Turn-end cleanup finalizes every backend the session used, not only its current one.
     backendOverride?: BrowserBackend
   ): Promise<CallToolResult> => {
     const backend = backendOverride ?? sessionBackends.get(context.sessionId) ?? "managed"
@@ -143,15 +138,10 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         const closed: string[] = []
         const released: string[] = []
         const failed: string[] = []
-        // Tabs handed to the user stay visible to later turns as origin "kept": the agent can
-        // still find, regroup, or reuse them, and no later finalize closes them.
         const remembered = new Map<string, "created" | "claimed" | "kept">()
         for (const [targetId, origin] of controlled) {
           const tabSessionId = active.sessions.get(targetId)
           if (origin === "created" && !keepIds.has(targetId)) {
-            // One tab that won't close (the user already closed it, or it
-            // vanished with its window) must not leave the rest open, nor stay
-            // tracked so every later turn fails on it again.
             try {
               await active.connection.send("Target.closeTarget", { targetId })
               closed.push(targetId)
@@ -179,7 +169,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         selectedTargets.delete(sessionKey)
         cursors.release(sessionKey)
         pointers.delete(sessionKey)
-        // Report exactly what happened so the agent can describe it to the user accurately.
         return jsonResult({
           finalized: true,
           kept,
@@ -224,9 +213,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         const created = await active.connection
           .send<{ targetId: string }>("Target.createTarget", { url })
           .catch(async (cause: unknown) => {
-            // A create that times out or fails partway can still open a tab;
-            // nothing would track it, so close whatever appeared that no
-            // session (another chat on the same browser) already owns.
             const owned = new Set([...sessionTargets.values()].flatMap((map) => [...map.keys()]))
             const after = await pageTargets(active).catch(() => [])
             for (const target of after) {
@@ -352,8 +338,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         case "create":
           return jsonResult(await send("create", { tabIds: tabIds(), ...appearance() }))
         case "ensure": {
-          // Idempotent "the group called X": add to an existing group with that title, else
-          // create it. Prevents a fresh group per turn when an agent keeps a session group.
           const title = stringArgument(args, "title")
           const listed = (await send("list", {})) as {
             groups?: ReadonlyArray<{ id: number; title?: string; tabIds?: ReadonlyArray<string> }>
@@ -423,7 +407,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         snapshotKey: `${sessionKey}:${target.targetId}`
       }
     } else {
-      // Legacy flat navigation may create its own tab, but never adopts a user's arbitrary tab.
       if (!selectedTargets.has(sessionKey) && toolName === "navigate") {
         const created = await active.connection.send<{ targetId: string }>("Target.createTarget", {
           url: "about:blank"

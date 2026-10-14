@@ -36,14 +36,11 @@ describe("sessions routes", () => {
     const first = await makeSession()
     const second = await makeSession()
 
-    // Deleting one of two: the workspace survives.
     expect(
       (await jsonRequest(server, `/v1/sessions/${first.id}`, { method: "DELETE" })).status
     ).toBe(204)
     expect(await run(services.db.listWorkspaces)).toHaveLength(1)
 
-    // Deleting the LAST session cascades to the workspace, with the event
-    // clients rely on to drop it from their sidebars.
     expect(
       (await jsonRequest(server, `/v1/sessions/${second.id}`, { method: "DELETE" })).status
     ).toBe(204)
@@ -51,7 +48,6 @@ describe("sessions routes", () => {
     const events = listEvents(services)
     expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
 
-    // A chat that belongs to no workspace has no cascade to run.
     const detached = (
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({ projectId: project.id, harnessId: "codex" }),
@@ -71,8 +67,6 @@ describe("sessions routes", () => {
     const workspaceFolder = join(projectRoot, "workspace")
     mkdirSync(workspaceFolder)
 
-    // First open: nothing exists server-side — both records are created and
-    // the first transcript page comes back, all in one request.
     const opened = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
       body: JSON.stringify({
         project: { folderPath: workspaceFolder, id: "open-project-1" },
@@ -116,9 +110,6 @@ describe("sessions routes", () => {
       }
     })
 
-    // Rename the project, then re-open with the original (now stale) snapshot:
-    // the existing project must NOT be reverted to its old name, the session
-    // must not be re-created, and the update payload applies.
     await jsonRequest(server, "/v1/projects/open-project-1", {
       body: JSON.stringify({ name: "Renamed project" }),
       method: "PATCH"
@@ -147,7 +138,6 @@ describe("sessions routes", () => {
       "Renamed project"
     )
 
-    // A body/path session-id mismatch is rejected before any writes.
     expect(
       (
         await jsonRequest(server, "/v1/sessions/other-id/open", {
@@ -159,7 +149,6 @@ describe("sessions routes", () => {
       ).status
     ).toBe(400)
 
-    // Invalid transcript limits are rejected before any writes.
     expect(
       (
         await jsonRequest(server, "/v1/sessions/open-session-1/open", {
@@ -172,7 +161,6 @@ describe("sessions routes", () => {
       ).status
     ).toBe(400)
 
-    // An open naming an unknown project with no project payload still 404s.
     expect(
       (
         await jsonRequest(server, "/v1/sessions/orphan-session/open", {
@@ -192,7 +180,6 @@ describe("sessions routes", () => {
     const workspaceFolder = join(projectRoot, "workspace")
     mkdirSync(workspaceFolder)
 
-    // A chat created by a Node client stores the canonical lowercase uuid.
     const lowerId = "ab12cd34-ef56-4789-a012-3456789abcde"
     const upperId = lowerId.toUpperCase()
     const project = (
@@ -212,9 +199,6 @@ describe("sessions routes", () => {
     })
     expect(created.status).toBe(201)
 
-    // Opening it with Swift's uppercase rendering must return the existing
-    // row — this exact path used to insert a case-twin duplicate session,
-    // which every client then showed as a second sidebar entry.
     const opened = await jsonRequest(server, `/v1/sessions/${upperId}/open`, {
       body: JSON.stringify({
         session: {
@@ -229,7 +213,6 @@ describe("sessions routes", () => {
     expect(opened.status).toBe(200)
     expect(opened.body).toMatchObject({ session: { id: lowerId, title: "Created remotely" } })
 
-    // Updates addressed with the uppercase id land on the same single row.
     const renamed = await jsonRequest(server, `/v1/sessions/${upperId}`, {
       body: JSON.stringify({ title: "Renamed from the Mac" }),
       method: "PATCH"
@@ -255,7 +238,6 @@ describe("sessions routes", () => {
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { title: "Harness-generated title" }
     })
-    // Repeating the current harness title is an idempotent no-op.
     await agents.emit(session.agentSessionId, {
       kind: "session.updated",
       subjectId: session.agentSessionId,
@@ -264,7 +246,6 @@ describe("sessions routes", () => {
         title: "Harness-generated title"
       }
     })
-    // A missing/blank harness title keeps the existing first-prompt fallback.
     await agents.emit(session.agentSessionId, {
       kind: "session.updated",
       subjectId: session.agentSessionId,

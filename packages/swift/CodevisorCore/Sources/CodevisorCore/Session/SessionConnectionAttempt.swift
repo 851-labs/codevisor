@@ -1,6 +1,5 @@
 import Foundation
 
-/// Owns an eager connection beyond any individual view mount. Explicit supersession cancels and joins it.
 @MainActor
 final class SessionConnectionAttempt {
   enum Event {

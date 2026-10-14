@@ -1,6 +1,3 @@
-//! Node (napi-rs) binding for the tunnel. Loaded by `@codevisor/net`; the
-//! TypeScript server owns one endpoint per machine.
-
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use codevisor_net as net;
@@ -23,7 +20,6 @@ pub struct EndpointOptions {
     pub relays: Vec<RelayOptions>,
     pub trust_anchors_pem: Option<Vec<String>>,
     pub bind_addrs: Option<Vec<String>>,
-    /// "auto" | "relay-only" | "direct-only"
     pub path_policy: Option<String>,
     pub alpns: Vec<String>,
 }
@@ -58,7 +54,6 @@ pub struct TunnelPath {
 
 #[napi(object)]
 pub struct TunnelMessage {
-    /// 0 = text, 1 = binary.
     pub kind: u32,
     pub payload: Buffer,
 }
@@ -114,7 +109,6 @@ impl TunnelEndpoint {
         self.inner.bound_sockets()
     }
 
-    /// First call: the current address. Later calls: the next change.
     #[napi]
     pub async fn next_addr(&self) -> Result<TunnelAddr> {
         let inner = self.inner.clone();
@@ -134,9 +128,6 @@ impl TunnelEndpoint {
         Ok(TunnelConnection { inner: connection })
     }
 
-    /// The next incoming connection, in handshake-completion order (one
-    /// stalled handshake doesn't hold up the rest); `null` once the endpoint
-    /// is closed. A failed handshake rejects this call only — keep accepting.
     #[napi]
     pub async fn accept(&self) -> Result<Option<TunnelConnection>> {
         let inner = self.inner.clone();
@@ -192,14 +183,11 @@ impl TunnelConnection {
             .collect()
     }
 
-    /// Largest UDP payload a media flow can carry, or `null`.
     #[napi]
     pub fn max_media_payload(&self) -> Option<u32> {
         self.inner.media().max_payload().map(|size| size as u32)
     }
 
-    /// Host side: forward media flow `flowId` to a local UDP socket
-    /// (`ip:port`, the host WebRTC's own candidate).
     #[napi]
     pub async fn forward_media(&self, flow_id: u32, target_addr: String) -> Result<TunnelMediaFlow> {
         let router = self.inner.media();
@@ -210,7 +198,6 @@ impl TunnelConnection {
         Ok(TunnelMediaFlow { inner: std::sync::Mutex::new(Some(flow)) })
     }
 
-    /// Viewer side: a local UDP port (all interfaces) bridged to flow `flowId`.
     #[napi]
     pub async fn bind_media(&self, flow_id: u32) -> Result<TunnelMediaFlow> {
         let router = self.inner.media();
@@ -244,7 +231,6 @@ impl TunnelMessageStream {
         inner.send(kind, &payload).await.map_err(to_napi)
     }
 
-    /// The next message, or `null` when the peer finished the stream.
     #[napi]
     pub async fn recv(&self) -> Result<Option<TunnelMessage>> {
         let inner = self.inner.clone();

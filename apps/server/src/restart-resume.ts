@@ -15,15 +15,8 @@ import {
   type RouteState
 } from "./server-context.js"
 
-/// Sessions resumed at once after a restart. Deliberately small: the
-/// startup comment in server.ts explains why cold-starting every chat at
-/// boot starved /health; only durable work resumes after the listener is up.
 const RESUME_CONCURRENCY = 2
 
-/// The boot half of the restart drain: resumes queued prompts, active goals,
-/// and background tasks. Old snapshots also release their persisted gates,
-/// but an idle session is never reconnected merely because it was open.
-/// Consume the snapshot before reconnecting; durable work remains in SQLite.
 export const resumeSessionsAfterRestart = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -38,10 +31,6 @@ export const resumeSessionsAfterRestart = async (
   if (requested.length === 0) return []
   const sessions = await run(services.db.listSessions)
   const known = new Map(sessions.map((session) => [session.id, session]))
-  // The previous process published `waiting` for every session it held and
-  // then exited — its `released` never happened. Publish it here, durably,
-  // so clients replaying the stream (or still showing the marker) let go
-  // before the held prompts dispatch.
   for (const sessionId of requested.filter((id) => known.has(id))) {
     await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
       harnessId: RESTART_GATE_HARNESS_ID,
@@ -73,7 +62,6 @@ export const resumeSessionsAfterRestart = async (
         await ensureAgentSessionFor(services, fanout, serverId, sessionId)
         resumed.push(sessionId)
       } catch (cause) {
-        // The session reconnects lazily on its next /connect, as before.
         log(`Could not resume session ${sessionId}: ${failureMessage(cause)}`)
       }
       const pending = await run(services.db.listPromptQueue(sessionId))

@@ -1,7 +1,6 @@
 import CodevisorUI
 import SwiftUI
 
-/// The address bar supplies its own glass; every SwiftUI host must hide the toolbar's extra backing.
 struct ChromiumBrowserAddressToolbarItem: ToolbarContent {
   let model: ChromiumBrowserModel
   var width: CGFloat?
@@ -42,13 +41,9 @@ struct ChromiumBrowserNavigationButtons: View {
   }
 }
 
-/// Window controls share the pane model without owning its browser lifetime.
 struct ChromiumBrowserToolbar: NSViewRepresentable {
   let model: ChromiumBrowserModel
 
-  // Keep the composite toolbar inside one native view. Otherwise SwiftUI's
-  // toolbar adaptation promotes the first button's action and accessibility
-  // metadata to the other controls, leaving the address editor inert.
   func makeNSView(context: Context) -> ChromiumToolbarHost {
     let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
     view.focusAddress = { [weak model] in model?.focusAddress() }

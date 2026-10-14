@@ -2,8 +2,6 @@ import CodevisorCore
 import Foundation
 import Observation
 
-/// Pane presentation shared by the native window toolbar and the document.
-/// The document store separately owns file contents and recoverable drafts.
 @MainActor @Observable
 public final class FilePaneModel {
   public let id: UUID
@@ -19,8 +17,6 @@ public final class FilePaneModel {
   public var findText = ""
   public var replacement = ""
   public var lineText = ""
-  /// Incremented when the inline picker (an empty pane) should take keyboard
-  /// focus: the pane becoming active, or ⌘O while it is already showing.
   public private(set) var explorerFocusRequests = 0
   @ObservationIgnored public var onNavigate: ((String) -> Void)?
   @ObservationIgnored private let sessions: FileEditorSessions
@@ -55,13 +51,10 @@ public final class FilePaneModel {
     document.isDirty && document.isEditable && !document.isSaving && document.conflict == nil
   }
 
-  /// Open File… — presents the picker over a document, or focuses the
-  /// picker an empty pane already shows.
   public func openExplorer() {
     if isBrowsing { focusExplorer() } else { showsExplorer = true }
   }
 
-  /// Routes keyboard focus into an empty pane's picker.
   public func focusExplorer() {
     guard isBrowsing else { return }
     explorerFocusRequests += 1
@@ -76,8 +69,6 @@ public final class FilePaneModel {
     showsExplorer = false
   }
 
-  /// Called once the current document has loaded, so a file that never
-  /// opened (moved, deleted, unreadable) is not offered again as recent.
   func recordRecent() {
     recents.record(path, machineId: machineId, root: rootPath)
   }

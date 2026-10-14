@@ -157,7 +157,6 @@ export const workingUpstream = async () => {
   return { calls, requests, url: `${await listen(server)}/mcp` }
 }
 
-/// Subscribe before reading so completion cannot land between the read and wait.
 export const connectionStateSettles = async (
   manager: McpManager,
   id: string,

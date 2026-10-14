@@ -2,11 +2,7 @@ import ScreenSharing
 import Foundation
 import QuartzCore
 
-/// A bounded stdin/stdout clock responder for a trusted diagnostic SSH session.
-/// The caller brackets each response with its own clock; no symmetry assumption
-/// is required to derive an offset interval from a request's round-trip time.
 enum ProbeClockSync {
-  /// `arguments` are the probe's words; `--clock-sync` must be the only one.
   static func run(arguments: [String]) throws {
     guard arguments == ["--clock-sync"] else {
       throw ScreenSharingError.invalid("--clock-sync must run alone.")

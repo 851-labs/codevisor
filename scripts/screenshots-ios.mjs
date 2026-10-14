@@ -91,7 +91,6 @@ try {
       simulator.udid,
       "override",
       "--time",
-      // Keep 9:41 in the host/simulator's local zone.
       new Date(2026, 8, 14, 9, 41).toISOString(),
       "--dataNetwork",
       "wifi",

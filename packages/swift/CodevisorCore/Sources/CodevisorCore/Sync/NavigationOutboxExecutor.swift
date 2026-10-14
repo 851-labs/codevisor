@@ -1,12 +1,5 @@
 import Foundation
 
-/// Sends outbox requests to their machines, one at a time per machine and in
-/// the order the user made them.
-///
-/// A request that fails because the machine can't be reached stays at the
-/// front and is sent again when the machine is back (or after a backoff). A
-/// request the server refuses is dropped: the cached server state is the
-/// answer, and the UI falls back to it.
 @MainActor
 final class NavigationOutboxExecutor {
   enum Outcome: Equatable {
@@ -17,16 +10,9 @@ final class NavigationOutboxExecutor {
   }
 
   var clientProvider: (String) -> (any CodevisorServerClienting)? = { _ in nil }
-  /// Only a machine whose navigation is current is sent to. Anything else is
-  /// either offline or still catching up, and will resume the pump itself.
   var isMachineReady: (String) -> Bool = { _ in false }
-  /// A workspace that exists only on this device. Its requests wait until
-  /// opening its first chat creates it on the server.
   var isDraftWorkspace: (UUID) -> Bool = { _ in false }
-  /// The cached event cursor of a machine, used when the server's current
-  /// cursor can't be read after an accepted request.
   var cachedCursor: (String) -> Int = { _ in 0 }
-  /// The outbox changed (an entry was accepted, dropped, or finished).
   var onChange: (String) -> Void = { _ in }
 
   private let outbox: NavigationOutbox
@@ -42,7 +28,6 @@ final class NavigationOutboxExecutor {
     self.now = now
   }
 
-  /// Starts sending a machine's waiting requests, if it isn't already.
   func resume(machineId: String) {
     guard pumps[machineId] == nil, isMachineReady(machineId) else { return }
     retries.removeValue(forKey: machineId)?.cancel()
@@ -52,7 +37,6 @@ final class NavigationOutboxExecutor {
     }
   }
 
-  /// Waits for a machine's pump to go idle (tests and pull to refresh).
   func idle(machineId: String) async {
     await pumps[machineId]?.value
   }
@@ -116,8 +100,6 @@ final class NavigationOutboxExecutor {
 
   static func classify(_ error: any Error, isRemoval: Bool) -> Outcome {
     guard case let CodevisorServerClientError.httpStatus(status, _) = error else {
-      // Transport failures mean the machine isn't reachable right now. They
-      // never use up an attempt: the request waits for the machine instead.
       if error is URLError || error is CancellationError { return .retryLater(countsAsAttempt: false) }
       return .retryLater(countsAsAttempt: true)
     }

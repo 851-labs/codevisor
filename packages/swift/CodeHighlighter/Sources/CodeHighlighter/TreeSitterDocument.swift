@@ -9,7 +9,6 @@ struct SyntaxSpan: Equatable, Sendable {
   let order: Int
 }
 
-/// Mutable C handles never leave the actor that owns this document.
 final class TreeSitterDocument {
   let grammar: TreeSitterGrammar
   private let parser: OpaquePointer
@@ -41,8 +40,6 @@ final class TreeSitterDocument {
   }
 
   func apply(_ edit: CodeHighlightDocument.Edit) throws -> NSRange {
-    // Root-scope bindings may change builtin classification in later functions.
-    // Languages with local-variable queries conservatively invalidate that scope.
     let before = grammar.locals == nil ? enclosingRange(edit.range) : localScopeRange(edit.range)
     var inputEdit = try text.replace(edit)
     if let tree { ts_tree_edit(tree, &inputEdit) }
@@ -120,8 +117,6 @@ final class TreeSitterDocument {
     return changed
   }
 
-  /// Include the containing top-level construct because queries can depend on
-  /// ancestors and siblings. A text edit matters even when tree shape is unchanged.
   func enclosingRange(_ range: NSRange) -> NSRange {
     guard let tree, text.count > 0 else { return NSRange(location: 0, length: text.count) }
     let root = ts_tree_root_node(tree)
@@ -168,8 +163,6 @@ final class TreeSitterDocument {
         let resolved = name == "markdown_inline" ? name : SyntaxLanguage.resolve(name)?.rawValue
       else { continue }
       for capture in match.captures where capture.name == "injection.content" {
-        // Child documents use local ranges. Only the injected source is copied,
-        // and unchanged children are reused on subsequent highlight requests.
         let region = capture.range
         guard region.length > 0, !(region.location == 0 && region.length == text.count && resolved == grammar.name)
         else { continue }

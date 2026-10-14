@@ -41,7 +41,6 @@ describe("@codevisor/db", () => {
       await run(db.updateProject(project.id, { defaultRunLocation: "newWorktree" }))
       expect((await run(db.listProjects))[0]?.defaultRunLocation).toBe("newWorktree")
 
-      // Other project settings leave the choice alone.
       const rebased = await run(
         db.updateProject(project.id, { worktreeBase: { remote: "origin", branch: "develop" } })
       )
@@ -69,7 +68,6 @@ describe("@codevisor/db", () => {
       expect(listed.find((project) => project.id === cloned.id)?.repoUrl).toBe(
         "https://github.com/acme/widget.git"
       )
-      // Directory projects carry no remote.
       const plain = await run(db.createProject({ folderPath: "/tmp/plain-dir" }))
       expect(plain.repoUrl).toBeUndefined()
     } finally {
@@ -82,16 +80,12 @@ describe("@codevisor/db", () => {
     try {
       const original = await run(db.createProject({ folderPath: "/tmp/duplicate" }))
 
-      // Same folder, no explicit id → the existing project comes back.
       const again = await run(db.createProject({ folderPath: "/tmp/duplicate" }))
       expect(again.id).toBe(original.id)
 
-      // Same id → idempotent.
       const byId = await run(db.createProject({ folderPath: "/tmp/other", id: original.id }))
       expect(byId.id).toBe(original.id)
 
-      // Same folder under a NEW explicit id → the old project merges into it,
-      // sessions and all — no unique-constraint failure.
       const session = await run(
         db.createSession({ harnessId: "codex", projectId: original.id, title: "Kept" })
       )
@@ -106,7 +100,6 @@ describe("@codevisor/db", () => {
       expect(merged.id).toBe("client-id-2")
       expect(merged.name).toBe("merged")
 
-      // Merge again with a bare request — defaults apply on the merge path too.
       const remerged = await run(
         db.createProject({ folderPath: "/tmp/duplicate", id: "client-id-3" })
       )
@@ -118,7 +111,6 @@ describe("@codevisor/db", () => {
       const detail = await run(db.getSessionDetail(session.id))
       expect(detail.session.projectId).toBe("client-id-3")
 
-      // Genuine sqlite failures still surface as tagged errors.
       const failed = await Effect.runPromiseExit(
         db.createSession({ harnessId: "codex", projectId: "missing-project", title: "x" })
       )

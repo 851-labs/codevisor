@@ -1,29 +1,16 @@
 import Foundation
 
-/// The server-major read of the desired-vs-reported matrix: for one MCP
-/// server, what every machine says about it. Unlike harnesses, MCPs have a
-/// real per-machine control — the `mcp-overlays` disable — so a machine row
-/// carries a toggle as well as a status.
 public extension McpFleet {
-  /// One MCP server on one machine, reduced to what the row shows.
   enum MachineStatus: Equatable, Sendable {
     case ready(toolCount: Int?)
     case connecting
-    /// Enabled and healthy, but nothing has needed it yet.
     case idle
-    /// The authorization this machine holds is missing or expired. Distinct
-    /// from `blocked` because the fix is a sign-in, not a look at a log.
     case needsAuthorization(reason: String)
-    /// Local setup this machine hasn't done — a browser extension, a
-    /// permission, the native app not being open.
     case needsSetup(reason: String)
     case blocked(reason: String)
-    /// Switched off by this machine's own overlay.
     case offHere
-    /// The fleet turned the server off; nothing machine-specific about it.
     case offFleet
     case unreachable
-    /// No report yet: the machine hasn't been probed, or hasn't learned it.
     case syncing
 
     public var label: String {
@@ -53,8 +40,6 @@ public extension McpFleet {
       }
     }
 
-    /// True while the machine is switched on here, whatever its health —
-    /// what the machine row's toggle reflects.
     public var isOnHere: Bool {
       switch self {
       case .offHere: false
@@ -76,18 +61,12 @@ public extension McpFleet {
     }
   }
 
-  /// The one mapping from a server's reported row. `code` carries the raw
-  /// connection state so an expired authorization can offer a sign-in while
-  /// a missing binary offers a log.
   nonisolated static func machineStatus(_ row: MachineReadiness) -> MachineStatus {
     switch row.state {
     case "ready": return .ready(toolCount: row.toolCount)
     case "connecting": return .connecting
     case "idle": return .idle
     case "disabled":
-      // The publisher distinguishes the two disables in its reason; the
-      // client re-derives "here" from the overlay it can see directly, so
-      // this only has to name the fleet-wide case.
       return .offFleet
     default:
       let reason = row.reason ?? FleetRowStatus.blockedFallbackReason
@@ -99,15 +78,6 @@ public extension McpFleet {
     }
   }
 
-  /// Machines keep their list order regardless of state, so rows don't jump
-  /// while a fleet converges. The overlay outranks the report: a machine
-  /// switched off here reads as off immediately, without waiting for it to
-  /// notice and republish.
-  ///
-  /// `wantsOn` says, per machine id, whether the user wants the server on
-  /// there. A machine still reporting "disabled" when it should be on hasn't
-  /// caught up with a flip yet, so it reads as syncing until it reports
-  /// connected or a failure.
   nonisolated static func machineRows(
     name: String,
     readiness: [String: [MachineReadiness]],
@@ -133,9 +103,6 @@ public extension McpFleet {
     }
   }
 
-  /// A built-in's switch is that machine's own `enabled` flag — built-ins
-  /// never replicate — so the overlay plane has nothing to say about them.
-  /// Managed servers read their per-machine state from the overlay.
   static func rowsRespectingBuiltIns(
     name: String,
     isMachineScoped: Bool,
@@ -145,9 +112,6 @@ public extension McpFleet {
     sync: ConfigSync,
     machines: [FleetMachineInfo]
   ) -> [MachineRow] {
-    // What the user last set: a built-in's own switch on each machine, or
-    // the fleet definition for a managed server (the overlay's "off here"
-    // is applied separately and wins).
     let wantsOn: (String) -> Bool = { machineId in
       isMachineScoped ? enabledByMachine[machineId] == true : fleetEnabled
     }
@@ -157,8 +121,6 @@ public extension McpFleet {
       if isMachineScoped, enabledByMachine[row.machineId] == false {
         copy.status = .offHere
       } else if turningOn.contains(row.machineId), row.status != .offHere, row.status != .unreachable {
-        // The request to turn it on hasn't answered: whatever the machine
-        // last reported predates the flip.
         copy.status = .syncing
       }
       return copy

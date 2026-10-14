@@ -15,9 +15,6 @@ import {
   SkillsError
 } from "./skills-store.js"
 
-/// Find skill folders (dirs containing SKILL.md) under a fetched source,
-/// shallowly: the root itself, or descendants a few levels down — enough
-/// for repo layouts like `skills/<name>/SKILL.md`.
 const discoverSkillDirs = async (root: string, depth = 3): Promise<ReadonlyArray<string>> => {
   if (await hasSkillFile(root)) return [root]
   if (depth === 0) return []
@@ -43,8 +40,6 @@ export interface RemoteSkillDeps {
   readonly onImported: () => void
 }
 
-/// Discovering and importing skills from remote sources (git repositories
-/// and well-known skill indexes) into the store, staged in a temp folder.
 export const makeRemoteSkillOperations = (deps: RemoteSkillDeps) => {
   const { dir } = deps
 
@@ -110,8 +105,6 @@ export const makeRemoteSkillOperations = (deps: RemoteSkillDeps) => {
   }): Promise<SkillsList> =>
     withSkillDirs(request.source, async (found) => {
       let skillDirs = found
-      // Multi-skill sources can be narrowed to a selection, matched against
-      // the sanitized folder name or the frontmatter name.
       const requested = request.skillNames?.map((name) => sanitizeName(name))
       if (requested !== undefined && requested.length > 0) {
         const matched: Array<string> = []

@@ -48,8 +48,6 @@ export const newSkillFile = (request: {
   if (name === "") throw new SkillsError("Skill name is required", "invalid")
   const description = request.description.trim() === "" ? name : request.description.trim()
   const pasted = request.content?.trim() ?? ""
-  // Pasted content with frontmatter is written verbatim and its own name
-  // names the folder; otherwise the form fields become the frontmatter.
   if (pasted.startsWith("---")) return pastedSkillFile(pasted, name)
   return templateSkillFile(pasted, name, description)
 }

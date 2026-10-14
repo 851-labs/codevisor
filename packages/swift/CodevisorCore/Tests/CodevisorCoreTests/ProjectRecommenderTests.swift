@@ -65,7 +65,6 @@ struct ProjectRecommenderTests {
       directoryExists: { _ in true }
     )
 
-    // Dated folders come first, then by chat count, then by name.
     #expect(recommendations.map(\.name) == ["dated", "alpha", "zebra"])
   }
 

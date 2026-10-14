@@ -1,12 +1,5 @@
 import Foundation
 
-/// Single-consumer pull surface over one http channel's machine frames:
-/// `readHead` then `nextBodyChunk` until nil. Every consumed frame
-/// replenishes the machine's window, so the machine reads its local response
-/// exactly as fast as this side is pulled. @unchecked Sendable covers the
-/// iterator handoff between the opening task and the body consumer — the
-/// single-consumer contract (like a URLSession receive loop) makes the
-/// accesses sequential.
 final class HttpResponseSource: @unchecked Sendable {
   private let channel: CloudRelayChannel
   private var iterator: AsyncThrowingStream<CloudRelayRequestTransport.WireFrame, any Error>.Iterator
@@ -36,8 +29,6 @@ final class HttpResponseSource: @unchecked Sendable {
     return response
   }
 
-  /// The next decoded body chunk, or nil after the machine's end frame
-  /// (which also closes the channel from this side).
   func nextBodyChunk() async throws -> Data? {
     while true {
       guard !finished else { return nil }

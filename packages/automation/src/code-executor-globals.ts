@@ -1,12 +1,3 @@
-/// Sandbox globals beyond `tools`: typed tool errors, `status`, `machines`,
-/// `clients`, and the cross-machine `tools.search`, as prelude source lines
-/// spliced into buildExecutionSource. Their model-facing signatures live
-/// beside them so the docs and the prelude change together.
-
-/// Typed tool failures. The host bridge rejects with an Error carrying `code`
-/// and `detailsJson`; these rebuild the named classes sandbox code can catch.
-/// The Error `name` is the class name, so the machine or client display name
-/// lives in `machineName` / `clientName` (and in `details.name`).
 export const sandboxErrorSource: ReadonlyArray<string> = [
   "class MachineUnavailableError extends Error {",
   "  constructor(message, details = {}) { super(message); this.name = 'MachineUnavailableError'; this.code = 'machine_unavailable'; this.details = details; this.machineId = details.machineId; this.machineName = details.name; this.lastSeen = details.lastSeen; this.phase = details.phase; }",
@@ -27,9 +18,6 @@ export const sandboxErrorSource: ReadonlyArray<string> = [
   "};"
 ]
 
-/// `status`, `machines`, `clients`, and the cross-machine `tools.search`.
-/// Machine and client handles carry their methods as non-enumerable
-/// properties so returning them from a script serializes only the facts.
 export const machinesAndClientsSource: ReadonlyArray<string> = [
   "const status = (text) => { __statusBridge(text === undefined || text === null ? '' : __format(text)); };",
   "const __hidden = (object, values) => { for (const [key, value] of Object.entries(values)) Object.defineProperty(object, key, { value, enumerable: false, configurable: true }); return object; };",
@@ -93,8 +81,6 @@ export const machinesAndClientsSource: ReadonlyArray<string> = [
   "};"
 ]
 
-/// The sandbox globals as TypeScript signatures, shown to the model in the
-/// `execute` tool description. Keep in step with the prelude above.
 export const codevisorSandboxSignatures = `declare const tools: {
   search(input: { query: string; limit?: number; machines?: "all" }): Promise<{ items: Array<{ path: string; name: string; description?: string; machine?: { id: string; name: string } }>; total: number }>
   describe: { tool(input: { path: string }): Promise<Tool> }

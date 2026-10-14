@@ -1,10 +1,7 @@
 import Foundation
 
-/// Apple simulators on a Mac with Xcode (`simulator-v1`, `/v1/simulators`).
-
 public struct ServerSimulatorRuntime: Codable, Sendable, Hashable, Identifiable {
   public let identifier: String
-  /// "iOS 27.0"
   public let name: String
   public let platform: String
   public let version: String
@@ -20,7 +17,6 @@ public struct ServerSimulatorRuntime: Codable, Sendable, Hashable, Identifiable 
 public struct ServerSimulatorDeviceType: Codable, Sendable, Hashable, Identifiable {
   public let identifier: String
   public let name: String
-  /// "iPhone", "iPad", "Apple TV", "Apple Watch", "Apple Vision"
   public let productFamily: String
   public var id: String { identifier }
 
@@ -43,7 +39,6 @@ public struct ServerSimulatorDevice: Codable, Sendable, Hashable, Identifiable {
 
   public let udid: String
   public let name: String
-  /// simctl's state: "Booted", "Shutdown", "Booting", "Shutting Down", "Creating"
   public let state: String
   public let runtime: Runtime
   public let deviceType: ServerSimulatorDeviceType
@@ -74,17 +69,13 @@ public struct ServerSimulatorList: Codable, Sendable, Equatable {
   }
 }
 
-/// One screen of a device type; a foldable has a cover and an inner one.
 public struct ServerSimulatorDisplay: Codable, Sendable, Equatable {
   public let name: String
-  /// Pixels in the display's native orientation.
   public let width: Double
   public let height: Double
   public let scale: Double
-  /// Upper-left, upper-right, lower-left, lower-right, in points.
   public let cornerRadii: [Double]
   public let chromeIdentifier: String?
-  /// A PDF the screen is clipped to, base64.
   public let mask: String?
   public let hasDigitizer: Bool
 
@@ -115,7 +106,6 @@ public struct ServerSimulatorDeviceTypeDetail: Codable, Sendable, Equatable {
   }
 }
 
-/// A DeviceKit chrome bundle: chrome.json (raw) and its PDFs, base64.
 public struct ServerSimulatorChrome: Sendable, Equatable {
   public let identifier: String
   public let definition: Data
@@ -126,7 +116,6 @@ public struct ServerSimulatorChrome: Sendable, Equatable {
   }
 }
 
-/// One of the Mac's audio devices a simulator's sound can play through or record from.
 public struct ServerSimulatorAudioDevice: Codable, Sendable, Equatable, Hashable, Identifiable {
   public var uid: String
   public var name: String
@@ -138,15 +127,11 @@ public struct ServerSimulatorAudioDevice: Codable, Sendable, Equatable, Hashable
   }
 }
 
-/// A running simulator's settings, as Device Hub offers them. A setting the runtime (or the Mac's
-/// Xcode) doesn't support is nil. Audio routes are `"system"` or a device's `uid`.
 public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
   public static let systemAudioRoute = "system"
 
   public var appearance: String?
-  /// How opaque Liquid Glass is: 0 clear, 1 tinted.
   public var liquidGlass: Double?
-  /// `"none"`, `"protanopia"`, `"deuteranopia"`, `"tritanopia"` or `"grayscale"`.
   public var colorFilter: String?
   public var contentSize: String?
   public var increaseContrast: Bool?
@@ -185,7 +170,6 @@ public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
     self.audioInputs = audioInputs
   }
 
-  /// The settings with a change applied, before the device confirms it.
   public func applying(_ change: ServerSimulatorSettingsChange) -> Self {
     var settings = self
     if let value = change.appearance { settings.appearance = value }
@@ -326,7 +310,6 @@ extension CodevisorServerClient: SimulatorClienting {
 
 private struct SimulatorEmptyBody: Encodable {}
 
-/// Test doubles and older clients: a machine without simulators.
 public extension SimulatorClienting {
   private var unsupported: CodevisorServerClientError {
     .httpStatus(501, "Simulators need Xcode and the Codevisor app on this Mac.")

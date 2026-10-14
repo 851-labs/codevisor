@@ -6,13 +6,6 @@ public enum CodevisorAppVariant: Sendable {
 
   private static let stashedEnvironmentKey = "dev.launchEnvironment"
 
-  /// A development instance is configured entirely through CODEVISOR_*
-  /// launch environment from `bun run dev`. Relaunches that bypass the
-  /// runner — macOS's own "Quit & Reopen" after a Screen Recording grant,
-  /// the Dock, Finder — start with none of it, which would silently point
-  /// the app at a different instance's data. Stash the configuration under
-  /// this bundle id (dev bundle ids are per-worktree, so per-instance) on
-  /// every configured launch, and restore it on bare ones.
   private static let resolvedEnvironment: [String: String] = {
     let live = ProcessInfo.processInfo.environment
     guard isDevelopment else { return live }
@@ -27,9 +20,6 @@ public enum CodevisorAppVariant: Sendable {
     return resolution.environment
   }()
 
-  /// Pure resolution: a configured launch wins and refreshes the stash; a
-  /// bare launch inherits the stashed configuration; anything the live
-  /// environment does define keeps precedence.
   static func resolvedDevelopmentEnvironment(
     live: [String: String],
     stashed: [String: String]?
@@ -84,8 +74,6 @@ public enum CodevisorAppVariant: Sendable {
     return environment["CODEVISOR_DEV_ICON_COLOR"] ?? "#0088ff"
   }
 
-  /// Opts a development build into Sparkle using an isolated test feed.
-  /// Production builds always use their normal architecture-specific feed.
   public static var developmentSparkleFeedURL: String? {
     guard isDevelopment,
       let value = environment["CODEVISOR_DEV_SPARKLE_FEED_URL"],
@@ -98,12 +86,7 @@ public enum CodevisorAppVariant: Sendable {
     !isDevelopment || developmentSparkleFeedURL != nil
   }
 
-  /// The cloud dev instance `bun run dev` starts alongside the app, so the
-  /// account flows can be developed against a local Worker. Present only in
-  /// development runs where the dev script provided its details.
   public struct DevelopmentCloud: Sendable, Equatable {
-    /// The local cloud instance `bun run dev` runs. Apps sign into it the
-    /// production way; no session ever rides the environment.
     public let url: URL
 
     public init(url: URL) {
@@ -116,7 +99,6 @@ public enum CodevisorAppVariant: Sendable {
     return developmentCloud(from: environment)
   }
 
-  /// Pure parsing, split out for tests: an empty URL means no dev cloud.
   static func developmentCloud(from environment: [String: String]) -> DevelopmentCloud? {
     guard let raw = environment["CODEVISOR_DEV_CLOUD_URL"], !raw.isEmpty,
       let url = URL(string: raw)
@@ -171,11 +153,6 @@ public enum CodevisorAppVariant: Sendable {
     )
   }
 
-  /// One-time rescue for the HerdMan → Codevisor rename: the app updates in
-  /// place (the bundle id stayed `com.851labs.HerdMan`) but the Application
-  /// Support folder name changed, orphaning every file-backed preference in
-  /// the old folder. Copies legacy files that don't exist at the new
-  /// location yet; never overwrites, and leaves the old folder as a backup.
   public static func migrateLegacyApplicationSupportIfNeeded(fileManager: FileManager = .default) {
     guard let legacy = legacyApplicationSupportURL(fileManager: fileManager) else { return }
     migrateLegacyApplicationSupport(
@@ -185,9 +162,6 @@ public enum CodevisorAppVariant: Sendable {
     )
   }
 
-  /// Pre-rename client data location. The SQLite bootstrap imports this
-  /// directory directly and then removes its supported legacy artifacts
-  /// after validation, rather than leaving a second authoritative copy.
   public static func legacyApplicationSupportURL(
     fileManager: FileManager = .default
   ) -> URL? {
@@ -219,11 +193,6 @@ public enum CodevisorAppVariant: Sendable {
     }
   }
 
-  /// Canonical server-state layout shared with standalone installs: the
-  /// server's database and logs live at ~/.codevisor/{data,logs} on every OS
-  /// so machine state is laid out identically everywhere (a prerequisite for
-  /// moving sessions between machines). Development builds keep their
-  /// isolated production-shaped directories supplied by the dev runner.
   public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {
     guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
     return createdDirectory(
@@ -251,9 +220,6 @@ public enum CodevisorAppVariant: Sendable {
     )
   }
 
-  /// `homeDirectoryForCurrentUser` is macOS-only; on iOS the sandbox home
-  /// from `NSHomeDirectory()` is the equivalent (and these paths are only
-  /// fallbacks/dev layouts there — iOS has no local server).
   private static func homeDirectory(fileManager: FileManager) -> URL {
     #if os(macOS)
       fileManager.homeDirectoryForCurrentUser

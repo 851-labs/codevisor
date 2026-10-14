@@ -1,8 +1,5 @@
 import Foundation
 
-// MARK: - Binary relay envelopes
-
-/// One decoded relay envelope: the raw JSON header bytes plus the payload.
 public struct CloudRelayEnvelope: Sendable {
   public var header: Data
   public var payload: Data
@@ -13,11 +10,6 @@ public struct CloudRelayEnvelope: Sendable {
   }
 }
 
-/// The relay's binary framing, the Swift twin of @codevisor/api
-/// encodeRelayEnvelopes: a binary WebSocket message is one or more envelopes,
-/// each `u32 BE header length | header JSON | u32 BE payload length | payload`.
-/// Senders may coalesce several envelopes into one message; receivers process
-/// them in order.
 public enum CloudRelayWire {
   public static func encode(_ envelopes: [CloudRelayEnvelope]) -> Data {
     var message = Data()

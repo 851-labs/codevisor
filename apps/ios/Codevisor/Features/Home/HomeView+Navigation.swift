@@ -3,8 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// Opening chats, workspace routing, disclosure expansion, and the
-/// no-machine / empty states.
 extension HomeView {
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     func openDiagnosticSession(_ id: UUID) {
@@ -21,12 +19,7 @@ extension HomeView {
     }
   #endif
 
-  /// Agent rows always open the agent itself, never the terminal or sibling
-  /// chat that happened to be selected when the workspace was last left.
   func openChat(_ session: ChatSession) {
-    // Existing sessions take the O(1) index path. Only a legacy session
-    // without a workspace pays the synchronous one-time backfill before
-    // a routable destination id exists.
     let workspaceId =
       environment.workspaces.workspaceId(forSession: session.id)
       ?? ensureWorkspace(for: session).id
@@ -34,8 +27,6 @@ extension HomeView {
       "home.openChat",
       "workspace=\(shortID(workspaceId)) session=\(shortID(session.id)) pathBefore=\(navigationPathSummary(path))"
     )
-    // Push first. Workspace pane selection, controller creation, history,
-    // and transcript projection all begin from the destination's tasks.
     openRoute(
       .workspace(
         serverId: session.serverId,
@@ -64,9 +55,6 @@ extension HomeView {
     )
   }
 
-  /// Applies the shared Core route policy, which
-  /// `HomePresentedWorkspaceObserver` evaluates whenever the presented
-  /// workspace or its anchor chat changes.
   func applyPresentedWorkspaceDisposition(_ disposition: WorkspaceRouteDisposition) {
     guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = path.last else {
       return
@@ -89,9 +77,6 @@ extension HomeView {
         )
       )
     case .dismiss:
-      // WorkspaceScreen may currently have a pane cover above it;
-      // clearing the owning stack closes the whole workspace and
-      // returns to the navigation list in one state transition.
       newChatFlow = nil
       if layoutMode == .split {
         selectDetail(nil)
@@ -101,8 +86,6 @@ extension HomeView {
     }
   }
 
-  /// The chat's project name for its row; nil for a no-project chat, whose
-  /// scratch folder's generated name says nothing about it.
   func projectName(for session: ChatSession) -> String? {
     guard
       let project = projectList.projects.first(where: {
@@ -113,8 +96,6 @@ extension HomeView {
     return project.name
   }
 
-  /// No machine paired (all machines removed): everything routes back
-  /// into the onboarding connect page.
   var noMachineState: some View {
     ContentUnavailableView {
       Label {

@@ -13,7 +13,6 @@ struct WorkedItemsTests {
     .tool(ToolCall(toolCallId: id, title: "Tool \(id)", kind: kind))
   }
 
-  /// An agent call whose input has arrived, so its agent has started.
   private func spawnedAgent(_ id: String) -> TranscriptEntry {
     .tool(ToolCall(toolCallId: id, title: "Agent \(id)", kind: .agent, rawInput: .object([:])))
   }
@@ -91,10 +90,8 @@ struct WorkedItemsTests {
   @Test("A plan boundary splits worked items into before/after the plan")
   func planSplit() {
     var t = AssistantTurn(entries: [tool("explore-1", .read), tool("explore-2", .search)])
-    // The plan is proposed after the two exploration calls.
     t.planBoundary = t.entries.count
     t.planDocument = "# Plan"
-    // Implementation follows approval, then the final answer.
     t.entries.append(tool("impl-1", .edit))
     t.entries.append(tool("impl-2", .execute))
     t.entries.append(.text(id: "final", markdown: "done"))
@@ -108,7 +105,7 @@ struct WorkedItemsTests {
     }
 
     let after = t.workedItemsAfterPlan
-    #expect(after.count == 1)  // the final-answer text is excluded from the slice
+    #expect(after.count == 1)
     if case let .toolGroup(group) = after.first {
       #expect(group.calls.map(\.toolCallId) == ["impl-1", "impl-2"])
     } else {
@@ -264,12 +261,10 @@ struct WorkedItemsTests {
     TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "b", title: "Edit", kind: .edit)), to: &turn)
     TranscriptReducer.apply(.agentMessageChunk(.text("Done."), messageId: "m3"), to: &turn)
 
-    // Streaming view: everything in arrival order, nothing pulled out.
     #expect(
       turn.streamingItems.map(\.id) == [
         "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b", "wtext:acp:m3",
       ])
-    // Finished view: the final text is split out below the worked section.
     #expect(
       turn.workedItems.map(\.id) == [
         "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b",

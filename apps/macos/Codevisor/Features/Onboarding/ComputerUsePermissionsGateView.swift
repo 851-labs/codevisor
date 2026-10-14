@@ -4,15 +4,9 @@ import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
 
-/// The Computer Use permissions checklist, optionally including onboarding's
-/// Full Disk Access request. All probes are cheap and non-prompting, so
-/// statuses refresh once a second and on window activation.
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
-  /// Onboarding also offers optional file access, independent of Computer Use.
   var includesFullDiskAccess = false
-  /// Embedded rows sit inside an existing container (a settings form row)
-  /// and skip the standalone card chrome.
   var embedded = false
   @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) private var controlActiveState
@@ -117,9 +111,6 @@ struct ComputerUsePermissionRowsView: View {
     .animation(.smooth(duration: 0.25), value: granted)
   }
 
-  /// macOS applies a fresh Screen Recording grant fully only to new
-  /// processes; a running app can keep getting empty captures. Offer the
-  /// restart instead of letting the first Computer Use task fail oddly.
   private var relaunchNudge: some View {
     HStack(spacing: 10) {
       Image(systemName: "arrow.clockwise.circle.fill")
@@ -140,15 +131,6 @@ struct ComputerUsePermissionRowsView: View {
   }
 }
 
-/// Update gate for already-onboarded users, presented as a dialog card over
-/// the main window: shown once per app version at launch when the Computer
-/// Use permissions are missing (for example right after updating to the first
-/// build that needs them). Skipping turns Computer Use off; the toggle in
-/// Settings → MCP re-enters this setup inline.
-///
-/// Deliberately not an AppKit sheet: a document-modal sheet refuses app
-/// termination (macOS beeps and cancels), and granting Screen Recording ends
-/// in macOS's own "Quit & Reopen" — which has to be able to quit us.
 struct ComputerUsePermissionsGateView: View {
   var onComplete: () -> Void
   var onSkip: () -> Void
@@ -160,8 +142,6 @@ struct ComputerUsePermissionsGateView: View {
 
   var body: some View {
     ZStack {
-      // Absorbs clicks to the app underneath without entering a modal
-      // session, so the dialog still reads as blocking.
       Color.black.opacity(0.28)
         .ignoresSafeArea()
         .onTapGesture {}

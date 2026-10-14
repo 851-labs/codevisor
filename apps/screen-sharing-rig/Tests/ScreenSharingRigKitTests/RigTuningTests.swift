@@ -41,7 +41,6 @@ struct RigTuningTests {
     #expect(tuning.label == "playout 0/35 · jitter window 30 · arrival on main")
   }
 
-  /// 851-2482: arbitrary WebRTC trials for rate-control experiments, merged over the knobs' own.
   @Test func fieldTrialsMergeOverTheKnobsAndMustBeWebRTCTrials() throws {
     let tuning = try RigTuning.parse([
       "pacingFactor": 10, "fieldTrials": ["WebRTC-FrameDropper": "Disabled", "WebRTC-Video-Pacing": "factor:5"],
@@ -57,8 +56,6 @@ struct RigTuningTests {
     #expect(try RigTuning.parse(["maintainSourceRate": false]).maintainSourceRate == false)
   }
 
-  /// The product renders on frame arrival with acquisition and encoding on the render worker; the
-  /// display-link (main-actor) renderer stays one key away, and needs no second key to undo the worker.
   @Test func theRendererDefaultsToTheProductsWorkerAndTheDisplayLinkStaysSelectable() throws {
     #expect(RigTuning.default.renderOnArrival && RigTuning.default.offMainPreparation)
     #expect(RigTuning.default.maximumDrawableCount == 3)

@@ -14,11 +14,6 @@ final class SessionQuietTurnCancellation {
   }
 }
 
-/// Schedules the work that verifies a provider turn after a quiet interval.
-///
-/// Production uses `continuous`; tests inject a manually advanced scheduler so
-/// timer behavior is deterministic without suspending test tasks on stored
-/// continuations.
 public struct SessionQuietTurnScheduler: Sendable {
   typealias Operation = @MainActor @Sendable () async -> Void
   typealias Schedule =

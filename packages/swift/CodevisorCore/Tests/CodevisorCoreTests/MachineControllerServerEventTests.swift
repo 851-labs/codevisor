@@ -45,7 +45,6 @@ struct MachineControllerServerEventTests {
       clientFactory: { _ in fake }
     )
 
-    // Establish the snapshot boundary; the event stream follows from it.
     await controller.refreshNavigationState(for: "local")
     fake.setSessions([
       ServerSession(
@@ -65,9 +64,6 @@ struct MachineControllerServerEventTests {
     try await waitForSync { projectList.sessions.contains { $0.id == sessionId } }
     #expect(projectList.projects.contains { $0.id == projectId })
 
-    // Ordinary session events carry their authoritative summary. Applying
-    // one must update only that cached row instead of listing and mapping
-    // every session again.
     let fullRefreshCount = fake.listSessionCallCount
     let updated = ServerSession(
       id: sessionId.uuidString,
@@ -92,7 +88,6 @@ struct MachineControllerServerEventTests {
     }
     #expect(fake.listSessionCallCount == fullRefreshCount)
 
-    // Another client deletes the session, then the project.
     fake.setSessions([])
     fake.emit(kind: "session.deleted", subjectId: sessionId.uuidString)
     try await waitForSync { !projectList.sessions.contains { $0.id == sessionId } }
@@ -124,10 +119,7 @@ struct MachineControllerServerEventTests {
     }
 
     controller.startEventSync(for: "local")
-    // Runtime transitions invalidate the machine's plugin list…
     fake.emit(kind: "plugin.state.updated", subjectId: "owner.example")
-    // …while only plugin.updated (code/install changed) triggers pane
-    // reloads, carrying the plugin id so unrelated panes stay put.
     fake.emit(kind: "plugin.updated", subjectId: "owner.example")
     await pluginUpdated.wait()
     #expect(updates == [["local", "owner.example"]])
@@ -215,8 +207,6 @@ struct MachineControllerServerEventTests {
       clientFactory: { _ in fake }
     )
 
-    // Production establishes one authoritative snapshot, then follows the
-    // event stream from its cursor.
     await controller.refreshNavigationState(for: "local")
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
     try await waitForSync {
@@ -232,9 +222,6 @@ struct MachineControllerServerEventTests {
       ) == .keep
     )
 
-    // Archiving the WORKSPACE dismisses every route into it. Chats carry no
-    // archive state of their own, so there is no per-chat event here --
-    // closing a chat is pane removal, covered by the pane-close routing tests.
     let chatSession = serverSession(id: sessionId, workspaceId: workspaceId)
     let siblingSession = serverSession(id: siblingSessionId, workspaceId: workspaceId)
     fake.setSessions([chatSession, siblingSession])
@@ -252,7 +239,6 @@ struct MachineControllerServerEventTests {
       ) == .dismiss
     )
 
-    // Restoring the workspace restores the route, layout intact.
     fake.setWorkspaces([serverWorkspace(isArchived: false)])
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
     try await waitForSync {

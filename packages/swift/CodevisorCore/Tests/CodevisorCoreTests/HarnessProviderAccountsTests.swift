@@ -3,7 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A scripted provider backend: answers from its queues and records calls.
 @MainActor
 private final class FakeProviderBackend: HarnessProviderBackend {
   var catalog: Result<[HarnessProvider], any Error> = .success([])
@@ -64,7 +63,6 @@ struct HarnessProviderAccountsTests {
     await machine.reload()
     #expect(machine.load == .loaded)
     #expect(machine.configured.map(\.id) == ["openai", "old"])
-    // Keys can't be added here, and a provider left with no way in is kept only if signed in.
     #expect(machine.providers.map(\.id) == ["openai", "xai", "old"])
     #expect(machine.available.map(\.id) == ["openai", "xai"])
     #expect(machine.providers.first?.methods == [oauth])
@@ -124,7 +122,6 @@ struct HarnessProviderAccountsTests {
     #expect(!replacing.canSubmit)
     replacing.apiKey = "  sk-1  "
     #expect(replacing.canSubmit)
-    // Choosing another provider starts over with its own method.
     replacing.providerId = "xai"
     #expect(replacing.methodId == "oauth")
     #expect(replacing.apiKey.isEmpty)
@@ -181,7 +178,6 @@ struct HarnessProviderAccountsTests {
     await second.submit()
     #expect(second.errorMessage == "Invalid key")
     #expect(!second.isComplete)
-    // Nothing to submit does nothing.
     second.apiKey = ""
     await second.submit()
     #expect(refused.calls.count == 1)
@@ -241,7 +237,6 @@ struct HarnessProviderAccountsTests {
     await draft.dismissed()
     #expect(backend.calls.last == "cancel s")
     #expect(draft.signIn == nil)
-    // Nothing pending: nothing to cancel.
     await draft.dismissed()
     #expect(backend.calls.filter { $0.hasPrefix("cancel") }.count == 1)
   }

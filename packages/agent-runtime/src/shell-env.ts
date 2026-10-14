@@ -2,45 +2,22 @@ import { execFile } from "node:child_process"
 import { accessSync, constants, readdirSync } from "node:fs"
 import { homedir as osHomedir, userInfo } from "node:os"
 
-/// Login-shell PATH resolution.
-///
-/// GUI-launched (and service-launched) processes inherit a minimal PATH that
-/// usually excludes Homebrew, nvm/volta/asdf, and per-user install dirs like
-/// `~/.local/bin` (the Claude Code native installer default). Harness
-/// detection scans PATH for agent CLIs, so the runtime recovers the user's
-/// real PATH by asking their login shell — and merges well-known install
-/// directories as a fallback when the probe fails.
-
 export interface ShellEnvOptions {
-  /// Environment to resolve from; defaults to `process.env`.
   readonly base?: NodeJS.ProcessEnv
-  /// Platform override for tests; defaults to `process.platform`.
   readonly platform?: NodeJS.Platform
-  /// Fallback when HOME is missing or empty; defaults to the OS home directory.
   readonly homedir?: string
-  /// Shell runner returning stdout; defaults to an `execFile` wrapper.
   readonly runShell?: (
     shell: string,
     args: ReadonlyArray<string>,
     timeoutMs: number,
     env: NodeJS.ProcessEnv
   ) => Promise<string>
-  /// Probe timeout; bounds pathological shell rc files. Default 5000ms.
   readonly timeoutMs?: number
-  /// The user's passwd-database shell, tried when $SHELL is unset (systemd
-  /// services and cron get no $SHELL). Defaults to `os.userInfo().shell`.
   readonly userShell?: () => string | undefined
-  /// Whether an executable exists; guards probing a shell that isn't
-  /// installed (minimal containers without bash). Defaults to `accessSync`.
   readonly executableExists?: (path: string) => boolean
-  /// Directory listing used for the nvm probe; defaults to `readdirSync`.
   readonly listDirectory?: (path: string) => ReadonlyArray<string>
 }
 
-/// Well-known executable directories merged into every resolved PATH so
-/// detection survives a failed shell probe or an unusual shell setup. Covers
-/// the common install locations across macOS (Homebrew) and Linux (snap, nix,
-/// npm prefix, deno) plus the version-manager shim dirs.
 export const fallbackPathDirectories = (home: string): ReadonlyArray<string> => [
   `${home}/.local/bin`,
   "/opt/homebrew/bin",
@@ -69,10 +46,6 @@ const listDirectoryOrEmpty = (path: string): ReadonlyArray<string> => {
   }
 }
 
-/// nvm keeps every Node version in its own bin dir and only rc files select
-/// one, so a failed shell probe loses npm-installed CLIs entirely. Falling
-/// back to the newest installed version matches what a fresh `nvm use node`
-/// would pick.
 export const nvmBinDirectories = (
   home: string,
   listDirectory: (path: string) => ReadonlyArray<string> = listDirectoryOrEmpty
@@ -99,7 +72,7 @@ const executableExistsSync = (path: string): boolean => {
   }
 }
 
-/* v8 ignore start -- the empty/throwing branches depend on the host passwd database; both degrade to the platform default shell. */
+/* v8 ignore start */
 const userShellFromPasswd = (): string | undefined => {
   try {
     const shell = userInfo().shell
@@ -110,7 +83,6 @@ const userShellFromPasswd = (): string | undefined => {
 }
 /* v8 ignore stop */
 
-/// Default shell runner: `execFile` with a hard timeout, resolving stdout.
 export const runShellCommand = (
   shell: string,
   args: ReadonlyArray<string>,
@@ -127,9 +99,6 @@ export const runShellCommand = (
     })
   })
 
-/// Extracts the value of the last `PATH=` line from `env(1)` output. Using
-/// `/usr/bin/env` instead of `echo $PATH` is fish-safe: fish prints `$PATH`
-/// space-separated, but the exported variable is always colon-separated.
 const pathFromEnvOutput = (output: string): string | undefined => {
   let path: string | undefined
   for (const line of output.split("\n")) {
@@ -155,9 +124,6 @@ const mergedPath = (groups: ReadonlyArray<ReadonlyArray<string>>): string => {
   return directories.join(":")
 }
 
-/// $SHELL when set (interactive logins), else the passwd-database shell
-/// (systemd/cron), else the platform default — skipping anything that isn't
-/// actually installed. `undefined` means no usable shell: skip the probe.
 const chooseShell = (
   base: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
@@ -174,11 +140,6 @@ const chooseShell = (
   return undefined
 }
 
-/// Restores a missing HOME and merges the login-shell PATH into `base`:
-/// probed dirs first (user's own ordering wins), then the base PATH, then the
-/// fallback dirs and the newest nvm bin. Any probe failure — spawn error,
-/// timeout, empty output, no PATH line, no usable shell — degrades to base +
-/// fallbacks. Windows is a passthrough.
 export const resolveShellEnv = async (
   options: ShellEnvOptions = {}
 ): Promise<NodeJS.ProcessEnv> => {
@@ -187,9 +148,6 @@ export const resolveShellEnv = async (
   if (platform === "win32") {
     return base
   }
-  // Service processes can inherit no HOME. Export it before probing so shell
-  // startup files and installer children agree on the user's home directory.
-  // os.homedir() can itself be empty when the process exports HOME="".
   const home = base.HOME || options.homedir || osHomedir() || userInfo().homedir
   const env = { ...base, HOME: home }
   const runShell = options.runShell ?? runShellCommand
@@ -203,12 +161,9 @@ export const resolveShellEnv = async (
   let probed: ReadonlyArray<string> = []
   if (shell !== undefined) {
     try {
-      // -i -l so the user's rc/profile files run — that's where PATH lives.
       const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env)
       probed = splitPath(pathFromEnvOutput(output))
-    } catch {
-      // Degrade to base + fallback directories below.
-    }
+    } catch {}
   }
   return {
     ...env,
@@ -221,11 +176,6 @@ export const resolveShellEnv = async (
   }
 }
 
-/// One login-shell probe shared by everything that needs the user's
-/// environment. Starting a login shell runs the user's rc files, so asking
-/// for it on every account click added up. `refresh` probes again (a rescan
-/// after installing a CLI); `current` reuses the latest probe, starting one
-/// on first use.
 export const makeShellEnvCache = (resolve: () => Promise<NodeJS.ProcessEnv>) => {
   let latest: Promise<NodeJS.ProcessEnv> | undefined
   const refresh = () => (latest = resolve())

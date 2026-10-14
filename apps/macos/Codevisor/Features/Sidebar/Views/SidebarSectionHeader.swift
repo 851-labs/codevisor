@@ -3,9 +3,6 @@ import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
-/// A collapsible heading above a run of sidebar rows, as in Mail: the
-/// title, then a disclosure chevron at the trailing edge that appears on
-/// hover. Clicking anywhere on the heading toggles it.
 struct SidebarSectionHeader: View {
   let title: String
   let isExpanded: Bool
@@ -15,8 +12,6 @@ struct SidebarSectionHeader: View {
   @State private var isHovered = false
 
   var body: some View {
-    // An inactive window spends its first click becoming key, so the
-    // chevron only shows once it can respond.
     let showsChevron = isHovered && controlActiveState == .key
     HStack(spacing: 6) {
       SidebarSectionTitle(title: title)
@@ -24,7 +19,6 @@ struct SidebarSectionHeader: View {
       Spacer(minLength: 0)
 
       Button(action: onToggle) {
-        // Mail's heading chevron: 11pt semibold (measured, pixel for pixel).
         Image(systemName: "chevron.right")
           .font(.system(size: 11, weight: .semibold))
           .animation(Motion.indicator(reduceMotion: reduceMotion)) { chevron in
@@ -34,9 +28,6 @@ struct SidebarSectionHeader: View {
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      // Cleared rather than removed or faded out, so the heading holds still
-      // and assistive tech can still collapse the section
-      // (SwiftUI hides fully transparent views from accessibility).
       .foregroundStyle(showsChevron ? AnyShapeStyle(.secondary) : AnyShapeStyle(.clear))
       .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
       .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
@@ -52,17 +43,6 @@ struct SidebarSectionHeader: View {
   }
 }
 
-/// A section heading's title, drawn by AppKit: 11pt semibold (Mail's
-/// "Favorites"), in the color a native source list gives its headings:
-/// the tertiary label color in light mode and the secondary one in dark
-/// (measured against Mail and a source-list group row in each). Both are
-/// system label colors, so the sidebar's vibrancy renders them exactly as
-/// native headings (see `SidebarVibrancyHost`).
-///
-/// AppKit rather than `Text`: at this size SwiftUI rasterizes semibold with
-/// thinner strokes than AppKit (about 10% less ink, measured with the same
-/// font), while an `NSTextField` here is pixel-identical to Mail's.
-/// Custom themes use their own tertiary text.
 struct SidebarSectionTitle: NSViewRepresentable {
   @Environment(\.theme) private var theme
   let title: String
@@ -73,7 +53,6 @@ struct SidebarSectionTitle: NSViewRepresentable {
     label.lineBreakMode = .byTruncatingTail
     label.maximumNumberOfLines = 1
     label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    // A heading to assistive tech, as SwiftUI's `.isHeader` trait reported.
     label.setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
     return label
   }
@@ -84,11 +63,7 @@ struct SidebarSectionTitle: NSViewRepresentable {
   }
 }
 
-/// Picks the native heading color for its own appearance. A dynamic
-/// `NSColor` wrapping the two would lose the system colors' vibrancy, so the
-/// label swaps between them itself when the appearance changes.
 final class SidebarSectionTitleLabel: NSTextField {
-  /// A custom theme's color, used as is.
   var themeColor: NSColor? {
     didSet { applyColor() }
   }

@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - Configure
-
 extension VirtualizedTranscriptScrollView {
   func configure(_ input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks) {
     let traceStart = TranscriptPerformanceTrace.begin()
@@ -109,9 +107,6 @@ extension VirtualizedTranscriptScrollView {
     if leftForeground {
       sendTransitions.interrupt()
     }
-    // Everything below can move rows. While a send is live, rows that
-    // move are carried from their previous on-screen position by the
-    // send's springs instead of jumping.
     sendTransitions.receive(newSendAnimationRequest, isForeground: newPresentationRole == .foreground)
     let contentShift = sendTransitions.beginContentShift()
     defer { sendTransitions.commitContentShift(contentShift) }
@@ -128,8 +123,6 @@ extension VirtualizedTranscriptScrollView {
     surfaceController.observeStreamingPresentation(input)
 
     if layoutFingerprintChanged {
-      // A new width re-lays out every row; land any flight first. (A new
-      // surface's first configure also lands here, with nothing in flight.)
       sendTransitions.landFlights()
     }
     let rebuiltRows: Bool
@@ -195,9 +188,6 @@ extension VirtualizedTranscriptScrollView {
     applyPendingInitialPositionIfPossible()
     presentDeferredActivePlaceholderIfNeeded()
     if becameForeground {
-      // The foreground transcript is now the sole viewport publisher.
-      // First-send promotion is always pinned to the newest row, but use
-      // the shared state when available so the handoff remains exact.
       if let initialState, initialPositionApplied {
         followsLatest = initialState.followMode.followsLatest
         if !initialState.isAtBottom,

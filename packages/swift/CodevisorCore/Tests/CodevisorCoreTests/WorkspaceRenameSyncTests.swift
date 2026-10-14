@@ -16,7 +16,6 @@ struct WorkspaceRenameSyncTests {
   @Test("A sidebar rename reaches the server without touching layout or archive state")
   func publishesNameOnly() async throws {
     let fixture = await WorkspaceSyncFixture { workspace, _ in workspace.isArchived = true }
-    // This device's own ⌘T page: never on the server, and a rename must not lose it.
     var layout = try #require(fixture.current)
     var group = PaneGroupState()
     group.addNewTabPane()
@@ -25,7 +24,6 @@ struct WorkspaceRenameSyncTests {
 
     fixture.sync.renameWorkspace(renamed(fixture, "Renamed on Mac"))
 
-    // Shown immediately, before any request.
     let local = try #require(fixture.current)
     #expect(local.name == "Renamed on Mac")
     #expect(local.hasCustomName)
@@ -52,7 +50,6 @@ struct WorkspaceRenameSyncTests {
     let fetchedAt = Date(timeIntervalSince1970: 999)
     fixture.sync.renameWorkspace(renamed(fixture, "New name"))
     await fixture.flush()
-    // Accepted, but its event hasn't arrived: the entry waits for it.
     #expect(fixture.store.pendingIntents.count == 1)
     #expect(
       fixture.store.pendingIntents.first?.state
@@ -111,7 +108,6 @@ struct WorkspaceRenameSyncTests {
     #expect(fixture.store.pendingIntents.count == 1)
     #expect(fixture.current?.name == "Shared rename")
 
-    // The machine comes back: the same request is sent again, safely.
     await fixture.settle()
     #expect(fixture.store.pendingIntents.isEmpty)
     #expect(fixture.current?.name == "Shared rename")

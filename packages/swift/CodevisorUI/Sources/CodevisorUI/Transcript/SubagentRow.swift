@@ -2,8 +2,6 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// Subagents spawned together, side by side and wrapping onto new lines when
-/// they don't fit — one chip each.
 public struct SubagentChips: View {
   let calls: [ToolCall]
   let isTurnActive: Bool
@@ -23,10 +21,6 @@ public struct SubagentChips: View {
   }
 }
 
-/// A subagent in the transcript: a chip with the harness's icon and the
-/// agent's name, shimmering while it works. Its thread opens separately
-/// through `openSubagent` (a pane beside the chat on macOS, a pushed screen on
-/// iOS) instead of nesting inline.
 public struct SubagentRow: View {
   let call: ToolCall
   let isTurnActive: Bool
@@ -42,7 +36,6 @@ public struct SubagentRow: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.theme) private var theme
 
-  // ToolGroupView's metrics, so the rows share one icon column.
   private static var iconSize: CGFloat {
     #if os(iOS)
       15
@@ -67,14 +60,11 @@ public struct SubagentRow: View {
     #endif
   }
 
-  /// Running while the turn is live and the call is open, or — after the
-  /// turn ended — while the harness still reports it as a background task.
   private var isRunning: Bool {
     (isTurnActive && !call.isSettled) || runningSubagentToolCallIds.contains(call.toolCallId)
   }
 
   private var title: String {
-    // A placeholder for work after a follow-up takes its agent's name.
     if call.rawInput == nil, let transcriptController,
       let spawn = SubagentMirror.spawn(of: call.toolCallId, in: transcriptController)
     {
@@ -83,21 +73,16 @@ public struct SubagentRow: View {
     return SubagentMirror.title(of: call)
   }
 
-  /// Subagents run in their chat's harness.
   private var harnessId: String? {
     transcriptController?.serverSession?.harnessId ?? transcriptController?.activeHarnessId
   }
 
-  /// The chat that owns this row. Nil inside a subagent's own read-only
-  /// view, whose mirror controller isn't a chat: nested agents don't open.
   private var parentSessionId: UUID? { transcriptController?.serverSession?.id }
 
   private var canOpen: Bool { openSubagent != nil && parentSessionId != nil }
 
   public var body: some View {
     if canOpen {
-      // A chip, not a disclosure: the agent opens as its own conversation
-      // beside the chat rather than expanding in place.
       Button {
         open(.automatic)
       } label: {
@@ -119,8 +104,6 @@ public struct SubagentRow: View {
     }
   }
 
-  /// A nested agent inside a subagent's own view can't be opened, so it reads
-  /// as a plain label in the tool rows' icon column.
   private var label: some View {
     HStack(spacing: Self.spacing) {
       glyph
@@ -194,8 +177,6 @@ public struct SubagentRow: View {
   }
 }
 
-/// A quiet capsule with a hairline edge at rest, so the agent reads as
-/// something to open; a firmer fill on hover and a dim while pressed.
 private struct SubagentChipButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     SubagentChipBody(configuration: configuration)

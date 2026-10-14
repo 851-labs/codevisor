@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Native iOS catch-up and unavailable presentations for the selected
-/// machine's navigation projection. Both replace cached rows so the screen
-/// never presents stale data as current.
 struct HomeNavigationSyncView: View {
   enum State {
     case loading(machineName: String)
@@ -33,8 +30,6 @@ struct HomeNavigationSyncView: View {
   }
 }
 
-/// Fast reconciliations remain visually quiet. SwiftUI cancels the task when
-/// catch-up finishes, so a spinner can never flash after this view disappears.
 private struct DelayedNavigationSyncProgressView: View {
   let machineName: String
 
@@ -63,8 +58,6 @@ private struct DelayedNavigationSyncProgressView: View {
   }
 }
 
-/// The toolbar's quiet "Syncing…" line while cached content is on screen
-/// and machines are catching up. It never replaces the content.
 struct HomeSyncIndicatorLabel: View {
   let text: String
 

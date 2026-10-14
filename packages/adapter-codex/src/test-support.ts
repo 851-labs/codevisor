@@ -37,8 +37,6 @@ export class FakeCodexClient implements CodexClient {
   failResume = false
   startModel = "gpt-5.2-codex"
   listedThreads: Array<Record<string, unknown>> = []
-  /// What `skills/list` reports for the thread directory; undefined models a
-  /// Codex without the method.
   listedSkills: Array<Record<string, unknown>> | undefined
   threadName: string | null = null
   threadPreview = ""
@@ -160,7 +158,6 @@ export class FakeCodexClient implements CodexClient {
     }
   }
 
-  /// Observe one future request; arm before starting the operation.
   nextRequest(method: string): Promise<void> {
     return new Promise((resolve) => this.requestWaiters.push({ method, resolve }))
   }
@@ -195,8 +192,6 @@ export class FakeCodexClient implements CodexClient {
   }
 }
 
-/// The shape the Codex desktop app writes into `~/.codex/config.toml`: its
-/// bundled automation servers are defined with real transports.
 export const DEFAULT_CODEX_CONFIG_TOML = `
 [mcp_servers.node_repl]
 command = "/Applications/ChatGPT.app/node_repl"
@@ -215,7 +210,6 @@ export const setup = async (
     startModel?: string
     listedSkills?: Array<Record<string, unknown>>
     toolGateway?: ToolGatewayConfig
-    /// `null` models a machine with no codex config.toml at all.
     codexConfigToml?: string | null
   } = {}
 ) => {
@@ -247,7 +241,6 @@ export const setup = async (
       waiter.resolve(event)
     }
   }
-  /// The next event matching `matches`; register before triggering it.
   const nextEvent = (matches: (event: RuntimeEvent) => boolean): Promise<RuntimeEvent> =>
     new Promise((resolve) => waiters.push({ matches, resolve }))
   const created =

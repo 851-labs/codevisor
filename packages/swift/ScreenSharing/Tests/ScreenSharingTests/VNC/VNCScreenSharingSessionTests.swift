@@ -6,9 +6,6 @@ import ScreenSharingTesting
 import Testing
 @testable import ScreenSharing
 
-/// The VNC viewing session against the loopback server: frames into the
-/// mailbox, the locally granted control lease driving RFB input, the
-/// clipboard bridge, and how the read loop's end is reported.
 @MainActor
 struct VNCScreenSharingSessionTests {
   @MainActor
@@ -57,7 +54,6 @@ struct VNCScreenSharingSessionTests {
   @Test func updatesFeedTheSessionsVNCMetrics() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
-    // The first (non-incremental) update is the whole 64 × 48 frame, raw.
     #expect(await awaitPolled { harness.session.metrics.snapshot().counters["vncUpdatesPublished"] == 1 })
     let snapshot = harness.session.metrics.snapshot()
     #expect(snapshot.counters["vncBytesReceived"] == 4 + 12 + 64 * 48 * 4)
@@ -109,7 +105,6 @@ struct VNCScreenSharingSessionTests {
     control.send(.input(lease: lease, sequence: 2, event: .key(code: 36, down: true, repeatKey: false, modifiers: 0)))
     #expect(await awaitPolled { harness.server.received.contains(.keyEvent(keysym: RFBKeysym.return, down: true)) })
     #expect(harness.server.received.contains(.pointerEvent(buttons: 1, x: 32, y: 24)))
-    // Releasing the lease releases the held button; input under the old lease is dropped.
     control.send(.release(lease: lease))
     #expect(await awaitPolled { harness.server.received.contains(.pointerEvent(buttons: 0, x: 32, y: 24)) })
     control.send(.input(lease: lease, sequence: 3, event: .key(code: 53, down: true, repeatKey: false, modifiers: 0)))
@@ -159,8 +154,6 @@ struct VNCScreenSharingSessionTests {
     #expect(await awaitPolled { harness.server.received.contains(.clientCutText("hello")) })
   }
 
-  /// Shared clipboard: the server's copies reach the viewer unasked once sharing is on, but not
-  /// the viewer's own text when the server announces it straight back.
   @Test func sharedClipboardSendsServerCopiesButNotTheViewersEcho() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
@@ -212,7 +205,6 @@ struct VNCScreenSharingSessionTests {
   }
 }
 
-/// Messages a channel delivered, for polling from tests.
 @MainActor
 final class ScreenSharingMessageLog<Message> {
   private(set) var messages: [Message] = []

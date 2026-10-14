@@ -1,10 +1,6 @@
 import Foundation
 import Observation
 
-/// A connection problem the user is only told about once it has lasted.
-/// Brief blips — a relay handoff, the app coming back from the background —
-/// reconnect within `delay` and never show; a notice that does show stays up
-/// for `minimumVisible`, so it never flashes in and out of the transcript.
 @MainActor
 @Observable
 final class DelayedConnectionNotice {
@@ -30,7 +26,6 @@ final class DelayedConnectionNotice {
     self.sleep = sleep
   }
 
-  /// Whether the problem is happening right now.
   func update(isActive active: Bool) {
     guard active != isActive else { return }
     isActive = active

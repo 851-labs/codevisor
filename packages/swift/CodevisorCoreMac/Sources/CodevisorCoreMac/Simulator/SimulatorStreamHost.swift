@@ -4,7 +4,6 @@ import Foundation
 import ScreenSharing
 import ScreenSharingWebRTC
 
-/// `simulator:<udid>` — an Apple simulator's screen.
 enum SimulatorStreamTarget {
   static let prefix = "simulator:"
 
@@ -15,8 +14,6 @@ enum SimulatorStreamTarget {
   }
 }
 
-/// A viewer's WebRTC sender: the simulator's frames out, its input and commands in on the
-/// simulator channel.
 @MainActor
 final class SimulatorSenderPeer: SimulatorFrameSink {
   private let sender: ScreenSharingSender
@@ -61,12 +58,9 @@ final class SimulatorSenderPeer: SimulatorFrameSink {
   func close() { sender.close() }
 }
 
-/// Streams booted simulators to Simulator panes. Viewers of the same simulator share its
-/// capture and its input: a rotation or posture change made in one pane shows in all of them.
 @MainActor
 final class SimulatorStreamHost {
   static let maximumSessions = 6
-  /// A viewer heartbeats every 8 s.
   static let lifetime: TimeInterval = 25
 
   private struct Owner: Hashable {
@@ -88,7 +82,6 @@ final class SimulatorStreamHost {
     }
   }
 
-  /// One device's capture and input, alive while anyone watches it.
   private final class Device {
     let control: SimulatorDeviceControl
     var capture: SimulatorScreenCapture?
@@ -118,7 +111,6 @@ final class SimulatorStreamHost {
       guard SimulatorRuntime.loaded else { return Self.noXcode }
       do {
         let device = try SimulatorRuntime.device(udid: udid)
-        // A device still booting is worth waiting for; the viewer retries "starting".
         guard SimulatorRuntime.isBooted(device) else {
           return .init(status: "starting", message: "The simulator is starting.")
         }
@@ -154,7 +146,6 @@ final class SimulatorStreamHost {
       }
       do {
         let device = try attach(udid: udid)
-        // The framebuffer appears once the screen callbacks are registered; give it a moment.
         var size = device.capture?.size
         for _ in 0..<60 where size == nil {
           try? await Task.sleep(for: .milliseconds(50))
@@ -212,8 +203,6 @@ final class SimulatorStreamHost {
     watchdog = nil
   }
 
-  // MARK: Devices
-
   private func attach(udid: String) throws -> Device {
     let device: Device
     if let existing = devices[udid] {
@@ -242,9 +231,6 @@ final class SimulatorStreamHost {
     capture.start()
   }
 
-  /// Clockwise quarter turns from the framebuffer to what the viewer sees: how the screen is
-  /// mounted in the device, then how the device is held. Viewers turn frame and screen together
-  /// this far, like glass in a real device, and touches arrive in this space.
   private func turns(_ device: Device) -> Int {
     let held = device.control.canRotate ? device.control.orientation.quarterTurns : 0
     return held + device.control.screenTurns
@@ -259,11 +245,9 @@ final class SimulatorStreamHost {
     devices[udid] = nil
   }
 
-  /// The device turned or folded: re-aim the capture and tell every viewer.
   private func deviceChanged(udid: String) {
-    guard let device = devices[udid] else { return }  // Snapshot viewers read state from replies.
+    guard let device = devices[udid] else { return }
     if device.control.displayName != device.displayName, let old = device.capture {
-      // A foldable swapped screens: move every viewer to the other framebuffer.
       old.stop()
       device.capture = nil
       try? startCapture(device)
@@ -302,7 +286,6 @@ final class SimulatorStreamHost {
     }
   }
 
-  /// A point in the upright video back in framebuffer-normalized coordinates.
   nonisolated static func framebufferPoint(x: Double, y: Double, turns: Int) -> CGPoint {
     let x = min(1, max(0, x)), y = min(1, max(0, y))
     switch ((turns % 4) + 4) % 4 {
@@ -313,10 +296,8 @@ final class SimulatorStreamHost {
     }
   }
 
-  /// The guest's edge codes: 1 top, 2 left, 3 bottom, 4 right, in framebuffer terms.
   nonisolated static func edgeCode(_ edge: ScreenSharingSimulatorEdge?, turns: Int) -> UInt64 {
     guard let edge else { return 0 }
-    // Clockwise order on screen; turning the video back counterclockwise moves each edge back.
     let order: [ScreenSharingSimulatorEdge] = [.top, .right, .bottom, .left]
     guard let index = order.firstIndex(of: edge) else { return 0 }
     let native = order[(((index - turns) % 4) + 4) % 4]
@@ -327,8 +308,6 @@ final class SimulatorStreamHost {
     case .right: return 4
     }
   }
-
-  // MARK: Sessions
 
   private func end(owner: Owner, session: Session) {
     guard sessions[owner] === session else { return }

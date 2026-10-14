@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 import { pendingOpenCodeMigration } from "./migration.js"
 import type { OpenCodeServer } from "./server.js"
 
-/// A server answering the migration status from a script, one per poll.
 const server = (statuses: Array<unknown>) => {
   const fake = {
     url: "http://oc",

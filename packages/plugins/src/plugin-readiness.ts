@@ -1,18 +1,14 @@
 import { request as httpRequest } from "node:http"
 import { connect, createServer } from "node:net"
 
-/// Asks the kernel for a free loopback port. A race against another process
-/// binding it before the plugin does is possible but harmless: startup fails
-/// readiness and surfaces as a plugin error, never a hijack (the plugin binds
-/// loopback).
 export const allocatePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
     const probe = createServer()
-    /* v8 ignore next -- loopback ephemeral binds only fail under fd exhaustion. */
+    /* v8 ignore next */
     probe.once("error", reject)
     probe.listen(0, "127.0.0.1", () => {
       const address = probe.address()
-      /* v8 ignore next -- TCP listen always returns AddressInfo here. */
+      /* v8 ignore next */
       const port = typeof address === "object" && address !== null ? address.port : 0
       probe.close(() => resolve(port))
     })
@@ -27,7 +23,7 @@ export const tcpProbe = (port: number): Promise<boolean> =>
     }
     socket.once("connect", () => done(true))
     socket.once("error", () => done(false))
-    /* v8 ignore next -- loopback connects resolve or error immediately. */
+    /* v8 ignore next */
     socket.setTimeout(1_000, () => done(false))
   })
 

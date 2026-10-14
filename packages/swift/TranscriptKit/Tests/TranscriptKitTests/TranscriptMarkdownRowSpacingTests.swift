@@ -4,9 +4,6 @@ import MarkdownCore
 import Testing
 @testable import TranscriptKit
 
-/// Rows split from one Markdown document sit flush; each row draws the gap
-/// its first block takes from the block above it, so a paragraph gap is the
-/// same whether or not a row boundary falls there.
 struct TranscriptMarkdownRowSpacingTests {
   @Test func rowsOfOneDocumentCarryTheBlockAboveThem() throws {
     let paragraph = String(repeating: "A long transcript sentence that wraps across lines. ", count: 8)
@@ -20,7 +17,6 @@ struct TranscriptMarkdownRowSpacingTests {
       #expect(chunk.precedingRole == previous.blocks.last?.role)
     }
     #expect(rows.dropLast().allSatisfy { $0.spacingAfter == 0 })
-    // Copying across the boundary still yields a paragraph break.
     #expect(TranscriptSelectionText.rowSeparator(previous: rows[0], current: rows[1]) == "\n\n")
   }
 
@@ -44,13 +40,9 @@ struct TranscriptMarkdownRowSpacingTests {
     let fragments = rows.compactMap(\.chunk).compactMap(\.fragment)
     try #require(fragments.count == 5)
 
-    // Inside a list every row is spaced like an item, and continuation rows
-    // copy as lines of the same list.
     #expect(fragments[0].trailingSpacing == .listItem)
     #expect(fragments[1].trailingSpacing == .listItem)
     #expect(TranscriptSelectionText.rowSeparator(previous: rows[0], current: rows[1]) == "\n")
-    // The quote starts a new block, and the heading's spacing rule still
-    // applies between its leaf rows.
     #expect(rows[3].chunk?.precedingRole == .list)
     #expect(fragments[3].trailingSpacing == .block(after: .heading(level: 1), before: .codeBlock))
   }

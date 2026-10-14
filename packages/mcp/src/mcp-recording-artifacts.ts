@@ -6,7 +6,6 @@ import { basename, dirname, join } from "node:path"
 import type { FileMetadata } from "@codevisor/api"
 import { makeAttachmentStore } from "@codevisor/db"
 
-/** Only completed files produced in the native recorder's private directory are importable. */
 export const makeRecordingPublisher = (
   dataDir: string,
   createFile: (metadata: FileMetadata) => Promise<unknown>

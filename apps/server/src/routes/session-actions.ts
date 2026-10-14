@@ -36,9 +36,6 @@ import { routeSessionTranscript } from "./session-transcript.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
 
-/// Per-session action routes: connect, prompt, cancel, mode/config, goals,
-/// questions, queue management, and read/attention state.
-
 export const routeSessionActions = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -55,7 +52,6 @@ export const routeSessionActions = async (
     return true
   }
 
-  // History and saved configuration are independent of the provider process.
   const openSessionId = matchRoute(url.pathname, "/v1/sessions/:id/open")
   if (openSessionId !== undefined && request.method === "POST") {
     return openSessionAction(services, fanout, routeState, request, response, config, openSessionId)
@@ -81,8 +77,6 @@ export const routeSessionActions = async (
     return true
   }
 
-  // Delivery journals are never a history API. Clients open the persisted
-  // transcript and subscribe after its revision.
   const eventsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/events")
   if (eventsSessionId !== undefined && request.method === "GET") {
     throw new HttpFailure(410, "Use the paginated transcript endpoint and its event cursor")
@@ -124,7 +118,7 @@ export const routeSessionActions = async (
         return true
       }
     }
-    /* v8 ignore next 4 -- duplicate in-flight requests normally hit the saved idempotency row above. */
+    /* v8 ignore next 4 */
     if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
       writeJson(response, 202, { accepted: true, sessionId: promptSessionId })
       return true
@@ -133,7 +127,6 @@ export const routeSessionActions = async (
     if (attachments.length > MAX_PROMPT_ATTACHMENTS) {
       throw new HttpFailure(422, `A prompt may carry at most ${MAX_PROMPT_ATTACHMENTS} attachments`)
     }
-    // Fail unknown file ids at send time rather than mid-drain.
     for (const attachment of attachments) {
       if ((await run(services.db.getFileMetadata(attachment.fileId))) === undefined) {
         throw new HttpFailure(422, `Unknown attachment file: ${attachment.fileId}`)
@@ -260,8 +253,6 @@ export const routeSessionActions = async (
     const payload = await readSchema(request, SetGoalRequest)
     await writeIdempotentAction(services, response, goalSessionId, "goal", payload, async () => {
       const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
-      // Double-option passthrough: only forward the tokenBudget key when the
-      // client sent one (absent = keep, null = clear, number = set).
       return await run(
         services.agents.setGoal(agentSession.sessionId, {
           ...(payload.objective === undefined ? {} : { objective: payload.objective }),

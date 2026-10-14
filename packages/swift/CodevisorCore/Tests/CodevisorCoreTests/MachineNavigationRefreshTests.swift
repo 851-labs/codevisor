@@ -37,7 +37,6 @@ struct MachineNavigationRefreshTests {
     let release = TestSignal()
     let client = ManualRefreshClient(snapshot: {
       blocked.signal()
-      // Deliberately ignores task cancellation, like a wedged transport.
       await release.wait()
     })
     let healthy = ManualRefreshClient()
@@ -66,7 +65,6 @@ struct MachineNavigationRefreshTests {
     #expect(!operation.isCancelled)
     #expect(controller.navigationSyncStateByMachineId["local"] != .current)
 
-    // The result is still applied when the slow machine eventually answers.
     release.signal()
     await operation.value
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
@@ -77,7 +75,6 @@ struct MachineNavigationRefreshTests {
   func unreachableMachineDoesNotHoldGesture() async throws {
     let clock = TestClock()
     let release = TestSignal()
-    // Re-preparing the failed machine stalls in its probe.
     let client = ManualRefreshClient(info: { await release.wait() })
     let healthy = ManualRefreshClient()
     let controller = try makeController(local: client, remote: healthy)
@@ -87,13 +84,11 @@ struct MachineNavigationRefreshTests {
     }
     controller.markFailed(for: "local", message: "Unreachable")
 
-    // Returns once the ready machine answers, without the deadline firing.
     await controller.refreshNavigation(sleep: clock.sleep)
     #expect(healthy.snapshots.value == 1)
     #expect(controller.navigationSyncStateByMachineId["cloud:healthy"] == .current)
     #expect(clock.pendingCount == 0)
 
-    // The unreachable machine's retry still started and completes later.
     let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
     await client.probes.wait()
     #expect(controller.navigationSyncStateByMachineId["local"] != .current)
@@ -196,7 +191,6 @@ struct MachineNavigationRefreshTests {
     }
     let preparation = Task { await controller.prepareMachine("local") }
     await client.probes.wait()
-    // A machine still preparing isn't answering: the gesture doesn't wait.
     await controller.refreshNavigation(sleep: clock.sleep)
     #expect(clock.pendingCount == 0)
     let operation = controller.connection(for: "local").manualNavigationRefresh?.task
@@ -205,7 +199,6 @@ struct MachineNavigationRefreshTests {
     release.signal()
     await preparation.value
     await operation?.value
-    // One snapshot: the refresh joined the preparation instead of racing it.
     #expect(client.snapshots.value == 1)
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
   }
@@ -219,8 +212,6 @@ struct MachineNavigationRefreshTests {
     let gesture = Task { @MainActor in
       await controller.refreshNavigation(sleep: clock.sleep)
     }
-    // Both creation and cancellation run on the main actor before the task
-    // can enter refreshNavigation.
     gesture.cancel()
     await gesture.value
     #expect(client.snapshots.value == 0)

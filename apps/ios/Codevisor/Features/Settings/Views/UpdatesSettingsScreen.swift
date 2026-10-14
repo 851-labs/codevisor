@@ -2,18 +2,9 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Settings ▸ Updates: a summary with the fleet-wide action on top, then one
-/// section per machine listing what it can update (its server, then its
-/// agents and plugins). The iOS twin of macOS's UpdateCenterView — the app
-/// itself is App Store-managed here, so its row simply never exists.
-/// The screen shows what the last sweep found — the same list behind the
-/// Settings badge — the moment it opens; opening it checks nothing. Pull to
-/// refresh checks every feed afresh, and a sweep landing while the screen
-/// is open updates rows in place without hiding them.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
-  /// A major-version update awaiting confirmation.
   @State private var majorUpdate: UpdateComponent?
 
   private var center: UpdateCenter { environment.updateCenter }
@@ -26,11 +17,8 @@ struct UpdatesSettingsScreen: View {
     }
   }
 
-  /// A sweep has finished at least once, so there is a list to show.
   private var hasLoaded: Bool { center.lastRefreshedAt != nil }
 
-  /// Background activity worth a spinner in the summary. A pull-to-refresh
-  /// check already shows the system's own indicator.
   private var showsActivity: Bool {
     !hasLoaded || center.isUpdatingAll
       || (center.isRefreshing && !center.isCheckingForUpdates)
@@ -47,13 +35,10 @@ struct UpdatesSettingsScreen: View {
     .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
     .animation(.default, value: center.components.map(\.id))
     .refreshable {
-      // Nothing re-checks while an update runs, so the list stays put.
       guard !center.hasUpdateInFlight else { return }
       await center.refresh(force: true)
     }
     .task {
-      // Opened before the launch sweep finished: join it (or start one)
-      // so there is something to show. Otherwise the last sweep stands.
       if !hasLoaded { await center.refresh() }
     }
   }
@@ -135,9 +120,6 @@ struct UpdatesSettingsScreen: View {
     }
   }
 
-  /// Versions are never truncated. A pending update reads "installed →
-  /// latest" on one line when it fits and otherwise breaks at the arrow, one
-  /// version per line. In-flight and failure status stays on one line.
   @ViewBuilder
   private func detail(for component: UpdateComponent) -> some View {
     if let change = component.pendingVersionChange {
@@ -178,8 +160,6 @@ struct UpdatesSettingsScreen: View {
   private func trailing(for component: UpdateComponent) -> some View {
     switch component.phase {
     case .updating:
-      // Measurable progress (a download, a data migration) draws a bar
-      // like macOS; otherwise an indeterminate spinner.
       if let progress = component.progress {
         ProgressView(value: progress)
           .progressViewStyle(.linear)

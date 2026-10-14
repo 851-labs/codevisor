@@ -9,7 +9,6 @@ extension ComputerUseBridge {
     window: AXUIElement, windowID: CGWindowID?
   ) throws -> [String: Any] {
     let mode = try deliveryMode(arguments, windowID: windowID)
-    // Resolve pointer coordinates only after acquiring foreground ownership.
     if tool == "paste_text", mode != "foreground" {
       throw BridgeError(
         "paste_text requires foreground delivery and foreground_reason. Prefer background type_text or set_value for plain text."
@@ -131,7 +130,6 @@ extension ComputerUseBridge {
     }
     if let windowID { result["windowId"] = Int(windowID) }
     result["app"] = app.bundleIdentifier ?? app.localizedName ?? ""
-    // No screenshots, tree reads, element renumbering, or app relaunch here.
     return textResult(try json(result))
   }
 }

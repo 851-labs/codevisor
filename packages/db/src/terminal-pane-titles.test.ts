@@ -37,7 +37,6 @@ const workspaceWithPanes = async () => {
 it("sets a terminal's live title and activity on its panes and journals only real changes", async () => {
   const { db, statuses } = await workspaceWithPanes()
 
-  // Keys match pane resource ids case-insensitively, as terminal routes do.
   const events = await run(db.setTerminalPaneStatus("term-1", "Claude Code", "working"))
   expect(events.map((event) => [event.kind, event.payload])).toEqual([
     ["navigation.changed", { table: "workspace_panes" }]
@@ -46,21 +45,17 @@ it("sets a terminal's live title and activity on its panes and journals only rea
     "Term-1": ["Claude Code", "working"],
     "term-2": [undefined, undefined]
   })
-  // The navigation delta clients consume carries it.
   const delta = await run(db.readSyncBatch(events[0]!.id - 1))
   expect(delta.events.at(-1)?.payload).toMatchObject({
     panes: [{ resourceId: "Term-1", liveTitle: "Claude Code", terminalActivity: "working" }]
   })
 
-  // An unchanged status journals nothing, so settled repeats cost no events.
   expect(await run(db.setTerminalPaneStatus("TERM-1", "Claude Code", "working"))).toEqual([])
-  // A program reporting its own status (OSC 7501) can say more than a title.
   expect(await run(db.setTerminalPaneStatus("term-2", "terraform", "blocked"))).toHaveLength(1)
   expect(await statuses()).toEqual({
     "Term-1": ["Claude Code", "working"],
     "term-2": ["terraform", "blocked"]
   })
-  // The terminal exiting clears both.
   await run(db.setTerminalPaneStatus("term-1", undefined, undefined))
   expect((await statuses())["Term-1"]).toEqual([undefined, undefined])
 })
@@ -70,7 +65,6 @@ it("keeps terminal status through client pane writes until the pane shows anothe
   await run(db.setTerminalPaneStatus("term-1", "Claude Code", "working"))
   await run(db.setTerminalPaneStatus("term-2", "Claude Code", "idle"))
 
-  // Clients never send the fields: rewriting a pane keeps the server's.
   await pane(PANE_1, "terminal", "TERM-1")
   await run(db.updateWorkspacePane(workspace.id, PANE_2, { title: "Renamed" }))
   expect(await statuses()).toEqual({
@@ -78,7 +72,6 @@ it("keeps terminal status through client pane writes until the pane shows anothe
     "term-2": ["Claude Code", "idle"]
   })
 
-  // Pointing a pane at another terminal drops the previous terminal's status.
   await pane(PANE_1, "terminal", "term-3")
   await run(db.updateWorkspacePane(workspace.id, PANE_2, { resourceId: "term-4" }))
   expect(await statuses()).toEqual({

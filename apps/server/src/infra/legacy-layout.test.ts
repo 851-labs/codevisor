@@ -109,14 +109,12 @@ describe("Codevisor tmp data dir migration", () => {
     const temporaryDirectory = join(root, "tmp")
     await mkdir(temporaryDirectory, { recursive: true })
 
-    // No temp database at all.
     await migrateTmpDataDir({
       databasePath: join(root, ".codevisor", "data", "codevisor-server.sqlite"),
       temporaryDirectory
     })
     await expect(lstat(join(root, ".codevisor"))).rejects.toMatchObject({ code: "ENOENT" })
 
-    // Database path already inside the temp directory (legacy default).
     await writeFile(join(temporaryDirectory, "codevisor-server.sqlite"), "database")
     await migrateTmpDataDir({
       databasePath: join(temporaryDirectory, "codevisor-server.sqlite"),
@@ -341,7 +339,6 @@ describe("Codevisor legacy file layout migration", () => {
       execFileAsync("git", ["status", "--short"], { cwd: join(movedWorktree, "deps", "sub") })
     ).resolves.toMatchObject({ stdout: "" })
 
-    // A recorded repair does not schedule another migration.
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
@@ -467,7 +464,6 @@ describe("Codevisor legacy file layout migration", () => {
       execFileAsync("git", ["status", "--short"], { cwd: movedWorktree })
     ).resolves.toMatchObject({ stdout: "" })
 
-    // A recorded repair does not schedule another migration.
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,

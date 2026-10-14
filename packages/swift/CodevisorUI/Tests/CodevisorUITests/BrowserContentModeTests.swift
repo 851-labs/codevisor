@@ -3,8 +3,6 @@ import WebKit
 
 @testable import CodevisorUI
 
-/// A browser pane asks for the mobile site where a desktop page wouldn't fit,
-/// as Safari does in a narrow window.
 @MainActor
 @Suite("Browser content mode")
 struct BrowserContentModeTests {

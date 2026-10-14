@@ -18,8 +18,6 @@ import { exportBrowserContent } from "./browser-content.js"
 import { readBrowserLogs } from "./browser-logs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
-/// Clipboard, console logs, dialogs, viewport, raw CDP access, and page asset bundling.
-/// Returns undefined for tool names this family does not own.
 export const invokePageTools = async (
   invocation: BrowserToolInvocation,
   state: BrowserToolSessionState

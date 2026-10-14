@@ -113,7 +113,6 @@ struct PaneGroupStateTests {
     state.selectPane(id: second.id)
     state.closePane(id: second.id)
     #expect(state.selectedPaneId == first.id)
-    // Closing the first pane in the list falls forward to its right neighbor.
     state.closePane(id: first.id)
     #expect(state.selectedPaneId == third.id)
   }
@@ -143,7 +142,6 @@ struct PaneGroupStateTests {
     var state = PaneGroupState()
     state.addTerminalPane(sessionId: sessionId)
     state.selectPane(id: state.panes[0].id)
-    // Unknown ids are ignored.
     state.selectPane(id: UUID())
     #expect(state.selectedPaneId == state.panes[0].id)
   }

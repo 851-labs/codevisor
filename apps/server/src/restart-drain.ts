@@ -12,33 +12,11 @@ import {
   type EventFanout
 } from "./server-context.js"
 
-/// The restart drain: how a server restarts (for an update) without killing
-/// chats mid-turn.
-///
-/// `begin` closes a dispatch gate — new prompts are accepted and stay
-/// durable in the prompt queue, but nothing is claimed — then waits for
-/// every live turn to end. When the deadline passes, the remaining turns are
-/// cancelled (they end as "interrupted", exactly like a crash would leave
-/// them). Once idle, the coordinator snapshots sessions with durable work
-/// or held prompts and closes loaded processes cleanly. The next boot resumes
-/// only that work before draining held prompts (`restart-resume.ts`).
-///
-/// `cancel` abandons a drain whose update never happened (the download
-/// failed, the host app aborted): the gate reopens and every held session
-/// re-drains, so an aborted update never leaves chats stuck waiting.
-
 export const DEFAULT_RESTART_DRAIN_TIMEOUT_MS = 10 * 60_000
-/// How long a drained server may sit without actually restarting before the
-/// drain is abandoned. Guards against an updater that accepted the handoff
-/// and then silently gave up, which would otherwise hold prompts forever.
 export const DRAINED_WITHOUT_RESTART_GRACE_MS = 15 * 60_000
-/// After cancelling the remaining turns, how long to wait for their terminal
-/// events before restarting regardless.
 const INTERRUPT_SETTLE_MS = 15_000
 const POLL_MS = 250
 
-/// The transcript-facing identity of the restart gate. Held sessions show the
-/// same "waiting for <name> update" marker a harness update gate shows.
 export const RESTART_GATE_HARNESS_ID = "codevisor-server"
 export const RESTART_GATE_HARNESS_NAME = "Codevisor"
 
@@ -48,8 +26,7 @@ export interface RestartSnapshotStore {
   readonly clear: () => void
 }
 
-/* v8 ignore start -- real filesystem persistence; the coordinator is covered
-   through the in-memory store. */
+/* v8 ignore start */
 export const makeFileRestartSnapshotStore = (path: string): RestartSnapshotStore => ({
   read: () => {
     try {
@@ -92,22 +69,14 @@ export const makeMemoryRestartSnapshotStore = (): RestartSnapshotStore => {
 }
 
 export interface RestartDrainOptions {
-  /// Cancel the remaining live turns immediately instead of waiting.
   readonly interrupt?: boolean | undefined
   readonly timeoutMs?: number | undefined
 }
 
 export interface RestartCoordinator {
   readonly state: () => RestartDrainState
-  /// True from `begin` until `cancel` (or the restart itself): prompt
-  /// dispatch holds while this is set.
   readonly isGated: () => boolean
-  /// Starts the drain (idempotent) and resolves once the server is idle and
-  /// its sessions are snapshotted — i.e. safe to restart. A second call
-  /// with `interrupt` cancels the remaining turns of a drain in progress.
   readonly begin: (options?: RestartDrainOptions) => Promise<RestartDrainState>
-  /// Abandons the drain: reopens the gate, drops the snapshot, re-drains
-  /// every held session. No-op when idle.
   readonly cancel: () => Promise<RestartDrainState>
   readonly close: () => void
 }
@@ -123,8 +92,6 @@ export interface RestartCoordinatorDeps {
   readonly snapshot: RestartSnapshotStore
   readonly defaultTimeoutMs?: number | undefined
   readonly log?: ((line: string) => void) | undefined
-  /// Re-drains a held session after `cancel` (the prompt queue drain in
-  /// production; a recorder in the coordinator's own tests).
   readonly redrain: (sessionId: string) => Promise<void>
 }
 
@@ -134,18 +101,13 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const defaultTimeoutMs = deps.defaultTimeoutMs ?? DEFAULT_RESTART_DRAIN_TIMEOUT_MS
 
   let phase: RestartDrainState["state"] = "idle"
-  /// When the current phase began.
   let startedAt = new Date().toISOString()
   let deadlineAt: number | undefined
   let interruptRequested = false
   let inFlight: Promise<RestartDrainState> | undefined
   let cancelling: Promise<RestartDrainState> | undefined
-  // An already-issued close/cancel cannot be retracted. Keep dispatch gated
-  // until it settles; validation reads need not delay cancellation.
   let destructiveWork: Promise<unknown> | undefined
   let graceTimer: NodeJS.Timeout | undefined
-  /// Bumped by `cancel` so a drain that was abandoned mid-wait never
-  /// finalizes on top of the reopened gate.
   let generation = 0
 
   const liveSessions = (): Set<string> =>
@@ -179,15 +141,11 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
             : session.agentSessionId
         await destructive(run(services.agents.cancel(agentSessionId)))
       } catch (cause) {
-        // A session whose process is already gone has nothing to cancel;
-        // reconciliation closes its rows on the next boot.
         log(`Restart drain could not cancel ${sessionId}: ${failureMessage(cause)}`)
       }
     }
   }
 
-  /// Wakes a drain waiting between polls, so `cancel` never leaves an
-  /// abandoned drain asleep for a poll interval.
   let wakeDrain: (() => void) | undefined
   const pollPause = (): Promise<void> =>
     new Promise((resolve) => {
@@ -209,8 +167,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     return generation === myGeneration
   }
 
-  /// Resume durable work only: queued prompts, active goals, and background
-  /// tasks. Having viewed an idle chat does not make it startup work.
   const sessionsToResume = async (): Promise<ReadonlyArray<string>> => {
     const ids = new Set<string>([
       ...(await run(services.db.listSessionsRequiringResume)),
@@ -240,9 +196,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     let idle = await waitUntilIdle(deadline, myGeneration)
     if (generation !== myGeneration) return state()
     if (liveSessions().size > 0 && idle) {
-      // Deadline reached or interrupt requested: end the remaining turns
-      // the way a client's Stop would, then give their terminal events a
-      // moment to land so the transcript closes cleanly.
       log(`Restart drain interrupting ${liveSessions().size} live turn(s)`)
       await cancelLiveTurns(myGeneration)
       if (generation !== myGeneration) return state()
@@ -259,10 +212,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     }
     if (generation !== myGeneration) return state()
     if (!finalized) {
-      // Nothing is safe to restart onto (the resume list could not be read
-      // or the snapshot written, e.g. a full disk). Abandon the drain so held
-      // prompts dispatch again instead of waiting on a restart that never
-      // comes; the caller sees "idle", not "drained", and does not apply.
       return coordinator.cancel()
     }
     phase = "drained"
@@ -301,8 +250,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       if (cancelling !== undefined) return cancelling
       if (phase === "idle") return Promise.resolve(state())
       generation += 1
-      // A drain waiting between polls stops now, not a poll later, so its
-      // caller learns the update is off before the cancel is acknowledged.
       wakeDrain?.()
       inFlight = undefined
       const cancel = (async () => {
@@ -318,8 +265,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
         try {
           snapshot.clear()
         } catch (cause) {
-          // A stale snapshot only makes the next boot resume a few extra idle
-          // sessions; failing here would leave the gate half reopened.
           log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
         }
         const held = [...turns.restartHeldSessions]

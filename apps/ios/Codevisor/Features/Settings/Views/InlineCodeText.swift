@@ -5,12 +5,6 @@ import CodevisorUI
 import SwiftUI
 import os
 
-// MARK: - Inline code styling
-
-/// Styles the backticked runs of a hint string like chat history's inline
-/// code chips — monospaced over a soft rounded background — so commands read
-/// as code instead of just a font change. Uses the same TextRenderer
-/// technique as StreamMarkdown's portable chip painter.
 struct InlineCodeText: View {
   let text: String
 
@@ -18,10 +12,8 @@ struct InlineCodeText: View {
     self.text = text
   }
 
-  /// Marks the code-span glyph runs so the renderer can find them.
   private struct ChipMarker: TextAttribute {}
 
-  /// Paints a rounded chip behind every marked run, then draws the text.
   private struct ChipRenderer: TextRenderer {
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
       for line in layout {

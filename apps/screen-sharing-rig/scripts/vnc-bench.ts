@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// `bun run vnc:bench`: the VNC benchmark.
-// Builds the rig in release mode, runs `screen-sharing-rig vnc-bench` with
-// the build's hash, writes the report under tmp/vnc-bench/<time>/, and
-// compares with docs/measurements/vnc/baseline-<machine>.json when present
-// (exit 1 on a regression beyond the noise band). --save-baseline makes this
-// run the machine's baseline.
 import { spawnSync, type SpawnSyncOptions } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -86,10 +80,6 @@ const args = [
 ]
 if (options.compare && existsSync(baseline)) args.push("--baseline", baseline)
 if (options.againstMain) {
-  // A/B in one session: the stored baseline can drift with the machine's state
-  // (CPU figures moved 0.57 → 1.45 ms between sessions on an unchanged build,
-  // 851-2314), so measure origin/main now, under the same conditions, and
-  // compare with that. The stored baseline stays the historical record.
   const worktree = join(root, "tmp/vnc-bench/main-worktree")
   run("git", ["-C", root, "fetch", "-q", "origin", "main"])
   if (existsSync(join(worktree, ".git"))) {
@@ -135,7 +125,6 @@ if (options.againstMain) {
   )
   if (reference.status !== 0) {
     process.stderr.write("vnc:bench: the origin/main run failed; no A/B comparison\n")
-    // Still name the directory: its main/bench-error.txt says why (851-2337).
     process.stdout.write(`\nReport: ${join(output, "bench.md")}\n`)
     process.exit(1)
   }

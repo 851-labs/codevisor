@@ -1,7 +1,5 @@
 import Foundation
 
-/// What `vnc-bench` measures per run.
-/// `CodingKeyRepresentable` so per-metric dictionaries encode as JSON objects.
 public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterable, Sendable, Comparable {
   case updatesPerSecond
   case updateLatencyP50Ms
@@ -12,17 +10,10 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
   case megabitsPerSecond
   case cpuMsPerUpdate
   case bytesCopiedPerUpdate
-  /// The client's estimate of the link (851-2331): bytes that arrived while it
-  /// waited for the network over that wait. Reported, not judged; on a shaped
-  /// link it should read close to the profile's rate.
   case linkEstimateMbps
 
   public enum Direction: Sendable { case higherIsBetter, lowerIsBetter, informational }
 
-  /// CPU per update is reported, not judged: whole-process CPU time (timers,
-  /// shaping, pacing included) read 0.54, 1.22, 1.45 and 1.7 ms for the same
-  /// build across runs (851-2320), more than any change moves it. Gate on the
-  /// exact counts (bytes, bytes copied) and on rates and latencies instead.
   public var direction: Direction {
     switch self {
     case .updatesPerSecond: .higherIsBetter
@@ -31,12 +22,9 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
     }
   }
 
-  /// Changes smaller than this, in the metric's unit, are noise whatever the ratio.
   public var absoluteFloor: Double {
     switch self {
     case .updateLatencyP50Ms, .updateLatencyP95Ms, .inputLatencyP50Ms, .inputLatencyP95Ms: 1
-    // Paced scenes leave ~16 ms idle per update; sub-ms CPU/update moves with
-    // scheduling (A/A typing/lan: 0.47 → 0.91 ms, spread ±56 %).
     case .cpuMsPerUpdate: 0.5
     case .updatesPerSecond: 0.5
     case .bytesPerUpdate, .bytesCopiedPerUpdate: 64
@@ -44,10 +32,6 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
     }
   }
 
-  /// The smallest noise band for this metric. Client CPU per update is
-  /// mostly idle overhead on high-latency profiles (few updates share the
-  /// same background timers) and moves with machine load: an unchanged build
-  /// read +13 % and +19 % at load ≈ 7 (851-2328), so it gets 25 %.
   public var minimumRelativeNoise: Double {
     self == .cpuMsPerUpdate ? 0.25 : VNCBenchComparison.minimumNoise
   }
@@ -73,7 +57,6 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
 }
 
 public enum VNCBenchStatistics {
-  /// Nearest-rank percentile; nil for no values.
   public static func percentile(_ values: [Double], _ fraction: Double) -> Double? {
     guard !values.isEmpty else { return nil }
     let sorted = values.sorted()
@@ -84,14 +67,11 @@ public enum VNCBenchStatistics {
   public static func median(_ values: [Double]) -> Double? { percentile(values, 0.5) }
 }
 
-/// One scene under one network profile, over N runs.
 public struct VNCBenchCase: Codable, Equatable, Sendable {
   public var scene: String
   public var profile: String
   public var runs: [[VNCBenchMetric: Double]]
-  /// Per metric, the median across runs.
   public var median: [VNCBenchMetric: Double]
-  /// Per metric, the largest relative distance of a run from the median: the noise band.
   public var spread: [VNCBenchMetric: Double]
 
   public var key: String { "\(scene)/\(profile)" }
@@ -118,7 +98,6 @@ public struct VNCBenchReport: Codable, Equatable, Sendable {
     public var model: String
     public var system: String
     public var power: String
-    /// One-minute load average when the run started; nil in older reports.
     public var load: Double?
     public init(model: String, system: String, power: String, load: Double? = nil) {
       self.model = model
@@ -176,10 +155,6 @@ public struct VNCBenchReport: Codable, Equatable, Sendable {
   }
 }
 
-/// A current report against a baseline: a metric regresses or improves only
-/// when it moves by more than the noise band, max(both spreads, 10 %) of the
-/// baseline, and by more than the metric's absolute floor. 10 %: an A/A pair
-/// of 3-run medians on loopback throughput differed by 5.4 % (851-2310).
 public struct VNCBenchComparison: Sendable {
   public enum Verdict: String, Sendable { case improved, regressed, withinNoise, informational }
 
@@ -195,7 +170,6 @@ public struct VNCBenchComparison: Sendable {
   public static let minimumNoise = 0.10
 
   public let rows: [Row]
-  /// Cases present on only one side, "scene/profile".
   public let unmatched: [String]
 
   public var regressions: [Row] { rows.filter { $0.verdict == .regressed } }
@@ -243,7 +217,6 @@ public struct VNCBenchComparison: Sendable {
   }
 }
 
-/// `screen-sharing-rig vnc-bench` arguments.
 public struct VNCBenchOptions: Sendable, Equatable {
   public static let sceneNames = ["typing", "scroll", "windowDrag", "photo", "resize", "input"]
   public static let profileNames = ["lan", "wan40", "wan150", "constrained"]
@@ -255,9 +228,7 @@ public struct VNCBenchOptions: Sendable, Equatable {
   public var width = 1280
   public var height = 800
   public var seed: UInt64 = 1
-  /// Scene frames per second (a real app's pace); 0 plays one frame per request, as fast as the client asks.
   public var pace = 60
-  /// A fixed Tight JPEG quality 0…9 for the client; nil asks for lossless (851-2313).
   public var quality: Int?
   public var output: String?
   public var baseline: String?
@@ -313,13 +284,7 @@ public struct VNCBenchOptions: Sendable, Equatable {
   }
 }
 
-/// The `vnc-server` process a bench case runs against.
 public enum VNCBenchServer {
-  /// Arguments for one case. `pace` 0 plays a scene frame per incremental
-  /// request (851-2336): that only works if the client keeps requesting, so
-  /// the server offers no continuous updates (`--requested-only`). Otherwise
-  /// the client switches to pushed updates, stops requesting, and the run
-  /// waits forever.
   public static func arguments(
     scene: String, echo: Bool, seed: UInt64, pace: Int, width: Int, height: Int
   ) -> [String] {

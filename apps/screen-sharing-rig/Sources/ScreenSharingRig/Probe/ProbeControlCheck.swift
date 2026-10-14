@@ -2,8 +2,6 @@ import ScreenSharing
 import ScreenSharingWebRTC
 import Foundation
 
-/// Real encrypted data-channel check with a recording sink. Never posts input
-/// to the diagnostic machine. Exercises both directions while video is running.
 @MainActor
 final class ProbeControlCheck {
   private let host: ScreenSharingControlChannel

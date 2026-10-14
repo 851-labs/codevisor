@@ -14,7 +14,6 @@ extension CloudAccountClient {
 }
 
 extension CloudAccountController {
-  /// Pending consent must never transfer to a different signed-in session or server.
   public var pluginConsentScope: String? {
     guard let storedToken else { return nil }
     return SHA256.hash(data: Data("\(serverURL.absoluteString)|\(storedToken)".utf8))

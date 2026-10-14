@@ -3,14 +3,9 @@ import { browserKeyDescription } from "./browser-key-description.js"
 
 export { browserKeyDescription } from "./browser-key-description.js"
 
-/** The modifier bit a standalone modifier key contributes while held, or 0 for other keys. */
 export const modifierKeyMask = (key: string): number =>
   key === "Alt" ? 1 : key === "Control" ? 2 : key === "Meta" ? 4 : key === "Shift" ? 8 : 0
 
-/**
- * Describe a key press while `heldModifiers` are down, like Playwright's `Keyboard` does: the
- * held mask is merged in and a single letter reports its shifted form.
- */
 export const heldKeyDescription = (
   value: string,
   heldModifiers: number
@@ -20,7 +15,6 @@ export const heldKeyDescription = (
   if (modifiers === key.modifiers) return key
   const shifted =
     (modifiers & 8) !== 0 && /^[a-z]$/i.test(key.key) ? key.key.toUpperCase() : key.key
-  // Control or Meta turn a printable key into a shortcut: no character is inserted.
   const typed = (modifiers & (2 | 4)) === 0 && key.text !== undefined
   const { text: _text, ...base } = key
   return {

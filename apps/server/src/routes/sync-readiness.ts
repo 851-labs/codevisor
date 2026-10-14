@@ -27,16 +27,6 @@ import {
 } from "../server-context.js"
 import { discoverHarnessesFromStoredAuthState } from "./harnesses.js"
 
-/// The REPORTED half of every config plane: each machine publishes one
-/// single-writer entry per plane saying what it actually looks like there.
-/// Split out of sync-reconcilers so the pass logic and the reporting stay
-/// separately readable; both are driven from the same triggers.
-
-/// Republishes this machine's harness-account roster (Phase 19). Wired to
-/// the auth manager's event stream, so a session that dies of auth — or any
-/// probe flipping an account's state — becomes fleet-visible within the
-/// gossip round instead of waiting for a client's periodic publish sweep.
-/// Change-detected and best-effort like the readiness refresh.
 export const republishAccountsRoster = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -54,16 +44,9 @@ export const republishAccountsRoster = async (
         entries: result.changedEntries
       }).catch(swallowError)
     }
-  } catch {
-    // Best-effort by design; the next client publish sweep is the backstop.
-  }
+  } catch {}
 }
 
-/// Re-derives and publishes this machine's MCP readiness entry after an
-/// mcps pass (reconciles change connection state and overlays change what
-/// counts as suppressed). Change-detected and best-effort: a settled
-/// machine publishes nothing, and a failure never affects the pass that
-/// triggered it.
 export const refreshMcpReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -72,9 +55,6 @@ export const refreshMcpReadiness = async (
   const mcp = services.mcp
   if (mcp === undefined) return
   try {
-    // Enforcement first, then the report: suppressed servers drop out of
-    // session resolution and lose live connections before readiness is
-    // derived, so the published entry reflects the enforced state.
     const overlays = await readMcpOverlays(services.db, config.id)
     await mcp.setLocalSuppression(overlays.disabledHere)
     const result = await publishMcpReadiness({ db: services.db, mcp, serverId: config.id })
@@ -84,15 +64,9 @@ export const refreshMcpReadiness = async (
         entries: result.changedEntries
       }).catch(swallowError)
     }
-  } catch {
-    // Best-effort by design; the next pass republishes.
-  }
+  } catch {}
 }
 
-/// Re-derives and publishes this machine's harness readiness entry after a
-/// harnesses pass or an auth change — the reported side of Phase 24's
-/// desired-vs-reported matrix. Change-detected and best-effort like the
-/// MCP readiness refresh.
 export const refreshHarnessReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -131,8 +105,7 @@ export const refreshHarnessReadiness = async (
               ? harness.readiness.detail
               : state === "signInRequired" &&
                   (harness.auth?.state === "error" || harness.auth?.state === "unavailable")
-                ? // The check itself failed: say why, so the row's mark can.
-                  harness.auth.detail
+                ? harness.auth.detail
                 : undefined
         const version = installed ? harness.readiness.version : undefined
         return {
@@ -160,9 +133,7 @@ export const refreshHarnessReadiness = async (
         entries: result.changedEntries
       }).catch(swallowError)
     }
-  } catch {
-    // Best-effort by design; the next pass republishes.
-  }
+  } catch {}
 }
 
 export interface AuthSyncRefreshScheduler {
@@ -170,9 +141,6 @@ export interface AuthSyncRefreshScheduler {
   readonly close: () => void
 }
 
-/// Account updates can arrive in large bursts. Run at most one roster/readiness
-/// refresh at a time and collapse every burst during that run into one trailing
-/// refresh, so event delivery cannot create unbounded background work.
 export const makeAuthSyncRefreshScheduler = (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -196,8 +164,6 @@ export const makeAuthSyncRefreshScheduler = (
     if (closed) return
     requested = true
     if (running !== undefined) return
-    // The microtask boundary collapses a synchronous event burst before the
-    // first refresh starts. Events received during I/O request one trailing run.
     running = Promise.resolve()
       .then(drain)
       .catch(swallowError)
@@ -215,9 +181,6 @@ export const makeAuthSyncRefreshScheduler = (
   }
 }
 
-/// Re-derives and publishes this machine's plugin readiness entry (Phase
-/// 24, third readiness instance). `blocked` carries the just-finished
-/// pass's refusals so "needs ffmpeg" survives as the row's reason.
 export const refreshPluginReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -232,9 +195,6 @@ export const refreshPluginReadiness = async (
     const rows: PluginReadinessRow[] = local.map((summary) => {
       const machineOnly =
         summary.source !== "managed" || pluginSyncOrigin(summary.path) === undefined
-      // A plugin whose process died is the one per-machine condition the
-      // fleet list cannot infer from the definition. Reporting it as blocked
-      // is what lets the list drop the per-machine pages entirely.
       if (summary.enabled && summary.state === "failed") {
         return {
           id: summary.id,
@@ -249,8 +209,6 @@ export const refreshPluginReadiness = async (
           : "disabled"
       return { id: summary.id, state }
     })
-    // Fleet-desired plugins this machine doesn't have yet — blocked passes
-    // explain themselves, everything else is simply not installed yet.
     const desired = await run(services.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
     for (const entry of desired) {
       if (entry.deleted === true || localIds.has(entry.key)) continue
@@ -273,7 +231,5 @@ export const refreshPluginReadiness = async (
         entries: result.changedEntries
       }).catch(swallowError)
     }
-  } catch {
-    // Best-effort by design; the next pass republishes.
-  }
+  } catch {}
 }

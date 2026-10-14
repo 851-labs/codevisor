@@ -320,7 +320,6 @@ describe("Antigravity chat", () => {
     first.exit("agy exited: panic: nil map")
     await expect(done).resolves.toEqual({ stopReason: "end_turn" })
     expect(turnStates(events.updates()).at(-1)!.stopDetail).toBe("agy exited: panic: nil map")
-    // A late exit report from the old process is ignored.
     first.exit()
     const next = chat.prompt("again")
     const second = await agy.spawned(2)

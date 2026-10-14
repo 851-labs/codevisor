@@ -1,12 +1,3 @@
-//  The chat pane's content: the streaming transcript with the composer
-//  floating over the bottom of the history (no divider), and enough bottom
-//  inset that the last message can scroll clear of the composer.
-//
-//  Extracted from SessionScreen so the chat renders through the pane system
-//  like any other pane. Everything that must survive unmount/remount —
-//  composer text, scroll position, follow mode — lives on SessionController,
-//  so tab switches rebuild this view cheaply and correctly.
-
 import SwiftUI
 import CodevisorCore
 import ACPKit
@@ -30,13 +21,8 @@ struct ChatScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane
   @Bindable var controller: SessionController
-  /// The session screen's focus coordinator (shared with the terminals).
   let focus: TerminalFocusController
-  /// The pane's retained AppKit presentation. Reattaching this surface keeps
-  /// its mounted Markdown rows, TextKit layout, and exact native viewport.
   let presentationSurface: TranscriptPresentationSurface
-  /// A view-only transcript (a subagent's thread): no composer, no
-  /// connection, no focus registration.
   let isReadOnly: Bool
   @State var isAtBottom: Bool
   @State var autoFollow: Bool
@@ -51,10 +37,6 @@ struct ChatScreen: View {
   @State var projectedRowsVersion: UInt64 = 0
   @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
   @State var projectedSessionID: UUID?
-  /// The native gate may open only for the exact projection request whose
-  /// rows have committed. An existing chat first publishes an empty/loading
-  /// request, then a history-backed request; a free-running Bool can briefly
-  /// describe the old rows as ready during that handoff.
   @State var projectionPublication =
     TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
   @State var presentationVisibilityOwner = UUID()
@@ -112,13 +94,6 @@ struct ChatScreen: View {
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
-      // AppKit sends `cursorUpdate` to the view it hit-tests under the
-      // pointer. Until a view in the hosting view declares a pointer style,
-      // SwiftUI answers that hit test by frame alone, and the full-pane
-      // layer it keeps above the transcript for the floating composer takes
-      // every hit: transcript and composer text fell back to the arrow
-      // whenever the pointer rested (after a scroll, while text streamed).
-      // Declaring one switches SwiftUI to the hit test it uses for clicks.
       .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
@@ -134,10 +109,6 @@ struct ChatScreen: View {
         historyLoadTask = nil
         controller.presentationClock.viewDidDisappear()
       }
-      // A warm retained AppKit surface reattaches immediately. Cold
-      // surfaces wait for one committed shell frame before constructing
-      // the virtualizer; until then the transcript region is an opaque,
-      // correctly-sized blank surface.
       .task(id: ObjectIdentifier(controller)) {
         let hasWarmPresentation = presentationSurface.isWarm
         isInitialTranscriptReady = hasWarmPresentation
@@ -152,15 +123,9 @@ struct ChatScreen: View {
         guard !Task.isCancelled else { return }
         isTranscriptMounted = true
       }
-      // Each visible chat owns its connection. Cold content work starts
-      // after the shell mount boundary above; workspace navigation never
-      // prepares a hidden routing chat.
       .task(id: contentLoadingIdentity) {
         guard isTranscriptMounted, !isReadOnly else { return }
         if controller.resumeAgentSessionId?.isEmpty == false {
-          // Existing chats know their harness. Refresh only that one in
-          // parallel; neither config inspection nor runtime startup may
-          // hold the first transcript page behind them.
           async let capabilities: Void = controller.prepareExistingSessionCapabilities()
           if !AppPreview.isRunning {
             await controller.connectIfNeeded()
@@ -200,9 +165,6 @@ struct ChatScreen: View {
         } catch is CancellationError {
           return
         } catch {
-          // Projection is pure and currently only throws for
-          // cancellation. Do not authorize a stale projection if
-          // that contract changes.
         }
       }
       .task(id: isInitialTranscriptReady) {

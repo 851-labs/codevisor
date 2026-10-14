@@ -6,9 +6,6 @@ import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
   it("archives the workspace alone and keeps its chats' tabs for the restore", async () => {
-    // The workspace is the only thing that carries archive state. Its chats
-    // have none to cascade to, and their panes must survive so restoring the
-    // workspace brings back exactly the tabs the user left open.
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/ws-archive" }))
     const workspace = await run(
@@ -28,7 +25,6 @@ describe("@codevisor/db", () => {
     )
     expect(archived?.isArchived).toBe(true)
     expect(archived?.archivedAt).toBeDefined()
-    // The tab is still recorded, so the restore has something to reopen.
     expect(
       (await run(db.listWorkspacePanes))
         .filter((pane) => pane.workspaceId === workspace.id)
@@ -45,8 +41,6 @@ describe("@codevisor/db", () => {
   })
 
   it("flips the archive bit through a full upsert, not just a patch", async () => {
-    // The macOS client writes workspaces with PUT, so the upsert path owes the
-    // same transition a PATCH does.
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/ws-upsert" }))
     const workspace = await run(
@@ -90,8 +84,6 @@ describe("@codevisor/db", () => {
       (candidate) => candidate.id === workspace.id
     )?.archivedAt
 
-    // A rename that says nothing about naming or archiving must not silently
-    // clear the custom-name pin or re-stamp the archive moment.
     const renamed = await run(db.updateWorkspace(workspace.id, { name: "still pinned" }))
 
     expect(renamed.name).toBe("still pinned")
@@ -112,8 +104,6 @@ describe("@codevisor/db", () => {
       (candidate) => candidate.id === workspace.id
     )?.archivedAt
 
-    // A retry after a failed teardown must not restamp the moment the user
-    // sees, or the row would jump to the top of any archive ordering.
     const again = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
 
     expect(again.isArchived).toBe(true)
@@ -154,15 +144,12 @@ describe("@codevisor/db", () => {
       createdAt: "2026-07-01T00:00:00.000Z"
     })
 
-    // Omitted ids and creation dates are generated server-side.
     const generated = await run(
       db.upsertWorkspace({ projectId: project.id, name: "Scratch", hasCustomName: false })
     )
     expect(generated.id).toMatch(/^[0-9a-f-]{36}$/)
     expect(Date.parse(generated.createdAt)).not.toBeNaN()
 
-    // Re-upserting the same id updates in place, stamps updated_at, and keeps
-    // the original creation date.
     const updated = await run(
       db.upsertWorkspace({
         id: "workspace-1",
@@ -185,13 +172,11 @@ describe("@codevisor/db", () => {
     expect(updated.updatedAt).toBeDefined()
     expect(created.updatedAt).toBeUndefined()
 
-    // Newest first.
     expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toEqual([
       generated.id,
       "workspace-1"
     ])
 
-    // A workspace cannot exist without its project.
     await expect(
       run(db.upsertWorkspace({ projectId: "missing", name: "Nope", hasCustomName: false }))
     ).rejects.toBeInstanceOf(DatabaseError)
@@ -200,7 +185,6 @@ describe("@codevisor/db", () => {
     expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(["workspace-1"])
     await expect(run(db.deleteWorkspace("missing"))).rejects.toBeInstanceOf(DatabaseError)
 
-    // Deleting a project cascades its workspaces (and their sessions) away.
     const session = await run(
       db.createSession({ projectId: project.id, harnessId: "codex", workspaceId: "workspace-1" })
     )
@@ -243,8 +227,6 @@ describe("@codevisor/db", () => {
     )
     expect(placeholder).toMatchObject({ id: "pane-placeholder", workspaceId: first.id })
 
-    // Conversion preserves the placeholder id and replaces the compatibility
-    // pane that session membership had synthesized.
     const converted = await run(
       db.upsertWorkspacePane(first.id, {
         id: placeholder.id,
@@ -264,14 +246,12 @@ describe("@codevisor/db", () => {
     expect(
       (await run(db.listWorkspacePanes)).find((pane) => pane.id === "pane-placeholder")
     ).toMatchObject({ workspaceId: second.id })
-    // The source workspace is simply empty now; no placeholder stands in.
     expect(
       (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === first.id)
     ).toEqual([])
 
     await run(db.deleteWorkspacePane(second.id, "pane-placeholder"))
     expect(await run(db.listWorkspacePanes)).toEqual([])
-    // Re-assigning membership synthesizes the compatibility chat pane again.
     await run(db.setSessionWorkspace(session.id, second.id))
     expect(
       (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === second.id)
@@ -426,7 +406,6 @@ describe("@codevisor/db", () => {
     expect(
       (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === first.id)
     ).toEqual([])
-    // Closing the last pane leaves the workspace empty; a retry is a no-op.
     await run(db.deleteWorkspacePane(first.id, generated.id))
 
     const emptyTitle = await run(

@@ -1,5 +1,3 @@
-/** Native integrations contain no credentials. Their mode-0600 manifest holds
- * machine-local capabilities; real rotating refresh tokens stay in the vault. */
 export const piAuthExtension = String.raw`
 import { readFile } from "node:fs/promises";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";

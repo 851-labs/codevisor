@@ -4,7 +4,6 @@ import CoreGraphics
 import Foundation
 import Observation
 
-/// The System Settings privacy panes used by Codevisor's permission requests.
 public enum SystemSettingsPane: String, Sendable {
   case accessibility = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
   case screenRecording = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
@@ -13,18 +12,11 @@ public enum SystemSettingsPane: String, Sendable {
   public var url: URL? { URL(string: rawValue) }
 }
 
-/// Injectable TCC probes so views and tests never hard-bind to the real
-/// (per-bundle, once-ever-prompting) system APIs.
 public struct ComputerUsePermissionProbes: Sendable {
   public var isAccessibilityGranted: @Sendable () -> Bool
   public var isScreenRecordingGranted: @Sendable () -> Bool
-  /// Full Disk Access has no status API; see `fullDiskAccessProbe`.
   public var isFullDiskAccessGranted: @Sendable () -> Bool
-  /// Shows the one-time system Accessibility consent dialog (also adds the
-  /// app to the Privacy list). No-ops after the first refusal.
   public var promptForAccessibility: @Sendable () -> Void
-  /// Shows the one-time system Screen Recording consent dialog. macOS never
-  /// re-prompts after a denial, so callers must fall back to the pane.
   public var promptForScreenRecording: @Sendable () -> Void
   public var openSettingsPane: @MainActor @Sendable (SystemSettingsPane) -> Void
 
@@ -44,8 +36,6 @@ public struct ComputerUsePermissionProbes: Sendable {
     self.openSettingsPane = openSettingsPane
   }
 
-  /// Real TCC checks. The status probes are the cheap, non-prompting calls
-  /// so they are safe to poll.
   public static let live = ComputerUsePermissionProbes(
     isAccessibilityGranted: { AXIsProcessTrusted() },
     isScreenRecordingGranted: { CGPreflightScreenCaptureAccess() },
@@ -56,9 +46,6 @@ public struct ComputerUsePermissionProbes: Sendable {
       )
     },
     promptForScreenRecording: {
-      // CGRequestScreenCaptureAccess blocks its calling thread until the
-      // user resolves the TCC dialog; keep that off the main actor. The
-      // result is unused — grant state arrives via the polling probes.
       DispatchQueue.global(qos: .userInitiated).async {
         _ = CGRequestScreenCaptureAccess()
       }
@@ -69,7 +56,6 @@ public struct ComputerUsePermissionProbes: Sendable {
     }
   )
 
-  /// Everything granted; for previews and UI tests.
   public static let granted = ComputerUsePermissionProbes(
     isAccessibilityGranted: { true },
     isScreenRecordingGranted: { true },
@@ -80,13 +66,6 @@ public struct ComputerUsePermissionProbes: Sendable {
   )
 }
 
-/// Full Disk Access has neither a status API nor a consent dialog — it is
-/// only ever granted by hand in System Settings — so the status check is a
-/// read of a file guarded by that permission alone. The user's TCC database
-/// exists on every account and belongs to no other TCC category, so a
-/// denied open fails silently with EPERM instead of raising a folder-access
-/// or per-service prompt. `open(2)` rather than an `access(2)`-style
-/// readability check: POSIX bits pass while TCC still blocks the real open.
 func fullDiskAccessProbe(
   path: String = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
 ) -> Bool {
@@ -96,11 +75,6 @@ func fullDiskAccessProbe(
   return true
 }
 
-/// Whether launch should present the permissions dialog to an already-
-/// onboarded user. Fresh installs meet the same content as an onboarding step
-/// instead, each app version asks at most once, and a user who chose "Set Up
-/// Later" is never nagged — they re-enter through the Computer Use toggle in
-/// Settings instead.
 public func computerUsePermissionsGateNeeded(
   hasCompletedOnboarding: Bool,
   permissionsReviewedVersion: String?,
@@ -110,36 +84,21 @@ public func computerUsePermissionsGateNeeded(
   allGranted: Bool
 ) -> Bool {
   guard hasCompletedOnboarding, !setupSkipped else { return false }
-  // Granting Screen Recording restarts the app mid-review. Coming back to a
-  // dismissed dialog would strand the user with no confirmation that the
-  // thing they just did worked, so an open review outlives the restart and
-  // ends only when the user closes it.
   if reviewInProgress { return true }
   if allGranted { return false }
   return permissionsReviewedVersion != currentVersion
 }
 
-/// Observable state for the Computer Use permissions UI. Status comes from
-/// cheap non-prompting probes, so views can poll it and refresh on window
-/// activation for near-instant updates after a System Settings round trip.
 @MainActor
 @Observable
 public final class ComputerUsePermissionsModel {
   public private(set) var isAccessibilityGranted: Bool
   public private(set) var isScreenRecordingGranted: Bool
-  /// Optional file access offered alongside Computer Use during onboarding.
-  /// Not part of `allGranted`: it never gates Computer Use. macOS itself
-  /// offers the relaunch after the grant, so no restart nudge here.
   public private(set) var isFullDiskAccessGranted: Bool
-  /// True when Screen Recording was granted after this process started.
-  /// macOS applies that grant to *new* processes, so captures can fail
-  /// until relaunch; the UI offers a restart when this is set.
   public private(set) var screenRecordingGrantedThisRun = false
 
   private let probes: ComputerUsePermissionProbes
   private let screenRecordingGrantedAtStart: Bool
-  /// The one-time system dialogs never re-appear after a refusal, so the
-  /// second press of either button goes straight to System Settings.
   private var promptedAccessibility = false
   private var promptedScreenRecording = false
 
@@ -153,8 +112,6 @@ public final class ComputerUsePermissionsModel {
     screenRecordingGrantedAtStart = screenRecording
   }
 
-  /// Both Computer Use permissions. Full Disk Access is optional and
-  /// deliberately excluded.
   public var allGranted: Bool {
     isAccessibilityGranted && isScreenRecordingGranted
   }
@@ -168,9 +125,6 @@ public final class ComputerUsePermissionsModel {
     }
   }
 
-  /// First press shows the system consent dialog; if the grant does not
-  /// arrive shortly (or the dialog was spent on an earlier refusal), the
-  /// Privacy pane opens so the user can flip the switch directly.
   public func requestAccessibility() {
     guard !isAccessibilityGranted else { return }
     if promptedAccessibility {
@@ -197,8 +151,6 @@ public final class ComputerUsePermissionsModel {
     }
   }
 
-  /// No system consent dialog exists for Full Disk Access; the Privacy pane
-  /// is the only way to grant it.
   public func requestFullDiskAccess() {
     guard !isFullDiskAccessGranted else { return }
     probes.openSettingsPane(.fullDiskAccess)

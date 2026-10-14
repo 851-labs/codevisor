@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// A pinned sidebar action ("New chat"): the shared header-row label with
-/// selection and hover chrome, and a tap action.
 struct SidebarActionRow: View {
   let title: String
   let systemImage: String
@@ -15,7 +13,6 @@ struct SidebarActionRow: View {
       .contentShape(Rectangle())
       .sidebarRowHover(isSelected: isSelected, isEnabled: isHoverEnabled)
       .onTapGesture(perform: action)
-      // The tap gesture alone has no accessibility press action.
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
       .accessibilityAction(.default, action)

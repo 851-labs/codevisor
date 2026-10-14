@@ -1,11 +1,6 @@
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
-/// Pi extensions ask the user through dialog requests (`select`, `confirm`,
-/// `input`, `editor`); each becomes one Codevisor question. Pi's other
-/// extension UI requests (notifications, status, widgets, titles) have no
-/// answer and nowhere to show, so they are dropped.
-
 const QUESTION_ID = "answer"
 
 const text = (value: unknown): string | undefined =>
@@ -14,7 +9,6 @@ const text = (value: unknown): string | undefined =>
 export interface PiDialogQuestion {
   readonly spec: QuestionSpec
   readonly message?: string
-  /// The `extension_ui_response` fields for the user's answer.
   readonly response: (answer: QuestionAnswer) => Record<string, unknown>
 }
 

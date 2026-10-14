@@ -11,8 +11,6 @@ import {
   run
 } from "./test-support.js"
 
-// The Agent tool's result for spawn "agent-1": the framed text the CLI hands
-// the parent, plus the SDK's structured output.
 const agentResult = (toolUseResult: Record<string, unknown>): SDKMessage =>
   ({
     message: {
@@ -31,7 +29,6 @@ const agentResult = (toolUseResult: Record<string, unknown>): SDKMessage =>
     type: "user"
   }) as never
 
-// The prose streamed into agent-1's thread over one turn of `messages`.
 const subagentProse = async (messages: Array<SDKMessage>): Promise<Array<unknown>> => {
   const fake = new FakeQuery()
   const provider = makeProvider(fake)

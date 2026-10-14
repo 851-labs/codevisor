@@ -2,47 +2,20 @@ import CoreVideo
 import Foundation
 import QuartzCore
 
-/// Receiver-only, opt-in frame-delivery audit (diagnostic). Records scalar
-/// boundary events for decoded frames on ONE receiver-local clock:
-/// `CACurrentMediaTime()` in nanoseconds — the clock of the viewer's media
-/// origin, of `receivedAtSeconds`, of Metal's `presentedTime` and of the
-/// observer alignment. Identity is a monotonic receiver-side decoder-input
-/// sequence (never restarted) plus the RTP timestamp; the identity's
-/// `generation` is the decoder INPUT EPOCH (VideoToolbox sessions created
-/// before that input); session creation itself is a recorded event. Records hold scalars only: no buffer, texture or object is
-/// retained. Disabled (nil) means nothing is allocated and every call site is
-/// a single nil branch. Earlier stages (capture, encode, network, jitter
-/// buffer before decoder input) and physical scanout are outside this audit.
 public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
   public enum Stage: UInt8, CaseIterable, Sendable {
-    /// WebRTC handed a reassembled/released encoded frame to the decoder.
     case decoderInput = 1
-    /// VideoToolbox output callback delivered the decoded pixel buffer.
     case vtOutput = 2
-    /// WebRTC's native renderer callback delivered the frame to the mailbox.
     case rtcRendererCallback = 3
-    /// The coordinator selected the frame (new frames only; cached redraws are not deliveries).
     case selection = 4
-    /// Drawable acquisition began (main-actor `currentDrawable` or worker `nextDrawable`).
     case acquisitionBegin = 5
-    /// Drawable acquisition returned (value = 1 acquired, 0 none).
     case acquisitionEnd = 6
-    /// Off-main preparation started on the worker (textures + size + acquisition + encoding).
     case preparationBegin = 7
-    /// The prepared result reached the main actor (`finishPreparation`).
     case preparedReceipt = 8
-    /// Final submission (commit) after the coordinator's terminal/slot guard.
     case submission = 9
-    /// The command buffer's completion CALLBACK ran (value = 1 completed, 0 error).
     case gpuCompletionCallback = 10
-    /// The presented handler ran: `atNs` is the callback time, `valueNs` is
-    /// Metal's `presentedTime` converted to nanoseconds (0 = unpresented).
     case presentedResult = 11
-    /// A VideoToolbox session was created for the frame carrying this identity
-    /// (value = the new generation); later inputs carry that epoch.
     case decoderConfigured = 12
-    /// The mailbox replaced this (never selected) frame with a newer one —
-    /// the newest-frame policy, recorded so downstream absence is explained.
     case mailboxReplaced = 13
 
     public var name: String {
@@ -64,10 +37,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// Decoder-input identity: the sequence never restarts within one audit; the
-  /// generation is the input epoch = VideoToolbox sessions created before the
-  /// input (the frame that triggers a session keeps the epoch it was input in;
-  /// the creation is its own `decoderConfigured` event).
   public struct Identity: Equatable, Hashable, Sendable {
     public let sequence: UInt32
     public let generation: UInt16
@@ -83,7 +52,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// Recording window relative to the receiver-local origin (media start).
   public struct Window: Equatable, Sendable {
     public let beginSeconds: Double
     public let durationSeconds: Double
@@ -96,7 +64,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// 32-byte scalar record (stride); nothing is retained.
   struct Record {
     let stage: UInt8
     let generation: UInt16
@@ -131,11 +98,7 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     public let decoderGenerations: Int
     public let sequenceRange: [UInt32]?
     public let perStage: [String: Int]
-    /// Events counted but never recorded: these make a trace incomplete.
     public let truncation: [String: Int]
-    /// Frames reaching each boundary, and downstream absences (which may be
-    /// legitimate newest-frame replacement, a failed preparation, or window
-    /// clipping — not by themselves an incomplete trace).
     public let coverage: [String: Int]
     public let stages: [UInt8]
     public let generations: [UInt16]
@@ -148,7 +111,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
 
   public static let defaultCapacity = 65536
   public static let recordByteStride = MemoryLayout<Record>.stride
-  /// The one supported clock: CACurrentMediaTime in nanoseconds.
   public static func defaultClock() -> Int64 { Int64(CACurrentMediaTime() * 1_000_000_000) }
   static let attachmentKey = "com.codevisor.screenSharing.deliveryAuditIdentity"
 
@@ -157,7 +119,7 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
   private let clock: @Sendable () -> Int64
   private let lock = NSLock()
   private var records: [Record]
-  private var seen: [UInt32: UInt16] = [:]  // stage bitmask per sequence (bounded by capacity)
+  private var seen: [UInt32: UInt16] = [:]
   private var nextSequence: UInt32 = 1
   private var generation: UInt16 = 0
   private var originNs: Int64?
@@ -184,17 +146,12 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     seen.reserveCapacity(min(self.capacity, 8192))
   }
 
-  /// Media start on the receiver-local clock. Events before it are counted, not recorded.
   public func start(originNs: Int64) {
     lock.withLock { if self.originNs == nil { self.originNs = originNs } }
   }
 
-  /// The audit's clock, for explicit stamps taken around a boundary.
   public func now() -> Int64 { clock() }
 
-  /// A VideoToolbox session was created while decoding `identity` (nil when
-  /// the triggering input carried none); sequences continue, the epoch of
-  /// LATER inputs increments, and the creation is recorded as an event.
   @discardableResult
   public func decoderConfigured(_ identity: Identity?, rtpTimestamp: UInt32) -> UInt16 {
     let next: UInt16 = lock.withLock {
@@ -205,7 +162,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     return next
   }
 
-  /// Assigns the next identity at decoder input and records the boundary.
   public func decoderInput(rtpTimestamp: UInt32, atNs: Int64? = nil) -> Identity {
     let identity: Identity = lock.withLock {
       let id = Identity(sequence: nextSequence, generation: generation)
@@ -217,9 +173,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
     return identity
   }
 
-  /// Records one boundary. A nil identity is counted as a missing-identity
-  /// event and stored with sequence 0. Events outside the window, before the
-  /// origin, after close, or beyond capacity are counted, never recorded.
   public func record(
     _ stage: Stage, _ identity: Identity?, rtpTimestamp: UInt32, valueNs: Int64 = 0, atNs: Int64? = nil
   ) {
@@ -245,31 +198,20 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
         Record(
           stage: stage.rawValue, generation: identity?.generation ?? 0, sequence: sequence, rtpTimestamp: rtpTimestamp,
           atNs: at, valueNs: valueNs))
-      // Append order is preserved in the arrays; the bounds are true min/max
-      // (the clock is sampled before the lock, so appends can be out of order).
       firstEventNs = min(firstEventNs ?? at, at)
       lastEventNs = max(lastEventNs ?? at, at)
     }
   }
 
-  /// Terminal: later events are counted as late and never recorded.
   public func close(atNs: Int64? = nil) {
     let at = atNs ?? clock()
     lock.withLock { if closedAtNs == nil { closedAtNs = at } }
   }
 
-  // MARK: identity on the decoded pixel buffer (diagnostic-only scalar attachment)
-
-  /// Attaches the identity to a decoded buffer so it survives the RTC native
-  /// bridge. Reused pool buffers get a fresh value on every VT output while
-  /// the audit is enabled; nothing is attached when the audit is nil.
   public static func attach(_ identity: Identity, to buffer: CVPixelBuffer) {
     CVBufferSetAttachment(buffer, attachmentKey as CFString, NSNumber(value: identity.packed), .shouldNotPropagate)
   }
 
-  /// The bridge helper used at VideoToolbox output while the audit is enabled:
-  /// a nil identity CLEARS any previous value so a reused pool buffer can never
-  /// carry a stale identity to the renderer. Not called when the audit is off.
   public static func stamp(_ identity: Identity?, on buffer: CVPixelBuffer) {
     if let identity { attach(identity, to: buffer) } else { removeIdentity(from: buffer) }
   }

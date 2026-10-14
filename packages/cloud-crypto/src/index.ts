@@ -3,25 +3,6 @@ import { x25519 } from "@noble/curves/ed25519.js"
 import { hkdf } from "@noble/hashes/hkdf.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 
-/// End-to-end encryption for cloud relay channels (see @codevisor/api
-/// cloud-protocol). The hub only ever sees box ciphertext — raw bytes
-/// carried as relay envelope payloads.
-///
-/// Key agreement per channel (Noise-IK-flavoured, deliberately minimal):
-///   dh1 = X25519(ephemeral, responderStatic)   — forward secrecy
-///   dh2 = X25519(openerStatic, responderStatic) — mutual authentication
-///   key = HKDF-SHA256(ikm = dh1 || dh2, salt = ephemeralPub, info = INFO)
-///
-/// Frames are IETF ChaCha20-Poly1305 boxes — chosen (over XChaCha20) because
-/// Apple CryptoKit implements it natively, so Swift clients need no extra
-/// dependency. Nonces are deterministic: 12 bytes = [direction byte, 0, 0, 0,
-/// seq as u64 BE]. This never repeats under one key because every channel
-/// open derives a fresh key (fresh ephemeral) and each direction's seq is
-/// strictly monotonic — which callers MUST uphold: never seal two different
-/// payloads with the same (direction, seq) on one channel. The AAD
-/// additionally binds (channelId, direction, seq) so ciphertext cannot be
-/// replayed across channels, directions, or positions.
-
 const INFO = new TextEncoder().encode("codevisor-cloud-channel-v1")
 export const NONCE_LENGTH = 12
 export const KEY_LENGTH = 32
@@ -39,7 +20,6 @@ const nonceFor = (direction: ChannelDirection, seq: number): Uint8Array => {
   return nonce
 }
 
-/// Direction of a frame relative to the channel opener.
 export type ChannelDirection = "opener-to-responder" | "responder-to-opener"
 
 export interface CloudKeyPair {
@@ -64,9 +44,6 @@ export const fromBase64Url = (encoded: string): Uint8Array => {
   return bytes
 }
 
-/// Generate a device's long-lived static X25519 keypair. The public key is
-/// registered with the account and redistributed by the hub; peers pin it on
-/// first use.
 export const generateDeviceKeyPair = (): CloudKeyPair => {
   const secret = x25519.utils.randomSecretKey()
   return {
@@ -85,8 +62,6 @@ const deriveKey = (dh1: Uint8Array, dh2: Uint8Array, ephemeralPublic: Uint8Array
 const aad = (channelId: string, direction: ChannelDirection, seq: number): Uint8Array =>
   new TextEncoder().encode(`${channelId}|${direction}|${seq}`)
 
-/// Symmetric cipher for one channel. Both peers converge on the same key and
-/// use the direction tag to keep their AAD spaces disjoint.
 export class ChannelCipher {
   readonly #key: Uint8Array
 
@@ -95,8 +70,6 @@ export class ChannelCipher {
     this.#key = key
   }
 
-  /// Returns the raw box (ciphertext ‖ 16-byte tag); the deterministic nonce
-  /// is never included. The box travels as a binary relay envelope payload.
   seal(
     channelId: string,
     direction: ChannelDirection,
@@ -107,8 +80,6 @@ export class ChannelCipher {
       this.#key,
       nonceFor(direction, seq),
       aad(channelId, direction, seq)
-      // Callers pass views over regular ArrayBuffers; noble's stricter
-      // Uint8Array<ArrayBuffer> parameter type is satisfied in practice.
     ).encrypt(plaintext as Uint8Array<ArrayBuffer>)
   }
 
@@ -122,12 +93,10 @@ export class ChannelCipher {
 }
 
 export interface OpenedChannel {
-  /// Send alongside the relay `open` frame so the responder can derive the key.
   ephemeralPublicKey: string
   cipher: ChannelCipher
 }
 
-/// Opener side (typically an app connecting to a machine).
 export const openChannel = (openerSecretKey: string, responderPublicKey: string): OpenedChannel => {
   const ephemeralSecret = x25519.utils.randomSecretKey()
   const ephemeralPublic = x25519.getPublicKey(ephemeralSecret)
@@ -140,9 +109,6 @@ export const openChannel = (openerSecretKey: string, responderPublicKey: string)
   }
 }
 
-/// Responder side (typically a machine accepting a channel). `openerPublicKey`
-/// arrives from the hub (`peerPublicKey`) and must already be pinned/trusted
-/// by the caller.
 export const acceptChannel = (
   responderSecretKey: string,
   openerPublicKey: string,
@@ -158,8 +124,6 @@ export const acceptChannel = (
 const utf8Encoder = new TextEncoder()
 const utf8Decoder = new TextDecoder()
 
-/// Convenience helpers for JSON channel payloads (channel opens, terminal
-/// control frames). Terminal output bytes should be sealed directly instead.
 export const sealJson = (
   cipher: ChannelCipher,
   channelId: string,

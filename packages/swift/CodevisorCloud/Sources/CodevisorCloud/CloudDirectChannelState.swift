@@ -39,9 +39,6 @@ final class CloudDirectChannelState {
         inboundCredit -= sealedBytes
       }
       onMessage(plaintext, sealedBytes)
-      // No auto-replenish: machines never gate structured sends on
-      // credit unless the opener negotiated flow control, so a
-      // per-message credit frame would be a pure no-op.
       return nil
     } catch {
       return .cryptoError
@@ -74,7 +71,6 @@ final class CloudDirectChannelState {
     return (frame: .data(channelId: channelId, seq: seq), payload: sealed)
   }
 
-  /// Strips the negotiated framing byte, inflating DEFLATE bodies.
   private static func unframe(_ plaintext: Data) throws -> Data {
     guard let framing = plaintext.first else { throw CloudDeflateError.corruptInput }
     let body = plaintext.dropFirst()

@@ -2,10 +2,6 @@
   import Foundation
   import ScreenSharing
 
-  /// `screen-sharing-rig vnc-keys`: sends Mac keyboard shortcuts to a VNC server
-  /// exactly as the viewer does, through `VNCKeyTranslator` (851-2335): ⌘ becomes
-  /// Control, letters go through a fixed US layout, so a check on a real desktop
-  /// (Mousepad, xfce4-terminal) exercises the product's key mapping.
   enum VNCKeysCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-keys --host H --port P [--password P] [--gap-ms 150] CHORD...
@@ -54,7 +50,6 @@
       dispatchMain()
     }
 
-    /// Mac virtual key codes and their `ScreenSharingInputEvent` modifier bits.
     static let modifiers: [String: (code: UInt16, bit: UInt8)] = [
       "shift": (56, 1), "ctrl": (59, 2), "opt": (58, 4), "cmd": (55, 8),
     ]
@@ -64,12 +59,11 @@
       "m": 46, "return": 36, "tab": 48, "escape": 53, "home": 115, "end": 119, "left": 123, "right": 124,
       "down": 125, "up": 126,
     ]
-    /// A US layout for the letters (what `VNCKeyTranslator` asks the Mac's layout).
     static let translator = VNCKeyTranslator { code, carbon in
       guard let name = keys.first(where: { $0.value == code })?.key, name.count == 1,
         let scalar = name.unicodeScalars.first
       else { return nil }
-      let shifted = carbon & UInt32(1 << 1) != 0  // Carbon shiftKey >> 8
+      let shifted = carbon & UInt32(1 << 1) != 0
       return shifted ? String(scalar).uppercased().unicodeScalars.first : scalar
     }
 
@@ -77,7 +71,6 @@
       let errorDescription: String?
     }
 
-    /// Modifier downs, the key down and up, modifier ups: what the viewer sends for one shortcut.
     static func messages(_ chord: String) throws -> [RFBClientMessage] {
       let parts = chord.lowercased().split(separator: "+").map(String.init)
       guard let keyName = parts.last, let code = keys[keyName] else {

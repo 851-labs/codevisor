@@ -89,7 +89,6 @@ describe("file routes", () => {
       return { body: (await response.json()) as Record<string, unknown>, status: response.status }
     }
 
-    // Kind is sniffed from magic bytes, with the declared mime as fallback.
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
     const png = await upload(pngBytes, { contentType: "image/png", name: "shot.png" })
     expect(png.status).toBe(201)
@@ -126,7 +125,6 @@ describe("file routes", () => {
     const text = await upload(Buffer.from("hello"), { contentType: "text/plain", name: "..." })
     expect(text.body).toMatchObject({ kind: "file", mimeType: "text/plain", name: "attachment" })
 
-    // Download round-trips bytes with immutable caching; unknown ids 404.
     const download = await fetch(`${server.url}/v1/files/${String(png.body.id)}`)
     expect(download.status).toBe(200)
     expect(download.headers.get("content-type")).toBe("image/png")
@@ -187,7 +185,6 @@ describe("file routes", () => {
     ).toBe(416)
     expect((await fetch(`${server.url}/v1/files/missing-file`)).status).toBe(404)
 
-    // The former 25 MB cap is gone; large uploads stream to the object store.
     const largeBytes = Buffer.alloc(25 * 1024 * 1024 + 1, 0x7a)
     const large = await upload(largeBytes, {
       contentType: "application/octet-stream",
@@ -235,7 +232,6 @@ describe("file routes", () => {
       sizeBytes: 5
     }
 
-    // Unknown file ids and over-limit attachment counts fail at send time.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -278,14 +274,12 @@ describe("file routes", () => {
     expect(materialized).toBeTruthy()
     expect(readFileSync(String(materialized)).equals(pngBytes)).toBe(true)
 
-    // Re-sending the same attachment reuses the materialized temp file.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ attachments: [pngRef], text: "again" }),
       method: "POST"
     })
     await waitFor(() => agents.prompts.length === 2)
 
-    // The persisted user message and its replayed event both carry the refs.
     const detail = (await jsonRequest(server, `/v1/sessions/${session.id}`)).body as {
       readonly conversation: ReadonlyArray<{
         readonly text: string
@@ -307,8 +301,6 @@ describe("file routes", () => {
       )
     ).toBe(true)
 
-    // A queued attachment whose file has vanished surfaces a session error at
-    // drain time instead of crashing the queue.
     await run(
       services.db.createPromptQueueItem(session.id, "stale file", [
         { ...pngRef, fileId: "vanished-file" }
@@ -329,7 +321,6 @@ describe("file routes", () => {
       )
     })
 
-    // A user payload with malformed attachments is not a conversation item.
     const agentSessionId = agents.prompts[0]?.[0] as string
     await agents.emit(agentSessionId, {
       kind: "session.output",
@@ -347,8 +338,6 @@ describe("file routes", () => {
     }
     expect(refreshed.conversation.some((item) => item.text === "malformed")).toBe(false)
 
-    // A corrupt disk-only object cannot fall back to SQLite and surfaces the
-    // storage error through prompt attachment resolution.
     writeFileSync(
       services.attachments.objectPath(String(png.body.sha256)),
       Buffer.alloc(pngBytes.byteLength, 0)
@@ -374,7 +363,6 @@ describe("file routes", () => {
     })
     rmSync(services.attachments.objectPath(String(png.body.sha256)), { force: true })
     expect((await fetch(`${server.url}/v1/files/${String(png.body.id)}`)).status).toBe(500)
-    // A vanished object surfaces as a storage error too, not a 422.
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -391,7 +379,6 @@ describe("file routes", () => {
       return events.some(
         (event) =>
           event.kind === "session.error" &&
-          // The colon tells this error from the earlier "missing or corrupt".
           String(event.payload.message).includes("Attachment object is missing:")
       )
     })
@@ -463,7 +450,6 @@ describe("file routes", () => {
       expect(existsSync(stale)).toBe(false)
       expect(existsSync(fresh)).toBe(true)
 
-      // A missing temp root is a no-op, not an error.
       rmSync(root, { force: true, recursive: true })
       sweepAttachmentTempFiles(Date.parse("2024-01-09T00:00:00.000Z"))
       expect(existsSync(root)).toBe(false)

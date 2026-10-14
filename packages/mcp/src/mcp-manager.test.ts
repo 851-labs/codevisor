@@ -87,9 +87,9 @@ describe("MCP manager", () => {
     )
     const messages: unknown[] = []
     let closed = false
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     transport.onmessage = (message) => messages.push(message)
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
     transport.onclose = () => {
       closed = true
     }
@@ -134,9 +134,6 @@ describe("MCP manager", () => {
     })
   })
 
-  // Spawns a real stdio upstream plus an HTTP gateway — comfortably fast on
-  // dev machines but past the 5s default on slower CI runners.
-
   it(
     "connects a working upstream and exposes its tools through execute",
     { timeout: 20_000 },
@@ -176,14 +173,12 @@ describe("MCP manager", () => {
         ])
       )
       expect(await manager.tools(created.id)).toHaveLength(2)
-      // What the live server said about itself, for client artwork.
       expect(await manager.iconSources(created.id)).toEqual({
         url: upstream.url,
         icons: [{ src: "https://tracker.example/icon.png", sizes: ["64x64"] }],
         websiteUrl: "https://tracker.example"
       })
       expect(await manager.iconSources("missing")).toBeUndefined()
-      // Built-ins have no URL and no upstream connection to describe them.
       expect(await manager.iconSources("browser")).toEqual({})
       expect(await manager.tools()).toEqual(
         expect.arrayContaining([

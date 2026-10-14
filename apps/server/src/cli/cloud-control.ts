@@ -37,8 +37,6 @@ export const ensureCloudServer = async (
   return started
 }
 
-/// Connection success means this device completed the relay handshake. The
-/// registration API also reports a device while connecting or revoked.
 export const waitForCloudConnection = async (
   deps: CliDeps,
   port: number,

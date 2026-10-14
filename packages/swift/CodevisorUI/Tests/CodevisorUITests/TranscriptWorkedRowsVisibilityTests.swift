@@ -70,7 +70,6 @@ struct TranscriptWorkedRowsVisibilityTests {
         rows, disclosure: store, activeItem: .assistant(message), runningSubagentRunToolCallIDs: [])
     }
 
-    // Live sections start collapsed.
     #expect(present().hiddenStreamIDs == liveStreams)
     store.setExpanded(.turn(messageID), true)
     #expect(present().hiddenStreamIDs.isEmpty)

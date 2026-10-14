@@ -52,7 +52,6 @@ describe("OpenCode 2 seeded credentials", () => {
       access: "access",
       expires: 5_000_000
     })
-    // Copilot keeps its long-lived GitHub token; nothing to refresh.
     expect(
       seededOAuthCredential(
         bundle("github-copilot-enterprise", { enterpriseUrl: "ghe.test" }),
@@ -127,7 +126,6 @@ describe("OpenCode 2 shared profiles", () => {
     })
     await run(host.db.saveHarnessAccount(account))
     await host.shared.providers.capture("opencode", "default", "openai", oauth(3_600_000))
-    // Nearly expired and the vault can't refresh it: left out, so OpenCode asks to sign in.
     await host.shared.providers.capture("opencode", "default", "xai", oauth(2_000))
     f.rotate.mockRejectedValueOnce(new Error("offline"))
     const context = await host.shared.providers.context(account, {
@@ -150,7 +148,6 @@ describe("OpenCode 2 shared profiles", () => {
     expect(await readFile(join(root, "plugin", "index.mjs"), "utf8")).toContain(
       "codevisor.shared-credentials"
     )
-    // No link back to the terminal's OpenCode database, and no OpenCode 1 refresh hook.
     expect(context.env).not.toHaveProperty("OPENCODE_DB")
     expect(context).not.toHaveProperty("beforeTurn")
     const [profile, seeded] = syncCredentials.mock.calls[0]!
@@ -173,7 +170,6 @@ describe("OpenCode 2 shared profiles", () => {
     const syncCredentials = vi.fn<OpenCode2Deps["syncCredentials"]>(async () => undefined)
     const host = await fleet().machine("opencode2-bare", undefined, {
       openCode2: { majorVersion: async () => 2, syncCredentials },
-      // No HOME, but never the real one: credentials resolve under this XDG root.
       environment: async () => ({ XDG_DATA_HOME: bareData })
     })
     await run(host.db.saveHarnessAccount(account))

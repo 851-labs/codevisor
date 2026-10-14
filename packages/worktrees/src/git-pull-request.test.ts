@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { gitPullRequest, parseGitPullRequest, rollUpChecks } from "./git-pull-request.js"
 import { makeGitRepo } from "./git-test-support.js"
 
-/// A stand-in `gh` on PATH: records its arguments and answers with `script`.
 const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFile: string } => {
   const bin = join(root, "bin")
   mkdirSync(bin)

@@ -8,7 +8,6 @@ import { WebSocket } from "ws"
 import { jsonRequest, makeServices, runningServers, start, startWithApp } from "../test-support.js"
 import { attachLivePreviewSocket } from "./live-preview-socket.js"
 
-/// The socket surface the route uses, with a controllable send buffer.
 const fakeSocket = () => {
   const socket = Object.assign(new EventEmitter(), {
     OPEN: 1,

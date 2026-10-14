@@ -6,10 +6,6 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// The refresh protocol's channel contract without a transport. Availability is
-/// owned by the test so the deferred and the delivered paths are both reachable,
-/// and both outcomes of a send are signalled so a test waits for the attempt as
-/// an event rather than guessing when it happened.
 @MainActor
 final class RefreshChannelDouble: ScreenSharingMessageChannel {
   var onMessage: ((ScreenSharingVideoRefreshMessage) -> Void)?
@@ -36,8 +32,6 @@ final class RefreshChannelDouble: ScreenSharingMessageChannel {
   }
 }
 
-/// Virtual nanoseconds since a `TestClock`'s origin, so the schedules that read
-/// a monotonic clock and the schedules that sleep share one controlled timeline.
 func nanoseconds(_ duration: Duration) -> Int64 {
   duration.components.seconds * 1_000_000_000 + duration.components.attoseconds / 1_000_000_000
 }

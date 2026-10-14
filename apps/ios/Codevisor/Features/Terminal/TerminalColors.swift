@@ -4,18 +4,13 @@ import GhosttyTerminal
 import SwiftUI
 import UIKit
 
-/// The terminal's colors for the current appearance, resolved once so the
-/// emulator is only recolored when they actually change.
 struct TerminalColors: Equatable {
   let background: UIColor
   let foreground: UIColor
   let cursor: UIColor
   let selection: UIColor?
-  /// ANSI 0–15 as 0xRRGGBB: the theme's when it defines all sixteen,
-  /// otherwise Ghostty's default.
   let ansi: [UInt32]?
   let isDark: Bool
-  /// No terminal theme: the terminal sits on the app's own surface.
   let followsSystem: Bool
 
   init(palette: TerminalPalette?, colorScheme: ColorScheme) {
@@ -30,13 +25,10 @@ struct TerminalColors: Equatable {
       isDark = Self.luminance(palette.background) < 0.5
       followsSystem = false
     } else {
-      // The chat's own surface, so terminals and chats sit on one color.
       background = UIColor.systemGroupedBackground.resolvedColor(with: traits)
       foreground = UIColor.label.resolvedColor(with: traits)
       cursor = foreground
       selection = nil
-      // Ghostty's default palette, which macOS terminals use in either
-      // appearance, so prompts and TUIs color the same on both platforms.
       ansi = Self.ghosttyANSI
       isDark = colorScheme == .dark
       followsSystem = true
@@ -53,20 +45,13 @@ struct TerminalColors: Equatable {
     UIColor(red: rgba.r / 255, green: rgba.g / 255, blue: rgba.b / 255, alpha: rgba.a)
   }
 
-  /// These colors as Ghostty configuration, at the app's terminal font size.
-  /// Ghostty's compiled-in font (JetBrains Mono with Nerd Font symbols) is
-  /// used as-is, matching the macOS app.
   func ghosttyConfiguration(fontSize: Float) -> TerminalConfiguration {
     TerminalConfiguration { builder in
       builder.withFontSize(fontSize)
-      // Ghostty's ⌘K clears only this view; the app clears the server
-      // terminal for every device instead (SessionTerminalView.onClear).
       builder.withCustom("keybind", "super+k=unbind")
       builder.withBackground(Self.hex(background))
       builder.withForeground(Self.hex(foreground))
       if followsSystem {
-        // As on macOS: the cursor takes the color of the text under it, so it
-        // stays visible on backgrounds programs paint themselves.
         builder.withCursorColor("cell-foreground")
         builder.withCursorText("cell-background")
       } else {
@@ -94,8 +79,6 @@ struct TerminalColors: Equatable {
     return channel(rgba.r) << 16 | channel(rgba.g) << 8 | channel(rgba.b)
   }
 
-  /// Ghostty's built-in ANSI 0–15 (Tomorrow Night), from libghostty's
-  /// `terminal/color.zig`.
   static let ghosttyANSI: [UInt32] = [
     0x1D1F21, 0xCC6666, 0xB5BD68, 0xF0C674, 0x81A2BE, 0xB294BB, 0x8ABEB7, 0xC5C8C6,
     0x666666, 0xD54E53, 0xB9CA4A, 0xE7C547, 0x7AA6DA, 0xC397D8, 0x70C0B1, 0xEAEAEA,

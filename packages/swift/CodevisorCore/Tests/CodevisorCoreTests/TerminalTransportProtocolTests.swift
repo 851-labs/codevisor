@@ -4,7 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Delivers scripted server messages, records what the client sends.
 private final class ProtocolSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
   private var pending: [ServerWebSocketMessage]
@@ -55,7 +54,6 @@ private struct OneSocket: ServerWebSocketTransport {
   func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting { socket }
 }
 
-/// Hands out the given sockets in order, one per connection attempt.
 private final class SocketSequence: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var sockets: [ProtocolSocket]
@@ -83,7 +81,6 @@ private func binaryOutput(kind: UInt8, seq: UInt64, _ text: String) -> ServerWeb
   return .data(Data(bytes))
 }
 
-/// Parks recurring pings and holds the first reconnect until the test releases it.
 private struct ReconnectTiming: Sendable {
   let pingInterval: Duration
   let clock = TestClock()
@@ -102,8 +99,6 @@ private struct ReconnectTiming: Sendable {
   }
 }
 
-/// Protocol 2: output arrives as binary frames, and a server that announces
-/// it is probed for the round trip that paces output and local echo.
 @MainActor
 @Suite("Terminal transport protocol 2")
 struct TerminalTransportProtocolTests {
@@ -123,7 +118,6 @@ struct TerminalTransportProtocolTests {
         requestTransport: FreshTerminal(),
         webSocketTransport: OneSocket(socket: socket)
       ),
-      // One ping, then park: the test only needs the first probe.
       sleep: { _ in try await Task.sleep(for: .seconds(3600)) },
       onEvent: { continuation.yield($0) }
     )
@@ -158,7 +152,6 @@ struct TerminalTransportProtocolTests {
     )
     transport.sendResize(cols: 80, rows: 24)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    // resize on connect, then the first ping once `ready` arrives.
     await modern.didSend.wait(for: 2)
     transport.sendHidden()
     transport.sendClear()
@@ -203,33 +196,27 @@ struct TerminalTransportProtocolTests {
         requestTransport: FreshTerminal(),
         webSocketTransport: sockets
       ),
-      // Reconnect immediately, but hold recurring pings at their real interval.
       sleep: { duration in
         if duration >= .seconds(5) { try await clock.sleep(for: duration) }
       },
       onEvent: { event in
-        // Receive order makes the size event acknowledge the preceding ack.
         if case .ptySize = event { acknowledged.signal() }
       }
     )
     transport.sendResize(cols: 80, rows: 24)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    // The resize (clientSeq 1) is acknowledged; "ls" is sent but never is.
     await acknowledged.wait()
     await first.didSend.wait(for: 2)
     transport.sendInput("ls")
     await first.didSend.wait(for: 3)
-    // The socket dies.
     first.cancel(with: .abnormalClosure, reason: nil)
     await sockets.didConnect.wait(for: 2)
-    // Input and resize plus at most one ping; two sends could include a ping.
     await second.didSend.wait(for: 3)
 
     let resent = second.sentFrames.filter { $0["type"] as? String != "ping" }
     #expect(resent.first?["type"] as? String == "input")
     #expect(resent.first?["data"] as? String == "ls")
     #expect(resent.first?["clientSeq"] as? Int == 2)
-    // The acknowledged resize isn't resent; the size is asserted afresh.
     #expect(resent.dropFirst().first?["type"] as? String == "resize")
     #expect(resent.dropFirst().first?["clientSeq"] as? Int == 3)
     transport.detach()
@@ -254,7 +241,6 @@ struct TerminalTransportProtocolTests {
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    // resize, then ping and the claim once `ready` arrives.
     await first.didSend.wait(for: 3)
     #expect(first.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" } == ["resize", "focus"])
     await timing.clock.waitForSleep(timing.pingInterval)
@@ -264,7 +250,6 @@ struct TerminalTransportProtocolTests {
     timing.releaseReconnect.signal()
     await sockets.didConnect.wait(for: 2)
     await timing.clock.waitForSleep(timing.pingInterval, count: 2)
-    // The unacknowledged resize and claim, a fresh resize, a ping, a claim.
     await second.didSend.wait(for: 5)
     let types = second.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "focus", "resize", "focus"])
@@ -274,7 +259,6 @@ struct TerminalTransportProtocolTests {
   func claimEndsWhenAnotherClientTakesTheSize() async throws {
     let first = ProtocolSocket(messages: [
       .string(#"{"type":"ready","seq":0,"protocol":2}"#),
-      // A size from before the server handled the claim is stale.
       .string(#"{"type":"size","seq":0,"cols":120,"rows":40}"#),
       .string(#"{"type":"ack","seq":0,"clientSeq":2}"#),
       .string(#"{"type":"size","seq":0,"cols":200,"rows":50}"#),
@@ -306,7 +290,6 @@ struct TerminalTransportProtocolTests {
     timing.releaseReconnect.signal()
     await sockets.didConnect.wait(for: 2)
     await timing.clock.waitForSleep(timing.pingInterval, count: 2)
-    // No claim after the reconnect: the next frame is the one sent next.
     await second.didSend.wait(for: 2)
     transport.sendClear()
     await second.didSend.wait(for: 3)

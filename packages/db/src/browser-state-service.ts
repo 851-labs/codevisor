@@ -38,12 +38,11 @@ const mergeBrowserCookieMutation = (
       !cookie.domain ||
       !cookie.path.startsWith("/") ||
       cookie.name.length + cookie.value.length > 16_384 ||
-      // oxlint-disable-next-line no-control-regex -- rejecting NUL and line breaks in cookie domains is deliberate
+      // oxlint-disable-next-line no-control-regex
       /[\r\n\0]/.test(cookie.domain))
   )
     throw new Error("Invalid cookie")
   const previous = entries.get(key)
-  // A stale client must not resurrect a logout or overwrite a newer login.
   if ((previous?.revision ?? 0) !== expectedRevision) return revision
   if (previous && JSON.stringify(previous.cookie) === JSON.stringify(cookie)) return revision
   entries.set(key, { key, revision: ++revision, cookie })

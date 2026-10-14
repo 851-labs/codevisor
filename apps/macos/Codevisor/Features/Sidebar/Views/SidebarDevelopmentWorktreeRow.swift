@@ -3,7 +3,6 @@ import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
-/// The pinned development-build identity row naming the active worktree.
 struct SidebarDevelopmentWorktreeRow: View {
   private var developmentWorktreeColor: Color {
     guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else { return .blue }

@@ -1,8 +1,5 @@
 import Foundation
 
-/// A harness's providers and their credentials, in one shape for every
-/// harness that signs in per provider (Pi, OpenCode), so their accounts
-/// screens share one pane, one set of states and one sign-in sheet.
 public struct HarnessProvider: Identifiable, Equatable, Sendable {
   public enum Credential: Equatable, Sendable {
     case providerAccount, apiKey, external
@@ -29,7 +26,6 @@ public struct HarnessProviderMethod: Identifiable, Equatable, Sendable {
   public let id: String
   public let label: String
   public let kind: Kind
-  /// Questions asked before signing in (e.g. a plan or region).
   public let prompts: [HarnessProviderPrompt]
 
   public init(id: String, label: String, kind: Kind, prompts: [HarnessProviderPrompt] = []) {
@@ -56,7 +52,6 @@ public struct HarnessProviderPrompt: Identifiable, Equatable, Sendable {
     }
   }
 
-  /// Shown only when another prompt's answer matches (or doesn't).
   public struct Condition: Equatable, Sendable {
     public let key: String
     public let equals: Bool
@@ -95,13 +90,9 @@ public struct HarnessProviderPrompt: Identifiable, Equatable, Sendable {
   }
 }
 
-/// A sign-in in progress: the page to open and code to enter, and what the
-/// user must answer before it can go on.
 public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
   public enum State: Equatable, Sendable {
-    /// The provider's page is open; waiting for the user there.
     case running
-    /// Waiting for the user to answer `prompt`.
     case waiting
     case complete
     case failed(String)
@@ -129,7 +120,6 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
   }
 }
 
-/// Where a harness's providers live and how to sign in to them.
 @MainActor public protocol HarnessProviderBackend {
   func providers() async throws -> [HarnessProvider]
   func signIn(
@@ -141,9 +131,6 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
   func remove(_ provider: HarnessProvider) async throws
 }
 
-// MARK: - Pi
-
-/// Pi's providers: one credentials file per machine, or the shared ones.
 @MainActor public struct PiProviderBackend: HarnessProviderBackend {
   let store: HarnessAccountsStore
 
@@ -166,7 +153,6 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
       return HarnessProviderSignIn(id: UUID().uuidString, state: .complete)
     }
     let started = try await store.startPiAuth(providerId: provider.id, method: method.id)
-    // A machine's own key is Pi's first prompt.
     guard let apiKey, started.state == "waiting", started.prompt != nil else { return Self.signIn(started) }
     return Self.signIn(try await store.answerPiAuthFlow(id: started.id, value: apiKey))
   }
@@ -212,9 +198,6 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
   }
 }
 
-// MARK: - OpenCode
-
-/// One OpenCode profile's providers.
 @MainActor public struct OpenCodeProviderBackend: HarnessProviderBackend {
   let store: HarnessAccountsStore
   let accountId: String
@@ -282,7 +265,6 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
     HarnessProviderSignIn(
       id: flow.id, state: state(flow.state, error: flow.error), url: flow.authorization?.url,
       instructions: flow.authorization?.instructions.isEmpty == false ? flow.authorization?.instructions : nil,
-      // OpenCode waits only for a pasted authorization code.
       prompt: flow.state == "waiting" ? codePrompt : nil)
   }
 }

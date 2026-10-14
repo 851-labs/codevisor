@@ -1,10 +1,6 @@
 import Foundation
 
 extension WorkspaceSyncModel {
-  /// Applies a close to local workspace truth before publishing it. Pane
-  /// views normally perform this mutation themselves; navigation surfaces
-  /// use this path when they archive a chat without owning its live model.
-  /// The final renderer becomes New Tab so an active workspace stays usable.
   func closePaneLocally(
     id: UUID,
     workspaceId: UUID,
@@ -40,7 +36,6 @@ extension Workspace {
     }
     let previousTabs = centerTabs
     guard removePane(id: id) else { return nil }
-    // A closed chat takes its subagent views with it.
     pruneOrphanedSubagentPanes()
     pruneEmptyCenterTabs()
     selectReplacementForClosedTab(selectedCenterTabId, previousTabs: previousTabs)

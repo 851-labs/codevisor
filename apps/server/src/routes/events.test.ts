@@ -28,7 +28,7 @@ const makeFakeSocket = () => {
   const closers: Array<() => void> = []
   return {
     sent,
-    readyState: 1, // WebSocket.OPEN
+    readyState: 1,
     send: (raw: string) => sent.push(raw),
     on: (event: string, handler: () => void) => {
       if (event === "close") closers.push(handler)
@@ -94,9 +94,6 @@ describe("event routes", () => {
       })
     ).body as { readonly id: string; readonly agentSessionId: string }
 
-    // The standing sink was registered at session create; the agent now pushes
-    // a whole background turn without any client prompt in flight.
-    // Scalar payloads are wrapped rather than crashing materialization.
     await agents.emit(session.agentSessionId, {
       kind: "session.output",
       subjectId: session.agentSessionId,
@@ -311,8 +308,6 @@ describe("event routes", () => {
     const fanout = await run(makeEventFanout)
 
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
-    // Session sockets carry keepalives, stamped with the socket's own cursor
-    // so no client cursor logic can ever be moved by one.
     const scoped = makeFakeSocket()
     await attachEventSocket(
       services.db,
@@ -332,7 +327,6 @@ describe("event routes", () => {
       payload: {}
     })
 
-    // Fanout wakes a durable read; only committed records advance the cursor.
     const project = await run(services.db.createProject({ folderPath: "/tmp/keepalive" }))
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex", title: "Keepalive" })
@@ -347,15 +341,11 @@ describe("event routes", () => {
       connected.sent.map(parseSentEvent).findLast((event) => event.kind === "keepalive")?.id
     ).toBe(committed.subjectRevision)
 
-    // Close stops the timer.
     connected.close()
     const sentAtClose = connected.sent.length
     await vi.advanceTimersByTimeAsync(25_000)
     expect(connected.sent.length).toBe(sentAtClose)
 
-    // The global socket stays keepalive-free: old live-only subscribers adopt
-    // the first received id as their cursor, which a keepalive must never
-    // influence.
     const global = makeFakeSocket()
     await attachEventSocket(
       services.db,
@@ -419,7 +409,6 @@ describe("event routes", () => {
         [2, "session.output"],
         [2, "keepalive"]
       ])
-      // Persisted but deliberately never published to the live fanout.
       durable.push({
         ...durable[1]!,
         id: 3,
@@ -459,8 +448,6 @@ describe("websocket upgrades", () => {
       Buffer.alloc(0),
       new WebSocketServer({ noServer: true })
     )
-    // Node took its own 'error' listener off the socket when it emitted
-    // 'upgrade'; the peer resets while the plugin is still deciding.
     socket.emit("error", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }))
     expect(socket.destroyed).toBe(true)
     decide(true)
@@ -473,8 +460,6 @@ describe("websocket upgrades", () => {
     onTestFinished(() => socket.terminate())
     await once(socket, "open")
     const closed = once(socket, "close")
-    // The ws client does not validate what it sends: a text frame carrying
-    // invalid UTF-8 is a protocol error the server's socket reports as 'error'.
     socket.send(Buffer.from([0xff, 0xfe]), { binary: false })
     const [code] = (await closed) as [number]
     expect(code).toBe(1007)

@@ -123,10 +123,6 @@ const publishArchive = (
   return archive
 }
 
-/// Writes a portable, store-only ZIP without relying on a system `zip`
-/// executable. The prepared extension is tiny, and avoiding a platform
-/// dependency keeps the drag-to-install artifact available on Linux servers
-/// as well as the macOS app.
 export const createBrowserExtensionArchive = (extension: string): string => {
   if (!existsSync(join(extension, "manifest.json"))) {
     throw new Error("The Codevisor Chrome extension is missing")
@@ -135,7 +131,7 @@ export const createBrowserExtensionArchive = (extension: string): string => {
   const centralParts: Buffer[] = []
   let localOffset = 0
   const fixedDosTime = 0
-  const fixedDosDate = (40 << 9) | (1 << 5) | 1 // 2020-01-01
+  const fixedDosDate = (40 << 9) | (1 << 5) | 1
 
   for (const file of [...extensionFiles(extension)].toSorted()) {
     const name = relative(extension, file).split(sep).join("/")

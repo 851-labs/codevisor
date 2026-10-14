@@ -1,8 +1,6 @@
 import Observation
 import SwiftUI
 
-/// Reports the geometry SwiftUI actually placed, rather than probing a second
-/// layout that can still describe the previous contents of a native host.
 @MainActor
 @Observable
 public final class TranscriptContentLayoutObserver {
@@ -44,8 +42,6 @@ private struct TranscriptContentLayout: View {
   var body: some View {
     let request = observer.request
     content
-      // The virtual row may still have its old or estimated height. Its
-      // contents must resolve their natural height independently of it.
       .fixedSize(horizontal: false, vertical: true)
       .onGeometryChange(for: TranscriptContentLayoutObserver.Measurement.self) { geometry in
         .init(generation: generation, request: request, size: geometry.size)

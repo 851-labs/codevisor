@@ -3,23 +3,10 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
 
 export interface AttentionSettleScheduler {
-  /// Re-arms every parked finish left behind by a previous process (or by the
-  /// revision-counter migration). Runs after startup reconciliation has
-  /// already cleared stale background-task snapshots. Queued prompts remain
-  /// held until dispatch resumes or the user removes them.
   readonly recover: () => Promise<void>
   readonly close: () => void
 }
 
-/// The event-driven half of deferred attention settling. Projections inside
-/// packages/db are synchronous SQLite transactions and cannot own timers, so
-/// they only persist a `settle_due_at` deadline; this scheduler watches the
-/// fanout for anything that could move a session's deadline and fires
-/// `settleSessionAttention` when it elapses. Settling is idempotent and
-/// re-validated in-transaction, so a race with a turn that restarted after
-/// the timer was armed is harmless. The db-side re-evaluation also settles
-/// expired deadlines opportunistically on the next inbound event — this
-/// scheduler just makes the flip prompt.
 export const makeAttentionSettleScheduler = (
   db: CodevisorDatabaseService,
   fanout: EventFanout
@@ -35,7 +22,7 @@ export const makeAttentionSettleScheduler = (
   }
 
   const arm = (sessionId: string, dueAt: string): void => {
-    /* v8 ignore next -- shutdown race: a settle resolving as close() runs. */
+    /* v8 ignore next */
     if (closed) return
     disarm(sessionId)
     const delay = Math.max(0, Date.parse(dueAt) - Date.now())
@@ -49,12 +36,9 @@ export const makeAttentionSettleScheduler = (
 
   const settle = async (sessionId: string): Promise<void> => {
     const result = await run(db.settleSessionAttention(sessionId))
-    /* v8 ignore next -- shutdown race: close() during the settle round-trip. */
+    /* v8 ignore next */
     if (closed) return
     if (result.settled) {
-      // The settle happened outside any inbound runtime event, so the fanout
-      // must be told explicitly — the exact mechanism the read/unread routes
-      // use. Clients see the flip from inProgress to unread here.
       const summary = await run(db.getSessionSummary(sessionId))
       await appendAndPublish(db, fanout, "session.attention.updated", sessionId, summary)
       return
@@ -91,9 +75,6 @@ export const makeAttentionSettleScheduler = (
         if (row.dueAt !== null) {
           arm(row.sessionId, row.dueAt)
         } else {
-          // No deadline yet (migrated pending epochs, holds released while
-          // the old process was dying). settle() arms the grace deadline
-          // in-transaction and hands back when to fire.
           await settle(row.sessionId).catch(swallowError)
         }
       }

@@ -11,8 +11,6 @@ const id = "persisted-transcript-state-v1"
 const batchBytes = 2 * 1024 * 1024
 const batchRows = 256
 
-/** Each checkpoint commits with its projections. A killed upgrade resumes at
- * the next indexed row, without reparsing earlier history or loading a chat. */
 export const runTranscriptStateUpgrade = (
   db: Database.Database,
   config: CodevisorDatabaseConfig
@@ -30,8 +28,6 @@ export const runTranscriptStateUpgrade = (
     Number((db.prepare("select count(*) as n from session_events").get() as { n: number }).n)
   if (existing === undefined)
     db.transaction(() => {
-      // Older upgrades can project while constructing canonical chat rows. This
-      // pass is the sole checkpointed owner of the final semantic conversion.
       db.exec(
         "delete from transcript_body_chunks; delete from transcript_body_fields; delete from transcript_text_chunks; delete from transcript_heads; delete from transcript_entries; delete from session_state;"
       )
@@ -53,7 +49,6 @@ export const runTranscriptStateUpgrade = (
   report("running")
   try {
     while (true) {
-      // Read sizes first so a row limit cannot accumulate hundreds of MB.
       const candidates = db
         .prepare(
           "select rowid as cursor, length(cast(payload as blob)) as bytes from session_events where rowid > ? order by rowid limit ?"

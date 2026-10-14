@@ -42,18 +42,15 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     turnClientId: (sessionId) => core.turnClientIds.get(sessionId)
   })
 
-  // Plugin installs/uninstalls change the plugin-tool inventory the gateway
-  // advertises; refresh every live gateway's tool descriptions on change.
   const unsubscribePluginTools = config.pluginTools?.subscribeInstalled(() => {
-    /* v8 ignore next 2 -- inventory refresh failures surface only from a live plugin installer. */
+    /* v8 ignore next 2 */
     void refreshGatewayInventories().catch((cause: unknown) =>
       reportBackgroundFailure("Plugin tool inventory refresh failed", cause)
     )
   })
 
-  // Saved skills appear in each gateway's `skills` tool description.
   const unsubscribeSkills = config.skillSource?.subscribe(() => {
-    /* v8 ignore next 2 -- refresh failures surface only from a broken skill store. */
+    /* v8 ignore next 2 */
     void refreshGatewayInventories().catch((cause: unknown) =>
       reportBackgroundFailure("Skill inventory refresh failed", cause)
     )
@@ -113,16 +110,13 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         const oauth = core.secrets(server).oauth
         if (oauth?.tokens === undefined) continue
         scheduleRefresh(server, oauth.tokens)
-        // A mirror that received tokens but never tried them (older builds
-        // stopped at the import) heals on boot: enabled, credentialed, and
-        // still reporting "needs authorization" means "connect now".
         if (server.enabled && server.connectionState === "needsAuthorization") {
-          /* v8 ignore next -- a refused boot reconnect already reports through the record's state. */
+          /* v8 ignore next */
           void serverOperations.connect(server.id).catch(() => undefined)
         }
       }
     })
-    /* v8 ignore start -- listing the manager's own table only fails on a broken database. */
+    /* v8 ignore start */
     .catch((cause: unknown) => reportBackgroundFailure("MCP OAuth restoration failed", cause))
   /* v8 ignore stop */
 

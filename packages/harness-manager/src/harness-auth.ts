@@ -58,24 +58,17 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     if (account.harnessId !== "opencode") throw new Error("Account is not an OpenCode profile")
     const env = await accountEnv(account)
     return {
-      // The newest OpenCode, as its chats run: OpenCode 1 must never touch
-      // data OpenCode 2 has migrated.
       command: locateOpenCode(env) ?? (await executable("opencode")),
       cwd: profilePath(account) ?? env.HOME ?? process.cwd(),
       env,
       authPath: openCodeAuthPath(env)
     }
   }
-  // OpenCode 2 keeps its accounts behind its own server API; OpenCode 1's
-  // control server is a different API entirely.
   const openCodeMajorVersion = config.openCode?.majorVersion ?? makeOpenCodeVersionProbe()
   const openCode2 =
     config.openCode?.accounts ?? makeOpenCode2Accounts({ pool: makeOpenCodeServerPool() })
   const openCode2Logins = config.openCode?.logins ?? makeOpenCode2Logins()
   const isOpenCode2 = async (command: string) => ((await openCodeMajorVersion(command)) ?? 1) >= 2
-  /// A throwaway OpenCode 2 server on its own data directory, for a sign-in
-  /// whose credential Codevisor takes into its vault: it never lands in a
-  /// profile OpenCode would refresh on its own.
   const isolatedOpenCode2 = async (profile: OpenCodeProfile): Promise<OpenCodeServerHold> => {
     const root = join(config.dataDir, "harness-logins", "opencode", randomUUID())
     await mkdir(root, { recursive: true, mode: 0o700 })
@@ -267,7 +260,6 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       if (!(await isOpenCode2(profile.command)))
         return openCodeAuth.beginLogin(accountId, providerId, methodId, inputs, apiKey, shared)
       const providers = config.sharedProviders?.()
-      // A sign-in Codevisor can share goes into its vault, like OpenCode 1's.
       const captured =
         apiKey === undefined &&
         providers !== undefined &&
@@ -292,7 +284,6 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
             }
           : {})
       })
-      // A key replaces a shared sign-in for the same provider.
       if (apiKey !== undefined) await providers?.remove("opencode", accountId, providerId, shared)
       return flow
     },

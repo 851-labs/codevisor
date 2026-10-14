@@ -53,15 +53,13 @@ struct RFBMessageTests {
     #expect(RFBKeysym.keysym(for: "→") == 0x0100_2192)
     #expect(RFBKeysym.keysym(for: "\r") == RFBKeysym.return)
     #expect(RFBKeysym.keysym(for: "\u{7f}") == RFBKeysym.delete)
-    #expect(RFBKeysym.keysym(for: "\u{03}") == 0x43)  // Control-C arrives as the letter
+    #expect(RFBKeysym.keysym(for: "\u{03}") == 0x43)
     #expect(RFBKeysym.function(12) == 0xffc9)
   }
 
   @Test func vncAuthenticationMatchesAnIndependentDES() {
-    // openssl enc -des-ecb -nopad with the bit-reversed key of "secret".
     let response = RFBVNCAuthentication.response(challenge: [UInt8](0..<16), password: "secret")
     #expect(response == [UInt8](hex: "ee22539f33a5983ec12f9c2edbc995dd"))
-    // Only the first eight bytes of the password are the key.
     #expect(
       RFBVNCAuthentication.response(challenge: [UInt8](0..<16), password: "secret12-and-more")
         == RFBVNCAuthentication.response(challenge: [UInt8](0..<16), password: "secret12"))

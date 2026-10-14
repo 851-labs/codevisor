@@ -12,7 +12,6 @@ export const chromiumVersion = "152.0.5+gb129680+chromium-152.0.7977.54"
 export const chromiumHelperName = (productName) =>
   productName.replace(/^Codevisor/, "Codevisor Browser Helper")
 export const chromiumHelperSuffixes = ["", " (Alerts)", " (GPU)", " (Plugin)", " (Renderer)"]
-// The macOS app ships for Apple silicon only.
 const artifacts = {
   arm64: { platform: "macosarm64", sha1: "38b1b9d7f68c4e9c7dbd253b8f4129bea50a8c33" }
 }
@@ -38,11 +37,6 @@ async function digest(path, algorithm = "sha256") {
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest("hex")
 }
-/// Shared across worktrees, like the GhosttyKit framework: the CEF SDK and
-/// its wrapper library are pinned by chromiumVersion + checksum and rarely
-/// change, so every worktree on the same version reuses one download and one
-/// wrapper build. Each version has its own keyed directories, so branches on
-/// different versions coexist. Per-worktree outputs stay in the worktree.
 export function chromiumArtifactsRoot(environment = process.env) {
   return (
     environment.CODEVISOR_CHROMIUM_ARTIFACTS_ROOT ??
@@ -129,8 +123,6 @@ export async function ensureChromium(
     if (!artifacts[arch]) throw new Error(`Unsupported Chromium architecture: ${arch}`)
   }
   await mkdir(output, { recursive: true })
-  // The shared inputs are provisioned by one worktree at a time; the others
-  // wait, then find them in place and skip straight to their own outputs.
   await withArtifactLock(join(cache, ".lock"), async () => {
     const cmake = await ensureCmake(cache, repoRoot, environment)
     for (const arch of archs) await ensureSdkAndWrapper(cache, cmake, arch, repoRoot, environment)

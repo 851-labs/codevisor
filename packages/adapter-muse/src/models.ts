@@ -2,8 +2,6 @@ import type { SessionConfigOption } from "@codevisor/api"
 
 import type { ModelCatalogEntry } from "./protocol.js"
 
-/// Muse's model catalog and reasoning tiers as Codevisor config options.
-
 export const MODEL_OPTION_ID = "model"
 export const EFFORT_OPTION_ID = "thought_level"
 
@@ -18,8 +16,6 @@ const tierNames: Record<string, string> = {
   ultra: "Ultra"
 }
 
-/// The tiers a model accepts. Muse 1.4.7 lists them in `variants`;
-/// `reasoningEffortVariants` is the described form newer catalogs fill.
 export const modelTiers = (model: ModelCatalogEntry | undefined): ReadonlyArray<string> => {
   if (model === undefined) return []
   if (Array.isArray(model.variants) && model.variants.length > 0)
@@ -27,7 +23,6 @@ export const modelTiers = (model: ModelCatalogEntry | undefined): ReadonlyArray<
   return (model.reasoningEffortVariants ?? []).map((variant) => variant.tier)
 }
 
-/// The tier a session runs at when nobody chose one.
 export const defaultTier = (model: ModelCatalogEntry | undefined): string | undefined => {
   const tiers = modelTiers(model)
   if (model?.defaultReasoningEffort !== undefined && tiers.includes(model.defaultReasoningEffort))

@@ -1,14 +1,6 @@
 import CZlib
 import Foundation
 
-/// The Extended Clipboard pseudo-encoding (0xC0A1E5CE), 851-2316: UTF-8
-/// clipboard text instead of Latin-1. Its messages ride Server/ClientCutText
-/// with a negative length: a u32 of flags (low 16 bits the formats, high bits
-/// the action) and the action's payload. Only the text format is used.
-///
-/// TigerVNC ignores text a client provides unprompted: the client notifies,
-/// the server requests (when something on its side pastes), the client
-/// provides. The other way, the client requests and the server provides.
 public enum RFBExtendedClipboard {
   public static let pseudoEncoding = Int32(bitPattern: 0xC0A1_E5CE)
 
@@ -19,16 +11,13 @@ public enum RFBExtendedClipboard {
   public static let notify: UInt32 = 1 << 27
   public static let provide: UInt32 = 1 << 28
   static let actions: UInt32 = caps | request | peek | notify | provide
-  /// The largest message (compressed) this client accepts, and the text it offers or takes.
   public static let maximumBytes = 1 << 20
 
   public enum Message: Sendable, Equatable {
-    /// The formats and actions a peer supports, with a maximum size per format (in format order).
     case caps(formats: UInt32, actions: UInt32, maximumSizes: [UInt32])
     case request(formats: UInt32)
     case peek
     case notify(formats: UInt32)
-    /// The text, or nil when the provider has none in that format.
     case provide(text: String?)
   }
 
@@ -47,7 +36,6 @@ public enum RFBExtendedClipboard {
         return writer.bytes
       }
       writer.u32(provide | Self.text)
-      // Text: UTF-8, CRLF line endings, NUL-terminated; the length includes the NUL.
       let bytes =
         Array(text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\r\n").utf8) + [0]
       var body = RFBByteWriter()
@@ -63,8 +51,6 @@ public enum RFBExtendedClipboard {
     let flags = UInt32(bytes[0]) << 24 | UInt32(bytes[1]) << 16 | UInt32(bytes[2]) << 8 | UInt32(bytes[3])
     let formats = flags & 0xFFFF
     let payload = Array(bytes.dropFirst(4))
-    // In a caps message the other action bits list the actions the peer supports,
-    // so caps is checked first; every other message carries exactly one action.
     if flags & caps != 0 {
       let count = formats.nonzeroBitCount
       guard payload.count >= count * 4 else { throw RFBError.malformed("extended clipboard caps without sizes") }
@@ -80,7 +66,6 @@ public enum RFBExtendedClipboard {
     case provide:
       guard formats & text != 0 else { return .provide(text: nil) }
       let inflated = try RFBZlibInflater().inflate(payload)
-      // The text format comes first; later formats (rich text, HTML, …) are ignored.
       guard inflated.count >= 4 else { throw RFBError.malformed("extended clipboard provide without a length") }
       let length = Int(inflated[0..<4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
       guard length <= inflated.count - 4, length <= maximumBytes else {
@@ -97,7 +82,6 @@ public enum RFBExtendedClipboard {
     }
   }
 
-  /// One complete zlib stream (a fresh stream per message, as the extension requires).
   static func compress(_ bytes: [UInt8]) throws -> [UInt8] {
     var length = compressBound(uLong(bytes.count))
     var output = [UInt8](repeating: 0, count: Int(length))

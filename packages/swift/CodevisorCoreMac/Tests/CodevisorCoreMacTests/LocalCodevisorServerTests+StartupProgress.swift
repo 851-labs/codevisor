@@ -94,8 +94,6 @@ extension LocalCodevisorServerTests {
     #expect(message.contains("stopped progressing"))
     #expect(jobProbes == 1)
     #expect(server.startupCanRetry)
-    // A slow probe consumes the deadline too; a fixed attempt budget would
-    // keep polling. A live launchd process must not extend the stall budget.
     let polls = probeDelayMilliseconds == 0 ? 10 : 8
     #expect(client.healthCallCount == polls)
     #expect(clock.requestedIntervals == Array(repeating: .milliseconds(2), count: polls))

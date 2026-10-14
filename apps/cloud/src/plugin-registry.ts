@@ -10,24 +10,14 @@ import {
 
 import type { CloudEnv } from "./env.js"
 
-/// GitHub topic that marks a public repository as a Codevisor plugin. Tagging
-/// a repo publishes it to the index on the next poll; untagging drops it.
 export const PLUGIN_TOPIC = "codevisor-plugin"
 
 export const PLUGIN_MANIFEST_FILENAME = "codevisor-plugin.json"
 
-/// KV layout: the whole index under one key (served as /plugins/index.json
-/// verbatim) plus one key per entry so /plugins/:id.json is a single read.
 export const PLUGIN_INDEX_KEY = "index"
 const ENTRY_KEY_PREFIX = "entry:"
 export const pluginEntryKey = (id: string): string => `${ENTRY_KEY_PREFIX}${id}`
 
-// -- Wire shapes ---------------------------------------------------------------
-
-/// One indexed plugin: manifest metadata the app can render without running
-/// anything, plus the GitHub facts (repo, stars, push time) that anchor it to
-/// a real owner. This is the Phase 1 shape; Phase 2 mirrors it into
-/// packages/api as the server-passthrough wire type.
 export interface PluginIndexEntry {
   url?: string
   ageRating?: number
@@ -36,31 +26,20 @@ export interface PluginIndexEntry {
   version: string
   protocolVersion: number
   description?: string
-  /// Manifest artwork path on the plugin's own server — only fetchable once
-  /// the plugin is installed and running, so browse UIs prefer
-  /// `ownerAvatarUrl`.
   iconPath?: string
   panes: readonly PluginPaneDescriptor[]
   tools?: readonly PluginToolDescriptor[]
-  /// GitHub "owner/name" — the directory always shows the real repo owner.
   repo: string
-  /// Exact commit used to fetch and validate this manifest.
   commit: string
   minCodevisorVersion?: string
   requirements?: PluginRequirements
   platforms?: readonly string[]
-  /// GitHub avatar of the repo owner — the only artwork renderable before
-  /// install.
   ownerAvatarUrl?: string
   stars: number
   pushedAt: string
-  /// Curation groundwork: reserved for first-party verification of an entry.
-  /// The indexer never sets it yet, so it is always absent today.
   verified?: boolean
 }
 
-/// Why a tagged repo was left out — published alongside the index so plugin
-/// authors can see (and fix) exactly what disqualified them.
 export interface PluginIndexRejection {
   repo: string
   reason: string
@@ -78,11 +57,8 @@ export interface PluginRefreshSummary {
   rejected: number
 }
 
-// -- GitHub fetch pipeline -----------------------------------------------------
-
 type FetchLike = NonNullable<CloudEnv["GITHUB_FETCH"]>
 
-/// The subset of a GitHub search item the indexer consumes.
 interface GitHubSearchRepo {
   full_name: string
   default_branch: string
@@ -99,7 +75,6 @@ const githubHeaders = (token: string | undefined): Record<string, string> => ({
 })
 
 const SEARCH_PAGE_SIZE = 100
-/// GitHub's search API serves at most 1000 results (10 pages of 100).
 const MAX_SEARCH_PAGES = 10
 
 const searchTaggedRepos = async (
@@ -137,15 +112,9 @@ const resolveDefaultBranchCommit = async (
   return body.sha
 }
 
-/// Fetch the manifest from the exact commit advertised in the index. This
-/// prevents a default-branch push from changing the candidate after consent.
 const manifestUrl = (repo: GitHubSearchRepo, commit: string): string =>
   `https://raw.githubusercontent.com/${repo.full_name}/${commit}/${PLUGIN_MANIFEST_FILENAME}`
 
-// -- Manifest validation ---------------------------------------------------------
-
-/// Mirrors packages/plugins/src/plugin-manifest.ts (PLUGIN_ID_PATTERN) — the
-/// id grammar is part of the plugin protocol.
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 
 type ManifestValidation = { ok: true; manifest: PluginManifest } | { ok: false; reason: string }
@@ -186,8 +155,6 @@ const validateIndexedIdentity = (
       reason: `plugin id must be lowercase "owner.name" (letters, digits, hyphens): ${manifest.id}`
     }
   }
-  // Anti-impersonation: the id's namespace must be the repo owner, so a repo
-  // can never publish under someone else's plugin id.
   const namespace = manifest.id.split(".")[0]
   if (namespace !== repoOwner.toLowerCase()) {
     return {
@@ -211,11 +178,6 @@ const decodeIndexedManifest = (json: unknown, repoOwner: string): ManifestValida
   return validateIndexedIdentity(manifest, repoOwner)
 }
 
-/// Structural validation for indexing. Reuses the PluginManifest Effect
-/// Schema from @codevisor/api; the full install-time ruleset lives in
-/// packages/plugins/src/plugin-manifest.ts (parsePluginManifest) and still
-/// runs on the user's machine before anything executes — the index only needs
-/// enough to publish honest metadata under the right owner.
 export const validateManifestForIndex = (raw: string, repoOwner: string): ManifestValidation => {
   let json: unknown
   try {
@@ -227,7 +189,6 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
   if (unsupportedProtocol !== undefined) return unsupportedProtocol
   return decodeIndexedManifest(json, repoOwner)
 }
-// -- Index refresh ---------------------------------------------------------------
 
 const toEntry = (
   manifest: PluginManifest,
@@ -253,17 +214,11 @@ const toEntry = (
     ? {}
     : { requirements: manifest.requirements }),
   repo: repo.full_name,
-  // The owner's GitHub avatar rides along so browse UIs can show artwork
-  // without running anything — search results already carry it, so this
-  // costs zero extra requests.
   ...(repo.owner?.avatar_url !== undefined ? { ownerAvatarUrl: repo.owner.avatar_url } : {}),
   stars: repo.stargazers_count,
   pushedAt: repo.pushed_at
 })
 
-/// Replaces the stored index: the full document, one key per entry, and
-/// deletion of entry keys whose plugin is no longer indexed — untagging a
-/// repo (or breaking its manifest) drops it on the next poll.
 const writeIndex = async (kv: KVNamespace, index: PluginIndex): Promise<void> => {
   const alive = new Set(index.entries.map((entry) => pluginEntryKey(entry.id)))
   await kv.put(PLUGIN_INDEX_KEY, JSON.stringify(index))
@@ -283,10 +238,6 @@ const writeIndex = async (kv: KVNamespace, index: PluginIndex): Promise<void> =>
   } while (cursor !== undefined)
 }
 
-/// The whole poll: paginated topic search → raw manifest fetch per repo →
-/// validation (schema + owner match) → rebuilt KV index with per-entry
-/// diagnostics for everything rejected. Fully injectable: GitHub traffic goes
-/// through env.GITHUB_FETCH when set (tests), global fetch otherwise.
 export const refreshPluginIndex = async (env: CloudEnv): Promise<PluginRefreshSummary> => {
   const fetchImpl: FetchLike = env.GITHUB_FETCH ?? globalThis.fetch
   const repos = await searchTaggedRepos(fetchImpl, env.GITHUB_TOKEN)

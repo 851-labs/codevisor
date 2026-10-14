@@ -12,7 +12,6 @@ import {
   systemMessage
 } from "./test-support.js"
 
-/// How long cancel waits for Claude's own terminal result after an interrupt.
 const CANCEL_GRACE_MS = 1_500
 
 describe("ClaudeProvider", () => {
@@ -58,7 +57,6 @@ describe("ClaudeProvider", () => {
         toolCallId: "tool-9"
       })
     )
-    // A cancelled turn is not an error.
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
   })
 
@@ -106,7 +104,6 @@ describe("ClaudeProvider", () => {
       return result
     })
     await vi.advanceTimersByTimeAsync(CANCEL_GRACE_MS - 1)
-    // Still inside the grace: nothing has been force-ended yet.
     expect(releaseTerminal).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     await terminalEntered.promise

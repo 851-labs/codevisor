@@ -3,9 +3,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Metrics are written from the capture queue, the encoder, the render loop and the main actor at
-/// once, and read while all of that is happening. Losing a count would make a diagnostic lie, so the
-/// totals here are exact rather than approximate.
 struct ScreenSharingMetricsConcurrencyTests {
   @Test func everyRecorderOnEveryQueueIsCountedExactlyOnce() async throws {
     let metrics = ScreenSharingMetrics()
@@ -18,8 +15,6 @@ struct ScreenSharingMetricsConcurrencyTests {
     await withTaskGroup(of: Void.self) { group in
       for recorder in 0..<recorders {
         group.addTask {
-          // Every recorder parks on one gate, so the writes genuinely overlap instead of finishing
-          // in whatever order the pool happened to start them.
           parked.signal()
           await release.wait()
           for index in 0..<perRecorder {
@@ -42,15 +37,11 @@ struct ScreenSharingMetricsConcurrencyTests {
     let encode = try #require(snapshot.timings["encodeMs"])
     #expect(encode.count == recorders * perRecorder)
     #expect(encode.maximumMs == 9)
-    // A label is last-writer-wins, but it must be one recorder's whole value, never a torn one.
     let label = try #require(snapshot.labels["lastRecorder"])
     #expect((0..<recorders).map { "recorder-\($0)" }.contains(label))
-    // The trace ring stays at its bound under contention rather than growing past it.
     #expect(try #require(snapshot.traces?["boundary"]).count == 64)
   }
 
-  /// `increment` returns the post-increment value so a caller can label a first occurrence without a
-  /// second lock. Under contention that means exactly one recorder may see each value.
   @Test func theValueReturnedByIncrementIsUniquePerCaller() async {
     let metrics = ScreenSharingMetrics()
     let recorders = 32
@@ -75,8 +66,6 @@ struct ScreenSharingMetricsConcurrencyTests {
     #expect(metrics.snapshot().counters["starts"] == recorders)
   }
 
-  /// A once-a-second check reads one counter or label without a snapshot; percentiles are taken over
-  /// the newest samples once the ring is full, whatever order it wrapped them in.
   @Test func singleValuesAndPercentilesReadTheSameRecords() throws {
     let metrics = ScreenSharingMetrics()
     #expect(metrics.counter("capturedFrames") == 0)
@@ -87,7 +76,6 @@ struct ScreenSharingMetricsConcurrencyTests {
     #expect(metrics.label("decoderError") == "bad slice")
     #expect(metrics.counters() == ["capturedFrames": 2])
 
-    // 2000 samples into an 1800-sample ring: the oldest 200 (0 ms) are overwritten by 1800...1999.
     for index in 0..<2000 { metrics.observe("decodeMs", milliseconds: index < 200 ? 0 : Double(index)) }
     let snapshot = metrics.snapshot()
     let timing = try #require(snapshot.timings["decodeMs"])
@@ -96,12 +84,9 @@ struct ScreenSharingMetricsConcurrencyTests {
     #expect(snapshot.counters == metrics.counters() && snapshot.labels == ["decoderError": "bad slice"])
   }
 
-  /// Cadence is measured between events of one stage on one clock. A repeated timestamp is a real
-  /// zero interval; a clock that jumps backwards must rebase instead of recording the jump.
   @Test func cadenceSamplesOnlyForwardIntervalsAndNeverSpikesOnAClockThatWentBackwards() throws {
     let metrics = ScreenSharingMetrics()
     metrics.event("cadence", atNanoseconds: 1_000_000)
-    // The first event only establishes a baseline; there is nothing yet to measure against.
     #expect(metrics.snapshot().timings["cadence"] == nil)
     metrics.event("cadence", atNanoseconds: 3_000_000)
     metrics.event("cadence", atNanoseconds: 3_000_000)
@@ -110,11 +95,9 @@ struct ScreenSharingMetricsConcurrencyTests {
     metrics.event("cadence", atNanoseconds: -5)
     metrics.event("cadence", atNanoseconds: 3_000_000)
     let timing = try #require(metrics.snapshot().timings["cadence"])
-    // 2 ms, 0 ms, (rebase), 1 ms, (rejected), 1 ms.
     #expect(timing.count == 4)
     #expect(timing.p50Ms == 1)
     #expect(timing.maximumMs == 2)
-    // Stages are independent: one stage's baseline never measures against another's.
     metrics.event("other", atNanoseconds: 9_000_000)
     #expect(metrics.snapshot().timings["other"] == nil)
   }
@@ -129,7 +112,6 @@ struct ScreenSharingMetricsConcurrencyTests {
         built.signal()
         return "never built"
       }())
-    // The autoclosure is the whole point of the gate: nothing is formatted on a media path.
     #expect(built.value == 0)
     #expect(metrics.snapshot().traces == nil)
 

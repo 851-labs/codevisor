@@ -5,8 +5,6 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-// MARK: - Composer
-
 extension ChatScreen {
   var composerOverlay: some View {
     VStack(spacing: ComposerGlassStyle.clusterSpacing) {
@@ -18,7 +16,6 @@ extension ChatScreen {
         )
         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
-      // Hidden while editing: the composer IS the goal UI in that mode.
       if controller.supportsGoals, !controller.isGoalEditing {
         if let model = controller.model {
           LiveGoalBannerView(
@@ -42,27 +39,14 @@ extension ChatScreen {
         )
       }
       composerNoticeRail
-      // ComposerCard owns all of its states, including blocking agent
-      // questions and plan approvals, so they share one stable glass
-      // identity while the content and surface geometry change.
       ComposerCard(
         controller: controller,
         onTextViewReady: { textView in
-          // REGISTRATION ONLY — mounting never takes focus. The
-          // container's open sequence is the single writer of the
-          // initial focus (it targets the routed chat, applying
-          // the moment that chat's composer registers); every
-          // later move is an explicit user intent. Racing grabs
-          // from N panes mounting in arbitrary layout order is
-          // exactly what this replaces.
           focus.composerTextView = textView
           if let chatId = controller.serverSession?.id {
             focus.registerComposer(textView, forChat: chatId)
           }
         },
-        // The question picker DOES take focus on mount (unlike the
-        // composer registration above): its mount is an event — a
-        // blocking question arrived and replaced the composer.
         focus: focus,
         focusChatId: controller.serverSession?.id,
         glassNamespace: composerGlassNamespace
@@ -102,8 +86,6 @@ extension ChatScreen {
         onDismiss: { controller.dismissConfigurationAdjustment() }
       )
     }
-    // The chat's model was withdrawn: shown until the user picks another
-    // model or dismisses it.
     if let message = controller.modelUnavailableMessage {
       ComposerNoticeRail(
         message,
@@ -111,9 +93,6 @@ extension ChatScreen {
         onDismiss: { controller.dismissModelUnavailableNotice() }
       )
     }
-    // A refusal-driven model swap is independent of the two notices above:
-    // it can happen mid-chat long after configuration settled, so it gets
-    // its own slot rather than another branch.
     if let message = controller.modelFallbackMessage {
       ComposerNoticeRail(
         message,

@@ -5,12 +5,8 @@ extension SessionModel {
   private func apply(_ update: SessionUpdate) {
     appliedUpdateCount += 1
     if let owner = Self.persistedOwner(of: update), activeItem?.id != owner, settledIndexById[owner] == nil {
-      // A late update to an unloaded turn is already persisted. Loading that
-      // history page will show it; it must not create a new active response.
       return
     }
-    // Plans update session-level state (the pinned todo panel) AND flow
-    // into the turn below for history/replay.
     if case let .plan(plan) = update {
       sessionPlan = plan
     }
@@ -47,8 +43,6 @@ extension SessionModel {
         pendingQuestion = nil
       }
       markActivePlanResumedIfNeeded()
-      // Answered questions keep a card in the transcript flow, like
-      // codex CLI's history cell; dismissed ones just disappear.
       if resolution.outcome == .answered {
         ensureAssistantTurn()
         guard case .assistant(var message) = activeItem else { return }
@@ -57,12 +51,6 @@ extension SessionModel {
         recordToolRoute(for: update, itemId: message.id)
       }
     default:
-      // Updates that belong to an earlier bubble merge there without
-      // reopening it. Background subagents outlive their turn (the Agent
-      // tool returns "launched" immediately), so their parented output
-      // and late child settles arrive while the owning Agent section
-      // sits one or more bubbles back — routing by ownership keeps that
-      // section growing instead of spawning a spurious new bubble.
       if let index = owningItemIndex(for: update),
         case .assistant(var message) = item(at: index),
         !(index == itemCount - 1 && message.turn.isGenerating)
@@ -75,13 +63,7 @@ extension SessionModel {
       ensureAssistantTurn()
       guard case .assistant(var message) = activeItem else { return }
       message.turn.isGenerating = true
-      // Real content flowing means any in-flight retry succeeded — drop
-      // the "Retrying…" status.
       if message.turn.retryStatus != nil { message.turn.retryStatus = nil }
-      // Guarded: `@Observable` fires on every set regardless of value,
-      // and this path runs for every streamed chunk — an unguarded
-      // write re-renders every `isSending` observer (the composer) per
-      // chunk for no state change.
       if !isSending { isSending = true }
       let planRevision = message.turn.planRevision
       let planDocument = message.turn.planDocument
@@ -89,8 +71,6 @@ extension SessionModel {
       if case .planDocument = update,
         message.turn.planRevision != planRevision || message.turn.planDocument != planDocument
       {
-        // Mirrors the server projection: a (re)proposed plan ends the
-        // planning section and awaits a fresh answer.
         message.turn.planProposedAt = now()
         message.turn.planResumedAt = nil
       }
@@ -99,8 +79,6 @@ extension SessionModel {
     }
   }
 
-  /// The conversation index of the bubble that owns this update. Routing is
-  /// O(1) even after many history pages have been loaded.
   private static func persistedOwner(of update: SessionUpdate) -> UUID? {
     switch update {
     case let .agentMessagePatch(patch): return patch.chatItemId.flatMap(UUID.init(uuidString:))
@@ -163,10 +141,6 @@ extension SessionModel {
       applySynchronization(state)
       return
     }
-    // Applied traffic proves progress even before an older server's next
-    // checkpoint. Missing historical details still gate this application;
-    // later revision/checkpoint gaps still trigger durable reconciliation.
-    // Do not let a redundant snapshot retry put recovery UI over live output.
     if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization != .reconnecting {
       stopConnectionRecovery()
     }
@@ -226,8 +200,6 @@ extension SessionModel {
       finish(stopReason: nil, outcome: .failed, stopDetail: message)
       endTurn()
     case let .retrying(retry):
-      // A transient failure is being retried — the turn is still alive.
-      // Surface it on the active turn so the UI shows "Retrying… (n/of)".
       ensureAssistantTurn()
       guard case .assistant(var message) = activeItem else { return }
       message.turn.isGenerating = true
@@ -250,24 +222,10 @@ extension SessionModel {
     }
   }
 
-  /// Drops the refusal-fallback notice. Called on user dismissal and when the
-  /// user selects a model themselves, which makes the notice stale.
   public func clearModelFallback() {
     modelFallback = nil
   }
 
-  /// The single choke point for ending a turn: marks it finished and settles
-  /// any tool calls that never received a terminal status, so in-progress
-  /// indicators can't outlive the turn.
-  ///
-  /// Terminal events are routed by the server-owned chat-item identity when
-  /// one is present — the same `turn:{turnId}` → item routing the server
-  /// projection uses. A bubble that was settled while still generating
-  /// (e.g. a user row interleaved with an agent-initiated turn) is closed
-  /// in place instead of stranding its "Worked for…" spinner forever.
-  /// Returns true when the closure landed on a settled bubble while a
-  /// NEWER active bubble is still generating — the session is still busy,
-  /// so the caller must not clear the sending state.
   @discardableResult
   func finish(
     stopReason: StopReason?,
@@ -291,17 +249,12 @@ extension SessionModel {
         retryable: retryable
       )
       settledConversation[index] = .assistant(settled)
-      // The active bubble belongs to a newer turn: leave the session-
-      // level state (pending question, sending flag) to that turn's own
-      // terminal event.
       if case let .assistant(active) = activeItem, active.turn.isGenerating {
         return true
       }
       pendingQuestion = nil
       return false
     }
-    // A question can't outlive its turn; providers emit the resolution,
-    // but a dropped event must not leave the picker stuck.
     pendingQuestion = nil
     guard case .assistant(var message) = activeItem else { return false }
     closeTurn(
@@ -312,9 +265,6 @@ extension SessionModel {
       stopKind: stopKind,
       retryable: retryable
     )
-    // Stays the active item: settling happens when the next bubble
-    // starts, so the row keeps its view identity through the finalize
-    // collapse.
     activeItem = .assistant(message)
     return false
   }
@@ -331,8 +281,6 @@ extension SessionModel {
     turn.isThinking = false
     turn.retryStatus = nil
     turn.stopReason = stopReason
-    // Present only when the turn ended abnormally; drives the per-turn reason
-    // line so a non-clean stop is never silent.
     turn.stopDetail = stopDetail
     turn.stopKind = stopKind
     turn.retryable = retryable
@@ -340,8 +288,6 @@ extension SessionModel {
     TranscriptReducer.settleToolCalls(&turn, outcome: outcome)
   }
 
-  /// Clears the sending flag and fires `onTurnEnded` — only when a turn was
-  /// actually in flight, so redundant terminal events don't double-notify.
   func endTurn() {
     let wasSending = isSending
     isSending = false
@@ -353,47 +299,14 @@ extension SessionModel {
   }
 
   func noteProviderActivity() {
-    // Guarded for the same reason `isSending` is in `apply(_ update:)`:
-    // `@Observable` fires on every set regardless of value, and this runs
-    // for EVERY applied stream event. The composer reads this property, so
-    // an unguarded write re-rendered the whole composer card — text view,
-    // model/harness menus, glass surface — at stream rate, which is what
-    // made typing feel buffered while chats ran.
-    //
-    // The quiet-turn timer below is deliberately NOT part of the guard: it
-    // must be cancelled and re-armed on every activity event, or a turn
-    // that streams steadily would keep the task armed by its FIRST chunk
-    // and falsely report itself stalled mid-stream.
     if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
     stalledTurnSchedule?.cancel()
     let quietInterval = stalledTurnQuietInterval
     stalledTurnSchedule = quietTurnScheduler.schedule(quietInterval) { [weak self] in
       guard let self, self.isSending else { return }
       self.isTakingLongerThanExpected = true
-      // A turn this quiet may be dead in a way no transport signal
-      // caught, or its terminal event may have been lost. Re-derive the
-      // truth from durable history: a genuinely finished turn clears
-      // its spinner here (snapshot + cursor resume), while a live-but-
-      // quiet turn reloads to the same state. Without this, a missed
-      // terminal event spins forever on platforms that render no stall
-      // affordance.
       let cursorBeforeReload = self.serverEventCursor
       await self.reconcileFromServer()
-      // Reloading notes synthetic activity, which clears the flag,
-      // re-arms the quiet window, and cancels this task — deliberately
-      // not guarded on cancellation here.
-      //
-      // The timer measures CLIENT-observed silence, and that is not the
-      // same as a stalled turn: a phone in a pocket or a closed laptop
-      // lid stops delivering events just as thoroughly as a hung
-      // provider does. The reload tells the two apart. A cursor that
-      // moved past the pre-reload one means the server kept producing
-      // events while this client was not listening — the turn is
-      // healthy, so let the freshly re-armed window run instead of
-      // greeting a normal reconnect with a stall notice. A cursor that
-      // did not move is a turn still live and still quiet on the SERVER:
-      // keep the notice up instead of blinking it off for a full window
-      // each cycle. Real activity clears it either way.
       guard self.isSending else { return }
       let advanced: Bool
       if let before = cursorBeforeReload, let after = self.serverEventCursor {
@@ -405,8 +318,6 @@ extension SessionModel {
     }
   }
 
-  /// Whether an event is live provider output that proves the turn is
-  /// still progressing.
   private func isProviderActivity(_ event: ServerSessionStreamEvent) -> Bool {
     switch event {
     case let .update(update):
@@ -433,10 +344,6 @@ extension SessionModel {
   ) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-    // IDENTITY first: the prompt carried the optimistic message's id and
-    // the server echoed it back — this IS that message, wherever it sits
-    // and whatever the agent did in between. Stamp attachments the
-    // optimistic append may not have carried.
     if let echoId = id.flatMap(UUID.init(uuidString:)),
       let index = settledConversation.lastIndex(where: { item in
         if case let .user(user) = item { return user.id == echoId }
@@ -452,10 +359,6 @@ extension SessionModel {
       pendingOptimisticUserMessageIDs.remove(echoId)
       return
     }
-    // CONTENT fallback (older servers that don't echo the client id).
-    // Restrict it to rows this client actually appended optimistically.
-    // Repeated queue prompts and messages from another client are distinct
-    // turns even when their text is identical.
     if let index = settledConversation.lastIndex(where: { item in
       guard case let .user(user) = item else { return false }
       return pendingOptimisticUserMessageIDs.contains(user.id)
@@ -493,8 +396,6 @@ extension SessionModel {
     for item in queuedPrompts where !updatedIDs.contains(item.id) {
       pendingQueuePromotionIDs[item.id] = now + 5
     }
-    // A pathological sequence of remote deletes should not leave an
-    // unbounded side table while no further queue events arrive.
     if pendingQueuePromotionIDs.count > 32 {
       let newest =
         pendingQueuePromotionIDs
@@ -515,15 +416,8 @@ extension SessionModel {
   }
 
   func ensureAssistantTurn() {
-    // User output is ordered before assistant output. Once provider output
-    // begins, an unmatched optimistic row is no longer awaiting an echo;
-    // retaining it could make a later equal queue/remote prompt look like
-    // that echo.
     pendingOptimisticUserMessageIDs.removeAll()
     if case let .assistant(message) = activeItem {
-      // A finished turn is never reopened: output arriving after the
-      // stopReason means the agent started a new turn on its own (e.g. a
-      // background task completing), which gets its own bubble.
       if message.turn.isGenerating { return }
     }
     settleActiveItem()
@@ -531,17 +425,6 @@ extension SessionModel {
     if !isSending { isSending = true }
   }
 
-  /// Stamps the running turn's start time from the provider's "turn started"
-  /// signal. This is the only live event that can supply one to a turn that
-  /// already exists: `ensureAssistantTurn` returns early for an
-  /// already-generating turn, and a server row created at prompt-accept time
-  /// carries no `startedAt` until the harness actually starts the turn.
-  /// Without this the elapsed label renders a frozen "Working for 0s" until
-  /// some unrelated full-history snapshot happens to carry the server value,
-  /// at which point it jumps to the true elapsed time.
-  /// The first answer to a proposed plan resumes the same turn (Claude keeps
-  /// working after ExitPlanMode); stamp where the section below the plan
-  /// starts. Mirrors the server projection, which supplies it on reload.
   func markActivePlanResumedIfNeeded() {
     guard case .assistant(var message) = activeItem,
       message.turn.isGenerating,

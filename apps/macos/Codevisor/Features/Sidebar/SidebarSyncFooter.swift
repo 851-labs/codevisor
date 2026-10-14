@@ -2,9 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A quiet line at the sidebar's foot while machines catch up, or naming the
-/// ones that can't be reached. The sidebar keeps showing what the Mac already
-/// knows either way; this only says it may be out of date.
 struct SidebarSyncFooter: View {
   var indicator: NavigationPresentation.SyncIndicator
   @Environment(\.theme) private var theme

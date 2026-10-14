@@ -1,7 +1,6 @@
 import Foundation
 import ACPKit
 
-/// Projects a chat's saved values over catalog definitions until its runtime reconnects.
 enum SavedSessionConfigOptions {
   static func project(
     definitions: [SessionConfigOption],
@@ -36,15 +35,11 @@ enum SavedSessionConfigOptions {
   ) {
     for (configId, value) in selections.sorted(by: { $0.key < $1.key })
     where !options.contains(where: { $0.id == configId }) {
-      // The value snapshot is enough to paint a provisional picker
-      // even when this machine has no cached definitions yet.
       options.append(provisionalConfigOption(id: configId, value: value))
     }
   }
 
   private static func appendUnlistedValues(to options: inout [SessionConfigOption]) {
-    // Keep a saved value visible (by its raw id) when stale catalog
-    // lists do not carry it; the runtime decides its availability.
     for index in options.indices {
       let value = options[index].currentValue
       if !value.isEmpty, !options[index].options.contains(where: { $0.value == value }) {

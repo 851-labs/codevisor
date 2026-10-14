@@ -32,7 +32,6 @@ describe("session titles", () => {
     expect((await run(services.db.getSessionSummary(session.id))).title).toBe(
       "Fix login validation"
     )
-    // Accepting the existing text in Rename is still a user choice.
     await patch("Fix login validation", "rename")
     await harnessTitle("Replace login title")
     expect((await run(services.db.getSessionSummary(session.id))).title).toBe(

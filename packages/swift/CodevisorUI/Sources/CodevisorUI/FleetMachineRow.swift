@@ -1,20 +1,12 @@
 import CodevisorCore
 import SwiftUI
 
-/// One machine under a fleet entry: its name, then — when there is exactly
-/// one thing to do about its status — that action, and a mark only when
-/// there is something to report. The mark trails in a fixed column and is
-/// always present — a gray dot when the machine is off or quiet — so the
-/// action never shifts as the status changes; its tooltip says what, and a
-/// mark with a failure behind it opens that failure when clicked.
 public struct FleetMachineRow<Trailing: View>: View {
   private let name: String
   private let status: FleetRowStatus
   private let details: FleetBlockedMachine?
   private let trailing: Trailing
 
-  /// - Parameter details: the failure this row's mark opens. Nil leaves the
-  ///   mark as a plain indicator.
   public init(
     name: String,
     status: FleetRowStatus,
@@ -34,8 +26,6 @@ public struct FleetMachineRow<Trailing: View>: View {
         .layoutPriority(1)
       Spacer(minLength: 8)
       trailing
-      // The mark trails in a fixed column and always shows something, so the
-      // controls before it never move as the status changes.
       FleetStatusMark(status: status, details: details)
         .frame(width: FleetRowMetrics.trailingControlWidth)
     }
@@ -53,14 +43,6 @@ public extension FleetMachineRow where Trailing == EmptyView {
   }
 }
 
-/// A check once a machine is in sync; a spinner while it catches up with
-/// the fleet; a mark when it needs the user. Quiet states — off here,
-/// unreachable, unsupported — are a gray dot: facts, not problems, but
-/// still a mark, so a machine row's status column never goes empty.
-///
-/// When the status carries a failure the mark IS the way in: a second
-/// "Details…" button beside it would be one control too many for a row
-/// whose whole job is to stay quiet.
 public struct FleetStatusMark: View {
   @Environment(\.theme) private var theme
   private let status: FleetRowStatus
@@ -95,8 +77,6 @@ public struct FleetStatusMark: View {
         mark("exclamationmark.circle.fill", theme.statusWarn)
       }
     case .quiet:
-      // Off, unreachable, or waiting on something else: a quiet dot rather
-      // than nothing, so every row keeps its mark and the column holds.
       mark("circle.fill", theme.textTertiary.opacity(0.5))
     }
   }
@@ -108,8 +88,6 @@ public struct FleetStatusMark: View {
       .accessibilityLabel(status.label)
   }
 
-  /// The tooltip says the failure itself when there is one — the label
-  /// ("Needs attention") is only useful as a fallback.
   private var helpText: String {
     guard let reason = status.reason, !reason.isEmpty else { return status.label }
     return reason

@@ -20,19 +20,6 @@ export const testTempDir = (prefix: string): string => {
   return root
 }
 
-// Each repository is built in place by Git rather than copied from a cached
-// seed. The seed was shared mutable state: a `/tmp` tree held in a module-level
-// map, deleted by a lifecycle hook, and recursively copied by every test. That
-// copy walks the seed's `.git` one directory at a time, creating each level of
-// the destination as it goes, so anything removing either tree mid-walk
-// surfaces as a bare ENOENT on a `.git` subdirectory — which is how this
-// failed on CI. `git init` has no such window: the repository either exists
-// when the subprocess returns or the call throws.
-//
-// This costs roughly 40ms per repository against a seed copy's ~5ms. That is
-// the deliberate trade: a few seconds across the suite to remove a class of
-// flake, per the project's rule to delete shared mutable state rather than
-// work around the race it creates.
 export const makeGitRepo = (tracked = false): { root: string; repo: string } => {
   const root = testTempDir(join(tmpdir(), "codevisor-git-"))
   const repo = join(root, "repo")

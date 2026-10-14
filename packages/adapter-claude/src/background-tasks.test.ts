@@ -31,7 +31,6 @@ describe("ClaudeProvider", () => {
     await createPromise
 
     fake.push(systemMessage("status", { status: "compacting" }))
-    // A result wins even if a CLI version leaves the old status populated.
     fake.push(systemMessage("status", { compact_result: "success", status: "compacting" }))
     fake.push(systemMessage("status", { status: "compacting" }))
     fake.push(
@@ -174,7 +173,6 @@ describe("ClaudeProvider", () => {
         tool_use_id: "toolu-agent-1"
       })
     )
-    // Shell tasks must NOT be retitled as agents.
     fake.push(
       systemMessage("task_started", {
         description: "Run npm test",
@@ -213,7 +211,6 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    // A fresh session emits an empty snapshot so replayed clients start clean.
     const snapshots = () =>
       events
         .filter((event) => event.kind === "session.updated")
@@ -236,7 +233,6 @@ describe("ClaudeProvider", () => {
     await promptPromise
     await fake.drain()
 
-    // The task survives turn end — that is what the waiting indicator keys on.
     const afterTurn = snapshots().at(-1)
     expect(afterTurn).toEqual([
       {
@@ -303,7 +299,6 @@ describe("ClaudeProvider", () => {
     }
     expect(latest()).toEqual([started])
 
-    // The SDK's full level snapshot is authoritative but carries less detail.
     fake.push(
       systemMessage("background_tasks_changed", {
         tasks: [{ description: "npm run dev", task_id: "bg-9", task_type: "shell" }]

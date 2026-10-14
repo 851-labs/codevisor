@@ -50,11 +50,7 @@ struct InlineMarkdownTests {
         && run[InlineCodeChipAttribute.self] == true
     }
     #expect(hasChip)
-    // The chip background is painted by the TextKit layout manager
-    // (rounded corners), never by the square-only backgroundColor attribute.
     #expect(attributed.runs.allSatisfy { $0.backgroundColor == nil })
-    // Narrow no-break spaces pad each side of the code span; the pads are
-    // chip-tagged too so the pill covers them.
     #expect(String(attributed.characters).contains("\u{202F}foo()\u{202F}"))
     let padsAreTagged = attributed.runs.allSatisfy { run in
       !String(attributed[run.range].characters).contains("\u{202F}")
@@ -80,11 +76,8 @@ struct InlineMarkdownTests {
     #expect(pieces.map(\.isChip) == [false, true, false, true])
     #expect(String(pieces[0].text.characters) == "call ")
     #expect(String(pieces[1].text.characters) == "\u{202F}foo()\u{202F}")
-    // The bold span stays merged into the surrounding non-chip piece even
-    // though it is a separate attribute run.
     #expect(String(pieces[2].text.characters) == " and also ")
     #expect(String(pieces[3].text.characters) == "\u{202F}bar\u{202F}")
-    // Re-joining the pieces reproduces the source text exactly.
     #expect(pieces.map { String($0.text.characters) }.joined() == String(attributed.characters))
   }
 
@@ -104,7 +97,6 @@ struct InlineMarkdownTests {
 
   @Test("Partially-formed emphasis falls back to text")
   func partial() {
-    // A dangling opening marker should not crash and should keep the text.
     let attributed = InlineMarkdown.attributedString(from: "an **unfinished")
     #expect(String(attributed.characters).contains("unfinished"))
   }

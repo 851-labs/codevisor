@@ -4,8 +4,6 @@ import Foundation
 import SwiftUI
 
 extension HomeView {
-  /// Split layouts (agent-driven `split`/`move`/`resize`) are advertised
-  /// only while the unfolded display can render them.
   static let rendersSplitLayouts = true
 
   var clientLayoutIsCompact: Bool {

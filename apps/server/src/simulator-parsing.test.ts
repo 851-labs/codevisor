@@ -77,7 +77,6 @@ describe("simulator list parsing", () => {
           platform: "xrOS",
           version: ""
         },
-        // An unknown type keeps its identifier and takes the last part as its name.
         deviceType: {
           identifier: "com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro",
           name: "Apple-Vision-Pro",

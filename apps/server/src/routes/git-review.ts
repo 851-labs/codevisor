@@ -23,8 +23,6 @@ const failureStatus: Readonly<Record<GitReviewFailureCode, number>> = {
 
 const isGitDiffMode = Schema.is(GitDiffMode)
 
-/// The review pane addresses a folder the way the other fs routes do, so a
-/// missing folder reads the same everywhere.
 const requestedDirectory = (url: URL): string => {
   const path = expandFsPath(url.searchParams.get("path") ?? "")
   let isDirectory: boolean
@@ -37,12 +35,8 @@ const requestedDirectory = (url: URL): string => {
   return path
 }
 
-/// How long a directory's pull request answer is reused. `gh` makes a GitHub
-/// round trip, and every window's sidebar asks about every workspace.
 const pullRequestTtlMs = 60_000
 
-/// Answers (and lookups still running) per directory, so concurrent and
-/// repeated asks share one `gh` call.
 const pullRequests = new Map<
   string,
   { readonly at: number; readonly lookup: Promise<GitPullRequest | null> }
@@ -65,9 +59,6 @@ const cachedPullRequest = (
 
 const gitReviewPaths = new Set(["/v1/fs/git/diff", "/v1/fs/git/refs", "/v1/fs/git/pull-request"])
 
-/// Git review for the Review pane and the sidebar: the diff of one comparison
-/// mode, the branches branch mode can compare against, and the current
-/// branch's pull request. All read-only.
 export const routeGitReview = async (
   services: CodevisorServerServices,
   request: IncomingMessage,

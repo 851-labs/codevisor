@@ -5,35 +5,21 @@ import ScreenSharingWebRTC
 import Foundation
 import OSLog
 
-/// One authorized viewer per native host. Capture starts only after the peer
-/// carrying the authenticated SDP connects, and a missed lease stops capture.
 @MainActor
 final class ScreenSharingHostService {
-  /// The sender's ceiling on LAN and Tailscale (the only networks native sharing targets,
-  /// 851-2370): room for sharp text and motion; the encoder spends it only when content needs it.
-  /// 45 Mbit/s for up to 2560×1440 (851-2482); Apple's High Performance uses up to ~54 at 4K.
   static let bitrateCeiling = 45_000_000
-  /// The physical display is captured scaled to fit this box (851-2482): 2216×1440 on a 3024×1964
-  /// MacBook Pro, which an M1 Pro encodes in time; native size waits on the bandwidth estimator.
   nonisolated static let physicalCaptureBox = (width: 2560.0, height: 1440.0)
 
-  /// A physical display's capture size: scaled down as a whole to fit the box, even pixels.
   nonisolated static func physicalCaptureSize(width: Int, height: Int) -> (width: Int, height: Int) {
     let scale = min(1, physicalCaptureBox.width / Double(width), physicalCaptureBox.height / Double(height))
     return (max(64, Int(Double(width) * scale) / 2 * 2), max(64, Int(Double(height) * scale) / 2 * 2))
   }
-  /// What 60 fps at the session's resolution needs; the adaptive policy measures shortage
-  /// against this, not the ceiling (851-2372).
   static let fullQualityBitrate = 6_000_000
-  /// Estimates while the bandwidth estimator ramps up after connecting aren't a shortage.
   static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   private(set) var current: ScreenSharingHostSession?
-  /// Why the host itself last ended a viewer's session, told to that viewer's next heartbeat: its
-  /// connection just drops, and "the connection ended" blamed the network (851-2397).
   private var lastEnd: (owner: ScreenSharingHostLease.Owner, reason: String)?
-  // Enumeration can suspend before a session owns the lease. Stop must invalidate those attempts by owner too.
   private var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private var isShutdown = false
   private var stopGeneration = 0
@@ -53,7 +39,6 @@ final class ScreenSharingHostService {
       enumerateDisplays: { try await Self.watchedDisplays() })
   }
 
-  /// Keep OS permission, notifications and display enumeration at the boundary for request-ordering tests.
   init(
     captureAccess: @escaping () -> Bool, notificationCenter: NotificationCenter,
     workspaceNotificationCenter: NotificationCenter, enumerateDisplays: @escaping () async throws -> [Display]
@@ -69,7 +54,6 @@ final class ScreenSharingHostService {
     guard request.version == 1 else {
       return .init(status: "unavailable", message: "Update Codevisor to use Screen Sharing.")
     }
-    // Register before any suspension, including cleanup of an expired previous session.
     let attempt: UUID?
     if request.operation == .start || request.operation == .restart {
       let id = UUID()
@@ -85,7 +69,6 @@ final class ScreenSharingHostService {
     if let attempt, Task.isCancelled || pendingStarts[attempt] == nil { return .init(status: "stopped") }
     switch request.operation {
     case .setScale:
-      // A VNC desktop's operation (851-2339); a Mac's display scale isn't the viewer's to set.
       return .init(status: "unsupported", message: "This Mac's display scale can't be set remotely.")
     case .stop:
       stopGeneration += 1
@@ -100,7 +83,6 @@ final class ScreenSharingHostService {
         if let lastEnd, lastEnd.owner == .init(request) { return .init(status: "failed", message: lastEnd.reason) }
         return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
       }
-      // A capture being restarted clears its error to "" (851-2375).
       if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
@@ -116,8 +98,6 @@ final class ScreenSharingHostService {
     case .start, .restart:
       var replacement: ScreenSharingHostLease.ReplacementPermit?
       if request.operation == .restart {
-        // A fresh media peer avoids replaying old decoder, cursor or input
-        // state. Renewal still requires the existing live host lease.
         guard let old = current, !old.stopping, old.owner == .init(request),
           old.display.id == request.displayId,
           let permit = lease.replacementPermit(
@@ -132,8 +112,6 @@ final class ScreenSharingHostService {
           return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
         }
       }
-      // This pane's own earlier connection, whose stop trails this start or was lost (a start the
-      // viewer abandoned can still complete after its stop): replaced, not reported as another viewer.
       if request.operation == .start, let old = current, old.owner.isSamePane(as: .init(request)) {
         await end(old)
         guard !isShutdown, attempt.map({ pendingStarts[$0] != nil }) == true else { return .init(status: "stopped") }
@@ -154,17 +132,13 @@ final class ScreenSharingHostService {
         if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
           return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
         }
-        // Display enumeration suspends; another request may reserve the host.
         guard current == nil else {
           return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
         }
         guard let display = available.first(where: { $0.description.id == displayId }) else {
           return .init(status: "unavailable", message: "The selected display is no longer available.")
         }
-        // Parsed once per process (failures cached too); an unknown value fails the request rather than selecting
-        // the candidate, and both roles in this app process read the same answer.
         let profile = try ScreenSharingDiagnosticProfile.process()
-        // The peer is built off the main thread; the request may be stopped or overtaken meanwhile.
         let session = try await ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
           connectivity: connectivity.make(viewerId: request.viewerId), profile: profile)
@@ -190,7 +164,6 @@ final class ScreenSharingHostService {
         do {
           try await session.peer.accept(.init(kind: "offer", sdp: offer))
           let answer = try await session.peer.makeDescription(offer: false)
-          // Main 4:4:4 needs BGRA frames to keep chroma; the others take NV12 (851-2381).
           if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
             session.capture.pixelFormat = codec.capturePixelFormat
             session.codec = codec
@@ -226,7 +199,6 @@ final class ScreenSharingHostService {
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         guard let session, !session.stopping else { return }
-        // A new size (851-2376) is a new full-quality level to adapt from.
         if session.configuration != base {
           base = session.configuration
           quality = ScreenSharingAdaptiveQuality(
@@ -240,8 +212,6 @@ final class ScreenSharingHostService {
         let bandwidth = statistics.first { $0.key.hasSuffix(".availableOutgoingBitrate") }.flatMap { Double($0.value) }
         if let configuration = quality.update(availableBitrate: bandwidth, now: ProcessInfo.processInfo.systemUptime) {
           session.peer.updateVideoConfiguration(configuration)
-          // Level-aware request: the override only at level 0, the video rate below it. Validation, the SCK call and
-          // the label commit all happen inside the single capture path.
           do {
             try await session.capture.update(
               configuration: configuration,
@@ -268,9 +238,6 @@ final class ScreenSharingHostService {
     session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
       availability: { [weak session] in
-        // Live video, not the "viewing" label: a viewer asks as soon as its first frame shows, and
-        // a slow first capture reads "connecting" for a while after frames go out. Denying then
-        // switched the pane to View for the session (851-2472).
         guard let session, !session.stopping, session.state == "viewing" || session.hasSentVideo else {
           return "Wait for live video before requesting control."
         }
@@ -338,7 +305,6 @@ final class ScreenSharingHostService {
         guard let self, let session, self.current === session else { return }
         session.control?.checkDeadline()
         session.clipboard?.tick()
-        // Shared clipboard: a new copy here goes to the viewer while it controls this Mac.
         if session.state == "viewing", session.control?.lease != nil { session.clipboard?.poll() }
         if self.lease.isExpired(now: ProcessInfo.processInfo.systemUptime) { await self.end(session); return }
       }
@@ -358,7 +324,6 @@ final class ScreenSharingHostService {
 
   private func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
     guard current === session else { return }
-    // Already ending: wait for that teardown, so a caller sees the host free once this returns.
     if let ending = session.ending { return await ending.value }
     if let reason { lastEnd = (session.owner, reason) }
     session.stopping = true
@@ -376,8 +341,6 @@ final class ScreenSharingHostService {
     session.peer.close()
     session.captureTask?.cancel()
     let ending = Task { [self] in
-      // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
-      // can hold the stop; the session ends anyway (851-2385).
       if await !ScreenSharingCaptureStallRecovery.stop({ try await session.capture.stop() }) {
         Self.logger.error("Capture didn't stop within 3 s; ending the session anyway")
       }
@@ -392,7 +355,6 @@ final class ScreenSharingHostService {
     await ending.value
   }
 
-  /// Shared by the system notification adapter and deterministic request-ordering coverage.
   func systemStopped() {
     stopGeneration += 1
     pendingStarts.removeAll()
@@ -427,8 +389,6 @@ extension ScreenSharingHostService {
     )
   }
 
-  /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
-  /// session, a bounded number of times, with the viewer told why the picture paused.
   private func captureStopped(_ session: ScreenSharingHostSession, message: String) {
     guard current === session, !session.stopping else { return }
     guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {

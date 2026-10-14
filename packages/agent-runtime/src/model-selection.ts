@@ -1,9 +1,9 @@
 import type { SessionConfigOption } from "@codevisor/api"
 
 const ansiEscapePattern =
-  // oxlint-disable-next-line no-control-regex -- matches ESC/CSI/BEL deliberately to strip ANSI escape sequences
+  // oxlint-disable-next-line no-control-regex
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
-// oxlint-disable-next-line no-control-regex -- matches C0 control characters and DEL deliberately to strip them
+// oxlint-disable-next-line no-control-regex
 const controlCharacterPattern = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 const trailingSgrFragmentPattern = /(?:\[\d+(?:;\d+)*m)+$/g
 
@@ -49,7 +49,6 @@ export const highestThinkingLevel = (levels: ReadonlyArray<string>): string | un
     return rank >= bestRank ? level : best
   }, undefined)
 
-/// Every value a picker option offers, flattening grouped entries.
 export const offeredConfigValues = (option: SessionConfigOption): ReadonlySet<string> =>
   new Set(
     option.options.flatMap((entry) =>
@@ -57,10 +56,6 @@ export const offeredConfigValues = (option: SessionConfigOption): ReadonlySet<st
     )
   )
 
-/// The value a requested or saved selection lands on in `option`: the value
-/// itself when offered, else the provider's reconciliation of a drifted id
-/// (Claude's Fable id changes between CLI releases) when that is offered.
-/// `undefined` means the option cannot take it.
 export const placeConfigValue = (
   option: SessionConfigOption,
   value: string,

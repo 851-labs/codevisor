@@ -1,8 +1,6 @@
 import Foundation
 import Observation
 
-/// Recently viewed workspace files, bounded and isolated by machine and
-/// workspace root so every file pane on the same workspace shares one list.
 @MainActor @Observable
 public final class FileRecents {
   public static let shared = FileRecents()
@@ -20,8 +18,6 @@ public final class FileRecents {
     return saved
   }
 
-  /// Moves `path` to the front. Only files inside `root` are remembered;
-  /// attachments and files elsewhere never appear in a workspace's list.
   public func record(_ path: String, machineId: String, root: String) {
     guard path.hasPrefix(Self.directoryPrefix(root)), !path.hasSuffix("/") else { return }
     var recent = paths(machineId: machineId, root: root)

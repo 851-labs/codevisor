@@ -4,16 +4,10 @@ import Foundation
 import Observation
 import ScreenSharing
 
-/// The stream's screen for more than one view: a foldable is drawn as its cover and two inner
-/// halves, each its own live copy, and folding keeps a still of what the screen last showed.
-/// A video source's frames are taken as they arrive and handed to each copy's mailbox.
 @MainActor @Observable
 final class SimulatorScreenFeed {
-  /// How many live copies a device is drawn with at most: a foldable's cover and inner halves.
   nonisolated static let copies = 3
 
-  /// A foldable's other screen is waking: the guest turns it on black, then fades it up from dim,
-  /// so its frames are held back (and the screen's still shown) until they're bright and settled.
   private(set) var waking = false
 
   @ObservationIgnored private var tee: Tee?
@@ -22,9 +16,6 @@ final class SimulatorScreenFeed {
   @ObservationIgnored private var wake: UUID?
   @ObservationIgnored private var pinned: (frame: ScreenSharingVideoFrame, at: Date)?
 
-  /// The source for each copy, fed from `source`. A new `arrangement` (one screen, two halves,
-  /// a fold) gets mailboxes of its own: a video view clears its mailbox's callback as it stops,
-  /// so views coming and going on a shared one could leave the new one unfed.
   func sources(for source: SimulatorScreenSource?, arrangement: String) -> [SimulatorScreenSource?] {
     switch source {
     case .video(let mailbox, let metrics):
@@ -47,7 +38,6 @@ final class SimulatorScreenFeed {
     }
   }
 
-  /// The stream is moving to another screen: hold its frames until that screen has woken.
   func awaitWake() {
     guard let tee else { return }
     let id = UUID()
@@ -60,7 +50,6 @@ final class SimulatorScreenFeed {
         self.waking = false
       }
     }
-    // A screen that stays dark (asleep, or showing black) still comes in, a little later.
     Task { @MainActor [weak self] in
       try? await Task.sleep(for: .seconds(1.2))
       guard let self, self.wake == id else { return }
@@ -70,13 +59,10 @@ final class SimulatorScreenFeed {
     }
   }
 
-  /// Keeps the frame showing now for the next `snapshot`: a posture was just asked for, and the
-  /// guest's fold will redraw the screen mid-transition before the device says it moved.
   func pin() {
     pinned = tee?.latest.map { (frame: $0, at: Date()) }
   }
 
-  /// What the screen showed last (or when it was pinned, a moment ago), as the framebuffer is laid out.
   func snapshot() -> CGImage? {
     let held = pinned.flatMap { Date().timeIntervalSince($0.at) < 3 ? $0.frame : nil }
     pinned = nil
@@ -87,7 +73,6 @@ final class SimulatorScreenFeed {
 
   private static let context = CIContext(options: [.cacheIntermediates: false])
 
-  /// Takes each frame from the receiver's mailbox and puts it in every copy's.
   private final class Tee: @unchecked Sendable {
     let source: ScreenSharingFrameMailbox
     private let lock = NSLock()
@@ -96,9 +81,7 @@ final class SimulatorScreenFeed {
     private var held: Held?
     private var count = 0
 
-    /// Frames kept back while the next screen wakes.
     private struct Held {
-      /// The screen being left's size: its frames still in flight aren't the new screen's.
       var size: CGSize?
       var brightness: Double?
       var woken: () -> Void
@@ -134,7 +117,6 @@ final class SimulatorScreenFeed {
       lock.withLock { held = Held(size: last.map { Tee.size($0.pixelBuffer) }, woken: woken) }
     }
 
-    /// Hands on the latest frame and stops holding.
     func release() {
       let (outputs, frame, woken) = lock.withLock {
         let woken = held?.woken
@@ -145,8 +127,6 @@ final class SimulatorScreenFeed {
       woken?()
     }
 
-    /// Whether a held frame shows the new screen awake: another size than the old screen, lit,
-    /// and done fading up (as bright as the last frame, or nothing newer comes for a moment).
     private func judge(_ frame: ScreenSharingVideoFrame, number: Int) {
       let size = Tee.size(frame.pixelBuffer)
       let brightness = SimulatorScreenFeed.brightness(frame.pixelBuffer)
@@ -177,8 +157,6 @@ final class SimulatorScreenFeed {
       CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
     }
 
-    /// New mailboxes, holding the latest frame: a still screen sends nothing new, and a fresh
-    /// view would stay black until it did.
     func renew() {
       let (outputs, frame) = lock.withLock {
         mailboxes = Tee.fresh()
@@ -188,13 +166,9 @@ final class SimulatorScreenFeed {
     }
   }
 
-  /// Mean luma (0–255) above which a frame is lit: video-range black is 16.
   nonisolated static let lit = 22.0
-  /// How little the mean luma moves between frames once a screen is done fading up.
   nonisolated static let steady = 1.5
 
-  /// A frame's mean luma (0–255) over a grid of samples, for the decoder's luma-first formats;
-  /// nil for any other.
   nonisolated static func brightness(_ buffer: CVPixelBuffer) -> Double? {
     let format = CVPixelBufferGetPixelFormatType(buffer)
     let wide: Bool
@@ -221,7 +195,6 @@ final class SimulatorScreenFeed {
       let line = base.advanced(by: y * stride)
       for column in 0..<grid {
         let x = (column * 2 + 1) * width / (grid * 2)
-        // Ten-bit luma sits in the high bits of each 16-bit sample.
         total +=
           wide
           ? Double(line.load(fromByteOffset: x * 2, as: UInt16.self) >> 8)

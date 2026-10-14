@@ -1,10 +1,5 @@
 import CoreGraphics
 
-/// Bounded identity cache for prepared native Markdown surfaces.
-///
-/// Rows just outside the virtual window usually return during the same scroll
-/// gesture. Keeping their TextKit object graph by row identity avoids rebuilding
-/// attributed storage and line fragments without retaining an entire transcript.
 @MainActor
 final class TranscriptMarkdownHostCache {
   private struct Entry {

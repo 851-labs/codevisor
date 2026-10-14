@@ -7,8 +7,6 @@ extension View {
   }
 }
 
-/// Keep Quick Look's chrome and interactive dismissal in one UIKit presentation.
-/// Both dismissal paths clear the selection so the same link can open again.
 private struct AttachmentQuickLookPresenter: UIViewControllerRepresentable {
   @Binding var selection: URL?
 

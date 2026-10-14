@@ -107,7 +107,6 @@ describe("durable shell subscriptions", () => {
           { ...attention(2, state), previousEventId: 1 }
         ])
       }
-      // A delayed duplicate broadcast and another heartbeat cannot repeat it.
       await run(f.fanout.publish(attention(2, state)))
       await vi.advanceTimersByTimeAsync(25_000)
       for (const client of clients) {

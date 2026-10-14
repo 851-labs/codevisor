@@ -1,25 +1,12 @@
 import { decodeHubToMachine, encodeRelayEnvelopes, type HubToMachine } from "@codevisor/api"
 
-/// The machine-side relay connection's transport surface, reconnect policy,
-/// and outgoing-envelope coalescing — split from machine-connection.ts so
-/// each module stays within the size ratchet.
-
-/// Minimal WebSocket surface both `ws` (Node/Bun) and the browser API can be
-/// adapted to; injected so the connection logic is unit-testable. Text frames
-/// carry JSON control messages; binary frames carry relay envelopes.
 export interface CloudSocket {
   send(data: string | Uint8Array): void
   close(code?: number, reason?: string): void
-  /// Immediately tears down the underlying transport. Node's `ws.terminate()`
-  /// is essential for half-open TCP connections where a graceful close can
-  /// wait forever; browser-style adapters may omit it and fall back to close.
   terminate?: () => void
   onopen: (() => void) | null
   onmessage: ((data: string | Uint8Array) => void) | null
   onclose: ((code: number) => void) | null
-  /// The upgrade was answered with an HTTP status instead of 101. Without
-  /// this, a refused credential is indistinguishable from a dropped TCP
-  /// connection (both surface as close 1006) and gets retried forever.
   onrejected?: ((status: number) => void) | null
 }
 
@@ -30,11 +17,7 @@ export type MachineConnectionState =
   | "connected"
   | "reconnecting"
   | "stopped"
-  /// The hub refused this machine's credential. Not final: a machine that
-  /// was really removed keeps being refused, but a wrongful refusal (a cloud
-  /// incident) heals on a periodic re-check (REVOKED_RECHECK_MS).
   | "revoked"
-  /// Fatal — the hub needs a newer server; retrying can't help.
   | "unsupported-protocol"
 
 export type MachineDisconnectReason =
@@ -46,11 +29,6 @@ export type MachineDisconnectReason =
 
 export type CancelTimeout = () => void
 
-/// Decodes one hub control frame, or undefined for one this build cannot
-/// read. A newer hub may send frame kinds or values an older machine does not
-/// know; those are ignored, as undecodable relay batches are. A throw would
-/// escape the socket's message listener and exit the server, on every machine
-/// (and again after each reconnect) the moment the hub deployed one.
 export const decodeHubFrame = (data: string): HubToMachine | undefined => {
   try {
     return decodeHubToMachine(data)
@@ -59,18 +37,10 @@ export const decodeHubFrame = (data: string): HubToMachine | undefined => {
   }
 }
 
-/// HTTP statuses on the upgrade that mean the relay refused this credential
-/// (revoked or unknown key): re-checked slowly, not retried with backoff.
-/// Everything else — 429, 5xx, a Cloudflare interstitial — is treated as
-/// transient and retried.
 export const isCredentialRejection = (status: number): boolean => status === 401 || status === 403
 
-/// How long a refused machine waits before offering its credential again.
-/// Slow enough to cost nothing for a machine that was really removed, quick
-/// enough that one refused by mistake is back within minutes.
 export const REVOKED_RECHECK_MS = 5 * 60 * 1000
 
-/// Exponential backoff with full jitter; exported for tests and reuse.
 export const reconnectDelayMs = (
   attempt: number,
   random: () => number,
@@ -78,29 +48,16 @@ export const reconnectDelayMs = (
   maxMs = 30_000
 ): number => Math.floor(random() * Math.min(maxMs, baseMs * 2 ** Math.min(attempt, 10)))
 
-/// Estimated per-envelope framing overhead (header JSON + length prefixes)
-/// used for the flush-early threshold.
 const ENVELOPE_OVERHEAD_BYTES = 128
 
-/// Flush immediately once this much payload is buffered.
 const MAX_BUFFERED_BYTES = 256 * 1024
 
 export interface RelayOutboxOptions {
-  /// Delivers one encoded binary relay message (may contain many envelopes).
   send: (message: Uint8Array) => void
   scheduleTimeout: (callback: () => void, delayMs: number) => CancelTimeout
-  /// 0 sends every envelope immediately as its own message. Positive values
-  /// buffer envelopes for up to this long and flush them as one message — a
-  /// Nagle for the relay. Chatty producers (a PTY writing per chunk) become a
-  /// few messages instead of hundreds, which is what the hub bills and what
-  /// wakes radios; the added latency is far below network RTT.
   coalesceMs: number
 }
 
-/// Order-preserving buffer of outgoing relay envelopes for one socket. All
-/// relay sends go through here so coalescing can never reorder frames; the
-/// owner clears it when its socket dies (channels die with the socket, so
-/// buffered frames are moot).
 export class RelayOutbox {
   #pending: { header: unknown; payload: Uint8Array }[] = []
   #pendingBytes = 0
@@ -135,13 +92,10 @@ export class RelayOutbox {
     this.options.send(encodeRelayEnvelopes(pending))
   }
 
-  /// Drops buffered envelopes without sending (the socket is gone).
   clear(): void {
     this.drain()
   }
 
-  /// Removes and returns the buffered envelopes without sending — the owner
-  /// can retain them for replay after a resumed reconnect.
   drain(): { header: unknown; payload: Uint8Array }[] {
     this.#cancelFlush?.()
     this.#cancelFlush = undefined

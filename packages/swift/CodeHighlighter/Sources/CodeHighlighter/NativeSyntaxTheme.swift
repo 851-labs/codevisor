@@ -1,6 +1,5 @@
 import Foundation
 
-/// Resolves Tree-sitter captures against the app’s VS Code/TextMate themes.
 struct NativeSyntaxTheme: Sendable {
   private struct Document: Decodable {
     var tokenColors: [Rule]?

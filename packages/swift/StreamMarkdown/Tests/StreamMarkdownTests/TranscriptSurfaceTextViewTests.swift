@@ -2,8 +2,6 @@ import AppKit
 @testable import StreamMarkdown
 import Testing
 
-/// A stand-in for the virtualized transcript: it owns focus and, like the
-/// real coordinator, drops its selection the moment focus leaves it.
 @MainActor
 private final class SelectionHost: NSView, TranscriptSelectionCoordinating {
   var hasSelection = true
@@ -36,9 +34,6 @@ private final class SelectionHost: NSView, TranscriptSelectionCoordinating {
   }
 }
 
-/// Records menus instead of showing them. A real pop-up — the coordinator's
-/// or `NSTextView`'s own — runs a tracking loop that blocks the test process
-/// until someone dismisses it on screen.
 @MainActor
 private final class RecordingSurface: TranscriptSurfaceTextView {
   var presentedMenus: [NSMenu] = []

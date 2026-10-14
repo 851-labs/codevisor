@@ -16,20 +16,14 @@ import ScreenSharingDiagnostics
       mediaStartedNs = started
       let startedAtSeconds = CACurrentMediaTime()
       for metrics in [senderMetrics, receiverMetrics] { metrics.label("mediaStartUptimeNs", String(started)) }
-      // The audit window is relative to this media start on the audit's own clock (CACurrentMediaTime).
       deliveryAudit?.start(originNs: Int64(startedAtSeconds * 1_000_000_000))
-      // The event-log diagnostics' first tick is the media-start boundary itself (a begin of 0 starts here).
       rtcEventLog?.tick(measuredSeconds: 0)
       senderRtcEventLog?.tick(measuredSeconds: 0)
-      // Relay checks require this exact capability; absent counters are never zero.
       receiverMetrics.label("idleAuditInstrumentation", "demand-attribution-1")
       if let report = options.reportURL {
-        // Both clocks are read back to back so a relay can verify that the
-        // Core Animation and Dispatch uptime clocks agree within this process.
         let ready: [String: Any] = [
           "startedAtSeconds": startedAtSeconds, "startedAtUptimeNs": started,
           "startedAtMediaTimeNs": Int64(CACurrentMediaTime() * 1_000_000_000),
-          // Backward compatible: existing keys unchanged; the meaning is now explicit.
           "meaning":
             "SETUP readiness: peers connected and the source (synthetic, display, picked or owned-window stream) started; not a first captured, encoded or decoded frame",
         ]
@@ -47,8 +41,6 @@ import ScreenSharingDiagnostics
       var measured = 0.0
       var sourcePausedAt: Double?
       var workloadPausedAt: Double?
-      // Owned-window mode: first-observed delivery over measurement ticks (bounded, one entry per metric),
-      // kept on the runner so failure evidence retains what was already seen.
       if options.captureOwnedWindow {
         firstObservation = ScreenSharingFirstObservation(names: [
           "anyCallbackIncludingInvalidOrMissingStatus", "completeStatusCallbacks", "acceptedCapturedFrames",
@@ -56,7 +48,7 @@ import ScreenSharingDiagnostics
         ])
         measurementStartedNs = started
       }
-      try recordFirstObservation(elapsedSeconds: measured)  // initial counter observation at tick 0
+      try recordFirstObservation(elapsedSeconds: measured)
       var idleCheckpointTaken = false
       var settlingCheckpointAtSeconds: Double?
       let settlingCounters = [
@@ -67,8 +59,6 @@ import ScreenSharingDiagnostics
         (receiverMetrics, ["videoRefreshRequestsSent"]),
       ]
       while measured < options.duration {
-        // The event-log diagnostic borrows these ticks: the sleep is shortened to its next requested boundary so
-        // the start/stop calls happen at the first tick at or after it (requested and actual are both recorded).
         let boundaries = [rtcEventLog?.nextBoundarySeconds(), senderRtcEventLog?.nextBoundarySeconds()]
           .compactMap { $0 }
         try await Task.sleep(
@@ -80,8 +70,6 @@ import ScreenSharingDiagnostics
         senderRtcEventLog?.tick(measuredSeconds: measured)
         if let pauseAfter = options.pauseSourceAfterSeconds, sourcePausedAt == nil, measured >= pauseAfter {
           if options.finalBurstSignal, let report = options.reportURL {
-            // Announce that the final changing content follows, keep producing it
-            // briefly, then stop. A loss relay coordinates its drop window on this.
             let signal: [String: Any] = [
               "signalAtSeconds": CACurrentMediaTime(), "measuredSeconds": measured, "continueMilliseconds": 250,
             ]
@@ -94,8 +82,6 @@ import ScreenSharingDiagnostics
           measured = Double(ScreenSharingMetrics.nowNs - started) / 1_000_000_000
           sourcePausedAt = measured
           if let report = options.reportURL {
-            // The source has drained (stop waits for its queue); a relay may end
-            // a coordinated drop window shortly after observing this file.
             let paused: [String: Any] = [
               "pausedAtSeconds": CACurrentMediaTime(), "pausedAtUptimeNs": ScreenSharingMetrics.nowNs,
               "measuredSeconds": measured,
@@ -111,12 +97,10 @@ import ScreenSharingDiagnostics
         if let pauseAfter = options.pauseWorkloadAfterSeconds, workloadPausedAt == nil, measured >= pauseAfter,
           let workload = ownedWorkload
         {
-          // Only the animation stops; the window and its last frame remain on
-          // screen and remain the captured content. The stream is not touched.
           var record = try workload.pauseAnimation()
           measured = Double(ScreenSharingMetrics.nowNs - started) / 1_000_000_000
           workloadPausedAt = measured
-          sourcePausedAt = measured  // idle-checkpoint accounting only; not a pass criterion here
+          sourcePausedAt = measured
           let snapshot = senderMetrics.snapshot()
           record["measuredSeconds"] = measured
           record["capturedFramesAtPause"] = snapshot.counters["capturedFrames", default: 0]
@@ -152,10 +136,6 @@ import ScreenSharingDiagnostics
           senderMetrics.label("idleCheckpointAtSeconds", String(measured))
           idleCheckpointTaken = true
         }
-        // Recovery may legitimately continue after the idle checkpoint (a
-        // blackout); the final three seconds must then be genuinely quiet.
-        // Every headless peer records the window so a separate-process
-        // experiment can verify both ends.
         if options.headless, settlingCheckpointAtSeconds == nil, measured >= options.duration - 3 {
           for (metrics, names) in settlingCounters {
             let snapshot = metrics.snapshot()
@@ -179,14 +159,10 @@ import ScreenSharingDiagnostics
           print("Measurement progress: \(Int(measured)) / \(Int(options.duration)) seconds")
         }
       }
-      // Normal completion: each event log is stopped exactly once here, before any peer teardown.
       rtcEventLog?.finish(measuredSeconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000_000)
       senderRtcEventLog?.finish(measuredSeconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000_000)
       synthetic?.stop()
       if let workload = ownedWorkload {
-        // Boundary order: stream stop through the session (success or failure
-        // preserved; the lifecycle advances only on success), then the window
-        // closes during stop(); both are in the report and the after-close file.
         let stopped = await workload.stopCapture()
         guard stopped else {
           throw ScreenSharingError.unavailable(
@@ -197,7 +173,7 @@ import ScreenSharingDiagnostics
       }
       if let workload = ownedWorkload {
         measured = Double(ScreenSharingMetrics.nowNs - started) / 1_000_000_000
-        try recordFirstObservation(elapsedSeconds: measured)  // final post-stop observation
+        try recordFirstObservation(elapsedSeconds: measured)
         publishFirstObservationLabels()
         let snapshot = senderMetrics.snapshot()
         var stopped: [String: Any] = [
@@ -235,17 +211,12 @@ import ScreenSharingDiagnostics
       }
       let sent = senderMetrics.snapshot()
       let received = receiverMetrics.snapshot()
-      // After the checkpoint the host may encode only cache refreshes, each
-      // answering a viewer request received after the checkpoint; a viewer in
-      // this process may request one only after a verified delivery shortfall
-      // (transport loss before idle). Without loss nothing continues.
       func sinceCheckpoint(_ snapshot: ScreenSharingMetrics.Snapshot, _ name: String) -> Int {
         snapshot.counters[name, default: 0] - snapshot.counters[name + "AtIdleCheckpoint", default: 0]
       }
       func settled(_ snapshot: ScreenSharingMetrics.Snapshot, _ name: String) -> Bool {
         snapshot.counters[name, default: 0] == snapshot.counters[name + "AtSettlingCheckpoint", default: 0]
       }
-      // A late checkpoint (delayed loop) must not pass with an unobserved window.
       let settlingObserved = settlingCheckpointAtSeconds.map { elapsed - $0 >= 2 } ?? false
       let idleObservationPassed =
         (options.pauseSourceAfterSeconds == nil && !options.idleOnDecoderReset)
@@ -265,8 +236,6 @@ import ScreenSharingDiagnostics
         !options.dropRecoveryKeyframe
         || (sent.counters["injectedEncoderKeyframeDrops", default: 0] == 1
           && sent.counters["encoderRetriedKeyframes", default: 0] >= 1
-          // The idle retry intentionally creates another request. Retention
-          // without a new request is covered by the encoder state tests.
           && sent.counters["encoderForcedKeyframesSubmitted", default: 0] >= 3)
       let recoveryPassed =
         !options.checkRecovery
@@ -275,9 +244,6 @@ import ScreenSharingDiagnostics
           && received.counters["decodedFrames", default: 0] >= (options.idleOnDecoderReset ? 120 : 126)
           && (options.headless || received.counters["presentedFrames", default: 0] >= 126)
           && (received.timings["decoderResetToRecoveryKeyframe"]?.maximumMs ?? .infinity) < 2000)
-      // Owned-window mode passes on delivered media, no errors, a recorded
-      // pause when one was requested, and a completed capture stop. Idle
-      // behaviour after the pause is recorded, not judged, in this mode.
       let ownedWindowPassed =
         !options.captureOwnedWindow
         || (sent.labels["captureStartedAtNs"] != nil && sent.labels["captureStopCompletedAtNs"] != nil
@@ -323,12 +289,6 @@ import ScreenSharingDiagnostics
       print(String(decoding: data, as: UTF8.self))
       let cacheHeldBeforeClose = sender?.frameSender.isHoldingCachedFrame
       await stop()
-      // Close check in three observations: immediately after close (tasks
-      // cancelled, not yet awaited), after each peer's owned work completed,
-      // and after a bounded 500 ms observation window. It fails the run when
-      // the cache or mailbox is still held or a tracked counter moved during
-      // that window. Only owned main-actor tasks are awaited; WebRTC and
-      // VideoToolbox threads are outside this boundary.
       func observation() throws -> [String: Any] {
         let sent = senderMetrics.snapshot()
         let received = receiverMetrics.snapshot()
@@ -359,8 +319,6 @@ import ScreenSharingDiagnostics
         return result
       }
       let movedCounters = counters(drained).filter { counters(settled)[$0.key] != $0.value }.keys.sorted()
-      // An owned-window run must also have closed its window in order after a
-      // successful stream stop; an abandoned lifecycle never passes this check.
       let closeCheckPassed =
         movedCounters.isEmpty && settled["cacheHeld"] as? Bool == false && settled["mailboxHeld"] as? Bool == false
         && (ownedWorkload?.session.completedInOrder ?? true)

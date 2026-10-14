@@ -3,17 +3,10 @@ import Foundation
 import Testing
 @testable import TranscriptKit
 
-/// Absolute cost of the extracted transcript-surface layer on a worst-case
-/// row set. These are not regression gates — they print timings so the
-/// per-frame overhead of TranscriptRowSet / geometry / window planning can be
-/// bounded. Opt in with `BENCH=1 swift test --filter TranscriptSurfaceBenchmarks`
-/// (optionally `-Xswiftc -O`); skipped otherwise so the ordinary test run and
-/// the pre-commit hook stay fast.
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["BENCH"] == "1"))
 struct TranscriptSurfaceBenchmarks {
   private typealias Row = TranscriptPresentationRow
 
-  /// Row count for the synthetic worst case; override with BENCH_ROWS.
   private static var rowCount: Int {
     Int(ProcessInfo.processInfo.environment["BENCH_ROWS"] ?? "") ?? 20_000
   }
@@ -46,7 +39,7 @@ struct TranscriptSurfaceBenchmarks {
   }
 
   private static func measure(_ label: String, iterations: Int, _ body: () -> Void) {
-    body()  // warm
+    body()
     let start = DispatchTime.now().uptimeNanoseconds
     for _ in 0..<iterations { body() }
     let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6

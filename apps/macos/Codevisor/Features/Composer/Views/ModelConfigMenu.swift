@@ -4,9 +4,6 @@ import CodevisorUI
 import Autocomplete
 import SwiftUI
 
-/// Separate model and parameter controls shared by draft and connected
-/// composers. Both use Autocomplete's searchable picker presentation;
-/// parameters are grouped by option, each with its own current value.
 struct ModelConfigMenu: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openSettings) private var openSettings
@@ -19,7 +16,6 @@ struct ModelConfigMenu: View {
 
   var body: some View {
     let presentation = controller.modelPickerPresentation
-    // One spinner at most across both chips (see ModelPickerPresentation).
     if presentation.modelChip == .loading {
       ProgressView()
         .controlSize(.small)
@@ -47,9 +43,6 @@ struct ModelConfigMenu: View {
         }
         .favorites($favoriteModelIDs)
       }
-      // An enabled harness whose account needs attention has no model list,
-      // so without these rows it would vanish from the picker as if it were
-      // turned off.
       for harness in signInRequiredHarnesses {
         Autocomplete.Section(harness.name, id: "sign-in:\(harness.id)") {
           Autocomplete.Action("Sign in to use \(harness.name)…", id: "sign-in:\(harness.id)") {
@@ -144,8 +137,6 @@ struct ModelConfigMenu: View {
     openSettings()
   }
 
-  /// Enabled harnesses the server reports as blocked on sign-in. Only a new
-  /// chat can switch harness, so only its picker offers them.
   private var signInRequiredHarnesses: [ServerHarness] {
     guard controller.canChooseHarness else { return [] }
     let usable = Set(modelGroups.map(\.id))
@@ -157,10 +148,6 @@ struct ModelConfigMenu: View {
   private var modelGroups: [ModelMenuGroup] {
     let serverId = controller.project.serverId
     if controller.canChooseHarness {
-      // Derived straight from the per-machine cache: the list is
-      // server-correct by construction and re-renders on any store,
-      // with no controller-held copy to go stale across a machine
-      // switch.
       return environment.configCache.capabilities(forServer: serverId).compactMap {
         capability in
         let harness = capability.harness
@@ -214,9 +201,6 @@ struct ModelConfigMenu: View {
       && group.modelOption.currentValue == model.value
   }
 
-  /// The controller names the pick on the chip immediately, validates it
-  /// against the live list after any harness switch (staging it if the list
-  /// lags), and resolves the model's settings behind a single spinner.
   private func choose(_ model: SessionConfigSelectOption, in group: ModelMenuGroup) {
     isPresented = false
     Task {
@@ -239,8 +223,6 @@ struct ModelConfigMenu: View {
     ModelParameterMenu.summarized(settingsOptions)
   }
 
-  /// The chip's text. While settings are loading with nothing to name yet,
-  /// the spinner alone is the label.
   private func parameterChipSummary(_ presentation: ModelPickerPresentation) -> String? {
     let summary = summarizedSettingsOptions.map(\.currentName).joined(separator: " · ")
     guard summary.isEmpty else { return summary }

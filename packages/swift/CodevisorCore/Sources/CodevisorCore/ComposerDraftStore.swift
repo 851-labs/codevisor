@@ -1,10 +1,5 @@
 import Foundation
 
-/// Persists the complete unsent new-chat composer per machine. Attachments
-/// persist as references to their staged files in `attachmentFiles`, so
-/// editing text never rewrites large blobs. The composer that staged a file
-/// owns deleting it; clearing a draft only drops the reference, because a
-/// promoted draft's controller still holds (and may restore) the files.
 @MainActor
 public final class ComposerDraftStore {
   public struct DraftAttachment: Equatable {
@@ -12,7 +7,6 @@ public final class ComposerDraftStore {
     public var name: String
     public var mimeType: String
     public var kind: String
-    /// The staged copy inside the store's `attachmentFiles`.
     public var fileURL: URL
 
     public init(id: UUID, name: String, mimeType: String, kind: String, fileURL: URL) {
@@ -26,9 +20,6 @@ public final class ComposerDraftStore {
 
   public struct Draft: Equatable {
     public var projectId: UUID
-    /// The project's machine. Optional because older persisted drafts
-    /// predate cross-machine drafts; nil means "the machine whose slot
-    /// this draft was saved under".
     public var projectServerId: String?
     public var composerText: String
     public var attachments: [DraftAttachment]
@@ -38,13 +29,7 @@ public final class ComposerDraftStore {
     public var isGoalComposerArmed: Bool
     public var isGoalEditing: Bool
     public var composerTextBeforeGoalEdit: String?
-    /// Newer drafts have already persisted every explicit picker change to
-    /// composer defaults. Older drafts need a one-time compatibility
-    /// promotion when restored.
     public var usesImmediateDefaultsPersistence: Bool
-    /// True when this draft is temporarily carrying a compatible
-    /// selection from another machine instead of using this machine's
-    /// durable fallback profile.
     public var selectionWasAutomaticallyCarried: Bool
 
     public init(
@@ -76,8 +61,6 @@ public final class ComposerDraftStore {
     }
   }
 
-  /// Both persisted draft payloads, decoded. Built off the main actor at
-  /// launch (see `ClientLaunchSnapshot`).
   struct Persisted: Sendable {
     var machines: ComposerPersistedDrafts?
     var panes: ComposerPersistedPaneDrafts?
@@ -90,12 +73,8 @@ public final class ComposerDraftStore {
   private let key: String
   private let paneKey: String
   private let persistenceOwner = UUID()
-  /// Where drafted attachments are staged; composers share it.
   public let attachmentFiles: ComposerAttachmentFileStore
   private var drafts: [String: Draft] = [:]
-  /// In-workspace draft chat panes, keyed by pane id. Same schema as the
-  /// per-machine draft — an unsent in-workspace composer must survive
-  /// relaunches and app updates just like the page draft does.
   private var paneDrafts: [UUID: Draft] = [:]
 
   public convenience init(
@@ -104,16 +83,12 @@ public final class ComposerDraftStore {
     key: String = ComposerDraftStore.defaultKey,
     paneKey: String = ComposerDraftStore.defaultPaneKey
   ) {
-    // Flush a previous instance's coalesced snapshot before replacing an
-    // environment or reopening the store in tests.
     PersistenceEncoding.drain()
     self.init(
       store: store, attachmentFiles: attachmentFiles, key: key, paneKey: paneKey,
       persisted: Self.loadPersisted(from: store, key: key, paneKey: paneKey))
   }
 
-  /// Opens the default-keyed drafts from what launch already decoded off the
-  /// main actor; without a snapshot it reads `store` synchronously.
   public convenience init(
     store: any PersistenceStore,
     attachmentFiles: ComposerAttachmentFileStore,
@@ -158,7 +133,6 @@ public final class ComposerDraftStore {
     }
   }
 
-  /// Reads and decodes both draft payloads, quarantining an unreadable one.
   nonisolated static func loadPersisted(
     from store: any PersistenceStore,
     key: String = defaultKey,
@@ -187,10 +161,6 @@ public final class ComposerDraftStore {
     drafts[serverId]
   }
 
-  /// Finds the durable page draft whose current project targets `serverId`.
-  /// A draft can live in its original machine slot after the fleet picker
-  /// retargets it, so looking up only by slot would make it disappear after
-  /// relaunch when New Chat restores the new target machine.
   public func draft(
     targetingServer serverId: String
   ) -> (
@@ -217,12 +187,8 @@ public final class ComposerDraftStore {
 
   public func clearDraft(forServer serverId: String) {
     guard drafts.removeValue(forKey: serverId) != nil else { return }
-    // Clearing on send supersedes any debounced keystroke snapshot. Queue
-    // the empty/newest metadata immediately, but still off the main actor.
     persistMetadata(immediately: true)
   }
-
-  // MARK: - Pane drafts
 
   public func paneDraft(forPane paneId: UUID) -> Draft? {
     paneDrafts[paneId]
@@ -245,18 +211,12 @@ public final class ComposerDraftStore {
     for paneId in paneIds { clearPaneDraft(forPane: paneId) }
   }
 
-  /// Synchronously drains the background persistence stage. Hot UI paths
-  /// should never call this; lifecycle stores drain the same shared stage
-  /// before termination/background suspension.
   public func flushPendingWrites() {
     persistMetadata(immediately: true)
     persistPaneMetadata(immediately: true)
     PersistenceEncoding.drain()
   }
 
-  /// Deletes staged files no draft references — leftovers from composers
-  /// that were closed, crashed, or never persisted. Call once at launch,
-  /// before any composer can stage; files staged after the call are spared.
   public func removeUnreferencedAttachmentFiles() {
     let referenced = Set(
       (Array(drafts.values) + Array(paneDrafts.values)).flatMap { $0.attachments.map(\.id) })
@@ -267,9 +227,6 @@ public final class ComposerDraftStore {
     }
   }
 
-  /// Rewrites the metadata with staged-file references, then drops the
-  /// legacy blobs — in one job, so a crash between the two can't leave a
-  /// draft whose attachments exist nowhere.
   private func finishLegacyAttachmentMigration(removing blobKeys: [String]) {
     let files = attachmentFiles
     let machines = ComposerPersistedDrafts(

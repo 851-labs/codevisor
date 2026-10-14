@@ -1,11 +1,5 @@
 import Foundation
 
-/// The Screen Sharing pane the rig views a Codevisor server's native display
-/// through (851-2384). The server starts a native session only for a real
-/// Screen Sharing pane in one of its workspaces, as the app has; the rig keeps
-/// one of its own there: a scratch project, a "Screen Sharing Rig" workspace
-/// and its pane. The ids are fixed, and every request is an idempotent
-/// create-or-update, so each connect converges on the same three records.
 public enum RigServerPane {
   public static let projectId = UUID(uuidString: "5C2E1A7B-0D3F-4B8E-9A61-7E4C2B1D9F01")!
   public static let workspaceId = UUID(uuidString: "5C2E1A7B-0D3F-4B8E-9A61-7E4C2B1D9F02")!
@@ -14,11 +8,9 @@ public enum RigServerPane {
   public struct Request: Equatable, Sendable {
     public var method: String
     public var path: String
-    /// The JSON body.
     public var body: String
   }
 
-  /// In order: the project, its workspace, then the pane.
   public static let requests: [Request] = [
     Request(method: "POST", path: "/v1/projects/scratch", body: #"{"id":"\#(projectId.uuidString)"}"#),
     Request(
@@ -37,7 +29,6 @@ public enum RigServerPane {
     public let errorDescription: String?
   }
 
-  /// Sends `requests` to the server at `baseURL`; throws on the first non-2xx answer.
   public static func ensure(
     baseURL: URL, token: String,
     send: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) }

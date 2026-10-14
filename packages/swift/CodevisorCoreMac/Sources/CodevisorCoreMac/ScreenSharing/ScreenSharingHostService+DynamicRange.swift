@@ -3,18 +3,11 @@ import ScreenSharingWebRTC
 
 extension ScreenSharingHostService {
   struct DynamicRangeState {
-    /// Whether the viewer's screen can show HDR, as it last said.
     var viewerSupports = false
-    /// The last switch, which the next one waits for.
     var task: Task<Void, Never>?
-    /// What the viewer was last told.
     var reported: (range: ScreenSharingDynamicRange, reason: String?)?
   }
 
-  /// HDR for a native viewer (851-2380): the viewer says on the video format channel whether its
-  /// screen can show HDR; the host captures and encodes 10-bit Display P3 PQ while that holds and
-  /// the display it captures has headroom, and says what it sends. An older viewer never opens
-  /// the channel, and the session stays SDR.
   func configureVideoFormat(_ session: ScreenSharingHostSession) {
     session.peer.videoFormatChannel.onMessage = { [weak self, weak session] message in
       guard let self, let session, !session.stopping, case .viewer(let supported) = message else { return }
@@ -23,9 +16,6 @@ extension ScreenSharingHostService {
     }
   }
 
-  /// Brings the capture to the range the viewer and the captured display allow. Called when the
-  /// viewer reports its screen and before each capture start (the display may have changed).
-  /// Switches run one at a time, in order; the task finishes once this one has.
   @discardableResult
   func applyDynamicRange(_ session: ScreenSharingHostSession) -> Task<Void, Never> {
     let decision = ScreenSharingDynamicRangePolicy.decide(

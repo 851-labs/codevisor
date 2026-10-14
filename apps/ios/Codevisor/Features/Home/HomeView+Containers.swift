@@ -2,13 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Home's compact-width container: the authoritative navigation stack that
-/// pushes workspaces over the sidebar list and hosts the New Chat sheet.
-/// Nothing about this presentation changes for iPhone Duo; the unfolded
-/// display uses `splitContainer` instead.
 extension HomeView {
-  /// The sidebar content shared by both containers, reading the bar edge
-  /// of whichever container hosts it.
   var homeRoot: some View {
     homeRootContent
       .background {
@@ -28,7 +22,6 @@ extension HomeView {
       #endif
     } else if !hasRemoteMachines {
       if environment.navigationRosterStatus == .unverified {
-        // Signed in, but the machine list isn't known yet.
         refreshableState(allowsStateHitTesting: false) {
           HomeNavigationSyncView(state: .loading(machineName: "your machines"))
         }
@@ -43,9 +36,6 @@ extension HomeView {
   var stackContainer: some View {
     NavigationStack(path: $navigation.path) {
       homeRoot
-        // No title: the workspace headers are the page's headings, and the
-        // bar keeps only its two buttons. The pushed workspace's back button
-        // falls back to the system "Back" label.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -55,8 +45,6 @@ extension HomeView {
         .navigationDestination(for: HomeRoute.self) { route in
           stackDestination(route)
         }
-        // The New Chat sheet is a compact-width presentation; its zoom
-        // transition sources from the bottom-bar button above.
         .sheet(item: $presentedNewChatFlow, onDismiss: handleNewChatSheetDismissed) {
           flow in
           newChatSheet(flow)
@@ -84,8 +72,6 @@ extension HomeView {
         preferredLeafId: preferredLeafId
       )
     case let .newChat(serverId):
-      // Reached only by folding while the New Chat page was the split
-      // detail: the draft continues as a pushed page with the system back.
       draftDestination(serverId: serverId)
     }
   }

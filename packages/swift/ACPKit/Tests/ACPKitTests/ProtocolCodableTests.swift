@@ -64,7 +64,6 @@ struct ProtocolCodableTests {
     }
     #expect(phase == .final)
 
-    // Unknown phase values decode as nil rather than failing the update.
     let unknown = Data(
       #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"phase":"interlude"}"#
         .utf8
@@ -147,7 +146,6 @@ struct ProtocolCodableTests {
           createdAt: "2026-07-05T00:00:00.000Z",
           updatedAt: "2026-07-05T00:01:00.000Z"
         )))
-    // Null budget (unbounded goal) survives the trip as nil.
     try roundTrip(SessionUpdate.goalUpdate(SessionGoal(objective: "unbounded", status: .paused)))
     try roundTrip(SessionUpdate.goalCleared)
     try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .started))

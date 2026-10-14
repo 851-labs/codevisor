@@ -1,7 +1,5 @@
 import type { CodevisorServerConfig } from "./server-context-types.js"
 
-/// A complete server config from partial overrides: the defaults every test
-/// and embedded run starts from, with `serve` supplying the real values.
 export const defaultServerConfig = (
   overrides: Partial<CodevisorServerConfig> & Pick<CodevisorServerConfig, "bootId">
 ): CodevisorServerConfig => ({

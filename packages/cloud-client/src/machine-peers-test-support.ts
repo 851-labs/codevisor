@@ -21,11 +21,6 @@ import {
   type SentEnvelope
 } from "./machine-connection-test-support.js"
 
-/// Two machine connections joined by a fake hub that routes exactly like
-/// relay-routing.ts: machineId-addressed envelopes from an opener reach the
-/// target with the opener's identity; peerId-addressed answers come back
-/// addressed by the responder's device id.
-
 export interface Peer {
   h: Harness
   socket: FakeSocket
@@ -83,15 +78,12 @@ export const welcome = (peer: Peer, machines?: CloudMachinePresence[]): void =>
     ...(machines === undefined ? {} : { machines })
   })
 
-/// Connects both peers through a routing fake hub.
 export const pair = (
   options: { a?: Parameters<typeof makePeer>[1]; b?: Parameters<typeof makePeer>[1] } = {}
 ) => {
   const a = makePeer("a", options.a)
   const b = makePeer("b", options.b)
   const peers = [a, b]
-  // Like a real hop, delivery is asynchronous: frames queue and drain on a
-  // microtask (or on an explicit flush()). `holding` models a hub outage.
   const queue: (() => void)[] = []
   const hub = {
     holding: false,
@@ -135,7 +127,6 @@ export const pair = (
   return { a, b, hub }
 }
 
-/// Scripted timers for requestOverGatewayChannel's accept timeout.
 export const timers = () => {
   const pending: { callback: () => void; delayMs: number; cancelled: boolean }[] = []
   return {

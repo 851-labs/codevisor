@@ -12,8 +12,6 @@ import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
 
-/// One annotator per server: sinks are rebuilt whenever a session's agent
-/// (re)starts, but the gateway and harness must correlate across them.
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
 
 const executionAnnotator = (services: CodevisorServerServices): ExecutionAnnotator => {
@@ -25,10 +23,6 @@ const executionAnnotator = (services: CodevisorServerServices): ExecutionAnnotat
   return annotator
 }
 
-/// The standing per-session sink: every runtime event — in-turn or
-/// agent-initiated — is persisted and fanned out here. User echoes are
-/// filtered because the server materializes its own copy when a prompt is
-/// accepted.
 export const sessionEventSink =
   (
     services: CodevisorServerServices,
@@ -47,7 +41,7 @@ export const sessionEventSink =
           isRecord(event.payload) && typeof event.payload.detail === "string"
             ? event.payload.detail
             : undefined
-        /* v8 ignore next -- sessions with and without pinned accounts are integration-tested. */
+        /* v8 ignore next */
         if (session?.harnessAccountId !== undefined) {
           await services.auth?.markAccountExpired(session.harnessAccountId, detail)
         }
@@ -78,8 +72,6 @@ export const sessionEventSink =
             `Browser tab cleanup failed for ${sessionId}: ${cause instanceof Error ? cause.message : String(cause)}`
           )
         })
-        // Attachments the reply embeds must be durable before the turn closes,
-        // so the finalized item and the turn-end event land in that order.
         await promoteAssistantArtifacts(services, fanout, serverId, sessionId).catch(
           (cause: unknown) => {
             console.error(
@@ -114,9 +106,6 @@ export const materializeRuntimeEvent = async (
     }
     return
   }
-  // appendEvent atomically persists the session event and updates the
-  // canonical semantic chat rows. There is deliberately no second legacy
-  // conversation write here: a crash can no longer split the two stores.
   await appendAndPublish(db, fanout, event.kind, subjectId, {
     ...payload,
     serverId
@@ -158,8 +147,6 @@ const conversationPayload = (
   if (!isRecord(payload) || typeof payload.sessionUpdate !== "string") {
     return undefined
   }
-  // Subagent-attributed chunks stay out of the text conversation snapshot;
-  // clients rebuild nested subagent transcripts from the raw event log.
   if (typeof payload.parentToolCallId === "string") {
     return undefined
   }

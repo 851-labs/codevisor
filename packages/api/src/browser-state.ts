@@ -1,7 +1,5 @@
 import { Schema } from "effect"
 
-// The jar belongs to this server installation, just like its connection token.
-// Partitioned cookies are deliberately excluded: WebKit cannot round-trip their key.
 export const BrowserCookie = Schema.Struct({
   name: Schema.String,
   value: Schema.String,

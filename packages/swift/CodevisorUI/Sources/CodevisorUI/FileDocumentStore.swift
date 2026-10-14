@@ -36,8 +36,6 @@ public final class FileDocumentStore {
     retained[key] = document
     accessOrder.removeAll { $0 == key }
     accessOrder.append(key)
-    // Panes retain their own documents. Evicting a clean cache entry never
-    // creates a second buffer for a document still owned by an editor session.
     while retained.count > capacity,
       let expired = accessOrder.first(where: {
         guard $0 != key, let document = retained[$0] else { return false }

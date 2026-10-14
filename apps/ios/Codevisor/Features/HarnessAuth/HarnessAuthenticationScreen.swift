@@ -3,11 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The iOS harness authentication flow, pinned to one machine: lists the
-/// harness's accounts and walks whichever sign-in method the user picks —
-/// browser, device-code, API-key, or an attached terminal (Claude's own
-/// login flow runs in a PTY on the target machine and renders here).
-/// Mirrors the macOS HarnessAuthenticationView's standard flow.
 struct HarnessAuthenticationScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.sharedHarnessAccounts) var isShared
@@ -82,8 +77,6 @@ struct HarnessAuthenticationScreen: View {
           }
           ToolbarSpacer(.fixed, placement: .topBarTrailing)
           if !model.accounts.isEmpty, !choosesSignInMethod {
-            // Text, not a bare checkmark: the verb is what makes this
-            // legible. Becomes a spinner while the switch is in flight.
             SheetConfirmToolbarItem(
               "Use", isEnabled: canConfirmSelection && !model.isWorking
             ) {
@@ -117,8 +110,6 @@ struct HarnessAuthenticationScreen: View {
         Task { await cancelFlow() }
       }
   }
-
-  // MARK: - Layout
 
   @ViewBuilder private var accountsForm: some View {
     if choosesSignInMethod {
@@ -206,8 +197,6 @@ struct HarnessAuthenticationScreen: View {
         }
       }
       Spacer()
-      // Per-row progress for a per-row operation: the model already tracks
-      // which account is busy, and a trailing spinner is the native idiom.
       if account.id == model.workingAccountId {
         ProgressView().controlSize(.small)
       } else if !canSelect(account), account.canLogin {
@@ -254,8 +243,6 @@ struct HarnessAuthenticationScreen: View {
     case "authenticated", "notRequired": return nil
     case "checking": return "Checking sign-in…"
     case "expired": return account.id.hasPrefix("shared-") ? (account.detail ?? "Sign-in expired") : "Sign-in expired"
-    // Plain language, never the probe's `detail` — that carries a crashed
-    // CLI's stderr. The cause is summarized and persisted server-side.
     case "error": return "Something went wrong starting the CLI"
     default: return "Not signed in"
     }

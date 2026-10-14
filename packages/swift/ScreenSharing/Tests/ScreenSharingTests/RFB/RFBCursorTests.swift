@@ -4,20 +4,14 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// The Cursor (-239) and PointerPos (-232) pseudo-encodings (851-2311): the
-/// pointer's shape is drawn locally, and a server-side move is reported.
 struct RFBCursorTests {
   typealias Harness = RFBClientLoopbackTests.Harness
 
-  /// A 3 × 2 shape: an opaque red top row, then a single opaque blue pixel.
   static let shape = RFBCursorShape(
     width: 3, height: 2, hotspotX: 1, hotspotY: 0,
     pixels: [0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0])
 
-  // MARK: L1 — bytes to shape
-
   @Test func theMaskDecidesWhichPixelsAreOpaque() throws {
-    // Pixels (colour everywhere, even where the mask hides it), then one mask byte per row.
     let colour: [UInt8] = [9, 9, 9, 0]
     let mask: [UInt8] = [0b1010_0000, 0b0100_0000]
     let payload: [UInt8] = Array(repeating: colour, count: 6).flatMap { $0 } + mask
@@ -58,8 +52,6 @@ struct RFBCursorTests {
       width: 11, height: 16, hotspotX: 0, hotspotY: 0, payload: arrow.encodedPayload())
     #expect(decoded == arrow)
   }
-
-  // MARK: L2 — against the reference server
 
   @Test func theClientAdvertisesCursorAndPointerPosition() async throws {
     let harness = try await Harness()

@@ -54,7 +54,7 @@ const writeAll = async (
   let offset = 0
   while (offset < buffer.byteLength) {
     const result = await handle.write(buffer, offset, buffer.byteLength - offset, position + offset)
-    /* v8 ignore next 3 -- a real FileHandle either writes bytes or rejects; this guards a broken adapter. */
+    /* v8 ignore next 3 */
     if (result.bytesWritten === 0) {
       throw new AttachmentStoreError("Unable to make progress writing attachment")
     }
@@ -64,9 +64,7 @@ const writeAll = async (
 }
 
 const syncDirectory = async (path: string): Promise<void> => {
-  // Windows does not support opening directories for fsync. The file itself
-  // is still synced before the atomic rename.
-  /* v8 ignore next -- CI exercises fsync on Unix; Windows rejects directory handles by design. */
+  /* v8 ignore next */
   if (process.platform === "win32") return
   const handle = await open(path, "r")
   try {
@@ -119,7 +117,7 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     }
     try {
       await rename(temporary, path)
-      /* v8 ignore start -- requires another process to install the same object during this rename. */
+      /* v8 ignore start */
     } catch (cause) {
       if (!(await verify({ sha256, sizeBytes }))) throw cause
       await rm(temporary, { force: true })
@@ -127,7 +125,7 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     /* v8 ignore stop */
     await chmod(path, 0o600)
     await syncDirectory(dirname(path))
-    /* v8 ignore next 3 -- requires external corruption between the atomic rename and immediate verification. */
+    /* v8 ignore next 3 */
     if (!(await verify({ sha256, sizeBytes }))) {
       throw new AttachmentStoreError(`Attachment object failed verification: ${sha256}`)
     }
@@ -165,11 +163,11 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
       )
     } catch (cause) {
       await handle.close().catch(
-        /* v8 ignore next -- best-effort cleanup after the primary write failure. */
+        /* v8 ignore next */
         () => undefined
       )
       await rm(temporary, { force: true }).catch(
-        /* v8 ignore next -- best-effort cleanup after the primary write failure. */
+        /* v8 ignore next */
         () => undefined
       )
       throw cause
@@ -202,8 +200,6 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     return data
   }
 
-  // A named copy gives tools a usable extension without exposing the object
-  // store to edits made through the model-facing path.
   const materialize = async (metadata: FileMetadata): Promise<string> => {
     const directory = join(root, "files", safePathSegment(metadata.id))
     const path = join(directory, safePathSegment(metadata.name))
@@ -240,8 +236,6 @@ export const migrateAttachmentBlobs = async (
   try {
     report("running", initial.disk)
     while (true) {
-      // A row may be the full upload limit, so process one BLOB at a time to
-      // keep startup backfill memory bounded.
       const rows = await Effect.runPromise(db.listFileStorage("sqlite", 1))
       if (rows.length === 0) break
       for (const row of rows) {

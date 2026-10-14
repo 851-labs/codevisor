@@ -4,8 +4,6 @@ import Network
 import Testing
 @testable import ScreenSharing
 
-/// A TCP listener on an ephemeral port, so nothing here depends on a port
-/// being free. `handle` runs once per accepted connection, already started.
 final class LoopbackListener: @unchecked Sendable {
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.tests.rfb-listener")
   private let lock = NSLock()
@@ -13,7 +11,6 @@ final class LoopbackListener: @unchecked Sendable {
   private let listener: NWListener
   private let handle: @Sendable (NWConnection) -> Void
   private(set) var port: UInt16 = 0
-  /// Signalled once per accepted connection, so tests never poll for one.
   let accepted = TestSignal()
 
   init(handle: @escaping @Sendable (NWConnection) -> Void) async throws {
@@ -50,8 +47,6 @@ final class LoopbackListener: @unchecked Sendable {
     listener.cancel()
   }
 
-  /// Returns only once the socket is really gone, so a test that needs the
-  /// port to be unbound does not race the cancellation.
   func stopAndWaitUntilUnbound() async {
     lock.withLock {
       for connection in connections { connection.cancel() }
@@ -66,7 +61,6 @@ final class LoopbackListener: @unchecked Sendable {
     }
   }
 
-  /// Sends everything it receives straight back.
   static func echo(_ connection: NWConnection) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, complete, error in
       if let data, !data.isEmpty { connection.send(content: data, completion: .idempotent) }
@@ -75,7 +69,6 @@ final class LoopbackListener: @unchecked Sendable {
     }
   }
 
-  /// Reads one byte, then closes the write side: a clean FIN rather than a reset.
   static func closeOnFirstByte(_ connection: NWConnection) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in
       connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
@@ -83,8 +76,6 @@ final class LoopbackListener: @unchecked Sendable {
   }
 }
 
-/// `RFBNetworkTransport` against a real socket: framing, end of stream, and
-/// what happens to reads and writes once the connection is gone.
 struct RFBNetworkTransportTests {
   private func readExactly(
     _ count: Int, from transport: RFBNetworkTransport, maximum: Int = 1 << 16
@@ -111,8 +102,6 @@ struct RFBNetworkTransportTests {
     #expect(try await readExactly(4, from: transport) == [1, 2, 3, 4])
   }
 
-  /// Two listeners get two different ports, which is what lets suites run in
-  /// parallel without agreeing on one.
   @Test func everyListenerGetsItsOwnEphemeralPort() async throws {
     let first = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { first.stop() }
@@ -121,8 +110,6 @@ struct RFBNetworkTransportTests {
     #expect(first.port != second.port)
   }
 
-  /// TCP is a stream: a large write arrives in however many pieces the kernel
-  /// chooses, and the reader is responsible for putting it back together.
   @Test func aLargeWriteIsReassembledByTheReader() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -133,8 +120,6 @@ struct RFBNetworkTransportTests {
     #expect(try await readExactly(payload.count, from: transport) == payload)
   }
 
-  /// `maximum` is a ceiling, never a floor: a read returns between one byte
-  /// and `maximum`, so the caller cannot use it to frame messages.
   @Test func readsNeverExceedTheRequestedMaximum() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -151,8 +136,6 @@ struct RFBNetworkTransportTests {
     #expect(received == payload)
   }
 
-  /// A zero maximum would be a receive that can never complete, so it is
-  /// clamped to one byte rather than hanging.
   @Test func aZeroMaximumStillReturnsAByte() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -164,9 +147,6 @@ struct RFBNetworkTransportTests {
     #expect(chunk.allSatisfy { $0 == 9 })
   }
 
-  /// End of stream is an empty read rather than an error — which is the only
-  /// signal `RFBInputStream` has. Reading again afterwards does fail, so that
-  /// first empty read has to be treated as terminal.
   @Test func aPeerClosingMidReadEndsTheStreamWithNoBytes() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.closeOnFirstByte)
     defer { listener.stop() }
@@ -186,9 +166,6 @@ struct RFBNetworkTransportTests {
     await #expect(throws: RFBError.connectionClosed) { _ = try await RFBInputStream(transport: transport).u8() }
   }
 
-  /// After `close()` a read must finish rather than hang. Network.framework
-  /// may report the cancellation either as end of stream or as an error, so
-  /// what is asserted is that it terminates and yields nothing.
   @Test func readsAfterCloseTerminateWithoutData() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -201,8 +178,6 @@ struct RFBNetworkTransportTests {
     }
   }
 
-  /// The same, with the close racing a read already in flight — the ordering
-  /// the session actually produces when the viewer disconnects.
   @Test func aCloseDuringAPendingReadTerminatesIt() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -225,9 +200,6 @@ struct RFBNetworkTransportTests {
     await #expect(throws: RFBError.self) { try await transport.write([1, 2, 3]) }
   }
 
-  /// Reads are not cancellation-aware: cancelling the task that is reading
-  /// does not abandon the receive, so a session must close the transport to
-  /// unblock it. Asserted so the day that changes is a deliberate change.
   @Test func cancellingTheReadingTaskDoesNotAbandonTheReceive() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
@@ -240,8 +212,6 @@ struct RFBNetworkTransportTests {
     #expect(try await reading.value == [42])
   }
 
-  /// Nothing is listening on a port we held and released, so the connect is
-  /// refused rather than timing out — and the user is told exactly that.
   @Test func connectingToAPortNobodyIsListeningOnIsRefused() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     let port = listener.port

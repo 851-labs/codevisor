@@ -2,20 +2,10 @@ import CoreGraphics
 import CoreVideo
 import Foundation
 
-/// How far a continuous (squircle) rounded rect's edge sits from its corner
-/// along the 45° diagonal, per point of corner radius.
 let computerUseContinuousCornerDiagonalInset: CGFloat = 0.2916
 
-/// Where the streamed window sits in its frame, measured from the frame.
-///
-/// The preview stream captures one window with its shadow removed. The
-/// capture buffer's even-pixel size rarely matches the window's aspect
-/// exactly, so the window arrives fitted inside with a pixel or two of
-/// transparent padding, and its rounded corners are transparent too.
 public struct ComputerUseWindowContent: Equatable, Sendable {
-  /// The window's opaque bounds in unit coordinates of the frame, y-down.
   public let rect: CGRect
-  /// The window's corner radius as a fraction of the window's width.
   public let cornerRadiusFraction: CGFloat
 
   public init(rect: CGRect, cornerRadiusFraction: CGFloat) {
@@ -23,7 +13,6 @@ public struct ComputerUseWindowContent: Equatable, Sendable {
     self.cornerRadiusFraction = cornerRadiusFraction
   }
 
-  /// Close enough that re-laying out the card would be noise.
   func isClose(to other: ComputerUseWindowContent) -> Bool {
     abs(rect.minX - other.rect.minX) < 0.0005 && abs(rect.minY - other.rect.minY) < 0.0005
       && abs(rect.width - other.rect.width) < 0.0005 && abs(rect.height - other.rect.height) < 0.0005
@@ -31,13 +20,6 @@ public struct ComputerUseWindowContent: Equatable, Sendable {
   }
 }
 
-/// Measures the window in a frame whose pixel alpha is `alpha(x, y)`, y-down.
-///
-/// Transparency summed along a line gives its transparent run with sub-pixel
-/// accuracy: across each edge at mid-height or mid-width for the padding,
-/// and along each top corner's diagonal for the corner. Returns nil when the
-/// frame can't tell: no alpha (the centre isn't opaque), or padding or a
-/// corner too deep to be a window's, as when the frame is letterboxed.
 func computerUseWindowContent(
   width: Int,
   height: Int,
@@ -61,7 +43,6 @@ func computerUseWindowContent(
     let top = transparentRun({ (width / 2, $0) }),
     let bottom = transparentRun({ (width / 2, height - 1 - $0) })
   else { return nil }
-  // Walk each corner's diagonal from the window's own corner, not the frame's.
   let leftStart = Int(left.rounded()), rightStart = Int(right.rounded()), topStart = Int(top.rounded())
   guard
     let leading = transparentRun({ (leftStart + $0, topStart + $0) }),
@@ -82,7 +63,6 @@ func computerUseWindowContent(
   )
 }
 
-/// Measures a BGRA frame. Nil for other pixel formats.
 func computerUseWindowContent(pixelBuffer: CVPixelBuffer) -> ComputerUseWindowContent? {
   guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else { return nil }
   guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return nil }
@@ -98,18 +78,13 @@ func computerUseWindowContent(pixelBuffer: CVPixelBuffer) -> ComputerUseWindowCo
   }
 }
 
-/// Decides when to re-measure the window and when a new measurement is
-/// worth reporting. Not thread-safe; the owner serialises access.
 struct ComputerUseCornerRadiusTracker {
-  /// Frames between re-measurements at an unchanged size, so a switch to a
-  /// same-sized window is still picked up.
   static let remeasureInterval = 30
 
   private(set) var content: ComputerUseWindowContent?
   private var frameSize: CGSize?
   private var framesSinceMeasurement = 0
 
-  /// Whether the next frame of `size` should be measured.
   mutating func shouldMeasure(size: CGSize) -> Bool {
     framesSinceMeasurement += 1
     guard size == frameSize, framesSinceMeasurement < Self.remeasureInterval else {
@@ -120,8 +95,6 @@ struct ComputerUseCornerRadiusTracker {
     return false
   }
 
-  /// Records a measurement. Returns it when it changed noticeably, nil
-  /// otherwise. Failed measurements keep the last value.
   mutating func record(_ measured: ComputerUseWindowContent?) -> ComputerUseWindowContent? {
     guard let measured else { return nil }
     if let content, content.isClose(to: measured) { return nil }
@@ -131,13 +104,8 @@ struct ComputerUseCornerRadiusTracker {
 }
 
 extension ComputerUseLivePreviewLayout {
-  /// Card corner radius when the window's own radius is unknown.
   public static let fallbackCornerRadius: CGFloat = 12
 
-  /// The card's corner radius: the window's radius scaled by the card's
-  /// zoom, so the card's corners line up with the window's. Falls back to a
-  /// fixed radius, and never exceeds a quarter of the short side so a small
-  /// card doesn't turn into a pill.
   public static func cardCornerRadius(radiusFraction: CGFloat?, cardSize: CGSize) -> CGFloat {
     let ceiling = max(0, min(cardSize.width, cardSize.height) / 4)
     guard let radiusFraction, radiusFraction.isFinite, radiusFraction >= 0 else {
@@ -146,13 +114,6 @@ extension ComputerUseLivePreviewLayout {
     return min(radiusFraction * cardSize.width, ceiling)
   }
 
-  /// Where to lay out the stream in a card of `cardSize` so the window
-  /// covers the card edge to edge: the returned rect, in the card's
-  /// coordinates, has the frame's aspect (so the renderer adds no
-  /// letterbox of its own) and overhangs the card by the frame's
-  /// transparent padding plus up to a pixel of rounding, which the card's
-  /// clip trims. `content` is the window's unit rect in the frame; nil
-  /// treats the whole frame as the window.
   public static func surfaceFrame(frameSize: CGSize?, content: CGRect?, cardSize: CGSize) -> CGRect {
     let fill = CGRect(origin: .zero, size: cardSize)
     guard let frameSize, frameSize.width > 0, frameSize.height > 0 else { return fill }
@@ -168,7 +129,6 @@ extension ComputerUseLivePreviewLayout {
     guard scale.isFinite, scale > 0 else { return fill }
     let width = frameSize.width * scale
     let height = frameSize.height * scale
-    // Centre the window on the card; any excess splits evenly.
     let excessX = windowWidth * scale - cardSize.width
     let excessY = windowHeight * scale - cardSize.height
     return CGRect(

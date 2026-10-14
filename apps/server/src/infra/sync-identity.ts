@@ -14,16 +14,6 @@ import {
   mcpOverlayDisableKey
 } from "./mcp-fleet.js"
 
-/// App-hosted servers used to identify as the literal "local" in every sync
-/// namespace: their per-machine overlay keys, their single-writer readiness
-/// and roster entries, and the device id on every clock stamp they minted.
-/// Two app-hosted Macs in one fleet therefore shared one identity — a
-/// disable on one applied to both, both believed they owned the same OAuth
-/// refresh cycle, and their readiness reports overwrote each other. Servers
-/// now boot under their database's persisted machine identity; this pass
-/// carries an existing fleet across: overlays written for "local" move
-/// under this machine's key and the dead single-writer entries tombstone
-/// so they stop shadowing the real ones.
 export const LEGACY_LOCAL_SERVER_ID = "local"
 
 const SINGLE_WRITER_NAMESPACES: ReadonlyArray<string> = [
@@ -38,23 +28,15 @@ const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise
 export interface LegacySyncIdentityDeps {
   readonly db: CodevisorDatabaseService
   readonly serverId: string
-  /// Only app-hosted ("local"-kind) servers ever wrote under the legacy id;
-  /// a remote must never claim those entries as its own.
   readonly kind: "local" | "remote"
-  /// When present, OAuth tokens this machine authorized under the legacy
-  /// id are re-owned too — otherwise it would mirror its own tokens and
-  /// never refresh them.
   readonly mcp?: McpManager | undefined
 }
 
 export interface LegacySyncIdentityResult {
-  /// Changed entries per namespace, for sync.changed publication.
   readonly changed: ReadonlyArray<{
     readonly namespace: string
     readonly entries: ReadonlyArray<SyncEntryRecord>
   }>
-  /// MCP server ids whose OAuth refresh ownership moved to this machine;
-  /// the caller republishes the mcps plane so mirrors learn the new owner.
   readonly adoptedOAuth: ReadonlyArray<string>
 }
 
@@ -83,7 +65,6 @@ export const adoptLegacySyncIdentity = async (
     const name = entry.key.slice(LEGACY_OVERLAY_PREFIX.length)
     if (name.length === 0) continue
     const adopted = mcpOverlayDisableKey(deps.serverId, name)
-    // A disable already written under the real id wins; only fill gaps.
     if (!liveKeys.has(adopted)) {
       overlayWrites.push({ key: adopted, value: entry.value, timestamp: stamp() })
     }
@@ -91,8 +72,6 @@ export const adoptLegacySyncIdentity = async (
   }
   if (overlayWrites.length > 0) {
     const result = await run(deps.db.mergeSyncEntries(MCP_OVERLAYS_NAMESPACE, overlayWrites))
-    // Freshly stamped writes always outrank the replica, so `changed` is
-    // never empty here; the guard only keeps an empty announcement out.
     /* v8 ignore next 3 */
     if (result.changed.length > 0) {
       changed.push({ namespace: MCP_OVERLAYS_NAMESPACE, entries: result.changed })
@@ -109,7 +88,7 @@ export const adoptLegacySyncIdentity = async (
         { key: LEGACY_LOCAL_SERVER_ID, value: null, deleted: true, timestamp }
       ])
     )
-    /* v8 ignore next -- a fresh stamp always outranks the replica (see above). */
+    /* v8 ignore next */
     if (result.changed.length > 0) changed.push({ namespace, entries: result.changed })
   }
   const adoptedOAuth =

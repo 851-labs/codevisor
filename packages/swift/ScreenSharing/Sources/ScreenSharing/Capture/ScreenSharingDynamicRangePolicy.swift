@@ -1,11 +1,7 @@
 #if os(macOS)
   import AppKit
 
-  /// When a host sends HDR (851-2380), shared by the product host and the rig.
   public enum ScreenSharingDynamicRangePolicy {
-    /// What to send, and why not HDR when the viewer can show it: the negotiated codec needs a
-    /// 10-bit profile (Main 4:4:4) and the captured display needs headroom (an XDR panel, an HDR
-    /// preset; a virtual display for Dynamic Resolution has none).
     public static func decide(
       viewerSupports: Bool, codec: ScreenSharingVideoCodec?, displayHeadroom: CGFloat
     ) -> (range: ScreenSharingDynamicRange, reason: String?) {
@@ -15,7 +11,6 @@
       return (.high, nil)
     }
 
-    /// The most a display can show above SDR white: 1 for an SDR display, or one that isn't online.
     @MainActor
     public static func headroom(of display: CGDirectDisplayID) -> CGFloat {
       let screen = NSScreen.screens.first {

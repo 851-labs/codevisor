@@ -53,10 +53,6 @@ export interface AcpConnectionExtensionContext {
   readonly questions?: AcpQuestionControls
 }
 
-/// Provider-neutral customization points for ACP-backed native adapters. The
-/// generic connection remains responsible for protocol methods; adapters can
-/// enrich metadata, handle private configuration routes, or decorate the
-/// normalized connection with additional capabilities.
 export interface AcpSdkConnectionCustomization {
   readonly customizeSessionMetadata?: (
     sessionId: string,
@@ -76,15 +72,12 @@ export interface AcpSdkConnectionOptions {
   readonly terminate?: () => void | Promise<void>
   readonly promptCapabilities?: AcpPromptCapabilities
   readonly questions?: AcpQuestionControls
-  /// The connection's skills, from its `available_commands_update`s.
   readonly skills?: AcpSkillTracker
   readonly auth?: AcpAuthControls
   readonly customization?: AcpSdkConnectionCustomization
 }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-/// ACP's auth-required signal: the reserved -32000 code, or the phrase agents
-/// put in the message when they don't use the code.
+/* v8 ignore start */
 const isAuthenticationRequired = (cause: unknown): boolean => {
   const error = cause as { code?: number; message?: string } | undefined
   return (
@@ -144,15 +137,6 @@ export const sdkConnection = (
               canLogout: auth.canLogout
             }
           }
-          // `detail` is rendered as the harness row's subtitle during
-          // onboarding, so it must stay a single short sentence even when the
-          // underlying CLI crashed and its stderr leaked into the message.
-          //
-          // When a CLI dies on launch the SDK sees EOF on the pipes and rejects
-          // pending requests with a bare "ACP connection closed", which races
-          // ahead of our own close error and says nothing about the cause. The
-          // process's stderr does, so prefer it whenever the message is that
-          // generic placeholder.
           const message = cause instanceof Error ? cause.message : String(cause)
           const detail = clampFailureDetail(
             isGenericConnectionClose(message) ? summarizeProcessFailure(stderr(), message) : message
@@ -213,10 +197,6 @@ export const sdkConnection = (
             params
           )) as NewSessionResponse
         } catch (cause) {
-          // An agent whose sign-in is delegated to the host (Grok's
-          // GROK_AUTH_PROVIDER_COMMAND) still wants the client to pick that
-          // method before its first session. There is nothing to ask the
-          // user, so select it and try once more; any other failure is real.
           const external = auth.methods.find((method) => method.external === true)
           if (external === undefined || !isAuthenticationRequired(cause)) throw cause
           await connection.agent.request(acp.methods.agent.authenticate, { methodId: external.id })
@@ -265,8 +245,6 @@ export const sdkConnection = (
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {
-        // Per spec, cancelling a turn resolves its pending permission
-        // requests as cancelled before the agent is notified.
         questions?.cancelQuestions(sessionId)
         await connection.agent.notify(acp.methods.agent.session.cancel, { sessionId })
       }),

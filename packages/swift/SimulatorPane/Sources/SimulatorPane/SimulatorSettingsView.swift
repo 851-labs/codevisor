@@ -1,9 +1,6 @@
 import CodevisorClient
 import SwiftUI
 
-/// The running device's settings, as Device Hub offers them: appearance, Liquid Glass, color
-/// filter and text size, accessibility, a simulated location, and sound. Settings this Mac's
-/// Xcode or the device's runtime can't change are left out.
 struct SimulatorSettingsView: View {
   let model: SimulatorPaneModel
 
@@ -13,7 +10,6 @@ struct SimulatorSettingsView: View {
     "accessibility-extra-extra-extra-large",
   ]
 
-  /// Device Hub's color filters, by CoreDevice's name for each.
   static let colorFilters: [(id: String, title: String)] = [
     ("none", "None"), ("protanopia", "Red/Green (Protanopia)"), ("deuteranopia", "Green/Red (Deuteranopia)"),
     ("tritanopia", "Blue/Yellow (Tritanopia)"), ("grayscale", "Grayscale"),
@@ -39,7 +35,6 @@ struct SimulatorSettingsView: View {
         }
         .formStyle(.grouped)
       } else {
-        // Just the spinner while the device answers; no form around it yet.
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
@@ -128,7 +123,6 @@ struct SimulatorSettingsView: View {
     }
   }
 
-  /// The Mac's default device, then each device in that direction.
   private func routePicker(
     _ title: String, route: String, devices: [ServerSimulatorAudioDevice],
     set: @escaping (inout ServerSimulatorSettingsChange, String) -> Void
@@ -137,15 +131,12 @@ struct SimulatorSettingsView: View {
       Text("System").tag(ServerSimulatorSettings.systemAudioRoute)
       if !devices.isEmpty { Divider() }
       ForEach(devices) { Text($0.name).tag($0.uid) }
-      // A device that's since gone keeps its name off the list but still shows as chosen.
       if route != ServerSimulatorSettings.systemAudioRoute, !devices.contains(where: { $0.uid == route }) {
         Text("Unavailable Device").tag(route)
       }
     }
   }
 
-  /// A Mac's switch can keep drawing its old state when the value changes underneath it (as an
-  /// optimistic change or the device's answer does); a new switch per value always draws right.
   private func settingToggle(
     _ title: String, _ value: Bool, set: @escaping (inout ServerSimulatorSettingsChange, Bool) -> Void
   ) -> some View {
@@ -159,14 +150,11 @@ struct SimulatorSettingsView: View {
   }
 }
 
-/// A setting on a slider. Dragged, the device gets the value once it's let go, not at every step
-/// on the way; stepped with the keyboard or VoiceOver (no drag), each step goes straight through.
 private struct SettingSlider: View {
   let title: String
   let value: Double
   let range: ClosedRange<Double>
   let step: Double?
-  /// The symbol at each end, and what it's called aloud.
   let low: (symbol: String, name: String)
   let high: (symbol: String, name: String)
   let describe: (Double) -> String

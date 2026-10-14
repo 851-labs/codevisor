@@ -26,7 +26,6 @@ struct ComputerUsePermissionsTests {
 
   @Test("Gates launch only for onboarded installs missing permissions on a new version")
   func gateDecision() {
-    // Fresh installs go through onboarding instead.
     #expect(
       !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: false,
@@ -36,7 +35,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: false
       ))
-    // Everything granted: no gate regardless of history.
     #expect(
       !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -46,7 +44,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: true
       ))
-    // Updated (or first launch of a gated build) with permissions missing.
     #expect(
       computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -65,8 +62,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: false
       ))
-    // The same version asks at most once, even if permissions were later
-    // revoked in System Settings.
     #expect(
       !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -76,8 +71,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: false
       ))
-    // "Set Up Later" suppresses the gate on every version; the Settings
-    // toggle is the way back in.
     #expect(
       !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -91,9 +84,6 @@ struct ComputerUsePermissionsTests {
 
   @Test("Keeps an open review on screen across the Screen Recording restart")
   func gateSurvivesMidReviewRestart() {
-    // The user granted Screen Recording and macOS relaunched the app.
-    // Everything is granted now, but the review they started has to come
-    // back so they can see it worked and close it themselves.
     #expect(
       computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -103,7 +93,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: true
       ))
-    // Even a version already marked reviewed keeps an open review up.
     #expect(
       computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -113,7 +102,6 @@ struct ComputerUsePermissionsTests {
         currentVersion: "1.2.0",
         allGranted: false
       ))
-    // Set Up Later still wins: it ends the review outright.
     #expect(
       !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
@@ -141,10 +129,8 @@ struct ComputerUsePermissionsTests {
     model.refresh()
 
     #expect(model.allGranted)
-    // Granted after this process started: captures may need a relaunch.
     #expect(model.screenRecordingGrantedThisRun)
 
-    // Granted before the model existed: no relaunch nudge.
     let preGranted = ComputerUsePermissionsModel(probes: probes(state))
     preGranted.refresh()
     #expect(!preGranted.screenRecordingGrantedThisRun)
@@ -161,7 +147,6 @@ struct ComputerUsePermissionsTests {
     #expect(!model.isFullDiskAccessGranted)
     #expect(model.allGranted)
 
-    // No consent dialog exists: the request goes straight to the pane.
     model.requestFullDiskAccess()
     #expect(state.openedPanes == [.fullDiskAccess])
 
@@ -169,7 +154,6 @@ struct ComputerUsePermissionsTests {
     model.refresh()
     #expect(model.isFullDiskAccessGranted)
 
-    // Granted: never reopens the pane.
     model.requestFullDiskAccess()
     #expect(state.openedPanes == [.fullDiskAccess])
   }
@@ -185,7 +169,6 @@ struct ComputerUsePermissionsTests {
     FileManager.default.createFile(atPath: readable, contents: Data())
     #expect(fullDiskAccessProbe(path: readable))
 
-    // Missing or unreadable: not granted, never a false checkmark.
     #expect(!fullDiskAccessProbe(path: dir.appendingPathComponent("missing.db").path))
     let unreadable = dir.appendingPathComponent("locked.db").path
     FileManager.default.createFile(atPath: unreadable, contents: Data(), attributes: [.posixPermissions: 0o000])
@@ -202,7 +185,6 @@ struct ComputerUsePermissionsTests {
     #expect(state.accessibilityPrompts == 1)
     #expect(state.openedPanes.isEmpty)
 
-    // The one-time system dialog is spent; go straight to the pane.
     model.requestAccessibility()
     #expect(state.accessibilityPrompts == 1)
     #expect(state.openedPanes == [.accessibility])
@@ -213,7 +195,6 @@ struct ComputerUsePermissionsTests {
     #expect(state.screenRecordingPrompts == 1)
     #expect(state.openedPanes == [.accessibility, .screenRecording])
 
-    // Granted permissions never re-prompt or open panes.
     state.accessibility = true
     model.refresh()
     model.requestAccessibility()

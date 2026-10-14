@@ -17,10 +17,6 @@ import {
   run
 } from "./test-support.js"
 
-/// The coordinator's edge paths, driven directly: interruption when a
-/// harness will not cancel, snapshot selection, abandonment mid-drain, and
-/// the grace period after a drain nobody restarted.
-
 const makeHarness = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
@@ -33,7 +29,6 @@ const makeHarness = async () => {
   const snapshot = makeMemoryRestartSnapshotStore()
   const logs: Array<string> = []
   const redrained: Array<string> = []
-  // Two durable sessions: one archived, one whose agent id is still empty.
   const project = await run(
     services.db.createProject({ folderPath: "/tmp/codevisor-coordinator", name: "Repo" })
   )
@@ -215,7 +210,6 @@ describe("restart coordinator", () => {
     expect(drained.state).toBe("drained")
     expect(harness.snapshot.read()).toEqual([sessions.fresh.id])
     expect(harness.agents.closes).toEqual(["agent-live", "agent-old", sessions.fresh.id])
-    // Idempotent once drained.
     expect((await coordinator.begin()).state).toBe("drained")
     coordinator.close()
   })
@@ -224,7 +218,6 @@ describe("restart coordinator", () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
     turns.activeTurnSessions.add(sessions.live.id)
-    // A session that never got an agent id is cancelled under its own id.
     turns.activeTurnSessions.add(sessions.fresh.id)
     turns.activePromptSessions.add("vanished-session")
     let closeAttempts = 0
@@ -232,8 +225,6 @@ describe("restart coordinator", () => {
     const coordinator = harness.make({
       cancel: (agentSessionId) =>
         Effect.promise(async () => {
-          // The live turns end on cancel; the vanished one has no row and
-          // throws before it gets here.
           cancelled.push(agentSessionId)
           if (agentSessionId === "agent-live") turns.activeTurnSessions.delete(sessions.live.id)
           if (agentSessionId === sessions.fresh.id) {
@@ -262,7 +253,6 @@ describe("restart coordinator", () => {
     )
     expect(closeAttempts).toBe(1)
     expect(harness.logs.some((line) => line.includes("could not close agent-live"))).toBe(true)
-    // Interrupted work has no queued continuation; opening the chat later is lazy.
     expect(harness.snapshot.read()).not.toContain(sessions.live.id)
     coordinator.close()
     turns.activePromptSessions.clear()
@@ -291,8 +281,6 @@ describe("restart coordinator", () => {
     const { sessions, turns } = harness
     turns.activeTurnSessions.add(sessions.live.id)
     turns.restartHeldSessions.add(sessions.fresh.id)
-    // Cancel is accepted but the turn never ends: the settle wait runs
-    // until the coordinator is cancelled underneath it.
     const coordinator = harness.make({
       cancel: () => Effect.succeed({ runtimeState: "reusable" as const })
     })
@@ -304,7 +292,6 @@ describe("restart coordinator", () => {
     await vi.advanceTimersByTimeAsync(250)
     expect((await started).state).toBe("idle")
     expect(harness.snapshot.read()).toBeUndefined()
-    // The held session was released and re-drained.
     expect(harness.redrained).toEqual([sessions.fresh.id])
     expect(turns.restartHeldSessions.size).toBe(0)
     coordinator.close()
@@ -336,9 +323,6 @@ describe("restart coordinator", () => {
   })
 
   it("abandons a drain it cannot snapshot instead of holding prompts forever", async () => {
-    // A full disk fails the snapshot write and its cleanup. The drain used to
-    // reject with the gate still shut: held prompts waited for a restart that
-    // never came, and the detached caller's rejection exited the server.
     const harness = await makeHarness()
     harness.turns.restartHeldSessions.add(harness.sessions.fresh.id)
     const coordinator = harness.make(
@@ -389,7 +373,6 @@ describe("restart coordinator", () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(coordinator.state().state).toBe("idle")
     expect(harness.logs.some((line) => line.includes("never restarted"))).toBe(true)
-    // Cancelling again is a no-op; cancelling a drained server clears the timer.
     expect((await coordinator.cancel()).state).toBe("idle")
     const again = harness.make()
     expect((await again.begin()).state).toBe("drained")

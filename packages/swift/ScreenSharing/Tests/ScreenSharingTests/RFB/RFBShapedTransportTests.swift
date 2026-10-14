@@ -4,12 +4,7 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// Network shaping for L2 tests and `vnc-bench`:
-/// the delivery schedule is pure and exact; the transport applies it on an
-/// injected clock.
 struct RFBShapedTransportTests {
-  // MARK: Schedule
-
   @Test func deliveryIsHalfTheRoundTripAfterSending() {
     var link = RFBLinkSchedule(profile: .init(name: "t", roundTrip: .milliseconds(150)))
     #expect(link.schedule(byteCount: 100, sentAt: .zero) == .milliseconds(75))
@@ -17,7 +12,6 @@ struct RFBShapedTransportTests {
   }
 
   @Test func bandwidthQueuesBackToBackSends() {
-    // 10 Mbit/s: 12 500 bytes take 10 ms on the wire.
     var link = RFBLinkSchedule(profile: .init(name: "t", roundTrip: .zero, bitsPerSecond: 10_000_000))
     #expect(link.schedule(byteCount: 12_500, sentAt: .zero) == .milliseconds(10))
     #expect(link.schedule(byteCount: 12_500, sentAt: .zero) == .milliseconds(20), "The second waits for the first.")
@@ -43,8 +37,6 @@ struct RFBShapedTransportTests {
     #expect(RFBNetworkProfile.named("nope") == nil)
     #expect(RFBNetworkProfile.all.map(\.name) == ["lan", "wan40", "wan150", "constrained"])
   }
-
-  // MARK: Transport
 
   @Test func readsArriveAfterTheOneWayDelay() async throws {
     let clock = TestClock()
@@ -92,9 +84,6 @@ struct RFBShapedTransportTests {
     await #expect(throws: RFBError.self) { try await read.value }
   }
 
-  /// Wiring: a real client through a shaped link to the reference server
-  /// still converges on a scene. Real time on the `lan` profile; no timing
-  /// is asserted.
   @Test func aClientWorksThroughAShapedLink() async throws {
     var configuration = RFBLoopbackServer.Configuration()
     configuration.encoding = .zrle
@@ -127,13 +116,11 @@ struct RFBShapedTransportTests {
     pixels.enumerated().compactMap { $0.offset % 4 == 3 ? nil : $0.element }
   }
 
-  /// A read registers before `close`, or the test only proves close-then-read.
   private func awaitReadWaiting(_ shaped: RFBShapedTransport<TestClock>) async {
     _ = await awaitPolled { shaped.waitingReads > 0 }
   }
 }
 
-/// An in-memory transport the test feeds and inspects.
 final class PipeTransport: RFBTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var inbox: [[UInt8]] = []

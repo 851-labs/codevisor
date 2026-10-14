@@ -46,7 +46,6 @@ it("preserves browser cells and applies gateway upload validation and attachment
           nested.push(name)
           throw new Error("Upload validation was bypassed")
         }
-        // This scenario opens no tabs; error diagnostics need no live browser.
         if (name === "tabs" && args.action === "list" && args.scope === "session") {
           return { content: [{ type: "text", text: JSON.stringify({ tabs: [] }) }] }
         }

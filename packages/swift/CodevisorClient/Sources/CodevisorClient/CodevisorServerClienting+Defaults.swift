@@ -3,7 +3,6 @@ import CodevisorProtocol
 import Foundation
 
 public extension CodevisorServerClienting {
-  /// Fakes and relays that can't delete folders only ever remove the record.
   func deleteProject(id: UUID, deletingFiles: Bool) async throws {
     guard !deletingFiles else { throw CodevisorServerClientError.invalidResponse }
     try await deleteProject(id: id)
@@ -25,8 +24,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Defaults for fakes and relay transports that don't manage a machine's
-  /// cloud registration: report "not registered" and refuse to change it.
   func cloudRegistration() async throws -> ServerCloudRegistration {
     ServerCloudRegistration(connected: false)
   }
@@ -46,20 +43,14 @@ public extension CodevisorServerClienting {
 
   func disconnectCloud() async throws {}
 
-  /// Cached-read stable-channel default so existing call sites keep
-  /// compiling; pass `refresh: true` (and the user's channel) when the
-  /// result is shown to the user right away.
   func updateInfo() async throws -> ServerUpdateInfo {
     try await updateInfo(refresh: false, channel: .stable)
   }
 
-  /// Stable-channel default for callers without a channel preference.
   func applyServerUpdate() async throws -> ServerUpdateApplied {
     try await applyServerUpdate(channel: .stable)
   }
 
-  /// Default for fakes/older servers without the config plane: a merge that
-  /// simply echoes what was pushed.
   func mergeSyncDocument(
     namespace: String,
     entries: [ServerSyncEntry]
@@ -80,8 +71,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Compatibility fallback for test doubles and older transports. The HTTP
-  /// client overrides this with the server-side filtered request.
   func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities {
     let response = try await capabilities(cwd: cwd)
     return ServerCapabilities(
@@ -126,16 +115,12 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Default for fakes/older transports: no combined open — callers use
-  /// the discrete calls. The HTTP client overrides with the real endpoint.
   func openSession(
     _ session: ChatSession,
     project: Project?,
     transcriptLimit: Int
   ) async throws -> ServerSessionOpenResponse? { nil }
 
-  /// Workspace-aware form used by native session controllers. Older/fake
-  /// transports fall back to the pre-workspace request.
   func openSession(
     _ session: ChatSession,
     project: Project?,
@@ -145,8 +130,6 @@ public extension CodevisorServerClienting {
     try await openSession(session, project: project, transcriptLimit: transcriptLimit)
   }
 
-  /// Workspace-aware session upsert. Compatibility transports safely drop
-  /// the association; current HTTP servers persist it.
   func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
     try await upsertSession(session)
   }
@@ -155,9 +138,6 @@ public extension CodevisorServerClienting {
     try await upsertSession(session)
   }
 
-  /// Compatibility fallback for test doubles and servers without the
-  /// plugins feature: no plugins, and no pane tokens. The HTTP client
-  /// overrides both with the real requests.
   func listPlugins() async throws -> [ServerPluginSummary] { [] }
 
   func listPluginUpdates() async throws -> [ServerPluginUpdateStatus] { [] }
@@ -221,13 +201,9 @@ public extension CodevisorServerClienting {
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? { nil }
 
   func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-    // Test doubles and old transports preserve their existing behavior.
     eventStream(since: 0)
   }
 
-  /// Default for fakes/older transports: filter the unfiltered stream in a
-  /// detached task so unhandled kinds never reach the caller's actor. The
-  /// HTTP client overrides this to also skip payload decoding.
   func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
     let source = shellEventStream()
     return AsyncThrowingStream { continuation in
@@ -293,22 +269,16 @@ public extension CodevisorServerClienting {
   func markSessionUnread(id: UUID) async throws -> ServerSession? { nil }
   func clearSessionPlanApproval(id: UUID) async throws {}
 
-  /// Default for fakes/older transports: a plain list (no PATH refresh).
-  /// The HTTP client overrides this with the real rescan endpoint.
   func rescanHarnesses() async throws -> [ServerHarness] {
     try await listHarnesses()
   }
 
-  /// Default for fakes/older servers: the plain list (no lifecycle fields).
   func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
     try await listHarnesses()
   }
 
-  /// Default for fakes/older transports: no native store to scan. The HTTP
-  /// client overrides this with the real endpoint.
   func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
 
-  /// Defaults for fakes/older servers without lifecycle support.
   func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -410,8 +380,6 @@ public extension CodevisorServerClienting {
   }
   func removeMcpServer(id: String) async throws {}
   func listMcpTools(id: String) async throws -> [ServerMcpTool] { [] }
-  /// Defaults for fakes/older servers: empty scans hide the sections and
-  /// mutations report the endpoint as unavailable.
   func listNativeMcps() async throws -> ServerNativeMcpScan {
     ServerNativeMcpScan(candidates: [], harnesses: [])
   }
@@ -428,22 +396,16 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Default for fakes/older transports: attachments are dropped and the
-  /// text-only prompt path is used.
   func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
     try await promptSession(id: id, text: text)
   }
 
-  /// Default for fakes/older transports: the message id is advisory (it
-  /// only sharpens echo reconciliation), so dropping it is safe.
   func promptSession(
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
   ) async throws -> ServerPromptAccepted {
     try await promptSession(id: id, text: text, attachments: attachments)
   }
 
-  /// Default for fakes/older transports: the origin window is advisory
-  /// (it only informs agents), so dropping it is safe.
   func promptSession(
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
     clientId: String?
@@ -451,8 +413,6 @@ public extension CodevisorServerClienting {
     try await promptSession(id: id, text: text, attachments: attachments, messageId: messageId)
   }
 
-  /// Defaults so fakes and older transports keep compiling; the HTTP client
-  /// overrides these with the real file endpoints.
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -490,8 +450,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.httpStatus(404, "")
   }
 
-  /// Defaults so fakes and older transports keep compiling; the HTTP client
-  /// overrides these with the real goal endpoints.
   @discardableResult
   func setSessionGoal(
     id: UUID,
@@ -511,11 +469,8 @@ public extension CodevisorServerClienting {
     answers: [String: QuestionAnswerEntry]?
   ) async throws {}
 
-  /// Default no-op so fakes and older transports keep compiling; the HTTP
-  /// client overrides this with `POST /v1/shutdown`.
   func requestShutdown() async throws {}
 
-  /// Default for fakes/older transports: the server declined the update.
   func applyServerUpdate(channel _: ServerUpdateChannel) async throws -> ServerUpdateApplied {
     ServerUpdateApplied(accepted: false, targetVersion: nil)
   }
@@ -539,10 +494,6 @@ public extension CodevisorServerClienting {
 
   func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
 
-  /// Notes sync is best-effort; fakes/older servers act notes-less.
-
-  /// Workspace archive sync is best-effort for the same reason: a fake or a
-  /// server predating the route leaves the local flag authoritative.
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {}
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
     throw CodevisorServerClientError.httpStatus(405, "Workspace ordering is unavailable on this server.")
@@ -558,14 +509,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Default for fakes/older transports: the id is dropped and the plain
-  /// create path is used (no setup-progress correlation).
   func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
     try await createWorktree(projectId: projectId, name: name)
   }
 
-  /// Defaults so fakes and older transports keep compiling; the HTTP client
-  /// overrides these with the real filesystem and clone endpoints.
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -578,8 +525,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  /// Defaults so fakes and older transports keep compiling; the HTTP client
-  /// overrides these with the real scratch-workspace endpoints.
   func createScratchProject(id: UUID) async throws -> ServerProject {
     throw CodevisorServerClientError.invalidResponse
   }

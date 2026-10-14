@@ -2,8 +2,6 @@ import CoreMedia
 import Foundation
 import VideoToolbox
 
-/// Decode and stop are serialized by the transport's decoder queue. The VT
-/// callback retains only immutable frame metadata and a thread-safe sink.
 public final class ScreenSharingDecoder: @unchecked Sendable {
   private final class Context {
     let frame: ScreenSharingEncodedFrame
@@ -38,14 +36,11 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
   private var session: VTDecompressionSession?
   private var format: CMVideoFormatDescription?
   private var parameterSets: [Data] = []
-  /// For H265, follows the stream: the profile the parameter sets carry, not the one negotiated.
   private var codec: ScreenSharingVideoCodec
-  /// The stream's dynamic range, from its bit depth: the decoder outputs 10-bit planes for HDR (851-2380).
   private var dynamicRange = ScreenSharingDynamicRange.standard
   private let output: @Sendable (ScreenSharingVideoFrame) -> Void
   private var refreshSignal: ScreenSharingRefreshSignal?
   public let metrics: ScreenSharingMetrics
-  /// Receiver-only diagnostic audit; nil = no identity, no attachment, no recording.
   private let audit: ScreenSharingFrameDeliveryAudit?
 
   public init(
@@ -61,14 +56,11 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
 
   deinit { stop() }
 
-  /// Installed on the serialized decoder queue before accepting frames.
   package func useRefreshSignal(_ signal: ScreenSharingRefreshSignal) { refreshSignal = signal }
 
   public func decode(
     _ frame: ScreenSharingEncodedFrame, auditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil
   ) throws {
-    // VT callbacks only mark the reset. Session teardown belongs on this
-    // queue, since waiting for callbacks from inside a callback can deadlock.
     if refreshSignal?.consumeDecoderReset() == true { stop() }
     let received = try NALUnitBitstream.nalUnits(frame.data)
     if codec != .h264 {
@@ -78,7 +70,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
         throw ScreenSharingError.invalid("Malformed HEVC NAL header.")
       }
     }
-    // The host's content marker is read here and never reaches VideoToolbox.
     let sourceTimestampNs = ScreenSharingSourceMarker.timestampNs(in: received, codec: codec)
     let units = received.filter { !ScreenSharingSourceMarker.isMarker($0, codec: codec) }
     func type(_ unit: Data) -> Int {
@@ -146,7 +137,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     parameters: [Data], auditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil, rtpTimestamp: UInt32 = 0
   ) throws {
     var description: CMFormatDescription?
-    // NSData keeps every parameter's storage stable across the C API call.
     let retained = parameters.map { $0 as NSData }
     let pointers = retained.map { $0.bytes.assumingMemoryBound(to: UInt8.self) }
     let sizes = retained.map(\.length)
@@ -166,12 +156,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     guard let description else { throw ScreenSharingError.invalid("Missing \(codec.payloadName) format.") }
     if codec != .h264 {
       let actual = try ScreenSharingHEVCFormat.read(description)
-      // libwebrtc (M152) creates the H265 decoder from the first H265 format the viewer offered,
-      // whatever profile the answer settled on: a viewer offering Main 4:4:4 and Main, talking to
-      // a Main-only sender (the Computer Use live preview), got a 4:4:4 decoder for a Main stream
-      // and rejected every frame (851-2471). Both are 8-bit H265 through the same hardware
-      // decoder; the parameter sets say which this stream is, and the output format follows.
-      // A 10-bit stream is the host's HDR (851-2380), sent only to a viewer that said it can show it.
       guard let streamCodec = actual.codec, let range = actual.dynamicRange else {
         try actual.validate(for: codec); return
       }
@@ -185,8 +169,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       throw ScreenSharingError.invalid("Unsupported decoded dimensions.")
     }
     stop()
-    // A new VideoToolbox session: recorded against the triggering input's
-    // identity; that input keeps its epoch, later inputs carry the new one.
     audit?.decoderConfigured(auditIdentity, rtpTimestamp: rtpTimestamp)
     var callback = VTDecompressionOutputCallbackRecord(
       decompressionOutputCallback: { _, sourceContext, status, flags, image, _, _ in
@@ -207,9 +189,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
           "decode", milliseconds: Double(ScreenSharingMetrics.nowNs - context.startedNs) / 1_000_000)
         context.metrics.label("decodedPixelFormat", String(CVPixelBufferGetPixelFormatType(image)))
         if let audit = context.audit {
-          // Diagnostic-only scalar attachment, stamped on EVERY output while the
-          // audit is on: a nil identity clears the previous value, so a reused
-          // pool buffer never carries a stale identity to the bridge.
           ScreenSharingFrameDeliveryAudit.stamp(context.auditIdentity, on: image)
           audit.record(.vtOutput, context.auditIdentity, rtpTimestamp: context.frame.rtpTimestamp)
         }
@@ -260,8 +239,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       } else if hardwareStatus != kVTPropertyNotSupportedErr {
         try check(hardwareStatus, "Query decoder hardware")
       }
-      // Some low-latency VT implementations omit this diagnostic property.
-      // RequireHardwareAcceleratedVideoDecoder still forbids software fallback.
       metrics.label(
         "decoderHardware",
         !Self.requiresHardware
@@ -272,8 +249,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     } catch { stop(); throw error }
   }
 
-  /// Every Mac and iPhone decodes in hardware, and software decoding would add latency, so it's
-  /// required; the iOS Simulator has no hardware decoder at all and decodes in software.
   private static var requiresHardware: Bool {
     #if targetEnvironment(simulator)
       false

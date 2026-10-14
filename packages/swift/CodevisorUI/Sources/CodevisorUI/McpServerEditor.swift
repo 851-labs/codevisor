@@ -1,11 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Adding or editing an MCP server, in plain SwiftUI so both apps can use
-/// it. The Mac's own sheet exists only because its controls are AppKit
-/// workarounds for theming a segmented bezel and scrolling a long value —
-/// nothing about defining a server is desktop-specific, and the create call
-/// has always been in the shared client.
 public struct McpServerEditor: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -67,8 +62,6 @@ public struct McpServerEditor: View {
 
   private var isEditing: Bool { initialServer != nil }
 
-  /// "Automatic" means whatever the probe found; the server decides when
-  /// nothing was detected.
   private var effectiveAuthType: String {
     authSelection == "auto" ? (detectedAuthType ?? "none") : authSelection
   }
@@ -90,8 +83,6 @@ public struct McpServerEditor: View {
             Text("Command").tag("stdio")
           }
           .pickerStyle(.segmented)
-          // Transport decides what the record even is; changing it after
-          // the fact would invalidate the saved address.
           .disabled(isEditing)
         }
 
@@ -196,9 +187,6 @@ public struct McpServerEditor: View {
     }
   }
 
-  /// Probing costs a request, so it waits for a pause in typing. Editing an
-  /// existing server keeps whatever it was created with unless the address
-  /// actually changes.
   private func scheduleDetection() {
     detectTask?.cancel()
     detectTask = Task { await detectAuthorization() }
@@ -223,8 +211,6 @@ public struct McpServerEditor: View {
     }
   }
 
-  /// Only entries the user actually typed a value into are sent; an
-  /// untouched existing row keeps whatever the server already has.
   private func changedValues(_ entries: [McpSecretEntry]) -> [String: String] {
     Dictionary(
       uniqueKeysWithValues: entries.compactMap { entry in

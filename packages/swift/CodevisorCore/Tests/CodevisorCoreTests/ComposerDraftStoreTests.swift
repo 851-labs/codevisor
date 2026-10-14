@@ -51,8 +51,6 @@ struct ComposerDraftStoreTests {
       composerText: "send this to the studio machine"
     )
     ComposerDraftStore(store: store).saveDraft(expected, forServer: "local")
-    // Reloaded from disk: the FOREIGN project reference survives, still
-    // under the machine slot the draft was typed on.
     let reloaded = ComposerDraftStore(store: store)
     #expect(reloaded.draft(forServer: "local") == expected)
     #expect(reloaded.draft(forServer: "local")?.projectServerId == "remote-b")
@@ -61,7 +59,6 @@ struct ComposerDraftStoreTests {
     #expect(targeted?.draft == expected)
   }
 
-  /// A fresh staging folder; each test removes it with `cleanUp()`.
   private struct StagingFolder {
     let files = ComposerAttachmentFileStore.temporary()
 
@@ -94,7 +91,6 @@ struct ComposerDraftStoreTests {
     ComposerDraftStore(store: store, attachmentFiles: staging.files).savePaneDraft(expected, forPane: paneId)
     let reloaded = ComposerDraftStore(store: store, attachmentFiles: staging.files)
     #expect(reloaded.paneDraft(forPane: paneId) == expected)
-    // Other panes and the per-machine draft stay untouched.
     #expect(reloaded.paneDraft(forPane: UUID()) == nil)
     #expect(reloaded.draft(forServer: "local") == nil)
   }
@@ -113,7 +109,6 @@ struct ComposerDraftStoreTests {
     drafts.flushPendingWrites()
 
     #expect(ComposerDraftStore(store: store, attachmentFiles: staging.files).paneDraft(forPane: paneId) == nil)
-    // A failed first send restores the composer from these files.
     #expect(FileManager.default.fileExists(atPath: attachment.fileURL.path))
   }
 
@@ -151,7 +146,6 @@ struct ComposerDraftStoreTests {
     #expect(migrated.id == attachmentId)
     #expect(try Data(contentsOf: migrated.fileURL) == Data("notes".utf8))
     #expect(store.loadData(forKey: blobKey) == nil)
-    // Reopened, the draft resolves the staged-file reference it now persists.
     let reopened = ComposerDraftStore(store: store, attachmentFiles: staging.files)
     #expect(reopened.draft(forServer: "local")?.attachments == [migrated])
   }

@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The fleet plane a blocked row belongs to — the only thing the shared
-/// details popover needs in order to offer the right recovery.
 public enum FleetPlane: String, Sendable {
   case harnesses
   case mcps
@@ -18,7 +16,6 @@ public enum FleetPlane: String, Sendable {
   }
 }
 
-/// A machine that couldn't converge on one entry, opened from its row.
 public struct FleetBlockedMachine: Identifiable, Equatable {
   public let plane: FleetPlane
   public let machineId: String
@@ -40,10 +37,6 @@ public struct FleetBlockedMachine: Identifiable, Equatable {
 }
 
 public extension View {
-  /// The failure text as the machine reported it, with the one recovery the
-  /// client can offer: another sync pass. A popover on macOS, an alert on
-  /// iOS. Shared by every fleet page so a blocked MCP explains itself
-  /// exactly the way a blocked harness does.
   func fleetBlockedDetails(item: Binding<FleetBlockedMachine?>) -> some View {
     modifier(FleetBlockedDetailsModifier(item: item))
   }

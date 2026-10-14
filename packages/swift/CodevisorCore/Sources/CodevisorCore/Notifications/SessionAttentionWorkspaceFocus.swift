@@ -1,7 +1,5 @@
 import Foundation
 
-/// Window-local focus ownership. Cached containers may keep observing their
-/// chat, but only a visible container in the selected workspace can read it.
 public struct SessionAttentionWorkspaceFocus {
   public private(set) var workspaceId: UUID?
   public private(set) var session: SessionAttentionFocus?
@@ -30,8 +28,6 @@ public struct SessionAttentionWorkspaceFocus {
     self.session = session
   }
 
-  /// SwiftUI can mount a new container before removing the old one, even
-  /// for the same chat. Release the publishing surface, not the chat id.
   public mutating func clear(sourceId: UUID) {
     guard self.sourceId == sourceId else { return }
     self.sourceId = nil

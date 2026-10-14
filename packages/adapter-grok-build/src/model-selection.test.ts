@@ -87,8 +87,6 @@ describe("Grok Build model-selection extension", () => {
     expect(
       extractAcpModelState({ models: { currentModelId: "m", availableModels: "nope" } })
     ).toBeUndefined()
-    // Entries without a string modelId are dropped; if none remain, treat the
-    // extension as absent rather than surfacing an empty picker.
     expect(
       extractAcpModelState({
         models: { currentModelId: "m", availableModels: [{ name: "no id" }, 7] }

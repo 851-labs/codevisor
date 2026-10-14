@@ -2,16 +2,9 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Home's regular-width container for the unfolded iPhone Duo display: the
-/// sidebar in the leading column and the selected workspace — or a New Chat
-/// draft when nothing is selected — in the detail column, mirroring macOS.
-/// The system collapses this to a stack on compact width, but Home swaps to
-/// `stackContainer` instead so the compact experience stays byte-identical.
 extension HomeView {
   static let sidebarColumnMinWidth: CGFloat = 300
   static let sidebarColumnIdealWidth: CGFloat = 340
-  /// At least half the inner display, so the balanced split can align its
-  /// divider with the fold when the device is held like a book.
   static let sidebarColumnMaxWidth: CGFloat = 520
 
   var splitContainer: some View {
@@ -35,7 +28,6 @@ extension HomeView {
       NavigationStack(path: $detailPath) {
         splitDetail
       }
-      // Tiled vs overlay sidebar, read from where the detail starts.
       .onGeometryChange(for: CGFloat.self) { proxy in
         proxy.frame(in: .global).minX
       } action: { minX in
@@ -50,9 +42,6 @@ extension HomeView {
     }
   }
 
-  /// A selection list in a split view highlights and swipes natively, but
-  /// SwiftUI leaves an overlay sidebar open after a selection. Dismiss it
-  /// here — only when it floats over the detail; a tiled sidebar stays.
   func dismissOverlaySidebarAfterSelection() {
     guard detailLeadingInset < 1, sidebarColumnVisibility != .detailOnly else { return }
     withAnimation(.smooth(duration: 0.3)) {
@@ -62,8 +51,6 @@ extension HomeView {
     IOSNavigationDiagnostics.record("home.sidebar.overlayDismissed")
   }
 
-  /// Widening after a dismissal (portrait to landscape) restores the tiled
-  /// sidebar instead of leaving it hidden. Narrowing keeps it dismissed.
   func restoreAutoCollapsedSidebarIfWidened(to width: CGFloat) {
     defer { splitContainerWidth = width }
     guard sidebarAutoCollapsed, splitContainerWidth > 0, width > splitContainerWidth + 1 else { return }
@@ -75,21 +62,14 @@ extension HomeView {
   @ViewBuilder
   var splitDetail: some View {
     if !hasRemoteMachines && !showsSampleSidebar {
-      // The sidebar column carries the connect prompt; the detail stays a
-      // quiet surface until a machine is paired.
       ChatSurfaceBackground()
         .ignoresSafeArea()
     } else {
       detailScreen(for: navigation.detailRoute(fallbackServerId: nil))
-        // A draft keeps its identity through its first send so the
-        // composer, transcript, and keyboard are not remounted.
         .id(navigation.detailIdentity(promotedDraftSessionId: promotedDraftSessionId, draftGeneration: draftGeneration))
     }
   }
 
-  /// One `WorkspaceScreen` at one structural position; only its parameters
-  /// vary by route. Combined with the detail identity above, a New Chat
-  /// draft becomes its workspace in place.
   func detailScreen(for route: HomeRoute) -> some View {
     let parameters = HomeDetailParameters(route: route, projectList: projectList)
     return WorkspaceScreen(
@@ -110,14 +90,6 @@ extension HomeView {
     )
   }
 
-  /// Keeps the route naming the pane the detail actually shows. The detail
-  /// switches panes on a route *change*, so a route left on the pane a
-  /// sidebar tap last asked for would swallow the next tap on that same row
-  /// — the case where New Tab moves the workspace to a terminal and tapping
-  /// the chat again does nothing until some other row is tapped first.
-  ///
-  /// Compact is exempt: it pushes a fresh screen per visit, so its route is
-  /// never stale, and rewriting the top of that stack would remount it.
   func followWorkspacePaneSelection(_ selection: WorkspacePaneSelection) {
     guard layoutMode == .split,
       navigation.followPaneSelection(workspaceId: selection.workspaceId, paneId: selection.paneId)
@@ -128,9 +100,6 @@ extension HomeView {
     )
   }
 
-  /// Sets the split detail and drops any pushed sub-pages. Entering New
-  /// Chat starts a new draft generation so a promoted workspace that
-  /// shares the draft identity is remounted rather than reused.
   func selectDetail(_ route: HomeRoute?) {
     if route?.isNewChat ?? true {
       promotedDraftSessionId = nil
@@ -141,8 +110,6 @@ extension HomeView {
   }
 }
 
-/// The `WorkspaceScreen` inputs for a detail route, resolved without side
-/// effects (destination construction stays read-only).
 struct HomeDetailParameters {
   var sessionId: UUID?
   var serverId: String?

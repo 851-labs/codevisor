@@ -2,8 +2,6 @@ import AppKit
 import ScreenSharing
 import QuartzCore
 
-/// Owns the probe's alternative display driver. The application still uses
-/// MTKView's ordinary scheduling unless this standalone experiment is selected.
 @MainActor
 final class ProbeMetalDisplayLink: NSObject, @preconcurrency CAMetalDisplayLinkDelegate {
   private weak var view: ScreenSharingMetalView?
@@ -26,7 +24,6 @@ final class ProbeMetalDisplayLink: NSObject, @preconcurrency CAMetalDisplayLinkD
     view.metrics.label("frameSelection", "newest from display-link drawable")
     view.metrics.label("displayLinkPreferredFrameLatency", "1")
     view.metrics.label("renderRequestedFPS", String(framesPerSecond))
-    // Supplied drawables: neither MTKView acquisition nor the off-main worker.
     view.metrics.label("drawableAcquisitionPath", "CAMetalDisplayLink supplied drawable")
     link.add(to: .main, forMode: .common)
   }

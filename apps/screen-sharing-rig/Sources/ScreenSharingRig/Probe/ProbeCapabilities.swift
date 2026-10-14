@@ -1,8 +1,6 @@
 import Foundation
 import VideoToolbox
 
-/// Capability discovery is deliberately separate from a measured round trip.
-/// An advertised HEVC encoder does not establish negotiated HEVC or 4:4:4 support.
 struct ProbeCapabilities: Encodable {
   struct Codec: Encodable {
     let name: String

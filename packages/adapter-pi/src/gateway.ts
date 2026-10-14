@@ -3,10 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-/// Codevisor's tool gateway reaches Pi through an extension loaded with
-/// `-e`: it registers the gateway as an MCP server whose tools the model
-/// sees directly. The bearer token stays in the environment, never on disk.
-/// Pi before 0.99 has no `registerMcpServer`; chats there run without it.
 export const gatewayExtension = String.raw`
 export default function (pi) {
   const url = process.env.CODEVISOR_MCP_GATEWAY_URL;
@@ -20,10 +16,9 @@ export default function (pi) {
 }
 `
 
-/// Writes an extension once per content and returns its path.
 export type ExtensionWriter = (name: string, source: string) => Promise<string>
 
-/* v8 ignore start -- writes to the real temp directory; tests inject a writer. */
+/* v8 ignore start */
 export const writeTemporaryExtension: ExtensionWriter = async (name, source) => {
   const directory = join(tmpdir(), "codevisor-pi-extensions")
   await mkdir(directory, { recursive: true })

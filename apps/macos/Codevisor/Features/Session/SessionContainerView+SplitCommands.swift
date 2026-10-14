@@ -2,11 +2,7 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-// MARK: - SplitCommands
-
 extension SessionContainerView {
-  /// Repeated keys can arrive before SwiftUI mounts the newly selected
-  /// workspace. Resolve navigation from the committed window destination.
   var navigationWorkspace: Workspace {
     store.navigationWorkspaceId.flatMap { environment.workspaces.workspace(id: $0) }
       ?? selectedWorkspace
@@ -16,9 +12,6 @@ extension SessionContainerView {
     guard var workspace = environment.workspaces.workspace(id: workspaceId),
       let index = workspace.selectedCenterTabIndex
     else { return }
-    // Divider callbacks carry render-time topology/fractions. Merge the
-    // repository's live leaf states so a recent New Tab conversion or
-    // title/session binding can never be overwritten by a resize.
     var merged = tree
     for group in workspace.centerTabs[index].root.allGroups {
       merged = merged.updatingGroup(id: group.id) { _ in group.state }
@@ -49,7 +42,6 @@ extension SessionContainerView {
     case .nextWorkspace:
       store.workspaceStepHandler?(1)
     case let .selectTab(index):
-      // Numbered as the strip shows them.
       let workspace = navigationWorkspace
       let tabs = workspace.centerTabs
       guard tabs.indices.contains(index) else { return true }
@@ -70,9 +62,6 @@ extension SessionContainerView {
     return true
   }
 
-  /// ⇧⌘[ / ⇧⌘]: while the sidebar shows, its rows (New Chat, then each
-  /// workspace, as ⌥⌘↑ / ⌥⌘↓ do), never this workspace's tabs; while it is
-  /// hidden, this workspace's tabs.
   func stepTab(offset: Int) {
     if FeatureFlag.sidebarRefresh.isEnabled {
       if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
@@ -80,13 +69,11 @@ extension SessionContainerView {
         return
       }
     } else if store.sidebarTabStepHandler?(offset) == true {
-      // The classic sidebar walks its tab rows, across workspaces.
       return
     }
     selectRelativeCenterTab(offset: offset)
   }
 
-  /// Cycles the strip's tabs, wrapping at either end.
   func selectRelativeCenterTab(offset: Int) {
     let workspace = navigationWorkspace
     let tabs = workspace.centerTabs
@@ -103,8 +90,6 @@ extension SessionContainerView {
     splitLeaf(activeLeafId ?? tab.activeLeafId, edge: edge)
   }
 
-  /// Splits the explicitly targeted leaf. Header buttons call this with
-  /// their owning leaf; keyboard/menu commands pass the active leaf.
   func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
     guard openingSplit == nil else { return }
     var workspace = selectedWorkspace
@@ -132,8 +117,6 @@ extension SessionContainerView {
     publishPane(pane, workspaceId: workspace.id)
   }
 
-  /// Mounts and focuses the destination only after its shell has reached
-  /// its final geometry. Existing panes stay live throughout the resize.
   func finishSplitOpening(_ opening: WorkspaceSplitOpening) {
     guard openingSplit == opening,
       activeLeafId == opening.leafId,
@@ -145,9 +128,6 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
-  /// Atomically relocates one whole leaf inside the selected top tab. The
-  /// group id survives, so its cached model and any live terminal surface
-  /// move with the layout instead of being torn down and recreated.
   func moveSplitLeaf(_ sourceLeafId: UUID, relativeTo targetLeafId: UUID, edge: SplitEdge) {
     var workspace = selectedWorkspace
     guard let tabIndex = workspace.selectedCenterTabIndex else { return }
@@ -172,9 +152,6 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
-  /// Validates the POST-move topology. A same-row reorder can be valid even
-  /// when the hovered leaf itself is too narrow to halve before the source
-  /// is removed; evaluating the candidate avoids hiding those targets.
   func canMoveSplitLeaf(
     _ sourceLeafId: UUID,
     relativeTo targetLeafId: UUID,
@@ -199,8 +176,6 @@ extension SessionContainerView {
       let currentMinHeight = currentFrames.map({ $0.height * canvasSize.height }).min()
     else { return false }
 
-    // A window may already be smaller than the nominal pane floor. In
-    // that case permit moves that do not make its smallest pane worse.
     let requiredWidth = min(WorkspaceSplitDragCoordinator.minChildWidth, currentMinWidth)
     let requiredHeight = min(WorkspaceSplitDragCoordinator.minChildHeight, currentMinHeight)
     return candidateFrames.allSatisfy { frame in
@@ -215,13 +190,10 @@ extension SessionContainerView {
     closeLeaf(activeLeafId ?? tab.activeLeafId)
   }
 
-  /// Closes the leaf's selected pane, asking first if it's a working chat.
   func closeLeaf(_ leafId: UUID) {
     let model = configuredCenterModel(leafId: leafId)
     guard let pane = model.state.selectedPane else { return }
     store.confirmClosingWorkingChats([pane], serverId: selectedWorkspace.serverId) {
-      // The confirmation can outlive a selection change; close the pane
-      // that was asked about, not whatever is selected now.
       guard model.state.panes.contains(where: { $0.id == pane.id }) else { return }
       let workspace = selectedWorkspace
       let closesActiveLeaf = leafId == (activeLeafId ?? workspace.selectedCenterTab?.activeLeafId)
@@ -269,9 +241,6 @@ extension SessionContainerView {
     store.selectDestination(.leaf(target), in: workspace.id)
   }
 
-  /// Cycles through split leaves in stable visual reading order. This is
-  /// deliberately independent of split orientation so ⌘[ / ⌘] remains
-  /// predictable in nested horizontal and vertical layouts.
   func focusRelativeSplit(offset: Int) {
     let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }

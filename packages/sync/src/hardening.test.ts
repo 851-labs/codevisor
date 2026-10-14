@@ -1,9 +1,3 @@
-/// Phase 15: ownership-model hardening. These tests pin the LWW core's
-/// behavior under the ugly cases every later phase leans on: three-replica
-/// races, skewed clocks, partition-then-merge, and tombstone resurrection
-/// attempts. The "conformance vector" scenario is mirrored verbatim in
-/// SyncClockHardeningTests.swift — both implementations MUST converge to
-/// the same document or replicas diverge across the fleet.
 import { describe, expect, it } from "vitest"
 
 import {
@@ -34,9 +28,6 @@ const dead = (key: string, timestamp: SyncTimestampValue): SyncEntryRecord => ({
   timestamp
 })
 
-/// The shared conformance vector: three replicas that exercised every
-/// tiebreak rung (wall clock, counter, device id) plus a tombstone and a
-/// deliberate revival. Mirrored in SyncClockHardeningTests.swift.
 const batchAlpha = [
   entry("theme", "dark", ts(100, 0, "alpha")),
   entry("font", "mono", ts(120, 0, "alpha")),
@@ -88,8 +79,6 @@ describe("three-replica convergence", () => {
   })
 
   it("republishing only the changed set still converges a fourth replica", () => {
-    // A replica that merges everything relays just `changed` onward; a
-    // fresh replica fed only those relays must still reach convergence.
     let document: ReadonlyArray<SyncEntryRecord> = []
     const relayed: Array<SyncEntryRecord> = []
     for (const batch of [batchAlpha, batchBeta, batchGamma]) {
@@ -104,8 +93,6 @@ describe("three-replica convergence", () => {
     const replicas = [batchAlpha, batchBeta, batchGamma].map(
       (batch) => mergeSyncEntries([], batch).merged
     )
-    // Full mesh, two rounds: after the first, every pairwise exchange is
-    // silent — no churn, no oscillation.
     let exchanges = 0
     for (let round = 0; round < 2; round += 1) {
       exchanges = 0
@@ -128,24 +115,18 @@ describe("three-replica convergence", () => {
 
 describe("clock skew", () => {
   it("a device hours behind still wins its causally-later edits", () => {
-    // "slow" has a wall clock of 500 while the fleet is at 1_000_000.
     const remote = entry("k", "fleet", ts(1_000_000, 0, "fast"))
     let document = mergeSyncEntries([], [remote]).merged
-    // Its edit AFTER seeing the fleet value ratchets past it: same wall
-    // clock, bumped counter — newer on every replica despite the skew.
     const stamp = nextSyncTimestamp("slow", latestSyncTimestamp(document), 500)
     expect(stamp).toEqual(ts(1_000_000, 1, "slow"))
     document = mergeSyncEntries(document, [entry("k", "local", stamp)]).merged
     expect(document).toEqual([entry("k", "local", stamp)])
-    // And the fleet adopts it too — the skewed device is not second-class.
     expect(mergeSyncEntries([remote], [entry("k", "local", stamp)]).changed).toHaveLength(1)
   })
 
   it("a device hours ahead cannot be outrun, only ratcheted past", () => {
     const future = entry("k", "from-the-future", ts(9_000_000, 4, "ahead"))
     const document = mergeSyncEntries([], [future]).merged
-    // A same-millisecond honest write loses; only a causally-later write
-    // (stamped after seeing the future entry) wins.
     const blind = entry("k", "blind", ts(1_000_000, 0, "honest"))
     expect(mergeSyncEntries(document, [blind]).changed).toEqual([])
     const informed = nextSyncTimestamp("honest", latestSyncTimestamp(document), 1_000_000)
@@ -161,7 +142,6 @@ describe("clock skew", () => {
       burst.push(entry("k", value, clock))
     }
     expect(burst.map((item) => item.timestamp.counter)).toEqual([0, 1, 2])
-    // Merged in any order, the last write of the burst wins.
     expect(mergeSyncEntries([], burst.toReversed()).merged).toEqual([burst[2]])
     expect(mergeSyncEntries([], burst).merged).toEqual([burst[2]])
   })
@@ -169,9 +149,6 @@ describe("clock skew", () => {
 
 describe("partition then merge", () => {
   it("both sides converge identically after a heal, in either push order", () => {
-    // Shared history, then a partition: each side edits the same keys
-    // several times, keeping only its latest state (LWW documents carry
-    // no history — the heal exchanges final documents, not logs).
     const shared = [entry("mode", "auto", ts(10, 0, "seed"))]
     const sideA = mergeSyncEntries(shared, [
       entry("mode", "manual", ts(20, 0, "a")),
@@ -214,7 +191,6 @@ describe("tombstone resurrection attempts", () => {
   it("a tombstone reaches replicas that never saw the key at all", () => {
     const result = mergeSyncEntries([], [tombstone])
     expect(result.merged).toEqual([tombstone])
-    // ...and keeps suppressing stale writes that arrive afterwards.
     expect(mergeSyncEntries(result.merged, [entry("mcp", "late", ts(99, 9, "z"))]).changed).toEqual(
       []
     )
@@ -231,8 +207,6 @@ describe("tombstone resurrection attempts", () => {
     const revived = entry("mcp", "reborn", stamp)
     const result = mergeSyncEntries([tombstone], [revived])
     expect(result.merged).toEqual([revived])
-    // The revival also beats the tombstone on replicas merging the other
-    // way around.
     expect(mergeSyncEntries([revived], [tombstone]).merged).toEqual([revived])
   })
 })

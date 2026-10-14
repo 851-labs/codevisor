@@ -1,8 +1,5 @@
 import UIKit
 
-/// SwiftUI owns these stable containers and each promotion surface owns its
-/// own editor. Keeping the editor inside its controller hierarchy is required
-/// for UIKit to open the software keyboard from a programmatic focus request.
 final class ComposerTextViewContainer: UIView {
   var activation: (() -> Void)?
   var localEditor: HeightReportingTextView?

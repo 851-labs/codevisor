@@ -18,8 +18,6 @@ enum TranscriptToolReduction {
       upsertTool(call, entries: &turn.entries)
       turn.receiveGeneratedImage(call)
     }
-    // An agent call gets its bucket eagerly so the UI can render the
-    // nested section before any child output arrives.
     cascadeSettleIfParent(ToolCallUpdate(toolCallId: call.toolCallId, status: call.status), in: &turn)
     if call.kind == .agent, turn.subagents[call.toolCallId] == nil {
       turn.subagents[call.toolCallId] = SubagentTranscript()
@@ -27,9 +25,6 @@ enum TranscriptToolReduction {
   }
 
   static func applyQuestion(_ resolution: QuestionResolution, to turn: inout AssistantTurn) {
-    // An answered question renders as a normal tool-call row, inline in
-    // the arrival position it resolved. `upsertTool` dedupes by id, so
-    // replay redelivering the pair is idempotent.
     turn.isThinking = false
     let call = syntheticQuestionCall(for: resolution)
     if let position = resolution.statePosition { turn.entryPositions["tool:\(call.toolCallId)"] = position }
@@ -47,8 +42,6 @@ enum TranscriptToolReduction {
     if let index = toolIndex(call.toolCallId, in: entries), case let .tool(existing) = entries[index] {
       if let revision = call.stateRevision, revision < (existing.stateRevision ?? 0) { return }
       if call.isSnapshot == true { entries[index] = .tool(call); return }
-      // A full re-send replaces the call, but must not clobber streamed
-      // state it omits (diffStats/content arrive on separate updates).
       var merged = call
       mergeOmittedDetails(into: &merged, from: existing)
       entries[index] = .tool(merged)
@@ -57,11 +50,6 @@ enum TranscriptToolReduction {
     }
   }
 
-  /// Synthesizes the tool call that stands in for an answered question, so it
-  /// flows through the same grouping/rendering path as every other tool call.
-  /// The id is derived from the question id so replays upsert in place. The
-  /// row title is the question itself (single) or a count (multiple); the
-  /// expandable content carries the chosen answer(s).
   private static func syntheticQuestionCall(for resolution: QuestionResolution) -> ToolCall {
     let questions = resolution.questions
     let title = questionTitle(questions)
@@ -75,23 +63,14 @@ enum TranscriptToolReduction {
     )
   }
 
-  /// The chosen answer text for one sub-question: the selected option
-  /// label(s), then any free-form note on its own labelled line so it never
-  /// reads as another selected option; "No answer" when nothing was given.
   private static func answerText(for question: QuestionSpec, in resolution: QuestionResolution) -> String {
     guard let entry = resolution.answers?[question.id] else { return "No answer" }
-    // Text with no selected option is the answer itself (macOS sends an
-    // "Other" reply this way), not a note on one.
     if entry.answers.isEmpty, let note = entry.note, !note.isEmpty { return note }
     let note = entry.note.flatMap { $0.isEmpty ? nil : "Note: \($0)" }
     let lines = [entry.answers.isEmpty ? nil : entry.answers.joined(separator: ", "), note].compactMap(\.self)
     return lines.isEmpty ? "No answer" : lines.joined(separator: "\n")
   }
 
-  /// Routes a tool-call update by id lookup — main entries first, then every
-  /// subagent thread — because settle updates (tool results, interrupt
-  /// force-settles) do not carry `parentToolCallId`. Unknown ids fall back to
-  /// the update's own parent attribution, then to the main list.
   static func applyToolUpdate(_ update: ToolCallUpdate, to turn: inout AssistantTurn) {
     if applyMainUpdate(update, to: &turn) { return }
     for key in turn.subagents.keys {
@@ -115,9 +94,6 @@ enum TranscriptToolReduction {
     }
   }
 
-  /// When the settled call is itself a subagent parent, its children must
-  /// not keep spinning: settle the whole nested thread (and any threads
-  /// nested below it) with the parent's outcome.
   private static func cascadeSettleIfParent(_ update: ToolCallUpdate, in turn: inout AssistantTurn) {
     guard let status = update.status,
       let outcome = outcome(for: status),
@@ -145,9 +121,6 @@ enum TranscriptToolReduction {
     }
   }
 
-  /// Marks every non-terminal tool call in the turn — including those inside
-  /// subagent threads — with the outcome's terminal status, so in-progress
-  /// indicators can never outlive the turn.
   static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TranscriptReducer.TurnOutcome) {
     settle(entries: &turn.entries, outcome: outcome)
     for key in turn.subagents.keys {

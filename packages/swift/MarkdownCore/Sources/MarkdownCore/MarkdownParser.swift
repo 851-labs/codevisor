@@ -1,9 +1,6 @@
 import CMD4C
 import Foundation
 
-/// Parses CommonMark plus the MD4C GitHub extensions into Codevisor's semantic
-/// render model. MD4C is the only component that decides block and span
-/// structure; this type only copies callback data into memory-safe Swift values.
 public struct MarkdownParser: Sendable {
   public init() {}
 
@@ -11,8 +8,6 @@ public struct MarkdownParser: Sendable {
     parseDocument(markdown).blocks
   }
 
-  /// Table boundaries come from MD4C, including headers and empty cells.
-  /// The UTF-16 ranges can be used with Foundation's Markdown link matches.
   public func parseWithTableRanges(_ markdown: String) -> (blocks: [MarkdownBlock], tableRanges: [NSRange]) {
     let result = parseDocument(markdown)
     let utf8 = markdown.utf8
@@ -79,10 +74,6 @@ public struct MarkdownParser: Sendable {
     )
   }
 
-  /// Parses an inline fragment with the same MD4C configuration used for
-  /// complete documents. Production rendering normally receives spans from
-  /// the original document parse; this is retained for public callers and
-  /// isolated renderer tests.
   public func parseInline(_ markdown: String) -> MarkdownText {
     let blocks = parse(markdown)
     if blocks.count == 1 {

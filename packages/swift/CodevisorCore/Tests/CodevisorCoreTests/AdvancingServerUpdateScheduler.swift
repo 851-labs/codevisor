@@ -1,8 +1,6 @@
 import Foundation
 @testable import CodevisorCore
 
-/// Polling advances only virtual time. The callback observes progress between
-/// probes without a competing task or wall-clock polling loop.
 @MainActor
 final class AdvancingServerUpdateScheduler {
   private let start = ContinuousClock.now

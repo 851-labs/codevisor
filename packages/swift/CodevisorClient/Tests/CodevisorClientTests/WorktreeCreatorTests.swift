@@ -20,7 +20,6 @@ struct WorktreeCreatorTests {
     #expect(worktree.name == "kiwi")
     #expect(creator.phase?.outcome == .succeeded)
     #expect(!creator.isRunning)
-    // The client-generated worktree id rode the request.
     #expect(client.receivedId?.isEmpty == false)
   }
 
@@ -76,13 +75,10 @@ struct WorktreeCreatorTests {
 
     let first = await client.subscription(1)
     for index in 0..<300 {
-      // More streamed output than the stream buffers: it must not reach
-      // the consumer, nor overflow the tail.
       first.yield(Self.event(kind: "session.output", subject: "session", payload: ["text": .string("token \(index)")]))
     }
     first.yield(Self.setupLog("wt-2", "another worktree"))
     first.yield(Self.setupLog("WT-1", "Preparing worktree"))
-    // The server asked for a snapshot: the stream restarts.
     first.finish(throwing: URLError(.networkConnectionLost))
     let second = await client.subscription(2)
     second.yield(Self.setupLog("wt-1", "HEAD is now at abc123"))
@@ -125,16 +121,12 @@ struct WorktreeCreatorTests {
   }
 }
 
-/// Minimal client stub: `createWorktree` is scripted; everything else uses
-/// the protocol's fake-friendly defaults or inert stubs.
 private final class WorktreeStubClient: CodevisorServerClienting, @unchecked Sendable {
   private let result: Result<ServerWorktree, any Error>
   private let lock = NSLock()
   private var _receivedId: String?
   private var subscriptions: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
   private let subscribed = TestSignal()
-  /// Off: every event stream ends at once. On: each subscription stays open
-  /// for the test to feed through `subscription(_:)`.
   private let scriptsEventStreams: Bool
 
   init(result: Result<ServerWorktree, any Error>, scriptsEventStreams: Bool = false) {
@@ -195,7 +187,6 @@ private final class WorktreeStubClient: CodevisorServerClienting, @unchecked Sen
     return stream
   }
 
-  /// The `number`th event stream subscribed (1-based), once it exists.
   func subscription(_ number: Int) async -> AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation {
     await subscribed.wait(for: number)
     return lock.withLock { subscriptions[number - 1] }

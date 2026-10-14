@@ -3,9 +3,6 @@ import CodevisorProtocol
 import Foundation
 import TranscriptKit
 
-/// One decoded stream event together with the cursor of the server envelope
-/// it came from. Session sockets scope that cursor to the session's own
-/// revision sequence — the same value `streamEvents(since:)` resumes from.
 public struct ServerSessionStreamEnvelope: Equatable, Sendable {
   public var byteCount: Int = 1024
   public let cursor: Int
@@ -38,20 +35,12 @@ public struct ServerSessionTransport: Sendable {
     try await client.promptQueue(id: sessionId)
   }
 
-  /// Lightweight reverse-paginated history. Historical worked details are
-  /// represented by a deferred item id and fetched only on expansion.
   public func transcriptPage(before: String? = nil, limit: Int = 32) async throws -> TranscriptHistoryPage {
     historyPage(from: try await client.transcriptPage(id: sessionId, before: before, limit: limit))
   }
 
-  /// Converts an already-fetched raw page — the combined open call returns
-  /// one alongside the session record — into the transport's history
-  /// representation without another round-trip.
   public func historyPage(from page: ServerTranscriptPage) -> TranscriptHistoryPage {
     TranscriptHistoryPage(
-      // Older/cloud servers can still return completed structural item
-      // shells. Filter at the transport boundary so every caller gets a
-      // conversation made only of rows that can actually render.
       conversation: page.items
         .map(Self.conversationItem(from:))
         .filter(\.hasRenderableTranscriptContent),
@@ -78,11 +67,6 @@ public struct ServerSessionTransport: Sendable {
       id: sessionId, itemId: resource.itemId, key: resource.entryKey, field: field, position: position)
   }
 
-  /// A turn's stored details with their entries already converted to
-  /// stream events. Each entry's payload is re-encoded and decoded through
-  /// the session-update bridge, which for a tool-heavy turn is real work:
-  /// the fetch and the conversion both run off the caller's actor, so
-  /// expanding a turn never decodes on the main thread.
   @concurrent
   public func transcriptDetailEvents(
     itemId: String
@@ -107,22 +91,10 @@ public struct ServerSessionTransport: Sendable {
     Self.droppingCursors(streamEnvelopes(since: since))
   }
 
-  /// The session-scoped stream with each event tagged by the cursor of the
-  /// envelope that carried it. Consumers that apply events incrementally
-  /// record that cursor so a later resubscription — on a new transport after
-  /// a route flip, or after a reconcile — resumes exactly after the last
-  /// event they applied instead of replaying from a stale page cursor.
   public func streamEnvelopes(
     since: Int = Self.liveOnlyEventCursor
   ) -> AsyncThrowingStream<ServerSessionStreamEnvelope, any Error> {
     AsyncThrowingStream(bufferingPolicy: .bufferingOldest(512)) { continuation in
-      // The upstream subscription is acquired synchronously at stream
-      // construction, NOT inside the bridge task. Callers subscribe and
-      // then prompt (`startConsumer()` before `transport.prompt` in
-      // SessionModel); if registration happened inside the task it
-      // would race that prompt, and for a cursor-less (live-only)
-      // session the server replays nothing — events emitted before the
-      // subscription registers would be lost permanently.
       let upstream = client.sessionEventStream(id: sessionId, since: since)
       let content = ServerTranscriptContent(transport: self)
       let task = Task {
@@ -131,7 +103,6 @@ public struct ServerSessionTransport: Sendable {
             var complete = event
             complete.payload = try await content.payload(event.payload)
             let updates = ServerSessionEventDecoder.decode(from: complete)
-            // Even events without visible content belong to the applied cursor.
             for update in updates.isEmpty ? [.synchronization(.cursor)] : updates {
               var envelope = ServerSessionStreamEnvelope(cursor: event.id, event: update)
               envelope.byteCount = event.transportByteCount ?? 1024
@@ -149,23 +120,16 @@ public struct ServerSessionTransport: Sendable {
     }
   }
 
-  /// Compatibility path for servers that predate the canonical transcript
-  /// endpoint and therefore also lack the session-scoped WebSocket.
   public func legacyStreamEvents(
     since: Int
   ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
     Self.droppingCursors(legacyStreamEnvelopes(since: since))
   }
 
-  /// Cursor-tagged form of `legacyStreamEvents`; the cursor is the global
-  /// event id, which is what the legacy stream's `since` expects.
   public func legacyStreamEnvelopes(
     since: Int
   ) -> AsyncThrowingStream<ServerSessionStreamEnvelope, any Error> {
     AsyncThrowingStream { continuation in
-      // Acquired synchronously for the same reason as `streamEvents`:
-      // subscription registration must complete before the caller's
-      // next prompt, or live-only streams silently drop its events.
       let upstream = client.eventStream(since: since)
       let task = Task {
         do {
@@ -218,12 +182,6 @@ public struct ServerSessionTransport: Sendable {
           }
         ))
     case .assistant:
-      // A still-streaming item carries the provider message id of its
-      // answer candidate. Adopting the live-delta identity (`acp:<id>`)
-      // lets TranscriptReducer.appendText merge resumed chunks into
-      // this entry instead of appending a second span — which would
-      // demote the restored half into "Worked for". Completed items
-      // have no live continuation, so the synthetic summary id is fine.
       let textId = item.messageId.map { "acp:\($0)" } ?? "summary:\(item.id)"
       let entries: [TranscriptEntry] = item.text.isEmpty ? [] : [.text(id: textId, markdown: item.text)]
       var turn = AssistantTurn(
@@ -265,8 +223,6 @@ public struct ServerSessionTransport: Sendable {
     UUID(uuidString: id) ?? UUID()
   }
 
-  /// Initial and older pages publish complete message text once, before the
-  /// renderer sees them. Hidden worked content retains its lazy turn contract.
   public func completeHistoryPage(
     _ page: TranscriptHistoryPage, before: String? = nil, limit: Int = 32
   ) async throws -> TranscriptHistoryPage {
@@ -313,8 +269,6 @@ public struct ServerSessionTransport: Sendable {
     return page
   }
 
-  /// Drain materialized storage pages into one complete turn. No event-log
-  /// replay, partial installs, or eviction is exposed to the transcript.
   public func transcriptDetails(itemId: String) async throws -> ServerTranscriptItemDetails {
     var changed: ToolDetailResource?
     while true {
@@ -323,8 +277,6 @@ public struct ServerSessionTransport: Sendable {
       {
         guard changed != resource else { throw ServerTranscriptContent.LoadError.changed(resource) }
         changed = resource
-        // A field was replaced while reading it. Restart from current metadata
-        // rather than mixing generations in the document we publish.
         try Task.checkCancellation()
       }
     }

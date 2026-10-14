@@ -1,16 +1,8 @@
-// The pure-SwiftUI inline-code chip painter used by portable renderers such
-// as iOS table cells. Native transcript prose uses the matching TextKit chip
-// background painter.
 #if !canImport(AppKit)
   import SwiftUI
 
-  /// SwiftUI-side marker mirroring `InlineCodeChipAttribute`: attached to the
-  /// chip Text segments so the renderer can find their glyph runs.
   struct InlineCodeChipMarker: TextAttribute {}
 
-  /// Paints rounded chip backgrounds behind marked runs, then draws the text.
-  /// Consecutive chip runs on one line merge into a single chip (the code span
-  /// plus its narrow no-break pads).
   struct InlineCodeChipRenderer: TextRenderer {
     let chipColor: Color
     let cornerRadius: CGFloat
@@ -43,9 +35,6 @@
     }
   }
 
-  /// Inline markdown as SwiftUI Text with chip backgrounds. Plain text takes
-  /// the cheap single-Text path; only strings containing code spans pay for
-  /// segment concatenation and the renderer.
   @ViewBuilder
   func portableInlineText(_ markdown: String, theme: MarkdownTheme) -> some View {
     portableInlineText(MarkdownParser().parseInline(markdown), theme: theme)

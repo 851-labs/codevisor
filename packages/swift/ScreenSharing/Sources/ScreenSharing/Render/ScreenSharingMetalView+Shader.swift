@@ -1,8 +1,6 @@
 import MetalKit
 
 extension ScreenSharingMetalView {
-  /// Every pipeline's source: biplanar YCbCr (8- or 10-bit, video or full range) and packed BGRA,
-  /// into an 8-bit drawable or, for HDR (851-2380), a half-float extended-linear Display P3 one.
   static let shader = """
     #include <metal_stdlib>
     using namespace metal;

@@ -6,18 +6,11 @@ import type { EventRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
-/// Terminal panes' live titles and agent activity. The
-/// navigation journal's pane trigger records each change, so clients receive
-/// it as the same `navigation.changed` delta as any other pane edit.
-/// `revision` is left alone: it orders client-driven pane conversions, and a
-/// title settling must not make a client discard a snapshot that raced its own
-/// conversion.
 export const makeTerminalPaneTitlesService = (
   context: ServiceContext
 ): Pick<CodevisorDatabaseService, "setTerminalPaneStatus" | "clearTerminalPaneStatuses"> => {
   const { sqlite } = context
 
-  /// Runs `update` and returns the navigation changes its triggers journaled.
   const journaled = (update: (now: string) => void): ReadonlyArray<EventEnvelope> =>
     sqlite.transaction(() => {
       const { cursor } = sqlite
@@ -35,8 +28,6 @@ export const makeTerminalPaneTitlesService = (
     setTerminalPaneStatus: (terminalKey, liveTitle, activity) =>
       attempt("setTerminalPaneStatus", () =>
         journaled((now) => {
-          // Pane resource ids are client-cased; terminal keys match them
-          // case-insensitively everywhere else too.
           sqlite
             .prepare(
               `update workspace_panes set

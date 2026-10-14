@@ -4,8 +4,6 @@ import Network
 import Observation
 import WebKit
 
-/// WebKit has no public favicon API. Read the page's declared icons, then
-/// download through its machine proxy without using the device's cookie jar.
 @MainActor
 @Observable
 final class BrowserFaviconLoader {
@@ -40,7 +38,6 @@ final class BrowserFaviconLoader {
     }
   }
 
-  /// The generation also rejects work whose underlying API ignores cancellation.
   @discardableResult
   func replace(load: @escaping @MainActor () async -> CGImage?) -> Task<Void, Never> {
     stop()
@@ -58,7 +55,6 @@ final class BrowserFaviconLoader {
   }
 
   static func session(for store: WKWebsiteDataStore) throws -> URLSession {
-    // An unconfigured profile must never fetch from the client machine.
     let proxies = store.proxyConfigurations
     guard !proxies.isEmpty else { throw URLError(.notConnectedToInternet) }
     let configuration = URLSessionConfiguration.ephemeral

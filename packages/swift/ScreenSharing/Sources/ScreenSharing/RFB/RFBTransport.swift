@@ -1,11 +1,7 @@
 import Foundation
 import Network
 
-/// A byte stream to a VNC server. Reads return between one and `maximum`
-/// bytes, or nothing once the peer has closed. `close()` is idempotent and
-/// fails every pending or later read and write.
 public protocol RFBTransport: Sendable {
-  /// What carries the bytes, for diagnostics ("TCP", "WebSocket").
   var name: String { get }
   func read(maximum: Int) async throws -> [UInt8]
   func write(_ bytes: [UInt8]) async throws
@@ -16,9 +12,6 @@ extension RFBTransport {
   public var name: String { "Stream" }
 }
 
-/// TCP through Network.framework. `connect` resolves and waits for the
-/// connection to be ready or to fail; a `waiting` state (no route, refused
-/// and retrying) fails fast, since the viewer owns retrying.
 public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   public var name: String { "TCP" }
   private let connection: NWConnection
@@ -36,7 +29,6 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
     return transport
   }
 
-  /// An already-accepted connection (the loopback server).
   package init(connection: NWConnection) {
     self.connection = connection
   }
@@ -110,7 +102,6 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
 
 }
 
-/// A continuation guard: the first `claim()` wins, later state callbacks are ignored.
 package final class RFBOnce: @unchecked Sendable {
   private let lock = NSLock()
   private var done = false

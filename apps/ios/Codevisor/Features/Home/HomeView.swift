@@ -3,10 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The workspace sidebar: every workspace in the fleet as a collapsible
-/// section listing its tabs, mirroring the macOS sidebar's layout with
-/// settings at the top left, sidebar options at the top right, and a fixed
-/// compose button at the bottom trailing edge.
 struct HomeView: View {
   static let newChatTransitionID = "home-new-chat"
   @Namespace var newChatTransition
@@ -22,94 +18,53 @@ struct HomeView: View {
   @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
   private var aiDataSharingConsentVersion
   @State var onboardingStart = OnboardingView.Step.welcome
-  // Bootstrap adds the dev machine a beat after first render; the grace
-  // period keeps onboarding from flashing over an already-paired install.
   @State var readyForOnboarding = false
   @State var clientSettingsSection = "root"
   @State var clientPresentationCompletion = ClientPresentationCompletion()
   @State var presentedSettingsDestination: SettingsDestination?
   @State var pendingHarnessSignIn: HarnessSignInRequest?
   @State var newChatFlow: NewChatFlow?
-  /// Presentation and promotion have different lifetimes. SwiftUI owns this
-  /// item only while the native sheet exists; `newChatFlow` deliberately
-  /// survives its removal until the overlay hands off to Home's real route.
-  /// Using the item as the sheet input also guarantees the content closure
-  /// is constructed with a non-nil flow on the very first presentation.
   @State var presentedNewChatFlow: NewChatFlow?
   @State var newChatSheetPath = NavigationPath()
-  /// The New Chat sheet's composer is being touched or is fully expanded;
-  /// its drags belong to the composer, so the sheet can't be swiped away.
   @State var newChatComposerBlocksDismiss = false
-  /// One navigation truth for both containers: the compact stack's path,
-  /// and the split detail selection (its last entry). A typed path lets
-  /// Home identify the workspace currently presented and pop it when a
-  /// remote server refresh archives that chat.
   @State var navigation = HomeNavigationState()
-  /// Which container is mounted, latched from the horizontal size class.
   @State var layoutMode: HomeLayoutMode = .stack
-  /// The hosting bar has moved its items into iPhone Duo's side strip.
   @State var barsAreVertical = false
-  /// The split view's column visibility. `.doubleColumn` is the two-column
-  /// default; driving it lets a selection dismiss an overlay sidebar.
   @State var sidebarColumnVisibility: NavigationSplitViewVisibility = .doubleColumn
-  /// Where the detail column starts: a tiled sidebar pushes it in, an
-  /// overlay sidebar (portrait, laptop pose) floats above it at zero.
   @State var detailLeadingInset: CGFloat = 0
-  /// A selection dismissed an overlay sidebar, so widening into a tiled
-  /// layout (rotating to landscape) should bring the sidebar back.
   @State var sidebarAutoCollapsed = false
-  /// The split container's last width, to tell widening from narrowing.
   @State var splitContainerWidth: CGFloat = 0
-  /// A size-class change that arrived mid-promotion, applied once it ends.
   @State var pendingLayoutMode: HomeLayoutMode?
-  /// The session a detail draft was promoted into; keeps its identity.
   @State var promotedDraftSessionId: UUID?
-  /// Bumped when Home enters New Chat afresh so the draft remounts.
   @State var draftGeneration = UUID()
-  /// One-shot keyboard focus for the detail draft after a layout swap.
   @State var detailComposerFocusRequest: UUID?
-  /// The workspace route a detail draft's first send produced, applied once
-  /// the send animation lands so the chrome swap cannot cut it short.
   @State var pendingDraftPromotion: HomeRoute?
-  /// Pages pushed within the split detail (a pane's sub-navigation).
   @State var detailPath = NavigationPath()
-  /// A scanned `codevisor auth login` QR code awaiting approval.
   @State var pendingDeviceApproval: CloudDeviceApprovalRequest?
-  /// A codevisor://install-plugin deeplink (the web plugin directory's
-  /// "Open in Codevisor" button), staged until the install sheet presents.
   @State var pendingPluginInstall: PendingPluginInstall?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
   @State var tabRenameTitle = ""
-  /// The sidebar's actions behind one stable reference, so sidebar rows
-  /// skip re-rendering when only Home's closures were rebuilt.
   @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
-  /// The launch state and sync indicator, precomputed off Home's body by
-  /// `HomeNavigationPresentationObserver`. Nil until its first value.
   @State var navigationPresentation: HomeNavigationPresentation?
-  /// The window hosting this Home. With several iPad windows open, only the
-  /// one the user is working in answers app-wide presentation requests.
   @State var hostWindow = WeakWindow()
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     @State private var didHandleDiagnosticSessionLaunch = false
     @State private var didHandleDiagnosticNewChatLaunch = false
   #endif
 
-  /// A window opened on one tab (iPad's Open in New Window) starts there.
   init(initialRoute: HomeRoute? = nil) {
     if let initialRoute {
       _navigation = State(initialValue: HomeNavigationState(path: [initialRoute]))
     }
   }
 
-  /// The stack path, proxied so route helpers read and write one value.
   var path: [HomeRoute] {
     get { navigation.path }
     nonmutating set { navigation.path = newValue }
   }
 
-  /// Opening pushes on the compact stack and replaces the split detail.
   func openRoute(_ route: HomeRoute) {
     navigation.open(route, mode: layoutMode)
   }
@@ -130,7 +85,6 @@ struct HomeView: View {
     machines.allMachines.contains { !$0.isLocal }
   }
 
-  /// Debug builds can stand in a fixture sidebar for design review.
   var showsSampleSidebar: Bool {
     #if DEBUG
       HomeSidebarSampleData.isEnabled
@@ -139,21 +93,10 @@ struct HomeView: View {
     #endif
   }
 
-  /// Consent is required even for an existing installation with paired machines.
-  /// After consent, onboarding stays open until a machine is paired; the empty
-  /// state can reopen it later.
   var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
-        // A pending device approval pins the cover to how it was when the
-        // QR code arrived. Presented over the cover, it keeps the cover up
-        // until the sheet is dismissed (approving usually adds the first
-        // machine, which would otherwise pull the sheet's host out from
-        // under the result); presented over Home, the cover waits so it
-        // can't collide with the open sheet.
         if let pendingDeviceApproval { return pendingDeviceApproval.presentsOverOnboarding }
-        // A cached machine list that hasn't been confirmed yet may still
-        // turn out to hold machines; onboarding waits for it.
         return readyForOnboarding && environment.navigationRosterStatus != .unverified
           && !showsSampleSidebar && presentedSettingsDestination == nil
           && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
@@ -180,8 +123,6 @@ struct HomeView: View {
         case .split: splitContainer
         }
       }
-      // Folding and unfolding iPhone Duo changes the size class, never
-      // the orientation; the container follows the width alone.
       .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
         applyLayoutMode(for: sizeClass)
       }
@@ -195,8 +136,6 @@ struct HomeView: View {
           "old=\(navigationPathSummary(oldPath)) new=\(navigationPathSummary(newPath))"
         )
       }
-      // Both observe on Home's behalf, so their stores' churn re-renders an
-      // empty view instead of Home and the workspace beside its sidebar.
       .background {
         HomePresentedWorkspaceObserver(route: navigation.selection) { disposition in
           applyPresentedWorkspaceDisposition(disposition)
@@ -219,18 +158,11 @@ struct HomeView: View {
   }
 
   #if DEBUG || NAVIGATION_DIAGNOSTICS
-    /// `CODEVISOR_DIAGNOSTIC_NEW_CHAT_TEXT` presents the New Chat sheet once
-    /// a machine has synced, types the text, and — after
-    /// `CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS` (default 4000) — taps
-    /// send through the composer's real button path. Custom-scheme
-    /// deeplinks can't do this headlessly: the system confirms them.
     func handleDiagnosticNewChatLaunchIfNeeded() async {
       let environmentValues = ProcessInfo.processInfo.environment
       guard !didHandleDiagnosticNewChatLaunch,
         let text = environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_TEXT"], !text.isEmpty
       else { return }
-      // Once per process: Home reappears after every promotion, and a
-      // second autostart would hijack the user's session.
       didHandleDiagnosticNewChatLaunch = true
       let delay =
         environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS"].flatMap(Int.init) ?? 4000
@@ -252,8 +184,6 @@ struct HomeView: View {
       NotificationCenter.default.post(name: .codevisorDiagnosticSubmitComposer, object: nil)
     }
 
-    /// `CODEVISOR_DIAGNOSTIC_SESSION_ID` opens a persisted chat at launch
-    /// (and optionally a follow-up) without desktop automation.
     func handleDiagnosticSessionLaunchIfNeeded() async {
       guard !didHandleDiagnosticSessionLaunch,
         let value = ProcessInfo.processInfo.environment["CODEVISOR_DIAGNOSTIC_SESSION_ID"],
@@ -273,8 +203,6 @@ struct HomeView: View {
           ],
             let followupID = UUID(uuidString: followupValue)
           {
-            // Own this sequence independently of Home's view task;
-            // pushing the first workspace correctly cancels that task.
             Task { @MainActor in
               try? await Task.sleep(for: .seconds(4))
               path.removeAll()
@@ -300,9 +228,6 @@ struct HomeView: View {
   #endif
 }
 
-/// Sheet-presentation wrapper for a parsed install-plugin deeplink: the repo
-/// is the identity, so a second tap on the same link while the sheet is up
-/// doesn't re-present it.
 struct PendingPluginInstall: Identifiable {
   let repo: String
   var id: String { repo }

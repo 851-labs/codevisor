@@ -1,8 +1,6 @@
 import Foundation
 
 extension WorkspaceSyncModel {
-  /// Both sidebars and the Mac title editor route chat renames through the
-  /// shared session record. Non-chat layout labels retain their local meaning.
   @discardableResult
   public func renameTab(
     workspaceId: UUID, tabId: UUID, chatSessionId: UUID? = nil, to title: String,
@@ -19,7 +17,6 @@ extension WorkspaceSyncModel {
       guard !trimmed.isEmpty, tab.root.groupId(containingChat: chatId) != nil,
         let chat = projectList.sessions.first(where: { $0.serverId == workspace.serverId && $0.id == chatId })
       else { return nil }
-      // Old local aliases must not mask this or another device's chat rename.
       if workspace.centerTabs[index].customTitle != nil {
         workspace.centerTabs[index].customTitle = nil
         repository.save(workspace)
@@ -28,8 +25,6 @@ extension WorkspaceSyncModel {
     }
     let normalized = trimmed.isEmpty ? nil : trimmed
     guard tab.customTitle != normalized else { return nil }
-    // Confirming the title editor unchanged is not a rename: it must not pin
-    // a terminal's current program title as the tab's permanent name.
     if tab.customTitle == nil, normalized == pane?.displayName { return nil }
     workspace.centerTabs[index].customTitle = normalized
     repository.save(workspace)

@@ -1,7 +1,5 @@
 import Foundation
 
-/// A non-waiting lock for foreground input. Ownership has a fixed monotonic
-/// deadline, so admission never depends on an abandoned operation returning.
 final class ComputerUseForegroundLock: @unchecked Sendable {
   struct Token: Sendable {
     let id = UUID()
@@ -22,9 +20,6 @@ final class ComputerUseForegroundLock: @unchecked Sendable {
     self.now = now
   }
 
-  // The bridge's action stack is synchronous. Keep the token on that stack's
-  // thread, rather than identifying ownership by PID or agent alone. Another
-  // request may own the same app after this request expires.
   var currentToken: Token? { Thread.current.threadDictionary[contextKey] as? Token }
 
   func perform<Value>(sessionID: String, pid: pid_t, operation: () throws -> Value) throws -> Value {
@@ -43,7 +38,6 @@ final class ComputerUseForegroundLock: @unchecked Sendable {
     Thread.current.threadDictionary[contextKey] = token
     defer {
       mutex.withLock {
-        // A late completion must not release a newer request's ownership.
         if owner?.id == token.id { owner = nil }
       }
       if let previous {
@@ -59,8 +53,6 @@ final class ComputerUseForegroundLock: @unchecked Sendable {
     try withInput(token, pid: pid) {}
   }
 
-  /// Atomically fence a nonblocking event post against revocation. Never put
-  /// accessibility IPC, focus restoration, sleeps or other waits in this closure.
   func withInput(_ token: Token?, pid: pid_t, operation: () -> Void) throws {
     try mutex.withLock {
       expire()
@@ -73,8 +65,6 @@ final class ComputerUseForegroundLock: @unchecked Sendable {
     }
   }
 
-  /// A cancelled key/button release may clean up its original process, but
-  /// must not release input belonging to a newer action in that same process.
   func withCleanup(_ token: Token?, pid: pid_t, operation: () -> Void) {
     mutex.withLock {
       expire()

@@ -20,7 +20,6 @@ afterEach(async () => {
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
-/// A scripted OpenCode 2 server; `stopped` settles once it is stopped.
 const scriptedServer = (answer: (path: string) => unknown) => {
   const calls: string[] = []
   let markStopped!: () => void
@@ -38,8 +37,6 @@ const scriptedServer = (answer: (path: string) => unknown) => {
   return { server, calls, stopped }
 }
 
-/// An auth manager for one OpenCode 2 default profile, with OpenCode's
-/// server and Codevisor's shared providers replaced by fakes.
 const setup = async (overrides: { readonly removed?: boolean } = {}) => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-opencode2-auth-"))
   directories.push(directory)
@@ -139,7 +136,6 @@ describe("OpenCode 2 accounts", () => {
       state: "running",
       authorization: { url: "https://auth.test", method: "auto" }
     })
-    // The throwaway server has its own data directory and loads no plugins.
     const env = start.mock.calls[0]![0].env
     expect(env.XDG_DATA_HOME).toMatch(/harness-logins\/opencode\/[\w-]+\/data$/)
     expect(env.OPENCODE_CONFIG_CONTENT).toBe("{}")

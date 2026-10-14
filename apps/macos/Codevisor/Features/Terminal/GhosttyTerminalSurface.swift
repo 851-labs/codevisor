@@ -1,28 +1,13 @@
-//  Bridges the vendored Ghostty.SurfaceView (upstream Ghostty's full AppKit
-//  surface: NSTextInputClient/IME, performKeyEquivalent, tracking areas,
-//  clipboard, DPI handling) to Codevisor's TerminalSurface protocol.
-
 import AppKit
 import Combine
 import GhosttyKit
 import CodevisorCore
 import os
 
-/// Upstream sizes the libghostty surface only via `sizeDidChange`, called from
-/// its SwiftUI wrapper (not vendored). Codevisor drives the view with Auto Layout
-/// (TerminalSurfaceView pins it into a container), so forward frame changes —
-/// and the initial attach, when the window's backing scale becomes available —
-/// into `sizeDidChange` here.
 @MainActor
 private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
-  /// ⌘K: clear the terminal for every client (set by the surface).
   var onClear: (() -> Void)?
-  /// The terminal was clicked or focused into: it takes the PTY's size
-  /// from another device showing it (set by the surface).
   var onUse: (() -> Void)?
-  /// A key press, click, drag, scroll or paste: what the surface produces
-  /// next is the user's, not a reply to a program's query (set by the
-  /// surface).
   var onUserInput: (() -> Void)?
 
   override func keyDown(with event: NSEvent) {
@@ -54,12 +39,8 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     onUserInput?()
     super.scrollWheel(with: event)
   }
-  /// Set by the adapter; fired from the context menu's "Restart Terminal".
   var onRestartRequest: (() -> Void)?
-  /// Set by the adapter; fired for pane-group shortcuts while focused.
   var onPaneCommand: ((PaneGroupCommand) -> Void)?
-  /// Set by the adapter; fired when this surface gains/loses keyboard
-  /// focus (first responder).
   var onFocusChanged: ((Bool) -> Void)?
 
   override func becomeFirstResponder() -> Bool {
@@ -79,13 +60,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     return accepted
   }
 
-  /// The size last forwarded into libghostty, plus a one-per-runloop-turn
-  /// coalescer. A libghostty resize is a full screen/scrollback reflow and
-  /// SIGWINCHes the proxy PTY (a JSON frame over the WebSocket, a
-  /// `node-pty.resize` on the server) — and a split-divider drag delivers
-  /// frame changes at pointer-event rate to every terminal in the branch,
-  /// with SwiftUI layout often setting the same frame several times per
-  /// pass. Coalescing defers the reflow by at most one runloop turn.
   private var lastForwardedSize: NSSize = .zero
   private var pendingSizeUpdate = false
 
@@ -102,8 +76,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.pendingSizeUpdate = false
-      // Read the frame at fire time so a burst of drag deltas resolves
-      // to a single reflow at the latest geometry.
       self.lastForwardedSize = self.frame.size
       self.sizeDidChange(self.frame.size)
     }
@@ -112,8 +84,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     guard window != nil else { return }
-    // Synchronous on purpose: the backing scale can change with the same
-    // frame size, and first attach must size the surface before it draws.
     lastForwardedSize = frame.size
     sizeDidChange(frame.size)
   }
@@ -124,7 +94,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
 
   override func mouseDown(with event: NSEvent) {
     onUserInput?()
-    // Already focused, a click still says this is the device being used.
     if window?.firstResponder === self { onUse?() }
     focusForInput()
     super.mouseDown(with: event)
@@ -134,14 +103,8 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     window?.makeFirstResponder(self)
   }
 
-  /// Workspace shortcuts, captured only while this surface has keyboard
-  /// focus. Everything else falls through to Ghostty's key handling. The guard is the actual
-  /// first-responder relationship — not the published `focused` flag, which
-  /// can go stale and would eat composer/menu key equivalents.
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    // AppKit offers key equivalents to every view; only this one's count.
     if window?.firstResponder === self { onUserInput?() }
-    // ⌘K clears the terminal for every device showing it, not just this view.
     if event.type == .keyDown, window?.firstResponder === self, let onClear,
       event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
       event.charactersIgnoringModifiers == "k"
@@ -150,8 +113,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
       return true
     }
     if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
-      // A focused terminal routes workspace commands to its pane model;
-      // all other key equivalents continue through Ghostty.
       let command = ShortcutCatalog.paneCommand(for: event)
     {
       onPaneCommand(command)
@@ -178,14 +139,10 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   }
 }
 
-/// A terminal surface backed by the vendored upstream Ghostty surface view.
 @MainActor
 final class GhosttyTerminalSurface: TerminalSurface {
   private var surfaceView: CodevisorGhosttySurfaceView?
   private var cancellables = Set<AnyCancellable>()
-  /// The server connection behind the surface. The surface runs no local
-  /// process: output arrives through the controller, and input and size
-  /// changes go back through `hostIO`.
   private let controller: TerminalController
   private let hostIO: GhosttyHostIO
   private var renderer: GhosttySurfaceRenderer?
@@ -214,8 +171,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
       cwd: descriptor.workingDirectory)
     hostIO = GhosttyHostIO.make(for: controller)
     var config = Ghostty.SurfaceConfiguration()
-    // No local process: the surface's I/O is the server terminal. The shell
-    // opens once the surface reports its first size.
     config.hostIO = hostIO.surfaceIO
     config.waitAfterCommand = true
 
@@ -229,10 +184,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
         message: "Try closing and reopening the pane."
       )
     }
-    // Upstream initializes SurfaceView.focused to true before the C surface
-    // exists. Codevisor mounts the view later, so reset the surface to the real
-    // unfocused state now; the next AppKit first-responder transition will
-    // publish the matching true focus event to libghostty.
     view.focusDidChange(false)
     CodevisorGhosttyApp.shared.register(view)
     surfaceView = view
@@ -240,7 +191,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
     let renderer = GhosttySurfaceRenderer(surface: view.surface, view: view)
     self.renderer = renderer
     controller.onError = { [weak renderer] message in
-      // Shown in the terminal itself, where the user is looking.
       renderer?.writeLive(Array("\r\n\u{1B}[2m[codevisor] \(message)\u{1B}[0m\r\n".utf8))
     }
     controller.attach(renderer)
@@ -248,16 +198,12 @@ final class GhosttyTerminalSurface: TerminalSurface {
     view.onUse = { [weak controller] in controller?.focus() }
     view.onUserInput = { [weak controller] in controller?.noteUserInput() }
 
-    // Upstream applies the surface's published pointer style from its
-    // SwiftUI wrapper (not vendored); mirror that here.
     view.$pointerStyle
       .combineLatest(view.$mouseOverSurface)
       .sink { style, over in
         if over {
           style.cursor.set()
         } else {
-          // Reset promptly on exit — otherwise the I-beam lingers
-          // until something else happens to set a cursor.
           NSCursor.arrow.set()
         }
       }
@@ -270,10 +216,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
       surfaceView.focusForInput()
     } else {
       surfaceView.focusDidChange(false)
-      // visibilityChanged(false) can clear Ghostty's input focus
-      // without an AppKit resignFirstResponder transition. Publish the
-      // same loss here so the pane group cannot keep stale shortcut
-      // hints after focus moves back to the main workspace.
       surfaceView.onFocusChanged?(false)
     }
   }
@@ -283,8 +225,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
   }
 
   func terminate() {
-    // The server's shell keeps running (reattached next time); closing it
-    // for good is the pane's explicit delete.
     controller.detach()
     let view = surfaceView
     if let view {
@@ -293,11 +233,6 @@ final class GhosttyTerminalSurface: TerminalSurface {
     }
     cancellables.removeAll()
     surfaceView = nil
-    // Releasing the view releases Ghostty.Surface, whose deinit frees the C
-    // surface on the main actor -- which must not happen while a write runs
-    // on the renderer's queue. Rather than make the main thread wait for
-    // that write, stop further writes now and keep the view alive until the
-    // queue has finished the one in flight.
     renderer?.retire {
       withExtendedLifetime(view) {}
     }

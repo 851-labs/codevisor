@@ -9,11 +9,9 @@ import { PluginsError } from "./plugins-error.js"
 
 export type FindExecutable = (name: string, env: NodeJS.ProcessEnv) => Promise<string | undefined>
 
-/// Resolves a direct-execution command from PATH. This deliberately ignores
-/// shell aliases and functions because protocol v2 commands do too.
 export const findExecutableOnPath: FindExecutable = async (name, env) => {
   const path = env["PATH"] ?? process.env["PATH"] ?? ""
-  /* v8 ignore start -- Windows PATHEXT resolution cannot execute in the macOS/Linux test jobs. */
+  /* v8 ignore start */
   const extensions =
     process.platform === "win32" ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT;.COM").split(";") : [""]
   const names =
@@ -27,9 +25,7 @@ export const findExecutableOnPath: FindExecutable = async (name, env) => {
       try {
         await access(candidate, constants.X_OK)
         return candidate
-      } catch {
-        // Continue through PATH.
-      }
+      } catch {}
     }
   }
   return undefined

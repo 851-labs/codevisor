@@ -72,7 +72,6 @@ struct ToolCallRawPresentationTests {
 
   @Test("Shell metadata without output does not make a call expandable")
   func exitCodeDetails() {
-    // Harnesses title shell calls with their command, so it adds nothing.
     let call = ToolCall(
       toolCallId: "run-1",
       title: "Ran false",

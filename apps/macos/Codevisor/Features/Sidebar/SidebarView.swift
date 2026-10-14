@@ -4,11 +4,6 @@ import CodevisorTheming
 import CodevisorUI
 import os
 
-/// The sidebar: a New Chat action and one row per fleet-wide workspace,
-/// optionally grouped by project or machine.
-///
-/// Built on `ScrollView` + `VStack` (not `List`), because the sidebar-styled
-/// `List` outline coordinator crashes on the current macOS SDK.
 struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -23,28 +18,17 @@ struct SidebarView: View {
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
   @State var drag: SidebarDrag?
-  /// The row a keyboard step landed on, scrolled into view.
   @State var revealedWorkspaceID: UUID?
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
-  /// The Archived section starts collapsed: the archive is somewhere you go
-  /// looking, not something that should crowd the live list.
   @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
   @ClientPreference("sidebar.pinnedExpanded", default: true) var pinnedExpanded
-  /// The list's own heading collapses every group beneath it.
   @ClientPreference("sidebar.listExpanded", default: true) var listExpanded
-  /// Not persisted: reopening the archive starts at the newest page.
   @State var archivedVisibleCount = archivedPageSize
-  /// Workspaces pinned to the top of the sidebar, per device.
   @ClientPreference("sidebar.pinnedWorkspaces", default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
-  /// Collapsed by default: the archive is a place you go looking for
-  /// something, not something that should crowd the live list.
-  /// Page state is deliberately NOT persisted: reopening the archive should
-  /// start at the newest page rather than restoring a deep scroll.
-  /// The item a click is asking to restore, driving the confirmation alert.
 
   var list: ProjectListModel { environment.projectList }
   var isReordering: Bool { drag != nil }
@@ -63,8 +47,6 @@ struct SidebarView: View {
 
   private var sidebarContent: some View {
     VStack(spacing: 0) {
-      // Development identity and New chat stay pinned; workspace rows
-      // scroll.
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -99,22 +81,16 @@ struct SidebarView: View {
       SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
       SidebarUpdateFooter(center: environment.updateCenter)
     }
-    // Row frames, the drag copy, and the insertion line share this space,
-    // so the overlay lines up with the rows it points between.
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
   }
 
-  /// The list's heading, named for its top-level rows. Grouping and the
-  /// row details live in the list's context menu.
   private var workspacesHeader: some View {
     SidebarSectionHeader(title: grouping.listTitle, isExpanded: listExpanded) {
       withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { listExpanded.toggle() }
     }
   }
 
-  /// The list's context menu: how rows are grouped, and which optional
-  /// details each row shows.
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
     Picker(selection: $grouping) {
@@ -155,10 +131,6 @@ struct SidebarView: View {
     )
   }
 
-  /// The Pinned section (when anything is pinned), then the list's heading
-  /// over each group's row and its workspace rows, which indent beneath it
-  /// and hide while it is collapsed. A flat sidebar is one group with no row.
-  /// Both headings scroll with the rows they introduce.
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
     let pinned = groups.first { $0.id == SidebarWorkspaceGroup.pinnedID }
     let rest = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }
@@ -198,21 +170,10 @@ struct SidebarView: View {
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
   }
 
-  /// How far a group's workspace rows sit in from the group's row.
   static let groupIndent: CGFloat = 8
 
-  /// Iterates the precomputed list only; each section resolves its own
-  /// workspace, so this body never reads a workspace's contents.
   private func workspaceList(_ items: [WorkspaceSidebarItem]) -> some View {
-    // A plain VStack: lazy row materialization re-measures the
-    // content mid-bounce, which reads as random overscroll snaps.
     VStack(alignment: .leading, spacing: 1) {
-      // `.geometryGroup()` makes each row translate as one
-      // rigid unit during reflows. Without it a row whose
-      // content changes in the same transaction as its move
-      // (the state change that reorders a workspace also
-      // restyles its leading icon) animates each subview's
-      // position independently, which reads as shearing/jitter.
       ForEach(items) { item in
         SidebarWorkspaceSection(
           sidebar: self, item: item, selection: selection, grouping: grouping, rowDetails: rowDetails,
@@ -226,11 +187,6 @@ struct SidebarView: View {
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: items.map(\.id))
   }
 
-  /// Under the system theme the split view's own sidebar material shows
-  /// through, as in Mail or Finder: AppKit's sidebar material is what gives
-  /// native sidebar text and headers their exact color (SwiftUI's regular
-  /// material renders the same label colors lighter). Custom themes keep
-  /// their tinted glass.
   @ViewBuilder
   private var sidebarBackground: some View {
     if theme.isSystem {
@@ -240,9 +196,6 @@ struct SidebarView: View {
     }
   }
 
-  /// The rows in their own hosting view, so they render with the sidebar's
-  /// vibrancy (see `SidebarVibrancyHost`), carrying the environment they
-  /// read across.
   private var vibrantContent: some View {
     let open = openSettings
     return SidebarVibrancyHost {
@@ -283,9 +236,6 @@ struct SidebarView: View {
 
   private var sidebarConfiguredView: some View {
     sidebarAlertsView
-      // The docked sidebar answers ⇧⌘[ / ⇧⌘] and ⌥⌘↑ / ⌥⌘↓ from inside a
-      // workspace (the drawer copy stays passive so there is exactly one
-      // owner).
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
         store?.workspaceStepHandler = { offset in stepWorkspace(offset) }
@@ -295,9 +245,6 @@ struct SidebarView: View {
           store?.workspaceStepHandler = nil
         }
       }
-      // PR badges and branches: the docked sidebar keeps the window's answers
-      // fresh while they show; the store re-asks a workspace only once its
-      // answer is stale.
       .task(id: gitLookupRefreshKey) {
         guard publishesSceneActions, gitLookupRefreshKey != nil else { return }
         while !Task.isCancelled {
@@ -310,8 +257,6 @@ struct SidebarView: View {
       }
       .focusedSceneValue(
         \.sidebarActions,
-        // Navigation captures the store; wait until it is available before
-        // publishing the closures retained by the scene's focused value.
         publishesSceneActions && store != nil
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
@@ -322,13 +267,10 @@ struct SidebarView: View {
       )
   }
 
-  /// The shared add-project sheet: a recent folder, any folder, or a clone.
   private func startAddProject() {
     showingAddProject = true
   }
 
-  /// After a project is added, look for existing harness sessions in its
-  /// folder and — only when some are found — offer to import them.
   private func offerSessionImport(for project: Project) {
     Task {
       let importable = await environment.findImportableSessions(

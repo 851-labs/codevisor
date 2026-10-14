@@ -4,15 +4,12 @@ import CodevisorTestSupport
 
 @testable import CodevisorClient
 
-/// A scripted socket: `receive()` waits on pushed messages and hangs silently
-/// when none arrive — exactly like a dead relay channel.
 private final class ScriptedEventSocket: ServerWebSocketConnecting, @unchecked Sendable {
   let receiving = TestSignal()
   private let lock = NSLock()
   private var calls: [String] = []
   private let stream: AsyncThrowingStream<ServerWebSocketMessage, any Error>
   private let continuation: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Continuation
-  // Single-consumer, like a URLSessionWebSocketTask receive loop.
   private var iterator: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Iterator
 
   init() {
@@ -38,7 +35,6 @@ private final class ScriptedEventSocket: ServerWebSocketConnecting, @unchecked S
     return next
   }
 
-  /// Abandonment calls in order, for asserting report-before-cancel.
   var lifecycle: [String] { lock.withLock { calls } }
 
   func markUnanswered() {
@@ -126,7 +122,6 @@ struct EventStreamKeepaliveTests {
     first.push(envelope(kind: "keepalive", id: 7))
     await delivered.wait()
 
-    // Reconnects resume from the real event's cursor.
     first.fail()
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "7")
@@ -145,9 +140,6 @@ struct EventStreamKeepaliveTests {
     }
     await transport.connected.wait()
     let first = transport.socket(0)!
-    // A keepalive arrives before any real event (its id is the server's
-    // zero cursor). Adopting it would turn the next reconnect into a
-    // full-history replay.
     first.push(envelope(kind: "keepalive", id: 0))
     await first.receiving.wait(for: 2)
     first.fail()
@@ -166,16 +158,12 @@ struct EventStreamKeepaliveTests {
       for try await _ in client.sessionEventStream(id: UUID(), since: 3) {}
     }
     await transport.connected.wait()
-    // The server proves it sends keepalives, then the path dies silently
-    // (orphaned relay channel, half-open TCP): the deadline must fire and
-    // re-dial from the cursor.
     transport.socket(0)!.push(envelope(kind: "keepalive", id: 3))
     await clock.waitForSleep(.seconds(90))
     clock.advance(by: .seconds(90))
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
 
-    // Every newly opened session socket has a first-frame deadline.
     await clock.waitForSleep(CodevisorServerClient.eventOpenDeadline)
     clock.advance(by: CodevisorServerClient.eventOpenDeadline)
     await transport.connected.wait(for: 3)
@@ -200,8 +188,6 @@ struct EventStreamKeepaliveTests {
     await recovering.wait()
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "12")
-    // The abandoned socket learned it went unanswered before it was closed,
-    // so a relayed transport can judge its pipe.
     #expect(transport.socket(0)?.lifecycle.prefix(2) == ["unanswered", "cancel"])
     consumer.cancel()
     _ = await consumer.result
@@ -235,7 +221,6 @@ struct EventStreamKeepaliveTests {
 
 }
 
-/// Minimal thread-safe box for cross-task assertions.
 private final class LockedBox<Value>: @unchecked Sendable {
   private let lock = NSLock()
   private var stored: Value
@@ -280,7 +265,6 @@ extension EventStreamKeepaliveTests {
     clock.advance(by: .milliseconds(1))
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
-    // The replay remains a live update; it can drive the unread edge.
     transport.socket(1)!.push(envelope(kind: "session.attention.updated", id: 4))
     await delivered.wait()
     #expect(received.value == [4])
@@ -335,7 +319,6 @@ extension EventStreamKeepaliveTests {
       envelope(kind: kind, id: id).replacingOccurrences(
         of: "\"payload\":{}", with: "\"previousEventId\":\(previous),\"payload\":{}")
     }
-    // Missing event 4 must not be skipped merely because event 5 arrives.
     transport.socket(0)!.push(shellEvent(5, previous: 4))
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
@@ -343,7 +326,6 @@ extension EventStreamKeepaliveTests {
     let socket = transport.socket(1)!
     socket.push(shellEvent(4, previous: 3))
     socket.push(shellEvent(5, previous: 4, kind: "plugin.updated"))
-    // Global ids can have holes; the predecessor proves continuity.
     socket.push(shellEvent(8, previous: 5))
     socket.push(shellEvent(8, previous: 5))
     socket.push(shellEvent(9, previous: 8))
@@ -420,8 +402,6 @@ extension EventStreamKeepaliveTests {
     await delivered.wait()
     #expect(received.value == (afterFailure ? ["reconnecting"] : []) + ["catchingUp", "session.output"])
 
-    // Seeing traffic does not weaken durable-tail verification. A later
-    // checkpoint exposing a missing event must still fail the stream.
     socket.push(envelope(kind: "keepalive", id: 5))
     switch await consumer.result {
     case .success: Issue.record("Missing tail was silently accepted")

@@ -3,29 +3,20 @@
   import CodevisorCore
   import SwiftUI
 
-  /// Open Quickly for the workspace. Typing searches filenames on the machine
-  /// that owns the files; an empty query offers recent files and the root
-  /// folder. Choosing a folder narrows the search to its contents rather
-  /// than opening it, so the whole tree stays one keystroke away.
   struct MacFileOpenPicker: View {
     let model: FilePaneModel
     let focus: Autocomplete.InputFocus
-    /// Present when the picker floats over a document: Escape closes it and
-    /// opening a file dismisses it.
     var onDismiss: (() -> Void)? = nil
 
     @Environment(\.openFileDocument) private var openFile
     @State private var query = ""
     @State private var search = FileExplorerSearch()
-    /// The last completed search stays on screen while the next one runs,
-    /// narrowed locally by the new query, so results never blink away.
     @State private var results: [ServerFileEntry] = []
 
     private static let style: Autocomplete.Style = {
       var metrics = Autocomplete.Metrics.xcodeMenu
       metrics.maximumWidth = 560
       metrics.maximumHeight = 480
-      // Open in New Tab stays on the context menu and ⌘↩; no hover button.
       return Autocomplete.Style(metrics: metrics, showsAccessories: false)
     }()
 
@@ -81,9 +72,6 @@
       }
     }
 
-    /// The title mirrors the label ("name  folder") so the popup is measured
-    /// for what it draws; the relative path rides along as a search term,
-    /// matching the machine's search so local narrowing and results agree.
     private func fileAction(_ path: String) -> Autocomplete.Action {
       let relative = explorer.relativePath(path)
       let name = (relative as NSString).lastPathComponent
@@ -129,8 +117,6 @@
     }
   }
 
-  /// An empty file pane: the picker centered on the pane background, the
-  /// same presentation as the New Tab page it was chosen from.
   struct MacFileOpenPage: View {
     let model: FilePaneModel
     @Environment(\.theme) private var theme
@@ -153,8 +139,6 @@
     }
   }
 
-  /// The picker anchored to the document title, for switching files without
-  /// leaving the pane.
   struct MacFileOpenPopover: View {
     let model: FilePaneModel
     @State private var focus = Autocomplete.InputFocus()

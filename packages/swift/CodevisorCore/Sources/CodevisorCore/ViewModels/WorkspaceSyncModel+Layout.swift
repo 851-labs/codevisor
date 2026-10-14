@@ -1,15 +1,6 @@
 import Foundation
 
 extension WorkspaceSyncModel {
-  /// Projects the server's pane registry onto this device's layout.
-  ///
-  /// The New Tab page is device-local: it is never published, and the
-  /// registry never lists it. So local `.newTab` panes are neither created
-  /// from nor removed by server records — with one exception. A workspace
-  /// showing ONLY the New Tab page (a workspace another client is still
-  /// filling, or one whose last pane closed) holds it as a placeholder: the
-  /// first real pane fills that tab in place, and any other placeholder tab
-  /// is dropped. New Tabs opened beside real panes (⌘T) are kept.
   nonisolated static func reconcilePanes(
     in workspace: inout Workspace,
     records: [ServerWorkspacePane],
@@ -47,23 +38,17 @@ extension WorkspaceSyncModel {
       guard !pane.kind.isDeviceLocal, !protectedLocalPaneIds.contains(pane.id),
         !remoteIds.contains(pane.id)
       else { continue }
-      // Resource matching is an identity-migration fallback, not a
-      // reason to retain two panes for one chat. Once the authoritative
-      // pane id is present, remove any compatibility pane that refers to
-      // the same session.
       if let key = resourceKey(pane), remoteIdByResourceKey[key] != nil {
         _ = removePane(id: pane.id, from: &workspace)
         continue
       }
       _ = removePane(id: pane.id, from: &workspace)
     }
-    // A chat that left takes its subagent views with it.
     workspace.pruneOrphanedSubagentPanes()
     if !hadRealPanes, workspace.hasRealPanes {
       workspace.centerTabs.removeAll(where: \.isPlaceholder)
     }
     pruneEmptyCenterTabs(in: &workspace)
-    // Tab order is shared across devices (splits stay local).
     workspace.centerTabs = SharedTabOrder.sorted(
       workspace.centerTabs, positions: SharedTabOrder.positions(of: records, workspaceId: nil))
     if workspace.centerTabs.contains(where: { $0.id == selectedTab }) {
@@ -74,8 +59,6 @@ extension WorkspaceSyncModel {
     ensureUsableLayout(&workspace)
   }
 
-  /// Gives a pane that has no slot yet the placeholder tab's page, keeping
-  /// the tab and leaf identity a mounted view may already hold.
   private nonisolated static func fillPlaceholderTab(
     with pane: PaneDescriptorState,
     in workspace: inout Workspace
@@ -115,8 +98,6 @@ extension WorkspaceSyncModel {
 
   nonisolated static func resourceKey(_ pane: ServerWorkspacePane) -> String? {
     guard let kind = pane.resourceKind, let id = pane.resourceId else { return nil }
-    // Files are case-sensitive resources, and document tabs deduplicate by
-    // their canonical path in the UI rather than this legacy migration key.
     guard kind != "file" else { return nil }
     return "\(kind.lowercased()):\(id.lowercased())"
   }

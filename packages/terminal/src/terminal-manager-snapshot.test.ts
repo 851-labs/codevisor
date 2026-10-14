@@ -19,8 +19,6 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     const restored = makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     restored.restoreTerminals(snapshot)
 
-    // The screen comes back as a reconstruction, followed by the synthetic
-    // exit (the process died with the previous server).
     expect(await run(restored.readScreen(created.terminalId, "text"))).toBe("hello world")
     const frames: Array<TerminalServerFrame> = []
     const detach = await run(
@@ -33,23 +31,18 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
       ["exit", 3]
     ])
     expect(frames[0]).toMatchObject({ reset: true })
-    // A client that had already seen everything only learns of the exit.
     expect(await run(replayedFrames(restored, created.terminalId, 2))).toEqual([
       { type: "exit", seq: 3 }
     ])
 
-    // Input is refused: the restored terminal is closed and process-less.
     await expect(
       run(restored.handleClientFrame(created.terminalId, inputFrame(2, "pwd\n")))
     ).rejects.toBeInstanceOf(TerminalError)
-    // Once its last reader leaves, the dead shell is dropped.
     detach()
     await expect(run(restored.readScreen(created.terminalId, "text"))).rejects.toBeInstanceOf(
       TerminalError
     )
 
-    // The session mapping is NOT reclaimed: the next createTerminal for the
-    // session spawns a fresh shell instead of handing back dead scrollback.
     const fresh = await run(
       restored.createTerminal({ sessionId: "session-live", cwd: "/tmp", cols: 80, rows: 24 })
     )
@@ -67,7 +60,6 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     const restored = makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     restored.restoreTerminals(manager.snapshotTerminals())
 
-    // attachOnly still resolves the session to the restored terminal.
     const attached = await run(
       restored.createTerminal({
         sessionId: "agent:bg:1",
@@ -79,8 +71,6 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     )
     expect(attached.terminalId).toBe(handle.terminalId)
 
-    // Already-exited externals do not gain a second exit frame, and input
-    // frames stay meaningless no-ops rather than errors.
     const frames = await run(replayedFrames(restored, handle.terminalId))
     expect(frames.map((frame) => frame.type)).toEqual(["output", "exit"])
     expect(frames[1]).toEqual({ type: "exit", seq: 2, exitCode: 0 })
@@ -96,7 +86,6 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     const snapshot = manager.snapshotTerminals()
     manager.restoreTerminals(snapshot)
 
-    // The live terminal was not clobbered: it still accepts output.
     handle.output("still live")
     const frames = await run(replayedFrames(manager, handle.terminalId))
     expect(frames.filter((frame) => frame.type === "output")).toHaveLength(2)
@@ -104,8 +93,6 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
   })
 
   it("skips external terminals from snapshots before version 3", async () => {
-    // Those files persisted agent command mirrors, which piled up across
-    // restarts with nothing left to reach or remove them.
     const manager = makeTerminalManager({ spawner: makeSpawner() })
     manager.registerExternalTerminal({ sessionId: "agent:bg:old" }, new FakeProcess()).exit(0)
     const restored = makeTerminalManager({ spawner: makeSpawner() })

@@ -25,17 +25,11 @@ import type { ScreenSharingVNCConfig } from "./server-context-types.js"
 import { makeSimulators, systemSimulatorEnvironment, type Simulators } from "./simulators.js"
 import type { StartupReporter } from "./startup-progress.js"
 
-/// Boot-time helpers for the `serve` entry point: argument parsing, bundle
-/// metadata, data-upgrade status, app-owner monitoring, optional feature
-/// initialization, and the background terminal integration.
-
 export const SERVER_PROCESS_TITLE = "codevisor-server"
 export const nativeScreenSharing = (dataDir: string) =>
   process.platform === "darwin"
     ? (request: ScreenSharingRequest) => requestMacScreenSharing(dataDir, request)
     : undefined
-/// The native helper where it exists (macOS), else the operator's VNC
-/// desktop, else no screen sharing at all.
 export const screenSharingProvider = (
   dataDir: string
 ): {
@@ -46,18 +40,15 @@ export const screenSharingProvider = (
   if (native !== undefined) return { screenSharing: native, screenSharingVNC: undefined }
   const vnc = readScreenSharingVNC(dataDir)
   if (vnc === undefined) return { screenSharing: undefined, screenSharingVNC: undefined }
-  // An Xfce desktop's scale can be set (851-2339); display N listens on 5900 + N.
   const scaler =
     vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900, systemScalerCommands) : undefined
   return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
 }
-/// Apple simulators, on a Mac whose native app streams them.
 export const simulatorsProvider = (dataDir: string): Simulators | undefined =>
   process.platform === "darwin"
     ? makeSimulators(systemSimulatorEnvironment, () => macNativeHostAvailable(dataDir))
     : undefined
 
-/// Native MCP discovery over this machine's real harness configs.
 export const systemNativeMcpManager = (
   config: Omit<NativeMcpManagerConfig, "env" | "fs" | "homedir">
 ): NativeMcpManager =>
@@ -67,9 +58,6 @@ export const systemNativeMcpManager = (
     fs: defaultNativeConfigFileSystem,
     homedir: homedir()
   })
-/// Background cache only: clients checking on the user's behalf pass
-/// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
-/// here made remote machines deny fresh releases for most of a day.
 export const SERVER_UPDATE_CHECK_TTL_MS = 15 * 60 * 1_000
 
 export const resolveServeModes = (
@@ -104,9 +92,6 @@ interface ServerWorkingDirectoryOps {
   readonly chdir: (path: string) => void
 }
 
-/// Detaches the daemon from whichever bundle, shell, or updater staging
-/// directory launched it. Long-lived servers outlive app-bundle swaps, so no
-/// subprocess may inherit a cwd that Sparkle can later remove.
 export const stabilizeServerWorkingDirectory = (
   databasePath: string,
   ops: ServerWorkingDirectoryOps = {
@@ -122,9 +107,6 @@ export const stabilizeServerWorkingDirectory = (
 
 export const failureMessage = (cause: unknown): string => {
   if (!(cause instanceof Error)) return String(cause)
-  // Effect wraps rejected promises in an UnknownError. Preserve the useful
-  // domain error (lease owner, migration failure, missing resource, …) rather
-  // than reducing every startup failure to "An error occurred".
   if (cause.message === "An error occurred in Effect.tryPromise" && cause.cause !== undefined) {
     return failureMessage(cause.cause)
   }
@@ -214,11 +196,6 @@ export const monitorAppOwner = (options: {
   return () => clearInterval(timer)
 }
 
-/// Exit status used to hand an update back to a host macOS app: a server that
-/// lives inside the .app bundle can't replace that bundle, so instead of
-/// swapping a standalone runtime (which the app's next launch would discard) it
-/// exits with this status and the app performs the full app update + relaunch.
-/// Must match `LocalCodevisorServer.updateHandoffExitStatus`.
 export { parseServeArgs as parseArgs } from "./startup-progress.js"
 
 export const bundledVersion = (): string | undefined => {
@@ -264,7 +241,6 @@ export const bundledBuildMetadata = (): {
   }
 }
 
-/// Restore saved scrollback and keep it available across graceful restarts.
 export const restoreTerminalPersistence = (
   dataDir: string,
   terminal: import("@codevisor/terminal").TerminalManagerService,
@@ -287,9 +263,6 @@ export const restoreTerminalPersistence = (
   persistence.startPeriodicFlush()
 }
 
-/// The `serve` arguments a self-updated runtime is re-launched with: the
-/// same bind, data, identity, and auth as this process. `--boot-id` and the
-/// status sidecars are deliberately absent — the new boot mints its own.
 export const selfUpdateServeArgs = (options: {
   readonly host: string
   readonly port: number
@@ -316,9 +289,6 @@ export const selfUpdateServeArgs = (options: {
   ...(options.kind === undefined ? [] : ["--kind", options.kind])
 ]
 
-/// The terminal upgrade report for a database that could not open or
-/// migrate: what the sidecar and the boot health answer carry to the app
-/// and to remote clients.
 export const databaseStartupFailure = (error: string): DataUpgradeProgress => ({
   state: "failed",
   id: "database-startup",
@@ -328,11 +298,6 @@ export const databaseStartupFailure = (error: string): DataUpgradeProgress => ({
   error
 })
 
-/// The machine network: when this machine is connected to a Codevisor Cloud
-/// account (`codevisor auth login`, or dev auto-provisioning), a presence
-/// connection to the user's hub serving end-to-end encrypted channels; and
-/// the MachineLink over every machine on the account (via the relay) behind
-/// the sandbox's `machines` API.
 export const startMachineNetwork = async (options: {
   readonly databasePath: string
   readonly port: number
@@ -355,10 +320,6 @@ export const startMachineNetwork = async (options: {
     startCloudBridge(cloudBridgeOptions)
   )
   const cloudControl = makeCloudServerControl(cloudBridgeOptions, cloudBridge)
-  // One name everywhere: the name cloud presence shows (chosen when the
-  // machine was registered) wins over `--name`/the host name, so
-  // machines.list(), machines.current, and the hub agree. Read live — a
-  // later cloud connect can register under a new name.
   const machineName = (): string => cloudControl.machineName() ?? options.machineName
   const machine = {
     id: options.serverId,

@@ -16,11 +16,6 @@ import {
 } from "@codevisor/api"
 import type { ComputerUseApp } from "@codevisor/automation"
 
-/// Live transcript annotation for one `execute` call: the latest `status()`
-/// text and every nested tool call, streamed to the session sink so the
-/// server can attach them to the harness tool row. None of this reaches the
-/// model's result.
-
 export const EXECUTION_EMIT_INTERVAL_MS = 250
 
 export interface ExecutionTimers {
@@ -40,8 +35,6 @@ export const truncateText = (text: string, max: number): string => {
   return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max - 1).trimEnd()}…`
 }
 
-/// The message a person needs from a thrown error: its first line, without
-/// the "Error:" prefix or the stack frames the sandbox appends.
 export const errorSummary = (error: string, max: number): string => {
   const firstLine = error.split("\n").find((line) => line.trim().length > 0) ?? error
   const message = firstLine
@@ -50,7 +43,6 @@ export const errorSummary = (error: string, max: number): string => {
   return truncateText(message.length > 0 ? message : firstLine, max)
 }
 
-/// sha256 hex of the canonical execute arguments, exactly as received.
 export const executionArgsHash = (args: {
   readonly code: string
   readonly description: string
@@ -59,10 +51,7 @@ export const executionArgsHash = (args: {
 export interface ExecutionRecorder {
   readonly status: (text: string) => void
   readonly call: (call: CodevisorExecutionCall) => void
-  /// The workflow is touching `icon` now: a call started, or a browser call
-  /// left its tab on a site. The first one names the settled workflow.
   readonly touch: (icon: CodevisorExecutionIcon) => void
-  /// Emits the terminal state and resolves once the sink has taken it.
   readonly finish: (error?: string) => Promise<void>
 }
 
@@ -71,7 +60,6 @@ const sameIcon = (
   rhs: CodevisorExecutionIcon | undefined
 ): boolean => JSON.stringify(lhs) === JSON.stringify(rhs)
 
-/// A bare browser or desktop, which the site or app it reaches names better.
 const isBareSurface = (icon: CodevisorExecutionIcon, next: CodevisorExecutionIcon): boolean =>
   icon.kind === "builtin" &&
   ((icon.id === "browser" && next.kind === "site") ||
@@ -81,7 +69,6 @@ export const makeExecutionRecorder = (options: {
   readonly sink: RuntimeEventSink | undefined
   readonly sessionId: string
   readonly argsHash: string
-  /// The workflow's label, carried for rows that can't show their own.
   readonly description?: string
   readonly timers?: ExecutionTimers
 }): ExecutionRecorder => {
@@ -119,8 +106,6 @@ export const makeExecutionRecorder = (options: {
       subjectId: sessionId,
       payload: { kind: "codevisor_execution", argsHash, execution }
     }
-    // Hand events to the sink in emission order (the session sink queues
-    // them serially); an annotation failure never fails the script.
     let delivered: Promise<unknown>
     try {
       delivered = Promise.resolve(sink(event))
@@ -141,7 +126,6 @@ export const makeExecutionRecorder = (options: {
       emit("running")
       return
     }
-    // finish() cancels this timer, so it only fires mid-execution.
     pending = timers.setTimeout(() => {
       pending = undefined
       emit("running")
@@ -157,7 +141,6 @@ export const makeExecutionRecorder = (options: {
       scheduleRunning()
     },
     call: ({ files, error, ...call }) => {
-      // The workflow's first files are what it was for; later ones are cut.
       const shown = files?.slice(0, Math.max(0, CODEVISOR_EXECUTION_MAX_FILES - filesShown)) ?? []
       filesShown += shown.length
       calls.push({
@@ -172,8 +155,6 @@ export const makeExecutionRecorder = (options: {
     },
     touch: (next) => {
       if (finished) return
-      // A site a browser call reached (or an app the desktop drove) names
-      // the workflow better than the bare surface it started with.
       const named = icon === undefined || isBareSurface(icon, next) ? next : icon
       if (sameIcon(named, icon) && sameIcon(next, activeIcon)) return
       icon = named
@@ -195,8 +176,6 @@ export const makeExecutionRecorder = (options: {
   }
 }
 
-/// Reports a `skills` call to the session sink, so a row that ran it from
-/// inside its own code can say which skill it read. Never fails the call.
 export const reportSkillRead = async (
   sink: RuntimeEventSink | undefined,
   sessionId: string,
@@ -209,16 +188,11 @@ export const reportSkillRead = async (
       subjectId: sessionId,
       payload: { kind: "codevisor_skill", skill }
     })
-  } catch {
-    // The read happened; only its label is lost.
-  }
+  } catch {}
 }
 
 const BUILTIN_ICON_IDS = new Set(["browser", "computer", "codevisor", "plugin"] as const)
 
-/// The artwork a sandbox call shows on its workflow before it runs: one of
-/// Codevisor's own capabilities, or the MCP server it reaches. Catalog
-/// lookups (`search`, `describe.tool`) touch nothing worth showing.
 export const executionCallIcon = async (
   path: string,
   serverHost: (serverId: string) => Promise<string | undefined>
@@ -234,7 +208,6 @@ export const executionCallIcon = async (
   return { kind: "mcp", serverId, ...(host === undefined ? {} : { host }) }
 }
 
-/// An app Computer Use drove, as a workflow icon.
 export const appIcon = (app: ComputerUseApp): CodevisorExecutionIcon => ({
   kind: "app",
   bundleId: app.bundleId,
@@ -242,7 +215,6 @@ export const appIcon = (app: ComputerUseApp): CodevisorExecutionIcon => ({
   ...(app.path === undefined ? {} : { path: app.path })
 })
 
-/// The site a page URL belongs to, as a workflow icon.
 export const siteIcon = (url: string): CodevisorExecutionIcon | undefined => {
   try {
     const parsed = new URL(url)
@@ -258,8 +230,6 @@ const SCRIPT_CELLS: Readonly<Record<string, string>> = {
   "computer.js": "Used the desktop"
 }
 
-/// A tool name (or a script cell's path) as a step label:
-/// `search_models` → "Search models", `browser.js` → "Used the browser".
 export const humanizeToolName = (name: string): string => {
   const cell = SCRIPT_CELLS[name]
   if (cell !== undefined) return cell
@@ -272,8 +242,6 @@ export const humanizeToolName = (name: string): string => {
   return words.length === 0 ? name : words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/// The files a call's result references: stored artifacts (screenshots,
-/// exports) and published recordings, each carrying a server `fileId`.
 export const executionFiles = (value: unknown): Array<CodevisorExecutionFile> => {
   const files = new Map<string, CodevisorExecutionFile>()
   const visit = (node: unknown, depth: number): void => {

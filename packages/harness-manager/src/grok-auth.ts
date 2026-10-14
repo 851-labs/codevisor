@@ -15,8 +15,6 @@ interface Login {
 
 const scope = (accountId: string, shared: boolean) => JSON.stringify([accountId, shared])
 
-// Use the same device-code handoff as Codex, with Grok's own OAuth
-// contract. Never launch a browser on the machine running the harness.
 export const makeGrokAuth = (core: HarnessAuthCore) => {
   const logins = new Map<string, Login>()
   const failures = new Map<string, string>()

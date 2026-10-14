@@ -13,7 +13,6 @@ import ScreenSharingDiagnostics
       let sent = senderMetrics.snapshot().counters
       let received = receiverMetrics.snapshot().counters
       return [
-        // Every callback bucket once; captureSamplesWithoutImage is a sub-count of complete and is NOT added.
         "anyCallbackIncludingInvalidOrMissingStatus": ScreenSharingCaptureCallbackAccounting.callbackTotal(
           counters: sent),
         "completeStatusCallbacks": sent["captureCallbacksComplete", default: 0],
@@ -22,8 +21,6 @@ import ScreenSharingDiagnostics
       ]
     }
 
-    /// One tick of first-observed delivery; writes the first-callback /
-    /// first-frame sidecars the first time their metric becomes non-zero.
     func recordFirstObservation(elapsedSeconds: Double) throws {
       guard firstObservation != nil else { return }
       let values = deliveryValues()
@@ -56,8 +53,6 @@ import ScreenSharingDiagnostics
       senderMetrics.label("firstObservedResolution", ScreenSharingFirstObservation.resolution)
     }
 
-    /// The final event-log record: the diagnostic's own when it was constructed, otherwise (options requested a
-    /// log but the probe failed earlier) an explicit not-initialized record; nil when no log was requested.
     func rtcEventLogRecord(
       role: ScreenSharingRtcEventLogDiagnostic.Role, reason: String
     ) -> ScreenSharingRtcEventLogDiagnostic.Record? {
@@ -71,9 +66,6 @@ import ScreenSharingDiagnostics
         maxSizeBytes: ScreenSharingRtcEventLogDiagnostic.fixedMaxSizeBytes, reason: reason, role: role)
     }
 
-    /// Shared finalization (normal completion, failure, window close): after the actual stop, publish the record
-    /// atomically as REPORT.rtc-event-log.json so the brackets and close reason survive even without a report.
-    /// A write error is recorded and printed, never a silent success. Idempotent per process.
     func publishRtcEventLogSidecar(role: ScreenSharingRtcEventLogDiagnostic.Role) {
       guard rtcEventLogSidecarOutcomes[role] == nil, let url = options.reportURL,
         let record = rtcEventLogRecord(role: role, reason: "probe stopped before the peer and the log were constructed")
@@ -92,19 +84,12 @@ import ScreenSharingDiagnostics
       }
     }
 
-    /// The role's final event-log record as a JSON object for the failure record; nil when no log was requested.
     func failureRecordJSON(role: ScreenSharingRtcEventLogDiagnostic.Role) -> Any? {
       let reason = "probe failed before the peer and the log were constructed"
       guard let record = rtcEventLogRecord(role: role, reason: reason) else { return nil }
       return (try? JSONEncoder().encode(record)).flatMap { try? JSONSerialization.jsonObject(with: $0) }
     }
 
-    /// Durable failure evidence: written after cleanup on any failed run so the
-    /// original error, a stop failure, the owned window's real lifecycle, every
-    /// snapshot already taken (readiness / before-start / after-start / pause /
-    /// stop) and the first-observed delivery state survive even when the normal
-    /// report was never written. A final observation is taken only if
-    /// measurement had begun; elapsed times are never invented.
     func writeFailureRecord(_ error: any Error) {
       guard let url = options.reportURL else { return }
       if firstObservation != nil, let startedNs = measurementStartedNs {
@@ -124,8 +109,6 @@ import ScreenSharingDiagnostics
         "firstObservationTicks": firstObservation?.ticks ?? 0,
         "snapshots": ownedWorkload?.snapshots ?? "not used",
         "observationAtFailure": ownedWorkload?.observation("failure record (after cleanup)") ?? "not used",
-        // The event-log diagnostic record survives a failure (stop() already closed it before peer teardown and
-        // published the sidecar); a request that never reached construction is stated as not initialized.
         "rtcEventLog": failureRecordJSON(role: .receiver) ?? "not requested",
         "rtcEventLogSidecar": rtcEventLogSidecarOutcomes[.receiver] ?? "not requested",
         "senderRtcEventLog": failureRecordJSON(role: .sender) ?? "not requested",
@@ -133,7 +116,6 @@ import ScreenSharingDiagnostics
       ]
       try? JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
         .write(to: URL(fileURLWithPath: url.path + ".failure.json"), options: .atomic)
-      // Draw timestamps already recorded survive a failure too (same schema, marked partial).
       if let workload = ownedWorkload,
         var times = workload.workloadTimesReport(
           mediaMeasuredSeconds: measurementStartedNs.map { Double(ScreenSharingMetrics.nowNs - $0) / 1_000_000_000 }
@@ -157,11 +139,6 @@ import ScreenSharingDiagnostics
       synthetic = nil
       if ownedWorkload == nil { try? await capture?.stop() }
       if let workload = ownedWorkload {
-        // Every exit path (normal, error, cancel) goes through one boundary:
-        // the stop is credited only when the session recorded a successful
-        // stream stop; the window closes in order or is abandoned; only this
-        // window is ever hidden, at most once. A stop never attempted (error
-        // before the normal end) is attempted here and its result preserved.
         if workload.lifecycle.state == .capturing || workload.lifecycle.state == .workloadPaused {
           await workload.stopCapture()
         }
@@ -179,13 +156,9 @@ import ScreenSharingDiagnostics
       capture = nil
       picker?.stop()
       picker = nil
-      // The standalone display link is invalidated before the renderer's
-      // terminal stop so no supplied-drawable draw can follow it.
       displayLink?.stop()
       displayLink = nil
       metalView?.stop()
-      // Failure, cancellation or early close: stop a started event log exactly once before the peer closes;
-      // after a normal completion this is already final and does nothing.
       let measuredAtStop = mediaStartedNs.map { Double(ScreenSharingMetrics.nowNs - $0) / 1_000_000_000 }
       rtcEventLog?.closeEarly(measuredSeconds: measuredAtStop, reason: "runner stop before peer teardown")
       senderRtcEventLog?.closeEarly(measuredSeconds: measuredAtStop, reason: "runner stop before peer teardown")
@@ -236,8 +209,6 @@ import ScreenSharingDiagnostics
     }
 
     func writeDescription(_ description: ScreenSharingDescription, to url: URL) throws {
-      // Publish a complete private file atomically, refusing to replace a prior
-      // session. The receiver can never observe a partially written description.
       let data = try JSONEncoder().encode(description)
       let temporary = url.deletingLastPathComponent().appendingPathComponent(".screen-sharing-" + UUID().uuidString)
       let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
@@ -251,8 +222,6 @@ import ScreenSharingDiagnostics
       }
     }
 
-    /// Real diagnostic workflow, not a test synchronization primitive. Bounded
-    /// polling allows a human to transfer the signaling file without a server.
     func waitUntil(seconds: Double, condition: () -> Bool) async throws {
       let deadline = ContinuousClock.now + .seconds(seconds)
       while !condition() {

@@ -2,8 +2,6 @@ import CMD4C
 import Foundation
 
 extension MD4CParserContext {
-  // MARK: C callbacks
-
   static let enterBlockCallback:
     @convention(c) (
       MD_BLOCKTYPE, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
@@ -16,7 +14,6 @@ extension MD4CParserContext {
           ? context.blocks.count : nil
       }
 
-      // Nested block content terminates an implicit tight-list paragraph.
       if type != MD_BLOCK_DOC && type != MD_BLOCK_LI && type != MD_BLOCK_P {
         context.flushImplicitParagraph()
       }
@@ -229,8 +226,6 @@ extension MD4CParserContext {
           title: value.map { copiedAttribute($0.title) }.flatMap { $0.isEmpty ? nil : $0 }
         )
       default:
-        // Optional MD4C extensions are disabled; preserve their visible
-        // children if a future version nevertheless reports one.
         kind = .root
       }
       context.beginInline(kind)

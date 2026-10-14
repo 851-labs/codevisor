@@ -28,11 +28,9 @@ struct TranscriptFindResultsTests {
   @Test func streamingKeepsTheCurrentMatchOrLandsAtTheSamePosition() {
     var results = TranscriptFindResults(rows: rows, startingRow: 0)
     results.step(by: 1)
-    // A new row streams in above; the bar stays on the same occurrence.
     results.update(rows: [.init(rowKey: "new", count: 3)] + rows)
     #expect(results.current == .init(rowKey: "a", ordinal: 1))
     #expect(results.currentIndex == 4)
-    // That occurrence disappears; the bar lands on whatever now sits there.
     results.update(rows: [.init(rowKey: "a", count: 1), .init(rowKey: "c", count: 2)])
     #expect(results.current == .init(rowKey: "c", ordinal: 1))
   }

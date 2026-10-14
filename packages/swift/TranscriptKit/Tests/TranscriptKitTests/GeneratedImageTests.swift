@@ -62,7 +62,6 @@ struct GeneratedImageTests {
         return false
       })
     TranscriptReducer.apply(.toolCallUpdate(completedImage()), to: &turn)
-    // History initially loads only the attachments, before worked details.
     turn.entries = []
     turn.isGenerating = false
     let completed = AssistantMessage(turn: turn)

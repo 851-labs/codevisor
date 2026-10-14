@@ -31,19 +31,16 @@ describe("@codevisor/db", () => {
     try {
       token = await run(db.getOrCreateConnectionToken)
       expect(token).toMatch(/^hm_/)
-      // Stable within a run and verifiable as a bearer token.
       expect(await run(db.getOrCreateConnectionToken)).toBe(token)
       expect(await run(db.verifyBearerToken(token))).toBe(true)
     } finally {
       await run(db.close)
     }
 
-    // Survives a restart/update (reopen with a different serverId).
     const reopened = await run(makeDatabase({ filename, serverId: "renamed" }))
     try {
       expect(await run(reopened.getOrCreateConnectionToken)).toBe(token)
 
-      // Rotation issues a new token and retires the old one.
       const rotated = await run(reopened.rotateConnectionToken)
       expect(rotated).not.toBe(token)
       expect(await run(reopened.getOrCreateConnectionToken)).toBe(rotated)

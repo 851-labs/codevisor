@@ -3,8 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// "No project" drafts run in a single-use scratch folder, which has no
-/// repository: a worktree preference must never follow the draft there.
 @MainActor
 @Suite("SessionController no-project drafts")
 struct SessionControllerNoProjectTests {

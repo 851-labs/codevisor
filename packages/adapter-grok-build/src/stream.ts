@@ -56,11 +56,6 @@ const phaseCorrection = (
   }
 })
 
-/// Converts Grok's response-oriented stream into Codevisor's canonical message
-/// stream. Grok's Responses backend omits ACP messageId, while its private
-/// response notifications carry boundaries but are not themselves transcript
-/// events. This state machine supplies identity and retroactive phase tags at
-/// the adapter boundary so every downstream projection remains provider-free.
 export class GrokStreamNormalizer {
   private readonly sessions = new Map<string, GrokSessionStreamState>()
   private readonly fallbackOrdinals = new Map<string, number>()

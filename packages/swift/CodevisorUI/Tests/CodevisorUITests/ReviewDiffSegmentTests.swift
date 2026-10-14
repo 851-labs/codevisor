@@ -4,7 +4,6 @@ import TranscriptKit
 
 @Suite("Review diff folding")
 struct ReviewDiffSegmentTests {
-  /// "r" for a visible run, "g" for a folded gap, with its line count.
   private func shape(_ segments: [ReviewDiffSegment]) -> [String] {
     segments.map { segment in
       switch segment {
@@ -27,12 +26,8 @@ struct ReviewDiffSegmentTests {
   @Test(
     "Changes keep three lines of context; only runs of four or more fold",
     arguments: [
-      // One change mid-file: leading and trailing context fold.
       (lines: 40, changed: [20], expected: ["g16", "r8", "g17"]),
-      // Changes near both ends: nothing outside the context remains.
       (lines: 8, changed: [1, 8], expected: ["r10"]),
-      // Hunks whose context meets stay one run; a lone leading line is
-      // cheaper shown than folded.
       (lines: 20, changed: [5, 12], expected: ["r17", "g5"]),
     ] as [(lines: Int, changed: Set<Int>, expected: [String])]
   )
@@ -47,7 +42,6 @@ struct ReviewDiffSegmentTests {
 
     #expect(found.map(\.isLeading) == [true, false, false])
     #expect(found.map(\.isTrailing) == [false, false, true])
-    // Each hunk spans its change plus three lines either side.
     #expect(found.map(\.nextHunkHeader) == ["@@ -17,7 +17,7 @@", "@@ -57,7 +57,7 @@", nil])
   }
 
@@ -57,7 +51,6 @@ struct ReviewDiffSegmentTests {
     let middle = try #require(gaps(ReviewDiffSegment.segments(for: rows)).first { !$0.isLeading && !$0.isTrailing })
     #expect(middle.rows.count == 93)
 
-    // "Show next lines" under the first hunk, then expand up above the next.
     var expansions = [middle.id: ReviewGapExpansion(top: ReviewDiffSegment.expandStep)]
     var folded = try #require(
       gaps(ReviewDiffSegment.segments(for: rows, expansions: expansions)).first { $0.id == middle.id })
@@ -70,7 +63,6 @@ struct ReviewDiffSegmentTests {
     #expect(folded.rows.count == 53)
     #expect(folded.rows.last?.id == middle.rows[72].id)
 
-    // Opening past what's left shows the whole run, in order.
     expansions[middle.id]?.top = 100
     let all = ReviewDiffSegment.segments(for: rows, expansions: expansions)
     #expect(!gaps(all).contains { $0.id == middle.id })

@@ -52,10 +52,8 @@ struct ScreenSharingSourceIdleTests {
     monitor.recordEncoded(timestampNs: 20)
     #expect(monitor.evaluate(nowNs: Self.threshold) == .resubmit)
     #expect(monitor.evaluate(nowNs: Self.threshold) == .wait(untilNs: 2 * Self.threshold))
-    // A refresh re-offers the same buffer, so the encoded identity is the capture's.
     monitor.recordEncoded(timestampNs: 30)
     #expect(monitor.evaluate(nowNs: 2 * Self.threshold) == .idle(latestEncodedNs: 30))
-    // Older encoded content is never announced as current; re-offers slow down.
     #expect(monitor.recordSubmission(timestampNs: 40, nowNs: 3 * Self.threshold))
     var now = 3 * Self.threshold
     for attempt in 1...ScreenSharingSourceIdleMonitor.maximumQuickResubmissions {
@@ -70,7 +68,6 @@ struct ScreenSharingSourceIdleTests {
     monitor.recordEncoded(timestampNs: 40)
     #expect(monitor.evaluate(nowNs: now + 2 * slow) == .idle(latestEncodedNs: 40))
     #expect(monitor.evaluate(nowNs: now + 2 * slow) == .inactive)
-    // The next capture resets the attempt budget to the quick threshold.
     #expect(monitor.recordSubmission(timestampNs: 50, nowNs: now + 2 * slow))
     #expect(monitor.resubmissionCount == 0)
     #expect(monitor.evaluate(nowNs: now + 2 * slow + Self.threshold) == .resubmit)
@@ -112,19 +109,16 @@ struct ScreenSharingSourceIdleTests {
     #expect(!monitor.recordSubmission(timestampNs: 2, nowNs: nanoseconds(clock, since: origin)))
     monitor.recordEncoded(timestampNs: 2)
     clock.advance(by: .milliseconds(250))
-    // Activity during the wait defers the announcement by one more threshold.
     await clock.waitForSleep(.milliseconds(250))
     #expect(notices.isEmpty)
     clock.advance(by: .milliseconds(250))
     await attempted.wait(for: 1)
-    // The channel was unavailable: the notice is retained, not lost.
     #expect(notices.isEmpty && notifier.hasPendingNotice && clock.pendingCount == 0)
     notifier.flush()
     #expect(notifier.hasPendingNotice && attempted.value == 2)
     available = true
     notifier.flush()
     #expect(notices == [2] && !notifier.hasPendingNotice && resubmitted.value == 0)
-    // A dropped last frame is re-offered once; the announced content is the capture's.
     #expect(monitor.recordSubmission(timestampNs: 5, nowNs: nanoseconds(clock, since: origin)))
     notifier.activate()
     await clock.waitForSleep(.milliseconds(500), count: 2)
@@ -134,10 +128,8 @@ struct ScreenSharingSourceIdleTests {
     #expect(notices == [2])
     monitor.recordEncoded(timestampNs: 5)
     clock.advance(by: .milliseconds(500))
-    // Attempts so far: unavailable, flush while unavailable, flush, this notice.
     await attempted.wait(for: 4)
     #expect(notices == [2, 5] && clock.pendingCount == 0)
-    // Persistent failure keeps re-offering at the slow rate, never announcing stale content.
     #expect(monitor.recordSubmission(timestampNs: 8, nowNs: nanoseconds(clock, since: origin)))
     notifier.activate()
     for attempt in 1...ScreenSharingSourceIdleMonitor.maximumQuickResubmissions {
@@ -174,7 +166,6 @@ struct ScreenSharingSourceIdleTests {
     #expect(audit.latestDecodedTimestampNs == 10)
     #expect(audit.noticed(latestTimestampNs: 10) && audit.noticed(latestTimestampNs: 9))
     #expect(audit.pendingTargetNs == nil)
-    // Target 20 announced; recovery completes with a delayed older keyframe.
     #expect(!audit.noticed(latestTimestampNs: 20))
     #expect(audit.verify())
     #expect(!audit.verify())
@@ -184,11 +175,9 @@ struct ScreenSharingSourceIdleTests {
     audit.decoded(sourceTimestampNs: 21)
     #expect(audit.recoveryFinished() == false)
     #expect(audit.pendingTargetNs == nil && audit.recoveryFinished() == nil)
-    // Content arriving during the grace period needs no recovery.
     #expect(!audit.noticed(latestTimestampNs: 30))
     audit.decoded(sourceTimestampNs: 30)
     #expect(!audit.verify() && audit.recoveryFinished() == nil)
-    // A newer notice replaces the target; a retry checks it is still missing.
     #expect(!audit.noticed(latestTimestampNs: 40))
     #expect(!audit.noticed(latestTimestampNs: 41) && audit.pendingTargetNs == 41)
     #expect(audit.verify())
@@ -217,14 +206,11 @@ struct ScreenSharingSourceIdleTests {
     audit.decoded(sourceTimestampNs: 21, nowNs: 400)
     #expect(audit.targetMetAtTimestampNs == 300)
     #expect(audit.recoveryFinished() == false)
-    // A new notice starts a fresh measurement; content already present keeps
-    // its first-decode time from the bounded ring.
     #expect(audit.noticed(latestTimestampNs: 21))
     #expect(audit.targetMetAtTimestampNs == 400)
     #expect(!audit.noticed(latestTimestampNs: 30))
     audit.decoded(sourceTimestampNs: 30, nowNs: 500)
     #expect(audit.targetMetAtTimestampNs == 500 && !audit.verify())
-    // Content decoded before its notice keeps its first-decode time from the bounded ring.
     audit.decoded(sourceTimestampNs: 40, nowNs: 600)
     audit.decoded(sourceTimestampNs: 41, nowNs: 700)
     #expect(audit.noticed(latestTimestampNs: 40) && audit.targetMetAtTimestampNs == 600)
@@ -261,15 +247,12 @@ struct ScreenSharingSourceIdleTests {
     #expect(outcomes == [.verifiedAfterGrace, .verified])
     verifier.noticed(latestTimestampNs: 6)
     await clock.waitForSleep(.milliseconds(500), count: 2)
-    // A newer notice replaces the pending one and restarts its grace period.
     verifier.noticed(latestTimestampNs: 20)
     await clock.waitForSleep(.milliseconds(500), count: 3)
     #expect(clock.pendingCount == 1)
     clock.advance(by: .milliseconds(500))
     await settled.wait(for: 3)
     #expect(outcomes.last == .refresh && refreshed.value == 1)
-    // Recovery completes with a keyframe marked 10: the target 20 stays pending
-    // and a retry follows the first backoff delay.
     audit.decoded(sourceTimestampNs: 10)
     verifier.recoveryChanged(.init(revision: 1, needed: true))
     verifier.recoveryChanged(.init(revision: 2, needed: false))
@@ -279,10 +262,7 @@ struct ScreenSharingSourceIdleTests {
     #expect(refreshed.value == 1)
     clock.advance(by: .milliseconds(100))
     await refreshed.wait(for: 2)
-    // An executed retry is reported distinctly from its scheduling.
     #expect(outcomes.suffix(2) == [.retry, .retryExecuted])
-    // A second stale completion waits twice as long; content arriving during
-    // the delay cancels the retry (scheduled, never executed).
     verifier.recoveryChanged(.init(revision: 3, needed: false))
     await clock.waitForSleep(.milliseconds(200))
     audit.decoded(sourceTimestampNs: 20)
@@ -292,7 +272,6 @@ struct ScreenSharingSourceIdleTests {
     #expect(outcomes.filter { $0 == .retryExecuted }.count == 1)
     verifier.recoveryChanged(.init(revision: 4, needed: false))
     #expect(outcomes.count == 7)
-    // Retries never stop while the content is missing; the delay caps at 5 s.
     verifier.noticed(latestTimestampNs: 30)
     await clock.waitForSleep(.milliseconds(500), count: 4)
     clock.advance(by: .milliseconds(500))
@@ -308,7 +287,6 @@ struct ScreenSharingSourceIdleTests {
     }
     #expect(outcomes.filter { $0 == .retry }.count == 11 && audit.pendingTargetNs == 30)
     #expect(outcomes.filter { $0 == .retryExecuted }.count == 10)
-    // Closing cancels a pending retry; nothing runs afterwards.
     verifier.recoveryChanged(.init(revision: revision, needed: false))
     await clock.waitForSleep(.seconds(5), count: 4)
     let pending = verifier.close()

@@ -39,8 +39,6 @@ aws s3 cp "$release_notes" "s3://$bucket/$prefix/$notes_name" \
   --content-type text/markdown \
   --cache-control "public, max-age=31536000, immutable"
 
-# The macOS app ships for Apple silicon only; appcast-x64.xml is frozen at the
-# last Intel build.
 for arch in arm64; do
   archive="$artifact_dir/Codevisor-macOS-$arch.zip"
   [[ -f "$archive" ]] || { echo "Missing $archive" >&2; exit 1; }
@@ -77,12 +75,6 @@ for arch in arm64; do
     --cache-control "public, max-age=60"
 done
 
-# Server archives and the per-channel manifest publish on BOTH channels:
-# remote machines follow server/stable.json or server/alpha.json depending on
-# the update channel the client requests. The manifest version carries the
-# full tag version (alphas include their pre-release suffix) and the CI build
-# number, which the self-updater prefers for comparisons — successive alphas
-# share a core version, so version strings alone cannot order them.
 for target in linux-arm64 linux-x64 darwin-arm64 darwin-x64; do
   archive="$artifact_dir/codevisor-server-$target.tar.gz"
   checksum="$archive.sha256"
@@ -119,8 +111,6 @@ aws s3 cp "$manifest" "s3://$bucket/server/$channel.json" \
   --content-type application/json \
   --cache-control "public, max-age=60"
 
-# The native development bootstrap consumes one immutable GhosttyKit artifact
-# keyed by the build stamp. Publishing it on both channels is idempotent.
 shopt -s nullglob
 ghostty_archives=("$artifact_dir"/GhosttyKit-*.tar.gz)
 if [[ "${#ghostty_archives[@]}" -ne 1 ]]; then

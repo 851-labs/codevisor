@@ -6,10 +6,6 @@ import process from "node:process"
 
 import { describeExit, waitForExit } from "./dev-shared.mjs"
 
-/// Host-side tooling the dev runner shells out to: command runners, the
-/// per-worktree app icon, browser extension icons, signing identities, and
-/// the surgical termination of a previously launched dev app.
-
 export function makeCommandRunner(repoRoot) {
   function run(command, arguments_, cwd = repoRoot) {
     console.log(`\n$ ${command} ${arguments_.join(" ")}`)
@@ -40,10 +36,6 @@ export function makeCommandRunner(repoRoot) {
   return { capture, run }
 }
 
-// Locate apps/cloud/.dev.vars: this worktree first, then the main clone (via
-// git's common dir), so per-developer cloud config is created once and shared
-// by every worktree — including app-created ones. Returns {} when absent or
-// git is unavailable; the cloud runs fine on dev login alone.
 export async function readCloudDevVariables(repoRoot) {
   const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
   try {
@@ -53,9 +45,7 @@ export async function readCloudDevVariables(repoRoot) {
     }).trim()
     const mainRoot = resolve(repoRoot, commonDir, "..")
     if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
-  } catch {
-    // Not a git checkout (or git missing): worktree-local file only.
-  }
+  } catch {}
   for (const candidate of candidates) {
     let content
     try {

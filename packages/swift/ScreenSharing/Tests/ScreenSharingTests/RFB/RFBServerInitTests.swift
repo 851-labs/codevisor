@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// ClientInit and ServerInit (RFC 6143 §7.3): the shared flag the client
-/// writes, and every field of the twenty-four-byte header plus the name.
 struct RFBServerInitTests {
   private func serverInit(
     _ bytes: [UInt8], shared: Bool = true
@@ -12,7 +10,6 @@ struct RFBServerInitTests {
   ) {
     let transport = ScriptedTransport(RFBScript.bytes("RFB 003.008\n") + [1, 1] + u32(0) + bytes, chunk: 5)
     let outcome = try await performHandshake(transport, password: nil, shared: shared)
-    // Everything after the version and the chosen security type is ClientInit.
     return (outcome.parameters, Array(transport.written.dropFirst(13)))
   }
 
@@ -30,8 +27,6 @@ struct RFBServerInitTests {
     #expect(parameters.pixelFormat == .bgra32)
   }
 
-  /// Every pixel-format field comes back verbatim, including the two flags and
-  /// a big-endian, palette (non-true-colour) format this client would not use.
   @Test func pixelFormatFieldsSurviveTheRoundTrip() async throws {
     let exotic = RFBPixelFormat(
       bitsPerPixel: 16, depth: 15, bigEndian: true, trueColour: false, redMax: 31, greenMax: 63, blueMax: 1023,
@@ -49,7 +44,6 @@ struct RFBServerInitTests {
     #expect(try RFBPixelFormat.decode(noisy) == .bgra32)
   }
 
-  /// Any non-zero byte is true, not only 1 — servers in the wild send 0xff.
   @Test func flagsAreTrueForAnyNonZeroByte() throws {
     var flagged = RFBPixelFormat.bgra32.encoded
     flagged[2] = 0xff
@@ -73,8 +67,6 @@ struct RFBServerInitTests {
     #expect(parameters.name == String(repeating: "n", count: length))
   }
 
-  /// The name is bytes, not text: invalid UTF-8 becomes replacement characters
-  /// rather than failing the connection.
   @Test func anInvalidUTF8NameBecomesReplacementCharacters() async throws {
     let (parameters, _) = try await serverInit(RFBScript.serverInit(name: [0x41, 0xff, 0xfe, 0x42]))
     #expect(parameters.name == "A\u{fffd}\u{fffd}B")
@@ -89,8 +81,6 @@ struct RFBServerInitTests {
     }
   }
 
-  /// Every prefix of a valid ServerInit ends the same way: there is no field
-  /// boundary at which a short read is mistaken for a value.
   @Test func everyTruncationOfServerInitIsAClosedConnection() async throws {
     let complete = RFBScript.serverInit(width: 800, height: 600, name: Array("Desk".utf8))
     for length in 0..<complete.count {
@@ -102,8 +92,6 @@ struct RFBServerInitTests {
     #expect(parameters == RFBServerParameters(width: 800, height: 600, pixelFormat: .bgra32, name: "Desk"))
   }
 
-  /// The client sizes its framebuffer from ServerInit, so a server claiming a
-  /// desktop it cannot render fails the connection rather than the first paint.
   @Test(arguments: [(0, 100), (100, 0), (0, 0)])
   func aDegenerateDesktopSizeFailsTheConnect(_ width: Int, _ height: Int) async throws {
     let transport = ScriptedTransport(
@@ -114,8 +102,6 @@ struct RFBServerInitTests {
     }
   }
 
-  /// A successful connect resizes the framebuffer and immediately states the
-  /// format and encodings this client understands.
   @Test func connectSizesTheFramebufferThenStatesFormatAndEncodings() async throws {
     let transport = ScriptedTransport(RFBScript.openHandshake(width: 320, height: 200), chunk: 5)
     let client = try RFBClient(transport: transport)

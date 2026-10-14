@@ -4,12 +4,6 @@ import UniformTypeIdentifiers
 import CodevisorCore
 import CodevisorUI
 
-/// The new-chat page: a centered "What should we build in <project>?" title with
-/// an inline project dropdown, and the composer. The session is created only
-/// when the user sends.
-/// Surfaces the backing NSView of the new-chat pane's background so it can
-/// register as a whitespace-click zone with the workspace's focus
-/// controller (`handleTranscriptClick` needs an AppKit view for geometry).
 private struct PaneClickZoneCapture: NSViewRepresentable {
   let onReady: (NSView) -> Void
 
@@ -22,8 +16,6 @@ private struct PaneClickZoneCapture: NSViewRepresentable {
   func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Keeps a short project reconciliation invisible. If it outlives the normal
-/// 500 ms grace period, the blank surface becomes an explicit loading state.
 private struct DelayedNewChatLoadingView: View {
   @State private var showsSpinner = false
 
@@ -53,31 +45,12 @@ struct NewChatView: View {
   @Environment(\.theme) private var theme
   let store: SessionStore
   @Binding var selection: SidebarSelection?
-  /// Set when navigation opened the page for a specific machine/project.
-  /// It initializes the retained draft once; after that, the run-target
-  /// pickers own the draft and navigation must not reassert this value.
   var initialProjectTarget: NewChatTarget?
-  /// In-pane draft mode: the id of the DRAFT CHAT PANE hosting this
-  /// composer (inside a workspace). The created session binds to the pane
-  /// via `onCreatedInPane` instead of navigating, and the composer uses a
-  /// per-pane draft controller rather than the per-server page draft.
   var paneDraftId: UUID? = nil
   var onCreatedInPane: ((ChatSession) -> Void)? = nil
-  /// The pane's session ALREADY EXISTS (created eagerly so the sidebar
-  /// lists it before the first message): first send fills in its details
-  /// (title, harness, worktree/cwd) instead of creating a new record.
   var preCreatedSession: ChatSession? = nil
-  /// The WORKSPACE's shared focus controller (pane mode only). The
-  /// composer registers under the pre-created chat's id so pane/tab
-  /// clicks and the container's open sequence can focus it exactly like
-  /// a started chat's composer.
   var paneFocus: TerminalFocusController? = nil
-  /// The hosting workspace (pane mode): supplies the workspace's one
-  /// working directory (worktree or project root), stamped onto the
-  /// session at first send.
   var hostWorkspaceId: UUID? = nil
-  /// The one-shot handoff from onboarding waits for the authoritative
-  /// project refresh before deciding between setup and the composer.
   var requiresInitialProjectResolution = false
   var onInitialProjectResolutionCompleted: (() -> Void)? = nil
 
@@ -85,22 +58,14 @@ struct NewChatView: View {
   @State var selectedProjectId: UUID?
   @State private var appliedInitialProjectTarget: NewChatTarget?
   @State private var focus = TerminalFocusController()
-  /// Which run picker chip the pointer is over; its neighbouring dividers
-  /// hide so the hover capsule never butts against a hairline.
   @State var hoveredRunPicker: RunPicker?
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
-  /// Linked checkouts share a group ID, so a favorite follows the repository
-  /// when the machine picker changes which checkout is available. The reserved
-  /// no-project key represents the choice available on every machine.
   @ClientPreference("composer.favoriteProjects", default: [])
   var favoriteProjectIDs: [ProjectGroup.ID]
   @Namespace private var composerGlassNamespace
   @Environment(\.openSettings) var openSettings
 
-  /// Only an explicit target resolves to a project. No fallback to the
-  /// newest project: that is usually the scratch folder the previous
-  /// no-project chat was just sent from, and "No project" is the default.
   private var selectedProject: Project? {
     projects.first { $0.id == selectedProjectId && !$0.isScratch }
   }
@@ -119,7 +84,6 @@ struct NewChatView: View {
       if requiresInitialProjectResolution {
         DelayedNewChatLoadingView()
       } else {
-        // 2:3 spacer split sits the composer slightly above true center.
         Spacer()
         Spacer()
         VStack(spacing: 22) {
@@ -128,9 +92,6 @@ struct NewChatView: View {
             VStack(alignment: .leading, spacing: 8) {
               GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
                 VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
-                  // A remembered or carried model this machine no longer
-                  // offers: shown until the user picks another model or
-                  // dismisses it.
                   if let message = controller.modelUnavailableMessage {
                     ComposerNoticeRail(
                       message,
@@ -143,15 +104,8 @@ struct NewChatView: View {
                     onTextViewReady: { textView in
                       focus.composerTextView = textView
                       if let paneFocus, let chatId = preCreatedSession?.id {
-                        // REGISTRATION ONLY, like ChatScreen:
-                        // the container's keyed focus request
-                        // (open sequence, pane/tab clicks)
-                        // applies the moment this lands.
                         paneFocus.registerComposer(textView, forChat: chatId)
                       } else {
-                        // Standalone page: the text view isn't
-                        // attached to a window yet during
-                        // makeNSView; focus once it is.
                         DispatchQueue.main.async { focus.focusComposer() }
                       }
                     },
@@ -173,11 +127,6 @@ struct NewChatView: View {
                     }
                     .font(.callout)
                     .disabled(controller.isSubmitting)
-                    // The chips' hover capsules bleed 5pt
-                    // sideways and 3pt vertically past their
-                    // layout (HoverIconButtonStyle .chip), so
-                    // 6/4 leaves an even 1pt ring between the
-                    // highlight and the glass pill's edge.
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .contentShape(Capsule())
@@ -204,10 +153,6 @@ struct NewChatView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(theme.contentBackground)
-    // Pinned to the pane's top edge as an overlay: appearing or
-    // dismissing the notice never shifts the composer's layout. Update
-    // notices moved to the update center; only setup failures remain
-    // contextual here.
     .overlay(alignment: .top) {
       if let controller, case let .failed(message) = controller.status {
         setupFailureBanner(message)
@@ -216,9 +161,6 @@ struct NewChatView: View {
           .padding(.top, 12)
       }
     }
-    // The whole pane is a click-to-focus zone, exactly like a started
-    // chat's transcript: whitespace clicks land in the composer (the
-    // pane's one input) unless the click claimed focus itself.
     .background {
       if let paneFocus, let chatId = preCreatedSession?.id {
         PaneClickZoneCapture { view in
@@ -227,8 +169,6 @@ struct NewChatView: View {
       }
     }
     .attachmentDropTarget(controller)
-    // "No project" is a stable choice, so a project arriving later never
-    // hijacks the draft; only a missing controller gets set up here.
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {
         setUpController()
@@ -237,9 +177,6 @@ struct NewChatView: View {
     .onChange(of: selectedDraftProjectIsDeleted, initial: true) { _, isDeleted in
       if isDeleted, let controller { selectNoProject(controller) }
     }
-    // Established installs stay stale-while-revalidate. The one-shot
-    // onboarding handoff keeps its loading surface mounted until this
-    // same authoritative refresh finishes.
     .task(id: composerPreparationIdentity) {
       await refreshComposerTarget()
     }
@@ -247,20 +184,11 @@ struct NewChatView: View {
       guard !requiresInitialProjectResolution else { return }
       setUpController()
     }
-    // Settings lives in a separate window, so this page can remain mounted
-    // while sign-in changes a harness from unavailable to ready. Refetch
-    // the live capabilities snapshot when that machine's catalog changes.
     .onChange(of: harnessCatalogRevision) { _, _ in
       guard let controller else { return }
-      // Mark the mounted draft stale synchronously, but retain its usable
-      // picker values until the replacement arrives.
       controller.invalidateHarnessCapabilities()
       Task { await controller.refreshHarnessCapabilities() }
     }
-    // A draft restored onto a cloud machine can mount BEFORE the cloud
-    // relay is routable — its capability fetch fails (never silently
-    // answering as another machine). Re-resolve the client and retry
-    // when the reachable machine set changes.
     .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
       guard let controller else { return }
       if let canonical = canonicalProjectTarget(for: controller) {
@@ -291,15 +219,11 @@ struct NewChatView: View {
       ))
   }
 
-  // MARK: - Title
-
   private var title: some View {
     Text("What should we build?")
       .font(.emptyStateTitle)
   }
 
-  /// A rebooting server remains a calm loading state beneath the composer.
-  /// Terminal setup errors use the pane's established top-banner position.
   @ViewBuilder
   private func statusLabel(_ controller: SessionController) -> some View {
     if controller.isServerReady, let waitMessage = controller.serverWaitMessage {
@@ -322,7 +246,6 @@ struct NewChatView: View {
         .font(.subheadline)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
-      // Relaunching the app restarts the managed server too.
       if message == serverUnreachableErrorMessage {
         Button("Restart") { AppRelauncher.relaunch() }
           .buttonStyle(.bordered)
@@ -338,18 +261,11 @@ struct NewChatView: View {
     .accessibilityLabel("Could not start chat. \(message)")
   }
 
-  // MARK: - Setup
-
   private func setUpController() {
-    // Only an explicit entry point picks a project up front; otherwise the
-    // draft store restores the remembered one and a fresh draft starts
-    // with no project at all.
     selectedProjectId = initialProjectTarget?.projectId
     let project =
       selectedProject
       ?? Project.runTargetPlaceholder(serverId: composerServerId)
-    // Keep the original draft controller path: it owns both the complete
-    // per-composer snapshot and its correctly-scoped composer defaults.
     let controller: SessionController
     if let paneDraftId {
       guard let workspaceId = hostWorkspaceId else { return }
@@ -363,16 +279,10 @@ struct NewChatView: View {
       controller = store.draft(project: project)
     }
     if controller.project.id != project.id || controller.project.serverId != project.serverId {
-      // Follow the draft's own project so the title matches the
-      // composer state the user left.
       selectedProjectId =
         controller.project.isRunTargetPlaceholder
         ? nil : controller.project.id
     }
-    // An explicit entry point ("New chat here") initializes even a
-    // retained draft, but only once for this navigation target. Machine
-    // and project picker actions after mount own the draft and must not be
-    // undone when setup-related tasks re-evaluate.
     if paneDraftId == nil,
       let initialProjectTarget,
       appliedInitialProjectTarget != initialProjectTarget
@@ -389,8 +299,6 @@ struct NewChatView: View {
           }
         }
       } else if let machine = environment.machines.machine(for: initialProjectTarget.serverId) {
-        // A machine alone: move the draft as the machine picker would,
-        // keeping its project when that machine has a checkout of it.
         appliedInitialProjectTarget = initialProjectTarget
         selectTargetMachine(machine, controller: controller)
       }
@@ -410,15 +318,8 @@ struct NewChatView: View {
           harnessId: controller.selectedHarnessId
         )
       {
-        // The record already exists (eager creation put it in the
-        // sidebar, already stamped with the workspace's directory);
-        // first send fills in what's now known.
         session = updated
       } else {
-        // Page mode: the session is born in the picked project. A
-        // worktree draft has no directory yet — the worktree
-        // materializes right after this and lands on the records via
-        // onWorktreeCreated below; the workspace inherits it too.
         let workspace = hostWorkspaceId.flatMap {
           environment.workspaces.workspace(id: $0)
         }
@@ -441,8 +342,6 @@ struct NewChatView: View {
         )
         store?.applyWorktree(worktree, toWorkspaceOf: session.id)
       }
-      // The eager connection may already hold an agent session id; persist
-      // it, and capture any future-created id too.
       if let agentSessionId = controller.connectedAgentSessionId {
         environment.projectList.setAgentSessionId(
           agentSessionId,
@@ -457,10 +356,6 @@ struct NewChatView: View {
           serverId: session.serverId
         )
       }
-      // Keep the session/workspace, but put this same controller back
-      // behind the original draft persistence hooks. The restored text,
-      // attachments, harness/config, run context, and goal state then
-      // survive navigation and relaunch exactly as they did before.
       controller.onSetupFailed = { [weak controller] in
         guard let controller else { return }
         controller.serverSession = nil
@@ -477,23 +372,14 @@ struct NewChatView: View {
       }
       store.register(controller, for: session)
       if let paneDraftId, let onCreatedInPane {
-        // In-pane draft: bind the pane to its new session in place —
-        // no navigation, the workspace stays exactly where it is.
         store.removePaneDraft(paneId: paneDraftId)
         onCreatedInPane(session)
       } else {
-        // The workspace materializes AROUND the sent chat: rooted in
-        // the picked directory, fixed for every tab it ever hosts.
         let workspace = store.createWorkspace(for: session, project: project)
         controller.hostWorkspaceId = workspace.id
-        // Persist the new-workspace choices as one latest-value snapshot.
-        // Sending never writes model defaults: only explicit picks do.
-        // The encoder/SQLite work stays on the shared utility queue.
         environment.composerDefaults.performPersistenceBatch(
           flushImmediately: true
         ) {
-          // A scratch folder is single-use; remember the CHOICE of no
-          // project rather than the folder it happened to get.
           environment.composerDefaults.rememberNewWorkspaceProject(
             serverId: project.serverId,
             projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
@@ -505,9 +391,6 @@ struct NewChatView: View {
             )
           }
         }
-        // Select the locally complete workspace in this send turn.
-        // Remote setup continues after this callback and must not
-        // delay workspace presentation.
         store.selectChat(session)
         selection = .session(serverId: session.serverId, id: session.id)
       }

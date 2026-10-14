@@ -3,8 +3,6 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-// MARK: - Actions
-
 extension HarnessAuthenticationScreen {
   func load() async {
     methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
@@ -105,8 +103,6 @@ extension HarnessAuthenticationScreen {
   }
 
   func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
-    // Fleet credentials (OpenCode, Pi) sign in through a machine; fleet
-    // account rows sign in right here.
     if isShared, !HarnessRegistry.descriptor(for: harness.id).usesFleetAccountRows, method.kind != "apiKey" {
       machineSignIn?(HarnessMachineSignIn())
       return
@@ -118,7 +114,6 @@ extension HarnessAuthenticationScreen {
     }
   }
 
-  /// Completes a pasteCode flow; returns an error message for the sheet.
   func submitPastedCode(_ code: String) async -> String? {
     guard let flow else { return "This sign-in attempt has expired — start again." }
     do {
@@ -140,7 +135,6 @@ extension HarnessAuthenticationScreen {
     }
   }
 
-  /// Runs an API-key login; returns an error message for the sheet.
   func submitApiKey(
     account: ServerHarnessAccount,
     method: ServerHarnessAuthMethod,
@@ -202,8 +196,6 @@ extension HarnessAuthenticationScreen {
         return
       }
       if account.authState == "error" || account.authState == "expired" {
-        // Friendly text only — `detail` carries the probe's technical
-        // cause (up to a crashed CLI's stderr) and never reaches the UI.
         let message =
           account.authState == "expired"
           ? "Sign-in expired. Try signing in again."
@@ -216,8 +208,6 @@ extension HarnessAuthenticationScreen {
         return
       }
     }
-    // The waiting spinner must never outlive the wait: a login that
-    // hasn't completed after ten minutes is not going to.
     guard !Task.isCancelled, flow != nil else { return }
     pollingTask = nil
     await cancelFlow()

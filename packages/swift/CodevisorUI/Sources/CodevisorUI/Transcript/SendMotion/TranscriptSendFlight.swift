@@ -12,10 +12,6 @@ import SwiftUI
 
 let transcriptSendLog = Logger(subsystem: "dev.codevisor.transcript", category: "send")
 
-// MARK: - Overlay
-
-/// A pass-through layer above everything in a window, including the glass
-/// composer and sheets, so a message can visibly leave the composer.
 public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
   #if canImport(UIKit)
     init(window: UIWindow) {
@@ -35,10 +31,8 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
       return overlay
     }
 
-    /// The window whose views flights start from and land in.
     var hostWindow: UIWindow? { window }
 
-    /// Kept attached; an empty overlay draws nothing.
     func releaseIfIdle() {}
   #else
     init() {
@@ -50,10 +44,6 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
     override public var isFlipped: Bool { true }
     override public func hitTest(_: NSPoint) -> NSView? { nil }
 
-    /// The window whose views flights start from and land in. The overlay
-    /// itself lives in a transparent child window above it: a SwiftUI
-    /// window's content view manages its own subviews, and re-inserting a
-    /// foreign overlay there strips its layers' animations mid-flight.
     private(set) weak var hostWindow: NSWindow?
 
     static func overlay(in window: NSWindow) -> TranscriptSendOverlayView? {
@@ -71,7 +61,6 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
       return overlay
     }
 
-    /// Detaches the child window once nothing is in flight.
     func releaseIfIdle() {
       guard subviews.isEmpty, let overlayWindow = window, let parent = overlayWindow.parent else { return }
       parent.removeChildWindow(overlayWindow)
@@ -96,7 +85,6 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
 }
 
 #if canImport(AppKit) && !canImport(UIKit)
-  /// A borderless, transparent, click-through window that carries flights.
   final class TranscriptSendOverlayWindow: NSWindow {
     let overlay = TranscriptSendOverlayView()
 
@@ -120,9 +108,6 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
   }
 #endif
 
-// MARK: - Staging
-
-/// A solid bubble-shaped backing for the held composer glyphs.
 final class TranscriptSendPillView: TranscriptSendPlatformView {
   var fill: CGColor? {
     didSet { transcriptSendLayer?.backgroundColor = fill }
@@ -149,9 +134,6 @@ final class TranscriptSendPillView: TranscriptSendPlatformView {
   required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
-/// The composer's glyphs, lifted into the window overlay on the Send tap.
-/// The editor clears underneath in the same frame, so nothing visibly
-/// changes until the transcript flies this into the new bubble.
 @MainActor
 public final class TranscriptSendStage {
   let snapshot: TranscriptSendPlatformView
@@ -201,23 +183,12 @@ public final class TranscriptSendStage {
   }
 }
 
-/// Composer snapshots waiting for their transcript, one per chat. The
-/// composer and the transcript that receives the message are different
-/// views (New Chat's composer is not even in the destination screen), so
-/// they meet here by session.
 @MainActor
 public final class TranscriptSendStaging {
   public static let shared = TranscriptSendStaging()
 
   private var stages: [ObjectIdentifier: TranscriptSendStage] = [:]
 
-  /// Holds the editor's current glyphs in place above the composer.
-  /// - Parameters:
-  ///   - textView: The composer's text view, before it clears.
-  ///   - textRect: Its laid-out glyphs, in `textView`'s coordinates.
-  ///   - lineHeight: One line of the editor's text (its caret height).
-  ///   - bubble: The user bubble tint, and `theme` for the transcript
-  ///     backdrop it sits on: the held glyphs become a solid bubble at once.
   public func stage(
     session: ObjectIdentifier,
     textView: TranscriptSendPlatformView,
@@ -240,9 +211,6 @@ public final class TranscriptSendStaging {
     var visibleText = glyphRect.intersection(editorFrame)
     if visibleText.isNull || visibleText.isEmpty { visibleText = glyphRect }
     let insets = TranscriptSendFlightGeometry.bubbleTextInsets
-    // The text becomes a bubble where it is: a solid pill (the bubble
-    // tint over the transcript's backdrop, exactly as it lands) holds
-    // the glyphs until the transcript flies them into the new row.
     let pill = TranscriptSendPillView(
       frame: visibleText.insetBy(dx: -insets.horizontal, dy: -insets.vertical))
     pill.fill = Self.compositedColor(
@@ -269,7 +237,6 @@ public final class TranscriptSendStaging {
       deadline: .now() + TranscriptSendMotion.stagingTimeout, execute: timeout)
   }
 
-  /// `top` drawn over `bottom`, resolved in `view`'s appearance.
   private static func compositedColor(
     _ top: Color, over bottom: Color, in view: TranscriptSendPlatformView
   ) -> CGColor {
@@ -300,7 +267,6 @@ public final class TranscriptSendStaging {
     stages[session] != nil
   }
 
-  /// Hands the staged glyphs to the flight that will carry them.
   func take(session: ObjectIdentifier) -> TranscriptSendStage? {
     guard let stage = stages.removeValue(forKey: session) else { return nil }
     stage.timeout?.cancel()
@@ -308,14 +274,11 @@ public final class TranscriptSendStaging {
     return stage
   }
 
-  /// The send did not reach a transcript (a failed guard, a queued prompt).
   public func cancel(session: ObjectIdentifier, animated: Bool = false) {
     stages.removeValue(forKey: session)?.remove(animated: animated)
   }
 
   #if canImport(UIKit)
-    /// A sheet expanding above the window must not cover a message in
-    /// flight: keep every overlay frontmost.
     public func bringOverlaysToFront() {
       for scene in UIApplication.shared.connectedScenes {
         guard let scene = scene as? UIWindowScene else { continue }
@@ -330,8 +293,6 @@ public final class TranscriptSendStaging {
     private static func visibleBounds(of view: UIView) -> CGRect { view.bounds }
 
     private static func snapshot(of view: UIView) -> UIView? {
-      // The caret takes the view's tint; clear it for the capture so only
-      // the glyphs leave the composer.
       let tint = view.tintColor
       view.tintColor = .clear
       defer { view.tintColor = tint }
@@ -347,7 +308,6 @@ public final class TranscriptSendStaging {
       guard !bounds.isEmpty, let bitmap = view.bitmapImageRepForCachingDisplay(in: bounds) else {
         return nil
       }
-      // Only the glyphs leave the composer, never the caret.
       let textView = view as? NSTextView
       let caret = textView?.insertionPointColor
       textView?.insertionPointColor = .clear
@@ -363,17 +323,6 @@ public final class TranscriptSendStaging {
   #endif
 }
 
-// MARK: - Flight
-
-/// One message leaving the composer: a copy of its real row, laid out
-/// exactly as the transcript will draw it, springs from the composer's
-/// glyphs into the row's slot, bubble and text scaling together as one.
-/// The real row stays hidden underneath until landing.
-///
-/// Every movement is a render-server spring, and the real row's later
-/// moves (history making room, a status row arriving, a sheet expanding)
-/// are followed with additive springs, so the flight never waits on the
-/// main thread or on the server.
 @MainActor
 public final class TranscriptSendFlight {
   private let stage: TranscriptSendStage
@@ -387,12 +336,8 @@ public final class TranscriptSendFlight {
   private var completion: (@MainActor () -> Void)?
   private var hasEnded = false
 
-  /// The flight's settle time, for the destination's bounded hide.
   public static var duration: TimeInterval { TranscriptSendMotion.bubble.settlingDuration() }
 
-  /// Begins a flight into `target` (the real, laid-out row host) using the
-  /// glyphs staged for `session`. Returns nil when nothing was staged or the
-  /// target is not in a window, so the caller can fall back to a lift.
   public static func begin(
     session: ObjectIdentifier,
     rowContent: AnyView,
@@ -407,8 +352,6 @@ public final class TranscriptSendFlight {
       return nil
     }
     if stage.overlay !== overlay {
-      // New Chat can stage in one window-level overlay and land in a
-      // screen that was mounted later: re-home the glyphs, same frame.
       overlay.addSubview(stage.snapshot)
       stage.overlay = overlay
     }
@@ -435,10 +378,6 @@ public final class TranscriptSendFlight {
     targetOrigin = rowFrame.origin
     let content = AnyView(rowContent.environment(\.isTranscriptSendProxy, true))
 
-    // The copy is hosted inside a plain container the flight owns, and
-    // every animation goes on the container. A hosting view manages its
-    // own layer (safe area and keyboard updates relayout it), and a
-    // SwiftUI update must never be able to drop the flight's animations.
     #if canImport(UIKit)
       let controller = UIHostingController(rootView: content)
       controller.view.backgroundColor = .clear
@@ -476,8 +415,6 @@ public final class TranscriptSendFlight {
         : TranscriptSendFlightGeometry(
           editorFrame: stage.editorFrame, textRect: stage.textRect, bubbleFrame: frame)
     }
-    // Attachment-only rows have no bubble: rise straight up from the
-    // editor's bottom edge, scaling about the row's bottom center.
     let rowOffset =
       geometry?.rowOffset
       ?? CGSize(width: 0, height: stage.editorFrame.maxY - proxy.frame.maxY)
@@ -488,14 +425,7 @@ public final class TranscriptSendFlight {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
 
-    // The bubble and its text move as one: a uniform scale from slightly
-    // small (as measured from iMessage) plus the travel from the
-    // composer, both on the bubble spring. The scale pivots on the text's
-    // first glyph, so that glyph starts exactly on the composer's and the
-    // text can never leave its bubble.
     let startScale = TranscriptSendMotion.bubbleStartScale
-    /// One transform for everything that flies: travel from the composer
-    /// plus a scale pivoting on the text origin, both on the bubble spring.
     func addFlight(to layer: CALayer?, travel: CGSize) -> CASpringAnimation? {
       guard let layer else { return nil }
       let pivot = CGSize(
@@ -518,13 +448,6 @@ public final class TranscriptSendFlight {
       return move
     }
 
-    // The composer's glyphs share the bubble's exact transform while they
-    // crossfade into its text: their model sits where the bubble's text
-    // lands, so both pivot on the same point and never drift apart.
-    // Only a single line wraps identically in the composer and the bubble.
-    // Multi-line text re-wraps at the bubble's width, so crossfading would
-    // show two layouts at once, spilling past the bubble: the bubble takes
-    // over at the first frame instead.
     let crossfades =
       geometry.map {
         $0.isSingleLine(textRect: stage.textRect.intersection(stage.editorFrame), lineHeight: stage.lineHeight)
@@ -556,9 +479,6 @@ public final class TranscriptSendFlight {
     CATransaction.commit()
   }
 
-  /// Keeps the flight aimed at the real row after it moves: the row's new
-  /// slot becomes the flight's model position, and an additive spring
-  /// carries the in-flight presentation there without a jump.
   public func follow(_ target: TranscriptSendPlatformView) {
     guard !hasEnded, let overlay else { return }
     guard target.window != nil, target.window === overlay.hostWindow else {
@@ -584,8 +504,6 @@ public final class TranscriptSendFlight {
     CATransaction.commit()
   }
 
-  /// Ends the flight now: the real row is revealed by the caller in the
-  /// same transaction, so the proxy and the row never both show or both hide.
   public func land() {
     guard !hasEnded else { return }
     hasEnded = true
@@ -600,8 +518,6 @@ public final class TranscriptSendFlight {
     CATransaction.commit()
   }
 }
-
-// MARK: - Platform helpers
 
 extension TranscriptSendPlatformView {
   var transcriptSendLayer: CALayer? { layer }

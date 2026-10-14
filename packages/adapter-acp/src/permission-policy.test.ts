@@ -29,7 +29,6 @@ describe("ACP permission policy", () => {
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
     policy.sessionModes("s", modes("build"))
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
-    // An agent offering only a lasting allow gets that.
     expect(policy.automaticOutcome(request({ options: options.slice(1) }))).toEqual(
       selected("always")
     )
@@ -43,10 +42,8 @@ describe("ACP permission policy", () => {
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
     policy.modeChanged("s", "read-only")
     expect(policy.automaticOutcome(request())).toBeUndefined()
-    // A session reloaded without modes no longer remembers the old ones.
     policy.sessionModes("s", undefined)
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
-    // A change for a session without modes has nothing to update.
     policy.modeChanged("s", "plan")
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
   })

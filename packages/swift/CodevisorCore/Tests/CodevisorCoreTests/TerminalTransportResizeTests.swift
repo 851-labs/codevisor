@@ -19,7 +19,6 @@ private final class RecordingSocket: ServerWebSocketConnecting, @unchecked Senda
     didSend.signal()
   }
 
-  /// Never delivers: the test only reads what the transport sends.
   func receive() async throws -> ServerWebSocketMessage {
     try await withCheckedThrowingContinuation { continuation in
       lock.withLock {
@@ -50,9 +49,6 @@ private struct CreatedTerminal: ServerRequestTransport {
   }
 }
 
-/// The shell must learn the renderer's real size even when the view lays
-/// out before the terminal's socket exists; a stale width makes the shell
-/// redraw its prompt over itself as the user types.
 @MainActor
 @Suite("Terminal transport resize")
 struct TerminalTransportResizeTests {
@@ -67,11 +63,8 @@ struct TerminalTransportResizeTests {
       ),
       onEvent: { _ in }
     )
-    // The view's first layout reports its size while the terminal is
-    // still being created with the placeholder size.
     transport.sendResize(cols: 142, rows: 48)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
-    // A keystroke after connecting: the resize must already be ahead of it.
     transport.sendInput("x")
     await sockets.socket.didSend.wait()
 

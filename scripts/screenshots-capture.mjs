@@ -11,8 +11,6 @@ import { runXcodebuild } from "./xcodebuild.mjs"
 
 const execute = promisify(execFile)
 
-// Both platforms use isolated builds, identical attachment validation, and the
-// same gallery/manifest format. Only device setup and Xcode arguments differ.
 export async function createCapture(root, platform, options) {
   await mkdir(options.output, { recursive: true })
   const output = await mkdtemp(join(options.output, "capture-"))
@@ -106,8 +104,6 @@ export async function createCapture(root, platform, options) {
   return { output, command, build, exportImages, finish }
 }
 
-// Keep screen-recording permission on the invoking terminal, instead of on a
-// newly signed XCTest runner. XCTest requests capture only after checking the UI.
 async function captureMacWindows(directory) {
   await mkdir(directory, { recursive: true })
   const path = `/${randomUUID()}`

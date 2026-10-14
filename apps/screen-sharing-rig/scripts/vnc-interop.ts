@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// `bun run vnc:interop`: VNC validation layer L3. Builds (or reuses) the pinned TigerVNC image, starts it on an OS-chosen loopback port,
-// waits for the RFB greeting, runs the Swift interop suites against it, and
-// always removes the container. Exits non-zero unless the suites ran, none
-// were skipped, and all passed.
 import { spawn, spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { connect } from "node:net"
@@ -93,7 +89,6 @@ let status = 1
 try {
   const port = parseDockerPort(docker(["port", container, `${defaults.containerPort}/tcp`]).stdout)
   await waitForGreeting(port)
-  // Xvnc answers before the entrypoint has painted the known desktop; wait for it too.
   await waitForReady(container)
   const environment = interopEnvironment({
     port,
@@ -121,7 +116,6 @@ try {
 }
 process.exit(status)
 
-/// The entrypoint prints "vnc-interop: ready" once the root colour and pointer are set.
 async function waitForReady(container: string, deadlineMs = 30_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
@@ -132,11 +126,9 @@ async function waitForReady(container: string, deadlineMs = 30_000): Promise<voi
   throw new Error(`The interop desktop wasn't ready within ${deadlineMs / 1000} s`)
 }
 
-/// Real I/O: connect until the server's 12-byte "RFB 003.00x\n" greeting arrives.
 async function waitForGreeting(port: number, deadlineMs = 30_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
-    // Retries are sequential by design: each attempt waits for the previous one.
     const greeting = await new Promise<string | null>((resolve) => {
       const socket = connect({ host: "127.0.0.1", port })
       let data = ""

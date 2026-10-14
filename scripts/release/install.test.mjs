@@ -11,9 +11,6 @@ const stableURL = "https://updates.codevisor.dev/server/stable.json"
 const githubLatestURL = "https://api.github.com/repos/851-labs/codevisor/releases/latest"
 const downloadBase = "https://github.com/851-labs/codevisor/releases/download"
 
-// The faked commands read each case's paths from its environment, so they are
-// written once: macOS assesses every new executable on its first run, which
-// costs ~100ms per file and serializes cases that would otherwise overlap.
 const sharedRoot = mkdtempSync(join(tmpdir(), "codevisor-installer-commands-"))
 after(() => rmSync(sharedRoot, { recursive: true, force: true }))
 const sharedCommands = join(sharedRoot, "commands")
@@ -32,7 +29,6 @@ for (const [command, body] of Object.entries({
   launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
   osascript: "exit 0",
   sysctl: 'printf "%s\\n" "${TEST_HW_ARM64:-}"',
-  // Stop the macOS path before it can touch /Applications or a running app.
   hdiutil: "exit 71",
   sha256sum: `exec '${process.execPath.replaceAll("'", "'\\''")}' '${join(sharedRoot, "sha256.mjs")}' "$@"`
 })) {
@@ -56,7 +52,6 @@ else writeFileSync(args[output + 1], body);
   { mode: 0o755 }
 )
 
-// Runs a piped script without blocking, so the installer cases run in parallel.
 const runShell = (input, options) =>
   new Promise((resolve) => {
     const child = spawn("/bin/sh", [], options)
@@ -69,8 +64,6 @@ const runShell = (input, options) =>
     child.stdin.end(input)
   })
 
-// Exercise the piped shell script, real archive extraction, and CLI links.
-// Only network responses, platform detection, and service commands are faked.
 const install = async (t, options = {}) => {
   const root = mkdtempSync(join(tmpdir(), "codevisor-installer-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -119,8 +112,6 @@ const install = async (t, options = {}) => {
     })
   }
   const result = await runShell(installer, {
-    // A new session has no controlling terminal, so /dev/tty prompts fail
-    // fast instead of waiting on the developer's terminal.
     detached: true,
     env: {
       PATH: `${bin}:${sharedCommands}:/usr/bin:/bin`,
@@ -151,7 +142,6 @@ const install = async (t, options = {}) => {
   }
 }
 
-// Each case owns its temporary root and environment.
 describe("install.sh", { concurrency: true }, () => {
   for (const uid of [0, 1000]) {
     test(`Linux uid ${uid} uses the same canonical home data directory`, async (t) => {
@@ -168,8 +158,6 @@ describe("install.sh", { concurrency: true }, () => {
   }
 
   test("an invite joins the account without a prompt, passing the code on stdin", async (t) => {
-    // The fake CLI records how it was called: args, stdin, and whether the
-    // secret leaked into its environment.
     const cli = [
       'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
       'printf "stdin=%s\\n" "$(cat)" >> "$TEST_ROOT/cli.log"',

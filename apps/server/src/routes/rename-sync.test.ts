@@ -57,7 +57,6 @@ describe("shared names", () => {
       })
     ]
     for (const events of await Promise.all(readers)) expect(events).toEqual(expected)
-    // A client reconnecting later gets the same names from its snapshot.
     expect((await jsonRequest(server, "/v1/workspaces")).body).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "shared-workspace", name: "Shared workspace" })

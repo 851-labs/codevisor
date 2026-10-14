@@ -1,11 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Which rows of a planned window are fully presentable. Used by the bottom
-/// jump, initial presentation, and window promotion gates.
 public enum TranscriptMountedWindowReadiness {
-  /// The keys whose measurement is committed (present and not stale) and
-  /// whose host reports ready.
   public static func resolvedKeys(
     required: Set<String>,
     measurements: TranscriptMeasurementLedger,
@@ -19,8 +15,6 @@ public enum TranscriptMountedWindowReadiness {
       })
   }
 
-  /// Whether one mounted row may be treated as final: measured, not stale,
-  /// not awaiting a commit, and fully presentable.
   @MainActor
   public static func isPromotable(
     key: String,
@@ -35,7 +29,6 @@ public enum TranscriptMountedWindowReadiness {
       && host.isFullyPresentable
   }
 
-  /// `resolvedKeys(required:measurements:isHostReady:)` over a host table.
   @MainActor
   public static func resolvedKeys(
     required: Set<String>,

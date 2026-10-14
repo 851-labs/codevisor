@@ -71,7 +71,6 @@ extension ProjectListModelTests {
     model.renameSession(remoteSession, to: "Renamed remote")
     await fixture.sync(with: fake, machineId: "remote-a")
 
-    // A write scoped to one machine never rewrites the other's record.
     #expect(model.projects.first { $0.serverId == "local" }?.name == localProject.name)
     #expect(model.projects.first { $0.serverId == "remote-a" }?.name == "Renamed remote project")
     #expect(model.sessions.first { $0.serverId == "local" }?.title == "Local chat")
@@ -98,16 +97,12 @@ extension ProjectListModelTests {
       listStarted.signal(); await latch.wait()
     }
 
-    // Start a refresh against the remote machine, and refresh local while
-    // its list call is still in flight (a slow network hop).
     let refresh = Task { _ = await fixture.refresh(from: remoteServer, machineId: "remote-mac-mini") }
     await listStarted.wait()
     await fixture.refresh(from: FakeServerClient(), machineId: "local")
     await latch.open()
     await refresh.value
 
-    // The remote response must never be filed under "local" — that would
-    // put another machine's projects in the local sidebar forever.
     let model = fixture.projectList
     #expect(!model.projects.contains { $0.id == remoteProject.id && $0.serverId == "local" })
     #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
@@ -115,8 +110,6 @@ extension ProjectListModelTests {
 
   @Test("Imports are filed under the machine they were discovered on, not the current selection")
   func importTagsDiscoveryServer() {
-    // Discovery ran against the remote machine, but local is selected: the
-    // results still belong to the remote machine.
     let model = NavigationFixture().projectList
     model.showsImportedSessions = true
     model.importSessions(
@@ -134,11 +127,8 @@ extension ProjectListModelTests {
   func importIntoProjectInheritsProjectServer() {
     let model = NavigationFixture().projectList
     model.showsImportedSessions = true
-    // The project lives on the remote machine; local is selected.
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/proj"), serverId: "remote-mac-mini")
 
-    // Confirming a pending import must not re-tag the sessions to the
-    // selected machine.
     model.importSessions(
       [
         ImportedSession(

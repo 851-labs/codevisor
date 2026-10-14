@@ -8,10 +8,6 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
-/// A diff-card-style surface for commands, logs, and other unstructured text.
-/// The native implementations keep the complete value in one TextKit document,
-/// so large outputs do not create a SwiftUI view per line. Long lines scroll
-/// horizontally and tall output is capped to the same viewport as file diffs.
 public struct PlainOutputView<Trailing: View>: View {
   private let title: String
   private let text: String
@@ -111,14 +107,10 @@ extension PlainOutputView where Trailing == EmptyView {
   }
 }
 
-/// Plain text as a bare code block body: no header, no copy button, in the
-/// diff card's capped, scrollable viewport. Given a command, it reads as a
-/// terminal: the command's line first and the output under it.
 struct PlainCodeBodyView: View {
   var command: String? = nil
   let output: String
   var followsTail = false
-  /// Syntax colors for `output`, one token line per line.
   var syntax: [[CodeHighlighter.Token]]? = nil
 
   @Environment(\.theme) private var theme

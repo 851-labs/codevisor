@@ -2,8 +2,6 @@ import CodevisorClient
 import ScreenSharing
 import SwiftUI
 
-/// Presses the device's own buttons, as a click: down, a short hold the guest registers as a
-/// press, then up.
 @MainActor
 enum SimulatorDeviceControls {
   static func press(_ name: String, on model: SimulatorPaneModel) {
@@ -16,9 +14,6 @@ enum SimulatorDeviceControls {
 }
 
 extension View {
-  /// Simulator's shortcut for a device control, on an iPhone or iPad. A Mac's menu bar carries
-  /// them instead (`SimulatorDeviceCommandItems`), so they reach the focused pane alone: a shortcut
-  /// on a button in the pane would turn the device while you type in a chat beside it.
   @ViewBuilder func deviceShortcut(_ shortcut: KeyboardShortcut) -> some View {
     #if os(iOS)
       keyboardShortcut(shortcut)
@@ -32,7 +27,6 @@ extension View {
   }
 }
 
-/// Home, or on an Apple TV the remote's Back, TV and Play/Pause. Shortcuts match Simulator's.
 struct SimulatorHomeButtons: View {
   let model: SimulatorPaneModel
   let device: ServerSimulatorDevice
@@ -54,7 +48,6 @@ struct SimulatorHomeButtons: View {
   }
 }
 
-/// Saves (Mac) or shares (iPhone, iPad) what the device shows.
 struct SimulatorScreenshotButton: View {
   let model: SimulatorPaneModel
   let device: ServerSimulatorDevice
@@ -76,12 +69,9 @@ struct SimulatorScreenshotButton: View {
   }
 }
 
-/// Turns the device a quarter left (as Device Hub's button does); its context menu turns it
-/// either way.
 struct SimulatorRotateButton: View {
   let model: SimulatorPaneModel
 
-  /// Whether the device turns at all: not an Apple TV, and only a Vision Pro that says it can.
   static func shown(model: SimulatorPaneModel, device: ServerSimulatorDevice) -> Bool {
     let family = device.deviceType.productFamily
     let canRotate = model.deviceState?.canRotate
@@ -98,7 +88,6 @@ struct SimulatorRotateButton: View {
         Button("Rotate Right", systemImage: "rotate.right") { model.rotate(clockwise: true) }
       }
       #if os(iOS)
-        // ⌘→ turns the other way without a visible button of its own.
         .background {
           Button("Rotate Right") { model.rotate(clockwise: true) }
           .deviceShortcut(.rightArrow, modifiers: .command)
@@ -109,15 +98,12 @@ struct SimulatorRotateButton: View {
 }
 
 #if os(macOS)
-  /// Device Hub's action bar: one glass capsule of icon buttons (Home, Screenshot), and Rotate in
-  /// a glass circle of its own beside it, or in a capsule with a foldable's postures.
   struct SimulatorActionBar: View {
     let model: SimulatorPaneModel
     let device: ServerSimulatorDevice
     let onScreenshot: (Data, String) -> Void
 
     var body: some View {
-      // Shapes blend when closer than the container's spacing; the 10-point gap keeps them apart.
       GlassEffectContainer(spacing: 6) {
         HStack(spacing: 10) {
           HStack(spacing: 0) {
@@ -128,7 +114,6 @@ struct SimulatorRotateButton: View {
           .glassEffect(.regular.interactive(), in: .capsule)
           let rotates = SimulatorRotateButton.shown(model: model, device: device)
           if model.deviceState?.postures.isEmpty == false {
-            // A foldable's Rotate shares a capsule with its postures, a rule between them.
             HStack(spacing: 0) {
               if rotates {
                 SimulatorRotateButton(model: model)
@@ -150,8 +135,6 @@ struct SimulatorRotateButton: View {
     }
   }
 
-  /// An action bar button's symbol in a 34×36 cell (Device Hub's size) that clicks anywhere
-  /// in it and lights up under the pointer.
   struct SimulatorActionBarLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
       Cell(configuration: configuration)
@@ -162,7 +145,6 @@ struct SimulatorRotateButton: View {
       @State private var hovering = false
 
       var body: some View {
-        // The title stays in the label (hidden), so the button keeps its accessibility name.
         Label {
           configuration.title
         } icon: {
@@ -170,7 +152,6 @@ struct SimulatorRotateButton: View {
         }
         .labelStyle(.iconOnly)
         .font(.system(size: 14, weight: .medium))
-        // Device Hub's highlight is a 28-point circle inset in the capsule, not the whole cell.
         .frame(width: 28, height: 28)
         .background(.primary.opacity(hovering ? 0.1 : 0), in: .circle)
         .frame(width: 34, height: 36)

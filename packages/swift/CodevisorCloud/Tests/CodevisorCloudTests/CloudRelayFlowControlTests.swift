@@ -5,8 +5,6 @@ import ACPKit
 import CodevisorClient
 @testable import CodevisorCloud
 
-/// Phase 6 behavior: http/ws channels run under negotiated credit-based flow
-/// control in both directions, and streamed responses are consumer-paced.
 @Suite("CloudRelay flow control")
 struct CloudRelayFlowControlTests {
   @Test("Uploads gate on the machine's window: no grant, no frames")
@@ -28,7 +26,6 @@ struct CloudRelayFlowControlTests {
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
     await #expect(throws: CloudRelayTransportError.timedOut) { try await pending.value }
-    // Not even the first chunk frame made it out.
     #expect(scriptedMachine.completedRequests.isEmpty)
     await pipe.shutdown()
   }
@@ -58,7 +55,6 @@ struct CloudRelayFlowControlTests {
     await pipe.shutdown()
   }
 
-  /// A file spanning three body chunks, the last one short.
   private func uploadFixture() throws -> (url: URL, contents: Data) {
     let count = CloudRelayRequestTransport.chunkSize * 3 - 100
     let contents = Data((0..<count).map { UInt8(truncatingIfNeeded: $0 &* 31) })
@@ -74,8 +70,6 @@ struct CloudRelayFlowControlTests {
     return request
   }
 
-  /// Covers one chunk frame's sealed cost but not two, so each grant
-  /// releases exactly one chunk.
   private static let oneChunkGrant = 400_000
 
   @Test("A file upload streams chunk by chunk, paced by grants, for longer than the timeout")
@@ -95,15 +89,12 @@ struct CloudRelayFlowControlTests {
     let pending = Task { try await transport.upload(for: uploadRequest(), fromFile: fileURL) }
     #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
     let channelId = scriptedMachine.openChannelIds[0]
-    // 20s between grants, 60s in all: past a fixed 30s deadline, but the
-    // upload never idles for 30s.
     for chunk in 1...3 {
       await clock.waitForSleep(.seconds(30))
       clock.advance(by: .seconds(20))
       scriptedMachine.grantUploadWindow(channelId: channelId, bytes: Self.oneChunkGrant)
       let expected = min(chunk * CloudRelayRequestTransport.chunkSize, contents.count)
       #expect(await waitUntil { scriptedMachine.receivedBodyBytes(channelId: channelId) >= expected })
-      // No more credit, so the next chunk cannot have gone out.
       #expect(scriptedMachine.receivedBodyBytes(channelId: channelId) == expected)
     }
 
@@ -158,12 +149,9 @@ struct CloudRelayFlowControlTests {
     }
     #expect(chunks == [first, second])
 
-    // The app granted its initial window plus one replenish per consumed
-    // frame (head, two chunks, end).
     #expect(await waitUntil { scriptedMachine.creditGrants.count >= 5 })
     #expect(scriptedMachine.creditGrants[0] == 1024 * 1024)
 
-    // The open advertised both negotiations to the machine.
     struct OpenProbe: Decodable {
       var compress: Bool?
       var flowControl: Bool?
@@ -188,14 +176,12 @@ struct CloudRelayFlowControlTests {
     #expect(await waitUntil { scriptedMachine.openChannelId != nil })
 
     let credits: @Sendable () -> Int = { scriptedMachine.scripted.credits.count }
-    // Settled: the app's initial window grant only.
     #expect(await waitUntil { credits() == 1 })
 
     scriptedMachine.push(#"{"kind":"text","data":"one"}"#)
     scriptedMachine.push(#"{"kind":"text","data":"two"}"#)
     #expect(relayMessageText(try await connection.receive()) == "one")
     #expect(await waitUntil { credits() == 2 })
-    // The second message is delivered but unconsumed — no grant for it.
     await scriptedMachine.scripted.socket.drain()
     #expect(credits() == 2)
     #expect(relayMessageText(try await connection.receive()) == "two")

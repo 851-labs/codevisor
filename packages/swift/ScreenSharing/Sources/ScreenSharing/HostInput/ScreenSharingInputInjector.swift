@@ -1,17 +1,10 @@
 #if os(macOS)
   import AppKit
 
-  /// Public Quartz events only, without automation's waits or app activation.
-  /// Display bounds are Quartz global points, including negative display origins.
   @MainActor
   public final class ScreenSharingInputInjector {
     public nonisolated static let eventTag: Int64 = 0x435653435245454E
     private let source = CGEventSource(stateID: .privateState)
-    /// System keys (Apps, Mission Control, Show Desktop) are posted exactly as a keyboard's: from the
-    /// HID system state, with the flags and user data the source gives them. From the private state
-    /// macOS ignores them: on tuftlord the private-state key 160 did nothing and the HID-state one
-    /// opened Mission Control; the same for 131 and F11 (851-2477). They're never captured by a
-    /// viewer, so they don't need the injected-event tag.
     private let systemKeySource = CGEventSource(stateID: .hidSystemState)
     private let displayBounds: CGRect
     private var buttons = Set<UInt8>()

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Inserts a leaf without changing existing group identities or pane state.
 enum SplitTreeInsertion {
   static func split(
     _ node: SplitNode,
@@ -45,8 +44,6 @@ enum SplitTreeInsertion {
     orientation: SplitOrientation, children: [SplitChild], targetId: UUID,
     edge: SplitEdge, newGroupId: UUID, newGroupState: PaneGroupState
   ) -> SplitNode? {
-    // Same-orientation parent: insert as a sibling, halving the
-    // target child's share, instead of nesting another split.
     guard orientation == edge.orientation,
       let index = children.firstIndex(where: {
         if case let .group(id, _) = $0.node { return id == targetId }

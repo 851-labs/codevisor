@@ -27,7 +27,6 @@ struct BrowserPageRetentionTests {
     elapsed = 1799
     await cache.prune()
     #expect(page.hasLiveBrowserPage)
-    // Revisiting resets the idle deadline, including a full return to chat.
     cache.touch(page)
     elapsed = 1800
     await cache.prune()

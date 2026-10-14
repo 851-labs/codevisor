@@ -1,38 +1,18 @@
-//  Drag-to-reorder for the sidebar's workspaces and tabs.
-//
-//  The list holds still while you drag. The picked-up row stays in place,
-//  dimmed; a copy of it follows the pointer, and a blue insertion line marks
-//  where it will land. Nothing moves until release, when the row slides into
-//  its new slot and the copy fades away.
-//
-//  The system drag session (`.draggable`/`.onDrop`) isn't used: its preview
-//  belongs to AppKit, which slides it back to the drag's origin whenever the
-//  pointer is released off a drop target.
-
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Where a workspace section sits, in the sidebar's reorder coordinate space.
 struct SidebarWorkspaceGeometry: Equatable {
-  /// The header row alone: what the workspace's drag copy mimics.
   var header: CGRect = .zero
-  /// The header plus its tab rows: what a dragged workspace is compared
-  /// against.
   var section: CGRect = .zero
 }
 
-/// Frames reported by every mounted section and tab. A plain class,
-/// deliberately not observed: frames change on every scroll tick and must
-/// not re-evaluate the sidebar; the drag reads them on demand.
 @MainActor
 final class ClassicSidebarDragGeometryStore {
   var workspaces: [UUID: SidebarWorkspaceGeometry] = [:]
-  /// A tab's rows (one per pane of a split).
   var tabs: [UUID: CGRect] = [:]
 }
 
-/// What a sidebar drag picked up. Tabs move only within their workspace.
 enum SidebarDragItem: Equatable {
   case workspace(UUID)
   case tab(UUID, workspaceID: UUID)
@@ -44,14 +24,10 @@ enum SidebarDragItem: Equatable {
   }
 }
 
-/// A row picked up from the sidebar and following the pointer.
 struct ClassicSidebarDrag: Equatable {
   let item: SidebarDragItem
-  /// The row's frame when it was picked up.
   let liftedFrame: CGRect
   var translation: CGFloat = 0
-  /// Where a drop would land, as an index among the other rows. Nil when
-  /// the drop would leave the row where it is.
   var targetIndex: Int?
 
   var ghostFrame: CGRect { liftedFrame.offsetBy(dx: 0, dy: translation) }
@@ -60,7 +36,6 @@ struct ClassicSidebarDrag: Equatable {
 extension ClassicSidebarView {
   nonisolated static let reorderSpace = "sidebar.reorder"
 
-  /// The workspace or tab being dragged; its row stays dimmed in place.
   var draggingID: UUID? { drag?.item.id }
 
   private var draggingWorkspaceID: UUID? {
@@ -81,8 +56,6 @@ extension ClassicSidebarView {
       }
       .onEnded { value in
         guard drag?.item == item else { return }
-        // A fast release can carry movement past the last `onChanged`;
-        // apply it so the drop lands where the pointer actually let go.
         drag?.translation = value.translation.height
         retarget()
         guard let finished = drag else { return }
@@ -122,7 +95,6 @@ extension ClassicSidebarView {
     }
   }
 
-  /// The rows a drag reorders, in order, with their frames.
   private func dropCandidates(for item: SidebarDragItem) -> (order: [UUID], frames: [UUID: CGRect]) {
     switch item {
     case .workspace:
@@ -134,7 +106,6 @@ extension ClassicSidebarView {
     }
   }
 
-  /// Moves only the insertion line; the rows stay put until release.
   private func retarget() {
     guard let current = drag else { return }
     let candidates = dropCandidates(for: current.item)
@@ -148,7 +119,6 @@ extension ClassicSidebarView {
     drag?.targetIndex = target
   }
 
-  /// Saves a finished drag: one move, sent once the row is released.
   private func commitMove(_ item: SidebarDragItem, toIndex index: Int) {
     switch item {
     case let .workspace(id):
@@ -160,8 +130,6 @@ extension ClassicSidebarView {
     }
   }
 
-  /// Where the insertion line sits: in the gap before the row the drop
-  /// would land in front of, or below the last row.
   private func insertionLine(for drag: ClassicSidebarDrag) -> CGRect? {
     guard let index = drag.targetIndex else { return nil }
     let candidates = dropCandidates(for: drag.item)
@@ -171,8 +139,6 @@ extension ClassicSidebarView {
     let span: CGRect
     switch drag.item {
     case .workspace:
-      // A section opens with its header's top padding; the line sits in
-      // that space, between the last tab above and the name below.
       let inset = SidebarWorkspaceHeader.topPadding / 2
       if others.indices.contains(index) {
         span = others[index]
@@ -193,8 +159,6 @@ extension ClassicSidebarView {
     return CGRect(x: span.minX, y: y, width: span.width, height: 0)
   }
 
-  /// The copy under the pointer and the insertion line, drawn over the
-  /// list in the reorder space.
   @ViewBuilder
   var reorderOverlay: some View {
     if let drag {
@@ -203,8 +167,6 @@ extension ClassicSidebarView {
         reorderGhost(for: drag.item)
           .frame(width: frame.width, height: frame.height)
           .background {
-            // A header's top padding is spacing above the section, not
-            // part of the row, so the card leaves most of it out.
             let inset = drag.item.id == draggingWorkspaceID ? SidebarWorkspaceHeader.topPadding - 4 : 0
             RoundedRectangle(cornerRadius: 6)
               .fill(.regularMaterial)
@@ -213,7 +175,6 @@ extension ClassicSidebarView {
           }
           .opacity(0.92)
           .position(x: frame.midX, y: frame.midY)
-        // Over the copy: the copy often hovers right on the drop point.
         if let line = insertionLine(for: drag) {
           ClassicSidebarInsertionLine()
             .frame(width: line.width, height: ClassicSidebarInsertionLine.height)
@@ -243,7 +204,6 @@ extension ClassicSidebarView {
   }
 }
 
-/// AppKit's drop indicator: a blue line with a ring at its leading end.
 struct ClassicSidebarInsertionLine: View {
   static let height: CGFloat = 7
 
@@ -259,8 +219,6 @@ struct ClassicSidebarInsertionLine: View {
   }
 }
 
-/// The lifted header's stand-in: the header exactly as it renders in the
-/// list — same label, insets, and color.
 struct SidebarWorkspaceDragGhost: View {
   let name: String
   let machineName: String?

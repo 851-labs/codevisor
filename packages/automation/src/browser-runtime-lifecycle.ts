@@ -17,10 +17,6 @@ export const serializedBrowserOperation = async <T>(
   }
 }
 
-/// Chrome removes a closed tab a moment after `Target.closeTarget` answers.
-/// Waits, briefly, until none of `targetIds` is listed anymore, so whatever
-/// lists tabs next (the agent's next turn, or the user) doesn't see a tab
-/// that is already closing. Gives up quietly at the deadline.
 export const waitForTargetsClosed = async (
   active: BrowserRuntime,
   targetIds: ReadonlyArray<string>,
@@ -43,7 +39,6 @@ export const closeBrowserRuntime = async (active: BrowserRuntime): Promise<void>
   await active.synchronizeCookies?.().catch(() => undefined)
   for (const dispose of active.eventDisposers.splice(0)) dispose()
   if (active.owned) {
-    // Arm before Browser.close: the process may exit before CDP replies.
     const exited = active.processHandle && browserProcessExit(active.processHandle)
     const requested = active.connection.send("Browser.close").catch(() => undefined)
     await (exited ?? requested)

@@ -87,7 +87,6 @@ const localServer = async (
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-/// Answers with the byte count and sha256 of the body it read.
 const digestingServer = (): Promise<string> =>
   localServer((request, response) => {
     const hash = createHash("sha256")
@@ -113,7 +112,6 @@ describe("streamedRequestBody", () => {
     expect((await reader.read()).value).toEqual(new Uint8Array([2, 2]))
     expect(grants).toEqual([17, 18])
 
-    // A pull with nothing queued waits for the next chunk or the end.
     const pending = reader.read()
     body.push(new Uint8Array([3]), 19)
     expect((await pending).value).toEqual(new Uint8Array([3]))
@@ -149,7 +147,6 @@ describe("httpChannelHandler", () => {
     expect(await channel.closed).toBe("done")
     expect(channel.sent[0]).toMatchObject({ kind: "head", status: 200 })
     expect(channel.responseBody()).toBe(`${chunks * chunk.byteLength}:${expected.digest("hex")}`)
-    // Every chunk's credit came back once the local request consumed it.
     expect(channel.grants.slice(1)).toEqual(Array(chunks).fill(chunk.byteLength + 16))
   })
 
@@ -183,7 +180,6 @@ describe("httpChannelHandler", () => {
     expect(await channel.closed).toBe("done")
     expect(channel.sent[0]).toMatchObject({ kind: "head", status: 413 })
     expect(channel.responseBody()).toBe('{"code":"file_too_large"}')
-    // Chunks still in flight from the app are dropped, not replayed.
     channel.chunk(new Uint8Array(1024))
     channel.end()
     expect(channel.sent.at(-1)).toEqual({ kind: "end" })
@@ -207,7 +203,6 @@ describe("httpChannelHandler", () => {
 
 describe("wsChannelHandler", () => {
   it("refuses a path the local websocket cannot dial", async () => {
-    // A `#` fragment makes the ws constructor throw; nothing is dialed.
     const channel = new FakeChannel("/v1/events/socket#fragment", false)
     wsChannelHandler("http://127.0.0.1:1")(channel)
     expect(await channel.closed).toBe("rejected")

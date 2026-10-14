@@ -4,8 +4,6 @@ import Foundation
 import StreamMarkdown
 import TranscriptKit
 
-/// Native side effects of committing a document change. The controller owns
-/// the order; adapters own host types, measurement execution, and native UI.
 @MainActor
 public protocol TranscriptSurfaceAdapter: AnyObject {
   func invalidateChangedMeasurements(
@@ -32,9 +30,6 @@ public protocol TranscriptFrameAdapter: AnyObject {
   func finishPresentationFrame()
 }
 
-/// One owner per viewport for document state and presentation ordering. A
-/// document may appear in multiple surfaces, each with independent geometry,
-/// native interaction, and reveal lifetime.
 @MainActor
 public final class TranscriptSurfaceController {
   public var rowSet = TranscriptRowSet()
@@ -70,9 +65,6 @@ public final class TranscriptSurfaceController {
       ])
   }
 
-  /// Navigation restores the position the reader actually left. Follow intent
-  /// still governs measurements during a presentation; it must not override a
-  /// saved non-bottom anchor when starting a new presentation.
   @discardableResult
   public func configureInitialPosition(_ state: SessionScrollState?, followsLatest defaultFollow: Bool) -> Bool {
     guard !initialPositionConfigured else { return false }
@@ -86,9 +78,6 @@ public final class TranscriptSurfaceController {
     return true
   }
 
-  /// Arrival eligibility is independent of the native host implementation.
-  /// Observe before mounting so cached and uncached surfaces consume the same
-  /// authoritative navigation baseline.
   public func observeStreamingPresentation(_ input: TranscriptSurfaceInput) {
     let followsAnimationEdge = followsLatest || input.scrollCommand != currentScrollCommand
     input.textAnimationRegistry.observeProjectedStreams(
@@ -160,9 +149,6 @@ public final class TranscriptSurfaceController {
     }
   }
 
-  /// Frame requests raised by native layout callbacks survive for the next
-  /// frame. Both platforms commit model, mounting, geometry, and reveal in
-  /// this order; native momentum determines whether geometry may commit.
   public func presentFrame(at timestamp: TimeInterval, adapter: any TranscriptFrameAdapter) {
     let traceStart = TranscriptPerformanceTrace.begin()
     defer {

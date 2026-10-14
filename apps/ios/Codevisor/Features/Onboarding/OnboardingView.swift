@@ -2,25 +2,12 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// First-launch onboarding: welcome, AI data-sharing consent, then a cloud-first "connect"
-/// page. The connect step is state-driven off `environment.cloud`:
-/// signed out leads with Codevisor Cloud sign-in, signed-in-with-no-machines
-/// shows install-and-login instructions (the machine logs itself into the
-/// same account), and signed-in-with-machines is a brief success state before
-/// the cover dismisses itself. Every machine arrives through the account.
-///
-/// Layout follows the iOS onboarding convention throughout: the hero glyph,
-/// title, and supporting content sit in the upper/centre of the screen while
-/// the primary actions are pinned to the bottom safe area as full-width
-/// buttons. All colours are semantic so both light and dark mode adapt.
 struct OnboardingView: View {
   enum Step {
     case welcome
     case connect
   }
 
-  /// Where the flow opens: the full welcome on first launch, straight to
-  /// connect when reopened from the empty home screen.
   var start: Step = .welcome
 
   static let readableWidth: CGFloat = 560
@@ -33,15 +20,12 @@ struct OnboardingView: View {
         case .connect: ConsentAndConnectStep()
         }
       }
-      // A readable column on iPad; phones are narrower than the cap.
       .frame(maxWidth: Self.readableWidth)
       .frame(maxWidth: .infinity)
       .background(Color(.systemBackground))
     }
   }
 }
-
-// MARK: - Welcome
 
 private struct WelcomeStep: View {
   private var title: String {
@@ -53,16 +37,12 @@ private struct WelcomeStep: View {
 
   var body: some View {
     VStack(spacing: 16) {
-      // Anchored in the top third: a fixed top offset, hero, then a
-      // flexible Spacer fills the rest so the bottom action stays put.
       Spacer()
         .frame(height: 96)
       CodevisorAppIconView(size: 96)
       Text(title)
         .font(.largeTitle.bold())
         .multilineTextAlignment(.center)
-        // Take the vertical room to wrap onto two lines rather than
-        // truncating "Codevisor" to an ellipsis.
         .fixedSize(horizontal: false, vertical: true)
       Text("Control your agents from anywhere.")
         .font(.title3)
@@ -101,9 +81,6 @@ private struct WelcomeStep: View {
   }
 }
 
-// MARK: - Connect
-
-/// Pairing and restored machines never imply permission to share data with AI providers.
 private struct ConsentAndConnectStep: View {
   @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
   private var consentVersion
@@ -121,8 +98,6 @@ private struct ConsentAndConnectStep: View {
   }
 }
 
-/// The connect page: sign in to Codevisor Cloud, then sign each machine in to
-/// the same account.
 private struct ConnectMachineStep: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -130,10 +105,6 @@ private struct ConnectMachineStep: View {
   @State private var isSigningInToCloud = false
   @State private var showsSettings = false
   @State private var showsEmailSignIn = false
-  /// The signed-in branch holds a bare spinner until the account's machine
-  /// list has actually been fetched once — rendering the add-machine
-  /// instructions (or anything else) off an empty-because-unfetched list
-  /// flashes the wrong screen for users who already have machines.
   @State private var hasCompletedFirstMachinesCheck = false
 
   private var cloud: CloudAccountController { environment.cloud }
@@ -147,9 +118,6 @@ private struct ConnectMachineStep: View {
         checkingContent
       case let .signedIn(userEmail):
         if !hasCompletedFirstMachinesCheck {
-          // First machines check in flight: a quiet spinner. When
-          // machines exist, Home's cover condition dismisses the
-          // sheet straight from here — no interstitial state.
           checkingContent
             .task {
               await cloud.refreshMachines()
@@ -158,9 +126,6 @@ private struct ConnectMachineStep: View {
         } else if cloud.machines.isEmpty {
           installAndLoginContent(userEmail: userEmail)
         } else {
-          // Machines exist: the onboarding cover is about to
-          // dismiss itself. Keep the spinner rather than flashing
-          // any success interstitial.
           checkingContent
         }
       }
@@ -180,12 +145,8 @@ private struct ConnectMachineStep: View {
     }
   }
 
-  // MARK: Signed out (primary path)
-
   private var signedOutContent: some View {
     VStack(spacing: 0) {
-      // Same top-third anchor as the Welcome screen: fixed top offset,
-      // hero, then a flexible Spacer down to the bottom action stack.
       Spacer()
         .frame(height: 96)
       hero(
@@ -237,16 +198,10 @@ private struct ConnectMachineStep: View {
     }
   }
 
-  // MARK: Signing in / first machines check
-
-  /// A bare centered spinner — no copy. Used while the sign-in validates
-  /// and while the first machines fetch is in flight.
   private var checkingContent: some View {
     ProgressView()
       .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
-
-  // MARK: Signed in, no machines yet (install + login instructions)
 
   private func installAndLoginContent(userEmail _: String?) -> some View {
     ScrollView {
@@ -287,9 +242,6 @@ private struct ConnectMachineStep: View {
       .padding(.horizontal, 20)
       .padding(.bottom, 24)
     }
-    // Poll while this state is on screen so a machine that logs into the
-    // same account shows up without any user action — when it arrives the
-    // list becomes non-empty and the flow advances / the cover dismisses.
     .task {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(5))
@@ -298,8 +250,6 @@ private struct ConnectMachineStep: View {
       }
     }
   }
-
-  // MARK: Building blocks
 
   private func hero(symbol: String, title: String, subtitle: String) -> some View {
     VStack(spacing: 16) {
@@ -337,13 +287,9 @@ private struct ConnectMachineStep: View {
     Text("\(number)")
       .font(.footnote.weight(.bold))
       .foregroundStyle(.tint)
-      // Scales with Dynamic Type so the footnote digit never outgrows
-      // its circle at accessibility text sizes.
       .scaledFrame(width: 24, height: 24, relativeTo: .footnote)
       .background(Color.accentColor.opacity(0.14), in: Circle())
   }
-
-  // MARK: Cloud sign-in
 
   private func startCloudSignIn(provider: CloudSignInProvider = .github) {
     guard !isSigningInToCloud else { return }
@@ -355,10 +301,6 @@ private struct ConnectMachineStep: View {
   }
 }
 
-// MARK: - Onboarding button styles
-
-/// A full-width, large filled button shared by the onboarding CTAs so the
-/// welcome and the later onboarding actions align consistently.
 struct OnboardingFilledButtonStyle: ButtonStyle {
   var background: Color
   var foreground: Color
@@ -384,10 +326,6 @@ struct OnboardingFilledButtonStyle: ButtonStyle {
   }
 }
 
-// MARK: - Command chip
-
-/// A copyable terminal command: monospaced text in a soft capsule with a
-/// copy button that flashes a checkmark.
 struct CommandChip: View {
   let command: String
   @State private var copied = false
@@ -397,9 +335,6 @@ struct CommandChip: View {
       Text(command)
         .font(.callout.monospaced())
         .foregroundStyle(.primary)
-        // Wraps rather than shrinking: `minimumScaleFactor` would
-        // render below the HIG 11 pt minimum and fight the user's
-        // Dynamic Type setting.
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
       Button {

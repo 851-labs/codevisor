@@ -273,7 +273,6 @@ describe("CodexProvider", () => {
       diffStats: [{ added: 3, path: "release.yml", removed: 1 }]
     })
 
-    // item/started for the same id merges rather than duplicating.
     client.emit("item/started", {
       item: {
         changes: [{ diff: UNIFIED_DIFF, kind: { type: "update" }, path: "release.yml" }],
@@ -295,8 +294,6 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     expect(events.at(-1)?.payload).toMatchObject({ sessionUpdate: "agent_thought_chunk" })
-    // Completion emits nothing extra; the next message/tool clears the state
-    // client-side.
     const count = events.length
     client.emit("item/completed", {
       item: { id: "rs_1", summary: [], type: "reasoning" },
@@ -308,7 +305,6 @@ describe("CodexProvider", () => {
 
   it("labels goal auto-continuation turns as agent-initiated", async () => {
     const { client, events } = await setup({ resume: "thread-resumed" })
-    // Resume flow: codex replays a goal snapshot then may start a turn itself.
     client.emit("thread/goal/updated", {
       goal: {
         createdAt: 1_700_000_000,

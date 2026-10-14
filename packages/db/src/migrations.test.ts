@@ -374,10 +374,8 @@ describe("@codevisor/db", () => {
   it("keeps no retired event journals, whose foreign keys made chat deletes scan them", async () => {
     const filename = tempDatabase()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
-    // The transcript cutover drops the old journals instead of renaming them.
     expect(legacyJournals(filename)).toEqual([])
 
-    // A database cut over by an earlier build still holds the renamed backup.
     const sqlite = new Database(filename)
     sqlite.exec(`
       create table legacy_events (id integer primary key autoincrement, payload text not null);
@@ -396,7 +394,6 @@ describe("@codevisor/db", () => {
     const filename = tempDatabase()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
     const sqlite = new Database(filename)
-    // SQLite resolves the `on delete cascade` from chat_items with this lookup.
     const plan = (
       sqlite
         .prepare("explain query plan delete from chat_item_routes where item_id = ?")

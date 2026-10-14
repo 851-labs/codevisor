@@ -78,8 +78,6 @@ export {
 } from "./serve-boot.js"
 export type { BootScopedDataUpgradeProgress } from "./serve-boot.js"
 
-/// Boots the Codevisor server from parsed `--flag value` arguments. Shared by
-/// the `codevisor-server` daemon bin and the `codevisor serve` CLI subcommand.
 export const runServe = (
   args: Record<string, string>,
   startup: StartupReporter = makeStartupReporter(args)
@@ -102,9 +100,6 @@ export const runServe = (
         : "production"
     const { authMode, directPathMode, resolvedKind } = resolveServeModes(args, host)
     const version = args.version ?? bundledVersion()
-    // Resolve caller-provided paths before changing cwd below. This preserves
-    // the CLI's relative-path semantics while ensuring every later consumer
-    // sees an absolute path.
     const launchDirectory = process.cwd()
     const layout = resolveServerDataLayout(args.db)
     const databasePath = layout.databasePath
@@ -138,10 +133,6 @@ export const runServe = (
         log: (message) => console.error(message)
       })
     )
-    // The canonical ~/.codevisor/data directory does not exist on first start
-    // (unlike the old tmpdir default, which always did). It is also the
-    // daemon's lifetime-stable cwd: an app-hosted server may outlive the
-    // Sparkle staging bundle that launched it.
     stabilizeServerWorkingDirectory(databasePath)
     const lease = yield* Effect.tryPromise(() =>
       acquireServerLease(databasePath, {
@@ -152,9 +143,6 @@ export const runServe = (
     )
     startupLease = lease
     stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
-    // Answer /v1/health while the blocking data upgrades below run, so a
-    // remote client can follow "updating chat history, 40%" instead of
-    // seeing a refused connection.
     bootListener = yield* Effect.promise(() =>
       startBootListenerIfPortFree({
         host,
@@ -168,11 +156,6 @@ export const runServe = (
       })
     )
     startup.checkpoint("openingDatabase")
-    // Standalone installs used to default the database into the OS temp
-    // directory; relocate that data the first time we start against a canonical
-    // data-dir path (the systemd units pass --db explicitly, so an explicit flag
-    // alone must not skip the migration). Other explicit --db paths — like the
-    // macOS app's Application Support database — are the caller's responsibility.
     if (args.db === undefined || canonicalDatabasePaths().includes(databasePath)) {
       yield* Effect.tryPromise(() => migrateTmpDataDir({ databasePath }))
     }
@@ -185,14 +168,6 @@ export const runServe = (
         log: (message) => console.error(message)
       })
     )
-    // No server may identify as the default "local": every machine
-    // publishing sync entries under one key makes the fleet LWW-merge them
-    // into a single lying record — and app-hosted Macs used to do exactly
-    // that, sharing one overlay key, one readiness entry, and one OAuth
-    // refresh owner. Without an explicit --serverId, every kind adopts the
-    // database's persisted machine identity — stable across restarts,
-    // renames, and updates, minted on first boot. Rows written under the
-    // former id are adopted by the database's identity upgrade.
     const serverId = args.serverId ?? `machine-${resolveServerIdentity(databasePath)}`
     const db = yield* makeDatabase({
       filename: databasePath,
@@ -209,9 +184,6 @@ export const runServe = (
       catch: (cause) =>
         cause instanceof Error ? cause : new Error(`Attachment migration failed: ${String(cause)}`)
     })
-    // Self-update needs a known current version to compare against; dev runs
-    // without a VERSION file simply don't offer it. The new runtime reads its
-    // own bundled VERSION, so --version is not forwarded.
     const updater =
       version === undefined
         ? undefined
@@ -235,17 +207,10 @@ export const runServe = (
     const terminal = makeTerminalManager()
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
-    // Cloud relay presence + sealed channels, and every machine on the
-    // account for cross-machine gateway calls. Optional — local operation
-    // never depends on it.
     const machineName = args.name ?? hostname()
     const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
       startMachineNetwork({ databasePath, port, serverId, machineName, version, db })
     )
-    // Start resolving the GUI process's minimal environment without delaying
-    // server boot. The first Git operation awaits this shared result so
-    // checkout hooks and filters can find user-installed tools such as
-    // Homebrew's git-lfs. The runtime and harness accounts share the probe.
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({
@@ -275,7 +240,6 @@ export const runServe = (
         baseUrl: `http://127.0.0.1:${port}`,
         environment: shellEnv.current
       })
-    // Sync static credentials without overwriting machine-specific providers.
     const credentialFerry = initializeOptionalServerFeature("Credential ferry", () =>
       credentialFerrySources({
         resolveEnv: () => Promise.resolve(process.env),
@@ -283,19 +247,15 @@ export const runServe = (
           (await sharedAccounts?.providers.staticOverrides(harness)) ?? []
       })
     )
-    // Codevisor's own skill store; agents read it through the gateway.
     const skillsDir = join(dirname(databasePath), "skills")
     const skillsEnv = { agents, env: process.env, homedir: homedir() }
     const skills = initializeOptionalServerFeature("Skills", () =>
       makeSkillStore({ dir: skillsDir })
     )
-    // Skills left harness folders: clean up older installs, import the
-    // user's own once. Never blocks or fails boot.
     if (skills !== undefined)
       void migrateLegacySkills({ ...skillsEnv, storeDir: skillsDir }).catch((cause: unknown) =>
         console.log(`Skill migration failed: ${failureMessage(cause)}`)
       )
-    // Content-addressed archives the config plane replicates skills through.
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
     const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
       makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
@@ -305,8 +265,6 @@ export const runServe = (
         ...(version === undefined ? {} : { codevisorVersion: version }),
         dataDir: dirname(databasePath),
         log: (message) => console.log(message),
-        // Plugin process output streams into an attachable external terminal
-        // (sessionId `plugin:{id}`) so clients can offer "Show Output".
         registerExternalTerminal: (config, process) =>
           terminal.registerExternalTerminal(config, process),
         resolveEnv: () => resolveShellEnv(),
@@ -315,11 +273,7 @@ export const runServe = (
           : { fetchPluginRegistry: pluginRegistryClient.fetchIndex })
       })
     )
-    // Registry browsing only makes sense where the install pipeline exists,
-    // so the read-through cache over the hosted index follows the manager's
-    // availability. Env overrides (or the dev cloud) rewire the base URL.
     const pluginRegistry = plugins === undefined ? undefined : pluginRegistryClient
-    // Packaged skills the gateway serves; a missing one is just dropped.
     const packagedSkills = [
       initializeOptionalServerFeature("File delivery skill", attachingFilesSkill),
       plugins && initializeOptionalServerFeature("Plugin skill", () => pluginAuthoringSkill())
@@ -334,9 +288,6 @@ export const runServe = (
         serverKind: resolvedKind,
         packagedSkills,
         ...(skills === undefined ? {} : { skillSource: skills }),
-        // Installed plugins' declared tools surface to agents through the MCP
-        // gateway (server "plugin"); the plugins manager satisfies the mcp
-        // package's structural PluginToolSource seam as-is.
         ...(plugins === undefined ? {} : { pluginTools: plugins })
       })
     )
@@ -358,20 +309,11 @@ export const runServe = (
         resolveEnv: () => resolveShellEnv(),
         terminal
       })
-      // Periodic harness update detection — jittered start, 6h cadence. The
-      // stop handle is intentionally dropped: checks live for the process.
       manager.startPeriodicChecks()
       return manager
     })
-    // Interrupted updates become failures; still-armed ones re-run once the
-    // server settles. Fire-and-forget so boot never waits on it.
     void lifecycle?.reconcileOnStartup().catch(() => undefined)
-    // Setup an update outside Codevisor (or before a restart) left unfinished,
-    // such as OpenCode 2's migration; prompts to that harness hold meanwhile.
     void lifecycle?.finishPendingSetup().catch(() => undefined)
-    // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
-    // inherit whatever PATH the parent had, and a slow login-shell probe must
-    // not delay the health endpoint the launching app is waiting on.
     void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
     void sweepTrashedWorktrees()
     startup.checkpoint("checkingHealth")
@@ -403,19 +345,11 @@ export const runServe = (
       defaultServerConfig({
         host,
         id: serverId,
-        // The app launches its own server bound to 0.0.0.0 so remote clients
-        // can connect; --kind lets it stay "local" despite the network bind.
         kind: resolvedKind,
-        // Network-bound servers advertise the machine's hostname so client
-        // machine lists show something recognizable,
-        // not the default "local" server id.
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
         directPathEnabled: directPathMode === "enabled",
         worktreeNameStyle,
-        // Lets clients match this machine to its cloud presence entry, and
-        // drive its registration live via /v1/cloud as the app's account
-        // session changes.
         cloud: cloudControl,
         bootId,
         processId: process.pid,
@@ -424,9 +358,6 @@ export const runServe = (
         ...buildMetadata,
         ...(version === undefined ? {} : { version }),
         auth: {
-          // Same-machine clients (the app that launched this server, the
-          // terminal proxy) are trusted without a token; only connections
-          // arriving over the network must present one.
           allowLocalhostWithoutAuth: authMode === "token",
           requireBearerToken: authMode === "token"
         },
@@ -434,7 +365,6 @@ export const runServe = (
         onShutdownRequested: () => {
           console.log("Codevisor server shutting down (requested by client)")
           stopOwnerMonitor?.()
-          // Let the 202 response flush before the process exits.
           setTimeout(() => {
             void lease.release().finally(() => process.exit(0))
           }, 250)
@@ -446,15 +376,10 @@ export const runServe = (
       }),
       bootListener
     )
-    // The real server owns the socket now.
     bootListener = undefined
     startupCompleted = true
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
-    // Installed plugins are server companions: start them only after the
-    // main listener is ready, without letting one broken plugin delay or
-    // fail Codevisor startup. The manager keeps crashed processes running
-    // again behind its own backoff/circuit breaker.
     void plugins
       ?.startAll()
       .catch((cause: unknown) =>
@@ -469,10 +394,7 @@ export const runServe = (
       await startupLease?.release().catch(() => undefined)
     }
     console.error(failureMessage(cause))
-    // A failed data upgrade stays readable for a moment (see BootListener.close).
     await bootListener?.close(upgradeFailed ? { afterMs: FAILED_UPGRADE_GRACE_MS } : undefined)
-    // Startup may have opened long-lived helpers; setting exitCode alone
-    // would leave this dedicated server process alive indefinitely.
     process.exit(1)
   })
 }

@@ -3,10 +3,6 @@ import type { GoalStatus, SessionGoal } from "@codevisor/api"
 import { isRecord } from "./internal.js"
 import type { CodexSession } from "./session.js"
 
-/// Accounting-only goal snapshots (tokensUsed/timeUsedSeconds ticks) are
-/// rate-limited: every emission is a permanent events-table row replayed on
-/// session open, and codex flushes accounting several times per turn.
-/// Status/objective/budget changes and out-of-band snapshots bypass this.
 export const GOAL_ACCOUNTING_INTERVAL_MS = 2000
 
 const GOAL_STATUSES: ReadonlySet<string> = new Set([
@@ -18,9 +14,6 @@ const GOAL_STATUSES: ReadonlySet<string> = new Set([
   "complete"
 ])
 
-/// Maps a codex `ThreadGoal` (unix-seconds timestamps) onto the wire
-/// `SessionGoal`. Lenient like the other decoders: a malformed or
-/// unknown-status goal yields undefined and the snapshot is skipped.
 export const sessionGoalFrom = (value: unknown): SessionGoal | undefined => {
   if (!isRecord(value)) return undefined
   const objective = typeof value.objective === "string" ? value.objective : undefined
@@ -43,8 +36,6 @@ export const sessionGoalFrom = (value: unknown): SessionGoal | undefined => {
 const isoFromUnixSeconds = (value: unknown): string =>
   new Date((typeof value === "number" ? value : 0) * 1000).toISOString()
 
-/// Whether a snapshot differs from the last emitted one beyond token/time
-/// accounting — those changes always reach the wire immediately.
 const goalMateriallyChanged = (session: CodexSession, goal: SessionGoal): boolean =>
   session.lastEmittedGoal === undefined ||
   session.lastEmittedGoal.objective !== goal.objective ||
@@ -72,10 +63,6 @@ export const emitGoalCleared = (session: CodexSession): Promise<void> => {
   })
 }
 
-/// `thread/goal/updated` handler: material changes and out-of-band snapshots
-/// (turnId null — client set / resume) emit immediately; accounting-only
-/// ticks are rate-limited with the freshest snapshot held for the next
-/// window or the turn-end flush.
 export const handleGoalUpdated = (
   session: CodexSession,
   payload: Record<string, unknown>

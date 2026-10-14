@@ -1,7 +1,3 @@
-//  The one picture-in-picture card over a chat. It shows whichever of the
-//  agent's tools it touched last, Computer Use or Browser Use, among those
-//  with something to show, and switches as the agent moves between them.
-
 import CodevisorCore
 import CodevisorCoreMac
 import Observation
@@ -18,29 +14,24 @@ final class AgentLivePreviewPiPModel {
     let browserVisible: Bool
   }
 
-  /// Nil where the chat's machine can't show that tool.
   private let computer: ComputerUsePiPModel?
   private let browser: BrowserUsePiPModel?
 
   init(computer: ComputerUsePiPModel?, browser: BrowserUsePiPModel?) {
     self.computer = computer
     self.browser = browser
-    // One card, one place: both views share the corner and size.
     if let computer, let browser {
       browser.corner = computer.corner
       browser.area = computer.area
     }
   }
 
-  /// The view on the card: the tool touched last when both have something
-  /// to show, otherwise whichever does.
   private var shown: (any LivePreviewPiPModel)? {
     let showsComputer = computer?.isVisible == true
     if browser?.isVisible == true, !showsComputer || browser?.lastUsedTool == .browser { return browser }
     return showsComputer ? computer : nil
   }
 
-  /// Where the card's placement is kept.
   private var placement: (any LivePreviewPiPModel)? {
     if let computer { return computer }
     return browser
@@ -110,9 +101,6 @@ extension AgentLivePreviewPiPModel: LivePreviewPiPModel {
     for child in children { child.teardown() }
   }
 
-  /// Closing the card closes every view it could switch to, so it doesn't
-  /// reappear with the other tool. Each returns once its tool's activity
-  /// ends and starts again.
   func dismiss() {
     for child in children where child.isVisible { child.dismiss() }
   }
@@ -124,7 +112,6 @@ extension AgentLivePreviewPiPModel: LivePreviewPiPModel {
     for child in children { child.resetSize() }
   }
 
-  /// The tab's frames stream only while the card shows it.
   private func pauseHiddenBrowser() {
     guard let browser else { return }
     browser.setPaused(shown !== browser)

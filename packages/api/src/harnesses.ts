@@ -3,9 +3,6 @@ import { Schema } from "effect"
 export const HarnessReadiness = Schema.Struct({
   state: Schema.Literals(["ready", "unavailable"]),
   detail: Schema.optional(Schema.String),
-  /// Resolved binary location and version for ready harnesses. Structured on
-  /// purpose: clients show them, and future config-sync diffs "what's
-  /// installed where" across machines.
   path: Schema.optional(Schema.String),
   version: Schema.optional(Schema.String)
 })
@@ -58,43 +55,28 @@ export const HarnessAuth = Schema.Struct({
 })
 export type HarnessAuth = typeof HarnessAuth.Type
 
-/// One way Codevisor can install a harness CLI on the server's machine,
-/// resolved against what's actually available there (brew/npm present, OS).
 export const HarnessInstallMethod = Schema.Struct({
-  /// Stable method id, currently the kind ("brew" | "npm" | "curl" | "uv").
   id: Schema.String,
   kind: Schema.Literals(["brew", "npm", "curl", "uv"]),
-  /// Human label for pickers, e.g. "Homebrew".
   label: Schema.String,
-  /// The exact shell command that would run — shown verbatim in the confirm
-  /// UI before anything executes.
   command: Schema.String,
-  /// Whether the method's prerequisite tooling exists on the machine.
   available: Schema.Boolean,
-  /// The resolved preference winner (brew > curl > npm among available).
   recommended: Schema.Boolean
 })
 export type HarnessInstallMethod = typeof HarnessInstallMethod.Type
 
-/// Latest-version knowledge for an installed harness, checked against the
-/// version channel matching its detected install origin.
 export const HarnessUpdateInfo = Schema.Struct({
   installedVersion: Schema.optional(Schema.String),
   latestVersion: Schema.optional(Schema.String),
   updateAvailable: Schema.Boolean,
-  /// Which channel produced latestVersion: "npm" | "brew" | "github" | "sparkle".
   source: Schema.optional(Schema.String),
-  /// Detected install origin of the binary (npm/brew/curl/appBundle/…).
   installOrigin: Schema.optional(Schema.String),
   channel: Schema.optional(Schema.String),
   checkedAt: Schema.optional(Schema.String),
-  /// What changes when the available update is a new major version; present
-  /// only then. Clients confirm before running such an update.
   notes: Schema.optional(Schema.String)
 })
 export type HarnessUpdateInfo = typeof HarnessUpdateInfo.Type
 
-/// Live install/update state machine for one harness.
 export const HarnessLifecycleState = Schema.Struct({
   phase: Schema.Literals([
     "idle",
@@ -105,18 +87,13 @@ export const HarnessLifecycleState = Schema.Struct({
     "failed"
   ]),
   targetVersion: Schema.optional(Schema.String),
-  /// Install method the current/last operation used.
   methodId: Schema.optional(Schema.String),
-  /// Background terminal streaming the operation's output ("Show Output").
   terminalId: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String),
   startedAt: Schema.optional(Schema.String)
 })
 export type HarnessLifecycleState = typeof HarnessLifecycleState.Type
 
-/// Dual-install: a desktop app that bundles a copy of the harness CLI while
-/// the primary install is the user's own (brew/npm/…). The app updates via
-/// its own Sparkle feed; this is the detail sheet's on-demand snapshot.
 export const HarnessBundledApp = Schema.Struct({
   appName: Schema.String,
   bundlePath: Schema.String,
@@ -143,24 +120,13 @@ export const Harness = Schema.Struct({
   source: Schema.String,
   launchKind: Schema.Literals(["executable", "npx", "uvx", "unknown"]),
   enabled: Schema.Boolean,
-  /// Persisted user preference. `enabled` is the effective value after
-  /// installation and authentication gates have been applied. Optional for
-  /// compatibility with older Codevisor servers and cached client models.
   desiredEnabled: Schema.optional(Schema.Boolean),
   settings: Schema.optional(HarnessSettings),
   readiness: HarnessReadiness,
-  /// Harness-owned authentication state. Optional while talking to servers
-  /// that predate account management.
   auth: Schema.optional(HarnessAuth),
-  /// Copyable shell command that installs the harness CLI; present only for
-  /// harnesses with a well-known installer.
   installHint: Schema.optional(Schema.String),
-  /// Ways Codevisor can install this harness on the server's machine.
-  /// Optional while talking to servers that predate lifecycle management.
   installMethods: Schema.optional(Schema.Array(HarnessInstallMethod)),
-  /// Latest-version knowledge from the periodic update check.
   updateInfo: Schema.optional(HarnessUpdateInfo),
-  /// Live install/update operation state.
   lifecycle: Schema.optional(HarnessLifecycleState)
 })
 export type Harness = typeof Harness.Type
@@ -215,7 +181,6 @@ export const HarnessAuthFlow = Schema.Union([
   })
 ])
 
-/// The code a user pasted back from a pasteCode flow's browser page.
 export const AnswerHarnessAuthRequest = Schema.Struct({ code: Schema.String })
 export type AnswerHarnessAuthRequest = typeof AnswerHarnessAuthRequest.Type
 export type HarnessAuthFlow = typeof HarnessAuthFlow.Type

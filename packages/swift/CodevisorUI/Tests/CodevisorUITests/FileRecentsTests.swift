@@ -4,8 +4,6 @@ import Testing
 @testable import CodevisorUI
 
 @MainActor struct FileRecentsTests {
-  /// A private defaults domain per test keeps the suite order-independent
-  /// and never touches the developer's own recents.
   private func makeDefaults() -> UserDefaults {
     let suite = "FileRecentsTests." + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!

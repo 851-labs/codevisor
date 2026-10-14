@@ -4,11 +4,6 @@ import MarkdownCore
 import StreamMarkdown
 import TranscriptKit
 
-/// Direct AppKit host for one immutable Markdown projection row.
-///
-/// Unlike ``TranscriptRowHost``, this view owns no hosting controller and
-/// never asks SwiftUI for an intrinsic size. Text, code, and tables are laid
-/// out by StreamMarkdown's native settled renderer.
 @MainActor
 final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
   private let decoration = TranscriptMarkdownRowDecoration()
@@ -52,9 +47,6 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     self.style = style
     decoration.frame = bounds
     decoration.setContent(chunk, style: style)
-    // Hosts are recycled across rows, so reset the limit for non-plan rows:
-    // transcript tables scroll to the window edges, plan tables inside the
-    // card's border.
     markdownView.tableBleedLimit =
       chunk.container == .planDocument
       ? PlanDocumentMetrics.tableBleedLimit
@@ -68,9 +60,6 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     )
     measuredWidth = max(1, bounds.width)
     reportedHeight = knownHeight
-    // A retained native layout can answer from its own content/width cache.
-    // A newly created renderer must establish its actual geometry, even if
-    // the ledger carries a height from a previous SwiftUI/TextKit surface.
     measureAndLayout()
   }
 
@@ -124,10 +113,6 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       width: geometry.contentFrame.width,
       height: contentHeight
     )
-    // The outer frame initially contains an estimate. Even when that
-    // estimate happens to equal the measured result (for example, a 1pt
-    // separator), the first native measurement must still enter the
-    // authoritative ledger so the initial-presentation gate can resolve.
     if previouslyReportedHeight.map({ abs($0 - height) > 0.5 }) ?? true {
       onHeightChange?(height)
     }
@@ -157,7 +142,6 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       chunk.container == .planDocument
       ? TranscriptMarkdownRowLayout.planHorizontalInset
       : 0
-    // A worked note sits beside its section's timeline rail.
     let timeline = chunk.timeline
     let linePadding = TranscriptTimelineMarks.linePadding
     let topInset =

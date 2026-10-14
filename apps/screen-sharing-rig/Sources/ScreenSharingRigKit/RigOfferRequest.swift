@@ -18,7 +18,6 @@ public struct RigOfferRequest: Codable, Sendable {
   }
 }
 
-/// Host → viewer: the answer for that session.
 public struct RigAnswerResponse: Codable, Sendable {
   public let version: Int
   public let sessionID: String

@@ -1,18 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The divider grip as a REAL AppKit view that owns its strip outright:
-/// hit-testing, the resize cursor, and the drag. The cursor is re-asserted
-/// on every tracked mouse move — the only thing that reliably beats a
-/// terminal view continuously re-asserting its I-beam next door (SwiftUI
-/// onHover push/pop and descendant cursor rects both lose that race under
-/// NSHostingView).
 struct SplitDividerGrip: NSViewRepresentable {
-  /// Branch orientation: horizontal branch → vertical divider →
-  /// left/right resize; vertical branch → up/down.
   let isHorizontal: Bool
-  /// Live translation along the branch axis since the drag started
-  /// (SwiftUI sign convention: right/down positive).
   let onChanged: (CGFloat) -> Void
   let onEnded: () -> Void
 
@@ -45,8 +35,6 @@ struct SplitDividerGrip: NSViewRepresentable {
     override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 
     override func mouseDown(with event: NSEvent) {
-      // Screen coordinates: stable while our own layout moves under
-      // the drag.
       dragStart = NSEvent.mouseLocation
     }
 
@@ -54,7 +42,6 @@ struct SplitDividerGrip: NSViewRepresentable {
       guard let dragStart else { return }
       cursor.set()
       let now = NSEvent.mouseLocation
-      // Screen space is y-up; SwiftUI's translation is y-down.
       let delta = isHorizontal ? now.x - dragStart.x : dragStart.y - now.y
       onChanged?(delta)
     }

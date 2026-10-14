@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process"
-// An isolated, pinned source recipe. Does not change the reference submodule,
-// installed SwiftPM artifact, Xcode selection, or any published release.
 import { createHash } from "node:crypto"
 import {
   cpSync,
@@ -78,13 +76,7 @@ function argumentsFor(variant) {
     `target_cpu="${variant.cpu}"`,
     `target_os="${variant.os}"`,
     ...(variant.os === "ios"
-      ? [
-          `target_environment="${variant.platform}"`,
-          // No ios_deployment_target: WebRTC's own (14.0 at M152, from its .gn). Built for iOS
-          // 12, the slices loaded Swift's libraries through @rpath, as for an OS without them,
-          // and an app without /usr/lib/swift in its run paths failed to launch on a device.
-          "ios_enable_code_signing=false"
-        ]
+      ? [`target_environment="${variant.platform}"`, "ios_enable_code_signing=false"]
       : [])
   ].join(" ")
 }
@@ -95,7 +87,6 @@ function checkout(directory, url, revision) {
     run("git", ["init", "--quiet"], directory)
     run("git", ["remote", "add", "origin", url], directory)
   }
-  // Never discard a source edit when resuming a failed build.
   if (existsSync(join(directory, ".git/HEAD"))) {
     const status = run("git", ["status", "--porcelain", "--untracked-files=no"], directory, true)
     if (status) throw new Error(`Source checkout has edits: ${directory}`)
@@ -140,7 +131,6 @@ function stage(identifier, builds, licenseText) {
   const mac = identifier.startsWith("macos")
   const resources = mac ? join(staged, "Versions/A/Resources") : staged
   if (mac) {
-    // M152 leaves public macOS headers in gen/ and nests the privacy manifest.
     const headers = join(paths[0], "gen/sdk/WebRTC.framework/Headers")
     for (const file of readdirSync(headers).filter((file) => file.endsWith(".h"))) {
       cpSync(join(headers, file), join(staged, "Versions/A/Headers", file))
@@ -180,10 +170,6 @@ function stage(identifier, builds, licenseText) {
   return ["-framework", staged, "-debug-symbols", dsym]
 }
 
-// Chromium's toolchain strips with llvm-strip, which leaves the string table 4-byte aligned
-// whenever the symbol count comes out odd; Xcode 27's linker refuses such a library
-// ("mis-aligned LINKEDIT string pool"). The builds stay unstripped (enable_stripping=false, after
-// dsymutil has run) and Apple's strip, with Chromium's arguments, does it here instead.
 function strip(binary) {
   run("xcrun", ["strip", "-x", "-S", binary])
   for (const arch of run("lipo", ["-archs", binary], workspace, true).split(/\s+/)) {
@@ -196,8 +182,6 @@ function strip(binary) {
 
 function build() {
   if (process.platform !== "darwin") throw new Error("The WebRTC artifact requires macOS")
-  // Validate tools before fetching gigabytes of sources. Respect DEVELOPER_DIR;
-  // this script never changes the user's global xcode-select setting.
   const xcode = run("xcodebuild", ["-version"], repoRoot, true)
   const python = run("python3", ["--version"], repoRoot, true)
   if (!xcode.split("\n").includes(`Xcode ${lock.xcodeVersion}`)) {
@@ -209,7 +193,7 @@ function build() {
     throw new Error(`Python ${lock.pythonVersion} is required; found ${python}`)
   mkdirSync(workspace, { recursive: true })
   const buildLock = join(workspace, ".building")
-  mkdirSync(buildLock) // Refuse concurrent builds of this exact artifact.
+  mkdirSync(buildLock)
   try {
     if (existsSync(output))
       throw new Error(
@@ -220,8 +204,6 @@ function build() {
       "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
       lock.depotToolsRevision
     )
-    // Disabling depot_tools updates also skips gclient's implicit bootstrap.
-    // Initialize its pinned tools without advancing the checkout revision.
     run(join(depot, "ensure_bootstrap"), [], depot)
     checkout(source, "https://webrtc.googlesource.com/src.git", lock.sourceRevision)
     writeFileSync(

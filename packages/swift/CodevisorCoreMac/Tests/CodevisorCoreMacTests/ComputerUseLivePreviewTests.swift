@@ -11,8 +11,6 @@ import Testing
 
 @Suite("Computer Use live preview")
 struct ComputerUseLivePreviewTests {
-  // MARK: Stream settings
-
   @Test("Watching raises the frame rate without changing the preview size")
   func previewSettingsFollowViewers() {
     let frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
@@ -23,11 +21,8 @@ struct ComputerUseLivePreviewTests {
     #expect(watched.size == idle.size)
     #expect(idle.framesPerSecond == 5)
     #expect(watched.framesPerSecond == 15)
-    // A renderer pins up to three buffers; the pool must exceed that.
     #expect(ComputerUseNativePreviewMetrics.queueDepth > 3)
   }
-
-  // MARK: Frame publishing
 
   @Test("Fans complete frames out to every sink and drops idle callbacks")
   func publisherFanOut() throws {
@@ -75,8 +70,6 @@ struct ComputerUseLivePreviewTests {
     #expect(mailbox.droppedFrames == 1)
   }
 
-  // MARK: Ledger
-
   @Test("Tracks a session through activity, idle, window switch and stop")
   func ledgerTransitions() {
     var ledger = ComputerUseLivePreviewLedger()
@@ -91,7 +84,6 @@ struct ComputerUseLivePreviewTests {
     ledger.apply(.idled(sessionID: "ABC"))
     #expect(ledger.activities["abc"]?.state == .idle)
     #expect(ledger.activities["abc"]?.cursor == nil)
-    // Idle sessions don't track the cursor.
     ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 100, y: 100), at: 100))
     #expect(ledger.activities["abc"]?.cursor == nil)
 
@@ -99,12 +91,10 @@ struct ComputerUseLivePreviewTests {
     #expect(ledger.activities["abc"]?.state == .active)
     #expect(ledger.activities["abc"]?.cursor == nil)
 
-    // A new window drops a cursor position that belonged to the old one.
     ledger.apply(activated("ABC", window: 8, frame: frame))
     #expect(ledger.activities["abc"]?.windowID == 8)
     #expect(ledger.activities["abc"]?.cursor == nil)
 
-    // A stop for another pid leaves the session alone.
     ledger.apply(.stopped(sessionID: "abc", pid: 99))
     #expect(ledger.activities["abc"]?.state == .active)
     ledger.apply(.stopped(sessionID: "abc", pid: 42))
@@ -121,12 +111,10 @@ struct ComputerUseLivePreviewTests {
     ledger.apply(activated("abc", window: 7, frame: frame))
     ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 100))
 
-    // Another window's bounds never apply.
     ledger.apply(.windowFrameChanged(sessionID: "abc", windowID: 8, frame: .zero))
     #expect(ledger.activities["abc"]?.windowFrame == frame)
     #expect(ledger.activities["abc"]?.cursor != nil)
 
-    // An unchanged frame is a no-op, so observers are not woken 4 times a second.
     let unchanged = ledger
     ledger.apply(.windowFrameChanged(sessionID: "ABC", windowID: 7, frame: frame))
     #expect(ledger == unchanged)
@@ -134,7 +122,6 @@ struct ComputerUseLivePreviewTests {
     let resized = CGRect(x: 50, y: 80, width: 600, height: 500)
     ledger.apply(.windowFrameChanged(sessionID: "ABC", windowID: 7, frame: resized))
     #expect(ledger.activities["abc"]?.windowFrame == resized)
-    // The old normalized cursor no longer lines up with the new frame.
     #expect(ledger.activities["abc"]?.cursor == nil)
   }
 
@@ -176,8 +163,6 @@ struct ComputerUseLivePreviewTests {
     #expect(computerUseNormalizedCursor(point: .zero, in: .zero) == nil)
   }
 
-  // MARK: Idle release
-
   @Test("Cursor inactivity and turn completion preserve the watched window and allow new input")
   func cursorLifetimeIsIndependentOfSharing() {
     var ledger = ComputerUseLivePreviewLedger()
@@ -187,7 +172,6 @@ struct ComputerUseLivePreviewTests {
     ledger.apply(.expireCursors(now: 101.999))
     #expect(ledger.activities["abc"]?.cursor != nil)
 
-    // New input extends the deadline; an old expiry cannot hide it.
     ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 200, y: 150), at: 101))
     ledger.apply(.expireCursors(now: 102))
     #expect(ledger.activities["abc"]?.cursor == CGPoint(x: 0.25, y: 0.25))
@@ -197,7 +181,6 @@ struct ComputerUseLivePreviewTests {
     #expect(ledger.activities["abc"]?.windowID == 7)
     #expect(ledger.activities["abc"]?.windowFrame == frame)
 
-    // Observations/Space changes must not resurrect the old indicator.
     ledger.apply(activated("ABC", window: 7, frame: frame))
     #expect(ledger.activities["abc"]?.cursor == nil)
     ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 104))
@@ -238,8 +221,6 @@ struct ComputerUseLivePreviewTests {
     #expect(idle == ["abandoned"])
   }
 
-  // MARK: Geometry
-
   @Test("Aspect-fits the frame into the card")
   func previewSize() {
     #expect(
@@ -252,8 +233,6 @@ struct ComputerUseLivePreviewTests {
       computerUseLivePreviewSize(frameSize: .zero, maxWidth: 320, maxHeight: 400)
         == CGSize(width: 320, height: 200))
   }
-
-  // MARK: Fixtures
 
   private func activated(
     _ sessionID: String,
@@ -279,7 +258,6 @@ final class RecordingSink: ComputerUseFrameSink, @unchecked Sendable {
 
 struct SampleBufferFixtureError: Error {}
 
-/// A BGRA sample buffer carrying ScreenCaptureKit's frame-status attachment.
 func sampleBuffer(status: SCFrameStatus, seconds: Int64) throws -> CMSampleBuffer {
   var pixelBuffer: CVPixelBuffer?
   CVPixelBufferCreate(nil, 4, 4, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)

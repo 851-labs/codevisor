@@ -6,7 +6,6 @@ import CodevisorTheming
 
 @Suite("CodeHighlighter")
 struct CodeHighlighterTests {
-  // A minimal but valid Shiki theme: dark bg, pink keywords.
   private let themeJSON = """
     {
       "name": "test-theme",
@@ -36,10 +35,8 @@ struct CodeHighlighterTests {
       ))
     #expect(tokens.count == 2)
     #expect(tokens[0].map(\.content).joined() == "// hi")
-    // `func` is a keyword.
     let funcToken = tokens[1].first { $0.content.contains("func") }
     #expect(funcToken?.color?.lowercased() == "#ff79c6")
-    // Round-trip content equals the input.
     let joined = tokens.map { $0.map(\.content).joined() }.joined(separator: "\n")
     #expect(joined == "// hi\nfunc greet() {}")
   }
@@ -259,7 +256,6 @@ struct CodeHighlighterTests {
     #expect(CodeHighlighter.language(forPath: "include/foo.hpp") == "cpp")
     #expect(CodeHighlighter.language(forPath: "CONFIG.YML") == "yaml")
     #expect(CodeHighlighter.language(forPath: "scripts/build.mjs") == "javascript")
-    // No extension or no bundled grammar → nil, caller keeps plain text.
     #expect(CodeHighlighter.language(forPath: "Makefile") == nil)
     #expect(CodeHighlighter.language(forPath: "photo.jpeg") == nil)
   }

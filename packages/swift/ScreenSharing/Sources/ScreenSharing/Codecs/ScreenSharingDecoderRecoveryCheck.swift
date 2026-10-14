@@ -1,8 +1,5 @@
 import Foundation
 
-/// Opt-in diagnostic shared by the probe and the transport's decoder queue.
-/// No fault is armed in the app. Time is supplied by the caller so the state
-/// transitions can be checked without a codec, network, or scheduler.
 package final class ScreenSharingDecoderRecoveryCheck: @unchecked Sendable {
   package init() {}
   package enum Action: Equatable {

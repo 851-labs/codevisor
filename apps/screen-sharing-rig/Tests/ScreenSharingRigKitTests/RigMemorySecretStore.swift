@@ -1,7 +1,6 @@
 import Foundation
 import ScreenSharingRigKit
 
-/// A `RigSecretStore` in memory, standing in for the login Keychain.
 final class RigMemorySecretStore: RigSecretStore, @unchecked Sendable {
   private let lock = NSLock()
   private var secrets: [String: String]

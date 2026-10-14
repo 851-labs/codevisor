@@ -3,7 +3,6 @@ import CodevisorTheming
 import Foundation
 import SwiftUI
 
-/// Synchronizes one native editor with its session and shared document buffer.
 @MainActor
 final class FileEditorStorage: NSObject {
   private weak var session: FileEditorSession?
@@ -83,7 +82,6 @@ struct FileSourceEditor: View {
     NativeFileSourceEditor(storage: session.storage, theme: theme, highlight: highlight)
       .onChange(of: session.document.snapshot?.version, initial: true) { _, _ in session.resolvePendingLine() }
       #if os(iOS)
-        // UIKit keeps resting content clear of chrome; SwiftUI avoids the keyboard.
         .ignoresSafeArea(.container, edges: .vertical)
       #endif
   }

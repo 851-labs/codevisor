@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// Every server-to-client message (RFC 6143 §7.6) through the client's read
-/// loop, over a scripted stream that ends on its own so nothing is timed.
 struct RFBServerMessageTests {
   private static let square = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
 
@@ -34,9 +32,6 @@ struct RFBServerMessageTests {
     #expect(session.events == [.serverCutText(""), .bell])
   }
 
-  /// A negative length is an Extended Clipboard message (851-2316); one the
-  /// client can't decode (here: flags with no action) is dropped whole, so the
-  /// stream stays in sync and the session carries on.
   @Test func anUndecodableExtendedClipboardMessageIsSkippedWhole() async throws {
     let body: [UInt8] = [0, 0, 0, 1] + [UInt8](repeating: 0x55, count: 36)
     let session = try await ScriptedSession.play(
@@ -50,8 +45,6 @@ struct RFBServerMessageTests {
     #expect(session.events == [.extendedClipboard(.notify(formats: RFBExtendedClipboard.text)), .bell])
   }
 
-  /// SetColourMapEntries is six bytes per colour after a six-byte header; the
-  /// client has no use for it but must step over exactly the right number.
   @Test(arguments: [0, 1, 256])
   func setColourMapEntriesIsSkippedByItsColourCount(_ colours: Int) async throws {
     let message: [UInt8] =
@@ -67,8 +60,6 @@ struct RFBServerMessageTests {
     #expect(session.error as? RFBError == .malformed("unknown server message \(type)"))
   }
 
-  // MARK: FramebufferUpdate
-
   @Test func rawRectanglesLandAtTheirOffsetWithAnOpaqueAlpha() async throws {
     let rect = RFBRectangle(x: 1, y: 2, width: 2, height: 2)
     let session = try await ScriptedSession.play(
@@ -82,8 +73,6 @@ struct RFBServerMessageTests {
     #expect(snapshot.pixel(x: 3, y: 2) == [0, 0, 0, 0])
   }
 
-  /// An update is acknowledged with one incremental request, and only one:
-  /// the client keeps a single request in flight.
   @Test func eachAppliedUpdateIsFollowedByOneIncrementalRequest() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let one = RFBScript.update([RFBScript.rectangle(rect, 0, RFBScript.rawPixels(rect, blue: 1, green: 1, red: 1))])
@@ -126,8 +115,6 @@ struct RFBServerMessageTests {
     #expect(copied.pixel(x: 0, y: 0) == [7, 8, 9, 255])
   }
 
-  /// CopyRect whose source and destination overlap: a one-pixel shift down the
-  /// framebuffer must not smear the top row over everything below it.
   @Test func copyRectHandlesOverlappingSourceAndDestination() async throws {
     let rows = (0..<4).map { row in
       RFBScript.rectangle(
@@ -141,8 +128,8 @@ struct RFBServerMessageTests {
       handshake: RFBScript.openHandshake(width: 1, height: 4))
     #expect(session.updates.count == 3)
     #expect((0..<4).map { session.updates[0].pixel(x: 0, y: $0)[0] } == [1, 2, 3, 4])
-    #expect((0..<4).map { session.updates[1].pixel(x: 0, y: $0)[0] } == [1, 1, 2, 3])  // shifted down
-    #expect((0..<4).map { session.updates[2].pixel(x: 0, y: $0)[0] } == [1, 2, 3, 3])  // shifted back up
+    #expect((0..<4).map { session.updates[1].pixel(x: 0, y: $0)[0] } == [1, 1, 2, 3])
+    #expect((0..<4).map { session.updates[2].pixel(x: 0, y: $0)[0] } == [1, 2, 3, 3])
   }
 
   @Test func desktopSizeResizesAndIsReportedWithoutARectangle() async throws {
@@ -152,7 +139,6 @@ struct RFBServerMessageTests {
     let snapshot = try #require(session.updates.first)
     #expect(snapshot.update == RFBUpdate(rectangles: [], resized: true))
     #expect(snapshot.width == 8 && snapshot.height == 4)
-    // The next request covers the new desktop, not the old one.
     #expect(
       Array(session.written.suffix(10))
         == RFBClientMessage.framebufferUpdateRequest(
@@ -186,8 +172,6 @@ struct RFBServerMessageTests {
         == .malformed("rectangle \(RFBRectangle(x: 7, y: 0, width: 2, height: 2)) outside 8 × 4"))
   }
 
-  /// A ZRLE length a server could never mean is refused before the bytes are
-  /// read, so a hostile header cannot make the client buffer 4 GB.
   @Test func anAbsurdZRLELengthIsRefusedBeforeReading() async throws {
     let session = try await ScriptedSession.play(
       RFBScript.update([RFBScript.rectangle(Self.square, 16, u32(64 << 20 + 1))]),
@@ -195,8 +179,6 @@ struct RFBServerMessageTests {
     #expect(session.error as? RFBError == .malformed("ZRLE rectangle of \(64 << 20 + 1) bytes"))
   }
 
-  /// Every prefix of a valid update ends the run with a closed connection:
-  /// no truncation is mistaken for a complete rectangle.
   @Test func everyTruncationOfAnUpdateEndsTheRun() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 2, height: 2)
     let complete = RFBScript.update([

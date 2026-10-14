@@ -11,14 +11,6 @@ import {
 } from "../components/plugin-directory"
 import { SiteNav } from "../components/site-nav"
 
-/// codevisor.dev/plugins/<id> — everything the directory row leaves out,
-/// rendered from the registry's per-plugin document (/plugins/<id>.json):
-/// what installing adds (panes, agent tools) and the GitHub facts that anchor
-/// the entry to a real owner. Install deep-links into the app's
-/// discover→consent flow; the CLI command is the no-app fallback.
-
-/// The serializable subset the page renders — the full registry entry
-/// carries opaque tool inputSchema values that are not serializable.
 interface PluginDetail {
   readonly id: string
   readonly name: string
@@ -34,13 +26,9 @@ interface PluginDetail {
 }
 
 interface PluginDetailData {
-  /// "missing" is a real 404 (unknown or delisted plugin); null means the
-  /// registry itself was unreachable.
   readonly plugin: PluginDetail | "missing" | null
 }
 
-/// Plugin ids are always lowercase `owner.name` — anything else can skip the
-/// network round trip (and never reaches the registry URL).
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 
 const toDetail = (entry: PluginRegistryEntry): PluginDetail => ({

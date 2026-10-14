@@ -27,13 +27,10 @@ export interface LegacyLayoutMigrationOptions {
   readonly worktreesRoot: string
   readonly homeDirectory: string
   readonly onProgress?: (progress: DataUpgradeProgress) => void
-  /// Receives worktrees whose Git links could not be repaired.
   readonly log: (message: string) => void
 }
 
 const migrationId = "codevisor-file-layout-v1"
-/// Written to the data directory once moved worktrees have been repaired, so
-/// later boots skip rescanning every worktree for an interrupted repair.
 const worktreeRepairMarker = `${migrationId}.json`
 const migrationName = "Moving HerdMan data to Codevisor"
 
@@ -42,9 +39,9 @@ const pathExists = async (path: string): Promise<boolean> => {
     await lstat(path)
     return true
   } catch (error) {
-    /* v8 ignore next -- the non-ENOENT branch is the unexpected adapter failure surfaced below. */
+    /* v8 ignore next */
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
-    /* v8 ignore next -- unexpected lstat failures are surfaced unchanged by the filesystem adapter. */
+    /* v8 ignore next */
     throw error
   }
 }
@@ -69,7 +66,7 @@ const moveWithoutOverwrite = async (source: string, destination: string): Promis
     try {
       await rename(source, destination)
       return
-      /* v8 ignore start -- EXDEV requires source and destination on separate mounted filesystems. */
+      /* v8 ignore start */
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error
       await cp(source, destination, {
@@ -120,10 +117,6 @@ export interface TmpDataDirMigrationOptions {
   readonly temporaryDirectory?: string
 }
 
-/// Everything the server writes next to its database. Standalone installs
-/// before the canonical ~/.codevisor/data layout defaulted the database into
-/// the OS temp directory (wiped on reboot), so the first start with the new
-/// default relocates whatever survived.
 const dataDirArtifacts = [
   "codevisor-server.sqlite",
   "codevisor-server.sqlite-shm",
@@ -137,7 +130,7 @@ const dataDirArtifacts = [
 ] as const
 
 export const migrateTmpDataDir = async (options: TmpDataDirMigrationOptions): Promise<void> => {
-  /* v8 ignore next -- tests always inject a temp directory; exercising the real tmpdir() could move a developer's live database. */
+  /* v8 ignore next */
   const temporaryDirectory = options.temporaryDirectory ?? tmpdir()
   const dataDirectory = dirname(options.databasePath)
   const legacyDatabasePath = join(temporaryDirectory, "codevisor-server.sqlite")
@@ -174,8 +167,6 @@ interface SubmoduleWorktreeRepair {
   readonly worktreePath: string
 }
 
-/// Reads a submodule's `core.worktree`, or undefined when it is unset. Git
-/// clears the key on `git submodule deinit`, leaving no checkout to repair.
 const configuredSubmoduleWorktree = async (configPath: string): Promise<string | undefined> => {
   try {
     const { stdout } = await execFileAsync("git", [
@@ -270,7 +261,6 @@ const worktreeRepairPending = async (
   canonicalWorktreesRoot: string
 ): Promise<boolean> => {
   for (const gitFile of await linkedWorktreeGitFiles(root)) {
-    // A worktree that can't be inspected is left to the repair pass, which reports it.
     const pending = await worktreeNeedsRepair(
       gitFile,
       legacyWorktreesRoot,
@@ -281,9 +271,6 @@ const worktreeRepairPending = async (
   return false
 }
 
-/// Repairs each moved worktree independently. A worktree Git can't repair is
-/// reported and skipped: its files are already in place, and one broken
-/// checkout must not keep the server from starting.
 const repairMovedWorktrees = async (
   root: string,
   legacyWorktreesRoot: string,
@@ -311,7 +298,7 @@ const repairMovedWorktrees = async (
         ])
       }
     } catch (error) {
-      /* v8 ignore next -- Node filesystem and git failures use Error instances. */
+      /* v8 ignore next */
       const message = error instanceof Error ? error.message : String(error)
       log(`Skipped repairing Git links for ${worktree}: ${message}`)
     }
@@ -335,11 +322,6 @@ const report = (
   })
 }
 
-/// Moves the pre-Codevisor data layout before the database opens. This is a
-/// blocking update backfill: the server health endpoint intentionally remains
-/// unavailable until every file and worktree is safely in its new location.
-/// Repairing Git links in moved worktrees is best-effort and runs until the
-/// data directory records it as complete.
 export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions): Promise<void> => {
   const { homeDirectory } = options
   const dataDirectory = dirname(options.databasePath)
@@ -380,7 +362,7 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
       ).some(Boolean)
     if (source !== destination && existsBeforeMerge) {
       operations.push(async () => {
-        /* v8 ignore next -- defensive recheck for a file removed by another interrupted updater. */
+        /* v8 ignore next */
         if (await pathExists(source)) await moveWithoutOverwrite(source, destination)
       })
     }
@@ -415,7 +397,6 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
       canonicalCodevisorWorktreesRoot
     ))
   ) {
-    // A previous attempt may have moved the files before it was interrupted.
     operations.push(() =>
       repairMovedWorktrees(
         options.worktreesRoot,
@@ -441,7 +422,7 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
     await recordRepairComplete()
     report(options.onProgress, "completed", operations.length, operations.length)
   } catch (error) {
-    /* v8 ignore next -- Node filesystem and git failures use Error instances. */
+    /* v8 ignore next */
     const message = error instanceof Error ? error.message : String(error)
     report(options.onProgress, "failed", completed, operations.length, message)
     throw error

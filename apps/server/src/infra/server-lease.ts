@@ -31,10 +31,6 @@ const ownerDescription = (databasePath: string): string | undefined => {
   }
 }
 
-/// Holds an operating-system-backed, heartbeat-updated lease for one database.
-/// `proper-lockfile` uses an atomic lock directory and removes it on normal
-/// process exit. A killed process leaves a stale lease that expires instead of
-/// allowing two migration writers to race against the same SQLite database.
 export const acquireServerLease = async (
   databasePath: string,
   options: {
@@ -58,9 +54,6 @@ export const acquireServerLease = async (
   try {
     unlock = await lockfile.lock(databasePath, {
       realpath: false,
-      // A replacement app may start immediately after a crashed predecessor.
-      // Give its owner monitor / stale heartbeat time to relinquish the lease.
-      // Standalone servers still reject duplicate starts immediately.
       retries:
         options.waitForOwnership === true
           ? { retries: 70, factor: 1, minTimeout: 100, maxTimeout: 250, randomize: true }
@@ -86,9 +79,7 @@ export const acquireServerLease = async (
           readFileSync(ownerPath(databasePath), "utf8")
         ) as Partial<ServerLeaseOwner>
         if (current.bootId === owner.bootId) rmSync(ownerPath(databasePath), { force: true })
-      } catch {
-        // Diagnostics metadata is best-effort; the lock remains authoritative.
-      }
+      } catch {}
       await unlock()
     }
   }

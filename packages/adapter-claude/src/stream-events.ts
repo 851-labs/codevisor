@@ -29,11 +29,6 @@ const startStreamBlock = (
   parentId: string | undefined
 ): void => {
   const block = event.content_block
-  // Current Claude models stream thinking with its text omitted (only a
-  // signature delta follows), so the block's start is the only reliable
-  // thinking signal. An empty thought chunk drives the client's
-  // "Thinking…" state through the otherwise silent gap; any thought text
-  // that does stream still flows through `thinking_delta` below.
   if (isRecord(block) && (block.type === "thinking" || block.type === "redacted_thinking")) {
     void session.emit({
       kind: "session.output",
@@ -52,11 +47,6 @@ const startStreamBlock = (
 }
 
 const retagStreamPreamble = (session: ClaudeSession, parentId: string | undefined): void => {
-  // A tool_use block starting after streamed text in the same top-level
-  // message proves that text was preamble ("Let me check…"), not the
-  // final answer. Retro-tag the span commentary via a zero-length chunk
-  // so clients demote it out of the final-answer slot immediately
-  // instead of waiting for the next text block after the tool settles.
   if (
     parentId === undefined &&
     session.currentMessageTextStreamed &&
@@ -103,12 +93,8 @@ const announceStreamTool = (
   toolName: string,
   parentId: string | undefined
 ): void => {
-  // Plan tools never open a tool call: they surface as plan updates
-  // once the authoritative input arrives on the assistant message.
   if (HIDDEN_TOOLS.has(toolName)) return
   session.openToolCalls.add(toolUseId)
-  // The model is already generating this call's input — that's work in
-  // progress, and for fast tools it's most of the visible lifetime.
   void session.emit({
     kind: "session.output",
     payload: {
@@ -128,16 +114,8 @@ const emitStreamText = (
   delta: Record<string, unknown>,
   parentId: string | undefined
 ): void => {
-  // Subagent prose flows tagged with its parent tool call so clients can
-  // nest it under the Task row instead of mixing it into the main thread.
   const messageId =
     parentId === undefined ? session.currentMessageId : session.subagentMessageIds.get(parentId)
-  // A zero-length delta carries neither text nor a phase to retro-tag
-  // with, so it is pure stream noise. Forwarding it created an empty
-  // text span that clients counted as the final answer, retiring the
-  // activity indicator with nothing to show in its place. The
-  // deliberate zero-length `phase: "commentary"` retro-tag emitted on
-  // tool start is a separate call and still flows.
   const text = String(delta.text ?? "")
   if (text.length > 0) {
     if (parentId === undefined) {
@@ -219,9 +197,6 @@ export const handleStreamEvent = (
   }
 }
 
-/// The Anthropic stream identifies blocks by index, not id. Content blocks
-/// stream strictly sequentially per message, so the accumulator opened last
-/// is the one receiving deltas.
 const findAccumulatorId = (session: ClaudeSession, _event: Record<string, unknown>): string => {
   let lastKey = ""
   for (const key of session.accumulators.keys()) {

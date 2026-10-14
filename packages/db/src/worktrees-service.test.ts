@@ -28,7 +28,6 @@ describe("@codevisor/db", () => {
       )
       await run(db.deleteWorktree(worktree.id))
 
-      // The live row is gone (name is free again) but the snapshot record remains.
       expect(await run(db.listWorktrees(project.id))).toEqual([])
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
       expect((await run(db.listArchivedWorktrees(project.id))).length).toBe(1)
@@ -58,7 +57,6 @@ describe("@codevisor/db", () => {
       expect(await run(db.listWorktrees(project.id))).toEqual([worktree])
       expect(await run(db.listWorktrees("missing"))).toEqual([])
 
-      // Same name for the same project on the same server is rejected.
       await expect(
         run(db.createWorktree(project.id, "fix-auth", "codevisor/fix-auth-2"))
       ).rejects.toBeInstanceOf(DatabaseError)
@@ -79,10 +77,8 @@ describe("@codevisor/db", () => {
       const doomed = await run(db.createWorktree(project.id, "doomed", "codevisor/doomed"))
       await run(db.deleteWorktree(doomed.id))
       expect((await run(db.listWorktrees(project.id))).map((w) => w.name)).toEqual(["fix-auth"])
-      // Deleting an unknown worktree is a no-op rather than an error.
       await run(db.deleteWorktree("missing"))
 
-      // Worktree rows are removed with their project.
       await run(db.deleteProject(project.id))
       expect(await run(db.listWorktrees(project.id))).toEqual([])
     } finally {

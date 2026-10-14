@@ -1,19 +1,6 @@
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-/// Terminal replay buffers across host restarts.
-///
-/// The terminal manager's screens are in-memory, so a server restart
-/// (self-update handoff, `codevisor stop`, service restart) would lose every
-/// terminal's scrollback. This module snapshots each terminal's screen and
-/// scrollback to `<dataDir>/terminal-buffers.json` on every graceful exit path,
-/// and periodically while output changes so a crash loses at most one
-/// interval, then restores them on the next boot.
-///
-/// Restored terminals are closed and process-less (the processes died with the
-/// previous server): clients see the reconstructed screen and an exit, then
-/// create fresh terminals as usual. All writes are synchronous so they are
-/// safe inside `process.on("exit")`.
 import type { TerminalManagerService, TerminalSnapshot } from "@codevisor/terminal"
 
 const SNAPSHOT_FILE = "terminal-buffers.json"
@@ -24,31 +11,17 @@ export interface TerminalPersistenceOptions {
   readonly terminal: TerminalManagerService
   readonly log?: (line: string) => void
   readonly onRestoreProgress?: (completed: number, total: number) => void
-  /// Injectable process seam so exit hooks are testable. Production uses the
-  /// real `process`.
   readonly processHandle?: {
     readonly on: (event: "exit" | "SIGTERM" | "SIGINT", handler: () => void) => void
     readonly exit: (code: number) => void
   }
-  /// Injectable timer seam for the periodic flush.
   readonly setInterval?: (run: () => void, ms: number) => { unref?: () => void }
 }
 
 export interface TerminalPersistence {
-  /// Restores the previous process's snapshot into the manager (best-effort:
-  /// a missing or corrupt file is skipped) and deletes the file so a later
-  /// crash can never resurrect stale buffers twice.
   readonly restore: () => void
-  /// Synchronously writes the current buffers (atomic: temp file + rename).
   readonly flush: () => void
-  /// Installs flush hooks on every graceful exit path: `process.on("exit")`
-  /// covers explicit `process.exit()` (client-requested shutdown, self-update
-  /// handoff, startup failure), and SIGTERM/SIGINT handlers convert
-  /// signal-driven stops (`codevisor stop`, service managers, Ctrl-C) into
-  /// flushing exits with conventional signal exit codes.
   readonly installExitHooks: () => void
-  /// Rewrites the snapshot every interval in which some terminal produced
-  /// output, bounding what a crash can lose.
   readonly startPeriodicFlush: () => void
 }
 
@@ -63,15 +36,11 @@ export const makeTerminalPersistence = (
     try {
       raw = readFileSync(snapshotPath, "utf8")
     } catch {
-      return // First boot, or the previous exit was not graceful.
+      return
     }
-    // Consumed either way: replaying the same snapshot into a future boot
-    // after this process crashes would resurrect stale state.
     try {
       unlinkSync(snapshotPath)
-    } catch {
-      // Removal is best-effort; the next flush overwrites it regardless.
-    }
+    } catch {}
     try {
       const snapshot = JSON.parse(raw) as TerminalSnapshot
       if (
@@ -106,18 +75,14 @@ export const makeTerminalPersistence = (
       const temporaryPath = `${snapshotPath}.tmp`
       writeFileSync(temporaryPath, JSON.stringify(snapshot), { mode: 0o600 })
       renameSync(temporaryPath, snapshotPath)
-    } catch {
-      // Never let a persistence failure interfere with shutdown.
-    }
+    } catch {}
   }
 
   let flushedRevision: number | undefined
   const startPeriodicFlush = (): void => {
-    /* v8 ignore next -- tests always inject a timer; production uses the real one. */
+    /* v8 ignore next */
     const schedule =
       options.setInterval ??
-      // Node's timers return a Timeout (with unref); the DOM lib in scope
-      // types setInterval as returning a number.
       ((run: () => void, ms: number) => setInterval(run, ms) as unknown as { unref: () => void })
     const timer = schedule(() => {
       const revision = options.terminal.outputRevision()
@@ -125,12 +90,11 @@ export const makeTerminalPersistence = (
       flushedRevision = revision
       flush()
     }, PERIODIC_FLUSH_INTERVAL_MS)
-    // Never keep the process alive just to persist terminals.
     timer.unref?.()
   }
 
   const installExitHooks = (): void => {
-    /* v8 ignore next -- tests always inject a handle; production uses the real process. */
+    /* v8 ignore next */
     const processHandle = options.processHandle ?? process
     processHandle.on("exit", flush)
     for (const [signal, code] of [
@@ -138,8 +102,6 @@ export const makeTerminalPersistence = (
       ["SIGINT", 130]
     ] as const) {
       processHandle.on(signal, () => {
-        // flush runs via the "exit" handler; exiting here preserves the
-        // conventional 128+signal exit code the previous default delivered.
         processHandle.exit(code)
       })
     }

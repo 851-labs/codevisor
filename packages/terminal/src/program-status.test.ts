@@ -23,7 +23,6 @@ const set = (records: ProgramStatusRecords, state: string, id?: string) =>
 describe("parseProgramStatus", () => {
   it.each([
     ["state=idle", "idle", undefined],
-    // Terraform's example from the specification.
     [
       `state=blocked:kind=permission:app=terraform:msg=${b64("Apply 3 to add?")}`,
       "blocked",
@@ -31,13 +30,9 @@ describe("parseProgramStatus", () => {
     ],
     ["state=working:id=deploy/us-east:progress=40", "working", "deploy/us-east"],
     ["state=clear:id=deploy", "clear", "deploy"],
-    // Whitespace around keys and values is trimmed; repeats keep the last.
     [" state = working :state=done", "done", undefined],
-    // A malformed pair or unknown key is skipped, not the report.
     ["state=error:future=yes:oops:=x:Bad=1:note=a;b", "error", undefined],
-    // Padding is optional.
     [`state=done:msg=${b64("ok").replace(/=+$/u, "")}`, "done", undefined],
-    // Out-of-range and unknown optional values read as absent.
     ["state=working:progress=101:kind=nope:app=bad!name", "working", undefined]
   ])("reads %j", (body, state, id) => {
     expect(parseProgramStatus(body)).toEqual({ type: "report", state, id })
@@ -50,18 +45,14 @@ describe("parseProgramStatus", () => {
   it.each([
     ["no state", "kind=permission"],
     ["an unknown state", "state=thinking"],
-    // A report meant for one record must never land on the root, where
-    // `clear` would remove everything.
     ["an invalid id", "state=clear:id=a//b"],
     ["an id segment too long", `state=idle:id=${"a".repeat(33)}`],
     ["an id too deep", `state=idle:id=${Array(9).fill("a").join("/")}`],
     ["an id too long", `state=idle:id=${Array(5).fill("a".repeat(30)).join("/")}`],
-    // Even a replaced or unknown value breaks a limit.
     ["an overlong key", `state=idle:${"k".repeat(17)}=1`],
     ["an overlong app, even replaced", `state=idle:app=${"a".repeat(33)}:app=ok`],
     ["an overlong encoded title", `state=idle:title=${"QUFB".repeat(65)}`],
     ["an overlong encoded msg", `state=idle:msg=${"QUFB".repeat(684)}`],
-    // Unpadded, the encoded limit alone would admit 2049 bytes.
     ["a msg over 2048 bytes decoded", `state=idle:msg=${"QUFB".repeat(683)}`],
     ["a title that isn't base64", "state=idle:title=a-b"],
     ["msg that isn't base64", "state=idle:msg=a-b"],
@@ -112,7 +103,6 @@ describe("makeProgramStatusScanner", () => {
 
   it("carries only sequences it could read", () => {
     const scanner = makeProgramStatusScanner()
-    // A title, and a prompt mark too long to be one, are left behind.
     expect(scanner.scan("\u001b]2;7501;state=idle")).toEqual([])
     expect(scanner.scan("\u0007\u001b]133;A;" + "x".repeat(256))).toEqual([])
     expect(scanner.scan("\u0007")).toEqual([])
@@ -128,7 +118,6 @@ describe("makeProgramStatusScanner", () => {
   it("stops carrying a sequence once it outgrows the limit", () => {
     const scanner = makeProgramStatusScanner()
     expect(scanner.scan(`\u001b]7501;state=idle:x=${"a".repeat(4096)}`)).toEqual([])
-    // The rest of the oversized report is plain text now.
     expect(scanner.scan("\u001b\\\u001b]7501;state=done\u0007")).toEqual([report("done")])
   })
 })
@@ -149,7 +138,6 @@ describe("makeProgramStatusRecords", () => {
     expect(r.summary()).toBe("blocked")
     set(r, "error", "d")
     expect(r.summary()).toBe("error")
-    // Each report replaces its record.
     set(r, "idle", "d")
     expect(r.summary()).toBe("blocked")
   })

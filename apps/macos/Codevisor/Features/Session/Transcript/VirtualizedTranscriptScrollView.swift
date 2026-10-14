@@ -6,10 +6,6 @@ import SwiftUI
 import CodevisorUI
 import TranscriptKit
 
-/// One authoritative owner for viewport position, virtual row mounting, and
-/// compensation. It mirrors the architecture of ChatGPT's web scroll
-/// controller while retaining AppKit's native gestures, momentum, elasticity,
-/// accessibility, and overlay scroller.
 @MainActor
 final class VirtualizedTranscriptScrollView: NSScrollView {
   static let rowSpacing: CGFloat = 20
@@ -31,7 +27,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   let transcriptDocumentView = FlippedTranscriptDocumentView()
   let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = NSProgressIndicator()
-  /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
   var rows: [TranscriptVirtualRow] { rowSet.rows }
   var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
   var projectedRows: [TranscriptVirtualRow] {
@@ -47,27 +42,15 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     set { rowSet.activeRowsRange = newValue }
   }
   var projectedRowsVersion: TranscriptRowSetRevision?
-  /// Visibility and projection revisions advance independently. Keep the
-  /// raw projection revision so disclosure changes cannot be mistaken for a
-  /// newly-published settled transcript.
   var receivedProjectionRevision: UInt64?
   var activeRowsVersion: TranscriptRowSetRevision?
 
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
-  /// The transcript-wide text selection; see `+Selection.swift`.
   let textSelection = TranscriptSelectionState()
-  /// Find-in-chat state; see `+Find.swift`.
   let find = TranscriptFindState()
   let hostPool = TranscriptHostPool()
-  /// Automatic settlement commits final virtual geometry immediately. One
-  /// clipped container retains only the already-mounted worked pixels for the
-  /// brief collapse, so disclosure motion never depends on cold measurements.
   var disclosureCollapsePresentations: [UUID: DisclosureCollapsePresentation] = [:]
   var disclosureExitTasks: [UUID: Task<Void, Never>] = [:]
-  /// Surviving mounted rows keep their pre-collapse viewport origin for
-  /// the same brief interval. Their model frames are already final, but this
-  /// interpolation makes the content below travel with the closing body
-  /// instead of snapping upward before the outgoing pixels have disappeared.
   var pendingDisclosureCollapseOrigins: [String: CGFloat]?
   var pendingDisclosureContainerOrigins: [(view: NSView, viewportY: CGFloat)] = []
   let markdownHostCache = TranscriptMarkdownHostCache()
@@ -86,8 +69,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var markdownImageLoader: MarkdownImageLoader = .remote
   var openMarkdownLink: (@MainActor (URL) -> Bool)?
   var markdownImageActions: MarkdownImageActions?
-  /// One action object for every native Markdown host, forwarding to the
-  /// current callbacks so parked and cached hosts never hold a stale handler.
   lazy var markdownLinkAction = MarkdownLinkAction(
     { [weak self] url in self?.openMarkdownLink?(url) ?? false },
     images: MarkdownImageActions(
@@ -103,19 +84,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   weak var sessionController: SessionController?
   var presentationFrameDriverToken: TranscriptFrameDriverToken?
   var presentationDisplayLink: CADisplayLink?
-  /// AppKit can synchronously post a clip-view bounds change while a newly
-  /// mounted SwiftUI/TextKit row is being laid out. Re-entering reconciliation
-  /// from that notification mutates AttributeGraph during its active update.
-  /// Keep the visible-row flush synchronous, but coalesce any nested pass onto
-  /// a later display/run-loop frame.
   var isUpdatingMountedRows = false
   var deferredMountedRowsUpdateScheduled = false
   var deferredMountedRowsUpdateRequested = false
   var deferredMountedRowsRangeOverride: Range<Int>?
-  /// A warm surface keeps displaying its last exact snapshot until both the
-  /// newly-created outer and active projection scopes have caught up. This
-  /// avoids replacing retained block rows with their provisional aggregate
-  /// row during reattachment.
   var isAwaitingWarmProjection = false
   var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
@@ -125,46 +97,25 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
   var isLoadingInitialHistory = false
   var isPreparingInitialProjection = true
-  /// The outer row projection initially contains one aggregate `.active` row.
-  /// Keep first paint closed until its independently parsed block rows replace
-  /// that provisional topology; otherwise an uncached chat visibly jumps from
-  /// the aggregate estimate to the final block layout.
   var isActiveProjectionPending = false
-  /// The aggregate `.active` placeholder mounted with a clear root while
-  /// the surface is still hidden and its precise rows have not published.
-  /// Laying out the whole streamed item once as SwiftUI only to discard it a
-  /// frame later dominated cold open; the reveal gate already waits for the
-  /// first publication, so nothing is ever visible in that window.
   var deferredActivePlaceholderKey: String?
   var isAwaitingFirstActiveProjection = false
   var scrollCommand = TranscriptScrollCommand()
   var hasReceivedScrollCommandForAttachment = false
-  /// Every send presentation on this surface; see `TranscriptSendTransitions`.
   let sendTransitions = TranscriptSendTransitions<VirtualizedTranscriptScrollView>()
   var isSendTransitionCleanupScheduled = false
   var reduceMotion = false
-  /// Geometry changes and their compensating scroll are one transaction.
-  /// The depth (rather than a Bool) keeps nested position restorations from
-  /// briefly looking like user input to the bounds-change observer.
   var positionApplicationDepth = 0
   var isApplyingPosition: Bool { positionApplicationDepth > 0 }
   var isHandlingUserInput = false
   var isLiveScrolling = false
-  /// AppKit can deliver the clip-view bounds notification after
-  /// `scrollWheel(with:)` returns. Keep a short intent window so that delayed
-  /// notification is still classified as user movement, not a system scroll.
   var userInputDeadline: TimeInterval = 0
   var lastDistanceFromBottom: CGFloat = 0
   var lastBottomState: Bool?
   var lastViewportSize: CGSize = .zero
-  /// Geometry from the last completed layout/scroll, before AppKit changes
-  /// the clip size for a split or its newly inserted pane header.
   var lastViewportDistanceFromBottom: CGFloat = 0
   var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
   var isDetaching = false
-  /// Last position that was intentionally established by the user, an
-  /// initial restore, or an explicit bottom command. AppKit sends bounds
-  /// notifications for layout and teardown too; those must never replace it.
   var lastStableScrollState: SessionScrollState?
   var viewportSnapshotGeneration: UInt64 = 0
   var boundsObserver: NSObjectProtocol?
@@ -185,7 +136,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
   var maximumMountsPerFrame: Int { frameBudget.mountsPerFrame }
   var mountWorkBudget: CFTimeInterval { frameBudget.workBudget }
-  /// Monotonic work clock; tests can advance it without waiting on rendering.
   var mountWorkTime: () -> CFTimeInterval = CACurrentMediaTime
   var initialMountWorkStartedAt: CFTimeInterval?
   var maximumRunwayPreparationsPerFrame: Int {
@@ -199,17 +149,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       viewportHeight: viewportHeight
     )
   }
-  /// The chat history itself can hold keyboard focus: a click anywhere in
-  /// it (routed here by TerminalFocusController's mouse monitor) blurs a
-  /// focused terminal, the scroll keys in `keyDown(with:)` keep working,
-  /// and ordinary typing is handed off to the composer by the same
-  /// controller's type-to-focus monitor.
   override var acceptsFirstResponder: Bool { true }
 
-  /// `NSScrollView` passes first-responder status on to its document view
-  /// and, when that view declines, leaves the window as first responder.
-  /// The transcript must hold focus itself so Copy and Select All reach the
-  /// transcript-wide selection.
   override func becomeFirstResponder() -> Bool { true }
 
   override init(frame frameRect: NSRect) {
@@ -221,8 +162,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     drawsBackground = false
     backgroundColor = .clear
     borderType = .noBorder
-    // Focus parks here invisibly (like the Codex/ChatGPT chat history);
-    // a ring around the whole transcript would read as a text field.
     focusRingType = .none
     hasHorizontalScroller = false
     hasVerticalScroller = true
@@ -241,8 +180,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     paginationLoadingIndicator.isDisplayedWhenStopped = false
     paginationLoadingIndicator.setAccessibilityLabel("Loading older messages")
     transcriptDocumentView.addSubview(paginationLoadingIndicator)
-    // Estimated row frames lay out underneath the document but must not
-    // reach the first paint. The readiness gate reveals one exact snapshot.
     transcriptDocumentView.alphaValue = 0
     transcriptDocumentView.setAccessibilityHidden(true)
     verticalScroller?.isEnabled = false
@@ -280,8 +217,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
           self?.isHandlingUserInput = false
           self?.isLiveScrolling = false
           self?.markRecentUserInput()
-          // The live window is correctness-complete. Use subsequent
-          // idle frames to finish preparing its directional runway.
           self?.requestMountedRowsUpdate()
         }
       },
@@ -300,10 +235,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  /// Runs observer work on the main actor: immediately when the
-  /// notification arrived on the main thread (always the case for these
-  /// `.main`-queue observers), or dispatched otherwise. Guarded so a stray
-  /// off-main delivery cannot trap `MainActor.assumeIsolated`.
   nonisolated private static func onMain(_ work: @escaping @MainActor @Sendable () -> Void) {
     if Thread.isMainThread {
       MainActor.assumeIsolated(work)
@@ -334,9 +265,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func viewWillMove(toWindow newWindow: NSWindow?) {
-    // AppKit may already have reset the clip bounds before this callback.
-    // Re-publish the last intentional position with fresh measurement
-    // caches; never sample teardown geometry here.
     if newWindow == nil, window != nil {
       republishLastStableScrollState()
       sendTransitions.interrupt()
@@ -357,9 +285,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
   }
 
-  /// Focus moving anywhere else (composer, a native link click inside a
-  /// surface) dismisses the selection, matching the surfaces' own behavior
-  /// so old highlights never accumulate across the transcript.
   override func resignFirstResponder() -> Bool {
     let resigned = super.resignFirstResponder()
     if resigned, textSelection.selection != nil {
@@ -368,8 +293,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     return resigned
   }
 
-  /// A click on the clip view outside the document (a short transcript)
-  /// never reaches a row; it still dismisses the selection.
   override func mouseDown(with event: NSEvent) {
     if textSelection.selection != nil {
       clearTranscriptSelection()
@@ -386,8 +309,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
       }
     } else {
-      // Ordinary AppKit layout can precede a delayed wheel notification.
-      // It must not consume that movement as a programmatic compensation.
       layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
     }
   }
@@ -409,7 +330,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func keyDown(with event: NSEvent) {
-    if event.keyCode == 53, textSelection.selection != nil {  // Escape
+    if event.keyCode == 53, textSelection.selection != nil {
       clearTranscriptSelection()
       return
     }
@@ -440,10 +361,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
 }
 
-/// Presentation-only shell for the bounded set of worked rows that were
-/// already mounted when an active turn settled. It cannot receive input, and
-/// its flipped coordinates preserve every host's document-space frame while
-/// the shared mask retracts from the bottom edge toward the header.
 final class TranscriptDisclosureCollapseContainer: NSView {
   override var isFlipped: Bool { true }
 

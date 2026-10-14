@@ -1,11 +1,6 @@
 import CoreMedia
 import Foundation
 
-/// The ScreenCaptureKit minimum-frame-interval REQUEST, isolated from the
-/// negotiated video/encoder rate. Without an override the request equals the
-/// video rate (existing behaviour). An override must be at least the video
-/// rate and at most 120 fps. This describes what is asked of ScreenCaptureKit;
-/// it never implies that frames complete at that cadence.
 public struct ScreenSharingCaptureIntervalRequest: Equatable, Sendable {
   public static let maximumFramesPerSecond = 120
 

@@ -1,14 +1,11 @@
 import CodevisorCore
 import SwiftUI
 
-/// The sidebar's confirmation and rename alerts, in the same order they were
-/// chained on the sidebar content: import, then workspace rename.
 struct SidebarAlertsModifier: ViewModifier {
   @Binding var pendingImport: PendingSessionImport?
   @Binding var renamingWorkspace: Workspace?
   @Binding var workspaceRenameTitle: String
   let onImport: (PendingSessionImport) -> Void
-  /// Receives the workspace with its new name already applied and pinned.
   let onRenameWorkspace: (Workspace) -> Void
 
   func body(content: Content) -> some View {
@@ -40,8 +37,6 @@ struct SidebarAlertsModifier: ViewModifier {
         Button("Rename") {
           let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
           guard !trimmed.isEmpty else { return }
-          // An explicit rename pins the name so worktree creation does
-          // not replace it.
           var renamed = workspace
           renamed.name = trimmed
           renamed.hasCustomName = true

@@ -210,8 +210,6 @@ struct FileDocumentModelTests {
       path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
       read: { await fixture.read() },
       write: { try await fixture.write($0, version: $1) })
-    // The backup loads off the main thread; refreshing right away must
-    // still compare the machine's copy against it, not replace it.
     await recovered.refresh()
     #expect(recovered.text == "recovered edits")
     #expect(recovered.conflict?.content == "external edits")
@@ -249,13 +247,10 @@ struct FileDocumentModelTests {
       path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
       read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
     await document.refresh()
-    // A typing burst: every backup is requested; the queue keeps the last.
     for length in 1...20 {
       document.edit(String(repeating: "x", count: length))
       document.persistDraft()
     }
-    // Opening the file again (an evicted cache entry, a new window) loads
-    // after the pending writes, so it sees the newest backup.
     let reopened = FileDocumentModel(
       path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
       read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
@@ -323,7 +318,7 @@ struct FileDocumentModelTests {
     let draft = try JSONDecoder().decode(FileDocumentModel.Draft.self, from: Data(contentsOf: url))
     #expect(draft.text == "offline edits")
     await document.refresh()
-    #expect(document.error != nil)  // Reading successfully must not hide a failed save.
+    #expect(document.error != nil)
     await document.retry()
     #expect(await fixture.read().content == "offline edits")
     #expect(document.error == nil)

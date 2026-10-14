@@ -2,26 +2,16 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A workspace tab as a sidebar row: the tab's kind glyph — a
-/// chat tab borrows the chat row's live status icon, and a terminal shows the
-/// same indicators for what its program reports — its title, and a hover
-/// close button.
 struct SidebarWorkspaceTabRow: View {
   let title: String
   let kind: PaneKind
   var browserFavicon: NSImage? = nil
-  /// A plugin pane's identity, so the row shows the plugin's own artwork
-  /// (fetched through `pluginIconClient`) instead of the generic glyph.
   var pluginId: String? = nil
   var pluginPaneType: String? = nil
   var pluginIconClient: (any CodevisorServerClienting)? = nil
   var pluginIconCacheNamespace = "preview"
-  /// The chat a chat tab shows, when it is still known to the session
-  /// list; drives the activity/unread leading icon.
   let chatSession: ChatSession?
-  /// A terminal tab's program status, shown in place of the terminal glyph.
   var terminalStatus: AgentPaneStatus? = nil
-  /// A subagent tab's harness (its chat's), for the harness icon.
   var subagentHarnessId: String? = nil
   let store: SessionStore?
   let isSelected: Bool
@@ -29,10 +19,7 @@ struct SidebarWorkspaceTabRow: View {
   let titleFont: Font
   let onActivate: () -> Void
   let onClose: () -> Void
-  /// Nil for non-chat pane rows, which have no title of their own to pin.
   var onRename: (() -> Void)? = nil
-  /// Latches one activation per press; resets when the gesture ends or is
-  /// cancelled.
   @GestureState private var isPressed = false
 
   var body: some View {
@@ -51,25 +38,17 @@ struct SidebarWorkspaceTabRow: View {
         }
         .padding(.vertical, 5)
         .contentShape(Rectangle())
-        // Only the label activates on pointer-down. The close button is
-        // a sibling, so pressing it cannot select the row first.
         .gesture(
           DragGesture(minimumDistance: 0)
             .updating($isPressed) { _, isPressed, _ in
-              // Activate on pointer-down only, not on every drag delta.
               guard !isPressed else { return }
               isPressed = true
               onActivate()
             }
         )
-        // Pointer-down selection and the hover-only close button are
-        // invisible to accessibility. Expose them as actions so assistive
-        // tech and background computer use can select and manage the tab
-        // without hovering or focusing the window.
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(.default, onActivate)
-        // Plain-title buttons: SwiftUI drops Label-built ones here.
         .accessibilityActions {
           if let onRename { Button("Rename", action: onRename) }
           Button("Close", action: onClose)
@@ -89,8 +68,6 @@ struct SidebarWorkspaceTabRow: View {
       .padding(.horizontal, 8)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
-      // Native sidebar rows keep the label color whether or not they are
-      // selected; only the glyph and hover controls read as secondary.
       .foregroundStyle(.primary)
     }
     .contextMenu {

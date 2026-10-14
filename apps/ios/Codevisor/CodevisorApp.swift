@@ -14,10 +14,6 @@ struct CodevisorApp: App {
   @State private var startupInProgress = false
   @State private var hasCompletedBootstrap = false
   @State private var recoveryInProgress = false
-  /// A foreground or network-path trigger that arrived while a recovery was
-  /// running. Its information is newer than what that pass started from
-  /// (the network typically comes back just after the foreground), so it
-  /// earns one more pass rather than being dropped.
   @State private var recoveryRequestedAgain = false
 
   init() {
@@ -39,9 +35,7 @@ struct CodevisorApp: App {
         #endif
       }
     }
-    // The iPad menu bar, and the hardware-keyboard shortcuts it lists.
     .commands { CodevisorCommands() }
-    // iPad's Open in New Window: a window that starts on one workspace tab.
     WindowGroup(for: WorkspaceWindowRoute.self) { $route in
       WindowIdentityRoot {
         applicationContent(initialRoute: route?.homeRoute)
@@ -52,19 +46,12 @@ struct CodevisorApp: App {
   @ViewBuilder
   private func applicationContent(initialRoute: HomeRoute?) -> some View {
     if let environment {
-      // The home screen shows immediately, from what this device already
-      // knows (cached machines and their last known workspaces), and
-      // decides for itself whether anything is still loading.
       HomeView(initialRoute: initialRoute)
-        // Order matters: ThemedRoot reads AppEnvironment, so the
-        // environment injection must wrap it (i.e. come after).
         .modifier(ThemedRoot())
         .environment(environment)
         .preferredColorScheme(colorScheme(for: environment))
         .task { await bootstrap(environment: environment) }
         .onChange(of: scenePhase, initial: true) { _, phase in
-          // Read = focus: a backgrounded app must not mark
-          // the open chat read while finishes land.
           environment.attentionCoordinator.setApplicationActive(
             phase == .active
           )
@@ -75,8 +62,6 @@ struct CodevisorApp: App {
           guard scenePhase == .active, hasCompletedBootstrap else { return }
           Task { await recoverAfterForeground(environment: environment) }
         }
-      // Device-approval links (the QR `codevisor auth login` prints) are
-      // handled inside HomeView, which can present over the onboarding cover.
     } else if let startupError {
       ClientDataStartupFailureView(
         message: startupError,
@@ -88,7 +73,6 @@ struct CodevisorApp: App {
     }
   }
 
-  /// Applies the Appearance setting; `.system` follows the device.
   private func colorScheme(for environment: AppEnvironment) -> ColorScheme? {
     switch environment.settings.settings.themeMode {
     case .light: .light
@@ -97,11 +81,8 @@ struct CodevisorApp: App {
     }
   }
 
-  /// A minimal iOS composition root: durable SQLite storage, no local
-  /// server (iOS is a pure client — `localServer` stays nil).
   private static func makeEnvironment(storage: ClientStorage) -> AppEnvironment {
     let store = storage.store
-    // Decoded off the main actor by `openAsync`.
     let launchSnapshot = storage.launchSnapshot
     let composerDrafts = ComposerDraftStore(
       store: store,
@@ -112,7 +93,6 @@ struct CodevisorApp: App {
       ),
       launchSnapshot: launchSnapshot
     )
-    // No composer exists yet: anything staged but undrafted is a leftover.
     composerDrafts.removeUnreferencedAttachmentFiles()
     return AppEnvironment(
       navigationPersistence: store,
@@ -162,25 +142,14 @@ struct CodevisorApp: App {
       !$0.isLocal && !$0.isCloud
     }
     if hasConfiguredRemote {
-      // Locally persisted remotes resolve synchronously. Preserve their
-      // fast path and collect status first so the later cloud snapshot
-      // can deduplicate the same machine by its advertised device id.
       await environment.prepareAllMachines()
       await environment.cloud.bootstrap()
-      // Cloud discovery may have added fleet members while configured
-      // machines were connecting.
       await environment.prepareAllMachines()
     } else {
-      // Cloud entries are synthesized rather than stored in the local
-      // registry, so restore them before resolving and preparing a
-      // persisted cloud selection (or auto-selecting on a fresh setup).
       await environment.cloud.bootstrap()
       await environment.prepareAllMachines()
     }
     hasCompletedBootstrap = true
-    // Fleet update sweep off the critical path: the Settings badge and
-    // Updates screen read what this populates. A pending update-all
-    // session (a run died mid-way) resumes first.
     Task {
       await environment.updateCenter.resumePendingSessionIfNeeded()
       await environment.updateCenter.refresh()
@@ -188,9 +157,6 @@ struct CodevisorApp: App {
     }
   }
 
-  /// iOS can preserve a half-open URLSession WebSocket across suspension or
-  /// a network handoff. Replace it on foreground, then re-prepare the
-  /// every machine so metadata and event streams reconcile immediately.
   private func recoverAfterForeground(environment: AppEnvironment) async {
     guard !recoveryInProgress else {
       recoveryRequestedAgain = true
@@ -200,9 +166,6 @@ struct CodevisorApp: App {
     defer { recoveryInProgress = false }
     repeat {
       recoveryRequestedAgain = false
-      // Everything at once: nothing here has to wait for anything else, and
-      // the open chat catches up as soon as its own machine answers rather
-      // than after the cloud hub reconnects.
       async let roster: Void = environment.cloud.retryIfUnverified()
       async let hub: Void = environment.cloud.reconnectHub()
       async let machineRecovery: Void = environment.prepareAllMachines()
@@ -210,14 +173,10 @@ struct CodevisorApp: App {
       TerminalSessionCache.shared.reconnectAll()
       _ = await (roster, hub, machineRecovery, chatRecovery)
     } while recoveryRequestedAgain
-    // Re-sweep fleet update state with transport restored.
     Task { await environment.updateCenter.backgroundRefresh() }
   }
 }
 
-/// The brief full-screen state shown while iOS opens its local data and
-/// restores a persisted cloud session. Keep it visually branded but quiet:
-/// startup normally lasts only a moment.
 private struct CodevisorStartupSplashView: View {
   @State private var showsSpinner = false
 
@@ -264,12 +223,6 @@ private struct CodevisorStartupSplashView: View {
   }
 }
 
-/// Emits only after a real path transition (not the monitor's initial
-/// snapshot). A satisfied Wi-Fi/cellular handoff is enough reason to replace
-/// a WebSocket whose old TCP path can remain half-open indefinitely.
-///
-/// Main-actor state is only `recoveryToken`; the path comparison runs on the
-/// monitor's queue in `NetworkPathTransitions`, which that queue alone owns.
 private final class NetworkPathObserver: ObservableObject {
   @Published private(set) var recoveryToken = 0
 
@@ -286,8 +239,6 @@ private final class NetworkPathObserver: ObservableObject {
     monitor.cancel()
   }
 
-  /// Built outside the main actor so the handler is not main-actor
-  /// isolated: NWPathMonitor calls it on its own queue.
   nonisolated private static func pathUpdateHandler(
     _ transitions: NetworkPathTransitions,
     onRecovery: @escaping @Sendable () -> Void
@@ -298,12 +249,9 @@ private final class NetworkPathObserver: ObservableObject {
   }
 }
 
-/// The previous path, compared on the monitor's serial queue: it is only
-/// ever touched from that queue's handler calls, one at a time.
 nonisolated private final class NetworkPathTransitions: @unchecked Sendable {
   private var previousSignature: String?
 
-  /// Whether `path` is a satisfied path that differs from the last one.
   func isRecovery(_ path: NWPath) -> Bool {
     let signature = [
       String(describing: path.status),

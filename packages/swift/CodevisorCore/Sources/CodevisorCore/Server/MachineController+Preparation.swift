@@ -1,11 +1,6 @@
 import Foundation
 
-// MARK: - Machine preparation
-
 extension MachineController {
-  /// Starts and connects exactly one machine. For the local machine this
-  /// owns the app/LaunchAgent lifecycle; remote machines are only probed and
-  /// synchronized. Concurrent callers for the same id share one task.
   public func prepareMachine(_ machineId: String) async {
     guard let machine = machine(for: machineId) else { return }
     let connection = connection(for: machineId)
@@ -25,9 +20,6 @@ extension MachineController {
     connection.preparationTask = nil
   }
 
-  /// Bootstraps every known machine independently. A slow or unavailable
-  /// remote can never prevent the local LaunchAgent from being restored,
-  /// and the remembered composer target has no bearing on this work.
   public func prepareAllMachines() async {
     let ids = allMachines.map(\.id)
     await withTaskGroup(of: Void.self) { group in
@@ -52,16 +44,10 @@ extension MachineController {
           isReachable: false,
           label: message
         )
-        // Never give up on the local server either: its chats say
-        // "Reconnecting…", so keep trying on the same backoff.
         schedulePreparationRetry(for: machineId)
         return
       }
       if serverState == .alreadyRunning {
-        // The durable server's PATH is frozen at its launch; a CLI
-        // installed since then (followed by an app relaunch) stays
-        // invisible to it. Fire one rescan so it re-resolves PATH —
-        // off the critical path so machine prep isn't delayed.
         Task {
           do {
             _ = try await client.rescanHarnesses()
@@ -72,15 +58,9 @@ extension MachineController {
       }
     } else {
       do {
-        // Unlike health, info proves the machine serves ordinary routes
-        // before ordinary requests are released.
         _ = try await client.info()
       } catch {
         if await probeDataUpgrade(for: machineId, client: client) != nil {
-          // Booting through a data upgrade: a known-finite wait. Ordinary
-          // requests still fail fast (the composer shows the wait), and the
-          // retry polls at the update cadence so Settings › Updates follows
-          // the migration live instead of backing off to a minute.
           let label = connection(for: machineId).status?.label ?? "Updating server data…"
           markFailed(for: machineId, message: label)
           schedulePreparationRetry(for: machineId, delay: updatePollInterval)
@@ -92,10 +72,6 @@ extension MachineController {
           isReachable: false,
           label: message
         )
-        // Remote failures are routinely transient (a relay timeout
-        // against a machine mid-handoff, a stale tunnel path): keep
-        // retrying with backoff instead of parking the machine in a
-        // latched failure until the next foreground.
         schedulePreparationRetry(for: machineId)
         return
       }

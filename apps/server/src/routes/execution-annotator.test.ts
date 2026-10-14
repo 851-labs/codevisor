@@ -18,7 +18,6 @@ import { ExecutionAnnotator } from "./execution-annotator.js"
 import { sessionEventSink } from "./session-events.js"
 
 const args = { description: "List open Linear issues", code: "async () => tools.linear.list()" }
-// The gateway hashes the arguments exactly as it received them.
 const argsHash = (input: unknown) =>
   createHash("sha256").update(canonicalExecutionArgs(input)).digest("hex")
 
@@ -117,7 +116,6 @@ describe("ExecutionAnnotator", () => {
         _meta: { codevisorExecution: completed }
       }
     ])
-    // The buffered state was consumed, and repeats of the same input are inert.
     expect(f.annotate(update)).toEqual([update])
   })
 
@@ -169,7 +167,6 @@ describe("ExecutionAnnotator", () => {
         _meta: { harness: { toolName: "execute" }, codevisorExecution: running }
       })
     ])
-    // A later harness _meta must not wipe the latest execution state.
     expect(
       payloads(
         f.annotate(
@@ -250,7 +247,6 @@ describe("ExecutionAnnotator", () => {
         ...(rawInput === undefined ? {} : { rawInput })
       })
     f.annotate(call(0, args))
-    // Evicting one call forgets only its own arguments.
     f.annotate(call(1, { ...args, code: "second" }))
     for (let index = 2; index <= 65; index += 1) f.annotate(call(index))
     expect(f.annotate(gateway(running))).toEqual([])
@@ -262,8 +258,6 @@ describe("ExecutionAnnotator", () => {
 })
 
 describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
-  /// OpenCode's own code tool: plain `execute`, running OpenCode's script,
-  /// from inside which the model calls the gateway.
   const host = (fields: Record<string, unknown>) =>
     output({ toolCallId: "oc-1", title: "execute", ...fields })
   const labeled: CodevisorExecutionState = { ...running, description: args.description }
@@ -272,11 +266,9 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     const f = fixture()
     const started = host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} })
     expect(f.annotate(started)).toEqual([started])
-    // Not running code yet: a gateway run can't be its own.
     expect(f.annotate(gateway(labeled))).toEqual([])
     const code = { code: "await tools.codevisor.execute({ description, code })" }
     const runs = host({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code })
-    // Once it runs, the run that arrived first is its own.
     expect(payloads(f.annotate(runs))).toEqual([
       runs.payload,
       {
@@ -285,7 +277,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
         _meta: { codevisorExecution: labeled }
       }
     ])
-    // Later updates of that run, and new runs from the same script, follow.
     const second = { description: "Then list my machines", code: "machines.list()" }
     const secondRun: CodevisorExecutionState = {
       state: "running",
@@ -303,7 +294,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     expect(payloads(f.annotate(gateway(done)))).toEqual([
       { sessionUpdate: "tool_call_update", toolCallId: "oc-1", _meta: { codevisorExecution: done } }
     ])
-    // The row's own updates keep the state, and the harness's _meta.
     expect(
       payloads(
         f.annotate(
@@ -325,7 +315,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
         _meta: { opencode: 1, codevisorExecution: done }
       }
     ])
-    // Once it settles, a later run is no longer its own.
     f.annotate(host({ sessionUpdate: "tool_call_update", status: "completed" }))
     expect(f.annotate(gateway(running, { description: "Later", code: "x" }))).toEqual([])
   })
@@ -334,8 +323,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     const f = fixture()
     const skillRead = (skill: unknown) => output({ kind: "codevisor_skill", skill })
     const read = { name: "execute", ok: true }
-    // Nothing running from a host (or no session yet): the harness's own row,
-    // if any, shows the read itself.
     expect(f.annotate(skillRead(read))).toEqual([])
     f.annotate(host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} }))
     expect(f.annotate(skillRead(read))).toEqual([])
@@ -345,7 +332,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
       { sessionUpdate: "tool_call_update", toolCallId: "oc-1", _meta: { codevisorSkill: read } }
     ])
     expect(f.annotate(skillRead("not a read"))).toEqual([])
-    // The row keeps it through its own updates.
     expect(
       payloads(
         f.annotate(
@@ -376,7 +362,6 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     })
     expect(f.annotate(host({ sessionUpdate: "tool_call", status: "pending" }))).toHaveLength(1)
     expect(f.annotate(update)).toEqual([update])
-    // Running again changes nothing.
     expect(f.annotate(update)).toEqual([update])
     const failed = host({ sessionUpdate: "tool_call_update", status: "failed" })
     expect(f.annotate(failed)).toEqual([failed])

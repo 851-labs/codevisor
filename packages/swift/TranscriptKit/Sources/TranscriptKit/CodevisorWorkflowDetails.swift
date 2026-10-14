@@ -2,8 +2,6 @@ import ACPKit
 import Foundation
 
 extension ToolCall {
-  /// The text the gateway returned, wherever the harness put it: a plain
-  /// string, MCP content blocks, or an MCP result object.
   var gatewayOutputText: String? {
     func texts(_ value: JSONValue?) -> [String] {
       guard let value else { return [] }
@@ -20,8 +18,6 @@ extension ToolCall {
     return nil
   }
 
-  /// What a gateway `skills` call read: the skill's instructions, or the
-  /// list of skills. Nil for every other tool, or before the read returns.
   public var skillText: String? {
     guard codevisorGatewayOperation == .skills,
       let text = gatewayOutputText?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -31,22 +27,13 @@ extension ToolCall {
   }
 }
 
-/// What an expanded gateway workflow shows: the files it produced and what
-/// it returned, or why it failed.
 public struct CodevisorWorkflowDetails: Equatable, Sendable {
-  /// Files the workflow produced (screenshots, recordings), each once.
   public var files: [PreviewFile]
-  /// Why the whole workflow failed, when it did: the full error, which the
-  /// row's title only summarizes.
   public var failure: String?
-  /// What the workflow returned: text as-is, anything else as formatted
-  /// JSON. JSON the script stringified is unpacked, and file references
-  /// (already shown as attachments) are left out.
   public var result: String?
 }
 
 extension ToolCall {
-  /// Readable details for a gateway `execute` call; nil for every other tool.
   public var codevisorWorkflowDetails: CodevisorWorkflowDetails? {
     guard codevisorGatewayOperation == .execute else { return nil }
     let output = Self.workflowOutput(gatewayOutputText)
@@ -61,8 +48,6 @@ extension ToolCall {
     )
   }
 
-  /// A workflow's whole error, without the JavaScript stack frames: they
-  /// point into the gateway's sandbox, not the script the model wrote.
   static func errorDetail(_ error: String) -> String? {
     let text = error.split(separator: "\n", omittingEmptySubsequences: false)
       .filter { $0.range(of: #"^\s*at\s"#, options: .regularExpression) == nil }
@@ -82,8 +67,6 @@ extension ToolCall {
     return (fields["result"].flatMap { cleaned($0, depth: 0) }.flatMap(Self.readable), nil)
   }
 
-  /// `value` as a reader wants it: JSON the script stringified is parsed,
-  /// file references are dropped, and a lone `value` wrapper is unwrapped.
   static func cleaned(_ value: JSONValue, depth: Int) -> JSONValue? {
     guard depth < 8 else { return value }
     switch value {

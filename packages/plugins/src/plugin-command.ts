@@ -23,8 +23,6 @@ export const pluginSetupCommands = (
     .map((step) => ({ argv: step.argv, kind: "argv" as const }))
 }
 
-/// Unambiguous display form for logs and consent. JSON string quoting keeps
-/// whitespace and empty arguments visible without implying shell execution.
 export const displayPluginCommand = (command: ResolvedPluginCommand): string =>
   command.kind === "shell" ? command.command : command.argv.map(displayArgument).join(" ")
 

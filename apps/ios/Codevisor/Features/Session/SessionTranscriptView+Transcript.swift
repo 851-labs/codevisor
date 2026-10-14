@@ -5,17 +5,12 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-// MARK: - Transcript
-
 extension SessionTranscriptView {
-  /// Inline images preview in Quick Look; their menu opens a tab or copies.
   var transcriptImageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
       quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
   }
 
-  /// Opens a linked workspace file as a document tab, or in Quick Look when
-  /// no tab can host it; web links fall through to the platform.
   func openMarkdownLink(_ url: URL) -> Bool {
     TranscriptMarkdownLinkOpener.open(
       url, quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
@@ -131,9 +126,6 @@ extension SessionTranscriptView {
             requestOlderHistoryLoad()
           },
           onOlderHistoryPresented: { token in
-            // UIViewRepresentable updates are part of SwiftUI's render
-            // transaction. Publish the acknowledgement on the next turn
-            // instead of mutating view state from inside that update.
             DispatchQueue.main.async {
               olderHistoryPresentation.didPresent(token: token)
             }
@@ -147,13 +139,6 @@ extension SessionTranscriptView {
         )
       )
     }
-    // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
-    // reaches beneath the translucent top bar, while its UIKit content
-    // inset keeps the first resting row below that chrome. It also runs
-    // to the bottom of the screen, under the floating glass composer and
-    // the home indicator; the bottom spacer (see
-    // `transcriptBottomObstruction`) keeps the newest row above both.
-    // The keyboard still bounds it, since the keyboard is opaque.
     .ignoresSafeArea(.container, edges: [.top, .bottom])
     .onChange(of: controller.userSendSignal) { _, _ in
       followsLatest = true
@@ -215,14 +200,8 @@ extension SessionTranscriptView {
     hasher.combine(displayScale)
     hasher.combine(markdownTheme.renderFingerprint)
     if composerTextEditorHandoffRole == .promotionSource, let composerTextEditorHandoffID {
-      // This sheet has its own short-lived measurement cache. Adopting a
-      // workspace changes its file namespace, not the bubble's geometry;
-      // invalidating here would cut the first send short. The destination
-      // uses the authoritative file namespace in its separate cache.
       hasher.combine(composerTextEditorHandoffID)
     } else if let layoutNamespaceToken {
-      // An in-place draft: same reasoning as the sheet above. The token
-      // drops once the route becomes the workspace, after the send lands.
       hasher.combine(layoutNamespaceToken)
     } else {
       hasher.combine(controller.previewCacheNamespace)

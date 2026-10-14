@@ -11,9 +11,6 @@ protocol CloudLoopbackBridging: AnyObject, Sendable {
 
 extension CloudRelayLoopbackBridge: CloudLoopbackBridging {}
 
-/// One listener and one recovery operation per machine. Published addresses
-/// describe live listeners; an old listener's callbacks cannot replace a new
-/// listener's address. Healthy listeners retain their origins across handoffs.
 @MainActor
 @Observable
 final class CloudLoopbackBridgePool {
@@ -52,9 +49,7 @@ final class CloudLoopbackBridgePool {
 
   func baseURL(for id: String, key: String, endpoint: any CloudChannelTransport) -> URL? {
     let entry = ensure(id: id, key: key, endpoint: endpoint)
-    // Read actual liveness even if the listener's notification is still
-    // queued on the main actor. Never return the cached port on its own.
-    _ = origins[id]  // Register observation without mutating during view reads.
+    _ = origins[id]
     return entry.bridge.port.flatMap { URL(string: "http://127.0.0.1:\($0)") }
   }
 
@@ -65,8 +60,6 @@ final class CloudLoopbackBridgePool {
     previous?.startup?.cancel()
     let bridge = factory(endpoint) { [weak self] in
       Task { @MainActor [weak self] in
-        // Read the CURRENT entry, not a captured port. Delayed callbacks
-        // from an old listener can only republish the current state.
         guard let self, let entry = self.entries[id] else { return }
         self.publish(id: id, entry: entry)
       }
@@ -99,9 +92,6 @@ final class CloudLoopbackBridgePool {
     revisions[id, default: 0] &+= 1
   }
 
-  /// Probe the real byte tunnel, not the separately functioning API
-  /// transport. A refused loopback connection warrants replacement; an
-  /// offline machine or relay does not warrant changing the local origin.
   func recover(for id: String, key: String, endpoint: any CloudChannelTransport) async -> Bool {
     let entry = ensure(id: id, key: key, endpoint: endpoint)
     if let task = entry.recovery?.task { return await task.value }
@@ -112,8 +102,6 @@ final class CloudLoopbackBridgePool {
         self.entries[id] === entry, !Task.isCancelled
       else { return false }
       self.publish(id: id, entry: entry)
-      // A previously ready listener can become stuck waiting after a
-      // handoff. Foreground/manual recovery replaces it once as well.
       let health: Health
       if let url = self.origins[id] { health = await self.probe(url) } else { health = .listenerUnavailable }
       guard self.entries[id] === entry, !Task.isCancelled else { return false }
@@ -124,8 +112,6 @@ final class CloudLoopbackBridgePool {
       case .upstreamUnavailable:
         return false
       case .listenerUnavailable:
-        // Keep the shared recovery task attached while replacing the
-        // listener so concurrent panes still join this same attempt.
         entry.bridge.stop()
         let replacement = self.ensure(id: id, key: key, endpoint: endpoint)
         replacement.recovery = recovery
@@ -142,7 +128,6 @@ final class CloudLoopbackBridgePool {
     recovery.task = task
     entry.recovery = recovery
     let result = await task.value
-    // A replacement inherited this attempt. Its next recovery may now run.
     if entries[id]?.recovery === recovery { entries[id]?.recovery = nil }
     entry.recovery = nil
     recovery.task = nil
@@ -153,7 +138,6 @@ final class CloudLoopbackBridgePool {
     let entry = entries.removeValue(forKey: id)
     entry?.bridge.stop()
     entry?.startup?.cancel()
-    // In-flight probes are bounded and check entry identity before writing.
     if origins.removeValue(forKey: id) != nil { revisions[id, default: 0] &+= 1 }
   }
 

@@ -3,11 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The New Tab page is device-local: never published, never listed by the
-/// server. A workspace showing only that page holds it as a placeholder that
-/// the first real pane fills in place — it must never linger beside real
-/// panes as a phantom row on a client that watched another client create a
-/// chat.
 @MainActor
 @Suite("WorkspaceSyncModel placeholder tab")
 struct WorkspaceSyncPlaceholderTabTests {
@@ -69,8 +64,6 @@ struct WorkspaceSyncPlaceholderTabTests {
     #expect(filling.centerTabs.count == 1)
     #expect(filling.chatSessionIds == [sessionId])
 
-    // ⌘T beside a chat: the page is this device's, the server never lists
-    // it, and the snapshot must not take it away.
     let chatTab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: sessionId, paneId: sessionId)))
     var chromeLike = placeholderWorkspace(tabs: [chatTab, .placeholder()])
     WorkspaceSyncModel.reconcilePanes(
@@ -88,7 +81,6 @@ struct WorkspaceSyncPlaceholderTabTests {
     WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [], protectedLocalPaneIds: [])
     #expect(workspace == before)
 
-    // A row from a client that still publishes its New Tab page is ignored.
     WorkspaceSyncModel.reconcilePanes(
       in: &workspace, records: [legacyNewTabRecord(workspaceId: workspace.id)],
       protectedLocalPaneIds: [])
@@ -120,7 +112,6 @@ struct WorkspaceSyncPlaceholderTabTests {
     let workspaceId = try #require(UUID(uuidString: record.id))
     let sessionId = UUID()
 
-    // The other client's workspace row lands first...
     await navigation.store.replace(
       ServerNavigationSnapshot(eventCursor: 1, projects: [], sessions: [], workspaces: [record], panes: []),
       machineId: serverId, requestedAt: Date())
@@ -128,7 +119,6 @@ struct WorkspaceSyncPlaceholderTabTests {
     #expect(paneLess.centerTabs.count == 1)
     #expect(!paneLess.hasRealPanes)
 
-    // ...then its chat pane.
     let pane = chatRecord(workspaceId: workspaceId, sessionId: sessionId)
     _ = await navigation.store.apply(.fixture(cursor: 2, panes: [pane]), machineId: serverId)
     let synced = try #require(repository.workspace(id: workspaceId))
@@ -138,7 +128,6 @@ struct WorkspaceSyncPlaceholderTabTests {
     #expect(synced.selectedCenterTabId == synced.centerTabs.first?.id)
     #expect(navigation.store.layouts.layout(for: workspaceId)?.tabs == synced.centerTabs)
 
-    // A later event carrying the same pane is a no-op.
     _ = await navigation.store.apply(.fixture(cursor: 3, panes: [pane]), machineId: serverId)
     #expect(repository.workspace(id: workspaceId) == synced)
   }

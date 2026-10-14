@@ -7,10 +7,6 @@ import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
 
-/// Development linking: the one install path whose bytes Codevisor does not
-/// own. A link points at the developer's checkout, so both operations here
-/// are constrained by the same rule — Codevisor creates and removes the
-/// LINK, and never touches what it points at.
 export interface PluginLinkDeps {
   readonly pluginsRoot: string
   readonly stop: (pluginId: string) => void
@@ -20,9 +16,6 @@ export interface PluginLinkDeps {
   readonly recoverPlugin: (pluginId: string) => Promise<void>
 }
 
-/// Symlinks a local plugin directory into the plugins root. The manifest is
-/// parsed from the target first, so a directory that is not a plugin is
-/// refused before anything is written.
 export const linkPlugin = async (
   deps: PluginLinkDeps,
   request: LinkPluginRequest
@@ -60,7 +53,6 @@ export const linkPlugin = async (
       if (cause instanceof PluginsError) {
         throw cause
       }
-      // ENOENT: the link path is free.
     }
     await mkdir(deps.pluginsRoot, { recursive: true })
     await symlink(target, destination)
@@ -68,10 +60,6 @@ export const linkPlugin = async (
   })
 }
 
-/// Removes a link Codevisor created, and only the link. Uninstalling a
-/// managed plugin is a different operation with a different confirmation;
-/// refusing one here keeps the two destructive paths from being
-/// interchangeable by accident.
 export const unlinkPlugin = async (deps: PluginLinkDeps, pluginId: string): Promise<void> => {
   await deps.withLock(pluginId, async () => {
     const plugin = deps.installedWithId(pluginId)
@@ -86,8 +74,6 @@ export const unlinkPlugin = async (deps: PluginLinkDeps, pluginId: string): Prom
       )
     }
     deps.stop(pluginId)
-    // unlink, never rm -r: the entry is a symlink, and the only thing that
-    // may disappear is the link itself.
     await unlink(plugin.path)
   })
 }

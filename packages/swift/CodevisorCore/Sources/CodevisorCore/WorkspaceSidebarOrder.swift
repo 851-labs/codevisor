@@ -7,8 +7,6 @@ extension Workspace {
   }
 }
 
-/// One shared comparator for every client's visible subset. Hidden workspaces
-/// retain their keys; reordering never republishes a list of other identities.
 public enum WorkspaceSidebarOrder {
   public static func precedes(_ left: Workspace, _ right: Workspace) -> Bool {
     if left.effectiveSidebarPosition != right.effectiveSidebarPosition {

@@ -22,7 +22,6 @@ export const environment: ProviderEnvironment = {
 
 export const CONVERSATION = "c-1"
 
-/// `agy models` as 1.3.4 prints it: a status line, then tab-separated rows.
 export const MODELS_OUTPUT = [
   "Fetching available models...",
   "gemini-4-argon-high\tGemini 4 Argon (High)",
@@ -31,8 +30,6 @@ export const MODELS_OUTPUT = [
   "gpt-oss-120b\tGPT-OSS 120B"
 ].join("\n")
 
-/// A scripted `agy` headless process: records what it was sent and lets a
-/// test push events or end it. By default it opens `conversation` at once.
 export class FakeAgyProcess implements AgyProcess {
   readonly sent: Array<Record<string, unknown>> = []
   interrupted = 0
@@ -42,7 +39,6 @@ export class FakeAgyProcess implements AgyProcess {
 
   constructor(
     readonly request: AgySpawnRequest,
-    /// Runs once the chat has wired its handlers (its exit handler last).
     private readonly opens: (process: FakeAgyProcess) => void = () => undefined
   ) {}
 
@@ -53,7 +49,6 @@ export class FakeAgyProcess implements AgyProcess {
     for (const waiter of this.sendWaiters.filter((entry) => this.sent.length >= entry.count))
       waiter.resolve()
   }
-  /// Settles once the chat has sent `count` lines.
   sends(count = 1): Promise<void> {
     if (this.sent.length >= count) return Promise.resolve()
     return new Promise((resolve) => this.sendWaiters.push({ count, resolve }))
@@ -95,8 +90,6 @@ export class FakeAgyProcess implements AgyProcess {
   }
 }
 
-/// Hands out fake processes in order; `opens` decides what each does as it
-/// starts (default: open the conversation).
 export const fakeConnector = (
   opens: (process: FakeAgyProcess, index: number) => void = (process) => process.init()
 ) => {
@@ -110,7 +103,6 @@ export const fakeConnector = (
       waiter.resolve(processes[waiter.count - 1]!)
     return process
   }
-  /// Settles with the `count`th process once it has been spawned.
   const spawned = (count: number): Promise<FakeAgyProcess> =>
     processes.length >= count
       ? Promise.resolve(processes[count - 1]!)
@@ -118,7 +110,6 @@ export const fakeConnector = (
   return { connector, processes, spawned }
 }
 
-/// Answers one-shot commands by their arguments; records each call.
 export const fakeRunner = (
   answers: Record<string, { code?: number; stdout?: string; stderr?: string } | Error> = {}
 ) => {
@@ -153,8 +144,6 @@ export const recorder = () => {
   }
 }
 
-/// A terminal agy's TUI "draws" into: the test writes the screen and reads
-/// back what the login typed.
 export class FakeTerminal implements AgyTerminal {
   readonly written: Array<string> = []
   killed = false
@@ -190,7 +179,6 @@ export const fakeTerminalSpawner = () => {
     spawned.resolve()
     return terminal
   }
-  /// Settles once the login has started its terminal and wired it.
   const ready = async () => {
     await spawned.promise
     await Promise.resolve()

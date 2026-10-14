@@ -18,10 +18,6 @@ import {
   snapshotWorktree
 } from "./worktree-archive.js"
 
-/// Mirrors the production archive path (snapshot, record, delete files,
-/// release the branch) so tests exercise the same invariants the server relies
-/// on. The server records the archive between the two calls; that ordering is
-/// covered by the server's own reconciler tests.
 const archive = async (repo: string, path: string, id: string, name: string) => {
   const snapshot = await snapshotWorktree(repo, path, id)
   const trashed = await removeArchivedWorktreeFiles(repo, path, `codevisor/${name}`, {
@@ -40,8 +36,6 @@ const git = (repo: string, ...args: ReadonlyArray<string>): string =>
 
 const makeRepo = () => makeGitRepo(true)
 
-/// Builds a worktree carrying every kind of uncommitted state that a naive
-/// "delete the files" archive would destroy.
 const makeDirtyWorktree = async (repo: string, root: string, name: string): Promise<string> => {
   const path = join(root, name)
   await addWorktree(repo, path, `codevisor/${name}`)
@@ -62,8 +56,6 @@ describe("worktree archive snapshots", () => {
   it("round-trips modified, staged, untracked, and deleted files", async () => {
     const { repo, root } = makeRepo()
     const path = await makeDirtyWorktree(repo, root, "sushi")
-    // A tracked file removed from the worktree must come back as a deletion,
-    // not silently reappear.
     writeFileSync(join(path, "doomed.txt"), "bye\n")
     git(path, "add", "doomed.txt")
     git(path, "commit", "-m", "add doomed")
@@ -90,7 +82,6 @@ describe("worktree archive snapshots", () => {
     expect(readFileSync(join(restorePath, "staged.txt"), "utf8")).toBe("staged\n")
     expect(existsSync(join(restorePath, "doomed.txt"))).toBe(false)
 
-    // The restored state is uncommitted work, not a commit the user never made.
     expect(git(restorePath, "rev-parse", "HEAD")).toBe(snapshot.parentSha)
     const status = git(restorePath, "status", "--porcelain")
     expect(status).toContain("tracked.txt")
@@ -114,10 +105,8 @@ describe("worktree archive snapshots", () => {
     })
     const restorePath = join(root, restored.name)
 
-    // Secrets and dependency trees stay out of git objects.
     expect(existsSync(join(restorePath, "secret.env"))).toBe(false)
     expect(existsSync(join(restorePath, "node_modules"))).toBe(false)
-    // ...but the user is warned about the one that is not regenerable.
     expect(snapshot.ignoredPaths).toContain("secret.env")
     expect(snapshot.ignoredPaths.some((path) => path.includes("node_modules"))).toBe(false)
   })
@@ -127,9 +116,6 @@ describe("worktree archive snapshots", () => {
     const path = await makeDirtyWorktree(repo, root, "tacos")
     const snapshot = await archive(repo, path, "wt-3", "tacos")
 
-    // Someone else took `tacos` while this chat sat archived — including the
-    // directory, which is the whole point: the restore cannot reuse the
-    // original path, so the path has to follow the suffixed name.
     const squatter = join(root, "tacos")
     await addWorktree(repo, squatter, "codevisor/tacos")
     writeFileSync(join(squatter, "stranger.txt"), "not ours\n")
@@ -148,7 +134,6 @@ describe("worktree archive snapshots", () => {
     expect(result.branch).toBe("codevisor/tacos-2")
     expect(result.restoredFromSnapshot).toBe(true)
     expect(readFileSync(join(restorePath, "tracked.txt"), "utf8")).toBe("modified\n")
-    // The squatter's worktree is left completely alone.
     expect(restorePath).not.toBe(squatter)
     expect(existsSync(join(restorePath, "stranger.txt"))).toBe(false)
     expect(readFileSync(join(squatter, "stranger.txt"), "utf8")).toBe("not ours\n")
@@ -159,7 +144,6 @@ describe("worktree archive snapshots", () => {
     const path = await makeDirtyWorktree(repo, root, "curry")
     const snapshot = await archive(repo, path, "wt-4", "curry")
 
-    // The repo was re-cloned or the ref pruned by hand.
     await deleteSnapshot(repo, "wt-4")
     expect(await snapshotExists(repo, snapshot.snapshotRef)).toBe(false)
 
@@ -173,8 +157,6 @@ describe("worktree archive snapshots", () => {
     })
     const restorePath = join(root, result.name)
 
-    // Unarchive still succeeds — the chat matters more than the files — but
-    // says plainly that the working state could not be recovered.
     expect(result.restoredFromSnapshot).toBe(false)
     expect(existsSync(restorePath)).toBe(true)
     expect(readFileSync(join(restorePath, "tracked.txt"), "utf8")).toBe("original\n")
@@ -187,11 +169,8 @@ describe("worktree archive snapshots", () => {
 
     await archive(repo, path, "wt-8", "burrito")
 
-    // Worktree names are picked against this namespace too, so a leftover
-    // branch would keep the name occupied forever and defeat archiving.
     expect(await listCodevisorWorktreeBranchNames(repo)).not.toContain("burrito")
 
-    // Proof the name is genuinely reusable by an unrelated new worktree.
     const reused = join(root, "burrito-reused")
     await addWorktree(repo, reused, "codevisor/burrito")
     expect(existsSync(reused)).toBe(true)
@@ -211,18 +190,12 @@ describe("worktree archive snapshots", () => {
       takenNames: new Set()
     })
 
-    // The common case: nothing claimed the name, so restore is seamless —
-    // same name, same directory the chat had before.
     expect(result.name).toBe("noodles")
     expect(result.restoredFromSnapshot).toBe(true)
     expect(existsSync(join(root, "noodles", "tracked.txt"))).toBe(true)
   })
 
   it("keeps concurrent archives isolated even with identical ids and commits", async () => {
-    // Two separate repos built identically: same content, same second, so git
-    // hands both the SAME commit sha. Archiving them concurrently under the
-    // same worktree id is the exact case where a scratch index path derived
-    // from (id, sha) would collide and let one archive corrupt the other.
     const first = makeRepo()
     const second = makeRepo()
     const firstPath = await makeDirtyWorktree(first.repo, first.root, "udon")
@@ -254,7 +227,6 @@ describe("worktree archive snapshots", () => {
     })
     const restoreTwo = join(second.root, restoredTwo.name)
 
-    // Each snapshot must contain its own file and not the other's.
     expect(existsSync(join(restoreOne, "only-in-first.txt"))).toBe(true)
     expect(existsSync(join(restoreOne, "only-in-second.txt"))).toBe(false)
     expect(existsSync(join(restoreTwo, "only-in-second.txt"))).toBe(true)
@@ -268,7 +240,6 @@ describe("worktree archive snapshots", () => {
 
     await snapshotWorktree(repo, path, "wt-5")
 
-    // Archiving must not stage the user's work as a side effect.
     expect(git(path, "status", "--porcelain")).toBe(before)
   })
 
@@ -277,7 +248,6 @@ describe("worktree archive snapshots", () => {
     const path = await makeDirtyWorktree(repo, root, "sashimi")
     await snapshotWorktree(repo, path, "wt-6")
     await deleteSnapshot(repo, "wt-6")
-    // A second delete (hard-delete after a manual prune) is not an error.
     await expect(deleteSnapshot(repo, "wt-6")).resolves.toBeUndefined()
   })
 
@@ -286,8 +256,6 @@ describe("worktree archive snapshots", () => {
     const path = await makeDirtyWorktree(repo, root, "gyoza")
     const snapshot = await archive(repo, path, "wt-7", "gyoza")
 
-    // The ref is the only thing keeping these objects alive once the branch
-    // and worktree are gone — an aggressive gc must not collect them.
     git(repo, "reflog", "expire", "--expire=now", "--all")
     git(repo, "gc", "--prune=now", "--quiet")
 
@@ -317,9 +285,6 @@ describe("snapshot identity", () => {
     const { repo, root } = makeRepo()
     const path = await makeDirtyWorktree(repo, root, "gnocchi")
 
-    // Exactly a fresh CI runner: no user.name/user.email anywhere. The
-    // snapshot commit must supply its own identity, or `commit-tree` aborts
-    // with "Author identity unknown" and archiving is impossible.
     const identityless: NodeJS.ProcessEnv = {
       ...process.env,
       GIT_CONFIG_GLOBAL: "/dev/null",
@@ -333,7 +298,6 @@ describe("snapshot identity", () => {
     const snapshot = await snapshotWorktree(repo, path, "wt-11", identityless)
     expect(await snapshotExists(repo, snapshot.snapshotRef, identityless)).toBe(true)
 
-    // The commit is attributed to Codevisor, not to whoever ran the app.
     const author = execFileSync("git", ["show", "-s", "--format=%an <%ae>", snapshot.snapshotSha], {
       cwd: repo,
       encoding: "utf8",
@@ -349,7 +313,6 @@ describe("restoreWorktree name exhaustion", () => {
     const path = await makeDirtyWorktree(repo, root, "pizza")
     const snapshot = await archive(repo, path, "wt-10", "pizza")
 
-    // Every suffix the restore would consider is already spoken for.
     const taken = new Set(["pizza"])
     for (let index = 2; index <= 99; index += 1) taken.add(`pizza-${String(index)}`)
 
@@ -364,7 +327,6 @@ describe("restoreWorktree name exhaustion", () => {
       })
     ).rejects.toThrow(/No available worktree name near pizza/)
 
-    // The snapshot is untouched, so a later restore can still recover it.
     expect(await snapshotExists(repo, snapshot.snapshotRef)).toBe(true)
   })
 })
@@ -372,8 +334,6 @@ describe("restoreWorktree name exhaustion", () => {
 describe("releaseBranch", () => {
   it("reports failure instead of throwing when the branch cannot be deleted", async () => {
     const { repo } = makeRepo()
-    // Nothing to delete: releasing is best-effort, and a failure here must not
-    // abort an archive that has already removed the worktree.
     expect(await releaseBranch(repo, "codevisor/never-existed")).toBe(false)
   })
 })

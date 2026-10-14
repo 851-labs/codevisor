@@ -9,10 +9,6 @@ import { machinePresence, machineRow } from "./hub-schema.js"
 import type { HubSockets } from "./hub-sockets.js"
 import type { ResumeSessionRow, ResumeSessions } from "./resume-sessions.js"
 
-/// The deferred death notices for a session nobody resumed — byte-for-byte
-/// the announcements the hub used to make immediately on socket close, moved
-/// behind the resume grace window (and extracted from user-hub.ts for size).
-
 export interface HubNoticesPort {
   readonly net: HubSockets
   readonly resume: ResumeSessions
@@ -22,8 +18,6 @@ export interface HubNoticesPort {
 export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow): void => {
   if (session.kind === "machine") {
     const deviceId = session.device_id
-    // Channels this connection OPENED toward other machines die with it,
-    // even when the device is already back under a newer session.
     port.net.broadcastToPeerMachines({ t: "peer-gone", peerId: session.connection_id })
     const row = machineRow(port.sql, deviceId)
     const stillConnected = port.net.machine(deviceId).some((candidate) => {
@@ -38,10 +32,6 @@ export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow)
     if (row !== undefined) {
       port.net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, false) })
     }
-    // Also broadcast the machine-offline error apps already understand
-    // from failed relay attempts: their channels toward this machine are
-    // dead, and a receive-only stream would otherwise never find out
-    // (it sends nothing, so it can never provoke the reactive error).
     port.net.broadcastMachineNotice({
       t: "error",
       code: "machine-offline",
@@ -50,7 +40,6 @@ export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow)
     })
     return
   }
-  // App gone (for good): let machines tear down that peer's channels.
   if (port.net.byConnectionId(session.connection_id).some((socket) => port.net.isRoutable(socket)))
     return
   const gone: HubToMachine = { t: "peer-gone", peerId: session.connection_id }
@@ -61,9 +50,6 @@ export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow)
   }
 }
 
-/// Ends a grace session nobody resumed: its buffered frames are dropped, the
-/// deferred death notices fire, and every app channel whose frames were in
-/// the buffer is told it lost them.
 export const abandonSession = (port: HubNoticesPort, session: ResumeSessionRow): void => {
   const dropped = port.resume.drainBuffers(session.connection_id)
   port.resume.delete(session.connection_id)
@@ -71,11 +57,6 @@ export const abandonSession = (port: HubNoticesPort, session: ResumeSessionRow):
   if (session.kind === "machine") reportDroppedChannels(port, session.device_id, dropped)
 }
 
-/// Buffered app→machine frames never reached the machine. Without a notice
-/// their channels wait forever for a reply: announceExpired is silent when
-/// the machine is connected again under another session, and the app only
-/// learns of a routed write failure through a channel-scoped error. Send
-/// that same error (one per channel) to each opener still connected.
 const reportDroppedChannels = (
   port: HubNoticesPort,
   machineId: string,
@@ -91,7 +72,6 @@ const reportDroppedChannels = (
     }
     for (const envelope of envelopes) {
       const header = parseHubToMachineRelayHeader(envelope.header)
-      // A dropped close needs no answer: its opener already let go.
       if (header === undefined || header.frame.t === "close") continue
       const channels = channelsByPeer.get(header.peerId) ?? new Set<string>()
       channels.add(header.frame.channelId)
@@ -100,7 +80,6 @@ const reportDroppedChannels = (
   }
   for (const [peerId, channelIds] of channelsByPeer) {
     for (const socket of port.net.byConnectionId(peerId)) {
-      // Openers are apps, or machines for machine→machine channels.
       if (!port.net.isRoutable(socket)) continue
       for (const channelId of channelIds) {
         port.net.send(
@@ -118,16 +97,12 @@ const reportDroppedChannels = (
   }
 }
 
-/// Buffers for a grace session, or — on overflow — abandons it: frames are
-/// being dropped, so a later resume could not be seamless anyway. The
-/// deferred death notices fire immediately, restoring pre-resume behavior.
 export const bufferOrAbandon = (
   port: HubNoticesPort,
   session: ResumeSessionRow,
   message: Uint8Array
 ): boolean => {
   if (port.resume.buffer(session.connection_id, message)) return true
-  // The caller reports `message` itself as undeliverable.
   abandonSession(port, session)
   return false
 }

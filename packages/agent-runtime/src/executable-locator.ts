@@ -1,9 +1,5 @@
 import { accessSync, constants } from "node:fs"
 
-/// Default executable locator. Plain names are searched on PATH; candidates
-/// with a leading `/` or `~/` (harness `fallbackPaths`, e.g. a CLI bundled
-/// inside a desktop app) are probed directly, `~` expanding via env.HOME.
-/// Exported for tests only.
 export const locateExecutableOnPath = (
   name: string,
   env: NodeJS.ProcessEnv

@@ -7,24 +7,15 @@ import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 import { updateClaudeCommands } from "./skills.js"
 import { toolKind } from "./tool-presentation.js"
 
-/// Tracks the SDK's background-task lifecycle (`task_*` system messages) so
-/// clients can tell "idle" apart from "turn ended, waiting on background
-/// work". Every change emits a full replace-on-update snapshot.
 export const handleSystemMessage = (
   session: ClaudeSession,
   message: Extract<SDKMessage, { type: "system" }>
 ): void => {
   switch (message.subtype) {
     case "commands_changed":
-      // The full list after a mid-session change (skills discovered in a
-      // subdirectory, a plugin reload): it replaces the old one.
       updateClaudeCommands(session, message.commands)
       break
     case "api_retry": {
-      // Claude Code retries transient API failures internally before it emits
-      // the assistant/result pair that drives Codevisor's bounded outer
-      // recovery. Surface that internal retry immediately instead of leaving
-      // the client on a stale "Thinking..." indicator for the whole backoff.
       if (!session.turnActive) break
       const retry = claudeInternalRetryStatus(message)
       void session.emit({
@@ -61,13 +52,11 @@ export const handleSystemMessage = (
       break
     }
     case "task_started": {
-      // Ambient/housekeeping tasks should not make the chat look busy.
       if (message.skip_transcript === true) {
         session.hiddenBackgroundTaskIds.add(message.task_id)
         if (removeBackgroundTask(session, message.task_id)) emitBackgroundTasks(session)
         break
       }
-      // A forked command has no spawning tool call; its row stands in for one.
       const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
       session.backgroundTasks.set(message.task_id, {
         description: message.description,
@@ -78,27 +67,18 @@ export const handleSystemMessage = (
       })
       emitBackgroundTasks(session)
       if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
-        // Stamp the agent's task id on the call that started this run, so
-        // clients can tie an agent's spawn and later follow-ups together
-        // from stored transcript data alone.
         const subagent = { codevisorSubagent: { taskId: message.task_id } }
         void session.emit({
           kind: "session.output",
           payload: startsNewSubagent(session, message.tool_use_id)
-            ? // Retitle the spawning call with the task's description — the
-              // most reliable source, immune to the Task→Agent tool rename.
-              {
+            ? {
                 _meta: subagent,
                 kind: "agent",
                 sessionUpdate: "tool_call_update",
                 title: `Agent: ${message.description}`,
                 toolCallId: message.tool_use_id
               }
-            : // A message to an existing agent (`SendMessage`) restarts its
-              // task under this call, but it's not a new agent: it stays an
-              // ordinary tool call, and the agent's thread keeps streaming
-              // under the call that spawned it.
-              {
+            : {
                 _meta: subagent,
                 sessionUpdate: "tool_call_update",
                 title: `Messaged agent: ${message.description}`,
@@ -147,9 +127,6 @@ export const handleSystemMessage = (
       break
     }
     case "session_state_changed": {
-      // This is a turn-loop barrier, not proof that detached work has exited:
-      // Claude can be idle while a background process continues. Clients pair
-      // it with the normalized task snapshot and exclude terminal-backed work.
       void session.emit({
         kind: "session.updated",
         payload: { runtimeState: message.state },
@@ -162,9 +139,6 @@ export const handleSystemMessage = (
   }
 }
 
-/// Whether a subagent `task_started` comes from the Agent/Task tool (a new
-/// agent) rather than a message to an existing one. Unknown tools count as
-/// spawns, the long-standing behavior.
 const startsNewSubagent = (session: ClaudeSession, toolUseId: string): boolean => {
   const toolName = session.accumulators.get(toolUseId)?.toolName
   return toolName === undefined || toolKind(toolName) === "agent"
@@ -177,9 +151,6 @@ export const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>
     subjectId: session.key
   })
 
-/// Reconciles the SDK's authoritative full task set while preserving richer
-/// edge metadata such as tool-use attribution and Codevisor's terminal key.
-/// The level signal prevents a missed task edge from wedging the busy state.
 const replaceBackgroundTasks = (
   session: ClaudeSession,
   tasks: ReadonlyArray<{ task_id: string; task_type: string; description: string }>

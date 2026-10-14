@@ -20,8 +20,6 @@ enum TreeSitterError: Error, CustomStringConvertible {
   }
 }
 
-/// Queries and generated languages are immutable. Every execution owns its cursor;
-/// every document owns its parser and trees. Only this immutable registry is shared.
 final class TreeSitterGrammar: @unchecked Sendable {
   let name: String
   let language: OpaquePointer

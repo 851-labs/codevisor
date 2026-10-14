@@ -8,12 +8,9 @@ export type McpContent = CallToolResult["content"][number]
 export interface SandboxArtifactInput {
   readonly data: Buffer
   readonly mimeType: string
-  /// The tool path that produced the bytes, e.g. `browser.screenshot`; names the stored file.
   readonly toolPath: string
 }
 
-/// Persists emitted bytes as an immutable server file so the agent can hand
-/// the user a real attachment instead of an unreachable in-memory blob.
 export interface SandboxArtifactPersistence {
   readonly persist: (
     artifact: SandboxArtifactInput
@@ -52,7 +49,6 @@ const persistArtifact = async (
       toolPath
     })
   } catch {
-    // Persistence is best effort: the bytes still reach the model as content.
     return undefined
   }
 }
@@ -150,9 +146,6 @@ const sandboxValueWithArtifacts = (rawValue: unknown, artifacts: Array<unknown>)
   return { value: rawValue, artifacts }
 }
 
-/// Native Computer Use and browser-client methods reject their promises on a
-/// failed action. Mirror that behavior inside execute instead of handing the
-/// model a truthy `{ isError: true }` object that it can accidentally ignore.
 export const sandboxSuccessfulToolResult = async (
   result: CallToolResult,
   collector: SandboxArtifactCollector,

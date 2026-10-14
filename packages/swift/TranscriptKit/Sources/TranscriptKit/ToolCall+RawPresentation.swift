@@ -1,9 +1,6 @@
 import ACPKit
 import Foundation
 
-/// A presentation-ready piece of a tool call's provider-native payload.
-/// `text` always retains the complete value; `preview` bounds the initial UI
-/// cost for command output that can be hundreds of kilobytes or more.
 public struct ToolCallRawSection: Sendable, Equatable, Identifiable {
   public enum Kind: String, Sendable, Equatable {
     case command
@@ -57,22 +54,14 @@ public struct ToolCallRawSection: Sendable, Equatable, Identifiable {
 }
 
 public extension ToolCall {
-  /// Whether expanding this row can reveal typed content or provider-native
-  /// input/output. This check deliberately avoids formatting the raw values so
-  /// collapsed transcript rows stay cheap.
   var hasPresentableDetails: Bool {
     if kind == .execute {
-      // A command alone is worth opening only when it shows more than the
-      // title's one line: a script, or a command the title cut short.
       return !(content?.isEmpty ?? true) || rawOutput != nil
         || shellCommand.map { !title.hasSuffix($0) } == true
     }
     return !(content?.isEmpty ?? true) || rawInput != nil || rawOutput != nil || exitCode != nil
   }
 
-  /// Provider-native output when no richer ACP content is available. Shell
-  /// disclosures use this directly so formatting their hidden command input
-  /// is not part of rendering a potentially large result.
   func rawOutputDetailSection(previewCharacterLimit: Int = 8_192) -> ToolCallRawSection? {
     guard content?.isEmpty ?? true, let rawOutput else { return nil }
     return ToolCallRawSection(
@@ -82,10 +71,6 @@ public extension ToolCall {
     )
   }
 
-  /// Provider-native payload sections used when no richer ACP content exists.
-  /// Execute inputs are omitted because their command is already summarized in
-  /// the tool-call title. Other raw inputs and all raw outputs are fallbacks so
-  /// edits and web sources are not duplicated.
   func rawDetailSections(previewCharacterLimit: Int = 8_192) -> [ToolCallRawSection] {
     let hasTypedContent = !(content?.isEmpty ?? true)
     var sections: [ToolCallRawSection] = []
@@ -104,10 +89,6 @@ public extension ToolCall {
     }
     return sections
   }
-  /// The full command or script a shell call ran, as a terminal would echo
-  /// it. Harnesses report it as `command` (or `cmd`): a string, or an argv
-  /// array. A login-shell wrapper (`/bin/zsh -lc '…'`) is unwrapped to the
-  /// script it runs.
   var shellCommand: String? {
     guard kind == .execute, let rawInput else { return nil }
     let value = rawInput["command"] ?? rawInput["cmd"]
@@ -126,7 +107,6 @@ public extension ToolCall {
 
   private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "dash"]
 
-  /// `["/bin/bash", "-lc", script]` → `script`.
   private static func script(fromArgv argv: [String]) -> String? {
     guard argv.count == 3,
       shells.contains((argv[0] as NSString).lastPathComponent),
@@ -135,7 +115,6 @@ public extension ToolCall {
     return argv[2]
   }
 
-  /// `/bin/zsh -lc 'rg -n "x"'` → `rg -n "x"`; anything else as-is.
   static func unwrappingShellInvocation(_ command: String) -> String {
     let pattern = #"^\s*(?:\S*/)?(sh|bash|zsh|fish|dash)\s+-(?:lc|cl|c)\s+(['"])([\s\S]*)\2\s*$"#
     guard let regex = try? NSRegularExpression(pattern: pattern),
@@ -151,8 +130,6 @@ public extension ToolCall {
   }
 
   private static func decodeSingleQuotedShellBody(_ body: String, original command: String) -> String {
-    // A single-quoted shell word can't contain `'`; joiners splice one in
-    // as `'\''` or `'"'"'`. Any other bare quote means it isn't one word.
     let splices = [#"'\''"#, #"'"'"'"#]
     let bare = splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "") }
     guard !bare.contains("'") else { return command }

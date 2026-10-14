@@ -5,8 +5,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The viewing session against a real server named by the environment
-/// (`VNC_TEST_HOST`, `VNC_TEST_PORT`, `VNC_TEST_PASSWORD`); skipped otherwise.
 @MainActor
 struct VNCSessionInteropTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))

@@ -1,7 +1,3 @@
-/// Logic behind the `codevisor` CLI, written against an injectable `CliDeps`
-/// seam so every command is unit-testable without touching systemctl, the
-/// network, or the process table. The real Node-backed deps live in cli.ts.
-
 export interface ExecResult {
   readonly code: number
   readonly stdout: string
@@ -9,19 +5,9 @@ export interface ExecResult {
 }
 
 export interface CliDeps {
-  /// Run a command to completion, capturing output. Spawn failures (missing
-  /// binary) surface as a non-zero code, never a rejection.
   readonly exec: (command: string, args: ReadonlyArray<string>) => Promise<ExecResult>
-  /// Run a command wired to this terminal (journalctl -f, tail -f). Resolves
-  /// with the exit code once the child ends.
   readonly execInteractive: (command: string, args: ReadonlyArray<string>) => Promise<number>
-  /// Spawn a detached `codevisor-server serve …` appending output to logPath;
-  /// resolves with the child pid.
   readonly spawnDetachedServer: (args: ReadonlyArray<string>, logPath: string) => Promise<number>
-  /// JSON request against the loopback API. `undefined` when the server is
-  /// unreachable (connection refused / timeout). `body` is JSON-encoded;
-  /// `timeoutMs` covers slow operations (plugin installs clone and build)
-  /// that outlive the default 5s.
   readonly fetchJson: (
     url: string,
     init?: {
@@ -38,7 +24,6 @@ export interface CliDeps {
   readonly sleep: (ms: number) => Promise<void>
   readonly env: Readonly<Record<string, string | undefined>>
   readonly isRoot: boolean
-  /// Version stamped into the installed runtime (the VERSION file), if any.
   readonly installedVersion: () => string | undefined
   readonly dataDir: string
   readonly logsDir: string
@@ -56,9 +41,6 @@ export interface ServiceManager {
 const UNIT = "codevisor-server.service"
 export const DEFAULT_PORT = 49361
 
-/// systemd owns the server when a unit exists (install.sh sets one up); the
-/// pidfile fallback covers macOS standalone runs and CODEVISOR_NO_SERVICE
-/// installs.
 export const detectServiceManager = async (deps: CliDeps): Promise<ServiceManager> => {
   const system = await deps.exec("systemctl", ["cat", UNIT])
   if (system.code === 0) return { kind: "systemd-system", unitText: system.stdout }
@@ -70,7 +52,6 @@ export const detectServiceManager = async (deps: CliDeps): Promise<ServiceManage
 export const pidFilePath = (deps: CliDeps): string => `${deps.dataDir}/server.pid`
 export const logFilePath = (deps: CliDeps): string => `${deps.logsDir}/server.log`
 
-/// --port flag > CODEVISOR_PORT > the systemd unit's ExecStart > default.
 export const resolvePort = async (
   deps: CliDeps,
   flag?: number,
@@ -87,15 +68,11 @@ export const resolvePort = async (
 
 const baseUrl = (port: number): string => `http://127.0.0.1:${port}`
 
-/// Something answers on the port — possibly the early listener a booting
-/// (or data-upgrading) server runs, which reports `ok: false` on /v1/health
-/// and refuses every other route with 503.
 const isAnswering = async (deps: CliDeps, port: number): Promise<boolean> => {
   const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
   return health !== undefined && health.status === 200
 }
 
-/// The server has finished booting and serves every route.
 const isHealthy = async (deps: CliDeps, port: number): Promise<boolean> => {
   const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
   return (
@@ -226,7 +203,6 @@ export const stopCommand = async (deps: CliDeps, options: CommandOptions = {}): 
     return 0
   }
 
-  // No pidfile (or a stale one): fall back to asking a live server politely.
   if (await isAnswering(deps, port)) {
     await deps.fetchJson(`${baseUrl(port)}/v1/shutdown`, { method: "POST" })
     if (!(await waitFor(deps, 20, async () => !(await isAnswering(deps, port))))) {
@@ -358,14 +334,11 @@ export const statusCommand = async (
 }
 
 export interface TokenOptions extends CommandOptions {
-  /// Replace the token, retiring the old one (its users need the new one).
   readonly rotate?: boolean | undefined
 }
 
 export const tokenCommand = async (deps: CliDeps, options: TokenOptions = {}): Promise<number> => {
   const port = await resolvePort(deps, options.port)
-  // The connection token is stable across restarts and updates; `--rotate`
-  // issues a fresh one and invalidates the previous.
   const response = options.rotate
     ? await deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token/rotate`, { method: "POST" })
     : await deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token`)
@@ -375,7 +348,7 @@ export const tokenCommand = async (deps: CliDeps, options: TokenOptions = {}): P
     return 1
   }
   const token = (response.body as { readonly token?: string }).token
-  /* v8 ignore next 4 -- the server always returns a token with a success status. */
+  /* v8 ignore next 4 */
   if (token === undefined) {
     deps.error("Server did not return a token")
     return 1
@@ -422,10 +395,6 @@ export const updateCommand = async (
     if (info === undefined || info.status !== 200) return false
     if (version === state.latestVersion) return true
 
-    // Alpha manifests carry the full prerelease tag (for example
-    // 0.1.97-alpha.54), while the runtime reports its base marketing version.
-    // Confirm a restarted server against the requested channel rather than
-    // timing out solely because those strings differ.
     const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
     const bootId = (health?.body as { readonly bootId?: string } | undefined)?.bootId
     const restarted =

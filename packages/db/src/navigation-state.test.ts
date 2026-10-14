@@ -15,7 +15,6 @@ it("records metadata changes atomically and replays only changed rows after a sn
     expect(snapshot.sessions.map((row) => row.id)).toEqual([session.id])
     const raw = new Database(filename)
     try {
-      // Simulate a process dying before its route can publish a notification.
       raw.prepare("update sessions set title = 'Persisted rename' where id = ?").run(session.id)
       raw.prepare("update sessions set title = 'Latest rename' where id = ?").run(session.id)
     } finally {

@@ -31,10 +31,7 @@ export interface McpOAuthRuntimeDeps {
     patch?: Partial<McpServerRecord>
   ) => Promise<McpServerRecord>
   readonly secrets: (server: McpServerRecord) => StoredSecrets
-  /// This machine's server id — refresh-ownership identity.
   readonly selfServerId: string
-  /// Fires after tokens are saved (authorize or refresh) so the config
-  /// plane can republish the rotated material immediately.
   readonly onRotated: (serverId: string) => void
 }
 
@@ -53,8 +50,7 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
     secrets
   } = deps
 
-  /* v8 ignore start -- the OAuth SDK callback contract, browser redirect, token refresh, and
-   * retry timers are exercised against live OAuth MCP providers in the macOS integration flow. */
+  /* v8 ignore start */
   const oauthProvider = (
     serverId: string,
     savedRedirectUrl?: string
@@ -92,8 +88,6 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
       },
       tokens: async () => secrets(await record(serverId)).oauth?.tokens,
       saveTokens: async (tokens) => {
-        // Saving tokens IS taking (or keeping) refresh ownership: a fresh
-        // authorize anywhere makes that machine the one rotator.
         const saved = await replaceSecrets(serverId, (value) => ({
           ...value,
           oauth: {
@@ -147,8 +141,6 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
   const scheduleRefresh = (server: McpServerRecord, tokens: OAuthTokens): void => {
     const existing = refreshTimers.get(server.id)
     if (existing !== undefined) clearTimeout(existing)
-    // Mirrors never rotate: another machine owns this token family, and a
-    // concurrent refresh here would invalidate it fleet-wide.
     const owner = secrets(server).oauth?.refreshOwner
     if (owner !== undefined && owner !== deps.selfServerId) return
     if (tokens.refresh_token === undefined || tokens.expires_in === undefined) return
@@ -205,9 +197,6 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
       await closeConnection(id)
       await refreshGatewayInventories()
     } catch (cause) {
-      // A failed refresh is THIS machine's observation, never a fleet
-      // decision: the enabled wish stays put (it is config-synced) and the
-      // expiry travels through connection state and readiness instead.
       const updated = await record(id)
       await saveRecord(updated, {
         connectionState: "expired",
@@ -227,7 +216,7 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
   }
   /* v8 ignore stop */
 
-  /* v8 ignore start -- completion validation requires a live OAuth provider and upstream MCP. */
+  /* v8 ignore start */
   const validateOAuthConnection = async (id: string): Promise<void> => {
     try {
       await connectUpstream(id, { allowDisabled: true, preserveState: true })

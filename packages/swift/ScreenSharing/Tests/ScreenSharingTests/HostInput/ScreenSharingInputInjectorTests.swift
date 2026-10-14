@@ -3,10 +3,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// The Quartz events the host would post for each remote event. The injector's
-/// delivery closure is replaced throughout, so nothing here moves the cursor or
-/// types on the machine running the suite — the events are inspected and
-/// dropped.
 @MainActor
 struct ScreenSharingInputInjectorTests {
   private static let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -15,7 +11,6 @@ struct ScreenSharingInputInjectorTests {
     let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: { _ in })
     #expect(injector.location(.init(x: 0, y: 0)) == CGPoint(x: 0, y: 0))
     #expect(injector.location(.init(x: 0.5, y: 0.5)) == CGPoint(x: 960, y: 540))
-    // A pointer at the far edge must not land on the next display over.
     #expect(injector.location(.init(x: 1, y: 1)) == CGPoint(x: 1919.999, y: 1079.999))
   }
 
@@ -26,8 +21,6 @@ struct ScreenSharingInputInjectorTests {
     #expect(injector.location(.init(x: 0.5, y: 0.5)) == CGPoint(x: -960, y: 440))
   }
 
-  /// 851-2477: macOS ignores Apps, Mission Control and Show Desktop from a private-state source;
-  /// they come from the HID system state, as from a keyboard. Other keys stay private.
   @Test func systemKeysComeFromTheHIDStateAndOtherKeysFromThePrivateState() throws {
     let recorder = InjectionRecorder()
     let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
@@ -38,9 +31,7 @@ struct ScreenSharingInputInjectorTests {
     let states = recorder.events.map { $0.getIntegerValueField(.eventSourceStateID) }
     let hid = Int64(CGEventSourceStateID.hidSystemState.rawValue)
     #expect(states.dropLast() == Array(repeating: hid, count: ScreenSharingSystemKey.allCases.count)[...])
-    // A private-state source reports its own ID rather than a shared one; it isn't the HID state.
     #expect(states.last != hid)
-    // Posted as a keyboard's, untouched; ordinary keys keep the injected-event tag.
     #expect(recorder.events.dropLast().allSatisfy { $0.getIntegerValueField(.eventSourceUserData) == 0 })
     #expect(recorder.events.last?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag)
   }

@@ -3,16 +3,12 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// One discovered server inside a harness's own config file: name, badges,
-/// the harness-native enable toggle, and the more-actions menu.
 struct NativeMcpServerRow: View {
   @Environment(\.theme) private var theme
   let server: ServerNativeMcpServer
   let setEnabled: (Bool) async -> Void
   let showDetails: () -> Void
   let requestRemoval: () -> Void
-  /// The flip the user made, shown until the harness's config answers —
-  /// then the rescan it returns is the truth (and puts a failed flip back).
   @State private var pendingEnabled: Bool?
 
   var body: some View {

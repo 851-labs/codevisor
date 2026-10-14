@@ -21,9 +21,6 @@ const recordFromRow = (row: SyncRow): SyncEntryRecord => ({
   timestamp: { wallMs: row.ts_wall, counter: row.ts_counter, deviceId: row.ts_device }
 })
 
-/// The server's replica of the config plane: per-namespace LWW documents
-/// (see @codevisor/sync). Merge semantics live in the pure package; this
-/// service persists the outcome.
 export const makeSyncService = (
   context: ServiceContext
 ): Pick<CodevisorDatabaseService, "getSyncEntries" | "mergeSyncEntries"> => {

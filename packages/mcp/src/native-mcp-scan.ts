@@ -22,7 +22,6 @@ import {
 } from "./native-config-normalize.js"
 import type { NativeMcpManagerConfig } from "./native-mcp-types.js"
 
-/// The resolved seams every native-config reader and editor shares.
 export interface NativeMcpEnvironment {
   readonly fs: NativeConfigFileSystem
   readonly home: string
@@ -41,15 +40,9 @@ export interface NativeMcpScanDetail {
 
 export interface NativeMcpScanner {
   readonly scan: () => Promise<NativeMcpScan>
-  /// The scan plus the normalized entries behind every row, for importers
-  /// that need the secret values the public rows deliberately omit.
   readonly scanDetailed: () => Promise<NativeMcpScanDetail>
 }
 
-// These are ChatGPT/Codex's own automation transports. Codevisor disables
-// them per thread in favor of its gateway, so offering them for import or
-// management in MCP Settings would be misleading. Keep the rule scoped to
-// Codex so an identically named user server in another harness stays visible.
 const HIDDEN_CODEX_NATIVE_MCPS = new Set(["computer-use", "node_repl", "cua_repl"])
 
 const isHiddenNativeMcp = (harnessId: string, serverName: string): boolean =>
@@ -61,7 +54,6 @@ export const makeNativeMcpScanner = (
 ): NativeMcpScanner => {
   const { env, fs, home } = environment
 
-  /// Identities of Codevisor-managed servers, for `alreadyManaged` flags.
   const managedIdentities = async (): Promise<ReadonlySet<string>> => {
     const servers = await run(config.db.listMcpServers)
     const identities = new Set<string>()
@@ -116,8 +108,6 @@ export const makeNativeMcpScanner = (
     }
   }
 
-  /// Read + normalize every server in one config file. Parse failures throw;
-  /// the caller converts them to a per-harness `error` field.
   const readServers = async (
     definition: HarnessDefinition,
     options: {
@@ -127,7 +117,7 @@ export const makeNativeMcpScanner = (
     }
   ): Promise<{ readonly exists: boolean; readonly servers: ReadonlyArray<DiscoveredServer> }> => {
     const spec = definition.nativeMcp
-    /* v8 ignore next -- callers only pass definitions carrying nativeMcp. */
+    /* v8 ignore next */
     if (spec === undefined) return { exists: false, servers: [] }
     const content = await fs.readFile(options.configPath)
     if (content === undefined) return { exists: false, servers: [] }
@@ -154,8 +144,6 @@ export const makeNativeMcpScanner = (
     return { exists: true, servers }
   }
 
-  /// Project-scoped files (.mcp.json) for harnesses that declare one — read
-  /// from every known project folder, deduped, always read-only.
   const readProjectServers = async (
     definition: HarnessDefinition,
     managed: ReadonlySet<string>
@@ -177,10 +165,7 @@ export const makeNativeMcpScanner = (
           scope: "project"
         })
         servers.push(...result.servers)
-      } catch {
-        // A project's committed file being malformed is that project's
-        // problem — never let it poison the whole scan.
-      }
+      } catch {}
     }
     return servers
   }
@@ -227,8 +212,6 @@ export const makeNativeMcpScanner = (
   return { scan, scanDetailed }
 }
 
-/// Group discovered servers by identity so the same server registered in
-/// three harnesses becomes one import row listing all of its sources.
 const coalesceCandidates = (
   discovered: ReadonlyArray<DiscoveredServer>
 ): ReadonlyArray<NativeMcpImportCandidate> => {
@@ -237,7 +220,7 @@ const coalesceCandidates = (
     { candidate: NativeMcpImportCandidate; foundIn: Array<string> }
   >()
   for (const { normalized, row } of discovered) {
-    /* v8 ignore next 2 -- defensive: normalized entries always carry a url or command, which yields a non-empty identity. */
+    /* v8 ignore next 2 */
     if (row.identity === "") continue
     const existing = byIdentity.get(row.identity)
     if (existing !== undefined) {

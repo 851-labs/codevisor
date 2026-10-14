@@ -1,12 +1,9 @@
 import Foundation
 import ImageIO
 
-/// Recently sent images, kept on the device that sent them. Attachments are
-/// immutable, so a local preview is exactly what the server would return.
 @MainActor
 final class SentAttachmentPreviews {
   private static let capacity = 8
-  /// The preview size the transcript's image store accepts and decodes.
   nonisolated private static let maxPixelSize = 960
   private var entries: [(fileId: String, data: Data)] = []
 
@@ -16,14 +13,10 @@ final class SentAttachmentPreviews {
     if entries.count > Self.capacity { entries.removeFirst(entries.count - Self.capacity) }
   }
 
-  /// The encoded preview of a sent image, or nil for files this device did
-  /// not send.
   func preview(for fileId: String) -> Data? {
     entries.last { $0.fileId == fileId }?.data
   }
 
-  /// A JPEG no larger than the preview size, decoded straight from the
-  /// staged file by ImageIO so the full image never has to be in memory.
   nonisolated static func encodePreview(of fileURL: URL) -> Data? {
     guard
       let source = CGImageSourceCreateWithURL(fileURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

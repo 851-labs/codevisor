@@ -34,7 +34,6 @@ struct RGBATests {
     let ratio = ColorMath.contrastRatio(
       white.relativeLuminance, black.relativeLuminance)
     #expect(abs(ratio - 21.0) < 0.01)
-    // Symmetry
     #expect(
       ColorMath.contrastRatio(0.2, 0.8) == ColorMath.contrastRatio(0.8, 0.2))
   }
@@ -43,7 +42,6 @@ struct RGBATests {
   func mixing() {
     let fg = RGBA(hex: "#ffffff")!
     let bg = RGBA(hex: "#000000")!
-    // color-mix(in srgb, #ffffff 6%, #000000) ≈ #0f0f0f
     #expect(fg.mixed(with: bg, weight: 0.06).hexString() == "#0f0f0f")
     #expect(fg.mixed(with: bg, weight: 1).hexString() == "#ffffff")
     #expect(fg.mixed(with: bg, weight: 0).hexString() == "#000000")
@@ -53,7 +51,6 @@ struct RGBATests {
   func compositing() {
     let translucent = RGBA(hex: "#ffffff80")!
     let over = translucent.compositedOver(RGBA(hex: "#000000")!)
-    // ~50% white over black
     #expect(over == RGBA(r: 128, g: 128, b: 128, a: 1))
     #expect(ColorMath.compositeOverBg("#ffffff80", over: "#000000") == "#808080")
     #expect(ColorMath.compositeOverBg("#ffffff", over: nil) == nil)
@@ -84,7 +81,6 @@ struct ColorMathTests {
   func darkSurface() {
     #expect(ColorMath.isDarkSurface(bg: "#1e1e2e"))
     #expect(!ColorMath.isDarkSurface(bg: "#f8f8f8"))
-    // Unparseable bg falls back to the fg hint: light fg → dark surface.
     #expect(ColorMath.isDarkSurface(bg: nil, fgHint: "#eeeeee"))
     #expect(!ColorMath.isDarkSurface(bg: nil, fgHint: "#111111"))
     #expect(!ColorMath.isDarkSurface(bg: nil, fgHint: nil))
@@ -93,33 +89,27 @@ struct ColorMathTests {
   @Test("surfacesMatch")
   func surfaces() {
     #expect(ColorMath.surfacesMatch("#ABCDEF", "#abcdef"))
-    #expect(ColorMath.surfacesMatch("#101010", "#141414"))  // Δ luminance < 0.06
+    #expect(ColorMath.surfacesMatch("#101010", "#141414"))
     #expect(!ColorMath.surfacesMatch("#000000", "#ffffff"))
     #expect(!ColorMath.surfacesMatch(nil, "#ffffff"))
   }
 
   @Test("hoverWouldEraseText truth table")
   func hoverErase() {
-    // Hover close to fg → erases.
     #expect(ColorMath.hoverWouldEraseText(hover: "#eeeeee", bg: "#111111", fg: "#ffffff"))
-    // Hover close to bg → fine.
     #expect(!ColorMath.hoverWouldEraseText(hover: "#1a1a1a", bg: "#111111", fg: "#ffffff"))
-    // Missing inputs → trust the theme.
     #expect(!ColorMath.hoverWouldEraseText(hover: "#eeeeee", bg: nil, fg: "#ffffff"))
     #expect(!ColorMath.hoverWouldEraseText(hover: "#eeeeee", bg: "#111111", fg: nil))
   }
 
   @Test("pickReadableForeground")
   func pickForeground() {
-    // First candidate clearing 3:1 wins.
     #expect(
       ColorMath.pickReadableForeground(
         bg: "#000000", candidates: ["#333333", "#cccccc", "#ffffff"]) == "#cccccc")
-    // Nothing clears the bar → highest contrast wins.
     #expect(
       ColorMath.pickReadableForeground(
         bg: "#000000", candidates: ["#111111", "#222222"]) == "#222222")
-    // Unparseable bg → first defined candidate.
     #expect(
       ColorMath.pickReadableForeground(bg: nil, candidates: [nil, "", "#abc"]) == "#abc")
     #expect(ColorMath.pickReadableForeground(bg: "#000000", candidates: [nil, nil]) == nil)

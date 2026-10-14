@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Launch builds the environment from state decoded off the main actor: the
-/// first window still shows every cached machine, picker, draft, and setting,
-/// but none of those payloads is read or decoded on the main thread.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct ClientLaunchSnapshotTests {
@@ -19,8 +16,6 @@ struct ClientLaunchSnapshotTests {
       name: "Launch workspace", rootDirectory: "/tmp/launch-snapshot", serverId: "local",
       projectId: project.id, centerTree: .leaf(.centerInitial(sessionId: session.id)), isServerSynced: true)
 
-    // The previous launch: synced a machine, inspected its harnesses, left
-    // an unsent draft, finished onboarding, then quit after its saves landed.
     await NavigationFixture(persistence: store.base)
       .install(projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
     ConfigOptionCache(store: store.base).store([codexCapability()], forServer: "local")
@@ -65,7 +60,6 @@ struct ClientLaunchSnapshotTests {
   }
 }
 
-/// Records which keys were read on the main thread once recording starts.
 private final class MainThreadReadRecordingStore: PersistenceStore, @unchecked Sendable {
   let base = InMemoryStore()
   private let lock = NSLock()

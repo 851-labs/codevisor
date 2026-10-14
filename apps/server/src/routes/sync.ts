@@ -44,18 +44,12 @@ const RECONCILE_UNAVAILABLE: Record<SyncReconcileNamespace, string> = {
 const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {
   const chunks: Array<Buffer> = []
   for await (const chunk of request) {
-    /* v8 ignore next -- Node HTTP request body chunks are Buffers in this server. */
+    /* v8 ignore next */
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
   }
   return Buffer.concat(chunks)
 }
 
-/// The config plane's endpoints: per-namespace replica documents, the
-/// content-addressed blob store clients ferry big payloads through, and
-/// the skills reconcile pass. GET/PUT of a namespace merge with
-/// last-writer-wins semantics (see @codevisor/sync); the PUT response is
-/// the merged document, so one round trip both pushes and pulls. Changes
-/// publish `sync.changed` so every connected client adopts them live.
 export const routeSync = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -78,9 +72,6 @@ export const routeSync = async (
     }
     if (request.method === "PUT") {
       const bytes = await readRawBody(request)
-      // The id IS the unpacked tree hash: bytes that do not reproduce it
-      // are rejected, so a ferrying client can never plant mismatched
-      // content under a trusted id.
       if (!(await verifySkillArchive(id, bytes))) {
         throw new HttpFailure(400, "Archive contents do not match the blob id")
       }
@@ -137,9 +128,6 @@ export const routeSync = async (
     const result = await run(services.db.mergeSyncEntries(namespace, body.entries))
     if (namespace === "harness-shared-accounts") {
       await services.sharedAccounts?.reconcileRemote()
-      // A sign-in shared from another machine changes what this machine's
-      // harnesses can use: check them now, then report, even unchanged, so
-      // the fleet sees this machine has caught up rather than waiting on it.
       const signedIn = harnessesSignedInBy(result.changed)
       if (signedIn.length > 0)
         void Promise.allSettled(signedIn.map((harnessId) => services.auth?.refresh(harnessId)))
@@ -151,8 +139,6 @@ export const routeSync = async (
         namespace,
         entries: result.changed
       }).catch(swallowError)
-      // Overlay writes enforce immediately: suppression applies and the
-      // machine's readiness entry updates in the same request cycle.
       if (namespace === MCP_OVERLAYS_NAMESPACE) {
         await refreshMcpReadiness(services, config, fanout)
       }

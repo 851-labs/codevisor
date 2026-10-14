@@ -31,22 +31,14 @@ struct SessionControllerConfigurationTests {
       serverClient: client
     )
 
-    // The draft mounted from onboarding's fast harness-only seed.
     #expect(controller.configOptionsByHarness[warmedCapability.harness.id]?.isEmpty == true)
     #expect(controller.modelOption == nil)
 
-    // The speculative warm updates the observable shared cache without
-    // directly applying another snapshot to this controller.
     cache.store([warmedCapability], forServer: project.serverId)
 
-    // The list is usable, but the harness's own default is not the
-    // user's pick: the chip asks for a model.
     #expect(controller.modelOption?.options.isEmpty == false)
     #expect(controller.modelOption?.currentValue == "")
 
-    // This is the model-row click path from the recording. It must stage
-    // and resolve the selected value even though the controller's older
-    // harness snapshot is still empty.
     await controller.setConfigOption("model", "gpt-5.6-terra")
 
     #expect(controller.modelOption?.currentValue == "gpt-5.6-terra")
@@ -81,7 +73,6 @@ struct SessionControllerConfigurationTests {
     controller.harnesses = [capability.harness]
     controller.selectedHarnessId = capability.harness.id
     controller.configOptionsByHarness[capability.harness.id] = capability.configOptions
-    // The mounted draft's model is the user's pick.
     controller.pendingConfiguration.replaceValues(["model": "stale-model"], for: capability.harness.id)
     controller.modeStateByHarness[capability.harness.id] = SessionModeState(
       currentModeId: "default",
@@ -105,7 +96,6 @@ struct SessionControllerConfigurationTests {
   @Test("An existing chat shows its own saved model until its runtime reports options")
   func existingChatUsesOwnValuesOverCatalogLists() {
     let cache = ConfigOptionCache(store: InMemoryStore())
-    // The catalog's current value is a fresh-session default.
     var catalog = capability(model: "sonnet")
     catalog.configOptions[0].options.append(SessionConfigSelectOption(value: "opus[1m]", name: "Opus"))
     var chat = session()
@@ -120,8 +110,6 @@ struct SessionControllerConfigurationTests {
     let controller = SessionController(project: project, configCache: cache)
     controller.configureExistingSession(chat)
     controller.connectedHarnessId = catalog.harness.id
-    // Claude's runtime reports NO options when its model list loses the
-    // startup race, and publishes the list later as a config update.
     let model = SessionModel(
       serverTransport: ServerSessionTransport(
         client: FakeSessionServerClient(sessionId: chat.id),
@@ -136,7 +124,6 @@ struct SessionControllerConfigurationTests {
     #expect(controller.modelOption?.options.map(\.value) == ["sonnet", "opus[1m]"])
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "Opus"))
 
-    // The late list replaces the stand-in.
     var live = catalog.configOptions
     live[0].currentValue = "sonnet"
     live[0].options = [SessionConfigSelectOption(value: "sonnet", name: "Sonnet")]
@@ -233,9 +220,6 @@ struct SessionControllerConfigurationTests {
 
     await controller.retarget(to: remoteProject, serverClient: remoteClient)
 
-    // The draft now belongs to the OTHER machine end to end: project,
-    // client, and the per-machine defaults scope. The typed prompt and
-    // its snapshot's foreign project reference survive untouched.
     #expect(controller.project.id == remoteProject.id)
     #expect(controller.project.serverId == "remote-b")
     #expect(controller.serverClient as? FakeSessionServerClient === remoteClient)
@@ -279,7 +263,6 @@ struct SessionControllerConfigurationTests {
     await controller.send()
 
     #expect(submittedText == "Preserve this title\nwith more detail")
-    // With no configured harness, setup fails and restores the draft.
     #expect(controller.composerText == "Preserve this title\nwith more detail")
   }
 

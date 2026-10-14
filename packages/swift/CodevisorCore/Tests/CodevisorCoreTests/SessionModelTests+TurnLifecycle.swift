@@ -16,8 +16,6 @@ extension SessionModelTests {
     )
 
     await model.send("do work")
-    // The provider gave up recovering a transient failure and ends the turn
-    // with a human reason attached to the turn-end event.
     client.emit(
       ServerEventEnvelope(
         id: 1, serverId: "local", kind: "session.updated",
@@ -128,7 +126,6 @@ extension SessionModelTests {
     )
 
     await model.send("do work")
-    // The provider reports it's retrying a transient failure (attempt 2 of 3).
     client.emit(
       ServerEventEnvelope(
         id: 1, serverId: "local", kind: "session.updated",
@@ -153,7 +150,6 @@ extension SessionModelTests {
       return false
     }
 
-    // The retry succeeds — new content clears the "Retrying…" status.
     client.emit(
       ServerEventEnvelope(
         id: 2, serverId: "local", kind: "session.output",
@@ -296,7 +292,6 @@ extension SessionModelTests {
     #expect(model.sessionPlan?.entries.count == 2)
     #expect(model.sessionPlan?.entries.last?.status == .inProgress)
 
-    // A later snapshot replaces the session plan wholesale.
     client.emit(
       ServerEventEnvelope(
         id: 2,

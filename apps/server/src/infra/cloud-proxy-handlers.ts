@@ -17,16 +17,6 @@ import {
 } from "@codevisor/cloud-client"
 import { WebSocket } from "ws"
 
-/// The machine ends of the generic http/ws relay channels: replay sealed
-/// requests against this server's own loopback API and bridge sealed ws
-/// channels onto its own ws endpoints. Integration glue over `fetch` and
-/// `ws` — the frame/header/credit logic it composes is fully covered in
-/// @codevisor/cloud-client (cloud-proxy.ts, incoming-channel.ts).
-
-/// A request body fed by sealed chunk frames. Credit for a chunk is granted
-/// only when fetch pulls it, so the opener can never get more than its
-/// credit window ahead of the local server's consumption: a 500MB upload
-/// holds about PROXY_INITIAL_CREDIT_BYTES here, whatever its size.
 export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) => {
   const queued: Array<{ readonly data: Uint8Array; readonly sealedBytes: number }> = []
   let ended = false
@@ -56,8 +46,6 @@ export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) 
         grantCredit(next.sealedBytes)
       },
       cancel: () => {
-        // The local server answered without reading the rest (e.g. 413);
-        // later chunks are dropped by the handler.
         queued.length = 0
         ended = true
       }
@@ -84,18 +72,6 @@ export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) 
   }
 }
 
-/// Serves one app-opened HTTP channel: replay the sealed request against the
-/// local server (loopback is exempt from token auth, so the app's cloud
-/// bearer is stripped and never forwarded), then stream the response back as
-/// head/chunk/end frames.
-///
-/// On flow-controlled opens both directions are credit-paced. A request body
-/// streams into the local fetch as its chunks arrive (streamedRequestBody),
-/// and reading the response pauses while the send queue sits behind the
-/// app's credit window, so large uploads and downloads never balloon memory
-/// on this hop (or the hub's). Openers without flow control cannot be paced,
-/// so their bodies are buffered up to MAX_REQUEST_BODY_BYTES. Pure frame and
-/// header logic lives in cloud-proxy.ts.
 export const httpChannelHandler =
   (localBaseUrl: string, log: (line: string) => void): ChannelHandler =>
   (channel) => {
@@ -118,7 +94,6 @@ export const httpChannelHandler =
       releaseDrain?.()
     }
     channel.onOutboundDrain = () => releaseDrain?.()
-    /// Resolves once the gated send queue has drained (or the channel died).
     const drained = (): Promise<void> =>
       new Promise((resolve) => {
         if (channelClosed || channel.queuedOutboundBytes() === 0) {
@@ -175,7 +150,6 @@ export const httpChannelHandler =
         }
         requestDone = true
         channel.send({ kind: "end" })
-        // Queued frames flush as credit arrives; the close follows them.
         channel.close("done")
       } catch (cause) {
         if (channelClosed) return
@@ -197,7 +171,6 @@ export const httpChannelHandler =
         return
       }
       if (flowControlled) {
-        // The first chunk starts the local request; the rest stream into it.
         if (streamed === undefined) {
           streamed = streamedRequestBody((bytes) => {
             if (!channelClosed) channel.grantCredit(bytes)
@@ -211,12 +184,6 @@ export const httpChannelHandler =
     }
   }
 
-/// Serves gateway channels (other machines' Codevisor gateway calls, see
-/// @codevisor/cloud-client gateway-channel.ts) by replaying each request
-/// against this server's own POST /v1/gateway/invoke — the only route this
-/// channel type can reach, so a peer machine gets exactly the gateway and
-/// nothing else of the local API. Cancelling the channel aborts the fetch,
-/// which the route turns into an aborted gateway call.
 export const gatewayLoopbackHandler = (
   localBaseUrl: string,
   log: (line: string) => void
@@ -231,12 +198,6 @@ export const gatewayLoopbackHandler = (
     return { status: response.status, body: await response.text() }
   }, log)
 
-/// Serves one app-opened WebSocket channel by bridging it onto the local
-/// server's own WS endpoint. Frames arriving before the local socket opens
-/// are queued; either side closing gracefully surfaces as close("done"). On
-/// flow-controlled opens both directions are credit-paced: the local socket
-/// pauses while outbound frames sit behind the app's window, and the app's
-/// window replenishes only after the local socket accepts each frame.
 export const wsChannelHandler =
   (localBaseUrl: string): ChannelHandler =>
   (channel) => {
@@ -250,8 +211,6 @@ export const wsChannelHandler =
     try {
       socket = new WebSocket(localBaseUrl.replace(/^http/, "ws") + params.path)
     } catch {
-      // The constructor throws synchronously for a URL it will not dial (a
-      // path carrying a `#` fragment): refuse the channel, as for bad params.
       channel.close("rejected")
       return
     }
@@ -269,15 +228,9 @@ export const wsChannelHandler =
     })
     socket.on("message", (data, isBinary) => {
       const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      // Chunked: an oversized message (a huge tool-call event) would exceed
-      // the hub's relay frame cap, and the dropped frame's seq gap would
-      // abort the channel — with cursor replay resending the same oversized
-      // event forever. Split frames reassemble on the app side instead.
       for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : String(data))) {
         channel.send(frame)
       }
-      // Gated sends queue behind the app's credit; pause the local socket so
-      // a slow phone stalls this stream instead of growing the queue.
       if (flowControlled && channel.queuedOutboundBytes() > PROXY_OUTBOUND_HIGH_WATER_BYTES) {
         socket.pause()
       }
@@ -287,8 +240,6 @@ export const wsChannelHandler =
     }
     socket.on("close", () => channel.close("done"))
     socket.on("error", () => {
-      // close fires afterwards; before open that would report "done" for a
-      // websocket that never connected, so reject first (later closes no-op).
       if (!opened) channel.close("rejected")
     })
     if (flowControlled) channel.grantCredit(PROXY_INITIAL_CREDIT_BYTES)

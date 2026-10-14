@@ -1,14 +1,6 @@
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 
-/// Canonical Codevisor directory layout, identical on every OS:
-///   ~/.codevisor/data   – sqlite metadata + attachments and sidecar state
-///   ~/.codevisor/server – standalone install runtime (managed by install.sh)
-///   ~/.codevisor/logs   – server logs for non-service runs
-///   ~/.codevisor/repos  – managed git clones (see @codevisor/db paths)
-/// An identical layout on every machine is a prerequisite for moving sessions
-/// between machines. Worktrees intentionally live at ~/codevisor instead (see
-/// @codevisor/db paths.ts).
 export const codevisorRoot = (): string => join(homedir(), ".codevisor")
 
 export const resolveDataDir = (): string =>
@@ -26,9 +18,6 @@ export interface ServerDataLayout {
   readonly legacyDataDirectory?: string
 }
 
-/// Old root systemd units pass the former default explicitly. Translate that
-/// one known default on startup, including automatic updates that do not run
-/// install.sh. Deliberate custom paths and macOS keep their existing behavior.
 export const resolveServerDataLayout = (
   requestedDatabasePath?: string,
   context = {
@@ -58,10 +47,6 @@ export const resolveServerDataLayout = (
   return { databasePath: requested }
 }
 
-/// Database locations that install.sh provisions (user and root installs).
-/// Servers started on one of these are eligible for the tmp-directory data
-/// migration even when the path arrives via an explicit --db flag, because the
-/// systemd units always pass --db.
 export const canonicalDatabasePaths = (): ReadonlyArray<string> => [
   defaultDatabasePath(),
   "/var/lib/codevisor/data/codevisor-server.sqlite"

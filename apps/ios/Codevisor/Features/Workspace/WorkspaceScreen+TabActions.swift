@@ -3,44 +3,27 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// What a route asks this screen to show. A pushed screen reads it once at
-/// mount; a split detail is reused, so it re-reads it on every change.
 struct WorkspacePreferredRoute: Equatable {
   var chatSessionId: UUID?
   var paneId: UUID?
 }
 
-/// What a mounted workspace screen is actually showing, reported back so a
-/// split layout's route can follow it instead of going stale.
 struct WorkspacePaneSelection: Equatable {
   var workspaceId: UUID
   var paneId: UUID
 }
 
-// MARK: - Tab actions
-
-/// The workspace's few tab operations. Switching tabs happens from the
-/// sidebar, which pushes the workspace on the chosen pane.
 extension WorkspaceScreen {
   var preferredRoute: WorkspacePreferredRoute {
     WorkspacePreferredRoute(chatSessionId: preferredChatSessionId, paneId: preferredPaneId)
   }
 
-  /// The pane this screen has decided to show, or nil while it has none of
-  /// its own. Before `paneState` exists, `panes` is a repository read or a
-  /// draft placeholder — the workspace's last selection, not this screen's,
-  /// and reporting it would overwrite a route whose pane is still pending.
-  /// A draft has no routed workspace to report against either.
   var reportedPaneSelection: WorkspacePaneSelection? {
     guard paneState != nil, let workspaceId, let paneId = panes.selectedPaneId else { return nil }
     return WorkspacePaneSelection(workspaceId: workspaceId, paneId: paneId)
   }
 
-  /// Applies the route's preferred chat/pane to the mounted pane state,
-  /// mirroring what `prepare()` does on a first mount. A chat the
-  /// workspace has not opened yet is added and published, as there.
   func applyPreferredRoute() {
-    // A screen that has not mounted its panes yet is prepare()'s to route.
     guard paneState != nil else { return }
     var state = panes
     var openedPane: PaneDescriptorState?
@@ -54,7 +37,6 @@ extension WorkspaceScreen {
       }
     }
     if let preferredPaneId {
-      // A pane sync already removed falls back to the last selection.
       state.selectPane(id: preferredPaneId)
     }
     guard state != panes else { return }
@@ -74,9 +56,6 @@ extension WorkspaceScreen {
     paneBinding.wrappedValue = state
   }
 
-  /// Any tab can close — chats included, as on macOS. A final-pane close is
-  /// optimistic conversion of that same identity; the server atomically
-  /// confirms the conversion so two clients cannot manufacture replacements.
   func close(_ pane: PaneDescriptorState) {
     let owningWorkspaceId = resolvedWorkspace?.id
     var state = panes
@@ -92,9 +71,6 @@ extension WorkspaceScreen {
       paneBinding.wrappedValue = state
     }
     if pane.kind == .plugin {
-      // Closing the tab drops this client's webview and web-content
-      // process. The machine-side plugin remains available to other
-      // clients, panes, and tools until the Codevisor server stops.
       PluginPaneCache.shared.remove(paneId: pane.id)
     }
     if pane.kind == .browser {
@@ -123,7 +99,6 @@ extension WorkspaceScreen {
     }
   }
 
-  /// Adds a New Tab page and shows it; its page offers what to create.
   func addTab() {
     var state = panes
     let newPane = state.addNewTabPane()

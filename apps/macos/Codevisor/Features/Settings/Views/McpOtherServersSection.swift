@@ -2,11 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// MCP servers that live in a machine's own harness config files, plus the
-/// ones Codevisor offers to adopt. These stay machine-major on purpose:
-/// they describe files on one disk, and folding them into fleet entries
-/// would claim a reach they do not have. Collapsed by default, grouped by
-/// machine, so the fleet list above stays the page's subject.
 struct McpOtherServersSection: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -19,8 +14,6 @@ struct McpOtherServersSection: View {
   @State private var pendingRemoval: NativeRemovalRequest?
   @State private var lastRemoval: NativeRemovalRecord?
 
-  /// A removal has to name the machine as well as the server: the same
-  /// harness config exists on every machine, and only one of them is meant.
   private struct NativeRemovalRequest: Identifiable {
     let machineId: String
     let server: ServerNativeMcpServer
@@ -96,8 +89,6 @@ struct McpOtherServersSection: View {
     environment.machines.allMachines.first { $0.id == machineId }?.name ?? "that machine"
   }
 
-  /// Codevisor edits a harness's own config file only on explicit request:
-  /// one-time backup, surgical excision, and the fragment parked for undo.
   private func removeNative(_ request: NativeRemovalRequest) async {
     pendingRemoval = nil
     do {
@@ -189,8 +180,6 @@ struct McpOtherServersSection: View {
     return ids.map { names[$0] ?? $0 }.joined(separator: ", ")
   }
 
-  /// Native discovery is best-effort: an older server or a scan failure
-  /// simply contributes nothing instead of failing the page.
   private func reload() async {
     var found: [String: ServerNativeMcpScan] = [:]
     for machine in environment.machines.allMachines {

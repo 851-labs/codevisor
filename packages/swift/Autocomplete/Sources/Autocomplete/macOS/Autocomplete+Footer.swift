@@ -2,8 +2,6 @@
   import SwiftUI
 
   public extension Autocomplete {
-    /// Actions pinned below the scrolling results, visible for every query.
-    /// Footer entries share the menu's keyboard navigation and dismissal.
     struct Footer: View, AutocompleteMenuContent {
       private let id: AnyHashable
       private let entries: [Entry]

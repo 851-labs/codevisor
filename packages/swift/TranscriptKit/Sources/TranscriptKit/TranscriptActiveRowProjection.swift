@@ -1,8 +1,5 @@
 import CodevisorProtocol
 
-/// Builds only the live transcript slice. Callers can parse this snapshot off
-/// the UI actor and splice it over the projection cache's single active slot,
-/// leaving the settled transcript untouched on token flushes.
 public enum TranscriptActiveRowProjection {
   public static func rows(
     for item: ConversationItem,
@@ -31,7 +28,6 @@ extension TranscriptAssistantRowProjection {
       lifecycle: lifecycle,
       to: &rows
     )
-    // A ticking worked header already says what the turn is doing.
     let hasLiveWorkedHeader = rows.contains { row in
       guard case .header? = row.workedSection?.role, let kind = row.workedSection?.identity.kind
       else { return false }
@@ -40,11 +36,6 @@ extension TranscriptAssistantRowProjection {
     if !hasLiveWorkedHeader {
       appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
     }
-    // A failed turn stays in the active slot until the next bubble starts,
-    // and the session-level banner defers to it. Without this row the
-    // failure either never appeared (turns with worked items) or was
-    // drawn in place into the aggregate row's 32pt opening frame and
-    // clipped to a sliver until a remeasure landed.
     appendStopDetailEpilogueIfNeeded(
       message,
       waitingOnBackgroundTask: waitingOnBackgroundTask,

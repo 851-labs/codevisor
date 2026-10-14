@@ -1,7 +1,6 @@
 import Foundation
 import TranscriptKit
 
-/// Resolves paths on the server without expanding ~ against the client machine.
 public enum MarkdownDocumentPath {
   public static func resolve(_ target: String, relativeTo directory: String) -> String? {
     let target = target.replacingOccurrences(

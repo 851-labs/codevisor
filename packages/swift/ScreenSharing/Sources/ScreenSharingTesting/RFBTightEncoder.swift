@@ -4,20 +4,12 @@ import ImageIO
 import ScreenSharing
 import UniformTypeIdentifiers
 
-/// The reference server's Tight encoder (851-2313), choosing per rectangle
-/// the way TigerVNC does: one colour → fill; up to 16 → palette (1-bit for
-/// two colours) over zlib; more → JPEG when the client asked for a quality
-/// level, else the copy filter over zlib. Four persistent zlib streams:
-/// 0 copy, 1 two-colour palette, 2 indexed palette.
 public final class RFBTightEncoder {
   public init() {}
-  /// TigerVNC's JPEG quality for Tight quality levels 0…9.
   public static let jpegQuality = [15, 29, 41, 42, 62, 77, 79, 86, 92, 100]
   private var deflaters: [RFBZlibDeflater?] = [nil, nil, nil, nil]
 
-  /// The bytes after the rectangle header.
   public func encode(_ rect: RFBRectangle, from framebuffer: RFBFramebuffer, qualityLevel: Int?) throws -> [UInt8] {
-    // One preallocated pass (this encoder must not bound vnc-bench on large frames).
     let rgb = framebuffer.withPixels { pixels, stride in
       [UInt8](unsafeUninitializedCapacity: rect.width * rect.height * 3) { buffer, count in
         var target = 0
@@ -78,7 +70,6 @@ public final class RFBTightEncoder {
 
   private func compressed(_ data: [UInt8], streamID: Int) throws -> [UInt8] {
     guard data.count >= 12 else { return data }
-    // zlib level 1: what TigerVNC uses at its default compression level, and fast enough not to bound the benchmark.
     if deflaters[streamID] == nil { deflaters[streamID] = try RFBZlibDeflater(level: 1) }
     let bytes = try deflaters[streamID]!.deflate(data)
     return Self.compactLength(bytes.count) + bytes

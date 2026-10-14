@@ -33,16 +33,11 @@ export interface ManagedSession {
   readonly phases: MessagePhases
 }
 
-/// Runtime state that swaps live after construction: the resolved
-/// environment (refreshEnvironment) and the shared in-flight refresh.
 export interface AgentRuntimeState {
   currentEnv: NodeJS.ProcessEnv
   envRefresh: Promise<void> | undefined
 }
 
-/// The registries and per-session plumbing every runtime operation shares:
-/// providers, managed sessions, the lifecycle serializer, and the event
-/// dispatcher that keeps a session's sink observing events in order.
 export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const state: AgentRuntimeState = {
     currentEnv: config.env ?? process.env,
@@ -52,8 +47,6 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const executableExists =
     config.executableExists ??
     ((name, environment) => locateExecutable(name, environment) !== undefined)
-  // A getter so every provider sees environment refreshes without re-wiring:
-  // providers read `environment.env` lazily at readiness/launch time.
   const environment: ProviderEnvironment = {
     get env() {
       return state.currentEnv
@@ -64,8 +57,6 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const versions = makeVersionProber(
     config.readVersionOutput === undefined ? {} : { readVersionOutput: config.readVersionOutput }
   )
-  /// First detect binary (or absolute fallback path) present in the current
-  /// environment — the same candidates providers scan for readiness.
   const locateHarnessBinary = (definition: HarnessDefinition): string | undefined => {
     for (const name of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
       const path = locateExecutable(name, state.currentEnv)
@@ -89,9 +80,6 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const sessions = new Map<string, ManagedSession>()
   const lifecycleTails = new Map<string, Promise<void>>()
 
-  /// Serializes load/cancel/close for one durable provider session. In
-  /// particular, a new load cannot observe a handle while an earlier forced
-  /// cancellation is still flushing and retiring it.
   const withSessionLifecycle = async <A>(
     sessionId: string,
     operation: () => Promise<A>
@@ -101,8 +89,6 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     const gate = new Promise<void>((resolvePromise) => {
       release = resolvePromise
     })
-    // Every stored tail resolves through the gate released in `finally`, so
-    // later operations can await it directly without unreachable catch paths.
     const tail = previous.then(() => gate)
     lifecycleTails.set(sessionId, tail)
     await previous
@@ -116,15 +102,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     }
   }
 
-  /// All session output funnels through here. Events append to the owning
-  /// session's serial promise chain so the sink observes them in arrival
-  /// order — including events with no prompt in flight, which is how
-  /// agent-initiated turns reach the server.
   const dispatch = (eventSource: object, event: RuntimeEvent): Promise<void> => {
     const session = sessions.get(event.subjectId)
-    // Provider processes can finish shutting down after their replacement is
-    // already live. Events are scoped to the handle that produced them so a
-    // retired process can never mutate the replacement's durable session.
     if (session === undefined || session.eventSource !== eventSource) {
       return Promise.resolve()
     }
@@ -171,7 +150,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
         .then(() => session.sink(labeled))
         .then(
           () => undefined,
-          /* v8 ignore next -- defensive: a sink failure must not wedge the chain. */
+          /* v8 ignore next */
           () => undefined
         )
     }
@@ -202,7 +181,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
         throw new Error(`${definition.name} is unavailable: ${definition.disabledReason}`)
       }
       const provider = providers.get(definition.provider)
-      /* v8 ignore next 3 -- every catalog provider id is registered above; guards future ids. */
+      /* v8 ignore next 3 */
       if (provider === undefined) {
         throw new Error(`No provider registered for harness: ${harnessId}`)
       }

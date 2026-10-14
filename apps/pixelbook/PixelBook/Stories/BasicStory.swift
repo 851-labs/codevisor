@@ -1,7 +1,6 @@
 import Autocomplete
 import SwiftUI
 
-/// A selection binding is all the caller needs; the package owns interaction.
 struct BasicStory: View {
   @State private var selection: Language?
   private let languages = SampleData.languages

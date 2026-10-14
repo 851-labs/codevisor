@@ -46,9 +46,6 @@ struct InlineCodeBackgroundTests {
         for: MarkdownParser().parse(markdown), theme: theme, foregroundColor: .clear
       )
     )
-    // Hide glyphs while retaining link boundaries so only the actual chip
-    // painter contributes pixels. Compare within this render, without a
-    // snapshot baseline tied to the machine's fonts or appearance.
     rendered.addAttribute(
       .foregroundColor, value: NSColor.clear,
       range: NSRange(location: 0, length: rendered.length)

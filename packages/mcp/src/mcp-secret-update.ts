@@ -12,9 +12,6 @@ const mergedSecretRecord = (
   return Object.keys(next).length === 0 ? undefined : next
 }
 
-/// The secret material a live connection depends on, in a stable shape so
-/// two StoredSecrets can be compared by value (ciphertext never can be —
-/// every encryption uses a fresh nonce).
 export const connectionSecretsSignature = (stored: StoredSecrets): string =>
   JSON.stringify({
     bearerToken:

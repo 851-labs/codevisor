@@ -5,7 +5,6 @@ import SwiftUI
 import StreamMarkdown
 
 extension Attachment {
-  /// PDFs render like images rather than as generic file chips.
   var isPDF: Bool {
     mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
   }
@@ -25,15 +24,8 @@ extension PreviewFile {
   var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-// MARK: - Transcript thumbnails
-
-/// Aggregates unresolved, layout-affecting attachment geometry through a
-/// hosted transcript row. The native presentation gate consumes this before
-/// accepting the row's measured height as final.
 typealias AttachmentGeometryReadinessPreferenceKey = ContentLayoutReadinessPreferenceKey
 
-/// A rounded thumbnail for an image, PDF, or video attachment in the
-/// transcript, or a file chip for other types. Tapping opens Quick Look.
 struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.theme) private var theme
@@ -74,11 +66,6 @@ struct AttachmentThumbnailView: View {
         fileChip
       }
     }
-    // The store is installed by SessionTranscriptView.onAppear. Include
-    // its identity in the task key so a thumbnail that first renders with
-    // a nil environment store retries as soon as the store is available.
-    // SwiftUI already runs this task once per key, so a separate
-    // "didLoad" latch would only recreate the original race.
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
       guard file.hasVisualPreview, let attachmentImages else { return }
       if let cached = await attachmentImages.cachedPreview(for: file) {
@@ -93,9 +80,6 @@ struct AttachmentThumbnailView: View {
         resolveFallbackGeometry()
       }
     }
-    // The first cold fetch must not keep the whole transcript invisible.
-    // Once this deadline wins, lock the fallback frame for this mount;
-    // late pixels may appear inside it but can no longer move the rows.
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
       guard inline, file.hasVisualPreview, attachmentImages != nil else { return }
       try? await Task.sleep(for: .milliseconds(450))
@@ -180,9 +164,6 @@ struct AttachmentThumbnailView: View {
       HStack(spacing: 6) {
         AttachmentChipIcon(isLoading: isLoadingPreview)
         Text(file.name)
-          // At accessibility sizes, let the name reflow to a second
-          // line and the chip widen instead of clipping (HIG:
-          // minimize truncation as font size increases).
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
           .truncationMode(.middle)
           .foregroundStyle(.primary)
@@ -213,8 +194,6 @@ struct AttachmentThumbnailView: View {
   }
 
   private func preview() {
-    // A second tap while the file is still downloading would only start
-    // the same download again.
     guard !isLoadingPreview else { return }
     quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
@@ -229,5 +208,3 @@ private struct AttachmentThumbnailLoadID: Hashable {
     storeID = store.map { ObjectIdentifier($0) }
   }
 }
-
-// PDFBadge and VideoPlayBadge are shared with the macOS app via CodevisorUI.

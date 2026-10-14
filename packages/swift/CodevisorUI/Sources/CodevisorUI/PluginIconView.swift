@@ -43,10 +43,6 @@ private actor PluginIconDataCache {
   }
 }
 
-/// Plugin-supplied artwork for client chrome. The server normalizes SVG,
-/// PNG, and WebP sources to PNG, so this view follows the same native raster
-/// path on macOS and iOS. Missing or invalid artwork uses client-owned SF
-/// Symbol fallback chrome.
 public struct PluginIconView: View {
   private let pluginId: String
   private let paneType: String?

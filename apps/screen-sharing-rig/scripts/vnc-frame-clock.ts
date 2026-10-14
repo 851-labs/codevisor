@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// `bun run vnc:frame-clock`: the cross-app frame clock (851-2358). Serves the
-// host page (apps/screen-sharing-rig/frame-clock/index.html) on this Mac's
-// network, then captures each named viewer window with
-// `screen-sharing-rig frame-clock` and writes summary.json, the per-window
-// samples and report.md under tmp/vnc-frame-clock/<time>/ (or --out).
-//
-// Open the printed URL on the machine being viewed (full screen), then click
-// the page, or reload it, once the capture says it's waiting: the strip turns
-// orange for a few seconds and every window calibrates on it. Only the named
-// windows are captured.
 import { spawn } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
@@ -37,8 +27,6 @@ function lanAddress(): string {
   return "localhost"
 }
 
-/// The host's clock minus this Mac's (ms), over one SSH connection so each sample costs a
-/// network round trip, not a process start: tuftlord answers `time.time()` per line.
 async function measureClockOffset(
   host: string,
   hostKeyAlias: string | undefined
@@ -105,7 +93,6 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
   if (!existsSync(rig))
     throw new Error(`no rig build at ${rig}: run bun run screen-sharing:rig build --build-only`)
   const page = readFileSync(join(pageDirectory, "index.html"))
-  // Served for the whole capture, so the page can be reloaded to recalibrate.
   const server = createServer((_, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
     response.end(page)
