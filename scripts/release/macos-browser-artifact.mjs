@@ -77,21 +77,29 @@ export function verifyBrowserLinkage(app, architectures, run = execute) {
 export async function verifyBrowserDistribution(app, architectures, run = execute) {
   verifyBrowserLinkage(app, architectures, run)
   const executables = browserExecutables(app)
-  const mainDetails = run("codesign", ["-d", "--verbose=4", executables[0]])
+  const requirement = distributionRequirement(executables[0], run)
+  for (const binary of [...executables, ...(await embeddedLibraries(app))]) {
+    verifyDistributionBinary(binary, requirement, run)
+  }
+}
+
+function distributionRequirement(binary, run) {
+  const mainDetails = run("codesign", ["-d", "--verbose=4", binary])
   const team = /^TeamIdentifier=([A-Z0-9]+)$/m.exec(mainDetails)?.[1]
   if (!team) throw new Error("The release app must have a signing Team ID.")
   // Developer ID Application, issued by Apple's Developer ID intermediate,
   // with the same team as the app. Strict verification alone accepts ad-hoc.
-  const requirement = `=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
-  for (const binary of [...executables, ...(await embeddedLibraries(app))]) {
-    run("codesign", ["--verify", "--strict", "--all-architectures", "-R", requirement, binary])
-    // A vendored dylib may still be universal. Check every slice, including
-    // those the arm64 app never loads: Apple's notary service scans them all.
-    for (const arch of architecturesOf(binary, run)) {
-      const details = run("codesign", ["-d", "--verbose=4", "--arch", arch, binary])
-      if (!/^Timestamp=.+$/m.test(details) || !/flags=.*\bruntime\b/.test(details)) {
-        throw new Error(`${binary} (${arch}) requires a secure timestamp and hardened runtime.`)
-      }
+  return `=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
+}
+
+function verifyDistributionBinary(binary, requirement, run) {
+  run("codesign", ["--verify", "--strict", "--all-architectures", "-R", requirement, binary])
+  // A vendored dylib may still be universal. Check every slice, including
+  // those the arm64 app never loads: Apple's notary service scans them all.
+  for (const arch of architecturesOf(binary, run)) {
+    const details = run("codesign", ["-d", "--verbose=4", "--arch", arch, binary])
+    if (!/^Timestamp=.+$/m.test(details) || !/flags=.*\bruntime\b/.test(details)) {
+      throw new Error(`${binary} (${arch}) requires a secure timestamp and hardened runtime.`)
     }
   }
 }
