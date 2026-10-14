@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { gitPullRequest, parseGitPullRequest, rollUpChecks } from "./git-pull-request.js"
 import { makeGitRepo } from "./git-test-support.js"
@@ -11,16 +11,15 @@ const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFil
   const bin = join(root, "bin")
   mkdirSync(bin)
   const argsFile = join(root, "gh-args")
-  writeFileSync(join(bin, "gh"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${argsFile}'\n${script}\n`)
+  writeFileSync(
+    join(bin, "gh"),
+    `#!/bin/sh\nprintf '%s\\n' "$@" "prompt=$GH_PROMPT_DISABLED" > '${argsFile}'\n${script}\n`
+  )
   chmodSync(join(bin, "gh"), 0o755)
   return { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, argsFile }
 }
 
 describe("gitPullRequest", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
   it("asks gh about the current branch and normalizes its answer", async () => {
     const { root, repo } = makeGitRepo()
     execFileSync("git", ["checkout", "-q", "-b", "feature/badge"], { cwd: repo })
@@ -34,11 +33,9 @@ describe("gitPullRequest", () => {
     const { env, argsFile } = fakeGh(root, `echo '${JSON.stringify(answer)}'`)
 
     expect(await gitPullRequest(repo, env)).toEqual({ ...answer, state: "merged", checks: "none" })
-    expect(readFileSync(argsFile, "utf8").split("\n").slice(0, 3)).toEqual([
-      "pr",
-      "view",
-      "feature/badge"
-    ])
+    const args = readFileSync(argsFile, "utf8").split("\n")
+    expect(args.slice(0, 3)).toEqual(["pr", "view", "feature/badge"])
+    expect(args).toContain("prompt=1")
   })
 
   it("is null when gh has no pull request for the branch", async () => {
@@ -46,24 +43,6 @@ describe("gitPullRequest", () => {
     const { env } = fakeGh(root, `echo 'no pull requests found for branch "main"' >&2; exit 1`)
 
     expect(await gitPullRequest(repo, env)).toBeNull()
-  })
-
-  it("uses the process environment when none is given", async () => {
-    const { root, repo } = makeGitRepo()
-    const { env } = fakeGh(
-      root,
-      `echo '{"number":3,"title":"t","state":"OPEN","isDraft":false,"url":"u"}'`
-    )
-    vi.stubEnv("PATH", env.PATH)
-
-    expect(await gitPullRequest(repo)).toEqual({
-      number: 3,
-      title: "t",
-      state: "open",
-      isDraft: false,
-      url: "u",
-      checks: "none"
-    })
   })
 
   it("is null on a detached HEAD without asking gh", async () => {

@@ -42,13 +42,9 @@ describe("machine-specific MCP availability", () => {
     const { services } = await makeServices("server-a")
     const { mcp: _mcp, ...withoutMcp } = services
     const server = await startWithApp(withoutMcp)
-    try {
-      expect(await jsonRequest(server, "/v1/mcps/codevisor/machine-state")).toMatchObject({
-        status: 501
-      })
-    } finally {
-      await run(server.close)
-    }
+    expect(await jsonRequest(server, "/v1/mcps/codevisor/machine-state")).toMatchObject({
+      status: 501
+    })
   })
 
   it("does not report success if the MCP is removed during the change", async () => {

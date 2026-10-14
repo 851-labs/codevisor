@@ -1,19 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  jsonRequest,
-  makeServices,
-  pluginsStub,
-  runningServers,
-  startWithApp
-} from "../test-support.js"
+import { jsonRequest, makeServices, pluginsStub, startWithApp } from "../test-support.js"
 
 describe("plugin tool routes", () => {
   it("invokes plugin tools, forwarding args and caller context verbatim", async () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
 
     const invoked = await jsonRequest(server, "/v1/plugins/owner.example/tools/notes_add", {
       body: JSON.stringify({ args: { text: "hi" }, cwd: "/tmp/project", workspaceId: "w1" }),
@@ -41,7 +34,6 @@ describe("plugin tool routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
 
     expect(
       (

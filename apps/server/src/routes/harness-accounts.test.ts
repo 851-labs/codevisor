@@ -10,7 +10,6 @@ import {
   jsonRequest,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   tempDirs,
   waitFor,
@@ -55,7 +54,6 @@ describe("harness account routes", () => {
       subscribe: () => () => undefined
     } as unknown as HarnessAuthManager
     const server = await startWithApp({ ...services, auth })
-    runningServers.push(server)
 
     const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-rebind-project-"))
     tempDirs.push(projectFolder)

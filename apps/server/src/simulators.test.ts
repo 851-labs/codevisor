@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { parseDisplays, parseSimulatorList } from "./simulator-parsing.js"
 import { makeSimulators, type SimulatorEnvironment, type Simulators } from "./simulators.js"
-import { jsonRequest, makeServices, run, runningServers, startWithApp } from "./test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "./test-support.js"
 
 const udid = "8C2D33A1-7E5B-4F0A-9C3D-2B1E4F6A7D90"
 const list = {
@@ -250,7 +250,6 @@ describe("simulator routes", () => {
     ] as const) {
       const { services } = await makeServices()
       const server = await startWithApp(services, undefined, config)
-      runningServers.push(server)
       const info = await jsonRequest(server, "/v1/info")
       expect((info.body as { features: string[] }).features.includes("simulator-v1")).toBe(expected)
       const devices = await jsonRequest(server, "/v1/simulators")
@@ -262,7 +261,6 @@ describe("simulator routes", () => {
     const helper = vi.fn(async () => ({ version: 1, status: "connecting", displays: [] }))
     const { services } = await makeServices()
     const server = await startWithApp(services, undefined, { screenSharing: helper })
-    runningServers.push(server)
     const project = await run(services.db.createProject({ folderPath: "/fixture/simulator" }))
     const workspace = await run(
       services.db.upsertWorkspace({ projectId: project.id, name: "Sim", hasCustomName: false })

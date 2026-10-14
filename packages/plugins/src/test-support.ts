@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { cp } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import type { Socket } from "node:net"
 import { tmpdir } from "node:os"
@@ -9,6 +10,7 @@ import type { PluginManifestV1 } from "@codevisor/api"
 import { afterEach } from "vitest"
 import { WebSocketServer } from "ws"
 
+import type { ClonePluginSourceResult } from "./plugin-source.js"
 import type { InstalledPlugin } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
 import { PluginsError } from "./plugins-error.js"
@@ -78,6 +80,15 @@ export const fakeSpawn = (options: { readonly listen?: boolean } = {}): FakeSpaw
       }
     }
   }
+}
+
+export const copyClone = async (
+  url: string,
+  _ref: string | undefined,
+  destination: string
+): Promise<ClonePluginSourceResult> => {
+  await cp(url, destination, { recursive: true })
+  return { resolvedCommit: "a".repeat(40) }
 }
 
 export const writePlugin = (

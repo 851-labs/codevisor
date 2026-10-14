@@ -12,7 +12,6 @@ import {
   listSubjectEvents,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   tempDirs,
   waitFor
@@ -67,7 +66,6 @@ describe("Codevisor skills in prompts", () => {
     await skills.create({ description: "Draft release notes", name: "release-notes" })
     const { agents, services } = await makeServices("server-a", { skillSource: skills })
     const server = await startWithApp({ ...services, skills })
-    runningServers.push(server)
     const folderPath = mkdtempSync(join(tmpdir(), "codevisor-prompt-skills-"))
     tempDirs.push(folderPath)
     const project = await run(services.db.createProject({ folderPath }))
@@ -92,7 +90,6 @@ describe("Codevisor skills in prompts", () => {
   it("records the skills a harness reports while starting, once", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     const folderPath = mkdtempSync(join(tmpdir(), "codevisor-native-skills-"))
     tempDirs.push(folderPath)
     const project = await run(services.db.createProject({ folderPath }))
@@ -136,7 +133,6 @@ describe("Codevisor skills in prompts", () => {
     await skills.create({ description: "Draft release notes", name: "release-notes" })
     const { services } = await makeServices("server-a", { skillSource: skills })
     const server = await startWithApp(services)
-    runningServers.push(server)
     const folderPath = mkdtempSync(join(tmpdir(), "codevisor-composer-skills-"))
     tempDirs.push(folderPath)
     const project = await run(services.db.createProject({ folderPath }))
@@ -158,7 +154,6 @@ describe("Codevisor skills in prompts", () => {
 
     const { mcp: _gateway, ...withoutGateway } = services
     const gatewayless = await startWithApp(withoutGateway)
-    runningServers.push(gatewayless)
     expect((await jsonRequest(gatewayless, "/v1/composer-skills?projectId=")).body).toEqual({
       skills: []
     })

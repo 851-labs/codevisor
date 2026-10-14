@@ -106,9 +106,9 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  for (const server of runningServers.splice(0)) {
-    await run(server.close)
-  }
+  const closed = await Promise.allSettled(
+    runningServers.splice(0).map((server) => run(server.close))
+  )
   for (const mcp of mcpManagers.splice(0)) await mcp.close()
   for (const database of databases.splice(0)) {
     await run(database.close)
@@ -117,6 +117,8 @@ afterEach(async () => {
     rmSync(dir, { force: true, recursive: true })
   }
   vi.unstubAllGlobals()
+  const failures = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []))
+  if (failures.length > 0) throw new AggregateError(failures, "Closing test servers failed")
 })
 
 export const makeServices = async (
@@ -264,20 +266,32 @@ export const startWithApp = async (
     )
     const httpServer = createServer(app.handleRequest)
     httpServer.on("upgrade", app.handleUpgrade)
-    httpServer.once("error", reject)
+    const failListen = (error: Error): void => {
+      void run(app.close).finally(() => reject(error))
+    }
+    httpServer.once("error", failListen)
     httpServer.listen(0, "127.0.0.1", () => {
-      httpServer.off("error", reject)
+      httpServer.off("error", failListen)
       const address = httpServer.address()
       const port = typeof address === "object" && address !== null ? address.port : 0
-      resolve({
-        close: Effect.promise(async () => {
-          await run(app.close)
-          await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
+      let closing: Promise<void> | undefined
+      const server: RunningCodevisorServer = {
+        close: Effect.promise(() => {
+          closing ??= (async () => {
+            try {
+              await run(app.close)
+            } finally {
+              await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
+            }
+          })()
+          return closing
         }),
         host: "127.0.0.1",
         port,
         url: `http://127.0.0.1:${port}`
-      })
+      }
+      runningServers.push(server)
+      resolve(server)
     })
   })
 }

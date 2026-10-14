@@ -12,7 +12,6 @@ import {
   listSubjectEvents,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   tempDirs
 } from "../test-support.js"
@@ -31,7 +30,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
@@ -179,7 +177,6 @@ describe("session configuration picks", () => {
     const saved = { effort: "high", model: "opus[1m]", speed: "standard" }
     await run(services.db.replaceSessionConfigSelections(session.id, saved))
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const opened = await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
       method: "POST"
@@ -212,7 +209,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const picked = await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "model", value: "model-saved" }),
@@ -248,7 +244,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
     ).toBe(200)
@@ -290,7 +285,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "model", value: "model-saved" }),
@@ -338,7 +332,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     await agents.emit("agent-session-config-starts-on-saved", {
       kind: "session.updated",
@@ -368,7 +361,6 @@ describe("session configuration picks", () => {
     )
     await run(services.db.saveSessionRuntimeState(session.id, { sessionId: "agent-none" }))
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const picked = await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
       body: JSON.stringify({ configId: "reasoning", value: "high" }),
@@ -398,7 +390,6 @@ describe("session configuration picks", () => {
       services.db.replaceSessionConfigSelections(session.id, { model: "model-default-legacy" })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const restored = (
       await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
@@ -430,7 +421,6 @@ describe("session configuration picks", () => {
       })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const restored = (
       await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })

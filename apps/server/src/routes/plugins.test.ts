@@ -15,7 +15,6 @@ import {
   pluginSummary,
   readSseEvents,
   readSseEventsOfKind,
-  runningServers,
   startWithApp,
   tempDirs,
   listEvents
@@ -118,7 +117,6 @@ describe("plugin registry route", () => {
   it("501s when no registry client is wired", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/plugins/registry")).status).toBe(501)
   })
 
@@ -130,7 +128,6 @@ describe("plugin registry route", () => {
       pluginRegistry: registryStub(calls),
       plugins: pluginsStub([])
     })
-    runningServers.push(server)
 
     const full = await jsonRequest(server, "/v1/plugins/registry")
     expect(full.status).toBe(200)
@@ -156,7 +153,6 @@ describe("plugin registry route", () => {
       },
       plugins: pluginsStub([])
     })
-    runningServers.push(server)
     const outage = await jsonRequest(server, "/v1/plugins/registry")
     expect(outage.status).toBe(503)
     expect(outage.body).toMatchObject({ code: "unavailable" })
@@ -167,7 +163,6 @@ describe("plugin routes", () => {
   it("501s when the plugins manager is unavailable", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/plugins")).status).toBe(501)
     expect((await jsonRequest(server, "/v1/plugins/owner.example/app/panes/main/")).status).toBe(
       501
@@ -177,11 +172,9 @@ describe("plugin routes", () => {
   it("advertises plugins-v1 only when the manager is present", async () => {
     const { services } = await makeServices("server-a")
     const without = await startWithApp(services)
-    runningServers.push(without)
     const bare = (await jsonRequest(without, "/v1/info")).body as { features: Array<string> }
     expect(bare.features).not.toContain("plugins-v1")
     const withPlugins = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    runningServers.push(withPlugins)
     const info = (await jsonRequest(withPlugins, "/v1/info")).body as { features: Array<string> }
     expect(info.features).toContain("plugins-v1")
   })
@@ -190,7 +183,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
 
     const list = await jsonRequest(server, "/v1/plugins")
     expect(list.status).toBe(200)
@@ -229,7 +221,6 @@ describe("plugin routes", () => {
   it("maps PluginsError codes onto HTTP statuses", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/plugins/owner.ghost")).status).toBe(404)
     expect((await jsonRequest(server, "/v1/plugins/owner.invalid")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/plugins/owner.conflict")).status).toBe(409)
@@ -240,7 +231,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     const live = readSseEvents(server, 1)
     const restarted = await jsonRequest(server, "/v1/plugins/owner.example/restart", {
       method: "POST"
@@ -263,7 +253,6 @@ describe("plugin routes", () => {
   it("enriches summaries with the count of open plugin panes", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    runningServers.push(server)
     await seedWorkspaces(server, ["ws-count"])
     await seedPane(server, "ws-count", "pane-1", "plugin:owner.example")
     await seedPane(server, "ws-count", "pane-2", "plugin:owner.example")
@@ -300,7 +289,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     const discovered = await jsonRequest(server, "/v1/plugins/discover-remote", {
       body: JSON.stringify({ source: "owner/example" }),
       method: "POST"
@@ -324,7 +312,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     const live = readSseEventsOfKind(server, "plugin.updated", 2)
     const imported = await jsonRequest(server, "/v1/plugins/import-remote", {
       body: JSON.stringify({ source: "owner/example" }),
@@ -375,7 +362,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     const removed = await jsonRequest(server, "/v1/plugins/owner.example", { method: "DELETE" })
     expect(removed.status).toBe(200)
     expect((removed.body as { plugins: Array<unknown> }).plugins).toEqual([])
@@ -389,7 +375,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     await seedWorkspaces(server, ["ws-shared", "ws-lonely"])
     await seedPane(server, "ws-shared", "plugin-pane", "plugin:owner.example")
     await seedPane(server, "ws-shared", "other-pane", "plugin:owner.other")
@@ -426,7 +411,6 @@ describe("plugin routes", () => {
   it("404s unmatched plugin paths and methods", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/plugins/owner.example", { method: "PUT" })).status).toBe(
       404
     )
@@ -441,7 +425,6 @@ describe("plugin routes", () => {
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) }, undefined, {
       auth: { allowLocalhostWithoutAuth: false, requireBearerToken: true }
     })
-    runningServers.push(server)
     const response = await fetch(`${server.url}/v1/plugins/owner.example/app/panes/main/`)
     expect(response.status).toBe(200)
     expect(await response.text()).toContain("pane")
@@ -454,7 +437,6 @@ describe("plugin routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
     const handled = await rawUpgradeStatus(server.url, "/v1/plugins/owner.example/app/live")
     expect(handled).toContain("418 Plugin Socket")
     expect(calls).toContainEqual(["upgrade", "/v1/plugins/owner.example/app/live"])
@@ -465,7 +447,6 @@ describe("plugin routes", () => {
   it("destroys plugin upgrade requests when the manager is unavailable", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     const response = await rawUpgradeStatus(server.url, "/v1/plugins/owner.example/app/live")
     expect(response).toBe("")
   })

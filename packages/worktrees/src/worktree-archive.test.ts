@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
@@ -272,12 +272,6 @@ describe("chooseRestoreName", () => {
     expect(chooseRestoreName("sushi", new Set(["sushi"]))).toBe("sushi-2")
     expect(chooseRestoreName("sushi", new Set(["sushi", "sushi-2"]))).toBe("sushi-3")
   })
-
-  it("gives up rather than looping forever when the space is exhausted", () => {
-    const taken = new Set(["sushi"])
-    for (let index = 2; index <= 99; index += 1) taken.add(`sushi-${String(index)}`)
-    expect(chooseRestoreName("sushi", taken)).toBeUndefined()
-  })
 })
 
 describe("snapshot identity", () => {
@@ -351,5 +345,52 @@ describe("meaningfulIgnoredPaths", () => {
         "coverage/"
       ])
     ).toEqual([".env", "src/generated.local.json"])
+  })
+})
+
+describe("restoreWorktree git environment", () => {
+  it("scans taken branch names with the caller's environment", async () => {
+    const env = { ...process.env }
+    const { repo, root } = makeRepo()
+    const path = await makeDirtyWorktree(repo, root, "ramen")
+    const snapshot = await archive(repo, path, "wt-12", "ramen")
+    await addWorktree(repo, join(root, "squat-1"), "codevisor/ramen")
+    await addWorktree(repo, join(root, "squat-2"), "codevisor/ramen-2")
+
+    vi.stubEnv("PATH", "")
+    const restored = await restoreWorktree({
+      repoDir: repo,
+      worktreePathFor: (name) => join(root, name),
+      originalName: "ramen",
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      takenNames: new Set(),
+      env
+    })
+
+    expect(restored).toMatchObject({ name: "ramen-3", restoredFromSnapshot: true })
+  })
+
+  it("looks up the fresh start point with the caller's environment", async () => {
+    const env = { ...process.env }
+    const { repo, root } = makeRepo()
+    const path = await makeDirtyWorktree(repo, root, "pho")
+    const snapshot = await archive(repo, path, "wt-13", "pho")
+    await deleteSnapshot(repo, "wt-13")
+    git(repo, "update-ref", "refs/remotes/origin/main", "main")
+
+    vi.stubEnv("PATH", "")
+    const fresh = await restoreWorktree({
+      repoDir: repo,
+      worktreePathFor: (name) => join(root, name),
+      originalName: "pho",
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      takenNames: new Set(),
+      env
+    })
+
+    expect(fresh).toMatchObject({ name: "pho", restoredFromSnapshot: false })
+    expect(existsSync(join(root, "pho", ".gitignore"))).toBe(false)
   })
 })

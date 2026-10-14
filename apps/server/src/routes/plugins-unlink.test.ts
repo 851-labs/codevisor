@@ -4,21 +4,13 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import {
-  jsonRequest,
-  makeServices,
-  pluginsStub,
-  runningServers,
-  startWithApp,
-  tempDirs
-} from "../test-support.js"
+import { jsonRequest, makeServices, pluginsStub, startWithApp, tempDirs } from "../test-support.js"
 
 describe("plugin unlink route", () => {
   it("unlinks the plugin and closes its panes like an uninstall", async () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
 
     const root = mkdtempSync(join(tmpdir(), "codevisor-plugin-unlink-"))
     tempDirs.push(root)

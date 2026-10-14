@@ -8,22 +8,13 @@ import { describe, expect, it } from "vitest"
 
 import { appendAndPublish } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
-import {
-  jsonRequest,
-  makeServices,
-  run,
-  runningServers,
-  startWithApp,
-  tempDirs,
-  waitFor
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, tempDirs, waitFor } from "../test-support.js"
 import { waitForSessions } from "./session-wait.js"
 
 const fixture = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const server = await startWithApp(services, fanout)
-  runningServers.push(server)
   const folderPath = mkdtempSync(join(tmpdir(), "codevisor-wait-"))
   tempDirs.push(folderPath)
   const project = await run(services.db.createProject({ folderPath }))

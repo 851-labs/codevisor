@@ -11,7 +11,6 @@ import {
   jsonRequest,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   waitFor,
   listSubjectEvents
@@ -48,7 +47,6 @@ describe("harness update checks", () => {
       subscribe: () => () => {}
     }
     const server = await startWithApp({ ...services, lifecycle })
-    runningServers.push(server)
 
     const response = await jsonRequest(server, "/v1/harnesses/check-updates", { method: "POST" })
     expect(response.status).toBe(200)
@@ -117,7 +115,6 @@ describe("harness update checks", () => {
       subscribe: () => () => {}
     }
     const server = await startWithApp({ ...services, lifecycle })
-    runningServers.push(server)
 
     const install = await jsonRequest(server, "/v1/harnesses/codex/install", {
       body: JSON.stringify({ methodId: "brew" }),
@@ -266,7 +263,6 @@ describe("harness update checks", () => {
   it("returns 501 without a lifecycle manager", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     for (const [path, method] of [
       ["/v1/harnesses/check-updates", "POST"],
@@ -310,7 +306,6 @@ describe("harness update checks", () => {
       subscribe: () => () => {}
     }
     const server = await startWithApp({ ...services, lifecycle })
-    runningServers.push(server)
 
     const folder = join(mkdtempSync(join(tmpdir(), "codevisor-gate-")), "repo")
     mkdirSync(folder, { recursive: true })

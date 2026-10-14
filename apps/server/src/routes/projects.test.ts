@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest"
 import {
   jsonRequest,
   makeServices,
-  runningServers,
   start,
   startWithApp,
   tempDirs,
@@ -45,7 +44,6 @@ describe("project routes", () => {
           ])
       }
     })
-    runningServers.push(server)
 
     const response = await jsonRequest(server, "/v1/projects/recommendations?limit=1")
 
@@ -80,7 +78,6 @@ describe("project routes", () => {
         }
       }
     })
-    runningServers.push(server)
 
     const first = await jsonRequest(server, "/v1/projects/recommendations")
     const scans = listOptions.length
@@ -103,7 +100,6 @@ describe("project routes", () => {
         listAgentSessions: () => Effect.die(new Error("native store unavailable"))
       }
     })
-    runningServers.push(server)
 
     const response = await jsonRequest(server, "/v1/projects/recommendations")
 

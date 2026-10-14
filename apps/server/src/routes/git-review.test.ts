@@ -5,15 +5,7 @@ import { join } from "node:path"
 
 import { describe, expect, it, vi } from "vitest"
 
-import {
-  jsonRequest,
-  makeServices,
-  run,
-  runningServers,
-  startWithApp,
-  tempDirs,
-  waitFor
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, tempDirs, waitFor } from "../test-support.js"
 
 const tempFolder = (prefix: string): string => {
   const folder = mkdtempSync(join(tmpdir(), prefix))
@@ -37,7 +29,6 @@ describe("git review routes", () => {
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
     const server = await startWithApp(services)
-    runningServers.push(server)
     const review = (query: string) => jsonRequest(server, `/v1/fs/git/${query}`)
     const path = encodeURIComponent(folder)
 
@@ -129,7 +120,6 @@ describe("git review routes", () => {
     chmodSync(join(bin, "gh"), 0o755)
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
     const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
-    runningServers.push(server)
     const lookup = () =>
       jsonRequest(server, `/v1/fs/git/pull-request?path=${encodeURIComponent(folder)}`)
 
@@ -165,7 +155,6 @@ describe("git review routes", () => {
     chmodSync(join(bin, "gh"), 0o755)
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
     const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
-    runningServers.push(server)
     const lookup = () =>
       jsonRequest(server, `/v1/fs/git/pull-request?path=${encodeURIComponent(folder)}`)
 

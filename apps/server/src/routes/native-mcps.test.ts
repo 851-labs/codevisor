@@ -7,7 +7,6 @@ import {
   nativeMcpRemoval,
   nativeMcpScan,
   nativeMcpStub,
-  runningServers,
   skillsList,
   skillsStub,
   startWithApp
@@ -21,7 +20,6 @@ describe("native MCP and skills routes", () => {
       nativeMcp: nativeMcpStub([]),
       skills: skillsStub([])
     })
-    runningServers.push(server)
 
     const nativeResponse = await jsonRequest(server, "/v1/native-mcps")
     expect(nativeResponse.status).toBe(200)
@@ -52,7 +50,6 @@ describe("native MCP and skills routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<unknown[]> = []
     const server = await startWithApp({ ...services, nativeMcp: nativeMcpStub(calls) })
-    runningServers.push(server)
 
     const removeResponse = await jsonRequest(server, "/v1/native-mcps/remove", {
       body: JSON.stringify({ harnessId: "claude-code", serverName: "docs" }),
@@ -111,7 +108,6 @@ describe("native MCP and skills routes", () => {
       }
     }
     const server = await startWithApp({ ...services, nativeMcp: failing })
-    runningServers.push(server)
 
     const unsupported = await jsonRequest(server, "/v1/native-mcps/remove", {
       body: JSON.stringify({ harnessId: "goose", serverName: "docs" }),
@@ -139,7 +135,6 @@ describe("native MCP and skills routes", () => {
   it("returns 501 when the host has no native MCP or skills managers", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/native-mcps")).status).toBe(501)
     expect((await jsonRequest(server, "/v1/skills")).status).toBe(501)
   })

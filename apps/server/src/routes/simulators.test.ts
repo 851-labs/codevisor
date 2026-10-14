@@ -2,7 +2,7 @@ import type { SimulatorChrome, SimulatorDeviceTypeDetail } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
 import { SimulatorCommandError, SimulatorRequestError, type Simulators } from "../simulators.js"
-import { jsonRequest, makeServices, runningServers, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, startWithApp } from "../test-support.js"
 
 const udid = "8C2D33A1-7E5B-4F0A-9C3D-2B1E4F6A7D90"
 const deviceType: SimulatorDeviceTypeDetail = {
@@ -34,7 +34,6 @@ const serve = async (simulators: Simulators) => {
     simulators,
     screenSharing: async () => ({})
   })
-  runningServers.push(server)
   return server
 }
 

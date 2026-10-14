@@ -11,7 +11,6 @@ import {
   jsonRequest,
   makeServices,
   run,
-  runningServers,
   start,
   startWithApp,
   tempDirs,
@@ -211,7 +210,6 @@ describe("session configuration routes", () => {
             : services.db.getSessionSummary(id)
       }
     })
-    runningServers.push(server)
 
     expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
       body: { added: 2, removed: 0 },
@@ -250,7 +248,6 @@ describe("session configuration routes", () => {
       }
     }
     const server = await startWithApp(routeServices)
-    runningServers.push(server)
 
     expect(await jsonRequest(server, `/v1/sessions/${session.id}/usage-limits`)).toMatchObject({
       body: {
@@ -295,7 +292,6 @@ describe("session configuration routes", () => {
       subscribe: () => () => undefined
     } as unknown as HarnessAuthManager
     const authenticatedServer = await startWithApp({ ...routeServices, auth })
-    runningServers.push(authenticatedServer)
 
     projectedSession = { ...withoutCwd, serverId: "server-a" }
     expect(
