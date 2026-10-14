@@ -36,7 +36,7 @@ struct SelectableTextViewTests {
     let narrow = view.contentHeight(forWidth: 180)
 
     #expect(narrow > wide)
-    #expect(text.string.hasPrefix("wrapped transcript"))
+    #expect(view.string == text.string)
   }
 
   @Test("Measuring a proposed width does not resize the displayed text view")
