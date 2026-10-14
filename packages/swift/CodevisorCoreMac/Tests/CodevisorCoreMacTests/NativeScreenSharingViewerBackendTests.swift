@@ -140,6 +140,7 @@ struct NativeScreenSharingViewerBackendTests {
     let harness = NativeBackendHarness(transport: SharingTransport(blockFirstStart: true))
     let first = harness.connect()
     await harness.transport.started.wait()
+    await awaitObserved { harness.log.endpoints.count == 1 }
     #expect(harness.log.endpoints.count == 1)
     first.cancel()
     await first.value
