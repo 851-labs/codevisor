@@ -259,12 +259,15 @@ struct WorkedItemsTests {
     TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "a", title: "Run", kind: .execute)), to: &turn)
     TranscriptReducer.apply(.agentMessageChunk(.text("Now editing."), messageId: "m2"), to: &turn)
     TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "b", title: "Edit", kind: .edit)), to: &turn)
-    TranscriptReducer.apply(.agentMessageChunk(.text("Done."), messageId: "m3"), to: &turn)
+    TranscriptReducer.apply(
+      .agentMessageChunk(.text("Checking once more."), messageId: "m3", parentToolCallId: nil, phase: .commentary),
+      to: &turn)
+    TranscriptReducer.apply(.agentMessageChunk(.text("Done."), messageId: "m4"), to: &turn)
 
     #expect(
       turn.workedItems.map(\.id) == [
-        "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b",
+        "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b", "wtext:acp:m3",
       ])
-    #expect(turn.finalText == .text(id: "acp:m3", markdown: "Done."))
+    #expect(turn.finalText == .text(id: "acp:m4", markdown: "Done."))
   }
 }
