@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { cp } from "node:fs/promises"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -10,16 +9,7 @@ import { PLUGIN_INSTALL_RECEIPT_FILENAME, readPluginInstallReceipt } from "./plu
 import type { ClonePluginSourceResult } from "./plugin-source.js"
 import { MANAGED_PLUGIN_MARKER, scanPlugins } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
-import { exampleManifest, makeDir, writePlugin } from "./test-support.js"
-
-const copyClone = async (
-  url: string,
-  _ref: string | undefined,
-  destination: string
-): Promise<ClonePluginSourceResult> => {
-  await cp(url, destination, { recursive: true })
-  return { resolvedCommit: "a".repeat(40) }
-}
+import { copyClone, exampleManifest, makeDir, writePlugin } from "./test-support.js"
 
 const failingClone = async (): Promise<ClonePluginSourceResult> => {
   throw new Error("repository not found")

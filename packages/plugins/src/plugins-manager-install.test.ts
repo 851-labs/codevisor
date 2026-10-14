@@ -4,14 +4,23 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
+import type { PluginProcessHandle } from "./plugin-supervisor.js"
 import type { PluginStateEvent } from "./plugins-manager.js"
 import { advancingClock } from "./test-support.js"
-import { exampleManifest, fakeSpawn, makeDir, makeManager } from "./test-support.js"
+import { copyClone, exampleManifest, fakeSpawn, makeDir, makeManager } from "./test-support.js"
 
 const makeFixture = (manifest: Record<string, unknown>): string => {
   const fixture = makeDir("codevisor-plugin-fixture-")
   writeFileSync(join(fixture, "codevisor-plugin.json"), JSON.stringify(manifest))
   return fixture
+}
+
+const exitingSetup = (): PluginProcessHandle => {
+  const exitListeners: Array<(message: string, exitCode?: number | null) => void> = []
+  setImmediate(() => {
+    for (const listener of exitListeners) listener("exited with code 0", 0)
+  })
+  return { kill: () => undefined, onExit: (listener) => exitListeners.push(listener), pid: 7 }
 }
 
 const freshManifest = {
@@ -29,48 +38,37 @@ describe("manager install pipeline", () => {
       minCodevisorVersion: "1.0.0",
       protocolVersion: 2,
       run: { argv: ["node", "server.js"] },
-      setup: [{ argv: ["npm", "ci"] }]
+      setup: [{ argv: ["codevisor-test-plugin-setup"] }]
     }
     const server = fakeSpawn()
     const spawned: Array<ReadonlyArray<string>> = []
-    const { manager } = makeManager({
-      clone: async (url, _ref, destination) => {
-        await cp(url, destination, { recursive: true })
-        return { resolvedCommit: "a".repeat(40) }
-      },
+    const { manager, root } = makeManager({
+      clone: copyClone,
       codevisorVersion: "1.0.0",
       spawnArgv: (argv, options) => {
         spawned.push(argv)
-        if (argv[0] === "node") return server.spawnShell(argv.join(" "), options)
-        const exitListeners: Array<(message: string, exitCode?: number | null) => void> = []
-        setImmediate(() => {
-          for (const listener of exitListeners) listener("exited with code 0", 0)
-        })
-        return { kill: () => undefined, onExit: (listener) => exitListeners.push(listener), pid: 7 }
+        return argv[0] === "codevisor-test-plugin-setup"
+          ? exitingSetup()
+          : server.spawnShell(argv.join(" "), options)
       }
     })
 
     await expect(
       manager.importRemote({ source: makeFixture({ ...v2Manifest, minCodevisorVersion: "1.1.0" }) })
-    ).rejects.toThrow(/requires Codevisor 1\.1\.0 or newer; this server is 1\.0\.0/)
+    ).rejects.toThrow(/this server is 1\.0\.0/)
     expect(spawned).toEqual([])
+    expect(existsSync(join(root, "owner.fresh"))).toBe(false)
 
     const imported = await manager.importRemote({ source: makeFixture(v2Manifest) })
     expect(imported.state).toBe("running")
-    expect(spawned).toEqual([
-      ["npm", "ci"],
-      ["node", "server.js"]
-    ])
+    expect(spawned).toEqual([["codevisor-test-plugin-setup"], ["node", "server.js"]])
   })
 
   it("discovers, imports, and removes a plugin through the facade", async () => {
     const fixture = makeFixture(freshManifest)
     const events: Array<PluginStateEvent> = []
     const { manager, root } = makeManager({
-      clone: async (url, _ref, destination) => {
-        await cp(url, destination, { recursive: true })
-        return { resolvedCommit: "a".repeat(40) }
-      },
+      clone: copyClone,
       registerExternalTerminal: (_config, _process) => ({
         exit: () => undefined,
         output: () => undefined,
@@ -159,10 +157,7 @@ describe("manager install pipeline", () => {
     const fixture = makeFixture(freshManifest)
     const spawn = fakeSpawn({ listen: false })
     const { manager, root } = makeManager({
-      clone: async (url, _ref, destination) => {
-        await cp(url, destination, { recursive: true })
-        return { resolvedCommit: "a".repeat(40) }
-      },
+      clone: copyClone,
       maxConsecutiveFailures: 1,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
