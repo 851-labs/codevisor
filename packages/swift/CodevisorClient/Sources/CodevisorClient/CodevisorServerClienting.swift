@@ -37,7 +37,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func publishAccountsSync() async throws
   func syncBlob(id: String) async throws -> Data
   func putSyncBlob(id: String, bytes: Data) async throws
-  func issuePairingToken() async throws -> ServerPairingToken
   func capabilities(cwd: String) async throws -> ServerCapabilities
   func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities
   func capabilities(

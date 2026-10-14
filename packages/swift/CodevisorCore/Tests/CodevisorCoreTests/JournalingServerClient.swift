@@ -68,7 +68,6 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
     try await base.updateInfo(refresh: refresh, channel: channel)
   }
-  func issuePairingToken() async throws -> ServerPairingToken { try await base.issuePairingToken() }
   func capabilities(cwd: String) async throws -> ServerCapabilities { try await base.capabilities(cwd: cwd) }
   func listHarnesses() async throws -> [ServerHarness] { try await base.listHarnesses() }
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {

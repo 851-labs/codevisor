@@ -174,7 +174,6 @@ private final class PreparationFakeServerClient: CodevisorServerClienting, @unch
     AsyncThrowingStream { _ in }
   }
 
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities {
     ServerCapabilities(harnesses: [])
   }

@@ -246,7 +246,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
     throw CodevisorServerClientError.invalidResponse
   }
-  func issuePairingToken() async throws -> ServerPairingToken { throw CodevisorServerClientError.invalidResponse }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listHarnesses() async throws -> [ServerHarness] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { serverProject(from: project) }
