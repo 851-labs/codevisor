@@ -15,10 +15,6 @@ export class ReplayBuffer {
 
   constructor(private readonly maxBytes: number = REPLAY_BUFFER_MAX_BYTES) {}
 
-  get bytes(): number {
-    return this.retainedBytes
-  }
-
   get length(): number {
     return this.frames.length - this.head
   }
