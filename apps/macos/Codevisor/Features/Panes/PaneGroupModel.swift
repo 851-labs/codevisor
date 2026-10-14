@@ -194,39 +194,11 @@ final class PaneGroupModel: Identifiable {
       wireScreenSharing(sharing)
       pane = sharing
     case .document:
-      let document = FilePane(context: makeContext(descriptor), descriptor: descriptor)
-      document.onNavigate = { [weak self] path in
-        guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
-        state.panes[index].documentPath = path
-        state.panes[index].name = FileDocumentLocation.name(path)
-        persist()
-        onPaneChanged?(state.panes[index])
-      }
-      pane = document
+      pane = makeDocumentPane(for: descriptor)
     case .simulator:
-      let simulator = AppleSimulatorPane(context: makeContext(descriptor), descriptor: descriptor)
-      simulator.onPreferencesChanged = { [weak self, weak simulator] preferences in
-        guard let self, let simulator,
-          let index = self.state.panes.firstIndex(where: { $0.id == simulator.id }),
-          self.state.panes[index].simulator != preferences
-        else { return }
-        self.state.panes[index].simulator = preferences
-        self.persist()
-        self.onPaneChanged?(self.state.panes[index])
-      }
-      simulator.canFocusChooser = { [weak self] in
-        self?.canFocusSelectedPane == true && self?.state.selectedPaneId == descriptor.id
-      }
-      pane = simulator
+      pane = makeSimulatorPane(for: descriptor)
     case .review:
-      let review = ReviewPane(context: makeContext(descriptor), descriptor: descriptor)
-      review.model.onPreferencesChange = { [weak self] preferences in
-        guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
-        state.panes[index].review = preferences
-        persist()
-        onPaneChanged?(state.panes[index])
-      }
-      pane = review
+      pane = makeReviewPane(for: descriptor)
     case .terminal:
       let terminal = TerminalPane(context: makeContext(descriptor))
       terminal.onContentAttached = { [weak self] in self?.requestSelectedPaneFocus() }
@@ -253,6 +225,46 @@ final class PaneGroupModel: Identifiable {
     }
     live[descriptor.id] = pane
     return pane
+  }
+
+  private func makeDocumentPane(for descriptor: PaneDescriptorState) -> FilePane {
+    let document = FilePane(context: makeContext(descriptor), descriptor: descriptor)
+    document.onNavigate = { [weak self] path in
+      guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
+      state.panes[index].documentPath = path
+      state.panes[index].name = FileDocumentLocation.name(path)
+      persist()
+      onPaneChanged?(state.panes[index])
+    }
+    return document
+  }
+
+  private func makeSimulatorPane(for descriptor: PaneDescriptorState) -> AppleSimulatorPane {
+    let simulator = AppleSimulatorPane(context: makeContext(descriptor), descriptor: descriptor)
+    simulator.onPreferencesChanged = { [weak self, weak simulator] preferences in
+      guard let self, let simulator,
+        let index = self.state.panes.firstIndex(where: { $0.id == simulator.id }),
+        self.state.panes[index].simulator != preferences
+      else { return }
+      self.state.panes[index].simulator = preferences
+      self.persist()
+      self.onPaneChanged?(self.state.panes[index])
+    }
+    simulator.canFocusChooser = { [weak self] in
+      self?.canFocusSelectedPane == true && self?.state.selectedPaneId == descriptor.id
+    }
+    return simulator
+  }
+
+  private func makeReviewPane(for descriptor: PaneDescriptorState) -> ReviewPane {
+    let review = ReviewPane(context: makeContext(descriptor), descriptor: descriptor)
+    review.model.onPreferencesChange = { [weak self] preferences in
+      guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
+      state.panes[index].review = preferences
+      persist()
+      onPaneChanged?(state.panes[index])
+    }
+    return review
   }
 
   func wireScreenSharing(_ sharing: ScreenSharingPane) {

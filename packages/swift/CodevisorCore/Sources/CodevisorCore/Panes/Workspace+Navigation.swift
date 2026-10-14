@@ -50,9 +50,7 @@ extension Workspace {
     // than leaving the selection pointing at some other destination.
     return .workspace(serverId: serverId, id: id)
   }
-}
 
-extension Workspace {
   /// Select all levels together so the first destination render, toolbar,
   /// and sidebar agree before any pane begins loading. Invalid intents leave
   /// the current selection intact.
