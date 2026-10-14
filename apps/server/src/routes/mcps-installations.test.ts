@@ -6,7 +6,7 @@ import { join } from "node:path"
 import type { McpServer } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
-import { jsonRequest, run, runningServers, start, startWithApp, tempDirs } from "../test-support.js"
+import { jsonRequest, run, start, startWithApp, tempDirs } from "../test-support.js"
 
 describe("mcp installation routes", () => {
   it("detects MCP authorization challenges", async () => {
@@ -273,7 +273,6 @@ describe("mcp installation routes", () => {
 
     const { mcp: _mcp, ...withoutMcp } = services
     const unavailable = await startWithApp(withoutMcp)
-    runningServers.push(unavailable)
     expect((await jsonRequest(unavailable, "/v1/mcps")).status).toBe(501)
     expect(
       (

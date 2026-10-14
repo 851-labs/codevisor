@@ -1,20 +1,13 @@
 import { SkillsError } from "@codevisor/skills"
 import { describe, expect, it } from "vitest"
 
-import {
-  jsonRequest,
-  makeServices,
-  runningServers,
-  skillsStub,
-  startWithApp
-} from "../test-support.js"
+import { jsonRequest, makeServices, skillsStub, startWithApp } from "../test-support.js"
 
 describe("skills routes", () => {
   it("reads and updates a named skill and rejects invalid update bodies", async () => {
     const { services } = await makeServices("server-a")
     const calls: Array<unknown[]> = []
     const server = await startWithApp({ ...services, skills: skillsStub(calls) })
-    runningServers.push(server)
 
     const read = await jsonRequest(server, "/v1/skills/deploy")
     expect(read.status).toBe(200)
@@ -43,7 +36,6 @@ describe("skills routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<unknown[]> = []
     const server = await startWithApp({ ...services, skills: skillsStub(calls) })
-    runningServers.push(server)
 
     expect(
       (
@@ -94,7 +86,6 @@ describe("skills routes", () => {
       }
     }
     const server = await startWithApp({ ...services, skills: failing })
-    runningServers.push(server)
 
     const conflict = await jsonRequest(server, "/v1/skills", {
       body: JSON.stringify({ description: "", name: "deploy" }),

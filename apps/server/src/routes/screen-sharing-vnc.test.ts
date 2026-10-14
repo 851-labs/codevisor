@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
-import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
@@ -100,7 +100,6 @@ const start = async (
     screenSharingVNC: config,
     ...(auth === undefined ? {} : { auth })
   })
-  runningServers.push(server)
   const socketUrl = (displayId: string) =>
     `ws://127.0.0.1:${server.port}/v1/screen-sharing/vnc/socket?displayId=${displayId}`
   return { services, server, socketUrl }

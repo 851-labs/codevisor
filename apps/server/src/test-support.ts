@@ -269,15 +269,21 @@ export const startWithApp = async (
       httpServer.off("error", reject)
       const address = httpServer.address()
       const port = typeof address === "object" && address !== null ? address.port : 0
-      resolve({
-        close: Effect.promise(async () => {
-          await run(app.close)
-          await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
+      let closing: Promise<void> | undefined
+      const server: RunningCodevisorServer = {
+        close: Effect.promise(() => {
+          closing ??= (async () => {
+            await run(app.close)
+            await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
+          })()
+          return closing
         }),
         host: "127.0.0.1",
         port,
         url: `http://127.0.0.1:${port}`
-      })
+      }
+      runningServers.push(server)
+      resolve(server)
     })
   })
 }

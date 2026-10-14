@@ -5,14 +5,7 @@ import { join } from "node:path"
 import type { SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import {
-  jsonRequest,
-  makeServices,
-  run,
-  runningServers,
-  startWithApp,
-  tempDirs
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
 
 describe("a new chat's starting picks", () => {
   it("starts a chat an agent creates on its parent's picks", async () => {
@@ -35,7 +28,6 @@ describe("a new chat's starting picks", () => {
     )
     await run(services.db.replaceSessionConfigSelections(otherHarness.id, { model: "other-model" }))
     const server = await startWithApp(services)
-    runningServers.push(server)
     const create = async (body: Readonly<Record<string, unknown>>) =>
       (
         (await jsonRequest(server, "/v1/sessions", {

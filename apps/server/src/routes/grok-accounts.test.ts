@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest"
 
 import { fleet } from "../infra/shared-accounts-test-support.js"
 import { providerSlot } from "../infra/shared-provider-store.js"
-import { jsonRequest, startWithApp, runningServers } from "../test-support.js"
+import { jsonRequest, startWithApp } from "../test-support.js"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -25,7 +25,6 @@ it("manages Grok's shared account through HTTP while preserving local overrides 
     sharedProviders: () => a.shared.providers
   })
   const server = await startWithApp({ ...a.services, auth })
-  runningServers.push(server)
   const send = (body: unknown) =>
     jsonRequest(server, "/v1/harnesses/grok-build/shared-accounts", {
       method: "POST",

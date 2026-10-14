@@ -208,7 +208,6 @@ describe("durable session turns", () => {
         })
     }
     const server = await startWithApp({ ...services, agents: durableAgents })
-    runningServers.push(server)
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {

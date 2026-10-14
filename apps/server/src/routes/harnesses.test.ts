@@ -8,7 +8,6 @@ import {
   jsonRequest,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   tempDirs,
   waitFor,
@@ -20,7 +19,6 @@ describe("harness routes", () => {
   it("returns 501 for authentication routes without an auth service", async () => {
     const { services } = await makeServices("server-a")
     const legacyServer = await startWithApp(services)
-    runningServers.push(legacyServer)
     const unavailableRequests: ReadonlyArray<readonly [string, string]> = [
       ["GET", "/v1/harnesses/pi/providers"],
       ["POST", "/v1/harnesses/pi/providers/openai/login"],
@@ -59,7 +57,6 @@ describe("harness routes", () => {
     const { services } = await makeServices("server-a")
     const { accountList, auth, piFlow, piProvider, state } = makeAuthFixture()
     const server = await startWithApp({ ...services, auth })
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/harnesses")).status).toBe(200)
     expect((await jsonRequest(server, "/v1/harnesses/pi/providers")).body).toEqual([piProvider])
     expect(
@@ -289,7 +286,6 @@ describe("harness routes", () => {
     const { services, agents } = await makeServices("server-a")
     const { account, auth, state } = makeAuthFixture()
     const server = await startWithApp({ ...services, auth })
-    runningServers.push(server)
     const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-auth-project-"))
     tempDirs.push(projectFolder)
     const project = (

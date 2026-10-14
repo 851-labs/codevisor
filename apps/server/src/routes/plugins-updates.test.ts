@@ -5,7 +5,6 @@ import {
   makeServices,
   pluginsStub,
   readSseEventsOfKind,
-  runningServers,
   startWithApp
 } from "../test-support.js"
 
@@ -14,7 +13,6 @@ describe("plugin update routes", () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
-    runningServers.push(server)
 
     const updates = await jsonRequest(server, "/v1/plugins/updates")
     expect(updates.status).toBe(200)

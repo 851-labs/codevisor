@@ -15,7 +15,6 @@ import {
   readSseEvents,
   readWebSocketEvents,
   run,
-  runningServers,
   start,
   startWithApp,
   tempDirs,
@@ -210,7 +209,6 @@ describe("event routes", () => {
       durable.push(event as typeof replayEvent)
       await run(fanout.publish(event))
     }
-    runningServers.push(server)
 
     expect(await readWebSocketEvents(server, 2, 0)).toEqual([
       { ...replayEvent, previousEventId: 0 },

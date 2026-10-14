@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest"
 
 import { waitFor } from "../changes-test-support.js"
 import { fleet } from "../infra/shared-accounts-test-support.js"
-import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
 afterEach(() => vi.useRealTimers())
 
@@ -12,7 +12,6 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
   const f = fleet(),
     m = await f.machine("a")
   const server = await startWithApp(m.services)
-  runningServers.push(server)
   const send = (body: unknown, harness = "codex") =>
     jsonRequest(server, `/v1/harnesses/${harness}/shared-accounts`, {
       method: "POST",
@@ -76,7 +75,6 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
 it("requires both the shared service and authentication support", async () => {
   const { services } = await makeServices()
   const server = await startWithApp(services)
-  runningServers.push(server)
   expect(
     (
       await jsonRequest(server, "/v1/harnesses/codex/shared-accounts", {
@@ -101,7 +99,6 @@ it("reconciles received credentials and protects the loopback gateway at the rea
   })
   const refresh = vi.spyOn(b.auth, "refresh")
   const server = await startWithApp(b.services)
-  runningServers.push(server)
   expect((await jsonRequest(server, "/harness/claude/v1/models")).status).toBe(401)
   expect(
     (await jsonRequest(server, "/harness/provider-token", { method: "POST", body: "{}" })).status
@@ -137,7 +134,6 @@ it("reconciles received credentials and protects the loopback gateway at the rea
   ).toBe(200)
   const { services } = await makeServices()
   const old = await startWithApp(services)
-  runningServers.push(old)
   expect((await jsonRequest(old, "/harness/claude/v1/models")).status).toBe(501)
   expect(
     (await jsonRequest(old, "/harness/provider-token", { method: "POST", body: "{}" })).status
@@ -151,7 +147,6 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
   const auth = { ...makeAuthFixture().auth }
   const services = { ...host.services, auth }
   const server = await startWithApp(services)
-  runningServers.push(server)
   const send = (harness: string, body: unknown) =>
     jsonRequest(server, `/v1/harnesses/${harness}/shared-accounts`, {
       method: "POST",

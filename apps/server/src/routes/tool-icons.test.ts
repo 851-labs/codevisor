@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { ToolIconStore } from "../infra/tool-icons.js"
-import { makeServices, runningServers, start, startWithApp } from "../test-support.js"
+import { makeServices, start, startWithApp } from "../test-support.js"
 
 describe("tool icon routes", () => {
   it("serves site and MCP artwork for the requested appearance, and 404s when there is none", async () => {
@@ -26,7 +26,6 @@ describe("tool icon routes", () => {
     }
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, toolIcons })
-    runningServers.push(server)
 
     const site = await fetch(
       `${server.url}/v1/tool-icons/site?origin=${encodeURIComponent("https://linear.app")}&theme=dark`
