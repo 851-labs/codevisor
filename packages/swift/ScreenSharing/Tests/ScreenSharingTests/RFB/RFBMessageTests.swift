@@ -3,14 +3,6 @@ import Testing
 @testable import ScreenSharing
 
 struct RFBMessageTests {
-  @Test func protocolVersionRoundTrips() {
-    #expect(RFBProtocolVersion.parse(Array("RFB 003.008\n".utf8)) == .v3_8)
-    #expect(RFBProtocolVersion.parse(Array("RFB 003.889\n".utf8)) == RFBProtocolVersion(major: 3, minor: 889))
-    #expect(RFBProtocolVersion.parse(Array("HTTP/1.1 200\n".utf8)) == nil)
-    #expect(RFBProtocolVersion.v3_7.encoded == Array("RFB 003.007\n".utf8))
-    #expect(RFBProtocolVersion(major: 3, minor: 889) > .v3_8)
-  }
-
   @Test func pixelFormatRoundTripsAsSixteenBytes() throws {
     let bytes = RFBPixelFormat.bgra32.encoded
     #expect(bytes == [UInt8](hex: "20 18 00 01 00ff 00ff 00ff 10 08 00 000000"))

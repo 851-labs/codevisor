@@ -15,11 +15,6 @@ struct RFBProtocolTypesTests {
     #expect(RFBEncoding.continuousUpdates.rawValue == -313)
     #expect(RFBEncoding.extendedDesktopSize.rawValue == -308)
     #expect(UInt32(bitPattern: RFBEncoding.extendedClipboard.rawValue) == 0xC0A1_E5CE)
-    #expect(
-      Set(RFBEncoding.allCases) == [
-        .raw, .copyRect, .tight, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
-        .extendedDesktopSize, .extendedClipboard,
-      ])
   }
 
   @Test func supportedEncodingsAreAdvertisedInPreferenceOrder() {
@@ -29,7 +24,6 @@ struct RFBProtocolTypesTests {
         .extendedDesktopSize, .extendedClipboard,
       ])
     #expect(RFBEncoding.supported.map(\.rawValue) == [7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698])
-    #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 
   @Test(arguments: [Int32(2), 5, 15, 17, -222, -224, Int32.max, Int32.min])

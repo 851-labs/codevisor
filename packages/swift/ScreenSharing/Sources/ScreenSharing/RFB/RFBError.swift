@@ -105,7 +105,7 @@ public struct RFBPixelFormat: Sendable, Equatable {
   }
 }
 
-public enum RFBEncoding: Int32, Sendable, CaseIterable {
+public enum RFBEncoding: Int32, Sendable {
   case raw = 0
   case copyRect = 1
   case tight = 7
