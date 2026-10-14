@@ -17,6 +17,7 @@
       let window = FocusTestWindow(
         contentRect: NSRect(x: 0, y: 0, width: 300, height: 250),
         styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
       window.contentView = NSHostingView(
         rootView: AnyView(root.environment(\.locale, Locale(identifier: "en_US_POSIX"))))
       window.contentView?.layoutSubtreeIfNeeded()
@@ -30,7 +31,10 @@
         Autocomplete.Suggestions {
           Autocomplete.Action("Match") { accepted += 1 }
         }.disabled(true))
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -45,7 +49,10 @@
     func enabledReturn() {
       var accepted = 0
       let window = window(Autocomplete.Suggestions { Autocomplete.Action("Match") { accepted += 1 } })
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -85,6 +92,11 @@
       let window = FocusTestWindow(
         contentRect: NSRect(x: 0, y: 0, width: 280, height: 50),
         styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      defer {
+        if window.contentView != nil { window.contentView = nil }
+        window.close()
+      }
       window.contentView = container
       window.contentView?.layoutSubtreeIfNeeded()
       #expect(focused)
@@ -102,7 +114,10 @@
             Autocomplete.Choice("Demo", value: "Demo")
           }.favorites(favorites.binding)
         })
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view) else {
         Issue.record("Search field did not mount"); return
       }
@@ -136,7 +151,10 @@
           Autocomplete.Action("Match B") { accepted.append("B") }
           Autocomplete.Action("Match C") { accepted.append("C") }
         })
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -174,7 +192,11 @@
       isCurrent = false
       let window = FocusTestWindow(
         contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-      defer { window.contentView = nil }
+      window.isReleasedWhenClosed = false
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       window.contentView = host
       host.layoutSubtreeIfNeeded()
       #expect((window.firstResponder as? NSTextView)?.delegate !== field)
@@ -191,7 +213,10 @@
             Autocomplete.Choice("Demo", value: "Demo")
           }.favorites(favorites.binding)
         })
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -222,7 +247,10 @@
     func focusBinding() async {
       var focused: Binding<Bool>!
       let window = window(FocusFixture { focused = $0 })
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       guard let view = window.contentView, let field = field(in: view) else {
         Issue.record("Search field did not mount"); return
       }

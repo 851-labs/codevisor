@@ -180,7 +180,11 @@
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
         styleMask: [.borderless], backing: .buffered, defer: false)
-      defer { window.contentView = nil }
+      window.isReleasedWhenClosed = false
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let host = Autocomplete.Host()
       defer { host.stop() }
       let snapshot = configure(host) {
@@ -247,7 +251,11 @@
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
         styleMask: [.borderless], backing: .buffered, defer: false)
-      defer { window.contentView = nil }
+      window.isReleasedWhenClosed = false
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let field = NSSearchField(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
       window.contentView?.addSubview(field)
       window.makeFirstResponder(field)
@@ -286,10 +294,14 @@
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
         styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
       let field = NSSearchField(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
       window.contentView?.addSubview(field)
       window.makeFirstResponder(field)
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let host = Autocomplete.Host()
       host.inputField = field
       var accepted = 0
