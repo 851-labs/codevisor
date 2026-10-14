@@ -1,4 +1,4 @@
-# Codevisor's peer-to-peer tunnel (docs/plans/codevisor-tunnel.md): a thin,
+# Codevisor's peer-to-peer tunnel: a thin,
 # purpose-built wrapper over iroh, exposed to Node (napi) and Swift (uniffi).
 [workspace]
 resolver = "3"

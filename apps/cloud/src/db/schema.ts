@@ -242,8 +242,8 @@ export const pluginConsents = sqliteTable(
 
 /// Tunnel endpoint ids (Ed25519, hex) registered by authenticated devices on
 /// `/connect`. Our relays ask `POST /api/relay/authorize` whether an endpoint
-/// may use them; only registered endpoints of live accounts may
-/// (docs/plans/codevisor-tunnel.md). Rows cascade with the user.
+/// may use them; only registered endpoints of live accounts may.
+/// Rows cascade with the user.
 export const tunnelEndpoint = sqliteTable(
   "tunnel_endpoint",
   {

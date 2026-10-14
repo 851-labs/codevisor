@@ -32,7 +32,7 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   /// `setScale`: the desktop's UI scale, 1 or 2 (851-2339).
   public var scale: Int?
   /// Media over the Codevisor tunnel: the viewer's endpoint and the flow it
-  /// opened (docs/plans/codevisor-tunnel.md). The machine bridges the flow to
+  /// opened. The machine bridges the flow to
   /// the host WebRTC's socket and says so in the reply.
   public var tunnelMedia: ServerScreenSharingTunnelMedia?
 

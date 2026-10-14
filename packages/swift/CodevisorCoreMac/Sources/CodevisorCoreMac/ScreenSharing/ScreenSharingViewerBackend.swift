@@ -37,8 +37,8 @@ public struct ScreenSharingViewerBackend: Sendable {
   public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
 }
 
-/// A screen-sharing media route over the Codevisor tunnel
-/// (docs/plans/codevisor-tunnel.md): the local UDP port bridged to one tunnel
+/// A screen-sharing media route over the Codevisor tunnel:
+/// the local UDP port bridged to one tunnel
 /// flow, which the machine bridges to the host's WebRTC socket. WebRTC keeps
 /// its own ICE/DTLS/RTP and just dials `localPort` as its remote candidate.
 public struct ScreenSharingTunnelMedia: Sendable {

@@ -117,7 +117,7 @@ extension MachineController {
   }
 
   /// A screen-sharing media route over the tunnel to a cloud-reached
-  /// machine (docs/plans/codevisor-tunnel.md); nil for the local machine or
+  /// machine; nil for the local machine or
   /// when the machine has no tunnel.
   public func tunnelMediaRoute(forMachineId machineId: String) async -> CloudTunnelMediaRoute? {
     guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }

@@ -1,5 +1,5 @@
-//! A two-machine probe of the tunnel's media path (docs/plans/codevisor-tunnel.md,
-//! Phase 4): the loopback UDP → QUIC datagram → loopback UDP route screen
+//! A two-machine probe of the tunnel's media path:
+//! the loopback UDP → QUIC datagram → loopback UDP route screen
 //! sharing uses, measured side by side with plain UDP over the same network.
 //!
 //! ```text

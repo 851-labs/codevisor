@@ -63,8 +63,8 @@ export interface MachineConnectionOptions {
   /// This machine's tunnel endpoint id (hex). Registered with the hub on
   /// connect so our relays serve it and apps can dial it.
   tunnelEndpointId?: string
-  /// Every welcome's relay map and rollout switch (docs/plans/
-  /// codevisor-tunnel.md). Absent fields mean an older hub: no tunnel.
+  /// Every welcome's relay map and rollout switch.
+  /// Absent fields mean an older hub: no tunnel.
   onTunnelConfig?: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   /// The app devices the hub vouches for (tunnel machines only).
   onPeerDevices?: (devices: readonly CloudVouchedDevice[]) => void

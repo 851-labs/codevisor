@@ -34,8 +34,8 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID" | "RELAY_MA
   /// Test seam: overrides the session-resume grace window (ms). Production
   /// uses the default in resume-sessions.ts.
   RESUME_GRACE_MS?: string
-  /// Tunnel relay map, JSON `[{ "url": "https://relay…", "quicPort"?: n }]`
-  /// (docs/plans/codevisor-tunnel.md). Absent → direct-only tunnel.
+  /// Tunnel relay map, JSON `[{ "url": "https://relay…", "quicPort"?: n }]`.
+  /// Absent → direct-only tunnel.
   RELAY_MAP?: string
   /// Comma-separated bearer tokens our relays present on
   /// POST /api/relay/authorize. Absent → the route does not exist.

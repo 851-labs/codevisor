@@ -2,8 +2,8 @@ import type { TunnelConnection, TunnelMediaFlow } from "@codevisor/net"
 
 import type { CancelTimeout } from "./machine-socket.js"
 
-/// Screen-sharing media over the tunnel (docs/plans/codevisor-tunnel.md,
-/// Phase 4). WebRTC keeps its own ICE/RTP/DTLS stack and sees the tunnel as a
+/// Screen-sharing media over the tunnel.
+/// WebRTC keeps its own ICE/RTP/DTLS stack and sees the tunnel as a
 /// LAN: the viewer opens a `codevisor/media/1` connection and a local UDP
 /// flow, names both in its screen-sharing request, and the machine bridges
 /// that flow to the host WebRTC's own candidate from the answer it produced.

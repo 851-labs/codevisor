@@ -1,7 +1,7 @@
 name: Set up Rust
 description: >-
   Installs the Rust toolchain pinned in scripts/net-build.lock.json (the
-  tunnel's native code, docs/plans/codevisor-tunnel.md) and puts cargo on PATH.
+  tunnel's native code) and puts cargo on PATH.
 runs:
   using: composite
   steps:

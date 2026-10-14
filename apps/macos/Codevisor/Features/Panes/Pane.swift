@@ -54,7 +54,7 @@ struct PaneContext {
   /// (previews) falls back to `machine.serverConfig`.
   var resolveServerConfig: (@MainActor () -> CodevisorServerConfig)? = nil
   /// Opens a screen-sharing media route over the Codevisor tunnel to this
-  /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines.
+  /// machine; nil for direct machines.
   var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
   /// The same tunnel route, raw, for panes that negotiate their own media (Simulator).
   var openTunnelRoute: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil

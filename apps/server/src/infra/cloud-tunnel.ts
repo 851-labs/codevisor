@@ -17,7 +17,7 @@ import {
 } from "@codevisor/cloud-client"
 import { loadNet, type NetModule, type PathPolicy } from "@codevisor/net"
 
-/// The machine's tunnel endpoint (docs/plans/codevisor-tunnel.md), wired to
+/// The machine's tunnel endpoint, wired to
 /// the cloud bridge: the hub connection registers the endpoint and delivers
 /// relay config + vouched app devices; the endpoint serves the same channel
 /// handlers as the relay and the LAN pipe. Integration glue over the native

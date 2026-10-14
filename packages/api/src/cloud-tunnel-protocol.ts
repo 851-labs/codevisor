@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-/// Cloud protocol additions for the tunnel (docs/plans/codevisor-tunnel.md).
+/// Cloud protocol additions for the tunnel.
 /// All optional or new frame types, so older peers are unaffected. Re-exported
 /// through cloud-protocol.ts.
 

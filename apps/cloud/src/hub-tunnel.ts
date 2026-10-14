@@ -8,7 +8,7 @@ import type {
 
 import type { CloudEnv } from "./env.js"
 
-/// The hub's tunnel control plane (docs/plans/codevisor-tunnel.md). Devices
+/// The hub's tunnel control plane. Devices
 /// talk to each other directly over the tunnel; the hub only introduces them:
 ///
 /// - machines report their endpoint id (hello) and address (`tunnel-addr`),

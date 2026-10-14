@@ -111,7 +111,7 @@ for package_dir in "$repo_root"/packages/*/; do
   fi
 done
 
-# The tunnel's native addon (docs/plans/codevisor-tunnel.md), built with cargo
+# The tunnel's native addon, built with cargo
 # on this runner for its own target like the other native addons. Without it
 # the server still runs, relay-only (see apps/server/src/infra/cloud-tunnel.ts).
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null

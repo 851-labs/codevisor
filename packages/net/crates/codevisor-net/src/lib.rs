@@ -1,4 +1,4 @@
-//! Codevisor's peer-to-peer tunnel core (see docs/plans/codevisor-tunnel.md).
+//! Codevisor's peer-to-peer tunnel core.
 //!
 //! One QUIC connection per device pair over iroh: direct (LAN, tailnet,
 //! hole-punched) when possible, through our relays otherwise. Services are

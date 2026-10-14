@@ -1,4 +1,4 @@
-// Relay smoke tests (docs/plans/codevisor-tunnel.md).
+// Relay smoke tests.
 //
 //   node apps/relay/smoke.mjs --local-image <image> [--engine docker|container]
 //     Boots the image exactly as Fly does, but with a throwaway CA (no

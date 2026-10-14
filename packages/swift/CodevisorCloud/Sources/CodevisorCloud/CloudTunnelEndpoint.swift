@@ -3,8 +3,7 @@ import CodevisorNet
 import CryptoKit
 import Foundation
 
-/// How to reach a machine's tunnel endpoint, from machine presence
-/// (docs/plans/codevisor-tunnel.md).
+/// How to reach a machine's tunnel endpoint, from machine presence.
 public struct CloudTunnelInfo: Codable, Equatable, Sendable {
   public var endpointId: String
   public var relayUrl: String?
