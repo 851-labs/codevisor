@@ -86,9 +86,18 @@ struct DirectMachineCloudAdoptionTests {
     let world = try World(pending: [studio])
     world.server.respond("/v1/cloud", json: #"{"connected":false}"#)
 
+    let gate = FirstAdoptionGate()
+    defer { gate.finish() }
+    world.provider.firstAdoptionGate = gate
     async let first: Void = world.adoption.adoptPendingMachines(cloud: world.provider)
-    async let second: Void = world.adoption.adoptPendingMachines(cloud: world.provider)
-    _ = await (first, second)
+    #expect(await gate.admission())
+    await world.adoption.adoptPendingMachines(cloud: world.provider)
+
+    #expect(world.server.requests == [.init(url: "http://studio.test:49361/v1/cloud", bearer: nil)])
+    #expect(world.provider.adoptions == ["Studio"])
+    #expect(world.settled.isEmpty)
+    gate.finish()
+    await first
 
     #expect(world.provider.adoptions == ["Studio"])
     #expect(world.settled.count == 1)
@@ -144,18 +153,46 @@ private final class World {
   }
 }
 
+private struct FirstAdoptionGate: Sendable {
+  private let entry = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+  private let release = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+
+  @MainActor
+  func hold() async {
+    entry.continuation.yield(())
+    entry.continuation.finish()
+    var iterator = release.stream.makeAsyncIterator()
+    _ = await iterator.next()
+  }
+
+  @MainActor
+  func admission() async -> Bool {
+    var iterator = entry.stream.makeAsyncIterator()
+    return await iterator.next() != nil
+  }
+
+  func finish() {
+    entry.continuation.finish()
+    release.continuation.finish()
+  }
+}
+
 @MainActor
 private final class AdoptingCloudProvider: CloudMachineProviding {
   var isCloudSignedIn = true
   var cloudMachines: [CloudMachine] = []
   var isCloudRosterVerified = true
   var adoptedDeviceId = "adopted-device"
+  var firstAdoptionGate: FirstAdoptionGate?
   private(set) var adoptions: [String] = []
 
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? { nil }
 
   func adoptDirectMachine(using client: any CodevisorServerClienting, name: String) async throws -> String {
     adoptions.append(name)
+    if adoptions.count == 1, let gate = firstAdoptionGate {
+      await gate.hold()
+    }
     return adoptedDeviceId
   }
 }
