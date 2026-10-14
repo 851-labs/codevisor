@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   DEFAULT_ALPHA_SERVER_MANIFEST_URL,
-  DEFAULT_LEGACY_RELEASE_BASE_URL,
   DEFAULT_STABLE_SERVER_MANIFEST_URL,
   fetchAlphaServerRelease,
   fetchLatestGitHubServerRelease,
@@ -21,6 +20,11 @@ import {
 } from "./release-source.js"
 
 const temporaryRoots: Array<string> = []
+
+const sources = {
+  repository: "example/codevisor",
+  legacyBaseURL: "https://releases.example/codevisor"
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -132,7 +136,7 @@ describe("GitHub and compatibility fetches", () => {
     )
     vi.stubGlobal("fetch", fetch)
 
-    await expect(fetchLatestServerRelease({ target: "linux-x64" })).resolves.toEqual({
+    await expect(fetchLatestServerRelease({ ...sources, target: "linux-x64" })).resolves.toEqual({
       version: "0.4.0",
       archiveURL: "https://updates.example/server.tar.gz",
       checksumURL: "https://updates.example/server.tar.gz.sha256",
@@ -157,20 +161,19 @@ describe("GitHub and compatibility fetches", () => {
           headers: { "Content-Type": "application/json" }
         })
       )
+    vi.stubGlobal("fetch", fetch)
 
-    await expect(
-      fetchLatestServerRelease({
-        repository: "example/codevisor",
-        legacyBaseURL: "https://releases.example/codevisor",
-        target: "linux-x64",
-        fetch
-      })
-    ).resolves.toEqual({
+    await expect(fetchLatestServerRelease({ ...sources, target: "linux-x64" })).resolves.toEqual({
       version: "0.3.0",
       archiveURL: "https://releases.example/codevisor/v0.3.0/codevisor-server-linux-x64.tar.gz",
       checksumURL:
         "https://releases.example/codevisor/v0.3.0/codevisor-server-linux-x64.tar.gz.sha256"
     })
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+      DEFAULT_STABLE_SERVER_MANIFEST_URL,
+      "https://api.github.com/repos/example/codevisor/releases/latest",
+      "https://releases.example/codevisor/latest.json"
+    ])
   })
 
   it("uses GitHub when the first-party manifest has no matching target", async () => {
@@ -194,7 +197,7 @@ describe("GitHub and compatibility fetches", () => {
 
     await expect(
       fetchLatestServerRelease({
-        repository: "example/codevisor",
+        ...sources,
         target: "linux-x64",
         fetch
       })
@@ -220,7 +223,7 @@ describe("GitHub and compatibility fetches", () => {
 
     await expect(
       fetchLatestServerRelease({
-        legacyBaseURL: "https://releases.example/codevisor",
+        ...sources,
         target: "linux-x64",
         fetch
       })
@@ -249,19 +252,6 @@ describe("GitHub and compatibility fetches", () => {
         fetch: malformed
       })
     ).resolves.toBeUndefined()
-  })
-
-  it("uses the production compatibility URL when GitHub is unavailable", async () => {
-    const fetch = vi
-      .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
-      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
-      .mockResolvedValueOnce(new Response('{"version":"0.3.0"}', { status: 200 }))
-    vi.stubGlobal("fetch", fetch)
-
-    await fetchLatestServerRelease({ target: "linux-x64" })
-
-    expect(fetch.mock.calls[2]?.[0]).toBe(`${DEFAULT_LEGACY_RELEASE_BASE_URL}/latest.json`)
   })
 
   it("exposes the lower-level GitHub error", async () => {
@@ -390,7 +380,12 @@ describe("alpha channel", () => {
       .mockResolvedValueOnce(manifestResponse(alphaManifest))
       .mockResolvedValueOnce(manifestResponse(stableManifest))
     await expect(
-      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaWins })
+      fetchLatestServerRelease({
+        ...sources,
+        channel: "alpha",
+        target: "linux-x64",
+        fetch: alphaWins
+      })
     ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
 
     const stableWins = vi
@@ -398,7 +393,12 @@ describe("alpha channel", () => {
       .mockResolvedValueOnce(manifestResponse({ ...alphaManifest, buildNumber: 40 }))
       .mockResolvedValueOnce(manifestResponse(stableManifest))
     await expect(
-      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: stableWins })
+      fetchLatestServerRelease({
+        ...sources,
+        channel: "alpha",
+        target: "linux-x64",
+        fetch: stableWins
+      })
     ).resolves.toMatchObject({ version: "0.4.0" })
   })
 
@@ -408,7 +408,12 @@ describe("alpha channel", () => {
       .mockResolvedValueOnce(new Response("missing", { status: 404 }))
       .mockResolvedValueOnce(manifestResponse(stableManifest))
     await expect(
-      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaMissing })
+      fetchLatestServerRelease({
+        ...sources,
+        channel: "alpha",
+        target: "linux-x64",
+        fetch: alphaMissing
+      })
     ).resolves.toMatchObject({ version: "0.4.0" })
 
     const stableMissing = vi
@@ -416,7 +421,12 @@ describe("alpha channel", () => {
       .mockResolvedValueOnce(manifestResponse(alphaManifest))
       .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
     await expect(
-      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: stableMissing })
+      fetchLatestServerRelease({
+        ...sources,
+        channel: "alpha",
+        target: "linux-x64",
+        fetch: stableMissing
+      })
     ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
 
     const stableNoTarget = vi
@@ -426,8 +436,8 @@ describe("alpha channel", () => {
       .mockResolvedValueOnce(new Response("rate limited", { status: 403 }))
     await expect(
       fetchLatestServerRelease({
+        ...sources,
         channel: "alpha",
-        repository: "example/codevisor",
         target: "linux-x64",
         fetch: stableNoTarget
       })
@@ -452,8 +462,8 @@ describe("alpha channel", () => {
       )
     await expect(
       fetchLatestServerRelease({
+        ...sources,
         channel: "alpha",
-        repository: "example/codevisor",
         target: "linux-x64",
         fetch
       })
@@ -464,7 +474,7 @@ describe("alpha channel", () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValue(manifestResponse(stableManifest))
-    await fetchLatestServerRelease({ channel: "stable", target: "linux-x64", fetch })
+    await fetchLatestServerRelease({ ...sources, channel: "stable", target: "linux-x64", fetch })
     expect(fetch.mock.calls.map((call) => call[0])).toEqual([DEFAULT_STABLE_SERVER_MANIFEST_URL])
   })
 })
