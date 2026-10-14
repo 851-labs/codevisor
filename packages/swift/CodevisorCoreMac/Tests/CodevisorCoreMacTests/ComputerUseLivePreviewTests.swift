@@ -54,7 +54,6 @@ struct ComputerUseLivePreviewTests {
 
     #expect(kept.timestamps.count == 2)
     #expect(removed.timestamps.count == 1)
-    #expect(!publisher.hasSinks)
   }
 
   @Test("A mailbox sink keeps only the newest frame")

@@ -58,10 +58,6 @@ final class ComputerUseFramePublisher: NSObject, SCStreamOutput, @unchecked Send
     lock.withLock { Array(sinks.values) }
   }
 
-  var hasSinks: Bool {
-    lock.withLock { !sinks.isEmpty }
-  }
-
   func publish(_ sampleBuffer: CMSampleBuffer) {
     let targets = lock.withLock { Array(sinks.values) }
     guard !targets.isEmpty,

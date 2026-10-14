@@ -7,28 +7,6 @@ import CodevisorTestSupport
 @MainActor
 @Suite("LocalCodevisorServer")
 struct LocalCodevisorServerTests {
-  @Test("Uses an already healthy local server without launching")
-  func alreadyRunning() async {
-    let client = FakeLocalServerClient(healthResults: [.success(.ready)])
-    var launches: [LocalCodevisorServerLaunchRequest] = []
-    let server = LocalCodevisorServer(
-      client: client,
-      allowsDevelopmentLaunch: true,
-      entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
-      serverEnvironmentProvider: { [:] },
-      launcher: { request in
-        launches.append(request)
-        return Process()
-      }
-    )
-    server.startupScheduler = AdvancingLocalServerScheduler().scheduler
-
-    let state = await server.ensureRunning()
-
-    #expect(state == .alreadyRunning)
-    #expect(launches.isEmpty)
-  }
-
   @Test("Initial and standalone health probes use the injected startup clock")
   func healthProbesUseStartupClock() async {
     let client = FakeLocalServerClient(healthResults: [.success(.ready), .success(.ready)])

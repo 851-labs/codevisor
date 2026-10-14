@@ -65,7 +65,7 @@ extension ComputerUseBridge {
         options: arguments
       )
     }
-    _ = try deliveryMode(arguments, windowID: nil)
+    _ = try deliveryMode(arguments)
     try requireAccessibility(prompt: true)
     let app = try resolveApp(appName, launchIfNeeded: false)
     try ComputerUsePresentation.requireControlAllowed(
@@ -123,7 +123,7 @@ extension ComputerUseBridge {
     appName: String,
     app: NSRunningApplication
   ) throws -> [String: Any] {
-    let mode = try deliveryMode(arguments, windowID: nil)
+    let mode = try deliveryMode(arguments)
     return try performWithDelivery(app: app, window: nil, windowID: nil, mode: mode, sessionID: sessionID) {
       if mode == "foreground" {
         try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
