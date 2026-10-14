@@ -36,101 +36,109 @@ describe("@codevisor/server attention settle", () => {
       if (event.kind === "session.attention.updated") attentionEvents.push(event)
     })
     const scheduler = makeAttentionSettleScheduler(db, fanout)
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/attention-settle" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        backgroundTasks: [
+          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+        ]
+      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+      // Still held: nothing may flip to unread while the subagent runs.
+      expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
-    const project = await run(db.createProject({ folderPath: "/tmp/attention-settle" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "user",
-      turnId: "turn-1",
-      turnState: "started"
-    })
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      backgroundTasks: [
-        { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-      ]
-    })
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "user",
-      stopReason: "end_turn",
-      turnId: "turn-1",
-      turnState: "ended"
-    })
-    // Still held: nothing may flip to unread while the subagent runs.
-    expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
-
-    await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-    // The hold released; the scheduler owns the grace deadline from here.
-    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS - 1)
-    expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 1,
-      unreadCount: 1
-    })
-    const settleFlips = attentionEvents.filter(
-      (event) =>
-        typeof event.payload === "object" &&
-        event.payload !== null &&
-        "sidebarState" in event.payload &&
-        event.payload.sidebarState === "unread"
-    )
-    expect(settleFlips).toHaveLength(1)
-    scheduler.close()
-    await run(db.close)
+      await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+      // The hold released; the scheduler owns the grace deadline from here.
+      await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS - 1)
+      expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+        latestAttentionSequence: 1,
+        unreadCount: 1
+      })
+      const settleFlips = attentionEvents.filter(
+        (event) =>
+          typeof event.payload === "object" &&
+          event.payload !== null &&
+          "sidebarState" in event.payload &&
+          event.payload.sidebarState === "unread"
+      )
+      expect(settleFlips).toHaveLength(1)
+    } finally {
+      scheduler.close()
+      await run(db.close)
+    }
   })
 
   it("cancels the deadline when the agent is re-invoked within the grace", async () => {
     const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
     const scheduler = makeAttentionSettleScheduler(db, fanout)
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/attention-reinvoke" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        backgroundTasks: [
+          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+        ]
+      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+      // The harness re-invokes before the deadline: the parked finish must ride
+      // through the continuation without settling.
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "agent",
+        turnId: "turn-2",
+        turnState: "started"
+      })
+      await vi.advanceTimersByTimeAsync(2 * ATTENTION_SETTLE_GRACE_MS)
+      expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+        latestAttentionSequence: 0,
+        unreadCount: 0,
+        sidebarState: "inProgress"
+      })
 
-    const project = await run(db.createProject({ folderPath: "/tmp/attention-reinvoke" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "user",
-      turnId: "turn-1",
-      turnState: "started"
-    })
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      backgroundTasks: [
-        { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-      ]
-    })
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "user",
-      stopReason: "end_turn",
-      turnId: "turn-1",
-      turnState: "ended"
-    })
-    await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-    // The harness re-invokes before the deadline: the parked finish must ride
-    // through the continuation without settling.
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "agent",
-      turnId: "turn-2",
-      turnState: "started"
-    })
-    await vi.advanceTimersByTimeAsync(2 * ATTENTION_SETTLE_GRACE_MS)
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 0,
-      unreadCount: 0,
-      sidebarState: "inProgress"
-    })
-
-    // The chain finally ends clean with nothing held: settles once.
-    await appendAndPublish(db, fanout, "session.updated", session.id, {
-      initiatedBy: "agent",
-      stopReason: "end_turn",
-      turnId: "turn-2",
-      turnState: "ended"
-    })
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 1,
-      unreadCount: 1,
-      sidebarState: "unread"
-    })
-    scheduler.close()
-    await run(db.close)
+      // The chain finally ends clean with nothing held: settles once.
+      await appendAndPublish(db, fanout, "session.updated", session.id, {
+        initiatedBy: "agent",
+        stopReason: "end_turn",
+        turnId: "turn-2",
+        turnState: "ended"
+      })
+      expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+        latestAttentionSequence: 1,
+        unreadCount: 1,
+        sidebarState: "unread"
+      })
+    } finally {
+      scheduler.close()
+      await run(db.close)
+    }
   })
 
   it("drains parked finishes on recovery after a restart", async () => {
