@@ -144,33 +144,38 @@ describe("Codex title generation", () => {
     expect(client.requests).toEqual([])
   })
 
-  const failedOutputs: Record<string, string> = {
-    malformed: "invalid",
-    failed: '{"title":"Fix login validation"}',
-    oversized: "x".repeat(9_000),
-    "non-object": "null",
-    untitled: "{}",
-    "non-string title": '{"title":3}',
-    "blank title": '{"title":"  "}'
-  }
+  it.each([
+    ["malformed", "invalid", "completed"],
+    ["failed", '{"title":"Fix login validation"}', "failed"],
+    [
+      "oversized",
+      JSON.stringify({ title: "Fix login validation", pad: "x".repeat(9_000) }),
+      "completed"
+    ],
+    ["non-object", "null", "completed"],
+    ["untitled", "{}", "completed"],
+    ["non-string title", '{"title":3}', "completed"],
+    ["blank title", '{"title":"  "}', "completed"]
+  ])("keeps the fallback on %s output", async (_case, text, status) => {
+    const { client, generator, finish } = fixture()
+    const generation = generator.onTurnCompleted()
+    await client.started.promise
+    finish(text, status)
+    await generation
+    expect(client.threadName).toBeNull()
+    await client.unsubscribed.promise
+  })
 
-  it.each([...Object.keys(failedOutputs), "error"])(
-    "keeps the fallback on %s output",
-    async (failure) => {
-      const { client, generator, finish } = fixture()
-      const generation = generator.onTurnCompleted()
-      await client.started.promise
-      if (failure === "error") {
-        generator.handleNotification("error", { threadId: "hidden-title", willRetry: true })
-        generator.handleNotification("error", { threadId: "hidden-title", willRetry: false })
-      } else {
-        finish(failedOutputs[failure], failure === "failed" ? "failed" : "completed")
-      }
-      await generation
-      expect(client.threadName).toBeNull()
-      await client.unsubscribed.promise
-    }
-  )
+  it("keeps the fallback when the title turn ends in a final error", async () => {
+    const { client, generator } = fixture()
+    const generation = generator.onTurnCompleted()
+    await client.started.promise
+    generator.handleNotification("error", { threadId: "hidden-title", willRetry: true })
+    generator.handleNotification("error", { threadId: "hidden-title", willRetry: false })
+    await generation
+    expect(client.threadName).toBeNull()
+    await client.unsubscribed.promise
+  })
 
   it.each([
     [
