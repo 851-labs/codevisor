@@ -93,6 +93,11 @@ describe("TunnelMediaRoutes", () => {
     timeouts.fireAll()
     expect(await first).toBeUndefined()
     expect(await second).toBeUndefined()
+    // Without a usable candidate it answers at once rather than waiting for
+    // a media connection that would have nothing to bridge to.
+    const srflxOnly = "v=0\na=candidate:5 1 udp 1 203.0.113.9 61000 typ srflx"
+    expect(await routes.bridge({ endpointId: "absent", flowId: 3 }, srflxOnly)).toBeUndefined()
+    expect(timeouts.count).toBe(0)
 
     // An unmeasured datagram size is simply omitted.
     const unmeasured = mediaConnection("unmeasured")
@@ -103,7 +108,6 @@ describe("TunnelMediaRoutes", () => {
     })
     // A connected viewer still gets nothing when the answer offers only a
     // server-reflexive candidate.
-    const srflxOnly = "v=0\na=candidate:5 1 udp 1 203.0.113.9 61000 typ srflx"
     expect(await routes.bridge({ endpointId: "unmeasured", flowId: 5 }, srflxOnly)).toBeUndefined()
     expect(unmeasured.flows.map(({ flowId }) => flowId)).toEqual([4])
   })
