@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-import CodevisorProtocol
 
 @testable import CodevisorClient
 
