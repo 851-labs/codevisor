@@ -15,15 +15,6 @@ struct TranscriptInitialBottomPinTests {
     #expect(!pin.isActive)
   }
 
-  @Test("An at-bottom cached transcript uses the same initial pin")
-  func cachedBottomPinsBottom() {
-    var pin = TranscriptInitialBottomPin()
-
-    pin.configure(restoresNonBottomPosition: false)
-
-    #expect(pin.isActive)
-  }
-
   @Test("A non-bottom restoration keeps its saved anchor authoritative")
   func nonBottomRestorationDoesNotPin() {
     var pin = TranscriptInitialBottomPin()

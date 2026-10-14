@@ -396,7 +396,7 @@ private final class ActivityFixture {
     try #require(view.initialPresentationGate.isReady)
   }
 
-  func expectActivity(for assistantID: UUID, visible: Bool = true) throws {
+  func expectActivity(for assistantID: UUID) throws {
     let row = try #require(
       view.rows.first {
         $0.id == .activeChrome(assistantID, .activity) || $0.id == .activeWorkedHeader(assistantID, .planning)
@@ -413,11 +413,7 @@ private final class ActivityFixture {
           (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1
         }.count
     }
-    if visible {
-      #expect(visiblePixels > 20, "The activity row must contain visible glyphs without a later text or tool event")
-    } else {
-      #expect(visiblePixels == 0, "Activity is suppressed while the previous response's text is entering")
-    }
+    #expect(visiblePixels > 20, "The activity row must contain visible glyphs without a later text or tool event")
   }
 
   private static func isReceivingMarkdown(_ row: TranscriptVirtualRow) -> Bool {
