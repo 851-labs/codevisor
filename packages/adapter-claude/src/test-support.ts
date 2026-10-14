@@ -8,7 +8,7 @@ import type {
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
-import { makeClaudeProvider, type ClaudeProviderConfig } from "./claude.js"
+import { makeClaudeProvider, type ClaudeProviderConfig } from "./provider.js"
 import type { ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 

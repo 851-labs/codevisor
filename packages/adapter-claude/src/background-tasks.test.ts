@@ -1,7 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { makeClaudeProvider } from "./claude.js"
+import { makeClaudeProvider } from "./provider.js"
 import {
   definition,
   environment,
