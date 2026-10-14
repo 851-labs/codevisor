@@ -239,6 +239,7 @@ struct TerminalControllerTests {
       .string(#"{"type":"size","seq":0,"cols":120,"rows":40}"#),
       .string(#"{"type":"output","seq":1,"data":"$ "}"#),
     ])
+    let now = LockedInstant(ContinuousClock.now)
     let controller = TerminalController(
       config: CodevisorServerConfig(
         baseURL: URL(string: "https://fixture.invalid")!,
@@ -246,6 +247,7 @@ struct TerminalControllerTests {
         webSocketTransport: SocketTransport(socket: socket)
       ),
       terminalKey: "s", cwd: "/",
+      clock: { now.value },
       sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
     let renderer = RecordingRenderer()
     controller.attach(renderer)
