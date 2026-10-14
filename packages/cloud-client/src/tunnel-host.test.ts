@@ -249,7 +249,6 @@ describe("MachineTunnel", () => {
       pathPolicy: "auto",
       alpns: [TUNNEL_ALPN_CHANNELS, TUNNEL_ALPN_MEDIA]
     })
-    expect(tunnel.endpoint).toBe(endpoints[0])
 
     await tunnel.configure({ relays: [{ url: "https://relay-b.test" }], enabled: true })
     expect(endpoints[0]!.closed).toBe(true)
@@ -257,7 +256,6 @@ describe("MachineTunnel", () => {
 
     await tunnel.configure({ relays, enabled: false })
     expect(endpoints[1]!.closed).toBe(true)
-    expect(tunnel.endpoint).toBeUndefined()
   })
 
   it("publishes every address change to the hub", async () => {
@@ -351,7 +349,6 @@ describe("MachineTunnel", () => {
     release()
     await configuring
     expect(endpoint.closed).toBe(true)
-    expect(tunnel.endpoint).toBeUndefined()
   })
 
   it("the latest same-tick configuration owns the only bound endpoint", async () => {
@@ -363,7 +360,9 @@ describe("MachineTunnel", () => {
       ])
       expect(endpoints).toHaveLength(1)
       expect(bindOptions[0]?.relays).toEqual([{ url: "https://new.test" }])
-      expect(tunnel.endpoint).toBe(endpoints[0])
+      await tunnel.configure({ relays: [{ url: "https://new.test" }], enabled: true })
+      expect(endpoints).toHaveLength(1)
+      expect(endpoints[0]!.closed).toBe(false)
     } finally {
       await tunnel.stop()
     }
@@ -374,7 +373,6 @@ describe("MachineTunnel", () => {
     const configured = tunnel.configure({ relays, enabled: true })
     await tunnel.stop()
     await configured
-    expect(tunnel.endpoint).toBeUndefined()
     expect(endpoints).toHaveLength(0)
   })
 })

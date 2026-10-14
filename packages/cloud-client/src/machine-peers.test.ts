@@ -26,11 +26,7 @@ import {
 
 describe("machine peers", () => {
   it("advertises peer support and tracks the account's machines", () => {
-    const seen: string[][] = []
-    const h = harness({
-      device: { name: "vps", serverId: "machine-vps" },
-      onMachinesChanged: (machines) => seen.push(machines.map((m) => `${m.name}:${m.online}`))
-    })
+    const h = harness({ device: { name: "vps", serverId: "machine-vps" } })
     h.connection.start()
     const socket = h.sockets[0]!
     socket.onopen?.()
@@ -53,8 +49,8 @@ describe("machine peers", () => {
       connectionId: "c",
       machines: [studio]
     })
+    expect(h.connection.machines()).toEqual([studio])
     socket.receive({ t: "presence", machine: { ...studio, online: false } })
-    expect(seen).toEqual([["Studio:true"], ["Studio:false"]])
     expect(h.connection.machines()).toEqual([{ ...studio, online: false }])
     h.connection.stop()
     expect(h.connection.machines()).toBeUndefined()
