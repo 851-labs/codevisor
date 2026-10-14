@@ -81,8 +81,8 @@ struct SidebarWorkspaceRow: View {
             .help(machine.name)
             .accessibilityLabel("On \(machine.name)")
         }
-        // One trailing slot: the archive button on hover, else the elapsed
-        // time. Sharing the slot keeps the label from re-truncating on hover.
+        // One trailing slot: the archive button on hover, flush right with
+        // the glyphs' spacing, else the elapsed time.
         if isHovered {
           Button(action: onArchive) {
             Image(systemName: "archivebox")
@@ -96,9 +96,6 @@ struct SidebarWorkspaceRow: View {
           .foregroundStyle(.secondary)
           .help("Archive workspace")
           .accessibilityLabel("Archive \(SidebarWorkspaceRowLabel.title(for: name))")
-          // Leading in the time's slot: the slot keeps its width, so the
-          // label doesn't re-truncate, and the button keeps the glyphs' gap.
-          .frame(minWidth: 24, minHeight: 14, alignment: .leading)
           // Covered by the row's Archive action, which does not depend on
           // hover.
           .accessibilityHidden(true)
