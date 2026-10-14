@@ -24,8 +24,8 @@ const worktreeID = createHash("sha256").update(root).digest("hex").slice(0, 12)
 const bundleID = `com.codevisor.ScreenSharingProbe.w${worktreeID}.${instance || "default"}`
 const displayName = `Screen Sharing Probe${instance ? ` (${instance})` : ""}`
 
-function run(command: string, args: string[], capture = false): string {
-  const result = spawnSync(command, args, {
+function run(command: string, commandArgs: string[], capture = false): string {
+  const result = spawnSync(command, commandArgs, {
     cwd: root,
     stdio: capture ? ["inherit", "pipe", "inherit"] : "inherit",
     encoding: "utf8"

@@ -25,8 +25,8 @@ const fixture = () => {
   const entries = new Map<string, BrowserCookieEntry>()
   let revision = 0
   let beforeReply: (() => void | Promise<void>) | undefined
-  const change = (cookie: BrowserCookie | null, key = browserCookieKey(cookie!)) =>
-    entries.set(key, { key, revision: ++revision, cookie })
+  const change = (changed: BrowserCookie | null, key = browserCookieKey(changed!)) =>
+    entries.set(key, { key, revision: ++revision, cookie: changed })
   const exchange = vi.fn((mutations: BrowserCookieMutation[]) =>
     Effect.promise(async () => {
       for (const mutation of mutations)

@@ -362,7 +362,7 @@ export const makeCloudServerControl = (
   let current = initial
   let connecting: Promise<string> | undefined
   const fetchImpl = (): FetchLike => options.fetchImpl ?? ((input, init) => fetch(input, init))
-  const join = (
+  const joinCloud = (
     grant: CloudJoinGrant,
     registration: { readonly managedBy?: CloudBridgeManagedBy; readonly machineName?: string } = {}
   ): Promise<string> => {
@@ -387,8 +387,8 @@ export const makeCloudServerControl = (
     managedBy: () => current?.managedBy,
     machineName: () => current?.machineName,
     connect: (serverUrl, sessionToken, registration) =>
-      join({ serverUrl, sessionToken }, registration),
-    connectWithInvite: (inviteCode, registration) => join({ inviteCode }, registration),
+      joinCloud({ serverUrl, sessionToken }, registration),
+    connectWithInvite: (inviteCode, registration) => joinCloud({ inviteCode }, registration),
     invite: async () => createMachineInvite(fetchImpl(), await storedCredentials()),
     removePeer: async (deviceId) =>
       removeMachinePeer(fetchImpl(), await storedCredentials(), deviceId),

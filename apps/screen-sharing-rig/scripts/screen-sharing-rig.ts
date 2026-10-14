@@ -124,7 +124,7 @@ function readDeployRecord(): DeployRecord {
   return readJSON(deployRecordPath) as DeployRecord
 }
 
-async function build({ debug = false, install = true } = {}): Promise<string> {
+async function build({ debug = false, install: installAfterBuild = true } = {}): Promise<string> {
   const configuration = debug ? "debug" : "release"
   const identities = parseCodesigningIdentities(
     run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], { capture: true })
@@ -197,7 +197,7 @@ async function build({ debug = false, install = true } = {}): Promise<string> {
   process.stdout.write(
     `Built ${buildApp} (${commit.slice(0, 8)}${dirty ? "*" : ""} ${configuration})\nDesignated requirement: ${requirement}\n`
   )
-  if (install) installLocally()
+  if (installAfterBuild) installLocally()
   return buildApp
 }
 
@@ -240,21 +240,21 @@ async function install(): Promise<void> {
   const port = portOption ? Number(portOption) : undefined
   const controlPortOption = stringOption(options, "control-port")
   const controlPort = controlPortOption ? Number(controlPortOption) : undefined
-  const hud = !options["no-hud"]
+  const showHud = !options["no-hud"]
   const viewer = rigConfiguration({
     role: "viewer",
     token,
     peer: hostAddress,
     port,
     controlPort,
-    hud
+    hud: showHud
   })
   const host = rigConfiguration({
     role: "host",
     token,
     port,
     controlPort,
-    hud,
+    hud: showHud,
     capture: stringOption(options, "capture") ?? "synthetic"
   })
   const { remoteHome, remoteUid } = remoteFacts(target)

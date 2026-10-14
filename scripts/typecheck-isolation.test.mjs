@@ -49,7 +49,7 @@ for (const command of commands) {
     writeFileSync(source, 'export const treeHash = (): string => "before"\n')
     const [executable, ...args] = command.split(" ")
     assert.equal(executable, "tsc")
-    const run = (args) => execFileSync(process.execPath, [tsc, ...args], { cwd: directory })
+    const run = (tscArgs) => execFileSync(process.execPath, [tsc, ...tscArgs], { cwd: directory })
 
     run(args)
     assert.throws(() => readdirSync(join(directory, "dist")), { code: "ENOENT" })

@@ -355,11 +355,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
       }
     },
-    registerExternalTerminal: (config, process) => {
+    registerExternalTerminal: (registration, process) => {
       const terminalId = randomUUID()
       const terminal: RunningTerminal = {
         terminalId,
-        sessionId: config.sessionId,
+        sessionId: registration.sessionId,
         process,
         sinks: new Set(),
         frames: new ReplayBuffer(),
@@ -371,12 +371,12 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         closed: false,
         external: true
       }
-      const previousId = terminalsBySession.get(config.sessionId)
+      const previousId = terminalsBySession.get(registration.sessionId)
       const previous = previousId === undefined ? undefined : terminals.get(previousId)
       if (previous !== undefined) dropTerminal(previous)
       terminals.set(terminalId, terminal)
-      terminalsBySession.set(config.sessionId, terminalId)
-      const normalize = config.normalizeNewlines === true
+      terminalsBySession.set(registration.sessionId, terminalId)
+      const normalize = registration.normalizeNewlines === true
       return {
         terminalId,
         response: terminalResponse(terminal),

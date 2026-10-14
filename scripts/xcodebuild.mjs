@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { mkdir } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { join, resolve as resolvePath } from "node:path"
 import process from "node:process"
 
 import { developmentLayout } from "./dev-layout.mjs"
@@ -56,8 +56,8 @@ export function packageResolutionInputs(repoRoot, resolutionArguments) {
   const workspace = valueOf("-workspace")
   const pins =
     workspace === undefined
-      ? join(resolve(repoRoot, valueOf("-project")), "project.xcworkspace")
-      : resolve(repoRoot, workspace)
+      ? join(resolvePath(repoRoot, valueOf("-project")), "project.xcworkspace")
+      : resolvePath(repoRoot, workspace)
   return [
     join(pins, "xcshareddata/swiftpm/Package.resolved"),
     join(repoRoot, "packages/swift/Package.swift"),

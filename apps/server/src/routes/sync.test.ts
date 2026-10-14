@@ -178,7 +178,7 @@ describe("/v1/sync", () => {
     })
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
     const entries = (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries
-    expect(entries.find((entry) => entry.key === "codex")?.value).toMatchObject({
+    expect(entries.find((synced) => synced.key === "codex")?.value).toMatchObject({
       enabled: true,
       installed: true,
       uninstall: false
@@ -217,7 +217,7 @@ describe("/v1/sync", () => {
         value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
       }>
     }
-    expect(readiness.entries.flatMap((entry) => entry.value.harnesses)).toContainEqual(
+    expect(readiness.entries.flatMap((synced) => synced.value.harnesses)).toContainEqual(
       expect.objectContaining({
         id: "codex",
         state: "blocked",

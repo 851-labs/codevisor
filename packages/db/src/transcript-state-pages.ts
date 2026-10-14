@@ -82,7 +82,7 @@ export const readTranscriptStatePage = (
       if (row.category === "question") payload.statePosition = row.position
       if (row.category === "text" || row.category === "plan") {
         const text = readTranscriptText(db, itemId, row.entry_key, 24_000)
-        const resource = transcriptTextResource(db, itemId, row.entry_key)
+        const textResource = transcriptTextResource(db, itemId, row.entry_key)
         payload =
           row.category === "text"
             ? {
@@ -96,13 +96,13 @@ export const readTranscriptStatePage = (
                 stateRevision: row.revision,
                 statePosition: row.position,
                 chatItemId: itemId,
-                detailResource: resource
+                detailResource: textResource
               }
             : {
                 ...payload,
                 markdown: text,
                 stateRevision: row.revision,
-                ...(row.text_length > text.length ? { detailResource: resource } : {})
+                ...(row.text_length > text.length ? { detailResource: textResource } : {})
               }
       }
       const size = Buffer.byteLength(JSON.stringify(payload))

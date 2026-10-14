@@ -385,9 +385,9 @@ export const makeBrowserUseProvider = (
         }
         const result = await serializedBrowserOperation(ready, async () => {
           await ready.synchronizeCookies?.().catch(() => undefined)
-          const result = await invokeTool(context, ready, effectiveTool, effectiveArgs)
+          const invoked = await invokeTool(context, ready, effectiveTool, effectiveArgs)
           await ready.synchronizeCookies?.().catch(() => undefined)
-          return result
+          return invoked
         })
         const key = `${runtimeKey(context, backend)}:${context.sessionId}`
         const named = effectiveArgs.tabId
@@ -473,7 +473,7 @@ export const makeBrowserUseProvider = (
       contexts.clear()
       const active = [
         ...runtimes.values(),
-        ...[...retiredRuntimes].map((active) => Promise.resolve(active))
+        ...[...retiredRuntimes].map((retired) => Promise.resolve(retired))
       ]
       retiredRuntimes.clear()
       runtimes.clear()

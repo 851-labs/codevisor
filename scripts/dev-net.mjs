@@ -39,14 +39,14 @@ export async function resolveDevNet({ instanceHash, netRoot, relayHost }) {
     const ports = Array.from({ length: RELAYS * PORTS_PER_RELAY }, (_, index) => base + index)
     if ((await Promise.all(ports.map((port) => isPortAvailable(port)))).every(Boolean)) {
       const relays = Array.from({ length: RELAYS }, (_, index) => {
-        const [https, quic, router, internal, metrics] = ports.slice(
+        const [httpsPort, quic, router, internal, metrics] = ports.slice(
           index * PORTS_PER_RELAY,
           (index + 1) * PORTS_PER_RELAY
         )
         return {
           name: `relay-${index + 1}`,
-          url: `https://${relayHost}:${https}`,
-          ports: { https, quic, router, internal, metrics }
+          url: `https://${relayHost}:${httpsPort}`,
+          ports: { https: httpsPort, quic, router, internal, metrics }
         }
       })
       return {
