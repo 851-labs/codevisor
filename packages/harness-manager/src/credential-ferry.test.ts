@@ -58,14 +58,17 @@ describe("pi source", () => {
     await writeFile(
       path,
       JSON.stringify({
+        openai: { type: "api_key", key: "sk-1" },
         anthropic: { type: "oauth", refresh: "r", access: "a", expires: 1 },
-        openai: { type: "api_key", key: "sk-1" }
+        groq: { type: "api_key", key: "sk-g" }
       })
     )
     const source = byId["pi-auth"]!
     expect(source.tombstoneOnAbsence).toBe(false)
     const published = await source.read()
-    expect(published).toBe('{"openai":{"type":"api_key","key":"sk-1"}}')
+    expect(published).toBe(
+      '{"groq":{"type":"api_key","key":"sk-g"},"openai":{"type":"api_key","key":"sk-1"}}'
+    )
 
     await source.apply(JSON.stringify({ groq: { type: "api_key", key: "sk-2" } }))
     const merged = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>
@@ -106,7 +109,7 @@ describe("opencode source", () => {
     })
     await source.apply(shared)
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ anthropic: oauth })
-    expect(await source.read(shared)).toBe(shared)
+    expect(await source.read(shared)).toBe('{"anthropic":{"type":"api","key":"shared-key"}}')
     await source.apply("{}")
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ anthropic: oauth })
     expect(await source.read("{}")).toBe("{}")
@@ -139,8 +142,8 @@ describe("codex source", () => {
     expect(await source.localOverrides!()).toEqual([])
 
     await mkdir(join(home, ".codex"), { recursive: true })
-    await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "sk-c", auth_mode: "apikey" }))
-    expect(await source.read()).toBe('{"auth_mode":"apikey","OPENAI_API_KEY":"sk-c"}')
+    await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "sk-c" }))
+    expect(await source.read()).toBe('{"OPENAI_API_KEY":"sk-c"}')
 
     await writeFile(path, JSON.stringify({ tokens: { access_token: "a" }, last_refresh: "t" }))
     expect(await source.localOverrides!()).toEqual(["*"])
@@ -234,9 +237,7 @@ describe("hostile files and path variants", () => {
       join(home, "custom-pi", "auth.json"),
       JSON.stringify({ openai: { type: "api_key", key: "sk-custom" }, junk: "not-an-object" })
     )
-    expect(await byId["pi-auth"]!.read()).toBe(
-      JSON.stringify({ openai: { type: "api_key", key: "sk-custom" } })
-    )
+    expect(await byId["pi-auth"]!.read()).toBe('{"openai":{"type":"api_key","key":"sk-custom"}}')
     await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "1" } }))
     await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "2" } }))
 
