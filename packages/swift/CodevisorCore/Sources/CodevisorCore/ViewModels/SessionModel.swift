@@ -104,6 +104,9 @@ public final class SessionModel {
     }
   }
   @ObservationIgnored var streamSynchronization: SessionStreamSynchronization = .caughtUp
+  /// "Reconnecting…" for a dropped event stream, once the drop outlasts a
+  /// blip such as the app returning from the background.
+  @ObservationIgnored let streamReconnectNotice: DelayedConnectionNotice
   @ObservationIgnored var connectionRecoveryGeneration: UInt64 = 0
   public internal(set) var queuedPrompts: [ServerPromptQueueItem] = []
   /// A deferred initial queue fetch must not overwrite a newer queue event
@@ -285,7 +288,6 @@ public final class SessionModel {
   /// state ladder without mutating process-global clocks.
   let connectionRecoveryScheduler: SessionConnectionRecoveryScheduler
   let connectionRecoveryStatusDelay: Duration
-  let connectionRecoveryFailureDelay: Duration
   let connectionRecoveryRetryBaseDelay: Duration
   let connectionRecoveryRetryMaximumDelay: Duration
 
@@ -339,7 +341,6 @@ public final class SessionModel {
     quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
     connectionRecoveryScheduler: SessionConnectionRecoveryScheduler = .continuous,
     connectionRecoveryStatusDelay: Duration = .seconds(5),
-    connectionRecoveryFailureDelay: Duration = .seconds(30),
     connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
     connectionRecoveryRetryMaximumDelay: Duration = .seconds(5)
   ) {
@@ -352,9 +353,14 @@ public final class SessionModel {
     self.quietTurnScheduler = quietTurnScheduler
     self.connectionRecoveryScheduler = connectionRecoveryScheduler
     self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
-    self.connectionRecoveryFailureDelay = connectionRecoveryFailureDelay
     self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay
     self.connectionRecoveryRetryMaximumDelay = connectionRecoveryRetryMaximumDelay
+    self.streamReconnectNotice = DelayedConnectionNotice(
+      delay: connectionRecoveryStatusDelay, now: connectionRecoveryScheduler.now,
+      sleep: connectionRecoveryScheduler.sleep)
+    streamReconnectNotice.onVisibilityChange = { [weak self] isVisible in
+      self?.streamReconnectNoticeChanged(isVisible: isVisible)
+    }
   }
 
   @ObservationIgnored var appliedUpdateCount = 0

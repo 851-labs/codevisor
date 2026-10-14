@@ -42,7 +42,6 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       connectionRecoveryScheduler: scheduler.scheduler,
       connectionRecoveryStatusDelay: .seconds(1),
-      connectionRecoveryFailureDelay: .seconds(2),
       connectionRecoveryRetryBaseDelay: .milliseconds(10),
       connectionRecoveryRetryMaximumDelay: .milliseconds(10)
     )
@@ -82,7 +81,7 @@ extension SessionModelTests {
     #expect(model.connectionRecoveryMessage == nil)
   }
 
-  @Test("Connection recovery delays status and manual retry until their thresholds")
+  @Test("Connection recovery says it is reconnecting after its threshold, and keeps retrying without ever giving up")
   func connectionRecoveryPresentationThresholds() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -99,7 +98,6 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       connectionRecoveryScheduler: scheduler.scheduler,
       connectionRecoveryStatusDelay: .milliseconds(20),
-      connectionRecoveryFailureDelay: .milliseconds(60),
       connectionRecoveryRetryBaseDelay: .milliseconds(200),
       connectionRecoveryRetryMaximumDelay: .milliseconds(200)
     )
@@ -115,22 +113,26 @@ extension SessionModelTests {
     #expect(scheduler.requestedIntervals == [.milliseconds(20)])
     scheduler.advance()
     await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
-    #expect(model.errorMessage == nil)
+    // Failure after failure it keeps retrying, still reconnecting, never an error.
+    for _ in 0..<3 {
+      await settleUntil { scheduler.pendingCount == 1 }
+      scheduler.advance()
+    }
     await settleUntil { scheduler.pendingCount == 1 }
-    #expect(scheduler.requestedIntervals == [.milliseconds(20), .milliseconds(40)])
-    scheduler.advance()
-    await settleUntil { model.errorMessage != nil }
-    #expect(model.connectionRecoveryMessage == nil)
+    #expect(model.errorMessage == nil)
+    #expect(model.connectionRecoveryMessage == "Reconnecting…")
 
+    let attempts = client.transcriptPageRequests.count
     client.clearTranscriptPageFailures()
-    await model.retrySessionFailure()
+    scheduler.advance()
+    await model.connectionRecoveryTask?.value
+    #expect(client.transcriptPageRequests.count > attempts)
     #expect(model.connectionRecoveryTask == nil)
-    #expect(model.connectionRecoveryMessage == nil)
-    model.apply(.synchronization(.caughtUp))
     #expect(model.connectionRecoveryMessage == nil)
     #expect(model.errorMessage == nil)
     #expect(model.isSending)
   }
+
 }
 
 extension SessionModelTests {

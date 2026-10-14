@@ -224,7 +224,7 @@ extension SessionModel {
             defer {
               if self.connectionRecoveryGeneration == generation { self.connectionRecoveryTask = nil }
             }
-            await self.runConnectionRecovery(firstFailureMessage: message)
+            await self.runConnectionRecovery()
           }
         } else {
           self.surfaceConnectionRecoveryFailure(message)
@@ -266,10 +266,9 @@ extension SessionModel {
     return outcome
   }
 
-  private func runConnectionRecovery(firstFailureMessage: String) async {
+  private func runConnectionRecovery() async {
     let startedAt = connectionRecoveryScheduler.now()
     var failures = 1
-    var latestMessage = firstFailureMessage
     var nextAttemptAt = startedAt.advanced(
       by: connectionRecoveryRetryDelay(failures: failures)
     )
@@ -277,7 +276,7 @@ extension SessionModel {
     while !Task.isCancelled {
       let now = connectionRecoveryScheduler.now()
       let elapsed = now - startedAt
-      updateConnectionRecoveryPresentation(elapsed: elapsed, message: latestMessage)
+      updateConnectionRecoveryPresentation(elapsed: elapsed)
 
       if now < nextAttemptAt {
         var wait = now.duration(to: nextAttemptAt)
@@ -286,11 +285,6 @@ extension SessionModel {
           elapsed < connectionRecoveryStatusDelay
         {
           wait = min(wait, connectionRecoveryStatusDelay - elapsed)
-        }
-        if surfacedConnectionRecoveryError == nil,
-          elapsed < connectionRecoveryFailureDelay
-        {
-          wait = min(wait, connectionRecoveryFailureDelay - elapsed)
         }
         do {
           try await connectionRecoveryScheduler.sleep(wait)
@@ -309,7 +303,8 @@ extension SessionModel {
       case .cancelled:
         return
       case let .failed(message, retryable):
-        latestMessage = message
+        // A failure that retrying can fix never becomes an error: the app
+        // keeps reconnecting for as long as it takes.
         guard retryable else {
           surfaceConnectionRecoveryFailure(message)
           return
@@ -330,12 +325,8 @@ extension SessionModel {
     )
   }
 
-  private func updateConnectionRecoveryPresentation(elapsed: Duration, message: String) {
-    if elapsed >= connectionRecoveryFailureDelay {
-      surfaceConnectionRecoveryFailure(message)
-    } else if elapsed >= connectionRecoveryStatusDelay,
-      connectionRecoveryMessage == nil
-    {
+  private func updateConnectionRecoveryPresentation(elapsed: Duration) {
+    if elapsed >= connectionRecoveryStatusDelay, connectionRecoveryMessage == nil {
       connectionRecoveryMessage = "Reconnecting…"
     }
   }
@@ -371,15 +362,23 @@ extension SessionModel {
   }
 
   var synchronizationMessage: String? {
-    switch streamSynchronization {
-    case .reconnecting: "Reconnecting…"
-    case .catchingUp, .caughtUp, .cursor: nil
+    streamReconnectNotice.isVisible ? "Reconnecting…" : nil
+  }
+
+  /// The stream's notice appeared or went: it owns the line unless snapshot
+  /// recovery has taken it over.
+  func streamReconnectNoticeChanged(isVisible: Bool) {
+    if isVisible {
+      if connectionRecoveryMessage == nil { connectionRecoveryMessage = synchronizationMessage }
+    } else if connectionRecoveryTask == nil, surfacedConnectionRecoveryError == nil {
+      connectionRecoveryMessage = nil
     }
   }
 
   func applySynchronization(_ state: SessionStreamSynchronization) {
     guard state != .cursor else { return }
     streamSynchronization = state
+    streamReconnectNotice.update(isActive: state == .reconnecting)
     if state != .reconnecting {
       clearConnectionRecoveryPresentation()
     } else {

@@ -133,6 +133,10 @@ public final class MachineController {
   let preparationRetryBaseDelay: Duration
   /// Shared scheduler for navigation debounce, timeout, and retry deadlines.
   let navigationClock: any Clock<Duration>
+  /// How long a machine stays unreachable before its chats say
+  /// "Reconnecting…" (see `DelayedConnectionNotice`).
+  let reconnectNoticeDelay: Duration
+  let reconnectNoticeScheduler: SessionConnectionRecoveryScheduler
   /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
   /// — the AppEnvironment bridges it to its harness-catalog revision so
   /// mounted pickers and settings panes refetch.
@@ -175,7 +179,9 @@ public final class MachineController {
     updateScheduler: ServerUpdateScheduler = .continuous,
     preparationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     preparationRetryBaseDelay: Duration = .seconds(1),
-    navigationClock: any Clock<Duration> = ContinuousClock()
+    navigationClock: any Clock<Duration> = ContinuousClock(),
+    reconnectNoticeDelay: Duration = .seconds(5),
+    reconnectNoticeScheduler: SessionConnectionRecoveryScheduler = .continuous
   ) {
     let requestGate = ServerRequestGate()
     self.store = store
@@ -191,6 +197,8 @@ public final class MachineController {
     self.preparationSleep = preparationSleep
     self.preparationRetryBaseDelay = preparationRetryBaseDelay
     self.navigationClock = navigationClock
+    self.reconnectNoticeDelay = reconnectNoticeDelay
+    self.reconnectNoticeScheduler = reconnectNoticeScheduler
     if let data = store.loadData(forKey: "machines") {
       do {
         registry = try JSONDecoder().decode(MachineRegistry.self, from: data).normalized()

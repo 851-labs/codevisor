@@ -37,24 +37,55 @@ extension SessionModelTests {
   func resumedTrafficClearsRecovery() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
+    let clock = ManualSessionConnectionRecoveryScheduler()
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString)
+      sessionId: sessionId.uuidString, connectionRecoveryScheduler: clock.scheduler)
     defer { model.shutdown() }
     model.apply(.synchronization(.reconnecting))
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
+    await settleUntil { clock.pendingCount == 1 }
+    clock.advance()
+    await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
     let revision = model.transcriptProjectionRevision
 
+    // Once shown, the line stays a moment rather than flashing away.
     model.apply(.synchronization(.catchingUp))
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.streamSynchronization == .catchingUp)
+    #expect(model.connectionRecoveryMessage == "Reconnecting…")
+    await settleUntil { clock.pendingCount == 1 }
+    clock.advance()
+    await settleUntil { model.connectionRecoveryMessage == nil }
     #expect(model.transcriptProjectionRevision > revision)
     model.apply(.synchronization(.caughtUp))
     #expect(model.connectionRecoveryMessage == nil)
 
     // A subsequent real failure must still surface the single recovery row.
     model.apply(.synchronization(.reconnecting))
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
+    await settleUntil { clock.pendingCount == 1 }
+    clock.advance()
+    await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
+  }
+
+  @Test("A stream that reconnects within a blip, like the app returning from the background, never says Reconnecting")
+  func briefStreamDropStaysQuiet() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let clock = ManualSessionConnectionRecoveryScheduler()
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString, connectionRecoveryScheduler: clock.scheduler)
+    defer { model.shutdown() }
+    let revision = model.transcriptProjectionRevision
+
+    model.apply(.synchronization(.reconnecting))
+    await settleUntil { clock.pendingCount == 1 }
+    #expect(clock.requestedIntervals == [.seconds(5)])
+    #expect(model.connectionRecoveryMessage == nil)
+    model.apply(.synchronization(.catchingUp))
+    await settleUntil { clock.pendingCount == 0 }
+
+    #expect(model.connectionRecoveryMessage == nil)
+    #expect(model.transcriptProjectionRevision == revision)
   }
 
   @Test("Live output retires snapshot retries before an older server's heartbeat")

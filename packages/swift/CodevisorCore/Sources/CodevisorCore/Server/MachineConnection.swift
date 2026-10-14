@@ -67,8 +67,13 @@ public final class MachineConnection {
   /// Consecutive failed preparations, for retry backoff. Reset on success.
   @ObservationIgnored var preparationFailures = 0
 
-  init(machineId: String) {
+  /// The "Reconnecting…" its chats show, once it has been unreachable for
+  /// longer than a blip.
+  let reconnectNotice: DelayedConnectionNotice
+
+  init(machineId: String, reconnectNotice: DelayedConnectionNotice) {
     self.machineId = machineId
+    self.reconnectNotice = reconnectNotice
   }
 
   /// Cold connections show progress. Once a sync has finished, retain its
@@ -89,7 +94,10 @@ extension MachineController {
   /// The connection record for a machine, created on first touch.
   func connection(for machineId: String) -> MachineConnection {
     if let existing = connectionsById[machineId] { return existing }
-    let connection = MachineConnection(machineId: machineId)
+    let connection = MachineConnection(
+      machineId: machineId,
+      reconnectNotice: DelayedConnectionNotice(
+        delay: reconnectNoticeDelay, now: reconnectNoticeScheduler.now, sleep: reconnectNoticeScheduler.sleep))
     connectionsById[machineId] = connection
     return connection
   }
@@ -128,6 +136,7 @@ extension MachineController {
     connection.preparationRetryTask?.cancel()
     connection.preparationRetryTask = nil
     connection.availability = .waiting(reason)
+    connection.reconnectNotice.update(isActive: true)
     connection.beginNavigationCatchUp()
     requestGate.beginWaiting(for: machineId)
   }
@@ -135,6 +144,7 @@ extension MachineController {
   func markReady(for machineId: String) {
     let connection = connection(for: machineId)
     connection.availability = .ready
+    connection.reconnectNotice.update(isActive: false)
     connection.preparationRetryTask?.cancel()
     connection.preparationRetryTask = nil
     connection.preparationFailures = 0
@@ -144,6 +154,8 @@ extension MachineController {
   func markFailed(for machineId: String, message: String) {
     let connection = connection(for: machineId)
     connection.availability = .failed(message)
+    // A failed machine is retried, so its chats just say "Reconnecting…".
+    connection.reconnectNotice.update(isActive: true)
     connection.navigationSyncState = .stale(message)
     requestGate.markFailed(for: machineId, message: message)
   }
@@ -199,8 +211,8 @@ extension MachineController {
   }
 
   /// A cloud machine's tunnel just came up. A machine parked `.failed`,
-  /// waiting out its retry backoff, is prepared now: the chat's "Unable to
-  /// connect" line should clear the moment the machine is back, with
+  /// waiting out its retry backoff, is prepared now: the chat's
+  /// "Reconnecting…" line should clear the moment the machine is back, with
   /// nothing for the user to do.
   public func cloudMachineBecameReachable(deviceId: String) {
     let machineId = CodevisorMachine.cloudIdPrefix + deviceId
@@ -433,6 +445,14 @@ extension MachineController {
   /// merely because the composer restored cached capabilities for them.
   public func availability(for machineId: String) -> ServerAvailability {
     connectionsById[machineId]?.availability ?? .waiting(.connecting)
+  }
+
+  /// Whether a machine's chats say "Reconnecting…": it has been unreachable
+  /// for longer than a blip, or only just came back (see
+  /// `DelayedConnectionNotice`). A machine never prepared has no record yet
+  /// and counts as reconnecting.
+  public func showsReconnectNotice(for machineId: String) -> Bool {
+    connectionsById[machineId]?.reconnectNotice.isVisible ?? true
   }
 
   public var navigationSyncStateByMachineId: [String: NavigationSyncState] {

@@ -52,6 +52,9 @@ extension MachineController {
           isReachable: false,
           label: message
         )
+        // Never give up on the local server either: its chats say
+        // "Reconnecting…", so keep trying on the same backoff.
+        schedulePreparationRetry(for: machineId)
         return
       }
       if serverState == .alreadyRunning {

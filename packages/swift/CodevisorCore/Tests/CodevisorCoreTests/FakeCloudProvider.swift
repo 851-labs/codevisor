@@ -133,14 +133,16 @@ func makeController(
   store: InMemoryStore = InMemoryStore(),
   localServer: (any LocalServerControlling)? = StubLocalServer(),
   provider: FakeCloudProvider = FakeCloudProvider(),
-  clientFactory: MachineController.ClientFactory? = nil
+  clientFactory: MachineController.ClientFactory? = nil,
+  reconnectNoticeScheduler: SessionConnectionRecoveryScheduler = .continuous
 ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
   let projectList = ProjectListModel.fixture()
   let controller = MachineController(
     store: store,
     projectList: projectList,
     localServer: localServer,
-    clientFactory: clientFactory
+    clientFactory: clientFactory,
+    reconnectNoticeScheduler: reconnectNoticeScheduler
   )
   controller.cloudProvider = provider
   return (controller, projectList, provider)

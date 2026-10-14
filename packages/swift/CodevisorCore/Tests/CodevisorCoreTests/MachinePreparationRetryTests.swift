@@ -94,6 +94,34 @@ struct MachinePreparationRetryTests {
     }
   }
 
+  @Test("A local server that won't start is retried on the same backoff, never given up on")
+  func failedLocalServerRetries() async throws {
+    let fake = PreparationFakeServerClient()
+    let clock = TestClock()
+    let local = StubLocalServer()
+    local.state = .unavailable("The server didn't start")
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel.fixture(),
+      localServer: local,
+      clientFactory: { _ in fake },
+      preparationSleep: clock.sleep
+    )
+    defer { controller.stopEventSync() }
+
+    await controller.prepareMachine("local")
+    guard case .failed = controller.availabilityByMachineId["local"] else {
+      Issue.record("A local server that won't start should surface as failed availability")
+      return
+    }
+
+    // It starts on a later attempt, with nothing for the user to do.
+    local.state = .started
+    await clock.waitForSleep(.seconds(2))
+    clock.advance(by: .seconds(2))
+    try await waitUntil { controller.availabilityByMachineId["local"] == .ready }
+  }
+
   private func makeController(fake: PreparationFakeServerClient, clock: TestClock) -> MachineController {
     let projectList = ProjectListModel.fixture()
     return MachineController(
