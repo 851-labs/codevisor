@@ -3,8 +3,7 @@ import Foundation
 import ScreenSharing
 
 /// A real server's bytes, captured after the handshake, that replay into the
-/// client with no server (docs/plans/vnc-validation.md: real-server behaviour
-/// becomes L1 fixtures). Recordings never hold credentials: capture starts
+/// client with no server (real-server behaviour becomes L1 fixtures). Recordings never hold credentials: capture starts
 /// once authentication is over.
 ///
 /// Format (JSON): `version`, `source` (free text naming the server), the

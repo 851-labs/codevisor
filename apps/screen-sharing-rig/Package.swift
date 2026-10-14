@@ -8,7 +8,7 @@ let strictCSettings: [CSetting] = [.treatAllWarnings(as: .error)]
 
 // The screen-sharing development tools, never shipped: the two-Mac rig and, as the
 // `probe` subcommand, the single-process diagnostic. A consumer of the media package.
-// See docs/plans/screen-sharing-rig.md and README.md.
+// See README.md.
 let package = Package(
   name: "ScreenSharingRig",
   platforms: [.macOS("26.0")],

@@ -56,7 +56,7 @@ let package = Package(
     // mailbox, metrics, ScreenCaptureKit capture, VideoToolbox codecs, the Metal renderer, the AppKit
     // viewer surface, host input injection, the RFB protocol and the VNC viewing session. Links CZlib
     // and system frameworks only, so a backend that is not the native WebRTC pipeline, and every test
-    // of these parts, never loads the binary framework. See docs/plans/screen-sharing-composable-architecture.md.)
+    // of these parts, never loads the binary framework.)
     .systemLibrary(name: "CZlib", path: "ScreenSharing/CZlib"),
     .target(
       name: "ScreenSharing",

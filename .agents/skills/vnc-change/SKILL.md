@@ -5,8 +5,7 @@ description: Validate every VNC change with the four-layer test method and the v
 
 # VNC change
 
-Read `docs/plans/vnc-validation.md` first; it is the rulebook. This skill is
-the checklist for applying it.
+This skill is the checklist for validating a VNC change.
 
 ## Pick the work
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `bun run vnc:tophat`: layer L4 of docs/plans/vnc-validation.md. Builds the
+// `bun run vnc:tophat`: VNC validation layer L4. Builds the
 // rig, launches it in the background (no focus stolen), drives it through the
 // Accessibility API (apps/screen-sharing-rig/scripts/vnc-tophat/rig-ax.swift), captures only the rig's
 // window, and writes tmp/vnc-tophat/<time>/summary.json with the screenshots.

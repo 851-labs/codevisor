@@ -36,7 +36,7 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     public static let `default` = Selection(name: "default", trials: [:])
     /// What the app runs with (851-2374): the receiver's playout delay bounded to 15…80 ms. WebRTC's
     /// adaptive jitter buffer held ~124 ms on Wi-Fi; these bounds cut image age by ~45–60 ms at a
-    /// few percent of frame rate (docs/measurements/native/2026-09-25-851-2374/report.md).
+    /// few percent of frame rate.
     /// And the pacer at 10× the target bitrate instead of 2.5×, so a keyframe leaves in a burst
     /// rather than holding every frame behind it (rig study rows H → I: worst image age 419 → 182 ms,
     /// no freeze-seconds, same average bitrate).

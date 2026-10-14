@@ -4,8 +4,7 @@
   import ScreenSharingRigKit
   import ScreenSharingTesting
 
-  /// `screen-sharing-rig vnc-bench`: the VNC benchmark of
-  /// docs/plans/vnc-validation.md. For every scene × network profile it runs
+  /// `screen-sharing-rig vnc-bench`: the VNC benchmark. For every scene × network profile it runs
   /// the reference server's scene in a separate `vnc-server` process (so this
   /// process's CPU is the client's), connects the product's `RFBClient` and
   /// frame publisher through `RFBShapedTransport`, and measures N runs. The

@@ -1172,6 +1172,5 @@ criteria.
 
 ## References
 
-- [docs/plans/native-screen-sharing-transport-decision.md](native-screen-sharing-transport-decision.md): the WebRTC tuning this plan preserves.
 - [apps/cloud/README.md](../../apps/cloud/README.md): the current hub, relay and resume design.
 - iroh 1.x: https://github.com/n0-computer/iroh (relay: `iroh-relay`; access control: https://www.iroh.computer/blog/authenticated-relays; NAT testing: https://github.com/n0-computer/patchbay).

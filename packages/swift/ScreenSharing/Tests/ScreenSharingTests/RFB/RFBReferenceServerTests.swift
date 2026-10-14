@@ -5,7 +5,7 @@ import ScreenSharingTesting
 @testable import ScreenSharing
 
 /// `RFBLoopbackServer` as the reference implementation every VNC feature is
-/// checked against (docs/plans/vnc-validation.md, layer L2): it implements
+/// checked against (VNC validation layer L2): it implements
 /// everything the client advertises, plays deterministic scenes, and echoes
 /// pointer input as a marker the client can find in its framebuffer.
 struct RFBReferenceServerTests {

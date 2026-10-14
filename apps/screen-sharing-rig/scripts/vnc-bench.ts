@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `bun run vnc:bench`: the VNC benchmark of docs/plans/vnc-validation.md.
+// `bun run vnc:bench`: the VNC benchmark.
 // Builds the rig in release mode, runs `screen-sharing-rig vnc-bench` with
 // the build's hash, writes the report under tmp/vnc-bench/<time>/, and
 // compares with docs/measurements/vnc/baseline-<machine>.json when present

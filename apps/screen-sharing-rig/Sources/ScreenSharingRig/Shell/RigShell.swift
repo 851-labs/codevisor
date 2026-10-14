@@ -161,7 +161,7 @@
         "The two-Mac WebRTC rig runs as LaunchAgents driven by rig.json; the viewer opens this window with its video here.",
         "bun run screen-sharing:rig install --host user@mac --host-address 192.168.x.y --capture workload:1920x1080@60",
         "bun run screen-sharing:rig status · sample --seconds 30 · tune paced15-worker · logs · stop --all",
-        "See docs/plans/screen-sharing-rig.md and apps/screen-sharing-rig/README.md.",
+        "See apps/screen-sharing-rig/README.md.",
       ])
 
     var body: some View {

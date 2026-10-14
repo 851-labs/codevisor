@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gives a Linux machine running codevisor-server a desktop the Codevisor app
-# can view as a Screen Sharing pane (docs/plans/screen-sharing-vps.md).
+# can view as a Screen Sharing pane.
 #
 #   scripts/vnc-desktop.sh root@HOST            # idempotent
 #   DISPLAY_NAME="Studio" scripts/vnc-desktop.sh root@HOST

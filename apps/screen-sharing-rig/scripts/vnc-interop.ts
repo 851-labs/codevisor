@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// `bun run vnc:interop`: layer L3 of docs/plans/vnc-validation.md. Builds (or
-// reuses) the pinned TigerVNC image, starts it on an OS-chosen loopback port,
+// `bun run vnc:interop`: VNC validation layer L3. Builds (or reuses) the pinned TigerVNC image, starts it on an OS-chosen loopback port,
 // waits for the RFB greeting, runs the Swift interop suites against it, and
 // always removes the container. Exits non-zero unless the suites ran, none
 // were skipped, and all passed.

@@ -4,7 +4,7 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// Network shaping for L2 tests and `vnc-bench` (docs/plans/vnc-validation.md):
+/// Network shaping for L2 tests and `vnc-bench`:
 /// the delivery schedule is pure and exact; the transport applies it on an
 /// injected clock.
 struct RFBShapedTransportTests {

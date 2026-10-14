@@ -1,8 +1,7 @@
 import Foundation
 import ScreenSharing
 
-/// Network conditions for L2 tests and `vnc-bench`
-/// (docs/plans/vnc-validation.md). `bitsPerSecond` nil is an unlimited link.
+/// Network conditions for L2 tests and `vnc-bench`. `bitsPerSecond` nil is an unlimited link.
 public struct RFBNetworkProfile: Sendable, Equatable, Hashable {
   public var name: String
   public var roundTrip: Duration

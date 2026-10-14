@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `vnc-bench` measures per run (docs/plans/vnc-validation.md).
+/// What `vnc-bench` measures per run.
 /// `CodingKeyRepresentable` so per-metric dictionaries encode as JSON objects.
 public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterable, Sendable, Comparable {
   case updatesPerSecond

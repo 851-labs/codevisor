@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // `bun run vnc:validate --issue 851-XXXX`: the one gate every VNC change
-// passes (docs/plans/vnc-validation.md). Runs, in order and whatever fails:
+// passes. Runs, in order and whatever fails:
 //   tests   L1/L2 — the VNC Swift suites and the rig package's tests
 //   interop L3    — `bun run vnc:interop` (pinned TigerVNC container)
 //   bench         — `bun run vnc:bench` against this machine's baseline
