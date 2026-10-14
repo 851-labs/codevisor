@@ -36,7 +36,8 @@ struct SidebarWorkspaceGroup: Identifiable, Equatable {
   struct Heading: Equatable {
     let title: String
     let systemImage: String
-    /// Where the row's New Chat starts one. Nil for machines.
+    /// Where the row's New Chat starts one: the project, or the machine.
+    /// Nil for a machine this Mac doesn't know.
     var newChatTarget: NewChatTarget? = nil
   }
 

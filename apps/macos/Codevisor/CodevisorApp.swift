@@ -426,11 +426,17 @@ enum SidebarSelection: Hashable {
 /// keeps the machine and project together instead of guessing from UUID alone.
 struct NewChatTarget: Hashable {
   let serverId: String
-  let projectId: UUID
+  /// Nil targets the machine alone (a sidebar machine row's New Chat): the
+  /// draft moves there the way the composer's machine picker moves it.
+  let projectId: UUID?
 
-  init(serverId: String, projectId: UUID) {
+  init(serverId: String, projectId: UUID?) {
     self.serverId = serverId
     self.projectId = projectId
+  }
+
+  init(machine serverId: String) {
+    self.init(serverId: serverId, projectId: nil)
   }
 
   init(_ project: Project) {

@@ -375,17 +375,24 @@ struct NewChatView: View {
     // undone when setup-related tasks re-evaluate.
     if paneDraftId == nil,
       let initialProjectTarget,
-      appliedInitialProjectTarget != initialProjectTarget,
-      let explicit = environment.projectList.fleetActiveProjects.first(where: {
-        $0.serverId == initialProjectTarget.serverId
-          && $0.id == initialProjectTarget.projectId
-      })
+      appliedInitialProjectTarget != initialProjectTarget
     {
-      appliedInitialProjectTarget = initialProjectTarget
-      if controller.project.serverId != explicit.serverId
-        || controller.project.id != explicit.id
-      {
-        selectTargetProject(explicit, controller: controller)
+      if let projectId = initialProjectTarget.projectId {
+        if let explicit = environment.projectList.fleetActiveProjects.first(where: {
+          $0.serverId == initialProjectTarget.serverId && $0.id == projectId
+        }) {
+          appliedInitialProjectTarget = initialProjectTarget
+          if controller.project.serverId != explicit.serverId
+            || controller.project.id != explicit.id
+          {
+            selectTargetProject(explicit, controller: controller)
+          }
+        }
+      } else if let machine = environment.machines.machine(for: initialProjectTarget.serverId) {
+        // A machine alone: move the draft as the machine picker would,
+        // keeping its project when that machine has a checkout of it.
+        appliedInitialProjectTarget = initialProjectTarget
+        selectTargetMachine(machine, controller: controller)
       }
     }
     controller.onScratchProjectCreated = { [weak projectList = environment.projectList] scratch in

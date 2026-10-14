@@ -26,7 +26,7 @@ extension NewChatView {
   var setupIdentity: String {
     let target =
       initialProjectTarget.map {
-        "\($0.serverId):\($0.projectId.uuidString)"
+        "\($0.serverId):\($0.projectId?.uuidString ?? "machine")"
       } ?? "default"
     return "\(target):\(requiresInitialProjectResolution ? "resolving" : "ready")"
   }

@@ -1,15 +1,14 @@
 import SwiftUI
 
 /// A project or machine that groups workspace rows: a disclosure row whose
-/// icon becomes a chevron on hover, with a hover new-chat button for
-/// projects.
+/// icon becomes a chevron on hover, with a hover new-chat button.
 struct SidebarGroupRow: View {
   let title: String
   let systemImage: String
   let isExpanded: Bool
   let isReordering: Bool
   let onToggle: () -> Void
-  /// Nil for groups a chat can't start in (machines).
+  /// Nil for groups a chat can't start in (an unknown machine).
   let onNewChat: (() -> Void)?
 
   var body: some View {
