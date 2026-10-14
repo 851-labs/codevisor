@@ -15,10 +15,10 @@ describe("codevisor-net addon", () => {
     await Promise.all(endpoints.splice(0).map((endpoint) => endpoint.close()))
   })
 
-  const bind = async (secretKeyHex = loadNet().generateSecretKeyHex()): Promise<TunnelEndpoint> => {
+  const bind = async (secretKeyHex?: string): Promise<TunnelEndpoint> => {
     const net = loadNet()
     const endpoint = await net.TunnelEndpoint.bind({
-      secretKeyHex,
+      secretKeyHex: secretKeyHex ?? net.generateSecretKeyHex(),
       relays: [],
       bindAddrs: ["127.0.0.1:0"],
       pathPolicy: "direct-only",
@@ -30,11 +30,12 @@ describe("codevisor-net addon", () => {
 
   it("derives the id an endpoint bound with the same secret key listens as", async () => {
     const net = loadNet()
-    const secret = net.generateSecretKeyHex()
-    expect(secret).toMatch(/^[0-9a-f]{64}$/)
+    expect(net.generateSecretKeyHex()).toMatch(/^[0-9a-f]{64}$/)
+    const secret = "11".repeat(32)
     const endpoint = await bind(secret)
+    expect(endpoint.endpointId()).toMatch(/^[0-9a-f]{64}$/)
     expect(net.endpointIdForSecretKey(secret)).toBe(endpoint.endpointId())
-    expect(net.endpointIdForSecretKey(net.generateSecretKeyHex())).not.toBe(endpoint.endpointId())
+    expect(net.endpointIdForSecretKey("22".repeat(32))).not.toBe(endpoint.endpointId())
   })
 
   it("carries text and binary messages both ways over a direct path", async () => {
