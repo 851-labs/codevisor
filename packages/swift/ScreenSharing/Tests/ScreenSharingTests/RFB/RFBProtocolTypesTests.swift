@@ -24,6 +24,7 @@ struct RFBProtocolTypesTests {
         .extendedDesktopSize, .extendedClipboard,
       ])
     #expect(RFBEncoding.supported.map(\.rawValue) == [7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698])
+    #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 
   @Test(arguments: [Int32(2), 5, 15, 17, -222, -224, Int32.max, Int32.min])
