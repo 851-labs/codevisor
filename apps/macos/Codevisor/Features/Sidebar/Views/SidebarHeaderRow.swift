@@ -12,9 +12,11 @@ struct SidebarHeaderRow: View {
     HStack(spacing: 8) {
       Image(systemName: systemImage)
         .frame(width: 18)
-        .foregroundStyle(foregroundColor ?? Color.secondary)
+        // Hierarchical styles, not `Color.secondary`/`Color.primary`: only
+        // they take the sidebar's vibrancy, so the icon matches the rows'.
+        .foregroundStyle(foregroundColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
       Text(title)
-        .foregroundStyle(foregroundColor ?? Color.primary)
+        .foregroundStyle(foregroundColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
         .lineLimit(1)
         .truncationMode(.middle)
       Spacer(minLength: 0)

@@ -53,8 +53,11 @@ struct SidebarSectionHeader: View {
 }
 
 /// A section heading's title, drawn by AppKit: 11pt semibold (Mail's
-/// "Favorites") in the tertiary label color, which the sidebar's vibrancy
-/// renders exactly as native headings (see `SidebarVibrancyHost`).
+/// "Favorites"), in the color a native source list gives its headings:
+/// the tertiary label color in light mode and the secondary one in dark
+/// (measured against Mail and a source-list group row in each). Both are
+/// system label colors, so the sidebar's vibrancy renders them exactly as
+/// native headings (see `SidebarVibrancyHost`).
 ///
 /// AppKit rather than `Text`: at this size SwiftUI rasterizes semibold with
 /// thinner strokes than AppKit (about 10% less ink, measured with the same
@@ -64,8 +67,8 @@ struct SidebarSectionTitle: NSViewRepresentable {
   @Environment(\.theme) private var theme
   let title: String
 
-  func makeNSView(context: Context) -> NSTextField {
-    let label = NSTextField(labelWithString: title)
+  func makeNSView(context: Context) -> SidebarSectionTitleLabel {
+    let label = SidebarSectionTitleLabel(labelWithString: title)
     label.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
     label.lineBreakMode = .byTruncatingTail
     label.maximumNumberOfLines = 1
@@ -75,8 +78,32 @@ struct SidebarSectionTitle: NSViewRepresentable {
     return label
   }
 
-  func updateNSView(_ label: NSTextField, context: Context) {
+  func updateNSView(_ label: SidebarSectionTitleLabel, context: Context) {
     label.stringValue = title
-    label.textColor = theme.palette.map { NSColor(rgba: $0.textTertiary) } ?? .tertiaryLabelColor
+    label.themeColor = theme.palette.map { NSColor(rgba: $0.textTertiary) }
+  }
+}
+
+/// Picks the native heading color for its own appearance. A dynamic
+/// `NSColor` wrapping the two would lose the system colors' vibrancy, so the
+/// label swaps between them itself when the appearance changes.
+final class SidebarSectionTitleLabel: NSTextField {
+  /// A custom theme's color, used as is.
+  var themeColor: NSColor? {
+    didSet { applyColor() }
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    applyColor()
+  }
+
+  private func applyColor() {
+    if let themeColor {
+      textColor = themeColor
+    } else {
+      let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+      textColor = isDark ? .secondaryLabelColor : .tertiaryLabelColor
+    }
   }
 }
