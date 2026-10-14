@@ -55,17 +55,20 @@ describe("archive jobs", () => {
     // Holding the worktree's lifecycle lock keeps the job from starting.
     const gate = Promise.withResolvers<void>()
     const held = withWorktreeLifecycle(services, worktree.path, () => gate.promise)
-    expect(
-      (
-        await jsonRequest(server, "/v1/workspaces/work", {
-          body: JSON.stringify({ isArchived: true }),
-          method: "PATCH"
-        })
-      ).status
-    ).toBe(200)
-    await run(services.db.updateWorkspace("work", { isArchived: false }))
-    gate.resolve()
-    await held
+    try {
+      expect(
+        (
+          await jsonRequest(server, "/v1/workspaces/work", {
+            body: JSON.stringify({ isArchived: true }),
+            method: "PATCH"
+          })
+        ).status
+      ).toBe(200)
+      await run(services.db.updateWorkspace("work", { isArchived: false }))
+    } finally {
+      gate.resolve()
+      await held
+    }
     await archiveJobs(services).idle()
 
     expect(existsSync(worktree.path)).toBe(true)
