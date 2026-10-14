@@ -35,8 +35,10 @@ describe("@codevisor/db", () => {
       const restored = await run(
         db.createWorktree(project.id, "sushi", "codevisor/sushi", worktree.id)
       )
+      expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
       await run(db.deleteArchivedWorktree(worktree.id))
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toBeUndefined()
+      expect(await run(db.listArchivedWorktrees(project.id))).toEqual([])
       expect(await run(db.listWorktrees(project.id))).toEqual([restored])
     } finally {
       await run(db.close)
