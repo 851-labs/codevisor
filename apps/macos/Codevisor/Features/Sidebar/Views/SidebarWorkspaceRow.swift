@@ -4,8 +4,8 @@ import CodevisorUI
 import SwiftUI
 
 /// One workspace in the sidebar: its chat's icon and name, over the
-/// Properties menu's project, branch, and worktree, then its pull request,
-/// machine, and when it last changed. Its tabs live in the strip above the
+/// Properties menu's project and branch, then its pull request, machine,
+/// and when it last changed. Its tabs live in the strip above the
 /// workspace's content.
 struct SidebarWorkspaceRow: View {
   let name: String

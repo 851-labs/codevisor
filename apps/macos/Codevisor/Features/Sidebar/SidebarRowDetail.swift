@@ -14,16 +14,14 @@ enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable {
   /// The branch its checkout is on, from its machine's git, on the second
   /// line.
   case branch
-  /// Its git worktree, on the second line.
-  case worktree
 
   static let preferenceKey = "sidebar.rowDetails"
-  static let defaults: [SidebarRowDetail] = [.updated, .pullRequest, .machine, .project, .worktree]
+  static let defaults: [SidebarRowDetail] = [.updated, .pullRequest, .machine, .project]
 
   /// The details after the row's name.
   static let trailingDetails: [SidebarRowDetail] = [.updated, .pullRequest, .machine]
   /// The details on the row's second line, in the order they read.
-  static let subtitleDetails: [SidebarRowDetail] = [.project, .branch, .worktree]
+  static let subtitleDetails: [SidebarRowDetail] = [.project, .branch]
 
   var id: String { rawValue }
 
@@ -34,7 +32,6 @@ enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable {
     case .machine: "Machine"
     case .project: "Project"
     case .branch: "Branch"
-    case .worktree: "Worktree"
     }
   }
 
@@ -45,7 +42,6 @@ enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable {
     case .machine: "desktopcomputer"
     case .project: "folder"
     case .branch: "arrow.triangle.branch"
-    case .worktree: "tree"
     }
   }
 }

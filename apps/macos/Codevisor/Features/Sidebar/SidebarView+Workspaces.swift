@@ -60,11 +60,11 @@ extension SidebarView {
     return SidebarRowMachine(name: name, systemImage: SidebarRowMachine.systemImage(isLocal: machine.isLocal))
   }
 
-  /// A row's second line: the Properties menu's project, branch, and
-  /// worktree, in that order, each shown whenever it is turned on and known,
-  /// even when it matches the workspace's name. Only the project gives way,
-  /// when the row's group heading already names it (a project folder;
-  /// pinned and archived rows sit outside it).
+  /// A row's second line: the Properties menu's project and branch, in that
+  /// order, each shown whenever it is turned on and known, even when it
+  /// matches the workspace's name. Only the project gives way, when the
+  /// row's group heading already names it (a project folder; pinned and
+  /// archived rows sit outside it).
   func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {
     let groupNamesProject = !isArchived && grouping == .project && !isPinned(workspace)
     // The logical project's name, as its folder reads: every machine's
@@ -78,7 +78,6 @@ extension SidebarView {
         switch detail {
         case .project: groupNamesProject ? nil : projectName
         case .branch: store?.branches.byWorkspace[workspace.id]
-        case .worktree: workspace.worktreeName
         default: nil
         }
       return part?.isEmpty == false ? part : nil
