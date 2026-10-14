@@ -173,6 +173,13 @@ export const holdClaudePlanApproval = (
     ],
     question: "Ready to implement this plan?"
   }
+  if (typeof toolInput.plan === "string" && toolInput.plan.trim().length > 0) {
+    void session.emit({
+      kind: "session.output",
+      payload: { markdown: toolInput.plan, sessionUpdate: "plan_document" },
+      subjectId: session.key
+    })
+  }
   const questionId = randomUUID()
   void session.emit({
     kind: "session.output",

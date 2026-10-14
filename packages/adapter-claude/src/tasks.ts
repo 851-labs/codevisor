@@ -106,19 +106,10 @@ export const applyTaskUpdate = (tasks: ClaudeTaskState, input: unknown): boolean
 }
 
 export const emitPlanUpdate = (session: ClaudeSession, toolName: string, input: unknown): void => {
-  if (toolName === "TodoWrite") {
-    if (!isRecord(input) || !Array.isArray(input.todos)) return
-    void session.emit({
-      kind: "session.output",
-      payload: { entries: planEntriesFromTodos(input.todos), sessionUpdate: "plan" },
-      subjectId: session.key
-    })
-    return
-  }
-  if (!isRecord(input) || typeof input.plan !== "string" || input.plan.length === 0) return
+  if (toolName !== "TodoWrite" || !isRecord(input) || !Array.isArray(input.todos)) return
   void session.emit({
     kind: "session.output",
-    payload: { markdown: input.plan, sessionUpdate: "plan_document" },
+    payload: { entries: planEntriesFromTodos(input.todos), sessionUpdate: "plan" },
     subjectId: session.key
   })
 }

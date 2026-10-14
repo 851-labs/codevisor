@@ -133,9 +133,14 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    const toolInput = { plan: "# The Plan\n\n1. Do it" }
+    const planFilePath = "/home/user/.claude/plans/golden-gathering-eagle.md"
+    const toolInput = { plan: "# The Plan\n\n1. Do it", planFilePath }
     const decision = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
     await fake.drain()
+    expect(events.at(-2)?.payload).toEqual({
+      markdown: "# The Plan\n\n1. Do it",
+      sessionUpdate: "plan_document"
+    })
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({ sessionUpdate: "question" })
     expect(asked.message).toBeUndefined()
@@ -173,8 +178,13 @@ describe("ClaudeProvider", () => {
       message: "The user wants to keep refining the plan. Stay in plan mode and continue planning."
     })
 
-    const refined = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
+    const refinedInput = { plan: "# The Plan\n\n1. Do it\n2. Check it", planFilePath }
+    const refined = fake.options!.canUseTool!("ExitPlanMode", refinedInput as never, {} as never)
     await fake.drain()
+    expect(events.at(-2)?.payload).toEqual({
+      markdown: "# The Plan\n\n1. Do it\n2. Check it",
+      sessionUpdate: "plan_document"
+    })
     const refinedAsk = events.at(-1)?.payload as Record<string, unknown>
     await run(
       created.handle.answerQuestion!(refinedAsk.questionId as string, {
@@ -188,6 +198,13 @@ describe("ClaudeProvider", () => {
         "The user wants to keep refining the plan. Stay in plan mode and continue planning.\n\n" +
         "The user's feedback on the plan:\nSplit step 2"
     })
+
+    const before = events.length
+    void fake.options!.canUseTool!("ExitPlanMode", {} as never, {} as never)
+    await fake.drain()
+    expect(
+      events.slice(before).map((event) => (event.payload as Record<string, unknown>).sessionUpdate)
+    ).toEqual(["question"])
   })
 
   it("blocks AskUserQuestion on the human's answer and folds it into updatedInput", async () => {

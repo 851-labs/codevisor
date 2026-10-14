@@ -113,10 +113,7 @@ describe("ClaudeProvider", () => {
       { content: "Design the fix", priority: "medium", status: "in_progress" },
       { content: "Add tests", priority: "medium", status: "pending" }
     ])
-    const documents = payloads.filter((payload) => payload.sessionUpdate === "plan_document")
-    expect(documents).toEqual([
-      { markdown: "# The Plan\n\n1. Do the thing\n2. Verify it", sessionUpdate: "plan_document" }
-    ])
+    expect(payloads.filter((payload) => payload.sessionUpdate === "plan_document")).toEqual([])
   })
 
   it("renders incremental Task tools as checklist snapshots outside plan mode", async () => {
