@@ -280,10 +280,10 @@ const listProjectBranches = async (
   const project = await getProjectOrFail(services.db, branchProjectId)
   const location = localLocationOrFail(serverId, project)
   assertLocationFolderExists(location)
-  if (!(await isGitWorkTree(location.folderPath))) {
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  if (!(await isGitWorkTree(location.folderPath, environment))) {
     throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
   }
-  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
   writeJson(response, 200, await listProjectGitBranches(location.folderPath, environment))
   return true
 }

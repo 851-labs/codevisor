@@ -49,15 +49,15 @@ export const createProjectWorktree = async (
   if (isScratchProject(project)) {
     throw new HttpFailure(422, "A scratch workspace folder cannot have worktrees")
   }
-  if (!(await isGitWorkTree(location.folderPath))) {
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  if (!(await isGitWorkTree(location.folderPath, environment))) {
     throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
   }
   const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
-  for (const name of await listCodevisorWorktreeBranchNames(location.folderPath)) {
+  for (const name of await listCodevisorWorktreeBranchNames(location.folderPath, environment)) {
     existing.add(name)
   }
   const requested = slugifyWorktreeName(payload.name)
-  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
   const startPoint = await worktreeStartPoint(
     location.folderPath,
     project.worktreeBase,

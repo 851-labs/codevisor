@@ -5,9 +5,18 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
-import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-support.js"
+import {
+  jsonRequest,
+  listEvents,
+  makeServices,
+  run,
+  start,
+  startWithApp,
+  tempDirs,
+  waitFor
+} from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
@@ -227,6 +236,43 @@ describe("project worktree routes", () => {
       })
       await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello worktree"))
       expect(agents.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
+    })
+  })
+
+  it("checks the repository and taken branches with the resolved git environment", async () => {
+    await withWorktreesRoot(async () => {
+      const { services } = await makeServices("server-a")
+      const env = { ...process.env }
+      const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
+      const repoFolder = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
+      tempDirs.push(repoFolder)
+      await git(["init"], repoFolder)
+      await git(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
+        repoFolder
+      )
+      await git(["branch", "codevisor/ramen"], repoFolder)
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: repoFolder, id: "git-project" }),
+        method: "POST"
+      })
+
+      vi.stubEnv("PATH", "")
+      try {
+        const branches = await jsonRequest(server, "/v1/projects/git-project/git/branches")
+        const created = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "ramen" }),
+          method: "POST"
+        })
+
+        expect(branches.status).toBe(200)
+        expect(created).toMatchObject({
+          status: 201,
+          body: { name: "ramen-2", branch: "codevisor/ramen-2" }
+        })
+      } finally {
+        vi.unstubAllEnvs()
+      }
     })
   })
 })

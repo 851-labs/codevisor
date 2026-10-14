@@ -81,9 +81,9 @@ export const runGit = (
   options?: GitRunOptions
 ): Promise<string> => git(operation, args, cwd, env, options)
 
-export const isGitWorkTree = async (dir: string): Promise<boolean> => {
+export const isGitWorkTree = async (dir: string, env?: NodeJS.ProcessEnv): Promise<boolean> => {
   try {
-    return (await git("rev-parse", ["rev-parse", "--is-inside-work-tree"], dir)) === "true"
+    return (await git("rev-parse", ["rev-parse", "--is-inside-work-tree"], dir, env)) === "true"
   } catch {
     return false
   }
