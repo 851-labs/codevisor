@@ -194,8 +194,10 @@ first.
    tests and test support.
 7. After final audit edits, run the `code-review` skill on the diff.
 
-The `lefthook` pre-commit hook runs the full `bun run check`, including the
-Swift suites and iOS build; allow it time rather than bypassing it.
+The `lefthook` pre-commit hook runs `bun run check`, which runs every check
+the uncommitted changes can affect (`bun run check -- --dry-run` lists them),
+including the Swift suites and iOS build when Swift changed; allow it time
+rather than bypassing it. `bun run check:all` runs everything.
 
 ## Landing and continuation
 

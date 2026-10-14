@@ -1,19 +1,77 @@
 import assert from "node:assert/strict"
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
+import test, { after, describe } from "node:test"
 
 const installer = readFileSync(new URL("../../apps/www/public/install.sh", import.meta.url), "utf8")
 const stableURL = "https://updates.codevisor.dev/server/stable.json"
 const githubLatestURL = "https://api.github.com/repos/851-labs/codevisor/releases/latest"
 const downloadBase = "https://github.com/851-labs/codevisor/releases/download"
 
+// The faked commands read each case's paths from its environment, so they are
+// written once: macOS assesses every new executable on its first run, which
+// costs ~100ms per file and serializes cases that would otherwise overlap.
+const sharedRoot = mkdtempSync(join(tmpdir(), "codevisor-installer-commands-"))
+after(() => rmSync(sharedRoot, { recursive: true, force: true }))
+const sharedCommands = join(sharedRoot, "commands")
+mkdirSync(sharedCommands)
+writeFileSync(
+  join(sharedRoot, "sha256.mjs"),
+  `import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+console.log(createHash('sha256').update(readFileSync(process.argv[2])).digest('hex'));`
+)
+for (const [command, body] of Object.entries({
+  uname:
+    'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
+  id: 'printf "%s\\n" "$TEST_UID"',
+  systemctl: 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
+  launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
+  osascript: "exit 0",
+  sysctl: 'printf "%s\\n" "${TEST_HW_ARM64:-}"',
+  // Stop the macOS path before it can touch /Applications or a running app.
+  hdiutil: "exit 71",
+  sha256sum: `exec '${process.execPath.replaceAll("'", "'\\''")}' '${join(sharedRoot, "sha256.mjs")}' "$@"`
+})) {
+  writeFileSync(join(sharedCommands, command), `#!/bin/sh\nset -eu\n${body}\n`, { mode: 0o755 })
+}
+writeFileSync(
+  join(sharedCommands, "curl"),
+  `#!${process.execPath}
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const url = args.at(-1);
+appendFileSync(process.env.TEST_REQUESTS, JSON.stringify({ url, args }) + '\\n');
+const response = JSON.parse(readFileSync(process.env.TEST_ROOT + '/responses.json'))[url];
+if (!response) { console.error('Unexpected URL: ' + url); process.exit(22); }
+if (response.status) process.exit(response.status);
+const body = response.file ? readFileSync(response.file) : response.body;
+const output = args.indexOf('-o');
+if (output === -1) process.stdout.write(body);
+else writeFileSync(args[output + 1], body);
+`,
+  { mode: 0o755 }
+)
+
+// Runs a piped script without blocking, so the installer cases run in parallel.
+const runShell = (input, options) =>
+  new Promise((resolve) => {
+    const child = spawn("/bin/sh", [], options)
+    let stdout = ""
+    let stderr = ""
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk))
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk))
+    child.once("error", (error) => resolve({ error, status: null, stdout, stderr }))
+    child.once("close", (status, signal) => resolve({ status, signal, stdout, stderr }))
+    child.stdin.end(input)
+  })
+
 // Exercise the piped shell script, real archive extraction, and CLI links.
 // Only network responses, platform detection, and service commands are faked.
-const install = (t, options = {}) => {
+const install = async (t, options = {}) => {
   const root = mkdtempSync(join(tmpdir(), "codevisor-installer-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const bin = join(root, "commands")
@@ -55,52 +113,17 @@ const install = (t, options = {}) => {
   const services = join(root, "services.log")
   writeFileSync(requests, "")
   writeFileSync(services, "")
-  const commands = {
-    uname:
-      'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
-    id: 'printf "%s\\n" "$TEST_UID"',
-    systemctl: options.systemctl ?? 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
-    launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
-    osascript: "exit 0",
-    sysctl: 'printf "%s\\n" "${TEST_HW_ARM64:-}"',
-    // Stop the macOS path before it can touch /Applications or a running app.
-    hdiutil: "exit 71",
-    sha256sum: `exec '${process.execPath.replaceAll("'", "'\\''")}' "$TEST_ROOT/sha256.mjs" "$@"`
+  if (options.systemctl !== undefined) {
+    writeFileSync(join(bin, "systemctl"), `#!/bin/sh\nset -eu\n${options.systemctl}\n`, {
+      mode: 0o755
+    })
   }
-  for (const [command, body] of Object.entries(commands)) {
-    writeFileSync(join(bin, command), `#!/bin/sh\nset -eu\n${body}\n`, { mode: 0o755 })
-  }
-  writeFileSync(
-    join(root, "sha256.mjs"),
-    `import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
-console.log(createHash('sha256').update(readFileSync(process.argv[2])).digest('hex'));`
-  )
-  writeFileSync(
-    join(bin, "curl"),
-    `#!${process.execPath}
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-const url = args.at(-1);
-appendFileSync(process.env.TEST_REQUESTS, JSON.stringify({ url, args }) + '\\n');
-const response = JSON.parse(readFileSync(process.env.TEST_ROOT + '/responses.json'))[url];
-if (!response) { console.error('Unexpected URL: ' + url); process.exit(22); }
-if (response.status) process.exit(response.status);
-const body = response.file ? readFileSync(response.file) : response.body;
-const output = args.indexOf('-o');
-if (output === -1) process.stdout.write(body);
-else writeFileSync(args[output + 1], body);
-`,
-    { mode: 0o755 }
-  )
-  const result = spawnSync("/bin/sh", [], {
-    input: installer,
-    encoding: "utf8",
+  const result = await runShell(installer, {
     // A new session has no controlling terminal, so /dev/tty prompts fail
     // fast instead of waiting on the developer's terminal.
     detached: true,
     env: {
-      PATH: `${bin}:/usr/bin:/bin`,
+      PATH: `${bin}:${sharedCommands}:/usr/bin:/bin`,
       HOME: root,
       USER: "installer-test",
       LC_ALL: "C",
@@ -128,200 +151,210 @@ else writeFileSync(args[output + 1], body);
   }
 }
 
-for (const uid of [0, 1000]) {
-  test(`Linux uid ${uid} uses the same canonical home data directory`, (t) => {
-    const result = install(t, { uid, defaultDataDir: true, env: { CODEVISOR_NO_SERVICE: "1" } })
+// Each case owns its temporary root and environment.
+describe("install.sh", { concurrency: true }, () => {
+  for (const uid of [0, 1000]) {
+    test(`Linux uid ${uid} uses the same canonical home data directory`, async (t) => {
+      const result = await install(t, {
+        uid,
+        defaultDataDir: true,
+        env: { CODEVISOR_NO_SERVICE: "1" }
+      })
+      assert.equal(result.status, 0, result.stderr)
+      assert.ok(existsSync(join(result.root, ".codevisor", "data")))
+      assert.ok(existsSync(join(result.root, ".codevisor", "logs")))
+      assert.equal(result.services, "")
+    })
+  }
+
+  test("an invite joins the account without a prompt, passing the code on stdin", async (t) => {
+    // The fake CLI records how it was called: args, stdin, and whether the
+    // secret leaked into its environment.
+    const cli = [
+      'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
+      'printf "stdin=%s\\n" "$(cat)" >> "$TEST_ROOT/cli.log"',
+      'printf "env=%s\\n" "${CODEVISOR_INVITE:-}" >> "$TEST_ROOT/cli.log"'
+    ].join("\n")
+    const result = await install(t, {
+      cli,
+      env: {
+        CODEVISOR_NO_SERVICE: "1",
+        CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
+        CODEVISOR_MACHINE_NAME: "hetzner 1"
+      }
+    })
     assert.equal(result.status, 0, result.stderr)
-    assert.ok(existsSync(join(result.root, ".codevisor", "data")))
-    assert.ok(existsSync(join(result.root, ".codevisor", "logs")))
+    assert.equal(
+      readFileSync(join(result.root, "cli.log"), "utf8"),
+      [
+        "args=auth login --invite - --name hetzner 1 --port 49361",
+        "stdin=cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
+        "env=",
+        ""
+      ].join("\n")
+    )
+  })
+
+  test("a systemctl without a running systemd (containers, WSL) installs without a service", async (t) => {
+    const result = await install(t, {
+      systemctl: [
+        'case "$1" in show) echo "System has not been booted with systemd" >&2; exit 1;; esac',
+        'printf "%s\\n" "$*" >> "$TEST_SERVICES"'
+      ].join("\n")
+    })
+    assert.equal(result.status, 0, result.stderr)
     assert.equal(result.services, "")
+    assert.match(result.stdout, /codevisor start/)
   })
-}
 
-test("an invite joins the account without a prompt, passing the code on stdin", (t) => {
-  // The fake CLI records how it was called: args, stdin, and whether the
-  // secret leaked into its environment.
-  const cli = [
-    'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
-    'printf "stdin=%s\\n" "$(cat)" >> "$TEST_ROOT/cli.log"',
-    'printf "env=%s\\n" "${CODEVISOR_INVITE:-}" >> "$TEST_ROOT/cli.log"'
-  ].join("\n")
-  const result = install(t, {
-    cli,
-    env: {
-      CODEVISOR_NO_SERVICE: "1",
-      CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
-      CODEVISOR_MACHINE_NAME: "hetzner 1"
-    }
-  })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(
-    readFileSync(join(result.root, "cli.log"), "utf8"),
-    [
-      "args=auth login --invite - --name hetzner 1 --port 49361",
-      "stdin=cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
-      "env=",
-      ""
-    ].join("\n")
-  )
-})
-
-test("a systemctl without a running systemd (containers, WSL) installs without a service", (t) => {
-  const result = install(t, {
-    systemctl: [
-      'case "$1" in show) echo "System has not been booted with systemd" >&2; exit 1;; esac',
-      'printf "%s\\n" "$*" >> "$TEST_SERVICES"'
-    ].join("\n")
-  })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.services, "")
-  assert.match(result.stdout, /codevisor start/)
-})
-
-test("without an invite or a terminal, the installer only prints how to finish", (t) => {
-  const cli = 'printf "called %s\\n" "$*" >> "$TEST_ROOT/cli.log"'
-  const result = install(t, { cli, env: { CODEVISOR_NO_SERVICE: "1", CODEVISOR_NO_SETUP: "0" } })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(existsSync(join(result.root, "cli.log")), false)
-  assert.match(result.stdout, /codevisor setup/)
-})
-
-for (const architecture of ["x86_64", "aarch64"]) {
-  test(`Linux ${architecture} installs current stable despite a stale GitHub latest pointer`, (t) => {
-    const result = install(t, { architecture })
+  test("without an invite or a terminal, the installer only prints how to finish", async (t) => {
+    const cli = 'printf "called %s\\n" "$*" >> "$TEST_ROOT/cli.log"'
+    const result = await install(t, {
+      cli,
+      env: { CODEVISOR_NO_SERVICE: "1", CODEVISOR_NO_SETUP: "0" }
+    })
     assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /Installing codevisor-server 0\.1\.99/)
-    assert.match(result.stdout, /Checksum verified/)
-    assert.equal(existsSync(join(result.runtime, "old-runtime")), false)
-    for (const command of ["codevisor", "codevisor-server", "codevisor-terminal-proxy"]) {
-      assert.equal(
-        execFileSync(join(result.root, "bin", command), { encoding: "utf8" }),
-        "codevisor 0.1.99\n"
+    assert.equal(existsSync(join(result.root, "cli.log")), false)
+    assert.match(result.stdout, /codevisor setup/)
+  })
+
+  for (const architecture of ["x86_64", "aarch64"]) {
+    test(`Linux ${architecture} installs current stable despite a stale GitHub latest pointer`, async (t) => {
+      const result = await install(t, { architecture })
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(result.stdout, /Installing codevisor-server 0\.1\.99/)
+      assert.match(result.stdout, /Checksum verified/)
+      assert.equal(existsSync(join(result.runtime, "old-runtime")), false)
+      for (const command of ["codevisor", "codevisor-server", "codevisor-terminal-proxy"]) {
+        assert.equal(
+          execFileSync(join(result.root, "bin", command), { encoding: "utf8" }),
+          "codevisor 0.1.99\n"
+        )
+      }
+      assert.deepEqual(
+        result.requests.map(({ url }) => url),
+        [
+          stableURL,
+          `${downloadBase}/v0.1.99/codevisor-server-linux-${architecture === "aarch64" ? "arm64" : "x64"}.tar.gz`,
+          `${downloadBase}/v0.1.99/codevisor-server-linux-${architecture === "aarch64" ? "arm64" : "x64"}.tar.gz.sha256`
+        ]
       )
-    }
+      assert.ok(result.requests[0].args.includes("Cache-Control: no-cache"))
+      assert.match(result.services, /--user restart codevisor-server\.service/)
+    })
+  }
+
+  for (const manifest of [
+    '{"targets":{},"version":"0.1.99","buildNumber":422}',
+    '{\n  "version":\n    "v0.1.99"\n}'
+  ]) {
+    test(`accepts stable manifest formatting: ${JSON.stringify(manifest)}`, async (t) => {
+      const result = await install(t, { manifest })
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(result.stdout, /Installing codevisor-server 0\.1\.99/)
+    })
+  }
+
+  for (const [name, options] of [
+    ["unavailable feed", { manifestStatus: 22 }],
+    ["missing version", { manifest: '{"buildNumber":422}' }],
+    ["empty response", { manifest: "" }],
+    ["HTML error", { manifest: "<html>Unavailable</html>" }],
+    ["invalid version", { manifest: '{"version":"0.1"}' }],
+    ["alpha version", { manifest: '{"version":"0.1.100-alpha.493"}' }]
+  ]) {
+    test(`${name} fails before changing the installation without falling back to GitHub`, async (t) => {
+      const result = await install(t, options)
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /stable.*https:\/\/updates\.codevisor\.dev\/server\/stable\.json/)
+      assert.match(result.stderr, /CODEVISOR_VERSION/)
+      assert.deepEqual(
+        result.requests.map(({ url }) => url),
+        [stableURL]
+      )
+      assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
+      assert.equal(result.services, "")
+    })
+  }
+
+  for (const [name, env, expectedVersion] of [
+    ["explicit stable", { CODEVISOR_VERSION: "0.1.98" }, "0.1.98"],
+    [
+      "explicit alpha with v prefix",
+      { CODEVISOR_VERSION: "v0.1.100-alpha.493" },
+      "0.1.100-alpha.493"
+    ],
+    ["legacy pin", { HERDMAN_VERSION: "v0.1.97" }, "0.1.97"],
+    [
+      "modern pin takes precedence",
+      { CODEVISOR_VERSION: "0.1.98", HERDMAN_VERSION: "0.1.97" },
+      "0.1.98"
+    ]
+  ]) {
+    test(`${name} bypasses the stable feed, even when it is unavailable`, async (t) => {
+      const result = await install(t, { env, expectedVersion, manifestStatus: 22 })
+      assert.equal(result.status, 0, result.stderr)
+      assert.ok(result.stdout.includes(`Installing codevisor-server ${expectedVersion}`))
+      assert.equal(result.requests.length, 2)
+      assert.ok(
+        result.requests.every(({ url }) => url.startsWith(`${downloadBase}/v${expectedVersion}/`))
+      )
+    })
+  }
+
+  for (const [name, env] of [
+    ["a native shell", {}],
+    ["a Rosetta shell", { TEST_HW_ARM64: "1" }]
+  ]) {
+    test(`Apple silicon under ${name} installs the arm64 app`, async (t) => {
+      const architecture = env.TEST_HW_ARM64 === undefined ? "arm64" : "x86_64"
+      const result = await install(t, { platform: "Darwin", architecture, env })
+      assert.equal(result.status, 71, result.stderr)
+      assert.doesNotMatch(result.stdout, /not supported on Intel/)
+      assert.deepEqual(
+        result.requests.map(({ url }) => url),
+        [stableURL, `${downloadBase}/v0.1.99/Codevisor-arm64.dmg`]
+      )
+    })
+  }
+
+  test("Intel Mac installs the standalone darwin-x64 server once confirmed", async (t) => {
+    const result = await install(t, {
+      platform: "Darwin",
+      architecture: "x86_64",
+      env: { CODEVISOR_INSTALL_SERVER: "1" }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
+    assert.match(result.stdout, /Installing codevisor-server 0\.1\.99 \(darwin-x64\)/)
+    assert.match(result.stdout, /Checksum verified/)
+    assert.match(result.stdout, /codevisor start/)
     assert.deepEqual(
       result.requests.map(({ url }) => url),
       [
         stableURL,
-        `${downloadBase}/v0.1.99/codevisor-server-linux-${architecture === "aarch64" ? "arm64" : "x64"}.tar.gz`,
-        `${downloadBase}/v0.1.99/codevisor-server-linux-${architecture === "aarch64" ? "arm64" : "x64"}.tar.gz.sha256`
+        `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz`,
+        `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz.sha256`
       ]
     )
-    assert.ok(result.requests[0].args.includes("Cache-Control: no-cache"))
-    assert.match(result.services, /--user restart codevisor-server\.service/)
-  })
-}
-
-for (const manifest of [
-  '{"targets":{},"version":"0.1.99","buildNumber":422}',
-  '{\n  "version":\n    "v0.1.99"\n}'
-]) {
-  test(`accepts stable manifest formatting: ${JSON.stringify(manifest)}`, (t) => {
-    const result = install(t, { manifest })
-    assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /Installing codevisor-server 0\.1\.99/)
-  })
-}
-
-for (const [name, options] of [
-  ["unavailable feed", { manifestStatus: 22 }],
-  ["missing version", { manifest: '{"buildNumber":422}' }],
-  ["empty response", { manifest: "" }],
-  ["HTML error", { manifest: "<html>Unavailable</html>" }],
-  ["invalid version", { manifest: '{"version":"0.1"}' }],
-  ["alpha version", { manifest: '{"version":"0.1.100-alpha.493"}' }]
-]) {
-  test(`${name} fails before changing the installation without falling back to GitHub`, (t) => {
-    const result = install(t, options)
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /stable.*https:\/\/updates\.codevisor\.dev\/server\/stable\.json/)
-    assert.match(result.stderr, /CODEVISOR_VERSION/)
-    assert.deepEqual(
-      result.requests.map(({ url }) => url),
-      [stableURL]
+    assert.equal(
+      execFileSync(join(result.root, "bin", "codevisor"), { encoding: "utf8" }),
+      "codevisor 0.1.99\n"
     )
-    assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
-    assert.equal(result.services, "")
+    assert.doesNotMatch(result.services, /codevisor-server\.service/)
   })
-}
 
-for (const [name, env, expectedVersion] of [
-  ["explicit stable", { CODEVISOR_VERSION: "0.1.98" }, "0.1.98"],
-  [
-    "explicit alpha with v prefix",
-    { CODEVISOR_VERSION: "v0.1.100-alpha.493" },
-    "0.1.100-alpha.493"
-  ],
-  ["legacy pin", { HERDMAN_VERSION: "v0.1.97" }, "0.1.97"],
-  [
-    "modern pin takes precedence",
-    { CODEVISOR_VERSION: "0.1.98", HERDMAN_VERSION: "0.1.97" },
-    "0.1.98"
-  ]
-]) {
-  test(`${name} bypasses the stable feed, even when it is unavailable`, (t) => {
-    const result = install(t, { env, expectedVersion, manifestStatus: 22 })
-    assert.equal(result.status, 0, result.stderr)
-    assert.ok(result.stdout.includes(`Installing codevisor-server ${expectedVersion}`))
-    assert.equal(result.requests.length, 2)
-    assert.ok(
-      result.requests.every(({ url }) => url.startsWith(`${downloadBase}/v${expectedVersion}/`))
-    )
-  })
-}
-
-for (const [name, env] of [
-  ["a native shell", {}],
-  ["a Rosetta shell", { TEST_HW_ARM64: "1" }]
-]) {
-  test(`Apple silicon under ${name} installs the arm64 app`, (t) => {
-    const architecture = env.TEST_HW_ARM64 === undefined ? "arm64" : "x86_64"
-    const result = install(t, { platform: "Darwin", architecture, env })
-    assert.equal(result.status, 71, result.stderr)
-    assert.doesNotMatch(result.stdout, /not supported on Intel/)
-    assert.deepEqual(
-      result.requests.map(({ url }) => url),
-      [stableURL, `${downloadBase}/v0.1.99/Codevisor-arm64.dmg`]
-    )
-  })
-}
-
-test("Intel Mac installs the standalone darwin-x64 server once confirmed", (t) => {
-  const result = install(t, {
-    platform: "Darwin",
-    architecture: "x86_64",
-    env: { CODEVISOR_INSTALL_SERVER: "1" }
-  })
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
-  assert.match(result.stdout, /Installing codevisor-server 0\.1\.99 \(darwin-x64\)/)
-  assert.match(result.stdout, /Checksum verified/)
-  assert.match(result.stdout, /codevisor start/)
-  assert.deepEqual(
-    result.requests.map(({ url }) => url),
-    [
-      stableURL,
-      `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz`,
-      `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz.sha256`
-    ]
-  )
-  assert.equal(
-    execFileSync(join(result.root, "bin", "codevisor"), { encoding: "utf8" }),
-    "codevisor 0.1.99\n"
-  )
-  assert.doesNotMatch(result.services, /codevisor-server\.service/)
+  for (const [name, env, message] of [
+    ["without a terminal to confirm", {}, /CODEVISOR_INSTALL_SERVER=1/],
+    ["when declined", { CODEVISOR_INSTALL_SERVER: "0" }, /not installing codevisor-server/]
+  ]) {
+    test(`Intel Mac installs nothing ${name}`, async (t) => {
+      const result = await install(t, { platform: "Darwin", architecture: "x86_64", env })
+      assert.equal(result.status, 1)
+      assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
+      assert.match(result.stderr, message)
+      assert.deepEqual(result.requests, [])
+      assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
+    })
+  }
 })
-
-for (const [name, env, message] of [
-  ["without a terminal to confirm", {}, /CODEVISOR_INSTALL_SERVER=1/],
-  ["when declined", { CODEVISOR_INSTALL_SERVER: "0" }, /not installing codevisor-server/]
-]) {
-  test(`Intel Mac installs nothing ${name}`, (t) => {
-    const result = install(t, { platform: "Darwin", architecture: "x86_64", env })
-    assert.equal(result.status, 1)
-    assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
-    assert.match(result.stderr, message)
-    assert.deepEqual(result.requests, [])
-    assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
-  })
-}

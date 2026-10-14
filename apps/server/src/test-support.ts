@@ -103,7 +103,12 @@ beforeEach(() => {
     if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
       return Promise.reject(new TypeError("External upstream unavailable in this fixture"))
     }
-    return realFetch(input, init)
+    // fetch's connection pool can open a socket it never sends a request on.
+    // Node does not count that socket as idle, so closing the test server
+    // would wait out the client's 4s keep-alive timeout.
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}))
+    headers.set("Connection", "close")
+    return realFetch(input, { ...init, headers })
   })
 })
 

@@ -64,6 +64,10 @@ if (target === "macos") {
       "-destination",
       "generic/platform=iOS Simulator",
       `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${IOS_DEVELOPMENT_BUNDLE_IDENTIFIER}`,
+      // A generic simulator destination otherwise builds every simulator
+      // architecture, compiling everything twice; this Mac's simulators run
+      // its own. Matches what `dev:ios` builds into the same DerivedData.
+      `ARCHS=${process.arch === "arm64" ? "arm64" : "x86_64"}`,
       ...forwardedArguments,
       "build"
     ],

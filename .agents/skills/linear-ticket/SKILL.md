@@ -30,7 +30,7 @@ work on a ticket just because you created it.
 3. **Tophat:** follow the `tophat` skill. Capture evidence: a screen
    recording for interactions, screenshots for static UI.
 4. **Open a PR** with the diff. The lefthook pre-commit hook runs
-   `bun run check`, so don't skip it. If it can't run on your machine,
+   `bun run check` on the checks your changes affect, so don't skip it. If it can't run on your machine,
    say so in the PR and note what you ran instead.
    - Title: `<summary> (<ticket id>)`.
    - Body: `Fixes <ticket id>`, a short summary, tophat notes and the

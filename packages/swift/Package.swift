@@ -480,5 +480,36 @@ let package = Package(
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
       ]
     ),
+
+    // MARK: TranscriptSurface (the macOS app's AppKit transcript, tested without
+    // booting the app. Its folders are symlinks into apps/macos, where the app
+    // compiles the same files; no product exposes it. The excluded files need
+    // app-only types.)
+    .target(
+      name: "TranscriptSurface",
+      dependencies: [
+        "CodevisorCore",
+        "CodevisorUI",
+        "CodevisorTheming",
+        "StreamMarkdown",
+        "MarkdownCore",
+        "TranscriptKit",
+      ],
+      path: "TranscriptSurface/Sources/TranscriptSurface",
+      exclude: [
+        "AssistantTurnView.swift",
+        "ConversationItemView.swift",
+        "TranscriptItemsView.swift",
+        "TranscriptRowLeaves+macOS.swift",
+      ],
+      // The app's language mode and main-actor default.
+      swiftSettings: [.swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .treatAllWarnings(as: .error)]
+    ),
+    .testTarget(
+      name: "TranscriptSurfaceTests",
+      dependencies: ["TranscriptSurface"],
+      path: "TranscriptSurface/Tests/TranscriptSurfaceTests",
+      swiftSettings: [.treatAllWarnings(as: .error)]
+    ),
   ]
 )
