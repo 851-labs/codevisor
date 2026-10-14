@@ -4,10 +4,10 @@ import { join } from "node:path"
 
 import type { OpenCodeAuthFlow, OpenCodeAuthProvider } from "@codevisor/api"
 
+import { methodValues } from "./opencode-auth-methods.js"
 import {
   credentialTypes,
   failureMessage,
-  methodValues,
   request,
   startServer,
   workspaceQuery,

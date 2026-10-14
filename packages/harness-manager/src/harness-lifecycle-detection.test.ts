@@ -2,6 +2,7 @@ import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { appBundlePath } from "./harness-lifecycle-support.js"
 import {
   cleanupLifecycleTests,
   makeDb,
@@ -10,7 +11,7 @@ import {
   npmDefinition,
   jsonResponse
 } from "./harness-lifecycle-test-support.js"
-import { makeHarnessLifecycleManager, appBundlePath } from "./harness-lifecycle.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 

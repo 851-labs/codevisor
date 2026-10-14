@@ -43,9 +43,9 @@ const setup = (intervalMs = 1000) => {
   let gate: Promise<void> | undefined
   const page = async (sessionId: string, cursor: string | undefined): Promise<ViewPage> => {
     calls.push({ sessionId, cursor })
+    const all = views.get(sessionId) ?? []
     await gate
     if (failure) throw failure
-    const all = views.get(sessionId) ?? []
     const start =
       cursor === undefined ? 0 : all.findIndex((entry) => entry.params.viewCursor === cursor) + 1
     // Two events a page, so longer views take several.

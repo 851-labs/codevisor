@@ -2,8 +2,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFile } from "node:fs/promises"
 
-export { methodValues, promptValue } from "./opencode-auth-methods.js"
-
 /// The control-plane side of OpenCode authentication: a short-lived
 /// `opencode serve` per operation, its authenticated HTTP requests, and the
 /// translation of OpenCode's provider/method/prompt shapes onto the API.

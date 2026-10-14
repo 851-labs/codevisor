@@ -30,6 +30,28 @@ extension FocusedValues {
     get { self[WorkspaceLayoutActionsKey.self] }
     set { self[WorkspaceLayoutActionsKey.self] = newValue }
   }
+
+  var workspaceTabCycling: WorkspaceTabCycling? {
+    get { self[WorkspaceTabCyclingKey.self] }
+    set { self[WorkspaceTabCyclingKey.self] = newValue }
+  }
+}
+
+/// Tab switching alone, for a workspace shown without its layout actions
+/// (an archived one, read-only): ⌥⌘← / ⌥⌘→ still move between its tabs.
+struct WorkspaceTabCycling: Equatable {
+  let workspaceId: UUID
+  let tabIds: [UUID]
+  let previous: @MainActor () -> Void
+  let next: @MainActor () -> Void
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.workspaceId == rhs.workspaceId && lhs.tabIds == rhs.tabIds
+  }
+}
+
+private struct WorkspaceTabCyclingKey: FocusedValueKey {
+  typealias Value = WorkspaceTabCycling
 }
 
 /// The workspace's split layout under View, and tab cycling under Window,
@@ -37,6 +59,7 @@ extension FocusedValues {
 /// in File, alongside New Chat and Close (see `NewTabMenuItem`).
 struct WorkspaceLayoutCommands: Commands {
   @FocusedValue(\.workspaceLayoutActions) private var actions
+  @FocusedValue(\.workspaceTabCycling) private var tabCycling
   @FocusedValue(\.sidebarActions) private var sidebarActions
 
   var body: some Commands {
@@ -83,10 +106,14 @@ struct WorkspaceLayoutCommands: Commands {
       // The refreshed sidebar's own commands; absent rather than disabled
       // without it, so their keys stay free for split focus.
       if FeatureFlag.sidebarRefresh.isEnabled {
-        ShortcutButton(.previousTabInWorkspace) { actions?.previousTabInWorkspace() }
-          .disabled(actions == nil)
-        ShortcutButton(.nextTabInWorkspace) { actions?.nextTabInWorkspace() }
-          .disabled(actions == nil)
+        ShortcutButton(.previousTabInWorkspace) {
+          if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
+        }
+        .disabled(actions == nil && tabCycling == nil)
+        ShortcutButton(.nextTabInWorkspace) {
+          if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
+        }
+        .disabled(actions == nil && tabCycling == nil)
 
         Divider()
 
