@@ -39,7 +39,6 @@ const makeFakeChild = (): FakeChild => {
       onExit: (handler) => {
         exitHandlers.push(handler)
       },
-      pid: 4242,
       stderr,
       stdin,
       stdout
@@ -267,11 +266,5 @@ describe("codex client over the ndjson transport", () => {
     await expect(client.request("thread/list")).rejects.toThrow(
       "codex app-server connection is closed"
     )
-  })
-
-  it("exposes the child pid", () => {
-    const child = makeFakeChild()
-    const client = makeClient(child)
-    expect(client.pid).toBe(4242)
   })
 })

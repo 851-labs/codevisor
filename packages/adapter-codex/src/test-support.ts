@@ -26,7 +26,6 @@ export const environment: ProviderEnvironment = {
 }
 
 export class FakeCodexClient implements CodexClient {
-  readonly pid = 4242
   readonly requests: Array<{ method: string; params: unknown }> = []
   private readonly requestWaiters: Array<{ method: string; resolve: () => void }> = []
   readonly notifications: Array<{ method: string; params: unknown }> = []

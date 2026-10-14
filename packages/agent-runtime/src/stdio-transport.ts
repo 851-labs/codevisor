@@ -14,7 +14,6 @@ export interface StdioEndpoint {
   readonly stdin: Writable
   readonly stdout: Readable
   readonly stderr: Readable | undefined
-  readonly pid: number | undefined
   kill: () => void
   /// Process-level termination: `error` carries a spawn/runtime process
   /// error when there is one, undefined for a plain exit.
@@ -28,7 +27,6 @@ export const childStdioEndpoint = (child: ChildProcessWithoutNullStreams): Stdio
     child.once("exit", () => handler(undefined))
     child.once("error", (error) => handler(error))
   },
-  pid: child.pid,
   stderr: child.stderr,
   stdin: child.stdin,
   stdout: child.stdout
@@ -55,7 +53,6 @@ export interface NdjsonTransportOptions {
 ///   it gates writes and never reports a failure — routine teardown must
 ///   not masquerade as a crash.
 export interface NdjsonTransport {
-  readonly pid: number | undefined
   /// True until close() or a failure.
   isOpen: () => boolean
   /// Writes one ndjson frame; dropped silently when the transport is not
@@ -191,7 +188,6 @@ export const makeNdjsonTransport = (
             messageHandler = handler
           }
         }),
-    pid: endpoint.pid,
     send: (payload) => {
       if (!open) return
       if (endpoint.stdin.destroyed || endpoint.stdin.writableEnded) return

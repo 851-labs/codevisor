@@ -11,7 +11,6 @@ const transport = () => {
   let failure: ((error: Error) => void) | undefined
   let closed = false
   const fake: NdjsonTransport = {
-    pid: 1,
     isOpen: () => !closed,
     send: (payload) => sent.push(payload),
     onLine: (handler) => {
