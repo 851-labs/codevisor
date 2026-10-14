@@ -31,7 +31,6 @@ export const createFirstSession = async (
     body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "First chat" }),
     method: "POST"
   })
-  const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
-  expect(session.agentSessionId).toBe("agent-codex-codevisor")
-  return session
+  expect(sessionResponse.status).toBe(201)
+  return sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
 }

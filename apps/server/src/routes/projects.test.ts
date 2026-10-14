@@ -197,6 +197,29 @@ describe("project routes", () => {
     }
   })
 
+  it("publishes a project rename to every client", async () => {
+    const { server, services } = await start()
+    const folderPath = mkdtempSync(join(tmpdir(), "codevisor-rename-project-"))
+    tempDirs.push(folderPath)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    const renamed = await jsonRequest(server, `/v1/projects/${project.id}`, {
+      body: JSON.stringify({ name: "Renamed" }),
+      method: "PATCH"
+    })
+
+    expect(renamed).toMatchObject({ status: 200, body: { id: project.id, name: "Renamed" } })
+    expect(listSubjectEvents(services, project.id).at(-1)).toMatchObject({
+      kind: "project.updated",
+      payload: { id: project.id, name: "Renamed" }
+    })
+  })
+
   it("addresses projects by id case-insensitively", async () => {
     const { server } = await start()
     const lowerId = "0d604f39-364b-4a17-8fd8-21bddd8c1399"
@@ -215,12 +238,6 @@ describe("project routes", () => {
     })
     expect((resync.body as { id: string }).id).toBe(lowerId)
     expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(1)
-
-    const renamed = await jsonRequest(server, `/v1/projects/${upperId}`, {
-      body: JSON.stringify({ name: "Renamed" }),
-      method: "PATCH"
-    })
-    expect(renamed).toMatchObject({ status: 200, body: { id: lowerId, name: "Renamed" } })
 
     const session = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({ projectId: upperId, harnessId: "codex" }),

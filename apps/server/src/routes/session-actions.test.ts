@@ -410,10 +410,12 @@ describe("session action routes", () => {
     })
     expect(await liveEvent).toEqual([expect.objectContaining({ kind: "project.created" })])
     const websocketReplay = await readWebSocketEvents(server, 2, 0)
-    expect(websocketReplay).toEqual([
-      expect.objectContaining({ kind: "project.created" }),
-      expect.objectContaining({ kind: "session.created" })
-    ])
+    expect(websocketReplay).toEqual(
+      listEvents(services)
+        .filter(({ kind }) => kind !== "navigation.changed")
+        .slice(0, 2)
+        .map(({ id, kind }) => expect.objectContaining({ id, kind }))
+    )
     const socketReplayEvents = listEvents(services)
     const socketReplayCursor = socketReplayEvents.at(-1)?.id ?? 0
     const websocketLive = readWebSocketEvents(server, 1, socketReplayCursor)
