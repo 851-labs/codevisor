@@ -37,13 +37,12 @@ relayRoutes.post("/api/relay/authorize", async (c) => {
 
 export const registerTunnelEndpoint = async (
   env: CloudEnv,
-  registration: TunnelRegistration,
-  log: (message: string, cause: unknown) => void = console.error
+  registration: TunnelRegistration
 ): Promise<void> => {
   try {
     await storeTunnelEndpoint(env, registration)
   } catch (cause) {
-    log("tunnel endpoint registration failed", cause)
+    console.error("tunnel endpoint registration failed", cause)
   }
 }
 
