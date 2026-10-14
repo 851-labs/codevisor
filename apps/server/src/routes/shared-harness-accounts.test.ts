@@ -109,10 +109,11 @@ it("reconciles received credentials and protects the loopback gateway at the rea
   })
   expect(merged.status).toBe(200)
   expect(await b.shared.accounts("claude-code", true)).toHaveLength(1)
-  expect(refresh.mock.calls.map(([harnessId]) => harnessId).toSorted()).toEqual([
-    "claude-code",
-    "pi"
-  ])
+  expect(
+    refresh.mock.calls
+      .map(([harnessId]) => harnessId)
+      .toSorted((left, right) => (left ?? "").localeCompare(right ?? ""))
+  ).toEqual(["claude-code", "pi"])
   const signedInAt = Math.max(
     ...(await a.shared.store.entries()).map((entry) => entry.timestamp.wallMs)
   )

@@ -111,7 +111,7 @@ export const reconcileForNamespace = async (
         }
       })
     }
-    case "plugins": {
+    default: {
       const manager = services.plugins
       if (manager === undefined) return undefined
       const outcome = await reconcilePlugins({

@@ -73,6 +73,7 @@ function deliveryFixture({ post = () => {}, membership } = {}) {
     counts.posts += 1
     post(counts.posts, options)
     assigned = true
+    return undefined
   }
   const run = (options) =>
     deliverInternalBuild(
@@ -262,6 +263,7 @@ test("delivery uploads an App Store eligible build once and assigns only an inte
     assert.equal(path, "betaGroups/group/relationships/builds")
     assert.deepEqual(options.body, { data: [{ type: "builds", id: "build" }] })
     assigned = true
+    return undefined
   }
   await deliverInternalBuild(client, build, async () => {
     operations.push(["upload", "POST"])

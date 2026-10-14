@@ -53,7 +53,7 @@ describe("browser cursor presentation", () => {
       [session, cursor],
       ["other", { ...cursor, session: "other" }]
     ])
-    const host = { __codevisorPointer: { version: 1, cursors } }
+    const host = { codevisorPointer: { version: 1, cursors } }
     runInNewContext(pointerOverlayExpression({ kind: "hide", session }), {
       document: { documentElement: {}, getElementById: () => host },
       setTimeout: vi.fn()

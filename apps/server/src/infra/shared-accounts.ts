@@ -124,7 +124,7 @@ export const makeSharedAccounts = (options: {
       previous?.sourceMachineId
     )
     const tombstone = (await store.entries()).some((entry) => entry.key === id && entry.deleted)
-    if (tombstone && !explicit) return
+    if (tombstone && !explicit) return undefined
     if (previous?.credential && !explicit) {
       if (bundle.ownership === "external") await vault.publishExternal(previous.credential, bundle)
     } else {

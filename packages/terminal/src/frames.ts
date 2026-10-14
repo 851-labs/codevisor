@@ -78,7 +78,7 @@ export const sequenceFrame = (seq: number, frame: TerminalFramePayload): Sequenc
     case "output": {
       return { type: "output", seq, data: frame.data }
     }
-    case "exit": {
+    default: {
       return frame.exitCode === undefined
         ? { type: "exit", seq }
         : { type: "exit", seq, exitCode: frame.exitCode }

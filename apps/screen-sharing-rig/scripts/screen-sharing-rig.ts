@@ -70,7 +70,7 @@ const { command, options, positional } = (() => {
     return parseRigArguments(process.argv.slice(2))
   } catch (error) {
     process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
-    process.exit(2)
+    return process.exit(2)
   }
 })()
 if (options.help || options.h) {

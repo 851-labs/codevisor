@@ -31,7 +31,7 @@ export const installCommand = (spec: HarnessInstallMethodSpec): string => {
       return `npm install -g ${spec.ignoreScripts === true ? "--ignore-scripts " : ""}${[spec.packageName, ...(spec.additionalPackages ?? [])].filter(Boolean).join(" ")}`.trim()
     case "uv":
       return `uv tool install ${spec.packageName ?? ""}${spec.python === undefined ? "" : ` --python ${spec.python}`}`.trim()
-    case "curl":
+    default:
       return spec.command ?? ""
   }
 }
@@ -50,7 +50,7 @@ export const upgradeCommand = (spec: HarnessInstallMethodSpec): string => {
         .join(" ")}`.trim()
     case "uv":
       return `uv tool upgrade ${spec.packageName ?? ""}`.trim()
-    case "curl":
+    default:
       return spec.command ?? ""
   }
 }

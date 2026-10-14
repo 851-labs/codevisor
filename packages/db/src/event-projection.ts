@@ -97,7 +97,7 @@ export const projectChatEvent = (
   event: SessionEventRow
 ): string | undefined => {
   const payload = jsonRecord(JSON.parse(event.payload))
-  if (payload === undefined) return
+  if (payload === undefined) return undefined
   const sessionId = event.session_id
   let itemId: string | undefined
 

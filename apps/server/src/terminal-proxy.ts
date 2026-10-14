@@ -248,7 +248,7 @@ const clientFrame = (
         rows: payload.rows
       }
     }
-    case "close": {
+    default: {
       return { type: "close", clientId, clientSeq }
     }
   }

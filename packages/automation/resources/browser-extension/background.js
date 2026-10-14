@@ -397,11 +397,11 @@ const scheduleReconnect = () => {
   nextReconnectAt = Date.now() + delay
   const scheduledAt = nextReconnectAt
   reconnectTimer = setTimeout(connectToCodevisor, delay)
-  void cleared.then(() => {
-    if (scheduleGeneration === reconnectScheduleGeneration && nextReconnectAt === scheduledAt) {
-      return chrome.alarms.create(RECONNECT_ALARM, { when: scheduledAt })
-    }
-  })
+  void cleared.then(() =>
+    scheduleGeneration === reconnectScheduleGeneration && nextReconnectAt === scheduledAt
+      ? chrome.alarms.create(RECONNECT_ALARM, { when: scheduledAt })
+      : undefined
+  )
 }
 
 const connectToCodevisor = () => {

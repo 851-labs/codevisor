@@ -108,10 +108,10 @@ export const startMuseChat = async (
   })
 
   const current = () => models.find((model) => model.modelId === modelId)
-  const options_ = () => configOptions({ models, modelId, effort })
+  const currentOptions = () => configOptions({ models, modelId, effort })
   const send = (kind: EventKind, payload: Record<string, unknown>) =>
     emit({ kind, payload, subjectId: key })
-  const announceOptions = () => void send("session.updated", { configOptions: options_() })
+  const announceOptions = () => void send("session.updated", { configOptions: currentOptions() })
 
   const startTurn = (initiatedBy: "user" | "agent", museTurnId?: string): Turn => {
     const started: Turn = { id: randomUUID(), initiatedBy, museTurnId, cancelled: false }
@@ -337,7 +337,7 @@ export const startMuseChat = async (
 
   return {
     key,
-    configOptions: options_,
+    configOptions: currentOptions,
     skills,
     prompt: async (input) => {
       await endTurn({})
@@ -401,7 +401,7 @@ export const startMuseChat = async (
       } else {
         throw new Error(`Muse Code has no setting named ${configId}`)
       }
-      return options_()
+      return currentOptions()
     },
     answerQuestion: async (questionId, answer) => {
       const question = questions.get(questionId)

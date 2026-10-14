@@ -53,72 +53,16 @@
           }
         ]
       }
+    ],
+    "no-underscore-dangle": [
+      "error",
+      {
+        "allow": ["_meta", "_splat", "_tag", "_toolName", "__indirect_function_table"]
+      }
     ]
   },
   "jsPlugins": ["./scripts/lint/no-comments.mjs"],
   "overrides": [
-    {
-      "files": [
-        "apps/server/src/routes/execution-annotator.test.ts",
-        "apps/server/src/routes/execution-annotator.ts",
-        "apps/www/src/routes/docs/$.tsx",
-        "apps/www/src/routes/docs/*md.ts",
-        "packages/adapter-acp/src/provider.ts",
-        "packages/adapter-acp/src/skills.ts",
-        "packages/adapter-acp/src/stdio-connector.ts",
-        "packages/adapter-antigravity/src/auth.test.ts",
-        "packages/adapter-antigravity/src/session.ts",
-        "packages/adapter-claude/src/skill-tool.test.ts",
-        "packages/adapter-cursor/src/config.ts",
-        "packages/adapter-cursor/src/subagents.ts",
-        "packages/adapter-grok-build/src/acp-model-state.ts",
-        "packages/adapter-grok-build/src/model-selection.ts",
-        "packages/adapter-grok-build/src/stream.ts",
-        "packages/adapter-grok-build/src/subagents.ts",
-        "packages/adapter-muse/src/session.test.ts",
-        "packages/adapter-muse/src/session.ts",
-        "packages/adapter-muse/src/subagents.test.ts",
-        "packages/adapter-opencode/src/extension.ts",
-        "packages/adapter-opencode/src/skill-tool.test.ts",
-        "packages/adapter-opencode/src/skill-tool.ts",
-        "packages/adapter-opencode/src/subagents.ts",
-        "packages/agent-runtime/src/index.ts",
-        "packages/automation/src/browser-cursor-overlay.ts",
-        "packages/harness-manager/src/antigravity-auth.test.ts",
-        "packages/harness-manager/src/shared-credential-vault.test.ts",
-        "packages/terminal/src/vt/ghostty-vt.ts",
-        "scripts/dev-worker.mjs",
-        "scripts/xcodebuild.test.mjs"
-      ],
-      "rules": {
-        "no-underscore-dangle": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
-        "apps/server/src/infra/shared-accounts.ts",
-        "apps/server/src/routes/file-documents.ts",
-        "apps/server/src/routes/session-events.ts",
-        "apps/server/src/routes/sync-reconcilers.ts",
-        "apps/server/src/terminal-proxy.ts",
-        "apps/www/src/lib/llm-text.ts",
-        "packages/adapter-acp/src/provider.ts",
-        "packages/automation/resources/browser-extension/background.js",
-        "packages/db/src/event-projection.ts",
-        "packages/harness-manager/src/harness-lifecycle-detection.ts",
-        "packages/harness-manager/src/harness-lifecycle-support.ts",
-        "packages/harness-manager/src/harness-lifecycle-updates.ts",
-        "packages/harness-manager/src/pi-auth.ts",
-        "packages/terminal/src/frames.ts",
-        "packages/worktrees/src/git-review.ts",
-        "scripts/release/app-store-connect.test.mjs",
-        "scripts/release/testflight-release.test.mjs"
-      ],
-      "rules": {
-        "typescript/consistent-return": "off"
-      }
-    },
     {
       "files": [
         "apps/cloud/test/plugin-moderation.test.ts",
@@ -297,24 +241,6 @@
     },
     {
       "files": [
-        "apps/cloud/test/apple-native.test.ts",
-        "apps/server/src/routes/sessions.test.ts",
-        "apps/server/src/routes/shared-harness-accounts.test.ts",
-        "apps/server/src/routes/sync-reconcilers.test.ts",
-        "packages/mcp/src/mcp-secret-update.ts",
-        "packages/processes/src/processes.test.ts",
-        "scripts/check-plan.mjs",
-        "scripts/check-size-ratchet.mjs",
-        "scripts/check.mjs",
-        "scripts/test-swift.test.mjs",
-        "scripts/vendor-file-icons.mjs"
-      ],
-      "rules": {
-        "typescript/require-array-sort-compare": "off"
-      }
-    },
-    {
-      "files": [
         "apps/cloud/src/pages/auth-navigation.ts",
         "apps/cloud/test/web-auth.test.ts",
         "packages/db/src/events-service.ts",
@@ -327,20 +253,6 @@
       ],
       "rules": {
         "typescript/restrict-template-expressions": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/cloud/test/hub-notices.test.ts",
-        "apps/server/src/infra/listener-probe.test.ts",
-        "apps/server/src/server.test.ts",
-        "packages/automation/src/browser-cdp-test-support.ts",
-        "packages/harness-manager/src/grok-auth.ts",
-        "packages/harness-manager/src/pi-auth.ts",
-        "packages/mcp/src/mcp-manager-lifecycle.test.ts"
-      ],
-      "rules": {
-        "typescript/unbound-method": "off"
       }
     }
   ]

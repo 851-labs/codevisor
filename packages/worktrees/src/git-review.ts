@@ -168,7 +168,7 @@ const comparedTrees = async (
       const { tree, base } = await branchBase(dir, requestedBase, env)
       return { oldTree: tree, newTree: await worktreeTree(dir, env), base }
     }
-    case "lastTurn": {
+    default: {
       const oldTree = await turnStartTree(dir, env)
       return { oldTree, newTree: await worktreeTree(dir, env) }
     }

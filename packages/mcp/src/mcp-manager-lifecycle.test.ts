@@ -23,19 +23,10 @@ describe("MCP manager lifecycle", () => {
     const { manager, db } = await testManager()
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
-    const list = Client.prototype.listTools
-    let first = true
-    vi.spyOn(Client.prototype, "listTools").mockImplementation(async function (
-      this: Client,
-      ...args
-    ) {
-      if (first) {
-        first = false
-        entered.resolve()
-        await release.promise
-        return { tools: [{ name: "obsolete", inputSchema: { type: "object" as const } }] }
-      }
-      return list.apply(this, args)
+    vi.spyOn(Client.prototype, "listTools").mockImplementationOnce(async () => {
+      entered.resolve()
+      await release.promise
+      return { tools: [{ name: "obsolete", inputSchema: { type: "object" as const } }] }
     })
     const old = manager.create({
       authType: "none",
@@ -110,7 +101,9 @@ describe("MCP manager lifecycle", () => {
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const closed = Promise.withResolvers<void>()
+    // oxlint-disable-next-line typescript/unbound-method
     const connect = Client.prototype.connect
+    // oxlint-disable-next-line typescript/unbound-method
     const close = Client.prototype.close
     vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
       this: Client,
