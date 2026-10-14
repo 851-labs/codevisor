@@ -11,14 +11,13 @@ import {
   reconcileStaleStreamingTurns,
   startCodevisorServer
 } from "../server.js"
-import type { RouteState } from "../server.js"
 import {
   jsonRequest,
   makeServices,
   run,
   runningServers,
   tempDirs,
-  idleRestartCoordinator,
+  idleRouteState,
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
@@ -29,19 +28,6 @@ describe("streaming turn sweeps and prompt gating", () => {
     const { services } = await makeServices("server-a")
     const folder = mkdtempSync(join(tmpdir(), "codevisor-stale-sweep-"))
     tempDirs.push(folder)
-    const emptyRouteState = (): RouteState => ({
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    })
-
     const strandedSession = async () => {
       const project = await run(services.db.createProject({ folderPath: folder }))
       const created = await run(
@@ -125,7 +111,7 @@ describe("streaming turn sweeps and prompt gating", () => {
 
     const fanout = await run(makeEventFanout)
 
-    const owned = emptyRouteState()
+    const owned = idleRouteState()
     owned.activePromptSessions.add(session.id)
     owned.activePromptSessions.add(turnless.id)
     owned.activePromptSessions.add(midTranscript.id)
@@ -134,7 +120,7 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    const liveTurn = emptyRouteState()
+    const liveTurn = idleRouteState()
     liveTurn.activeTurnSessions.add(session.id)
     liveTurn.activeTurnSessions.add(turnless.id)
     liveTurn.activeTurnSessions.add(midTranscript.id)
@@ -143,9 +129,13 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    expect(
-      await reconcileStaleStreamingTurns(services, fanout, emptyRouteState(), "server-a")
-    ).toBe(3)
+    const repaired = await reconcileStaleStreamingTurns(
+      services,
+      fanout,
+      idleRouteState(),
+      "server-a"
+    )
+    expect(repaired).toBe(3)
     const repairedPage = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(repairedPage).toMatchObject({
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
@@ -174,9 +164,13 @@ describe("streaming turn sweeps and prompt gating", () => {
       )
     ).toBe(true)
 
-    expect(
-      await reconcileStaleStreamingTurns(services, fanout, emptyRouteState(), "server-a")
-    ).toBe(0)
+    const repairedAgain = await reconcileStaleStreamingTurns(
+      services,
+      fanout,
+      idleRouteState(),
+      "server-a"
+    )
+    expect(repairedAgain).toBe(0)
   })
 
   it("spares streaming turns with recent event activity", async () => {
@@ -199,18 +193,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     )
 
     const fanout = await run(makeEventFanout)
-    const routeState: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const routeState = idleRouteState()
     expect(await reconcileStaleStreamingTurns(services, fanout, routeState, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
       items: [{ role: "assistant", isGenerating: true }]
@@ -230,18 +213,7 @@ describe("streaming turn sweeps and prompt gating", () => {
       })
     )
     const fanout = await run(makeEventFanout)
-    const routeState: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const routeState = idleRouteState()
     const unsubscribe = fanout.subscribe(
       makeTurnDispatchListener(services, fanout, routeState, "server-a")
     )
@@ -317,18 +289,7 @@ describe("streaming turn sweeps and prompt gating", () => {
       })
     )
     const fanout = await run(makeEventFanout)
-    const routeState: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const routeState = idleRouteState()
     const unsubscribe = fanout.subscribe((event) => {
       const payload = event.payload as Record<string, unknown>
       if (event.kind === "session.updated" && payload.turnState === "ended") {

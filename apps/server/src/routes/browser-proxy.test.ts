@@ -4,9 +4,8 @@ import { request, createServer } from "node:http"
 import { describe, expect, it } from "vitest"
 
 import { handleRequest } from "../server-router.js"
-import { defaultServerConfig, makeEventFanout, type RouteState } from "../server.js"
-import { idleRestartCoordinator, makeServices, run } from "../test-support.js"
-import { jsonRequest, start } from "../test-support.js"
+import { defaultServerConfig, makeEventFanout } from "../server.js"
+import { idleRouteState, jsonRequest, makeServices, run, start } from "../test-support.js"
 
 const proxyRequest = (port: number, upgrade = false) =>
   new Promise<number>((resolve, reject) => {
@@ -61,18 +60,7 @@ describe("browser proxy session", () => {
   it("reports an unavailable proxy in a router without that service", async () => {
     const { services } = await makeServices()
     const fanout = await run(makeEventFanout)
-    const state: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const state = idleRouteState()
     const http = createServer((req, res) => {
       void handleRequest(
         services,

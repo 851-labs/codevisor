@@ -30,7 +30,7 @@ import {
   startCodevisorServer
 } from "./server.js"
 import type { RunningCodevisorServer } from "./server.js"
-import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
+import type { CodevisorServerConfig, CodevisorServerServices, RouteState } from "./server.js"
 import { run, makeAgents } from "./test-support-agents.js"
 export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"
@@ -45,6 +45,19 @@ export const idleRestartCoordinator = (): RestartCoordinator => {
     close: () => {}
   }
 }
+
+export const idleRouteState = (): RouteState => ({
+  activePromptSessions: new Set(),
+  promptTurnReleases: new Map(),
+  activeTurnSessions: new Set(),
+  gatedSessions: new Map(),
+  pendingPromptActions: new Set(),
+  pendingSessionCreates: new Map(),
+  turnHeldSessions: new Set(),
+  updateSignature: {},
+  restartHeldSessions: new Set(),
+  restart: idleRestartCoordinator()
+})
 
 class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []

@@ -7,15 +7,8 @@ import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "../archive-jobs.js"
-import { makeEventFanout, type RouteState } from "../server.js"
-import {
-  jsonRequest,
-  run,
-  start,
-  tempDirs,
-  idleRestartCoordinator,
-  listEvents
-} from "../test-support.js"
+import { makeEventFanout } from "../server.js"
+import { jsonRequest, run, start, tempDirs, idleRouteState, listEvents } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 
@@ -100,18 +93,7 @@ describe("workspace process cleanup", () => {
       Object.assign(services.db, { listWorkspacePanes: panes })
     }
     await run(services.db.createPromptQueueItem("chat", "Do not start"))
-    const state: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const state = idleRouteState()
     const prompt = vi.spyOn(services.agents, "prompt")
     await drainPromptQueue(services, await run(makeEventFanout), state, "server-a", "chat")
     expect(prompt).not.toHaveBeenCalled()
