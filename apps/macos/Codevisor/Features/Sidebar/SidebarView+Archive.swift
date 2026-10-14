@@ -35,16 +35,14 @@ extension SidebarView {
           }
         }
         if items.count > archivedVisibleCount {
-          Button("Show \(min(archivedPageSize, items.count - archivedVisibleCount)) More") {
+          // A row like New chat's, revealing the next page.
+          SidebarActionRow(
+            title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering
+          ) {
             withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
               archivedVisibleCount += archivedPageSize
             }
           }
-          .buttonStyle(.plain)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 6)
         }
       }
     }
