@@ -72,7 +72,11 @@ struct SidebarWorkspaceRow: View {
         if let machine {
           Image(systemName: machine.systemImage)
             .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
-            .foregroundStyle(.secondary)
+            // The display's screen is a second, translucent layer even in
+            // monochrome; clearing it leaves the outline the row's other
+            // glyphs use.
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.secondary, .clear)
             .frame(width: 18, height: 18)
             .help(machine.name)
             .accessibilityLabel("On \(machine.name)")
