@@ -33,7 +33,7 @@ struct SidebarArchivedWorkspaceRow: View {
         if isHovered {
           Button(action: onRestore) {
             Image(systemName: "arrow.uturn.backward")
-              .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
+              .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)
