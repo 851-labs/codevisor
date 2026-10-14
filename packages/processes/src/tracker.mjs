@@ -114,7 +114,7 @@ export async function trackProcessTree(pid, options = {}) {
 }
 
 /**
- * @param {Pick<import('node:child_process').ChildProcess, 'exitCode' | 'signalCode' | 'once'>} child
+ * @param {{exitCode: number | null, signalCode: NodeJS.Signals | null, once: (event: "exit", listener: () => void) => unknown}} child
  * @param {{stop: () => Promise<void>}} tree
  */
 export function stopTreeOnExit(child, tree) {

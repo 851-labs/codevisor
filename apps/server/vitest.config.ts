@@ -7,7 +7,6 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
-      all: true,
       include: ["src/**/*.ts"],
       exclude: [
         "**/dist/**",

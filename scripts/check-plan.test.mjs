@@ -67,7 +67,20 @@ test("JavaScript changes run turbo for the changed packages and their dependents
     typecheck: ["--filter=...@codevisor/db", "--filter=...@codevisor/server"],
     "test:coverage": ["--filter=...@codevisor/db", "--filter=...@codevisor/server"]
   })
-  assert.deepEqual(planned(["tsconfig.base.json"]), { typecheck: [], "test:coverage": [] })
+  assert.deepEqual(planned(["tsconfig.base.json"]), {
+    typecheck: [],
+    "test:coverage": [],
+    "typecheck:configs": []
+  })
+})
+
+test("Vitest config changes type-check every Vitest config", () => {
+  assert.deepEqual(planned(["packages/db/vitest.config.ts"]), {
+    typecheck: ["--filter=...@codevisor/db"],
+    "test:coverage": ["--filter=...@codevisor/db"],
+    "typecheck:configs": []
+  })
+  assert.deepEqual(planned(["tsconfig.configs.json"]), { "typecheck:configs": [] })
 })
 
 test("release tests follow the release scripts, the installer, and the modules they import", () => {

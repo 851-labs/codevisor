@@ -16,7 +16,6 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "../adapter-acp/src/runtime-*.test.ts"],
     coverage: {
-      all: true,
       include: ["src/**/*.ts"],
       exclude: ["**/dist/**", "**/*.test.ts"],
       provider: "v8",
