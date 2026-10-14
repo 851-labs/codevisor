@@ -196,9 +196,6 @@ const parseAddressedHeader = <Header>(value: unknown, addressField: string): Hea
 export const parseAppRelayHeader = (value: unknown): AppRelayHeader | undefined =>
   parseAddressedHeader<AppRelayHeader>(value, "machineId")
 
-const parseMachineRelayHeader = (value: unknown): MachineRelayHeader | undefined =>
-  parseAddressedHeader<MachineRelayHeader>(value, "peerId")
-
 export const parseHubToMachineRelayHeader = (
   value: unknown
 ): HubToMachineRelayHeader | undefined => {
@@ -226,7 +223,7 @@ export type MachineOutboundRelayHeader =
 export const parseMachineOutboundRelayHeader = (
   value: unknown
 ): MachineOutboundRelayHeader | undefined => {
-  const answer = parseMachineRelayHeader(value)
+  const answer = parseAddressedHeader<MachineRelayHeader>(value, "peerId")
   if (answer !== undefined) return { direction: "answer", ...answer }
   const opened = parseAppRelayHeader(value)
   return opened === undefined ? undefined : { direction: "open", ...opened }
