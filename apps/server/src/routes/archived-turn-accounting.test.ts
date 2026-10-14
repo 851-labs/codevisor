@@ -6,14 +6,7 @@ import type { Harness } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "../changes-test-support.js"
-import {
-  jsonRequest,
-  makeServices,
-  run,
-  runningServers,
-  startWithApp,
-  waitFor
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, waitFor } from "../test-support.js"
 
 describe("archived chats and update turn accounting", () => {
   it("ends an archived chat's turn even when its prompt never settles", async () => {
@@ -39,7 +32,6 @@ describe("archived chats and update turn accounting", () => {
       subscribe: () => () => {}
     }
     const server = await startWithApp({ ...services, lifecycle })
-    runningServers.push(server)
 
     const folder = join(mkdtempSync(join(tmpdir(), "codevisor-archive-turn-")), "repo")
     mkdirSync(folder, { recursive: true })
@@ -85,7 +77,6 @@ describe("archived chats and update turn accounting", () => {
   it("never holds an update behind a turn an archived chat starts after its archive", async () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
 
     const folder = join(mkdtempSync(join(tmpdir(), "codevisor-archive-late-turn-")), "repo")
     mkdirSync(folder, { recursive: true })

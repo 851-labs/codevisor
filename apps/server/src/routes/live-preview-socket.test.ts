@@ -5,7 +5,7 @@ import type { AutomationTool } from "@codevisor/mcp"
 import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
 
-import { jsonRequest, makeServices, runningServers, start, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, start, startWithApp } from "../test-support.js"
 import { attachLivePreviewSocket } from "./live-preview-socket.js"
 
 const fakeSocket = () => {
@@ -103,7 +103,6 @@ describe("browser preview socket", () => {
   it("advertises live-preview-v1 only when the MCP manager is present", async () => {
     const { services } = await makeServices("server-a")
     const features = async (server: Awaited<ReturnType<typeof startWithApp>>) => {
-      runningServers.push(server)
       return ((await jsonRequest(server, "/v1/info")).body as { features: Array<string> }).features
     }
     expect(await features(await startWithApp(services))).toContain("live-preview-v1")

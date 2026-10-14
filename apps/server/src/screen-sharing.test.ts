@@ -4,7 +4,7 @@ import type { ScreenSharingRequest } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
 import type { CloudServerControl } from "./server-context-types.js"
-import { jsonRequest, makeServices, run, runningServers, startWithApp } from "./test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "./test-support.js"
 
 const capabilities = (): ScreenSharingRequest => ({
   version: 1,
@@ -25,7 +25,6 @@ const fixture = async (
     screenSharing,
     ...(cloud === undefined ? {} : { cloud })
   })
-  runningServers.push(server)
   const project = await run(services.db.createProject({ folderPath: "/fixture/screen-sharing" }))
   const workspace = await run(
     services.db.upsertWorkspace({
@@ -118,7 +117,6 @@ describe("native Screen Sharing signaling", () => {
       screenSharing: helper,
       auth: { allowLocalhostWithoutAuth: false, requireBearerToken: true }
     })
-    runningServers.push(server)
     const request = { method: "POST", body: JSON.stringify(capabilities()) }
     expect((await jsonRequest(server, "/v1/screen-sharing", request)).status).toBe(401)
     for (const browserHeader of [
@@ -282,7 +280,6 @@ describe("native Screen Sharing signaling", () => {
   it("returns actionable errors for an absent, incompatible or failed native helper", async () => {
     const { services } = await makeServices()
     const server = await startWithApp(services)
-    runningServers.push(server)
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       features: expect.not.arrayContaining(["screen-sharing-v1"])
     })

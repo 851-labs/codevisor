@@ -12,7 +12,6 @@ import {
   jsonRequest,
   makeServices,
   run,
-  runningServers,
   startWithApp,
   tempDirs,
   waitFor,
@@ -82,7 +81,6 @@ describe("restart drain", () => {
     const { services } = await makeServices("server-progress")
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { updater })
-    runningServers.push(server)
     await jsonRequest(server, "/v1/update/apply", { method: "POST" })
     await waitFor(() => state.applyCalls === 1)
     const drain = (await jsonRequest(server, "/v1/restart/drain")).body as { startedAt: string }
@@ -113,7 +111,6 @@ describe("restart drain", () => {
       restartSnapshotPath: snapshotPath,
       updater
     })
-    runningServers.push(server)
     const sessionId = await openSession(server, "Draining")
 
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
@@ -194,7 +191,6 @@ describe("restart drain", () => {
     )
 
     const restarted = await startWithApp(services, undefined, { restartSnapshotPath: snapshotPath })
-    runningServers.push(restarted)
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[1]?.[1]).toBe("held prompt")
     expect(await gateEvents(services, sessionId)).toEqual([
@@ -221,7 +217,6 @@ describe("restart drain", () => {
   it("interrupts the remaining turns on request", async () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     const sessionId = await openSession(server, "Interrupted")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
@@ -249,7 +244,6 @@ describe("restart drain", () => {
     const { agents, services } = await makeServices("server-a")
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { updater })
-    runningServers.push(server)
     const sessionId = await openSession(server, "Interrupted apply")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
@@ -264,7 +258,6 @@ describe("restart drain", () => {
   it("cancelling a drain releases held prompts", async () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp(services)
-    runningServers.push(server)
     const sessionId = await openSession(server, "Released")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
@@ -290,7 +283,6 @@ describe("restart drain", () => {
     const { agents, services } = await makeServices("server-a")
     const { state, updater } = makeUpdater({ applyFails: true })
     const server = await startWithApp(services, undefined, { updater })
-    runningServers.push(server)
     const sessionId = await openSession(server, "Failed apply")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
@@ -307,7 +299,6 @@ describe("restart drain", () => {
     const { agents, services } = await makeServices("server-a")
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { updater })
-    runningServers.push(server)
     const sessionId = await openSession(server, "Cancelled apply")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
@@ -328,7 +319,6 @@ describe("restart drain", () => {
     const { agents, services } = await makeServices("server-a")
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { updater })
-    runningServers.push(server)
     const sessionId = await openSession(server, "Refused")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
