@@ -10,6 +10,8 @@ import {
   signDiagnosticApp
 } from "./screen-sharing-bundle.ts"
 
+const identityVariable = "CODEVISOR_RIG_SIGN_IDENTITY"
+
 const findIdentityOutput = `Policy: Code Signing
   Matching identities
   1) 0123456789ABCDEF0123456789ABCDEF01234567 "Developer ID Application: Example Person (TEAM123456)"
@@ -59,14 +61,14 @@ test("falls back to ad hoc with a warning when no development identity exists", 
     resolved.warning!,
     /^WARNING: signing ad hoc \(no Apple Development identity found\)/
   )
-  assert.match(resolved.warning!, /CODEVISOR_RIG_SIGN_IDENTITY/)
+  assert.match(resolved.warning!, new RegExp(identityVariable))
 })
 
 test("environment override wins, may be a hash, and rejects revoked identities", () => {
   const identities = parseCodesigningIdentities(findIdentityOutput)
   assert.deepEqual(
     resolveSigningIdentity({
-      env: { CODEVISOR_RIG_SIGN_IDENTITY: "Developer ID Application: Example Person (TEAM123456)" },
+      env: { [identityVariable]: "Developer ID Application: Example Person (TEAM123456)" },
       identities
     }),
     {
@@ -77,7 +79,7 @@ test("environment override wins, may be a hash, and rejects revoked identities",
   )
   assert.equal(
     resolveSigningIdentity({
-      env: { CODEVISOR_RIG_SIGN_IDENTITY: "0123456789ABCDEF0123456789ABCDEF01234567" },
+      env: { [identityVariable]: "0123456789ABCDEF0123456789ABCDEF01234567" },
       identities
     }).identity,
     "0123456789ABCDEF0123456789ABCDEF01234567"
@@ -85,13 +87,13 @@ test("environment override wins, may be a hash, and rejects revoked identities",
   assert.throws(
     () =>
       resolveSigningIdentity({
-        env: { CODEVISOR_RIG_SIGN_IDENTITY: "Apple Development: Example Person (CERT000002)" },
+        env: { [identityVariable]: "Apple Development: Example Person (CERT000002)" },
         identities
       }),
     /not valid/
   )
   const explicitAdHoc = resolveSigningIdentity({
-    env: { CODEVISOR_RIG_SIGN_IDENTITY: "-" },
+    env: { [identityVariable]: "-" },
     identities
   })
   assert.equal(explicitAdHoc.adHoc, true)

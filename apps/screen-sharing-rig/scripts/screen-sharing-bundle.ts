@@ -142,11 +142,9 @@ export async function signDiagnosticApp({
   run: CommandRunner
 }): Promise<void> {
   if (!identity) throw new Error("A signing identity is required (use - for ad hoc).")
-  const sign = async (path: string) => {
+  for (const path of [...frameworks, app]) {
     await run("/usr/bin/codesign", ["--force", "--sign", identity, "--timestamp=none", path])
   }
-  for (const framework of frameworks) await sign(framework)
-  await sign(app)
 }
 
 export async function designatedRequirement({
