@@ -16,7 +16,7 @@ struct SidebarUpdateFooter: View {
   var body: some View {
     if center.availableCount > 0 || center.isUpdatingAll {
       VStack(spacing: 0) {
-        Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+        Hairline(color: theme.separator)
         Button {
           SettingsRouter.shared.showUpdates()
           if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }

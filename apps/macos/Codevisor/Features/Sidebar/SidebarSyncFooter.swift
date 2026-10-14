@@ -12,7 +12,7 @@ struct SidebarSyncFooter: View {
   var body: some View {
     if let label = indicator.label {
       VStack(spacing: 0) {
-        Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+        Hairline(color: theme.separator)
         HStack(spacing: 6) {
           if indicator.unreachableMachineNames.isEmpty {
             ProgressView()
