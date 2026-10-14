@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest"
 
 import { handleRequest } from "../server-router.js"
 import { defaultServerConfig, makeEventFanout } from "../server.js"
-import { idleRouteState, makeServices, run } from "../test-support.js"
-import { jsonRequest, start } from "../test-support.js"
+import { idleRouteState, jsonRequest, makeServices, run, start } from "../test-support.js"
 
 const proxyRequest = (port: number, upgrade = false) =>
   new Promise<number>((resolve, reject) => {

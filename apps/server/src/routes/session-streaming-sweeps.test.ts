@@ -129,9 +129,13 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    expect(await reconcileStaleStreamingTurns(services, fanout, idleRouteState(), "server-a")).toBe(
-      3
+    const repaired = await reconcileStaleStreamingTurns(
+      services,
+      fanout,
+      idleRouteState(),
+      "server-a"
     )
+    expect(repaired).toBe(3)
     const repairedPage = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(repairedPage).toMatchObject({
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
@@ -160,9 +164,13 @@ describe("streaming turn sweeps and prompt gating", () => {
       )
     ).toBe(true)
 
-    expect(await reconcileStaleStreamingTurns(services, fanout, idleRouteState(), "server-a")).toBe(
-      0
+    const repairedAgain = await reconcileStaleStreamingTurns(
+      services,
+      fanout,
+      idleRouteState(),
+      "server-a"
     )
+    expect(repairedAgain).toBe(0)
   })
 
   it("spares streaming turns with recent event activity", async () => {
