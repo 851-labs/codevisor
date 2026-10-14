@@ -196,7 +196,7 @@ const parseAddressedHeader = <Header>(value: unknown, addressField: string): Hea
 export const parseAppRelayHeader = (value: unknown): AppRelayHeader | undefined =>
   parseAddressedHeader<AppRelayHeader>(value, "machineId")
 
-export const parseMachineRelayHeader = (value: unknown): MachineRelayHeader | undefined =>
+const parseMachineRelayHeader = (value: unknown): MachineRelayHeader | undefined =>
   parseAddressedHeader<MachineRelayHeader>(value, "peerId")
 
 export const parseHubToMachineRelayHeader = (

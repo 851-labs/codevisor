@@ -13,7 +13,6 @@ import {
   parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
   parseMachineOutboundRelayHeader,
-  parseMachineRelayHeader,
   parseRelayFrameHeader,
   type AppToHub,
   type CloudDeviceInfo,
@@ -186,11 +185,6 @@ describe("relay envelopes (binary)", () => {
     expect(parseAppRelayHeader({ peerId: "p", frame })).toBeUndefined()
     expect(parseAppRelayHeader("nope")).toBeUndefined()
     expect(parseAppRelayHeader({ machineId: "m-1", frame: { t: "data" } })).toBeUndefined()
-
-    expect(parseMachineRelayHeader({ peerId: "conn-1", frame })).toEqual({
-      peerId: "conn-1",
-      frame
-    })
 
     const open = frames[0]!
     expect(
