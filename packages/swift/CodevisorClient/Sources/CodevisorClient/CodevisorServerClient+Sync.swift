@@ -14,15 +14,13 @@ public struct ServerSyncTimestamp: Codable, Equatable, Sendable {
     self.counter = counter
     self.deviceId = deviceId
   }
+
+  /// The wall-clock time the entry was written.
+  public var date: Date { Date(timeIntervalSince1970: Double(wallMs) / 1000) }
 }
 
 /// One replicated config key. Deletions are tombstones (`deleted: true`),
 /// so a removal beats an older write on replicas that never saw the key.
-public extension ServerSyncTimestamp {
-  /// The wall-clock time the entry was written.
-  var date: Date { Date(timeIntervalSince1970: Double(wallMs) / 1000) }
-}
-
 public struct ServerSyncEntry: Codable, Equatable, Sendable {
   public var key: String
   public var value: JSONValue
@@ -129,6 +127,30 @@ extension CodevisorServerClient {
       contentType: "application/gzip"
     )
   }
+
+  public func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
+    try await send(
+      "/v1/sync/harnesses/reconcile",
+      method: "POST",
+      body: Optional<EmptyBody>.none
+    )
+  }
+
+  public func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
+    try await send(
+      "/v1/sync/plugins/reconcile",
+      method: "POST",
+      body: Optional<EmptyBody>.none
+    )
+  }
+
+  public func reconcileCredentialsSync() async throws -> JSONValue {
+    try await send(
+      "/v1/sync/credentials/reconcile",
+      method: "POST",
+      body: Optional<EmptyBody>.none
+    )
+  }
 }
 
 /// One machine blocked on itself: a sign-in required before an enable
@@ -166,16 +188,6 @@ public struct ServerHarnessSyncStatus: Codable, Equatable, Sendable {
   }
 }
 
-extension CodevisorServerClient {
-  public func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
-    try await send(
-      "/v1/sync/harnesses/reconcile",
-      method: "POST",
-      body: Optional<EmptyBody>.none
-    )
-  }
-}
-
 /// POST /v1/sync/plugins/reconcile: the plugin plane's pass summary.
 public struct ServerPluginSyncStatus: Codable, Equatable, Sendable {
   public var published: [String]
@@ -196,25 +208,5 @@ public struct ServerPluginSyncStatus: Codable, Equatable, Sendable {
     self.removed = removed
     self.installed = installed
     self.blocked = blocked
-  }
-}
-
-extension CodevisorServerClient {
-  public func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
-    try await send(
-      "/v1/sync/plugins/reconcile",
-      method: "POST",
-      body: Optional<EmptyBody>.none
-    )
-  }
-}
-
-extension CodevisorServerClient {
-  public func reconcileCredentialsSync() async throws -> JSONValue {
-    try await send(
-      "/v1/sync/credentials/reconcile",
-      method: "POST",
-      body: Optional<EmptyBody>.none
-    )
   }
 }
