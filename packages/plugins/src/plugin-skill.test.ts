@@ -30,7 +30,7 @@ describe("pluginAuthoringSkill", () => {
       moduleDirectory: join(root, "dist"),
       workingDirectory: join(root, "elsewhere")
     })
-    expect(spec.name).toBe(PLUGIN_AUTHORING_SKILL_DIRECTORY)
+    expect(spec.name).toBe("create-codevisor-plugin")
     expect(spec.path).toBe(join(skillDir, "SKILL.md"))
   })
 
