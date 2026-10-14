@@ -39,7 +39,7 @@ const turboStep = (name) => ({
       return workspace !== undefined
     })
     if (inputs.length === 0) return undefined
-    const sorted = [...names].toSorted()
+    const sorted = [...names].toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     return {
       inputs,
       args: sorted.map((workspaceName) => `--filter=...${workspaceName}`),

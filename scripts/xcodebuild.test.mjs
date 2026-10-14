@@ -6,9 +6,9 @@ import { packageResolutionArguments, xcodebuildArguments } from "./xcodebuild.mj
 
 test("xcodebuild builds pin worktree-local caches", () => {
   const layout = developmentLayout("/repo/codevisor", {})
-  const arguments_ = xcodebuildArguments(layout, "macos", ["-scheme", "Codevisor", "build"])
+  const xcodeArguments = xcodebuildArguments(layout, "macos", ["-scheme", "Codevisor", "build"])
 
-  assert.deepEqual(arguments_.slice(0, 8), [
+  assert.deepEqual(xcodeArguments.slice(0, 8), [
     "-derivedDataPath",
     layout.build.macos.derivedData,
     "-clonedSourcePackagesDirPath",
@@ -18,7 +18,7 @@ test("xcodebuild builds pin worktree-local caches", () => {
     "-skipMacroValidation",
     "COMPILER_INDEX_STORE_ENABLE=NO"
   ])
-  assert.deepEqual(arguments_.slice(8), ["-scheme", "Codevisor", "build"])
+  assert.deepEqual(xcodeArguments.slice(8), ["-scheme", "Codevisor", "build"])
 })
 
 test("standalone Xcode operations omit incompatible build flags", () => {

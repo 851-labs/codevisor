@@ -35,7 +35,7 @@ describe("encrypted shared credential vault", () => {
   it.each(["codex", "pi", "opencode", "grok-build"] as const)(
     "serializes two machines refreshing %s and publishes both tokens in one generation",
     async (harnessId) => {
-      const fixture_ = fixture()
+      const f = fixture()
       const entered = gate(),
         release = gate(),
         waiting = gate()
@@ -44,11 +44,11 @@ describe("encrypted shared credential vault", () => {
         await release.promise
         return { ...refreshed, harnessId }
       })
-      const a = makeSharedCredentialVault({ ...fixture_.config, rotate })
+      const a = makeSharedCredentialVault({ ...f.config, rotate })
       const b = makeSharedCredentialVault({
-        ...fixture_.config,
+        ...f.config,
         rotate,
-        coordinate: fixture_.coordinate("b"),
+        coordinate: f.coordinate("b"),
         wait: async () => {
           waiting.resolve()
           await release.promise
@@ -63,8 +63,8 @@ describe("encrypted shared credential vault", () => {
       expect(await first).toEqual({ ...refreshed, harnessId })
       expect(await second).toEqual({ ...refreshed, harnessId })
       expect(rotate).toHaveBeenCalledOnce()
-      expect(fixture_.records.get(ref.id)?.generation).toBe(2)
-      expect(fixture_.receipts.size).toBe(0)
+      expect(f.records.get(ref.id)?.generation).toBe(2)
+      expect(f.receipts.size).toBe(0)
     }
   )
 

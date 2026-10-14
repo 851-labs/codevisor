@@ -32,7 +32,7 @@ export const sessionEventSink =
   ): RuntimeEventSink =>
   (event) => {
     if (isUserRuntimeEvent(event)) {
-      return
+      return undefined
     }
     if (event.kind === "session.authRequired") {
       return (async () => {

@@ -46,12 +46,15 @@ import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
-const arguments_ = process.argv.slice(2)
-const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(arguments_, {
-  allowedArguments: ["--no-ios", "--reuse-macos-build"]
-})
-const reuseMacOSBuild = requestsMacOSBuildReuse(arguments_)
-const includesIOS = !arguments_.includes("--no-ios")
+const cliArguments = process.argv.slice(2)
+const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
+  cliArguments,
+  {
+    allowedArguments: ["--no-ios", "--reuse-macos-build"]
+  }
+)
+const reuseMacOSBuild = requestsMacOSBuildReuse(cliArguments)
+const includesIOS = !cliArguments.includes("--no-ios")
 const simulator = includesIOS ? await requireIOSSimulator(repoRoot) : undefined
 sanitizeAmbientEnvironment(process.env)
 const instance = await resolveDevelopmentInstance(repoRoot, process.env)

@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest"
 import { makeAntigravityAuth } from "./antigravity-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 
-const URL_ = "https://accounts.google.com/o/oauth2/auth?client_id=1"
+const SIGN_IN_URL = "https://accounts.google.com/o/oauth2/auth?client_id=1"
 
 const account = (fields: Partial<HarnessAccountRecord> = {}) =>
   ({
@@ -36,7 +36,7 @@ const terminals = (agy: { signedIn: boolean; refuses: boolean; quits: boolean })
       },
       onData: (handler) => {
         draw = handler
-        if (!agy.quits) queueMicrotask(() => draw?.(`\x1b]8;;${URL_}\x07link\x1b]8;;\x07`))
+        if (!agy.quits) queueMicrotask(() => draw?.(`\x1b]8;;${SIGN_IN_URL}\x07link\x1b]8;;\x07`))
       },
       onExit: (handler) => {
         if (agy.quits) queueMicrotask(() => handler(1))
@@ -117,7 +117,7 @@ describe("Antigravity sign-in", () => {
   it("shows agy's Google link as a paste-code step for a managed account", async () => {
     const { auth, events } = setup()
     const flow = await auth.begin(account())
-    expect(flow).toEqual({ id: flow.id, accountId: "acct-1", kind: "pasteCode", url: URL_ })
+    expect(flow).toEqual({ id: flow.id, accountId: "acct-1", kind: "pasteCode", url: SIGN_IN_URL })
     expect(events).toEqual([
       { kind: "harness.authFlow.updated", subjectId: "antigravity", payload: flow }
     ])

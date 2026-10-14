@@ -418,7 +418,10 @@ describe("credentials plane", () => {
       "opencode-profile:work",
       "pi-auth"
     ])
-    expect(refreshed.toSorted()).toEqual(["opencode", "pi"])
+    expect(refreshed.toSorted((a, b) => (a ?? "").localeCompare(b ?? ""))).toEqual([
+      "opencode",
+      "pi"
+    ])
     expect(contents.get("pi-auth")).toContain("fleet")
 
     const withFerryNoAuth = {

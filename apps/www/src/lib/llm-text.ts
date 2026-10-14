@@ -10,7 +10,7 @@ const responseHeaders = {
 export async function getPageMarkdown(slugs: string[], pageUrl: string) {
   const resolvedSource = await source.get()
   const page = resolvedSource.getPage(slugs)
-  if (!page) return
+  if (!page) return undefined
 
   const heading = `# ${page.data.title} (${pageUrl})`
   if (page.type === "docs") {
@@ -72,7 +72,7 @@ export function markdownResponse(markdown: string | undefined) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
   return value as Record<string, unknown>
 }
 

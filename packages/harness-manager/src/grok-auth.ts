@@ -83,14 +83,14 @@ export const makeGrokAuth = (core: HarnessAuthCore) => {
       return { id, accountId: row.id, kind: "complete" }
     }
     if (method !== "grok.com") throw new Error("Choose a Grok sign-in method")
-    const loginOAuth = core.config.grokOAuth?.login ?? loginGrok
+    const grokOAuth = core.config.grokOAuth ?? { login: loginGrok }
     const abort = new AbortController()
     const login: Login = { accountId: row.id, shared, abort, done: Promise.resolve() }
     logins.set(id, login)
     const ready = Promise.withResolvers<HarnessAuthFlow>()
     login.done = (async () => {
       try {
-        const credential = await loginOAuth({
+        const credential = await grokOAuth.login({
           signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10 * 60_000)]),
           notify: (event) => {
             if (event.type !== "device_code" || abort.signal.aborted) return

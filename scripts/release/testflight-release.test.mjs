@@ -114,7 +114,7 @@ function fixture(overrides = {}) {
       assert.equal(method, "POST")
       assert.deepEqual(options.body, { data: [{ type: "builds", id: "build" }] })
       state.assigned = true
-      return
+      return undefined
     }
     if (path === "betaBuildLocalizations" && method === "GET") {
       assert.equal(options.query["filter[build]"], "build")
@@ -167,7 +167,7 @@ function fixture(overrides = {}) {
       state.externalState = "IN_BETA_TESTING"
       return { data: {} }
     }
-    assert.fail(`Unexpected API call: ${method} ${path}`)
+    throw new assert.AssertionError({ message: `Unexpected API call: ${method} ${path}` })
   }
   const run = (options = {}) =>
     promoteTestFlightBuild(client, configuration, {

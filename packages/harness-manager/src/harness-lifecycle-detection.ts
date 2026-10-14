@@ -95,7 +95,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
       }
       case "github":
         return checkGithubLatest(source.check.repo, fetchImpl)
-      case "sparkle": {
+      default: {
         const url =
           arch === "x64" && source.check.appcastUrlX64 !== undefined
             ? source.check.appcastUrlX64

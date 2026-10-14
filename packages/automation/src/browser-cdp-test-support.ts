@@ -3,6 +3,7 @@ import { vi } from "vitest"
 import { CdpConnection } from "./browser-cdp.js"
 
 export const emulateBrowserFocus = () => {
+  // oxlint-disable-next-line typescript/unbound-method
   const send = CdpConnection.prototype.sendOnce
   vi.spyOn(CdpConnection.prototype, "sendOnce").mockImplementation(async function <T>(
     this: CdpConnection,
@@ -23,6 +24,7 @@ export const observeCdp = () => {
     matches: (params: Readonly<Record<string, unknown>>) => boolean
     resolve: () => void
   }>()
+  // oxlint-disable-next-line typescript/unbound-method
   const on = CdpConnection.prototype.on
   vi.spyOn(CdpConnection.prototype, "on").mockImplementation(function (
     this: CdpConnection,

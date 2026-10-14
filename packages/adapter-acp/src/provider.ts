@@ -69,7 +69,7 @@ const resolveLaunch = (
         ? undefined
         : { args: ["-y", launch.packageName, ...launch.args], command }
     }
-    case "executable": {
+    default: {
       const located =
         environment.locateExecutable(launch.command, environment.env) ??
         (definition.detectBinaries.includes(installed)

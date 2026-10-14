@@ -101,7 +101,7 @@ const eventValue = (event: AuthEvent): PiAuthEvent => {
         message: event.message,
         ...(event.links?.[0]?.url === undefined ? {} : { url: event.links[0].url })
       }
-    case "progress":
+    default:
       return { type: event.type, message: event.message }
   }
 }
@@ -183,9 +183,9 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     shared: boolean
   ): Promise<void> => {
     try {
-      const login = method === "oauth" ? provider.auth.oauth?.login : provider.auth.apiKey?.login
-      if (login === undefined) throw new Error(`${provider.name} does not support ${method}`)
-      const credential = await login({
+      const auth = method === "oauth" ? provider.auth.oauth : provider.auth.apiKey
+      if (auth?.login === undefined) throw new Error(`${provider.name} does not support ${method}`)
+      const credential = await auth.login({
         signal: flow.abort.signal,
         notify: (event) => {
           update(flow, {

@@ -12,14 +12,17 @@ const mergedSecretRecord = (
   return Object.keys(next).length === 0 ? undefined : next
 }
 
+const sortedEntries = (record: Readonly<Record<string, string>>): Array<[string, string]> =>
+  Object.entries(record).toSorted(([a], [b]) => (a < b ? -1 : 1))
+
 export const connectionSecretsSignature = (stored: StoredSecrets): string =>
   JSON.stringify({
     bearerToken:
       stored.bearerToken === undefined || stored.bearerToken === ""
         ? undefined
         : stored.bearerToken,
-    headers: stored.headers === undefined ? undefined : Object.entries(stored.headers).toSorted(),
-    env: stored.env === undefined ? undefined : Object.entries(stored.env).toSorted(),
+    headers: stored.headers === undefined ? undefined : sortedEntries(stored.headers),
+    env: stored.env === undefined ? undefined : sortedEntries(stored.env),
     oauth:
       stored.oauth === undefined
         ? undefined

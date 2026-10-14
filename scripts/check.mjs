@@ -47,7 +47,7 @@ function changedFiles(base) {
       ...splitPaths(git("diff", "--name-only", "--no-renames", "-z", base)),
       ...splitPaths(git("ls-files", "--others", "--exclude-standard", "-z"))
     ])
-  ].toSorted()
+  ].toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
 }
 
 function importClosure(entries) {

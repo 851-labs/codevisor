@@ -97,7 +97,7 @@ export const startAgyChat = async (
     selection.modelId = resolved.model.id
     selection.tier = resolved.variant.tier
   }
-  let process_: AgyProcess | undefined
+  let agyProcess: AgyProcess | undefined
   let stale = false
   let turn: Turn | undefined
   let cancelTimer: ReturnType<typeof setTimeout> | undefined
@@ -106,7 +106,7 @@ export const startAgyChat = async (
 
   const send = (kind: EventKind, payload: Record<string, unknown>) =>
     emit({ kind, payload, subjectId: key })
-  const options_ = () => configOptions(options.models, selection)
+  const currentOptions = () => configOptions(options.models, selection)
 
   const endTurn = (outcome: { detail?: string; cancelled?: boolean }) => {
     const ended = turn
@@ -159,8 +159,8 @@ export const startAgyChat = async (
   }
 
   const exited = (owner: AgyProcess, error: Error) => {
-    if (process_ !== owner) return
-    process_ = undefined
+    if (agyProcess !== owner) return
+    agyProcess = undefined
     endTurn(
       turn?.cancelled === true ? { cancelled: true } : { detail: failureDetail(error.message) }
     )
@@ -205,13 +205,13 @@ export const startAgyChat = async (
     }
     spawned.onEvent(handle)
     spawned.onExit((error) => exited(spawned, error))
-    process_ = spawned
+    agyProcess = spawned
     stale = false
   }
 
   const relaunch = async () => {
-    process_?.close()
-    process_ = undefined
+    agyProcess?.close()
+    agyProcess = undefined
     await launch()
   }
 
@@ -224,13 +224,13 @@ export const startAgyChat = async (
     })
     void send("session.updated", { initiatedBy: "user", turnId: id, turnState: "started" })
     try {
-      if (process_ === undefined || stale) await relaunch()
+      if (agyProcess === undefined || stale) await relaunch()
     } catch (cause) {
       endTurn({ detail: (cause as Error).message })
       return done
     }
     const prompt = normalizePromptInput(input)
-    process_!.send({
+    agyProcess!.send({
       event: "user",
       message: { content: withAttachmentNotes(prompt.text, prompt.attachments ?? []) }
     })
@@ -241,7 +241,7 @@ export const startAgyChat = async (
     get key() {
       return key
     },
-    configOptions: options_,
+    configOptions: currentOptions,
     prompt: (input) => {
       const next = queue.then(() => run(input))
       queue = next
@@ -251,11 +251,11 @@ export const startAgyChat = async (
       const current = turn
       if (current === undefined) return
       current.cancelled = true
-      process_?.interrupt()
+      agyProcess?.interrupt()
       clearTimeout(cancelTimer)
       cancelTimer = setTimeout(() => {
-        process_?.close()
-        process_ = undefined
+        agyProcess?.close()
+        agyProcess = undefined
         endTurn({ cancelled: true })
       }, cancelGraceMs)
     },
@@ -279,12 +279,12 @@ export const startAgyChat = async (
       } else {
         throw new Error(`Antigravity has no setting named ${configId}`)
       }
-      return options_()
+      return currentOptions()
     },
     close: () => {
       endTurn({ cancelled: true })
-      process_?.close()
-      process_ = undefined
+      agyProcess?.close()
+      agyProcess = undefined
     }
   }
 }

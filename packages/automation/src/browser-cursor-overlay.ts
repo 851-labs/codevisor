@@ -89,7 +89,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     tick: () => void
   }
 
-  type Host = HTMLDivElement & { __codevisorPointer?: Layer }
+  type Host = HTMLDivElement & { codevisorPointer?: Layer }
 
   const idle: PointerReply = { duration: 0, visible: false }
   if (typeof document === "undefined" || document.documentElement === null) return idle
@@ -123,7 +123,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   const existingHost = (): Host | undefined => {
     const host = document.getElementById(LAYER_ID) as Host | null
     if (host === null) return undefined
-    if (host.__codevisorPointer?.version === VERSION) return host
+    if (host.codevisorPointer?.version === VERSION) return host
     host.remove()
     return undefined
   }
@@ -222,7 +222,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
 
   const ensureLayer = (): Layer => {
     const host = existingHost()
-    if (host?.__codevisorPointer !== undefined) return host.__codevisorPointer
+    if (host?.codevisorPointer !== undefined) return host.codevisorPointer
     const created = document.createElement("div") as Host
     created.id = LAYER_ID
     created.setAttribute("aria-hidden", "true")
@@ -252,7 +252,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
       for (const cursor of layer.cursors.values()) active = render(layer, cursor, time) || active
       layer.frame = active ? requestAnimationFrame(layer.tick) : 0
     }
-    created.__codevisorPointer = layer
+    created.codevisorPointer = layer
     document.documentElement.append(created)
     return layer
   }
@@ -364,7 +364,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   })
 
   if (command.kind === "inspect") {
-    const layer = existingHost()?.__codevisorPointer
+    const layer = existingHost()?.codevisorPointer
     return {
       duration: 0,
       visible: !hidden(),
@@ -383,7 +383,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   if (session.length === 0) return idle
 
   if (command.kind === "hide") {
-    const layer = existingHost()?.__codevisorPointer
+    const layer = existingHost()?.codevisorPointer
     const cursor = layer?.cursors.get(session)
     if (layer !== undefined && cursor !== undefined) removeCursor(layer, cursor)
     return idle
