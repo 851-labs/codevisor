@@ -13,10 +13,8 @@ export const scratchWorkspacesRoot = (): string => join(worktreesRoot(), "worksp
 
 export const scratchWorkspacePath = (name: string): string => join(scratchWorkspacesRoot(), name)
 
-export const managedReposRoot = (): string =>
-  process.env["CODEVISOR_REPOS_ROOT"] ?? join(homedir(), ".codevisor", "repos")
-
-export const managedRepoPath = (name: string): string => join(managedReposRoot(), name)
+export const managedRepoPath = (name: string): string =>
+  join(process.env["CODEVISOR_REPOS_ROOT"] ?? join(homedir(), ".codevisor", "repos"), name)
 
 export const resolveSessionCwd = (
   folderPath: string | undefined,

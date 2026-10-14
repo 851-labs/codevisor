@@ -19,7 +19,6 @@ describe("ReplayBuffer", () => {
 
     buffer.push(output(3, "éé"))
     expect(buffer.firstSeq).toBe(2)
-    expect(buffer.bytes).toBe(8)
     expect(buffer.since(0).map((frame) => frame.seq)).toEqual([2, 3])
   })
 

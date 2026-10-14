@@ -72,9 +72,6 @@ export class CloudMachineConnection {
       ...(options.onPeerKeyMismatch === undefined
         ? {}
         : { onPeerKeyMismatch: options.onPeerKeyMismatch }),
-      ...(options.onMachinesChanged === undefined
-        ? {}
-        : { onMachinesChanged: options.onMachinesChanged }),
       sendEnvelope: (machineId, frame, payload) => this.#sendEnvelope({ machineId, frame }, payload)
     })
   }

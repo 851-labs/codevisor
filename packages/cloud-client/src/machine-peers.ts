@@ -25,7 +25,6 @@ export interface MachinePeersOptions {
   secretKey: string
   peerKeyPins?: PeerKeyPinStore
   onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
-  onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
   sendEnvelope: (machineId: string, frame: RelayFrameHeader, payload?: Uint8Array) => void
 }
 
@@ -76,17 +75,16 @@ export class MachinePeers {
   }
 
   welcome(machines: ReadonlyArray<CloudMachinePresence> | undefined): void {
-    this.#set(
+    this.#machines =
       machines === undefined
         ? undefined
         : new Map(machines.map((machine) => [machine.deviceId, machine]))
-    )
   }
 
   presence(machine: CloudMachinePresence): void {
     const machines = new Map(this.#machines)
     machines.set(machine.deviceId, machine)
-    this.#set(machines)
+    this.#machines = machines
     if (!machine.online) this.#opener.dropMachine(machine.deviceId)
   }
 
@@ -108,10 +106,5 @@ export class MachinePeers {
 
   clear(): void {
     this.#machines = undefined
-  }
-
-  #set(machines: Map<string, CloudMachinePresence> | undefined): void {
-    this.#machines = machines
-    if (machines !== undefined) this.options.onMachinesChanged?.([...machines.values()])
   }
 }

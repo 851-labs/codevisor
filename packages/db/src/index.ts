@@ -13,8 +13,6 @@ export * from "./ids.js"
 
 export {
   managedRepoPath,
-  managedReposRoot,
-  resolveSessionCwd,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
   worktreePath,

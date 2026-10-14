@@ -107,7 +107,7 @@ export const worktreeFromRow = (row: WorktreeRow): Worktree => ({
   createdAt: row.created_at
 })
 
-export const parseLabels = (
+const parseLabels = (
   raw: string | null | undefined
 ): Readonly<Record<string, string>> | undefined => {
   if (raw == null) return undefined
@@ -320,6 +320,5 @@ export const nativeMcpRemovalFromRow = (row: NativeMcpRemovalRow): NativeMcpRemo
   harnessId: row.harness_id,
   id: row.id,
   removedAt: row.removed_at,
-  ...(row.restored_at === null ? {} : { restoredAt: row.restored_at }),
   serverName: row.server_name
 })

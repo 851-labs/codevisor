@@ -14,8 +14,7 @@ import {
   parseHttpRequestFrame,
   parseWsChannelParams,
   parseWsFrame,
-  sanitizeRequestHeaders,
-  sanitizeResponseHeaders
+  sanitizeRequestHeaders
 } from "./cloud-proxy.js"
 
 const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values)
@@ -119,24 +118,17 @@ describe("header sanitization", () => {
     ).toEqual({ "content-type": "application/json" })
   })
 
-  it("strips hop-by-hop and content-encoding headers from responses", () => {
+  it("builds a head frame without hop-by-hop or content-encoding headers", () => {
     expect(
-      sanitizeResponseHeaders([
+      headFrame(204, [
         ["Connection", "close"],
         ["Content-Encoding", "gzip"],
         ["Content-Length", "5"],
+        ["Transfer-Encoding", "chunked"],
+        ["ETag", '"abc"'],
         ["X-Custom", "kept"]
       ])
-    ).toEqual({ "x-custom": "kept" })
-  })
-
-  it("builds a head frame with sanitized headers", () => {
-    expect(
-      headFrame(204, [
-        ["Transfer-Encoding", "chunked"],
-        ["ETag", '"abc"']
-      ])
-    ).toEqual({ kind: "head", status: 204, headers: { etag: '"abc"' } })
+    ).toEqual({ kind: "head", status: 204, headers: { etag: '"abc"', "x-custom": "kept" } })
   })
 })
 

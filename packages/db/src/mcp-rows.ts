@@ -36,7 +36,7 @@ export interface NativeConfigBackupRecord {
   readonly createdAt: string
 }
 
-export interface NativeMcpRemovalRecord extends NativeMcpRemoval {
+export interface NativeMcpRemovalRecord extends Omit<NativeMcpRemoval, "restoredAt"> {
   readonly fragment: string
 }
 
