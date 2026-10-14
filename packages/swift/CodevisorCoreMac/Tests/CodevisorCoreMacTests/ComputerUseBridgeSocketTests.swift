@@ -30,6 +30,11 @@ struct ComputerUseBridgeSocketTests {
         #expect(String(describing: error).contains("foreground_reason"))
       }
     }
+  }
+
+  @Test("Native requests with an unknown delivery mode are refused before app lookup")
+  func unknownDeliveryMode() {
+    let bridge = ComputerUseBridge()
     let unknown: [String: Any] = ["app": "No app should be resolved", "delivery_mode": "invalid", "key": "Return"]
     do {
       _ = try bridge.handle(["type": "tool", "sessionId": "intent", "tool": "press_key", "arguments": unknown])
