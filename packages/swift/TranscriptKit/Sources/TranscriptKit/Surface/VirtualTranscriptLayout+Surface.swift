@@ -30,22 +30,3 @@ extension VirtualTranscriptLayout {
     return (self.keys[first], last - first + 1)
   }
 }
-
-/// Which rows of a planned window are fully presentable. Used by the bottom
-/// jump, initial presentation, and window promotion gates.
-public enum TranscriptMountedWindowReadiness {
-  /// The keys whose measurement is committed (present and not stale) and
-  /// whose host reports ready.
-  public static func resolvedKeys(
-    required: Set<String>,
-    measurements: TranscriptMeasurementLedger,
-    isHostReady: (String) -> Bool
-  ) -> Set<String> {
-    Set(
-      required.filter { key in
-        measurements[key] != nil
-          && !measurements.isStale(key)
-          && isHostReady(key)
-      })
-  }
-}

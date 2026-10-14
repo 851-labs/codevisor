@@ -17,33 +17,3 @@ extension TranscriptPresentableRowHost {
     isPresentationReady && isAttachmentGeometryReady
   }
 }
-
-extension TranscriptMountedWindowReadiness {
-  /// Whether one mounted row may be treated as final: measured, not stale,
-  /// not awaiting a commit, and fully presentable.
-  @MainActor
-  public static func isPromotable(
-    key: String,
-    measurements: TranscriptMeasurementLedger,
-    hasPendingMeasurement: Bool,
-    host: (any TranscriptPresentableRowHost)?
-  ) -> Bool {
-    guard let host else { return false }
-    return measurements[key] != nil
-      && !measurements.isStale(key)
-      && !hasPendingMeasurement
-      && host.isFullyPresentable
-  }
-
-  /// `resolvedKeys(required:measurements:isHostReady:)` over a host table.
-  @MainActor
-  public static func resolvedKeys(
-    required: Set<String>,
-    measurements: TranscriptMeasurementLedger,
-    hosts: [String: some TranscriptPresentableRowHost]
-  ) -> Set<String> {
-    resolvedKeys(required: required, measurements: measurements) { key in
-      hosts[key]?.isFullyPresentable == true
-    }
-  }
-}
