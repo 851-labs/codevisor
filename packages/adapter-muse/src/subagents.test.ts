@@ -161,7 +161,8 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     f.append(CHILD, read(1, "inProgress"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "resultReady" }))
-    await vi.advanceTimersByTimeAsync(0)
+    expect(f.calls).toEqual([{ sessionId: CHILD, cursor: undefined }])
+    await f.subagents.drain()
     expect(f.threads()).toEqual([["tool_call", "agent-1", "in_progress"]])
     const calls = f.calls.length
     // Muse restating the answer reads nothing more.
@@ -179,8 +180,9 @@ describe("Muse subagents", () => {
     // The subagent answers while the tick's read waits on Muse.
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "closed" }))
+    const drained = f.subagents.drain()
     release()
-    await vi.advanceTimersByTimeAsync(0)
+    await drained
     expect(f.threads()).toEqual([
       ["tool_call", "agent-1", "in_progress"],
       ["tool_call_update", "agent-1", "completed"]
@@ -192,7 +194,8 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "resultReady" }))
-    await vi.advanceTimersByTimeAsync(0)
+    expect(f.calls).toEqual([{ sessionId: CHILD, cursor: undefined }])
+    await f.subagents.drain()
     // A later turn messages it: Muse runs it again in the same child session,
     // and the chat gives that run a chip of its own.
     f.subagents.observe(agent({ revision: 4 }), () => "agent-1:2")
