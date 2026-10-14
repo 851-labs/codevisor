@@ -183,7 +183,7 @@ const packageIdentity = (command: string, args: ReadonlyArray<string>): string |
   return undefined
 }
 
-export const normalizeUrlIdentity = (identity: string): string => {
+const normalizeUrlIdentity = (identity: string): string => {
   if (!identity.startsWith("http://") && !identity.startsWith("https://")) return identity
   try {
     const url = new URL(identity)
