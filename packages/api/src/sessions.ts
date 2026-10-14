@@ -361,6 +361,10 @@ export const CreateSessionRequest = Schema.Struct({
   workspaceId: Schema.optional(Schema.String),
   parentSessionId: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
+  /// The chat's starting picks (config id → value), saved as its own and
+  /// used to start its agent. Omitted, a chat with a parent running the same
+  /// harness starts on the parent's picks.
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
 })
@@ -465,19 +469,6 @@ export const CancelRequest = Schema.Struct({
   clientActionId: Schema.optional(Schema.String)
 })
 export type CancelRequest = typeof CancelRequest.Type
-
-export const SetModeRequest = Schema.Struct({
-  modeId: Schema.String,
-  clientActionId: Schema.optional(Schema.String)
-})
-export type SetModeRequest = typeof SetModeRequest.Type
-
-export const SetConfigRequest = Schema.Struct({
-  configId: Schema.String,
-  value: Schema.String,
-  clientActionId: Schema.optional(Schema.String)
-})
-export type SetConfigRequest = typeof SetConfigRequest.Type
 
 /// Partial goal update mirroring codex `thread/goal/set` semantics: omitted
 /// fields keep their current value. `tokenBudget` is a double-option — omit

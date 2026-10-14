@@ -70,6 +70,7 @@ A new workspace, optionally with its own git worktree, suits separate work that 
 
 - Without `workspaceId`, each session gets its own new workspace.
 - Sessions you create record you as `parentSessionId`.
+- A session on your harness starts on your model, reasoning, and speed. Pass `configSelections` (config id → value, e.g. `{ model: "…" }`) to pick others.
 - `labels` are free-form key/value pairs. Use them to find your agents again later.
 
 ## Wait instead of polling

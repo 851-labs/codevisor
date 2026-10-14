@@ -163,3 +163,16 @@ export const ServerCapabilities = Schema.Struct({
   harnesses: Schema.Array(HarnessCapability)
 })
 export type ServerCapabilities = typeof ServerCapabilities.Type
+
+export const SetModeRequest = Schema.Struct({
+  modeId: Schema.String,
+  clientActionId: Schema.optional(Schema.String)
+})
+export type SetModeRequest = typeof SetModeRequest.Type
+
+export const SetConfigRequest = Schema.Struct({
+  configId: Schema.String,
+  value: Schema.String,
+  clientActionId: Schema.optional(Schema.String)
+})
+export type SetConfigRequest = typeof SetConfigRequest.Type

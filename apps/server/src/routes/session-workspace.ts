@@ -29,7 +29,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
-import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
+import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
 import { publishSessionSkills } from "./session-skills.js"
@@ -38,9 +38,10 @@ const createServerSession = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
-  payload: CreateSessionRequest,
+  request: CreateSessionRequest,
   project: Project
 ): Promise<SessionSummary> => {
+  const payload = await withStartPicks(services, request)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
   const { accountContext, harnessAccountId } = await resolveSessionAccount(services, payload)
   const workspaceExisted = await assertWorkspaceProject(services, payload.workspaceId, project)
