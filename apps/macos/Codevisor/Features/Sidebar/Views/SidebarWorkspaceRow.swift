@@ -87,12 +87,18 @@ struct SidebarWorkspaceRow: View {
           Button(action: onArchive) {
             Image(systemName: "archivebox")
               .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
+              // The same 18pt slot as the PR and machine glyphs, so the
+              // three sit evenly spaced.
+              .frame(width: 18, height: 18)
+              .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)
           .help("Archive workspace")
           .accessibilityLabel("Archive \(SidebarWorkspaceRowLabel.title(for: name))")
-          .frame(minWidth: 24, minHeight: 14, alignment: .trailing)
+          // Leading in the time's slot: the slot keeps its width, so the
+          // label doesn't re-truncate, and the button keeps the glyphs' gap.
+          .frame(minWidth: 24, minHeight: 14, alignment: .leading)
           // Covered by the row's Archive action, which does not depend on
           // hover.
           .accessibilityHidden(true)
