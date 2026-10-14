@@ -61,11 +61,10 @@ extension SidebarView {
   }
 
   /// A row's second line: the Properties menu's project, branch, and
-  /// worktree, in that order. Leaves out the project when the row's group
-  /// heading already names it (a project folder; pinned and archived rows
-  /// sit outside it), and anything that repeats the workspace's own name or
-  /// an earlier part (workspaces are often named after their worktree, and
-  /// worktrees after their branch).
+  /// worktree, in that order, each shown whenever it is turned on and known,
+  /// even when it matches the workspace's name. Only the project gives way,
+  /// when the row's group heading already names it (a project folder;
+  /// pinned and archived rows sit outside it).
   func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {
     let groupNamesProject = !isArchived && grouping == .project && !isPinned(workspace)
     // The logical project's name, as its folder reads: every machine's
@@ -73,21 +72,16 @@ extension SidebarView {
     let projectName = ProjectGroup.grouping(list.projects).first {
       $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
     }?.name
-    let candidates: [String?] = SidebarRowDetail.subtitleDetails.map { detail in
+    let parts = SidebarRowDetail.subtitleDetails.compactMap { detail -> String? in
       guard rowDetails.contains(detail) else { return nil }
-      return switch detail {
-      case .project: groupNamesProject ? nil : projectName
-      case .branch: store?.branches.byWorkspace[workspace.id]
-      case .worktree: workspace.worktreeName
-      default: nil
-      }
-    }
-    var parts: [String] = []
-    for candidate in candidates {
-      guard let candidate, !candidate.isEmpty, candidate != workspace.name, !parts.contains(candidate) else {
-        continue
-      }
-      parts.append(candidate)
+      let part: String? =
+        switch detail {
+        case .project: groupNamesProject ? nil : projectName
+        case .branch: store?.branches.byWorkspace[workspace.id]
+        case .worktree: workspace.worktreeName
+        default: nil
+        }
+      return part?.isEmpty == false ? part : nil
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
