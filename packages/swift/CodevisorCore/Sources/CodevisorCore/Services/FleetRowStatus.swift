@@ -92,14 +92,11 @@ public struct FleetRowStatus: Equatable, Sendable {
   public static let syncing = FleetRowStatus.busy("Syncing…")
 
   nonisolated public static let blockedFallbackReason = "Couldn’t sync this to the machine."
-}
-
-public extension FleetRowStatus {
   /// True when a folded single-machine row should render a mark at all.
   /// With one machine there is nothing to compare against, so a check on
   /// every row is just a column of green repeating "fine" — the same noise
   /// a caption saying "available everywhere" would be. Only progress and
   /// problems earn the space. Machine rows in a real fleet still show the
   /// check, because there it distinguishes machines from each other.
-  var isWorthFoldingUp: Bool { emphasis != .ready && emphasis != .quiet }
+  public var isWorthFoldingUp: Bool { emphasis != .ready && emphasis != .quiet }
 }
