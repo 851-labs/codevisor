@@ -115,6 +115,28 @@ public struct MarkdownList: Sendable, Equatable, Hashable {
     self.isTight = isTight
     self.items = items
   }
+
+  /// Disc, circle, then square: nested bullet lists stay distinguishable
+  /// from their parent the way browsers vary unordered markers by depth.
+  public static func bullet(depth: Int) -> String {
+    switch depth {
+    case 0: "•"
+    case 1: "◦"
+    default: "▪"
+    }
+  }
+
+  /// Bullets are drawn bold; at body size the regular glyphs are too small
+  /// to tell a nested circle from a disc.
+  public static func isBullet(_ marker: String) -> Bool {
+    marker == "•" || marker == "◦" || marker == "▪"
+  }
+
+  /// `depth` counts the lists enclosing this one; it only affects bullets.
+  public func marker(for item: MarkdownListItem, at index: Int, depth: Int = 0) -> String {
+    if item.isTask { return item.isChecked ? "☑" : "☐" }
+    return isOrdered ? "\(start + index)\(delimiter)" : Self.bullet(depth: depth)
+  }
 }
 
 /// A semantic Markdown block produced by MD4C.
