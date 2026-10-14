@@ -38,7 +38,6 @@ const mergeBrowserCookieMutation = (
       !cookie.domain ||
       !cookie.path.startsWith("/") ||
       cookie.name.length + cookie.value.length > 16_384 ||
-      // oxlint-disable-next-line no-control-regex
       /[\r\n\0]/.test(cookie.domain))
   )
     throw new Error("Invalid cookie")

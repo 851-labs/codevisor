@@ -88,6 +88,11 @@ const checkSteps = [
   alwaysStep("dev:scripts:test"),
   turboStep("typecheck"),
   turboStep("test:coverage"),
+  pathStep("typecheck:configs", "javascript", [
+    "**/vitest*.config.ts",
+    "tsconfig.base.json",
+    "tsconfig.configs.json"
+  ]),
   pathStep("release:scripts:test", "javascript", (context) => [
     "scripts/release/**",
     "apps/www/public/install.sh",

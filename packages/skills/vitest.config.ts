@@ -5,7 +5,6 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
-      all: true,
       include: ["src/**/*.ts"],
       exclude: ["**/dist/**", "**/*.test.ts", "src/skills-test-support.ts"],
       provider: "v8",

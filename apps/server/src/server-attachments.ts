@@ -17,7 +17,6 @@ const ATTACHMENT_TEMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const attachmentsTempRoot = (): string => join(tmpdir(), "codevisor-attachments")
 
 export const sanitizeFileName = (name: string): string => {
-  // oxlint-disable-next-line no-control-regex
   const cleaned = name.replace(/[/\\:\0]/g, "_").replace(/^\.+/, "")
   return cleaned.length === 0 ? "attachment" : cleaned
 }
