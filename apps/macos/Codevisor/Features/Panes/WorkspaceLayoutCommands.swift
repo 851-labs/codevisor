@@ -9,6 +9,8 @@ struct WorkspaceLayoutActions: Equatable {
   let reopenClosedPane: @MainActor () -> Void
   let previousTab: @MainActor () -> Void
   let nextTab: @MainActor () -> Void
+  let previousTabInWorkspace: @MainActor () -> Void
+  let nextTabInWorkspace: @MainActor () -> Void
   let previousSplit: @MainActor () -> Void
   let nextSplit: @MainActor () -> Void
   let split: @MainActor (SplitEdge) -> Void
@@ -72,23 +74,41 @@ struct WorkspaceLayoutCommands: Commands {
     }
 
     CommandGroup(before: .windowArrangement) {
+      // The sidebar owns the order across workspaces, so these work from
+      // the New Chat page too.
       ShortcutButton(.previousTab) { stepTab(-1) }
         .disabled(actions == nil && sidebarActions == nil)
       ShortcutButton(.nextTab) { stepTab(1) }
         .disabled(actions == nil && sidebarActions == nil)
+      // The refreshed sidebar's own commands; absent rather than disabled
+      // without it, so their keys stay free for split focus.
+      if FeatureFlag.sidebarRefresh.isEnabled {
+        ShortcutButton(.previousTabInWorkspace) { actions?.previousTabInWorkspace() }
+          .disabled(actions == nil)
+        ShortcutButton(.nextTabInWorkspace) { actions?.nextTabInWorkspace() }
+          .disabled(actions == nil)
+
+        Divider()
+
+        ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
+          .disabled(sidebarActions?.stepWorkspace == nil)
+        ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
+          .disabled(sidebarActions?.stepWorkspace == nil)
+      }
     }
   }
 
   private func stepTab(_ offset: Int) {
     if let actions {
-      if offset < 0 {
-        actions.previousTab()
-      } else {
-        actions.nextTab()
-      }
+      if offset < 0 { actions.previousTab() } else { actions.nextTab() }
     } else {
-      // The standalone New Chat page has no workspace container.
-      sidebarActions?.stepTab(offset)
+      // The standalone New Chat page has no tabs; it steps the sidebar
+      // (workspaces in the refresh, tab rows in the classic sidebar).
+      if let stepWorkspace = sidebarActions?.stepWorkspace {
+        stepWorkspace(offset)
+      } else {
+        sidebarActions?.stepTab?(offset)
+      }
     }
   }
 }

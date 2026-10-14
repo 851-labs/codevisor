@@ -293,7 +293,7 @@ struct RootView: View {
       // No per-machine remount and no machine switcher: the sidebar is
       // the FLEET's. Selection is a routing detail that follows the
       // chat you open (or send), and machines are managed in Settings.
-      SidebarView(selection: $selection, store: store)
+      WorkspaceSidebar(selection: $selection, store: store)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
       Group {
@@ -311,11 +311,18 @@ struct RootView: View {
         edge: .leading,
         width: min(270, panelLayout.windowWidth - 16)
       ) {
-        SidebarView(selection: $selection, store: store, publishesSceneActions: false)
+        WorkspaceSidebar(selection: $selection, store: store, publishesSceneActions: false)
           .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
           .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
           .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
       }
+    }
+    // ⇧⌘[ / ⇧⌘] step the sidebar's rows while it shows, tabs otherwise.
+    .onChange(of: clientSidebarVisible, initial: true) { _, visible in
+      store?.isSidebarVisible = visible
+    }
+    .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
+      store?.isSidebarVisible = clientSidebarVisible
     }
   }
 

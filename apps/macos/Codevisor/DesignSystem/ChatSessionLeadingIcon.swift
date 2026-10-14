@@ -13,6 +13,8 @@ struct ChatSessionLeadingIcon: View {
   /// rasterized for CoreAnimation (see `AgentActivityIndicator`), so it needs
   /// the color its row would otherwise have applied.
   var activityColor: Color = .secondary
+  /// The model glyph's point size when the chat has no status to show.
+  var iconSize: CGFloat = 13
 
   @Environment(\.theme) private var theme
 
@@ -32,7 +34,7 @@ struct ChatSessionLeadingIcon: View {
       } else if let store, store.unreadCount(session) > 0 {
         AgentStatusIndicator(status: .unread)
       } else {
-        HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.and.pencil")
+        HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.and.pencil", size: iconSize)
       }
     }
     .frame(width: 18)

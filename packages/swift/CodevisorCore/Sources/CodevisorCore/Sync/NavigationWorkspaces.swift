@@ -28,11 +28,13 @@ public final class WorkspaceEntry: Identifiable {
   }
 }
 
-/// A workspace as the sidebar lists it: which one, on which machine, and the
-/// chats that route into it (the first one anchors the workspace's route).
+/// A workspace as the sidebar lists it: which one, on which machine and in
+/// which project, and the chats that route into it (the first one anchors the
+/// workspace's route).
 public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let id: UUID
   public let serverId: String
+  public let projectId: UUID
   public let routingChatIds: [UUID]
 }
 
@@ -50,6 +52,9 @@ public final class NavigationWorkspaces {
   /// chats all moved elsewhere. Recomputed only when a workspace changes, so
   /// a mark-read or another machine's unrelated event never touches it.
   public private(set) var sidebar: [WorkspaceSidebarItem] = []
+  /// Archived workspaces, newest first, for the sidebar's Archived section.
+  /// Rebuilt alongside `sidebar`.
+  public private(set) var archived: [WorkspaceSidebarItem] = []
   /// The chat → workspace index the sidebar was last built from; a chat
   /// moving between workspaces changes routing without changing any
   /// workspace.
@@ -75,6 +80,20 @@ public final class NavigationWorkspaces {
     sidebarIndex = projection.sessionIndex
     let next = Self.sidebar(from: projection)
     if next != sidebar { sidebar = next }
+    let nextArchived = Self.archived(from: projection)
+    if nextArchived != archived { archived = nextArchived }
+  }
+
+  static func archived(from projection: NavigationProjection) -> [WorkspaceSidebarItem] {
+    projection.workspaces.filter(\.isArchived)
+      .sorted { lhs, rhs in
+        lhs.createdAt != rhs.createdAt ? lhs.createdAt > rhs.createdAt : lhs.id.uuidString < rhs.id.uuidString
+      }
+      .map { workspace in
+        WorkspaceSidebarItem(
+          id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
+          routingChatIds: workspace.chatSessionIds)
+      }
   }
 
   /// A layout save: only this workspace's routing chats can change.
@@ -83,7 +102,7 @@ public final class NavigationWorkspaces {
     guard let index = sidebar.firstIndex(where: { $0.id == workspace.id }) else { return }
     let routed = workspace.chatSessionIds.filter { sessionWorkspace($0) == workspace.id }
     let item = WorkspaceSidebarItem(
-      id: workspace.id, serverId: workspace.serverId,
+      id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
       routingChatIds: routed.isEmpty ? sidebar[index].routingChatIds : routed)
     if sidebar[index] != item { sidebar[index] = item }
   }
@@ -112,7 +131,8 @@ public final class NavigationWorkspaces {
       guard chats.isEmpty || !routed.isEmpty else { return nil }
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
-        id: workspace.id, serverId: workspace.serverId, routingChatIds: routed.isEmpty ? fallback : routed)
+        id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
+        routingChatIds: routed.isEmpty ? fallback : routed)
     }
   }
 

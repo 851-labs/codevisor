@@ -72,3 +72,30 @@ export const GitRefs = Schema.Struct({
   branches: Schema.Array(GitRefBranch)
 })
 export type GitRefs = typeof GitRefs.Type
+
+export const GitPullRequestState = Schema.Literals(["open", "closed", "merged"])
+export type GitPullRequestState = typeof GitPullRequestState.Type
+
+/// The pull request's checks, rolled up: any failure wins, then anything
+/// still running; `none` when it has no checks at all.
+export const GitPullRequestChecks = Schema.Literals(["passing", "failing", "pending", "none"])
+export type GitPullRequestChecks = typeof GitPullRequestChecks.Type
+
+/// The pull request for a branch on the repository's GitHub remote.
+export const GitPullRequest = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  state: GitPullRequestState,
+  isDraft: Schema.Boolean,
+  url: Schema.String,
+  checks: GitPullRequestChecks
+})
+export type GitPullRequest = typeof GitPullRequest.Type
+
+/// The current branch's pull request, looked up with the machine's `gh`. Null
+/// when there is none or it can't be told: a detached HEAD, a non-GitHub
+/// remote, or `gh` missing or signed out.
+export const GitPullRequestLookup = Schema.Struct({
+  pullRequest: Schema.NullOr(GitPullRequest)
+})
+export type GitPullRequestLookup = typeof GitPullRequestLookup.Type

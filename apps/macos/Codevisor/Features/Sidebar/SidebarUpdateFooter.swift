@@ -10,6 +10,7 @@ struct SidebarUpdateFooter: View {
   var center: UpdateCenter
   @Environment(\.theme) private var theme
   @Environment(\.openSettings) private var openSettings
+  @Environment(\.sidebarOpenSettings) private var sidebarOpenSettings
   @State private var isHovered = false
 
   var body: some View {
@@ -18,7 +19,7 @@ struct SidebarUpdateFooter: View {
         Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
         Button {
           SettingsRouter.shared.showUpdates()
-          openSettings()
+          if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }
         } label: {
           HStack(spacing: 6) {
             if center.isUpdatingAll {
@@ -48,4 +49,17 @@ struct SidebarUpdateFooter: View {
       .transition(.move(edge: .bottom).combined(with: .opacity))
     }
   }
+}
+
+extension EnvironmentValues {
+  /// Opens Settings from sidebar content hosted outside the scene's view
+  /// graph (see `SidebarVibrancyHost`), where `openSettings` can't reach.
+  @Entry var sidebarOpenSettings: SidebarOpenSettingsAction? = nil
+}
+
+/// Opens Settings on behalf of the scene that hosts the sidebar.
+struct SidebarOpenSettingsAction {
+  let open: @MainActor () -> Void
+
+  @MainActor func callAsFunction() { open() }
 }

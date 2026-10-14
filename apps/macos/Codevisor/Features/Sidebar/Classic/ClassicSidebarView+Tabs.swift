@@ -9,7 +9,7 @@ import SwiftUI
 /// Tab selection commits synchronously before routing the workspace into
 /// the detail column. The routing chat supplies context; only visible chat
 /// panes load transcripts.
-extension SidebarView {
+extension ClassicSidebarView {
   /// One workspace's tab row identities in order, driving its reflow
   /// animation.
   func tabRowIDs(in workspace: Workspace) -> [UUID] {

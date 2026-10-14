@@ -2,6 +2,7 @@
 // node:https differs from Node where it matters here (see relayHealthy).
 
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import https from "node:https"
 import { createServer } from "node:net"
@@ -10,7 +11,12 @@ import { join } from "node:path"
 import test from "node:test"
 import { rootCertificates } from "node:tls"
 
-import { relayHealthUrl, relayHealthy, waitForDevRelays } from "./dev-net.mjs"
+import {
+  ensureDevCertificates,
+  relayHealthUrl,
+  relayHealthy,
+  waitForDevRelays
+} from "./dev-net.mjs"
 
 /// A TCP server that accepts connections and never answers: the TLS
 /// handshake stalls, like an address that swallows packets.
@@ -99,4 +105,29 @@ test("a relay probe passes its CA and handles a request constructor that throws"
 test("the host checks relays over loopback, not the container-facing address", () => {
   const relay = { url: "https://192.168.64.1:30290", ports: { https: 30290 } }
   assert.equal(relayHealthUrl(relay), "https://127.0.0.1:30290")
+})
+
+test("dev relay certificates are signed with SHA-256 by any openssl", async () => {
+  // macOS's /usr/bin/openssl is LibreSSL, which signs with SHA-1 unless told
+  // otherwise; the tunnel's TLS rejects SHA-1, so every dev relay failed.
+  const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
+  try {
+    await ensureDevCertificates({ netRoot, relayHost: "127.0.0.1" })
+    for (const file of ["ca.pem", "relay.pem"]) {
+      const text = execFileSync(
+        "openssl",
+        ["x509", "-in", join(netRoot, file), "-noout", "-text"],
+        {
+          encoding: "utf8"
+        }
+      )
+      assert.match(
+        text,
+        /Signature Algorithm: ecdsa-with-SHA256/,
+        `${file} must be signed with SHA-256`
+      )
+    }
+  } finally {
+    await rm(netRoot, { recursive: true, force: true })
+  }
 })

@@ -1,31 +1,44 @@
 import SwiftUI
 import CodevisorCore
 
+/// Each workspace is one sidebar row; its tabs live in the strip above the
+/// workspace's content. Clicking a row opens the workspace on its selected
+/// tab, routing through that tab's chat when it has one.
 extension SidebarView {
-  /// One workspace: its header (the reorder handle) over its tab rows.
-  /// Both report their frames so a drag can compare the picked-up header
-  /// against whole sections and draw the insertion line between them.
-  func workspaceSection(_ item: SidebarWorkspaceListItem) -> some View {
-    let id = item.workspace.id
-    return VStack(alignment: .leading, spacing: 1) {
-      workspaceHeader(item)
-        // The picked-up row stays dimmed in place while its copy travels.
-        .opacity(draggingID == id ? 0.4 : 1)
-        .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .named(Self.reorderSpace))
-        } action: { frame in
-          recordWorkspaceHeaderFrame(frame, for: id)
-        }
-        .gesture(reorderGesture(for: .workspace(id)))
-
-      workspaceTabRows(item)
-    }
+  /// One workspace row. It reports its frame so a drag can compare the
+  /// picked-up row against the others and draw the insertion line.
+  func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
+    let workspace = item.workspace
+    let id = workspace.id
+    return SidebarWorkspaceRow(
+      name: workspace.name,
+      subtitle: rowSubtitle(for: workspace),
+      icon: icon(for: item),
+      store: store,
+      updatedAt: rowDetails.contains(.updated) ? lastUpdated(item.workspace) : nil,
+      pullRequest: rowDetails.contains(.pullRequest) ? store?.pullRequests.byWorkspace[id] : nil,
+      isSelected: routesSelectedSession(workspace),
+      isReordering: isReordering,
+      onActivate: { activateWorkspace(item) },
+      onNewTab: { addTab(in: item) },
+      onRename: {
+        workspaceRenameTitle = workspace.name
+        renamingWorkspace = workspace
+      },
+      onArchive: { archiveWorkspace(workspace) },
+      isPinned: isPinned(workspace),
+      onTogglePin: { togglePin(workspace) }
+    )
+    // The picked-up row stays dimmed in place while its copy travels.
+    .opacity(draggingID == id ? 0.4 : 1)
     .onGeometryChange(for: CGRect.self) { proxy in
       proxy.frame(in: .named(Self.reorderSpace))
     } action: { frame in
-      recordWorkspaceSectionFrame(frame, for: id)
+      recordWorkspaceFrame(frame, for: id)
     }
     .onDisappear { forgetWorkspaceGeometry(for: id) }
+    // Alongside the row's own press-to-select, so a drag selects too.
+    .simultaneousGesture(reorderGesture(for: id))
   }
 
   /// Where the workspace lives. Nil when its machine is unknown — an
@@ -35,18 +48,86 @@ extension SidebarView {
     return machine.map { $0.isLocal ? "This Mac" : $0.name }
   }
 
-  private func workspaceHeader(_ item: SidebarWorkspaceListItem) -> some View {
-    SidebarWorkspaceHeader(
-      name: item.workspace.name,
-      machineName: machineName(forServer: item.workspace.serverId),
-      isReordering: isReordering,
-      onArchive: { archiveWorkspace(item.workspace) },
-      onRename: {
-        workspaceRenameTitle = item.workspace.name
-        renamingWorkspace = item.workspace
-      },
-      onNewTab: { addTab(in: item) }
-    )
+  /// A row's second line: its project, worktree, and machine, leaving out
+  /// whatever its group heading already says and anything that repeats the
+  /// workspace's own name (workspaces are often named after either). A
+  /// pinned row sits outside its project and machine, so it names both. A
+  /// project folder spans machines, so its rows name theirs when there is
+  /// more than one to tell apart.
+  func rowSubtitle(for workspace: Workspace) -> String? {
+    let projectName = list.projects.first {
+      $0.serverId == workspace.serverId && $0.id == workspace.projectId
+    }?.name
+    let heading = isPinned(workspace) ? .flat : grouping
+    let candidates: [String?] = [
+      heading == .project ? nil : projectName,
+      workspace.worktreeName,
+      heading == .flat || (heading == .project && environment.machines.allMachines.count > 1)
+        ? machineName(forServer: workspace.serverId) : nil,
+    ]
+    var parts: [String] = []
+    for candidate in candidates {
+      guard let candidate, !candidate.isEmpty, candidate != workspace.name, !parts.contains(candidate) else {
+        continue
+      }
+      parts.append(candidate)
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  /// Restarts the PR refresh loop when badges are turned on or off, or the
+  /// listed workspaces change. Nil while badges are off.
+  var pullRequestRefreshKey: [UUID]? {
+    rowDetails.contains(.pullRequest) ? listedSidebarItems.map(\.id) : nil
+  }
+
+  /// Asks each workspace row on screen about its pull request; workspaces in
+  /// collapsed groups, or without a checkout yet, are left alone.
+  func refreshPullRequests() {
+    guard let store else { return }
+    let targets = listedWorkspaceItems.compactMap { item -> SidebarPullRequests.Target? in
+      guard let path = item.workspace.rootDirectory, !path.isEmpty else { return nil }
+      return SidebarPullRequests.Target(
+        workspaceId: item.workspace.id,
+        path: path,
+        client: environment.machines.client(for: item.workspace.serverId)
+      )
+    }
+    store.pullRequests.refresh(targets)
+  }
+
+  /// When the workspace last changed: its most recently updated chat, else
+  /// when it was created.
+  func lastUpdated(_ workspace: Workspace) -> Date {
+    let chatDates = workspace.chatSessionIds.compactMap { id in
+      list.session(id, serverId: workspace.serverId).map { $0.updatedAt ?? $0.createdAt }
+    }
+    return chatDates.max() ?? workspace.createdAt
+  }
+
+  /// The chat whose icon stands for the workspace: the one needing the
+  /// most attention (an error, a question, work in progress, unread
+  /// output -- the order a chat's own icon uses), else the chat in the
+  /// selected tab, else the workspace's routing chat. A workspace without
+  /// a chat shows a working agent terminal, or the workspace glyph.
+  func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {
+    let workspace = item.workspace
+    let panes = workspace.centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
+    let chats = panes.compactMap { pane -> ChatSession? in
+      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
+      return list.session(id, serverId: workspace.serverId)
+    }
+    if let store {
+      let urgent: [(ChatSession) -> Bool] = [
+        store.hasUnreadError, store.isWaitingOnUser, store.isInProgress, { store.unreadCount($0) > 0 },
+      ]
+      for isUrgent in urgent {
+        if let chat = chats.first(where: isUrgent) { return .chat(chat) }
+      }
+    }
+    let selectedChat = workspace.selectedCenterTab.flatMap { routableChat(in: $0, serverId: workspace.serverId) }
+    if let chat = selectedChat ?? item.routingSession ?? chats.first { return .chat(chat) }
+    return panes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
   }
 
   /// Whether the sidebar's selection is showing this workspace: its selected
@@ -60,6 +141,83 @@ extension SidebarView {
       return serverId == workspace.serverId && id == workspace.id
     case .newChat, .none:
       return false
+    }
+  }
+
+  // MARK: - Actions
+
+  /// Opens the workspace on the tab it last showed.
+  func activateWorkspace(_ item: SidebarWorkspaceListItem) {
+    guard let tab = item.workspace.selectedCenterTab ?? item.workspace.centerTabs.first else { return }
+    activateTab(tab, in: item)
+  }
+
+  /// Opens one of a workspace's tabs. Selection commits synchronously before
+  /// routing the workspace into the detail column, through the tab's own
+  /// chat when it has one.
+  func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
+    let workspace = item.workspace
+    guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
+    apply(
+      workspace.selectionRoute(
+        activatedChatSessionId: routableChat(in: tab, serverId: workspace.serverId)?.id,
+        routingSessionId: item.routingSession?.id,
+        selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
+      ))
+  }
+
+  /// ⌥⌘↑ / ⌥⌘↓, and ⇧⌘[ / ⇧⌘] while the sidebar shows: moves to the row
+  /// above or below -- New Chat, then each workspace in sidebar order --
+  /// stopping at either end.
+  func stepWorkspace(_ offset: Int) {
+    let items = listedWorkspaceItems
+    let current =
+      isNewChatSelected
+      ? 0 : items.firstIndex { routesSelectedSession($0.workspace) }.map { $0 + 1 }
+    guard let current else { return }
+    let target = current + offset
+    guard target != current, (0...items.count).contains(target) else { return }
+    if target == 0 {
+      selection = .newChat(nil)
+    } else {
+      let item = items[target - 1]
+      activateWorkspace(item)
+      revealedWorkspaceID = item.workspace.id
+    }
+  }
+
+  /// The live chat a tab can route through: its selected pane's chat first,
+  /// else any chat pane inside the tab's splits.
+  func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
+    let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
+    let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
+    for pane in panes where pane.kind == .chat {
+      guard let id = pane.chatSessionId, let session = list.session(id, serverId: serverId) else { continue }
+      return session
+    }
+    return nil
+  }
+
+  /// Applies the resolved route. A nil route means the current selection
+  /// already shows this workspace and must not be disturbed.
+  private func apply(_ route: WorkspaceSelectionRoute?) {
+    switch route {
+    case let .session(serverId, id):
+      selection = .session(serverId: serverId, id: id)
+    case let .workspace(serverId, id):
+      selection = .workspace(serverId: serverId, id: id)
+    case nil:
+      break
+    }
+  }
+
+  /// Adds a tab through the workspace's container, opening the workspace
+  /// first when it is not the one on screen.
+  func addTab(in item: SidebarWorkspaceListItem) {
+    let workspace = item.workspace
+    store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .new)
+    if !routesSelectedSession(workspace) {
+      activateWorkspace(item)
     }
   }
 
@@ -80,6 +238,7 @@ extension SidebarView {
       selectionLeaves = false
     }
     environment.archiveWorkspace(workspace)
+    pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
     if selectionLeaves {
       // Land on the most recent remaining chat; only an empty machine
       // falls through to creating a fresh scratch workspace.

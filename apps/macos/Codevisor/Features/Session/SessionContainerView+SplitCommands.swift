@@ -37,13 +37,23 @@ extension SessionContainerView {
     case .newTab:
       addCenterTab()
     case .previousTab:
-      selectRelativeCenterTab(offset: -1)
+      stepTab(offset: -1)
     case .nextTab:
+      stepTab(offset: 1)
+    case .previousTabInWorkspace:
+      selectRelativeCenterTab(offset: -1)
+    case .nextTabInWorkspace:
       selectRelativeCenterTab(offset: 1)
+    case .previousWorkspace:
+      store.workspaceStepHandler?(-1)
+    case .nextWorkspace:
+      store.workspaceStepHandler?(1)
     case let .selectTab(index):
+      // Numbered as the strip shows them.
       let workspace = navigationWorkspace
-      guard workspace.centerTabs.indices.contains(index) else { return true }
-      store.selectDestination(.tab(workspace.centerTabs[index].id), in: workspace.id)
+      let tabs = workspace.centerTabs
+      guard tabs.indices.contains(index) else { return true }
+      store.selectDestination(.tab(tabs[index].id), in: workspace.id)
     case let .split(edge):
       splitActiveLeaf(edge: edge)
     case let .focusSplit(edge):
@@ -60,14 +70,31 @@ extension SessionContainerView {
     return true
   }
 
+  /// ⇧⌘[ / ⇧⌘]: while the sidebar shows, its rows (New Chat, then each
+  /// workspace, as ⌥⌘↑ / ⌥⌘↓ do), never this workspace's tabs; while it is
+  /// hidden, this workspace's tabs.
+  func stepTab(offset: Int) {
+    if FeatureFlag.sidebarRefresh.isEnabled {
+      if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
+        stepWorkspace(offset)
+        return
+      }
+    } else if store.sidebarTabStepHandler?(offset) == true {
+      // The classic sidebar walks its tab rows, across workspaces.
+      return
+    }
+    selectRelativeCenterTab(offset: offset)
+  }
+
+  /// Cycles the strip's tabs, wrapping at either end.
   func selectRelativeCenterTab(offset: Int) {
-    if store.sidebarTabStepHandler?(offset) == true { return }
     let workspace = navigationWorkspace
-    guard workspace.centerTabs.count > 1,
-      let index = workspace.selectedCenterTabIndex
+    let tabs = workspace.centerTabs
+    guard tabs.count > 1,
+      let index = tabs.firstIndex(where: { $0.id == workspace.selectedCenterTabId })
     else { return }
-    let target = (index + offset + workspace.centerTabs.count) % workspace.centerTabs.count
-    store.selectDestination(.tab(workspace.centerTabs[target].id), in: workspace.id)
+    let target = (index + offset + tabs.count) % tabs.count
+    store.selectDestination(.tab(tabs[target].id), in: workspace.id)
   }
 
   func splitActiveLeaf(edge: SplitEdge) {

@@ -14,7 +14,10 @@ private struct FilePaneKey: FocusedValueKey {
 struct SidebarActions: Equatable {
   let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
-  let stepTab: @MainActor (Int) -> Void
+  /// The refreshed sidebar steps workspaces; the classic one steps its tab
+  /// rows. Each sidebar supplies its own.
+  var stepWorkspace: (@MainActor (Int) -> Void)? = nil
+  var stepTab: (@MainActor (Int) -> Void)? = nil
 
   /// The closures capture stable references (bindings and the app
   /// environment), so any published instance is interchangeable.
