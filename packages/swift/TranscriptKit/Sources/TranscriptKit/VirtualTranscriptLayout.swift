@@ -29,15 +29,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   public let indexByKey: [String: Int]
   public var totalHeight: CGFloat { heightIndex.totalHeight }
 
-  public var heights: [CGFloat] { heightIndex.allRows().map(\.height) }
-  public var topOffsets: [CGFloat] {
-    var top: CGFloat = 0
-    return heightIndex.allRows().map { row in
-      defer { top += row.extent }
-      return top
-    }
-  }
-
   public init(
     items: [Item],
     measuredHeights: [String: CGFloat],
