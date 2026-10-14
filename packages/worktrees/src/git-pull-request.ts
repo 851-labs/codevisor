@@ -39,7 +39,7 @@ export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
 const gh = (
   args: ReadonlyArray<string>,
   cwd: string,
-  env?: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv
 ): Promise<string | undefined> =>
   new Promise((resolve) => {
     execFile(
@@ -48,7 +48,7 @@ const gh = (
       {
         cwd,
         timeout: ghTimeoutMs,
-        env: { ...(env ?? process.env), GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }
+        env: { ...env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }
       },
       (error, stdout) => resolve(error === null ? stdout : undefined)
     )
@@ -85,7 +85,7 @@ export const parseGitPullRequest = (json: string): GitPullRequest | null => {
 
 export const gitPullRequest = async (
   dir: string,
-  env?: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv
 ): Promise<GitPullRequest | null> => {
   const branch = await runGit(
     "current-branch",
