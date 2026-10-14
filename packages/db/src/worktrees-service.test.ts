@@ -32,6 +32,13 @@ describe("@codevisor/db", () => {
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
       expect((await run(db.listArchivedWorktrees(project.id))).length).toBe(1)
 
+      const reused = await run(db.createWorktree(project.id, "sushi", "codevisor/sushi"))
+      expect(reused.id).not.toBe(worktree.id)
+      expect((await run(db.listWorktrees(project.id))).map((entry) => entry.name)).toEqual([
+        "sushi"
+      ])
+      expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
+
       await run(db.deleteArchivedWorktree(worktree.id))
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toBeUndefined()
     } finally {
