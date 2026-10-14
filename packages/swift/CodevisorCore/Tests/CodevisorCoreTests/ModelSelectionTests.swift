@@ -110,6 +110,7 @@ struct ModelSelectionTests {
     let controller = controller(for: session(configSelections: nil), cache: cache)
 
     #expect(controller.modelPickerPresentation.modelChip == .loading)
+    #expect(!controller.modelPickerPresentation.showsSettingsSpinner)
   }
 
   @Test("An existing chat whose model was withdrawn asks for a new one")
