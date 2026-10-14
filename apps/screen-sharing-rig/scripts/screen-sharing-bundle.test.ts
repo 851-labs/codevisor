@@ -7,8 +7,7 @@ import {
   parseCodesigningIdentities,
   resolveSigningIdentity,
   rigIdentity,
-  signDiagnosticApp,
-  signingIdentityVariable
+  signDiagnosticApp
 } from "./screen-sharing-bundle.ts"
 
 const findIdentityOutput = `Policy: Code Signing
@@ -60,14 +59,14 @@ test("falls back to ad hoc with a warning when no development identity exists", 
     resolved.warning!,
     /^WARNING: signing ad hoc \(no Apple Development identity found\)/
   )
-  assert.match(resolved.warning!, new RegExp(signingIdentityVariable))
+  assert.match(resolved.warning!, /CODEVISOR_RIG_SIGN_IDENTITY/)
 })
 
 test("environment override wins, may be a hash, and rejects revoked identities", () => {
   const identities = parseCodesigningIdentities(findIdentityOutput)
   assert.deepEqual(
     resolveSigningIdentity({
-      env: { [signingIdentityVariable]: "Developer ID Application: Example Person (TEAM123456)" },
+      env: { CODEVISOR_RIG_SIGN_IDENTITY: "Developer ID Application: Example Person (TEAM123456)" },
       identities
     }),
     {
@@ -78,7 +77,7 @@ test("environment override wins, may be a hash, and rejects revoked identities",
   )
   assert.equal(
     resolveSigningIdentity({
-      env: { [signingIdentityVariable]: "0123456789ABCDEF0123456789ABCDEF01234567" },
+      env: { CODEVISOR_RIG_SIGN_IDENTITY: "0123456789ABCDEF0123456789ABCDEF01234567" },
       identities
     }).identity,
     "0123456789ABCDEF0123456789ABCDEF01234567"
@@ -86,13 +85,13 @@ test("environment override wins, may be a hash, and rejects revoked identities",
   assert.throws(
     () =>
       resolveSigningIdentity({
-        env: { [signingIdentityVariable]: "Apple Development: Example Person (CERT000002)" },
+        env: { CODEVISOR_RIG_SIGN_IDENTITY: "Apple Development: Example Person (CERT000002)" },
         identities
       }),
     /not valid/
   )
   const explicitAdHoc = resolveSigningIdentity({
-    env: { [signingIdentityVariable]: "-" },
+    env: { CODEVISOR_RIG_SIGN_IDENTITY: "-" },
     identities
   })
   assert.equal(explicitAdHoc.adHoc, true)
@@ -130,7 +129,7 @@ test("plist escapes XML in values and keeps keys sorted", () => {
 
 test("signs frameworks before the app with one identity and no timestamp", async () => {
   const calls: string[][] = []
-  const commands = await signDiagnosticApp({
+  await signDiagnosticApp({
     app: "/tmp/Rig.app",
     frameworks: ["/tmp/Rig.app/Contents/Frameworks/WebRTC.framework"],
     identity: "Apple Development: Example Person (CERT000001)",
@@ -155,7 +154,6 @@ test("signs frameworks before the app with one identity and no timestamp", async
     ]
   ]
   assert.deepEqual(calls, expected)
-  assert.deepEqual(commands, expected)
   await assert.rejects(
     signDiagnosticApp({ app: "/tmp/Rig.app", frameworks: [], identity: "", run: async () => {} }),
     /signing identity is required/

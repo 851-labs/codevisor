@@ -5,7 +5,7 @@ export const rigIdentity = Object.freeze({
   appName: "ScreenSharingRig.app"
 })
 
-export const signingIdentityVariable = "CODEVISOR_RIG_SIGN_IDENTITY"
+const signingIdentityVariable = "CODEVISOR_RIG_SIGN_IDENTITY"
 
 export interface CodesigningIdentity {
   hash: string
@@ -140,17 +140,13 @@ export async function signDiagnosticApp({
   frameworks: string[]
   identity: string
   run: CommandRunner
-}): Promise<string[][]> {
+}): Promise<void> {
   if (!identity) throw new Error("A signing identity is required (use - for ad hoc).")
-  const commands: string[][] = []
   const sign = async (path: string) => {
-    const args = ["--force", "--sign", identity, "--timestamp=none", path]
-    commands.push(["/usr/bin/codesign", ...args])
-    await run("/usr/bin/codesign", args)
+    await run("/usr/bin/codesign", ["--force", "--sign", identity, "--timestamp=none", path])
   }
   for (const framework of frameworks) await sign(framework)
   await sign(app)
-  return commands
 }
 
 export async function designatedRequirement({
