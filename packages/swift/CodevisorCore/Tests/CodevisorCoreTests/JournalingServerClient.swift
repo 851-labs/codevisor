@@ -29,9 +29,6 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
   func upsertProject(_ project: Project) async throws -> ServerProject {
     try await journaled { try await base.upsertProject(project) }
   }
-  func updateProject(_ project: Project) async throws -> ServerProject {
-    try await journaled { try await base.updateProject(project) }
-  }
   func deleteProject(id: UUID) async throws { try await journaled { try await base.deleteProject(id: id) } }
   func deleteProject(id: UUID, deletingFiles: Bool) async throws {
     try await journaled { try await base.deleteProject(id: id, deletingFiles: deletingFiles) }

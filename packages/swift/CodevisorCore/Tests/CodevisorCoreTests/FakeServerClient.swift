@@ -123,10 +123,6 @@ actor FakeServerClient: CodevisorServerClienting {
     return serverProject
   }
 
-  func updateProject(_ project: Project) async throws -> ServerProject {
-    try await upsertProject(project)
-  }
-
   func deleteProject(id: UUID) async throws {
     if let deleteDelay { await deleteDelay() }
     deletedProjectIDs.append(id.uuidString)

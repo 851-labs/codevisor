@@ -97,7 +97,6 @@ private final class AgentSessionsFakeClient: CodevisorServerClienting, @unchecke
   }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
-  func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

@@ -249,7 +249,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listHarnesses() async throws -> [ServerHarness] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { serverProject(from: project) }
-  func updateProject(_ project: Project) async throws -> ServerProject { serverProject(from: project) }
   func deleteProject(id: UUID) async throws {}
   func updateSession(_ session: ChatSession) async throws -> ServerSession { try await upsertSession(session) }
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
