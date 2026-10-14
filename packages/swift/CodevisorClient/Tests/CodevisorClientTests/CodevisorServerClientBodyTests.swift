@@ -7,19 +7,14 @@ import CodevisorProtocol
 
 @Suite("Server client body encoding")
 struct CodevisorServerClientBodyTests {
-  @Test("Snapshot sync and explicit renames carry distinct title intent")
+  @Test("Snapshot sync sends its title as a fallback, never a rename")
   func sessionTitleIntent() throws {
     let session = ChatSession(projectId: UUID(), title: "First message")
     let fallback = try JSONDecoder().decode(
       JSONValue.self, from: JSONEncoder().encode(UpdateSessionBody(session: session))
     )
-    let rename = try JSONDecoder().decode(
-      JSONValue.self, from: JSONEncoder().encode(RenameSessionBody(title: session.title))
-    )
     #expect(fallback["titleIntent"] == .string("fallback"))
     #expect(fallback["title"] == .string("First message"))
-    #expect(rename["titleIntent"] == .string("rename"))
-    #expect(rename["title"] == fallback["title"])
   }
 
   @Test("SetGoalBody encodes the token-budget double-option")
@@ -35,10 +30,5 @@ struct CodevisorServerClientBodyTests {
     let set = try json(SetGoalBody(objective: nil, status: .paused, tokenBudget: .set(50_000), clientActionId: "a"))
     #expect(set.contains(#""tokenBudget":50000"#))
     #expect(set.contains(#""status":"paused""#))
-  }
-
-  @Test("Event WebSockets accept bounded multi-megabyte tool results")
-  func eventWebSocketLimit() {
-    #expect(CodevisorServerClient.eventWebSocketMaximumMessageSize == 16 * 1024 * 1024)
   }
 }

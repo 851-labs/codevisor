@@ -21,8 +21,6 @@
               sections = ids.compactMap { byID[$0] }
             }))
         )
-        .accessibilityIdentifier("sample-sidebar")
-        .accessibilityValue(sections.map(\.name).joined(separator: ","))
       }
     }
 

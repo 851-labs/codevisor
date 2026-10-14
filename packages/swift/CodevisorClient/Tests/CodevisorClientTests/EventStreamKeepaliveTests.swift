@@ -52,13 +52,17 @@ private final class ScriptedEventSocket: ServerWebSocketConnecting, @unchecked S
 private final class ScriptedEventTransport: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
   let connected = TestSignal()
-  private var connections: [(request: URLRequest, socket: ScriptedEventSocket)] = []
+  private var connections: [(request: URLRequest, socket: ScriptedEventSocket, maximumMessageSize: Int)] = []
 
   func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
     let socket = ScriptedEventSocket()
-    lock.withLock { connections.append((request, socket)) }
+    lock.withLock { connections.append((request, socket, maximumMessageSize)) }
     connected.signal()
     return socket
+  }
+
+  var maximumMessageSizes: [Int] {
+    lock.withLock { connections.map(\.maximumMessageSize) }
   }
 
   var requests: [URLRequest] {
@@ -126,6 +130,19 @@ struct EventStreamKeepaliveTests {
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "7")
     #expect(received.value == [7])
+    consumer.cancel()
+    _ = await consumer.result
+  }
+
+  @Test("Event sockets accept multi-megabyte tool results")
+  func eventSocketMessageLimit() async throws {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let consumer = Task {
+      for try await _ in client.sessionEventStream(id: UUID(), since: 0) {}
+    }
+    await transport.connected.wait()
+    #expect(transport.maximumMessageSizes == [16 * 1024 * 1024])
     consumer.cancel()
     _ = await consumer.result
   }
