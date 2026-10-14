@@ -1,14 +1,11 @@
-import { createHash } from "node:crypto"
-
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor/api"
+import type { CodevisorExecutionState } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
   appIcon,
   EXECUTION_EMIT_INTERVAL_MS,
   errorSummary,
-  executionArgsHash,
   executionCallIcon,
   executionFiles,
   humanizeToolName,
@@ -226,16 +223,6 @@ describe("execution recorder", () => {
     )
     expect(errorSummary("Error:", 200)).toBe("Error:")
     expect(errorSummary("\n  \n", 200)).toBe("")
-  })
-
-  it("hashes the canonical execute arguments as received", () => {
-    const args = { description: "Build the app", code: "async () => 1" }
-    expect(executionArgsHash(args)).toBe(
-      createHash("sha256").update(canonicalExecutionArgs(args)).digest("hex")
-    )
-    expect(executionArgsHash({ code: args.code, description: args.description })).toBe(
-      executionArgsHash(args)
-    )
   })
 
   it("names a workflow by the first thing it touched, and shows what it touches now", async () => {
