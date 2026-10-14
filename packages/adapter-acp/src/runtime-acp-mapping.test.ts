@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  acpClientCapabilities,
-  acpPermissionOutcome,
-  acpPermissionQuestion,
-  normalizeAcpConfigOptions,
-  normalizeModeState,
-  runtimeEventFromNotification
-} from "./index.js"
+import { normalizeAcpConfigOptions, normalizeModeState } from "./config-options.js"
+import { acpClientCapabilities } from "./connection.js"
+import { runtimeEventFromNotification } from "./notifications.js"
+import { acpPermissionOutcome, acpPermissionQuestion } from "./questions.js"
 
 describe("@codevisor/agent-runtime", () => {
   it("advertises only provider-neutral ACP client capabilities", () => {

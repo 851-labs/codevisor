@@ -1,6 +1,5 @@
-export { normalizeAcpConfigOptions, normalizeModeState } from "./config-options.js"
+export { normalizeAcpConfigOptions } from "./config-options.js"
 export {
-  acpClientCapabilities,
   type AcpAgentConnection,
   type AcpConnector,
   type AcpHarnessLaunchRequest
@@ -9,8 +8,8 @@ export { type ConfigureAcpClientApp } from "./client-app.js"
 export { runtimeEventFromNotification } from "./notifications.js"
 export { turnLifecycleEvent } from "./internal.js"
 export { makeAcpProvider, type AcpLaunchContext, type AcpProviderConfig } from "./provider.js"
-export { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
-export { acpPermissionOutcome, acpPermissionQuestion, type AcpMappedQuestion } from "./questions.js"
+export { type AcpPromptCapabilities } from "./prompt.js"
+export { type AcpMappedQuestion } from "./questions.js"
 export {
   type AcpConnectionExtensionContext,
   type AcpQuestionControls,

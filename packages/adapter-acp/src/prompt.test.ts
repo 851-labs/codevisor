@@ -1,7 +1,7 @@
 import type { PromptAttachmentInput } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
-import { acpPrompt } from "./index.js"
+import { acpPrompt } from "./prompt.js"
 
 describe("prompt attachments", () => {
   const image: PromptAttachmentInput = {
