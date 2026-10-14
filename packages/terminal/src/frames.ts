@@ -29,8 +29,6 @@ export interface RunningTerminal {
   /// Externally-managed terminals are never (re)spawned by the manager and
   /// stay attachable after exit (scrollback survives until removed).
   readonly external: boolean
-  /// Removed at exit and never persisted; see ExternalTerminalConfig.
-  readonly endsWithProcess: boolean
 }
 
 export type TerminalFramePayload =

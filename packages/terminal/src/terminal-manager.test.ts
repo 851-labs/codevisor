@@ -1,7 +1,6 @@
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
+import { makeTerminalManager, TerminalError } from "./index.js"
 import {
   run,
   makeSpawner,
@@ -12,18 +11,16 @@ import {
 } from "./test-support.js"
 
 describe("@codevisor/terminal terminal manager", () => {
-  it("creates terminals through an Effect layer and rejects invalid dimensions", async () => {
+  it("creates terminals with the default shell and rejects invalid dimensions", async () => {
     const spawner = makeSpawner()
+    const manager = makeTerminalManager({ defaultShell: "/bin/zsh", env: {}, spawner })
     const response = await run(
-      Effect.gen(function* () {
-        const manager = yield* TerminalManager
-        return yield* manager.createTerminal({
-          sessionId: "session-1",
-          cwd: "/tmp/project",
-          cols: 80,
-          rows: 24
-        })
-      }).pipe(Effect.provide(TerminalManager.layer({ defaultShell: "/bin/zsh", env: {}, spawner })))
+      manager.createTerminal({
+        sessionId: "session-1",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
     )
 
     expect(response.websocketPath).toBe(`/v1/terminals/${response.terminalId}/socket`)
@@ -34,7 +31,6 @@ describe("@codevisor/terminal terminal manager", () => {
       shell: "/bin/zsh"
     })
 
-    const manager = makeTerminalManager({ spawner })
     await expect(
       run(
         manager.createTerminal({

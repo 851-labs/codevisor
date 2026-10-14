@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs"
-
 import { describe, expect, it, vi } from "vitest"
 
-import { createVtTerminal, GHOSTTY_VT_WASM_PATH, loadGhosttyVt } from "./ghostty-vt.js"
+import { createVtTerminal, loadGhosttyVt } from "./ghostty-vt.js"
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
@@ -10,7 +8,7 @@ describe("libghostty-vt terminal state", () => {
   it("loads the bundled wasm build, lazily or explicitly", () => {
     const lazy = createVtTerminal({ cols: 20, rows: 4 })
     lazy.free()
-    loadGhosttyVt(readFileSync(GHOSTTY_VT_WASM_PATH))
+    loadGhosttyVt()
     const terminal = createVtTerminal({ cols: 20, rows: 4 })
     terminal.write("")
     terminal.write("ready")
@@ -19,13 +17,13 @@ describe("libghostty-vt terminal state", () => {
   })
 
   it("reconstructs screen, scrollback, style, and cursor into a fresh terminal", () => {
-    const source = createVtTerminal({ cols: 40, rows: 5, scrollbackLines: 1000 })
+    const source = createVtTerminal({ cols: 40, rows: 5 })
     for (let line = 0; line < 30; line += 1) {
       source.write(`\u001b[3${line % 8}mline ${line}\u001b[0m\r\n`)
     }
     source.write("prompt$ \u001b[?25l")
     // A renderer that already shows other output is reset first.
-    const replica = createVtTerminal({ cols: 40, rows: 5, scrollbackLines: 1000 })
+    const replica = createVtTerminal({ cols: 40, rows: 5 })
     replica.write("stale output\r\nthat must disappear")
     replica.write(source.reconstruct())
 
