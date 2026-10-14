@@ -47,9 +47,7 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
       ?? decodedRoot.allGroups.first?.id
       ?? UUID()
   }
-}
 
-extension WorkspaceTab {
   /// The tab a layout shows when it has nothing else: one local "New tab"
   /// page. It exists only on this device — it is never published, and it
   /// gives way to the first real pane that arrives (see
