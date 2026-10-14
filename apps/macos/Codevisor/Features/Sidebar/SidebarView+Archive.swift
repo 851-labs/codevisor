@@ -16,6 +16,16 @@ extension SidebarView {
     }
   }
 
+  /// The archived rows on screen, in order: none while the section is
+  /// collapsed, and only the pages already shown. For keyboard stepping --
+  /// never read from a view body.
+  var listedArchivedWorkspaces: [Workspace] {
+    guard archivedExpanded else { return [] }
+    return archivedSidebarItems.prefix(archivedVisibleCount).compactMap {
+      environment.navigationStore.workspaceEntries.entry($0.id).workspace
+    }
+  }
+
   @ViewBuilder
   var archivedSection: some View {
     let items = archivedSidebarItems
@@ -31,6 +41,8 @@ extension SidebarView {
         ForEach(items.prefix(archivedVisibleCount)) { item in
           if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
             archivedRow(workspace, item: item)
+              // Keyboard stepping scrolls a row it lands on into view.
+              .id(workspace.id)
               .transition(Motion.unfold(reduceMotion: reduceMotion))
           }
         }

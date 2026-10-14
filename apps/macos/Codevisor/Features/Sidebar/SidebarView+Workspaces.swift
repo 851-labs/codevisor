@@ -197,22 +197,36 @@ extension SidebarView {
   }
 
   /// ⌥⌘↑ / ⌥⌘↓, and ⇧⌘[ / ⇧⌘] while the sidebar shows: moves to the row
-  /// above or below -- New Chat, then each workspace in sidebar order --
-  /// stopping at either end.
+  /// above or below -- New Chat, then each workspace in sidebar order, then
+  /// the archived workspaces on screen -- stopping at either end.
   func stepWorkspace(_ offset: Int) {
     let items = listedWorkspaceItems
-    let current =
-      isNewChatSelected
-      ? 0 : items.firstIndex { routesSelectedSession($0.workspace) }.map { $0 + 1 }
+    let archived = listedArchivedWorkspaces
+    let current: Int? =
+      if isNewChatSelected {
+        0
+      } else if let index = items.firstIndex(where: { routesSelectedSession($0.workspace) }) {
+        index + 1
+      } else if case let .archivedWorkspace(serverId, id) = selection,
+        let index = archived.firstIndex(where: { $0.serverId == serverId && $0.id == id })
+      {
+        items.count + 1 + index
+      } else {
+        nil
+      }
     guard let current else { return }
     let target = current + offset
-    guard target != current, (0...items.count).contains(target) else { return }
+    guard target != current, (0...items.count + archived.count).contains(target) else { return }
     if target == 0 {
       selection = .newChat(nil)
-    } else {
+    } else if target <= items.count {
       let item = items[target - 1]
       activateWorkspace(item)
       revealedWorkspaceID = item.workspace.id
+    } else {
+      let workspace = archived[target - items.count - 1]
+      selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
+      revealedWorkspaceID = workspace.id
     }
   }
 
