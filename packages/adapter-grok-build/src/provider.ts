@@ -1,12 +1,24 @@
-import { makeAcpProvider, makeStdioAcpConnectorWithOptions } from "@codevisor/adapter-acp"
+import {
+  makeAcpProvider,
+  makeStdioAcpConnectorWithOptions,
+  type AcpConnector
+} from "@codevisor/adapter-acp"
 import type { AgentProvider, ProviderEnvironment } from "@codevisor/agent-runtime"
 
 import { makeGrokBuildExtension } from "./extension.js"
 import { withGrokSkillsDisabled } from "./skills.js"
 
-export const makeGrokBuildProvider = (environment: ProviderEnvironment): AgentProvider =>
+export interface GrokBuildProviderConfig {
+  readonly connector?: AcpConnector
+}
+
+export const makeGrokBuildProvider = (
+  environment: ProviderEnvironment,
+  config: GrokBuildProviderConfig = {}
+): AgentProvider =>
   makeAcpProvider(environment, {
-    connector: makeStdioAcpConnectorWithOptions({ extension: makeGrokBuildExtension }),
+    connector:
+      config.connector ?? makeStdioAcpConnectorWithOptions({ extension: makeGrokBuildExtension }),
     providerId: "grok-build",
     launchEnv: (env, launch) => withGrokSkillsDisabled(env, launch)
   })
