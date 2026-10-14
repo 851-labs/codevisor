@@ -18,7 +18,7 @@ struct AssistantTurnActivityTests {
     #expect(activity(turn) == "Thinking…")
     TranscriptReducer.apply(.contextCompaction(id: "compact", status: .started), to: &turn)
     #expect(activity(turn) == "Compacting context…")
-    #expect(turn.streamingItems.isEmpty)
+    #expect(turn.workedItems.isEmpty)
     TranscriptReducer.apply(.contextCompaction(id: "compact", status: status), to: &turn)
     #expect(activity(turn) == nil)
     #expect(turn.workedItems.isEmpty)

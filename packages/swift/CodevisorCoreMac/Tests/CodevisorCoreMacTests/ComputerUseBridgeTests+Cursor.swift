@@ -161,30 +161,6 @@ extension ComputerUseBridgeTests {
       ))
   }
 
-  @Test("Keeps background delivery explicit across Spaces")
-  func crossSpaceDeliveryMode() {
-    #expect(
-      computerUseResolvedDeliveryMode(
-        requested: "background",
-        targetIsOnVisibleSpace: false
-      ) == "background")
-    #expect(
-      computerUseResolvedDeliveryMode(
-        requested: "background",
-        targetIsOnVisibleSpace: true
-      ) == "background")
-    #expect(
-      computerUseResolvedDeliveryMode(
-        requested: "foreground",
-        targetIsOnVisibleSpace: false
-      ) == "foreground")
-    #expect(
-      computerUseResolvedDeliveryMode(
-        requested: "invalid",
-        targetIsOnVisibleSpace: true
-      ) == nil)
-  }
-
   @Test("Uses the same smooth cursor geometry at overlay and menu-bar scales")
   @MainActor
   func cursorGeometryScalesCleanly() {

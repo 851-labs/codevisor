@@ -18,11 +18,7 @@ import {
   parseNativeConfig,
   resolveNativeConfigPath
 } from "./native-config-files.js"
-import {
-  extractServerIdentity,
-  normalizeNativeServer,
-  normalizeUrlIdentity
-} from "./native-config-normalize.js"
+import { extractServerIdentity, normalizeNativeServer } from "./native-config-normalize.js"
 
 const cleanups: Array<() => Promise<void>> = []
 
@@ -355,6 +351,17 @@ describe("extractServerIdentity", () => {
     expect(extractServerIdentity({ serverUrl: "https://b.example.com" })).toBe(
       "https://b.example.com"
     )
+    expect(extractServerIdentity({ url: "https://a.example.com/x?y=1" })).toBe(
+      "https://a.example.com/x?y=1"
+    )
+    expect(extractServerIdentity({ url: "https://a.example.com/x/?y=1" })).toBe(
+      "https://a.example.com/x?y=1"
+    )
+  })
+
+  it("passes non-http and unparseable url values through unchanged", () => {
+    expect(extractServerIdentity({ url: "docs-mcp" })).toBe("docs-mcp")
+    expect(extractServerIdentity({ url: "https://" })).toBe("https://")
   })
 
   it("identifies npx/bunx invocations by package name", () => {
@@ -381,24 +388,6 @@ describe("extractServerIdentity", () => {
     )
     expect(extractServerIdentity({ cmd: "uvx" })).toBe("uvx")
     expect(extractServerIdentity({})).toBe("")
-  })
-})
-
-describe("normalizeUrlIdentity", () => {
-  it("lowercases hosts and strips trailing slashes", () => {
-    expect(normalizeUrlIdentity("https://MCP.Example.com/api/")).toBe("https://mcp.example.com/api")
-  })
-
-  it("preserves query strings", () => {
-    expect(normalizeUrlIdentity("https://a.example.com/x?y=1")).toBe("https://a.example.com/x?y=1")
-  })
-
-  it("passes through non-http identities", () => {
-    expect(normalizeUrlIdentity("docs-mcp")).toBe("docs-mcp")
-  })
-
-  it("passes through unparseable urls", () => {
-    expect(normalizeUrlIdentity("https://")).toBe("https://")
   })
 })
 

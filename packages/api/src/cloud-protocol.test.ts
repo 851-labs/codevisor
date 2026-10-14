@@ -13,7 +13,6 @@ import {
   parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
   parseMachineOutboundRelayHeader,
-  parseMachineRelayHeader,
   parseRelayFrameHeader,
   type AppToHub,
   type CloudDeviceInfo,
@@ -187,11 +186,6 @@ describe("relay envelopes (binary)", () => {
     expect(parseAppRelayHeader("nope")).toBeUndefined()
     expect(parseAppRelayHeader({ machineId: "m-1", frame: { t: "data" } })).toBeUndefined()
 
-    expect(parseMachineRelayHeader({ peerId: "conn-1", frame })).toEqual({
-      peerId: "conn-1",
-      frame
-    })
-
     const open = frames[0]!
     expect(
       parseHubToMachineRelayHeader({
@@ -239,5 +233,18 @@ describe("relay envelopes (binary)", () => {
       frame
     })
     expect(parseMachineOutboundRelayHeader({ frame })).toBeUndefined()
+    for (const address of [{ peerId: "conn-1" }, { machineId: "m-2" }]) {
+      expect(parseMachineOutboundRelayHeader({ ...address, frame: { t: "data" } })).toBeUndefined()
+    }
+  })
+
+  it("derives a machine header's direction from its address, never from the wire", () => {
+    const frame = frames[1]!
+    expect(
+      parseMachineOutboundRelayHeader({ machineId: "m-2", direction: "answer", frame })
+    ).toEqual({ direction: "open", machineId: "m-2", frame })
+    expect(parseMachineOutboundRelayHeader({ peerId: "conn-1", direction: "open", frame })).toEqual(
+      { direction: "answer", peerId: "conn-1", frame }
+    )
   })
 })

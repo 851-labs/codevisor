@@ -315,7 +315,7 @@ extension CodevisorServerClient {
     return try await createProject(project)
   }
 
-  public func updateProject(_ project: Project) async throws -> ServerProject {
+  private func updateProject(_ project: Project) async throws -> ServerProject {
     try await send(
       "/v1/projects/\(project.id.uuidString)",
       method: "PATCH",

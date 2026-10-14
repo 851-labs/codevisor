@@ -288,7 +288,6 @@ private final class ManualRefreshClient: CodevisorServerClienting, Sendable {
   func capabilities(cwd: String) async throws -> ServerCapabilities { fatalError("unused") }
   func listHarnesses() async throws -> [ServerHarness] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
-  func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

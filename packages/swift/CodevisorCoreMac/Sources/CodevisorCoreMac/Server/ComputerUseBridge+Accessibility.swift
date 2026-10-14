@@ -2,14 +2,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-func computerUseResolvedDeliveryMode(
-  requested: String,
-  targetIsOnVisibleSpace: Bool?
-) -> String? {
-  guard requested == "background" || requested == "foreground" else { return nil }
-  return requested
-}
-
 extension ComputerUseBridge {
   private struct UncheckedAXPayload<Value>: @unchecked Sendable {
     let value: Value
@@ -129,23 +121,14 @@ extension ComputerUseBridge {
     }
   }
 
-  func deliveryMode(
-    _ arguments: [String: Any],
-    windowID: CGWindowID?
-  ) throws -> String {
+  func deliveryMode(_ arguments: [String: Any]) throws -> String {
     let requested =
       (arguments["deliveryMode"] ?? arguments["delivery_mode"]) as? String
       ?? "background"
-    let targetIsVisible = windowID.map(windowIsOnVisibleSpace)
-    guard
-      let resolved = computerUseResolvedDeliveryMode(
-        requested: requested,
-        targetIsOnVisibleSpace: targetIsVisible
-      )
-    else {
+    guard requested == "background" || requested == "foreground" else {
       throw BridgeError("deliveryMode must be background or foreground")
     }
-    if resolved == "foreground" {
+    if requested == "foreground" {
       guard let reason = arguments["foreground_reason"] as? String,
         !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       else {
@@ -153,7 +136,7 @@ extension ComputerUseBridge {
           "Foreground delivery requires foreground_reason explaining why background cannot complete this action.")
       }
     }
-    return resolved
+    return requested
   }
 
   func performWithDelivery<T>(

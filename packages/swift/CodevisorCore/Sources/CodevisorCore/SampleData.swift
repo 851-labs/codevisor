@@ -172,9 +172,6 @@ struct PreviewServerClient: CodevisorServerClienting {
   func upsertProject(_ project: Project) async throws -> ServerProject {
     throw CodevisorServerClientError.invalidResponse
   }
-  func updateProject(_ project: Project) async throws -> ServerProject {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func deleteProject(id: UUID) async throws {}
   func listSessions() async throws -> [ServerSession] { [] }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {

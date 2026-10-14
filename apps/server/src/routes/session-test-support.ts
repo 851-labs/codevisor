@@ -15,20 +15,11 @@ export const setUpWorkspace = async () => {
   const workspaceFolder = join(workspaceRoot, "codevisor")
   mkdirSync(workspaceFolder)
   const workspaceResponse = await jsonRequest(server, "/v1/projects", {
-    body: JSON.stringify({ folderPath: workspaceFolder, id: "workspace-client-id" }),
+    body: JSON.stringify({ folderPath: workspaceFolder }),
     method: "POST"
   })
   expect(workspaceResponse.status).toBe(201)
   const workspace = workspaceResponse.body as { readonly id: string }
-  expect(workspace.id).toBe("workspace-client-id")
-  expect(
-    (
-      await jsonRequest(server, `/v1/projects/${workspace.id}`, {
-        body: JSON.stringify({ name: "Renamed" }),
-        method: "PATCH"
-      })
-    ).body
-  ).toMatchObject({ name: "Renamed" })
   return { agents, server, services, workspace, workspaceFolder, workspaceRoot }
 }
 
@@ -40,7 +31,6 @@ export const createFirstSession = async (
     body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "First chat" }),
     method: "POST"
   })
-  const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
-  expect(session.agentSessionId).toBe("agent-codex-codevisor")
-  return session
+  expect(sessionResponse.status).toBe(201)
+  return sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
 }

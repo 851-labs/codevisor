@@ -196,9 +196,6 @@ const parseAddressedHeader = <Header>(value: unknown, addressField: string): Hea
 export const parseAppRelayHeader = (value: unknown): AppRelayHeader | undefined =>
   parseAddressedHeader<AppRelayHeader>(value, "machineId")
 
-export const parseMachineRelayHeader = (value: unknown): MachineRelayHeader | undefined =>
-  parseAddressedHeader<MachineRelayHeader>(value, "peerId")
-
 export const parseHubToMachineRelayHeader = (
   value: unknown
 ): HubToMachineRelayHeader | undefined => {
@@ -226,10 +223,10 @@ export type MachineOutboundRelayHeader =
 export const parseMachineOutboundRelayHeader = (
   value: unknown
 ): MachineOutboundRelayHeader | undefined => {
-  const answer = parseMachineRelayHeader(value)
-  if (answer !== undefined) return { direction: "answer", ...answer }
+  const answer = parseAddressedHeader<MachineRelayHeader>(value, "peerId")
+  if (answer !== undefined) return { ...answer, direction: "answer" }
   const opened = parseAppRelayHeader(value)
-  return opened === undefined ? undefined : { direction: "open", ...opened }
+  return opened === undefined ? undefined : { ...opened, direction: "open" }
 }
 
 export const AppHello = Schema.Struct({

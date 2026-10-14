@@ -153,15 +153,6 @@ public enum CodevisorAppVariant: Sendable {
     )
   }
 
-  public static func migrateLegacyApplicationSupportIfNeeded(fileManager: FileManager = .default) {
-    guard let legacy = legacyApplicationSupportURL(fileManager: fileManager) else { return }
-    migrateLegacyApplicationSupport(
-      from: legacy,
-      to: applicationSupportURL(fileManager: fileManager),
-      fileManager: fileManager
-    )
-  }
-
   public static func legacyApplicationSupportURL(
     fileManager: FileManager = .default
   ) -> URL? {
@@ -174,23 +165,6 @@ public enum CodevisorAppVariant: Sendable {
       ?? Self.homeDirectory(fileManager: fileManager)
       .appendingPathComponent("Library/Application Support")
     return base.appendingPathComponent("HerdMan", isDirectory: true)
-  }
-
-  static func migrateLegacyApplicationSupport(from legacy: URL, to destination: URL, fileManager: FileManager) {
-    guard fileManager.fileExists(atPath: legacy.path) else { return }
-    let contents = (try? fileManager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)) ?? []
-    for source in contents where source.pathExtension == "json" {
-      let target = destination.appendingPathComponent(source.lastPathComponent)
-      guard !fileManager.fileExists(atPath: target.path) else { continue }
-      do {
-        try fileManager.copyItem(at: source, to: target)
-        Log.persistence.log("Migrated legacy HerdMan file \(source.lastPathComponent, privacy: .public)")
-      } catch {
-        Log.persistence.error(
-          "Failed to migrate legacy HerdMan file \(source.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
-        )
-      }
-    }
   }
 
   public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {

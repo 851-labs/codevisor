@@ -145,9 +145,6 @@ final class SocketQueue: @unchecked Sendable {
 
 func makeHub(
   _ scripted: ScriptedCloudHub,
-  heartbeatInterval: Duration = .seconds(30),
-  heartbeatTimeout: Duration = .seconds(10),
-  clock: TestClock = TestClock(),
   releaseChannel: CloudReleaseChannel = CloudReleaseChannel()
 ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
   let store = InMemoryCloudCredentialStore(token: "session-token")
@@ -159,9 +156,7 @@ func makeHub(
     releaseChannel: releaseChannel,
     webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
     readyTimeout: .seconds(2),
-    heartbeatInterval: heartbeatInterval,
-    heartbeatTimeout: heartbeatTimeout,
-    sleep: clock.sleep,
+    sleep: TestClock().sleep,
     reconnectDelay: { _ in .seconds(1) }
   )
   return (hub, store)

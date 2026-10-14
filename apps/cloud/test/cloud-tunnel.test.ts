@@ -1,6 +1,6 @@
 import { type CloudDeviceInfo, encodeCloudFrame } from "@codevisor/api"
 import { SELF } from "cloudflare:test"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import type { CloudEnv } from "../src/env.js"
 import { machineTunnelScope } from "../src/hub-tunnel-events.js"
@@ -189,9 +189,13 @@ describe("tunnel control plane", () => {
         throw new Error("D1 unavailable")
       }
     }
-    const logged: unknown[] = []
     const env = { DB: failingDb } as unknown as CloudEnv
-    await registerTunnelEndpoint(env, registration, (...entry) => logged.push(entry))
-    expect(logged).toEqual([["tunnel endpoint registration failed", new Error("D1 unavailable")]])
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    onTestFinished(() => logged.mockRestore())
+    await registerTunnelEndpoint(env, registration)
+    expect(logged).toHaveBeenCalledWith(
+      "tunnel endpoint registration failed",
+      new Error("D1 unavailable")
+    )
   })
 })

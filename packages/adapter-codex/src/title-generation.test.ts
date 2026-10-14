@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { FakeCodexClient } from "./test-support.js"
-import { CodexTitleGenerator, parseGeneratedTitle } from "./title-generation.js"
+import { CodexTitleGenerator } from "./title-generation.js"
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void
@@ -144,26 +144,58 @@ describe("Codex title generation", () => {
     expect(client.requests).toEqual([])
   })
 
-  it.each(["malformed", "failed", "error", "oversized"])(
-    "keeps the fallback on %s output",
-    async (failure) => {
-      const { client, generator, finish } = fixture()
-      const generation = generator.onTurnCompleted()
-      await client.started.promise
-      if (failure === "error") {
-        generator.handleNotification("error", { threadId: "hidden-title", willRetry: true })
-        generator.handleNotification("error", { threadId: "hidden-title", willRetry: false })
-      } else {
-        finish(
-          failure === "oversized" ? "x".repeat(9_000) : "invalid",
-          failure === "failed" ? "failed" : "completed"
-        )
-      }
-      await generation
-      expect(client.threadName).toBeNull()
-      await client.unsubscribed.promise
-    }
-  )
+  it.each([
+    ["malformed", "invalid", "completed"],
+    ["failed", '{"title":"Fix login validation"}', "failed"],
+    [
+      "oversized",
+      JSON.stringify({ title: "Fix login validation", pad: "x".repeat(9_000) }),
+      "completed"
+    ],
+    ["non-object", "null", "completed"],
+    ["untitled", "{}", "completed"],
+    ["non-string title", '{"title":3}', "completed"],
+    ["blank title", '{"title":"  "}', "completed"]
+  ])("keeps the fallback on %s output", async (_case, text, status) => {
+    const { client, generator, finish } = fixture()
+    const generation = generator.onTurnCompleted()
+    await client.started.promise
+    finish(text, status)
+    await generation
+    expect(client.threadName).toBeNull()
+    await client.unsubscribed.promise
+  })
+
+  it("keeps the fallback when the title turn ends in a final error", async () => {
+    const { client, generator } = fixture()
+    const generation = generator.onTurnCompleted()
+    await client.started.promise
+    generator.handleNotification("error", { threadId: "hidden-title", willRetry: true })
+    generator.handleNotification("error", { threadId: "hidden-title", willRetry: false })
+    await generation
+    expect(client.threadName).toBeNull()
+    await client.unsubscribed.promise
+  })
+
+  it.each([
+    [
+      "a whitespace-collapsed title",
+      '{"title":" Fix   login\\nvalidation "}',
+      "Fix login validation"
+    ],
+    [
+      "a title cut to 80 whole code points",
+      JSON.stringify({ title: "🚀".repeat(81) }),
+      "🚀".repeat(80)
+    ]
+  ])("names the thread with %s", async (_case, text, expected) => {
+    const { client, generator, finish } = fixture()
+    const generation = generator.onTurnCompleted()
+    await client.started.promise
+    finish(text)
+    await generation
+    expect(client.threadName).toBe(expected)
+  })
 
   it("bounds a stalled request and cleans up without affecting the main thread", async () => {
     vi.useFakeTimers()
@@ -223,15 +255,5 @@ describe("Codex title generation", () => {
     await generator.onTurnCompleted()
     expect(client.threadName).toBeNull()
     expect(client.closed).toBe(false)
-  })
-
-  it("validates and bounds generated text without splitting Unicode", () => {
-    for (const value of [undefined, "no JSON", "null", "{}", '{"title":3}', '{"title":"  "}']) {
-      expect(parseGeneratedTitle(value)).toBeUndefined()
-    }
-    expect(parseGeneratedTitle('{"title":" Fix   login\\nvalidation "}')).toBe(
-      "Fix login validation"
-    )
-    expect(parseGeneratedTitle(JSON.stringify({ title: "🚀".repeat(81) }))).toBe("🚀".repeat(80))
   })
 })

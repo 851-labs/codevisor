@@ -35,8 +35,6 @@ export interface MachineLink {
   ) => Promise<unknown>
 }
 
-export const GATEWAY_INVOKE_PATH = "/v1/gateway/invoke"
-
 interface Peer {
   readonly id: string
   readonly name: string

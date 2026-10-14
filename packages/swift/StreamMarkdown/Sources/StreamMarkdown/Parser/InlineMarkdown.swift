@@ -2,16 +2,8 @@ import Foundation
 import SwiftUI
 
 public enum InlineMarkdown {
-  public static func attributedString(from markdown: String) -> AttributedString {
-    attributedString(from: MarkdownParser().parseInline(markdown))
-  }
-
   public static func attributedString(from text: MarkdownText) -> AttributedString {
     render(text.spans, intent: [])
-  }
-
-  public static func attributedString(from markdown: String, theme: MarkdownTheme) -> AttributedString {
-    attributedString(from: MarkdownParser().parseInline(markdown), theme: theme)
   }
 
   public static func attributedString(from text: MarkdownText, theme: MarkdownTheme) -> AttributedString {

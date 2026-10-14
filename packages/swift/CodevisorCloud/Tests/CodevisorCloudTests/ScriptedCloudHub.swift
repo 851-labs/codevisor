@@ -19,7 +19,6 @@ final class ScriptedCloudHub: @unchecked Sendable {
   var tunnelWelcome: (relays: [CloudTunnelConfig.Relay], tunnel: String)?
   var respondsToPing = true
   var issueResumeTokens = false
-  var acceptResume = true
   private var issuedToken: String?
   private var connectionCounter = 0
   private var currentConnectionId = "conn-0"
@@ -117,7 +116,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
           helloTunnelEndpointId = hello.device.tunnelEndpointId
           helloReleaseChannel = hello.device.releaseChannel
           let resumed =
-            issueResumeTokens && acceptResume && hello.resume != nil
+            issueResumeTokens && hello.resume != nil
             && hello.resume == issuedToken
           if !resumed {
             connectionCounter += 1
@@ -175,7 +174,6 @@ final class ScriptedRelayMachine: @unchecked Sendable {
     var nextOutboundSeq: UInt64 = 0
     var openPayload: Data?
     var messages: [Data] = []
-    var closeReason: CloudChannelCloseReason?
     var compressedFraming = false
 
     init(cipher: CloudChannelCipher) {
@@ -253,12 +251,11 @@ final class ScriptedRelayMachine: @unchecked Sendable {
       }
       channel.nextInboundSeq += 1
       return nil
-    case let .close(channelId, seq, reason):
+    case let .close(channelId, seq, _):
       guard let channel = channel(channelId), channel.nextInboundSeq == seq else {
         throw CloudChannelCryptoError.openFailed
       }
       channel.nextInboundSeq += 1
-      channel.closeReason = reason
       return nil
     }
   }

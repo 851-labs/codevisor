@@ -8,7 +8,7 @@ extension ComputerUseBridge {
     appName: String, app: NSRunningApplication, application: AXUIElement,
     window: AXUIElement, windowID: CGWindowID?
   ) throws -> [String: Any] {
-    let mode = try deliveryMode(arguments, windowID: windowID)
+    let mode = try deliveryMode(arguments)
     if tool == "paste_text", mode != "foreground" {
       throw BridgeError(
         "paste_text requires foreground delivery and foreground_reason. Prefer background type_text or set_value for plain text."

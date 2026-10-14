@@ -89,10 +89,6 @@ extension AssistantTurn {
     }
   }
 
-  public var streamingItems: [WorkedItem] {
-    groupedItems(entries)
-  }
-
   private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
     var items: [WorkedItem] = []
     var group: [ToolCall] = []

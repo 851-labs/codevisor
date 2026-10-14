@@ -301,8 +301,7 @@ extension SessionModel {
   func noteProviderActivity() {
     if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
     stalledTurnSchedule?.cancel()
-    let quietInterval = stalledTurnQuietInterval
-    stalledTurnSchedule = quietTurnScheduler.schedule(quietInterval) { [weak self] in
+    stalledTurnSchedule = quietTurnScheduler.schedule(Self.stalledTurnQuietInterval) { [weak self] in
       guard let self, self.isSending else { return }
       self.isTakingLongerThanExpected = true
       let cursorBeforeReload = self.serverEventCursor

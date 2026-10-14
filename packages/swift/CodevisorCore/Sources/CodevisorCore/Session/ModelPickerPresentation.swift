@@ -33,10 +33,6 @@ public struct ModelPickerPresentation: Equatable, Sendable {
     showsSettingsChip = hasSettings || settingsSpinner
   }
 
-  public var spinnerCount: Int {
-    (modelChip == .loading ? 1 : 0) + (showsSettingsSpinner ? 1 : 0)
-  }
-
   public var modelChipTitle: String? {
     switch modelChip {
     case .loading: nil

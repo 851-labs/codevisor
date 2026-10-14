@@ -25,7 +25,7 @@ struct TranscriptWaitingActivityGeometryTests {
   private func screenY(_ key: String, in layout: VirtualTranscriptLayout) throws -> CGFloat {
     let index = try #require(layout.indexByKey[key])
     let viewport = VirtualTranscriptViewport(contentHeight: layout.totalHeight, viewportHeight: 600)
-    return layout.topOffsets[index] - viewport.offsetY(distanceFromBottom: 0)
+    return layout.frame(at: index).minY - viewport.offsetY(distanceFromBottom: 0)
   }
 
   @Test(arguments: [false, true])

@@ -198,10 +198,7 @@ struct VirtualTranscriptLayoutTests {
     #expect(measured.totalHeight == 1_290)
 
     for index in 0..<(measured.keys.count - 1) {
-      #expect(
-        measured.topOffsets[index] + measured.heights[index] + 10
-          == measured.topOffsets[index + 1]
-      )
+      #expect(measured.frame(at: index).maxY + 10 == measured.frame(at: index + 1).minY)
     }
 
     let viewportHeight: CGFloat = 250
@@ -213,13 +210,13 @@ struct VirtualTranscriptLayoutTests {
         previousDistanceFromBottom: previousDistanceFromBottom
       ))
     let previousAnchorY =
-      initial.topOffsets[2]
+      initial.frame(at: 2).minY
       - initial.viewportTop(
         distanceFromBottom: previousDistanceFromBottom,
         viewportHeight: viewportHeight
       )
     let nextAnchorY =
-      measured.topOffsets[2]
+      measured.frame(at: 2).minY
       - measured.viewportTop(
         distanceFromBottom: nextDistanceFromBottom,
         viewportHeight: viewportHeight

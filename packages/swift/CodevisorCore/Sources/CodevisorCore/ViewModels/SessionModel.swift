@@ -136,7 +136,7 @@ public final class SessionModel {
   let transport: ServerSessionTransport
   private let sessionId: String
   let now: @Sendable () -> Date
-  let stalledTurnQuietInterval: Duration
+  static let stalledTurnQuietInterval: Duration = .seconds(300)
   let quietTurnScheduler: SessionQuietTurnScheduler
   var serverEventCursor: Int?
   var isReplayingHistory = false
@@ -175,7 +175,6 @@ public final class SessionModel {
     modeState: SessionModeState? = nil,
     configOptions: [SessionConfigOption] = [],
     now: @escaping @Sendable () -> Date = { Date() },
-    stalledTurnQuietInterval: Duration = .seconds(300),
     quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
     connectionRecoveryScheduler: SessionConnectionRecoveryScheduler = .continuous,
     connectionRecoveryStatusDelay: Duration = .seconds(5),
@@ -187,7 +186,6 @@ public final class SessionModel {
     self.modeState = modeState
     self.configOptions = configOptions
     self.now = now
-    self.stalledTurnQuietInterval = stalledTurnQuietInterval
     self.quietTurnScheduler = quietTurnScheduler
     self.connectionRecoveryScheduler = connectionRecoveryScheduler
     self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay

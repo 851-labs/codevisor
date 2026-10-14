@@ -32,6 +32,18 @@ struct ComputerUseBridgeSocketTests {
     }
   }
 
+  @Test("Native requests with an unknown delivery mode are refused before app lookup")
+  func unknownDeliveryMode() {
+    let bridge = ComputerUseBridge()
+    let unknown: [String: Any] = ["app": "No app should be resolved", "delivery_mode": "invalid", "key": "Return"]
+    do {
+      _ = try bridge.handle(["type": "tool", "sessionId": "intent", "tool": "press_key", "arguments": unknown])
+      Issue.record("An unknown delivery mode must be rejected before app lookup or permission prompting")
+    } catch {
+      #expect(String(describing: error).contains("deliveryMode must be background or foreground"))
+    }
+  }
+
   @Test("Starts a discoverable socket for deeply nested development data")
   func deepDevelopmentDirectory() throws {
     let root = FileManager.default.temporaryDirectory

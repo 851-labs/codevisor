@@ -19,6 +19,7 @@ struct TranscriptSurfaceControllerTests {
     #expect(controller.configureInitialPosition(state, followsLatest: !savedAtBottom))
     #expect(controller.followsLatest == savedAtBottom)
     #expect(controller.lockedRestoreDistance == (savedAtBottom ? nil : 640))
+    #expect(controller.initialBottomPin.isActive == savedAtBottom)
     #expect(!controller.configureInitialPosition(nil, followsLatest: !savedAtBottom))
     #expect(controller.followsLatest == savedAtBottom)
   }
