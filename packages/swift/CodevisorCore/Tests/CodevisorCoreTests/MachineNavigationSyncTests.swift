@@ -371,7 +371,6 @@ private final class NavigationSyncFakeServerClient: CodevisorServerClienting, @u
 
   func health() async throws -> ServerHealth { fatalError("unused") }
   func info() async throws -> ServerInfo { fatalError("unused") }
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
     fatalError("unused")
   }

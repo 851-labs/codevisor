@@ -152,7 +152,6 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
       channel: "stable", checkedAt: nil, migrationState: "idle"
     )
   }
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }

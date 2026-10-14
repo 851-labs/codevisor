@@ -235,7 +235,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
     fatalError("unused")
   }
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }

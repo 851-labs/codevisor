@@ -215,19 +215,6 @@ public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
   }
 }
 
-public struct ServerPairingToken: Decodable, Equatable, Sendable {
-  public var token: String
-  public var createdAt: String
-
-  public init(
-    token: String,
-    createdAt: String
-  ) {
-    self.token = token
-    self.createdAt = createdAt
-  }
-}
-
 extension CodevisorServerClient {
   public func health() async throws -> ServerHealth {
     try await get("/v1/health")
@@ -289,10 +276,6 @@ extension CodevisorServerClient {
     if channel != .stable { query.append("channel=\(channel.rawValue)") }
     let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"
     return try await get("/v1/update\(suffix)")
-  }
-
-  public func issuePairingToken() async throws -> ServerPairingToken {
-    try await send("/v1/auth/pairing-token", method: "POST", body: Optional<EmptyBody>.none)
   }
 
   public func capabilities(cwd: String) async throws -> ServerCapabilities {

@@ -164,7 +164,6 @@ struct PreviewServerClient: CodevisorServerClienting {
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
     throw CodevisorServerClientError.invalidResponse
   }
-  func issuePairingToken() async throws -> ServerPairingToken { throw CodevisorServerClientError.invalidResponse }
   func capabilities(cwd: String) async throws -> ServerCapabilities {
     ServerCapabilities(harnesses: harnessCapabilities)
   }
