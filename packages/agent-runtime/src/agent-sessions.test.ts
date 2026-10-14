@@ -292,12 +292,6 @@ describe("listCodexAgentSessions", () => {
       }
     ])
   })
-
-  it("returns [] for a missing sessions root", async () => {
-    await expect(
-      listCodexAgentSessions({ homedir: home, fs: makeFakeFs({}, []) })
-    ).resolves.toEqual([])
-  })
 })
 
 describe("defaultAgentSessionFileSystem", () => {

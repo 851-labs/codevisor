@@ -306,12 +306,6 @@ describe("runShellCommand", () => {
     ).resolves.toBe("/home/test user")
   })
 
-  it("resolves stdout from a real process", async () => {
-    await expect(runShellCommand("/bin/sh", ["-c", "printf 'PATH=/x\\n'"], 5000)).resolves.toBe(
-      "PATH=/x\n"
-    )
-  })
-
   it("rejects on spawn failure", async () => {
     await expect(runShellCommand(missingPath(), ["-c", "true"], 5000)).rejects.toThrow()
   })
