@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 @testable import TranscriptSurface
 
-@Suite("Native prepared content", .serialized)
+@Suite("Native prepared content", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct TranscriptPreparedContentTests {
   @Observable
@@ -13,9 +13,7 @@ struct TranscriptPreparedContentTests {
     var isPrepared = false
   }
 
-  @Test(
-    "Replacing a root while preparation is pending preserves its readiness", .timeLimit(.minutes(1)),
-    arguments: [false, true])
+  @Test("Replacing a root while preparation is pending preserves its readiness", arguments: [false, true])
   func rootReplacementDuringPreparation(usesCachedHeight: Bool) async throws {
     _ = NSApplication.shared
     let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 800, height: 320))
@@ -64,7 +62,7 @@ struct TranscriptPreparedContentTests {
     }
   }
 
-  @Test("A prepared paragraph replaces its placeholder height", .timeLimit(.minutes(1)))
+  @Test("A prepared paragraph replaces its placeholder height")
   func preparedParagraphReportsItsNaturalHeight() async throws {
     _ = NSApplication.shared
     let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 800, height: 320))
