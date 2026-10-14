@@ -7,7 +7,6 @@ export default defineConfig({
     env: { CODEVISOR_COMMAND_PRIORITY: "normal" },
     maxWorkers: Math.max(2, Math.floor(availableParallelism() / 4)),
     coverage: {
-      all: true,
       include: ["src/**/*.ts"],
       exclude: ["**/*.test.ts", "src/git-test-support.ts"],
       provider: "v8",
