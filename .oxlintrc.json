@@ -208,7 +208,11 @@
       "files": [
         "apps/cloud/**",
         "apps/screen-sharing-rig/**",
-        "apps/server/**",
+        "apps/server/src/*.ts",
+        "apps/server/src/cli/**",
+        "apps/server/src/infra/**",
+        "apps/server/src/routes/**",
+        "apps/server/test/**",
         "apps/www/**",
         "packages/adapter-acp/**",
         "packages/adapter-antigravity/**",
