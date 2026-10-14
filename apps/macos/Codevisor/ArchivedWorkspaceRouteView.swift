@@ -30,6 +30,7 @@ struct ArchivedWorkspaceRouteView: View {
         content(workspace)
           .navigationTitle(SidebarWorkspaceRowLabel.title(for: workspace.name))
           .navigationSubtitle("Archived")
+          .focusedSceneValue(\.workspaceTabCycling, tabCycling(in: workspace))
       } else if workspace == nil {
         ContentUnavailableView(
           "Workspace Unavailable",
@@ -66,6 +67,19 @@ struct ArchivedWorkspaceRouteView: View {
         )
       }
     }
+  }
+
+  /// ⌥⌘← / ⌥⌘→ through the tabs, wrapping around like a live workspace's.
+  private func tabCycling(in workspace: Workspace) -> WorkspaceTabCycling? {
+    let tabIds = workspace.centerTabs.map(\.id)
+    guard tabIds.count > 1 else { return nil }
+    let step: @MainActor (Int) -> Void = { offset in
+      let current = selectedTabId ?? workspace.selectedCenterTabId
+      let index = tabIds.firstIndex(of: current) ?? 0
+      selectedTabId = tabIds[(index + offset + tabIds.count) % tabIds.count]
+    }
+    return WorkspaceTabCycling(
+      workspaceId: workspace.id, tabIds: tabIds, previous: { step(-1) }, next: { step(1) })
   }
 
   /// The pane the tab last showed: its active split's selected pane, else
