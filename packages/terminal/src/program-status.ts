@@ -81,13 +81,7 @@ export type ProgramStatusReport =
   | { readonly type: "query" }
   | { readonly type: "report"; readonly state: ReportState; readonly id: string | undefined }
 
-/// Reads one OSC 7501 body (everything after `7501;`). Undefined when the
-/// specification says to ignore the report: no known `state`, an invalid
-/// `id`, a broken limit, or `title`/`msg` that isn't safe base64 text. A
-/// malformed pair or an unknown key is skipped on its own.
-export const parseProgramStatus = (body: string): ProgramStatusReport | undefined => {
-  if (body.length > MAX_BODY) return undefined
-  if (body === "?") return { type: "query" }
+const collectProgramStatusValues = (body: string): Map<string, Array<string>> | undefined => {
   const values = new Map<string, Array<string>>()
   for (const pair of body.split(":")) {
     const equals = pair.indexOf("=")
@@ -99,20 +93,41 @@ export const parseProgramStatus = (body: string): ProgramStatusReport | undefine
     if (!KEY.test(key) || !VALUE.test(value)) continue
     values.set(key, [...(values.get(key) ?? []), value])
   }
-  const all = (key: string): ReadonlyArray<string> => values.get(key) ?? []
-  const last = (key: string): string | undefined => all(key).at(-1)
+  return values
+}
 
+const validProgramStatusValues = (
+  all: (key: string) => ReadonlyArray<string>,
+  last: (key: string) => string | undefined
+): boolean => {
   // Every value counts against its limit, even one a later pair replaces.
   // An invalid id discards the report rather than falling back to the root
   // record, where `clear` would remove everything.
-  if (!all("id").every(validId)) return undefined
-  if (all("app").some((app) => app.length > MAX_APP)) return undefined
-  if (all("title").some((title) => title.length > MAX_TITLE_ENCODED)) return undefined
-  if (all("msg").some((msg) => msg.length > MAX_MSG_ENCODED)) return undefined
+  if (!all("id").every(validId)) return false
+  if (all("app").some((app) => app.length > MAX_APP)) return false
+  if (all("title").some((title) => title.length > MAX_TITLE_ENCODED)) return false
+  if (all("msg").some((msg) => msg.length > MAX_MSG_ENCODED)) return false
   const title = last("title")
-  if (title !== undefined && !validText(title, MAX_TITLE)) return undefined
+  if (title !== undefined && !validText(title, MAX_TITLE)) return false
   const msg = last("msg")
-  if (msg !== undefined && !validText(msg, MAX_MSG)) return undefined
+  if (msg !== undefined && !validText(msg, MAX_MSG)) return false
+
+  return true
+}
+
+/// Reads one OSC 7501 body (everything after `7501;`). Undefined when the
+/// specification says to ignore the report: no known `state`, an invalid
+/// `id`, a broken limit, or `title`/`msg` that isn't safe base64 text. A
+/// malformed pair or an unknown key is skipped on its own.
+export const parseProgramStatus = (body: string): ProgramStatusReport | undefined => {
+  if (body.length > MAX_BODY) return undefined
+  if (body === "?") return { type: "query" }
+  const values = collectProgramStatusValues(body)
+  if (values === undefined) return undefined
+  const all = (key: string): ReadonlyArray<string> => values.get(key) ?? []
+  const last = (key: string): string | undefined => all(key).at(-1)
+
+  if (!validProgramStatusValues(all, last)) return undefined
 
   const state = last("state")
   if (state === undefined || !STATES.has(state)) return undefined
