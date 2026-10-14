@@ -8,7 +8,7 @@ import { DatabaseError, makeDatabase, worktreePath } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
-  it("stores archived worktrees keyed by id so the name returns to the pool", async () => {
+  it("stores archived worktrees by id, apart from the worktree restored under that id", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/archived-worktrees" }))
@@ -32,8 +32,14 @@ describe("@codevisor/db", () => {
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
       expect((await run(db.listArchivedWorktrees(project.id))).length).toBe(1)
 
+      const restored = await run(
+        db.createWorktree(project.id, "sushi", "codevisor/sushi", worktree.id)
+      )
+      expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
       await run(db.deleteArchivedWorktree(worktree.id))
       expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toBeUndefined()
+      expect(await run(db.listArchivedWorktrees(project.id))).toEqual([])
+      expect(await run(db.listWorktrees(project.id))).toEqual([restored])
     } finally {
       await run(db.close)
     }

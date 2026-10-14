@@ -21,7 +21,7 @@ struct SimulatorDeviceCanvas: View {
   @State private var outlines: [String: CGRect] = [:]
   @State private var masks: [String: CGImage] = [:]
   @State private var angle: Double?
-  @State private var feed = SimulatorScreenFeed()
+  @State private var mount = UUID()
   @State private var hinge: Double?
   @State private var fold: Fold?
   @State private var stills: [String: CGImage] = [:]
@@ -46,6 +46,7 @@ struct SimulatorDeviceCanvas: View {
   }
 
   private var state: ScreenSharingSimulatorState? { model.deviceState }
+  private var feed: SimulatorScreenFeed { model.screenFeed }
 
   private var fitsCurrentScreen: Bool {
     #if os(iOS)
@@ -250,7 +251,8 @@ struct SimulatorDeviceCanvas: View {
 
   @ViewBuilder private func content(current: Face, foldable: (cover: Face, inner: Face)?, scale: CGFloat) -> some View {
     let sources = feed.sources(
-      for: model.connection?.source, arrangement: foldable == nil || hinge == nil ? "screen \(current.id)" : "foldable")
+      for: model.connection?.source,
+      arrangement: "\(mount) " + (foldable == nil || hinge == nil ? "screen \(current.id)" : "foldable"))
     if let foldable, let hinge {
       let inner = foldable.inner, cover = foldable.cover
       SimulatorFoldScene(
