@@ -351,6 +351,8 @@ struct RootView: View {
       sessionDetail(store, serverId: serverId, sessionId: sessionId)
     case let .workspace(serverId, workspaceId):
       workspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
+    case let .archivedWorkspace(serverId, workspaceId):
+      archivedWorkspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
     case let .newChat(target):
       newChat(store, target: target)
     case .none:
@@ -394,6 +396,41 @@ struct RootView: View {
     )
   }
 
+  private func archivedWorkspaceDetail(
+    _ store: SessionStore,
+    serverId: String,
+    workspaceId: UUID
+  ) -> some View {
+    ArchivedWorkspaceRouteView(
+      store: store,
+      serverId: serverId,
+      workspaceId: workspaceId,
+      onRestored: { workspace in
+        // The route reports for the workspace it shows; a stale report from
+        // a route being replaced must not act on the new selection.
+        guard selection == .archivedWorkspace(serverId: serverId, id: workspaceId) else { return }
+        openRestoredWorkspace(workspace)
+      }
+    )
+  }
+
+  /// Leaves the read-only view for the live workspace, on the tab it last
+  /// showed: through that tab's chat when it has one, else the workspace.
+  private func openRestoredWorkspace(_ workspace: Workspace) {
+    let chat = workspace.selectedCenterTab.flatMap { tab in
+      tab.root.allGroups.flatMap(\.state.panes).lazy
+        .filter { $0.kind == .chat }
+        .compactMap { $0.chatSessionId.flatMap { environment.projectList.session($0, serverId: workspace.serverId) } }
+        .first
+    }
+    if let chat {
+      store?.selectChat(chat)
+      selection = .session(serverId: chat.serverId, id: chat.id)
+    } else {
+      selection = .workspace(serverId: workspace.serverId, id: workspace.id)
+    }
+  }
+
   /// The standalone new-chat page. Creates NOTHING until the first message
   /// is sent — sending resolves the picked directory (project folder or a
   /// fresh worktree) and materializes the workspace around the started
@@ -418,6 +455,8 @@ enum SidebarSelection: Hashable {
   /// identity independently of any chat, so one that has never hosted a chat
   /// is still somewhere the user can be.
   case workspace(serverId: String, id: UUID)
+  /// An archived workspace, shown read-only until it is restored.
+  case archivedWorkspace(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
 }
 

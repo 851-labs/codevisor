@@ -57,8 +57,9 @@ extension SidebarView {
       subtitle: rowSubtitle(for: workspace, isArchived: true),
       icon: icon(for: listItem),
       store: store,
+      isSelected: selection == .archivedWorkspace(serverId: workspace.serverId, id: workspace.id),
       isReordering: isReordering,
-      onRequestRestore: { restoringWorkspace = workspace },
+      onActivate: { selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id) },
       onRestore: { environment.unarchiveWorkspace(workspace) }
     )
   }

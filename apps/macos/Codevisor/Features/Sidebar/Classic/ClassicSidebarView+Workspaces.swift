@@ -58,7 +58,7 @@ extension ClassicSidebarView {
       return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
     case let .workspace(serverId, id):
       return serverId == workspace.serverId && id == workspace.id
-    case .newChat, .none:
+    case .archivedWorkspace, .newChat, .none:
       return false
     }
   }

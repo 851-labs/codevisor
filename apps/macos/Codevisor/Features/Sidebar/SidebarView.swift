@@ -35,8 +35,6 @@ struct SidebarView: View {
   @ClientPreference("sidebar.listExpanded", default: true) var listExpanded
   /// Not persisted: reopening the archive starts at the newest page.
   @State var archivedVisibleCount = archivedPageSize
-  /// The archived workspace a click is asking to restore.
-  @State var restoringWorkspace: Workspace?
   /// Workspaces pinned to the top of the sidebar, per device.
   @ClientPreference("sidebar.pinnedWorkspaces", default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
@@ -55,7 +53,7 @@ struct SidebarView: View {
   var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .session, .workspace: false
+    case .session, .workspace, .archivedWorkspace: false
     }
   }
 
@@ -281,16 +279,6 @@ struct SidebarView: View {
           },
         )
       )
-      .alert(
-        "Restore Workspace?",
-        isPresented: Binding(get: { restoringWorkspace != nil }, set: { if !$0 { restoringWorkspace = nil } }),
-        presenting: restoringWorkspace
-      ) { workspace in
-        Button("Restore") { environment.unarchiveWorkspace(workspace) }
-        Button("Cancel", role: .cancel) {}
-      } message: { workspace in
-        Text("“\(SidebarWorkspaceRowLabel.title(for: workspace.name))” comes back with its tabs and worktree.")
-      }
   }
 
   private var sidebarConfiguredView: some View {

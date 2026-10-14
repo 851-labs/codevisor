@@ -1,32 +1,34 @@
 import SwiftUI
 
 /// An archived workspace: the row's label in secondary colors, a hover
-/// Restore button, and Restore in its menu. Clicking the row asks before
-/// restoring, since restoring also brings back its worktree.
+/// Restore button, and Restore in its menu. Clicking the row opens the
+/// workspace read-only; restoring is a separate, deliberate step, since it
+/// also brings back the worktree.
 struct SidebarArchivedWorkspaceRow: View {
   let name: String
   let subtitle: String?
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
+  let isSelected: Bool
   let isReordering: Bool
-  /// Asks to restore (the sidebar confirms first).
-  let onRequestRestore: () -> Void
+  /// Opens the workspace read-only.
+  let onActivate: () -> Void
   /// Restores right away.
   let onRestore: () -> Void
 
   var body: some View {
-    HoverableRow(isHoverEnabled: !isReordering) { isHovered in
+    HoverableRow(isSelected: isSelected, isHoverEnabled: !isReordering) { isHovered in
       HStack(spacing: 7) {
         SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
           .foregroundStyle(.secondary)
           .opacity(0.8)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
-          .onTapGesture(perform: onRequestRestore)
+          .onTapGesture(perform: onActivate)
           .accessibilityElement(children: .combine)
-          .accessibilityAddTraits(.isButton)
+          .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
           .accessibilityValue("Archived")
-          .accessibilityAction(.default, onRequestRestore)
+          .accessibilityAction(.default, onActivate)
           // Plain-title buttons: SwiftUI drops Label-built ones here.
           .accessibilityActions {
             Button("Restore", action: onRestore)

@@ -24,6 +24,7 @@ extension RootView {
       page: {
         if case .session = selection { return "workspace" }
         if case .workspace = selection { return "workspace" }
+        if case .archivedWorkspace = selection { return "archived_workspace" }
         return "new_chat"
       }(),
       settingsSection: settings.controlWindow?.isVisible == true ? settings.selectedTab.rawValue : nil,
