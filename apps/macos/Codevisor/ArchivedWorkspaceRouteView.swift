@@ -4,7 +4,8 @@ import SwiftUI
 /// An archived workspace, read-only: its tabs as they were left, each showing
 /// its selected pane. Chats show their history without a composer and never
 /// start an agent; terminals and files went with the archive, so those panes
-/// say so. Restoring is the way back to a live workspace.
+/// say so. Restoring, from the sidebar row, is the way back to a live
+/// workspace.
 ///
 /// Its own view rather than the live container: nothing here can add, close,
 /// split, or rearrange a tab, so none of those paths need an archived guard.
@@ -13,8 +14,8 @@ struct ArchivedWorkspaceRouteView: View {
   let store: SessionStore
   let serverId: String
   let workspaceId: UUID
-  /// The workspace stopped being archived: restored here or on another
-  /// device. The caller moves the selection to the live workspace.
+  /// The workspace stopped being archived: restored from its sidebar row
+  /// or on another device. The caller moves the selection to the live workspace.
   let onRestored: (Workspace) -> Void
   /// The tab shown; nil starts on the tab the workspace last showed.
   @State private var selectedTabId: UUID?
@@ -45,7 +46,6 @@ struct ArchivedWorkspaceRouteView: View {
     let tabs = workspace.centerTabs
     let tab = tabs.first { $0.id == selectedTabId } ?? workspace.selectedCenterTab ?? tabs.first
     return VStack(spacing: 0) {
-      ArchivedWorkspaceBanner { environment.unarchiveWorkspace(workspace) }
       if tabs.count > 1 {
         Picker(
           "Tab",
@@ -58,9 +58,9 @@ struct ArchivedWorkspaceRouteView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.vertical, 8)
+        Divider()
       }
-      Divider()
       if let tab, let pane = selectedPane(of: tab) {
         paneContent(pane, in: workspace)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -126,25 +126,6 @@ struct ArchivedWorkspaceRouteView: View {
         description: Text("Restore the workspace to open this tab.")
       )
     }
-  }
-}
-
-/// The strip above an archived workspace: what it is, and the way back.
-private struct ArchivedWorkspaceBanner: View {
-  let onRestore: () -> Void
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "archivebox")
-        .foregroundStyle(.secondary)
-      Text("This workspace is archived. Restore it to keep working.")
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-      Spacer(minLength: 8)
-      Button("Restore", action: onRestore)
-    }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
   }
 }
 
