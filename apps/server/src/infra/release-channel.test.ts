@@ -1,9 +1,9 @@
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 
 import {
   machineReleaseChannel,
@@ -11,7 +11,11 @@ import {
   syncedUpdateChannel
 } from "./release-channel.js"
 
-const dataDir = (): string => mkdtempSync(join(tmpdir(), "release-channel-"))
+const dataDir = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "release-channel-"))
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
+}
 
 describe("releaseChannelReader", () => {
   it("prefers the host app's channel file over the synced setting", async () => {
