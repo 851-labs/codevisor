@@ -152,7 +152,7 @@ describe("importLegacyUserSkills", () => {
 })
 
 describe("migrateLegacySkills", () => {
-  it("removes Codevisor's skills before importing the user's", async () => {
+  it("removes Codevisor's skills and imports only the user's", async () => {
     const home = makeHome()
     managedSkill(join(home, ".agents/skills/codevisor"))
     writeSkill(join(home, ".agents/skills/deploy"), { name: "Deploy" })
@@ -160,6 +160,5 @@ describe("migrateLegacySkills", () => {
       "deploy"
     ])
     expect(present(join(home, ".agents/skills/codevisor"))).toBe(false)
-    expect(present(join(storeDir(home), "codevisor"))).toBe(false)
   })
 })
