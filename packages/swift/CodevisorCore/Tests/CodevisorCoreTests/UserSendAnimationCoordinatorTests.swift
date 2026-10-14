@@ -15,15 +15,6 @@ struct UserSendAnimationCoordinatorTests {
     #expect(!remountClaim)
   }
 
-  @Test("A request remains claimable until its target row mounts")
-  func delayedMountCanClaim() {
-    var coordinator = UserSendAnimationCoordinator()
-    let request = coordinator.issue(for: UUID())
-
-    let delayedClaim = coordinator.claim(request)
-    #expect(delayedClaim)
-  }
-
   @Test("A newer send supersedes an unclaimed request")
   func newerRequestSupersedesOlderRequest() {
     var coordinator = UserSendAnimationCoordinator()

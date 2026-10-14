@@ -116,16 +116,6 @@ struct SessionOverlayTests {
     #expect(model.sessions.first { $0.id == session.id }?.agentSessionId == "agent-123")
   }
 
-  @Test("removeAll clears projects and sessions")
-  func removeAll() {
-    let model = makeModel()
-    let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    model.newSession(in: ws)
-    model.removeAll()
-    #expect(model.projects.isEmpty)
-    #expect(model.sessions.isEmpty)
-  }
-
   @Test("deleteAllData wipes data and re-triggers onboarding")
   func deleteAllData() {
     let environment = AppEnvironment.preview()

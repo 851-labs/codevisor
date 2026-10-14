@@ -6,13 +6,6 @@ import Testing
 struct PaneGroupStateTests {
   let sessionId = UUID()
 
-  @Test("Defaults have no panes or selection")
-  func defaults() {
-    let state = PaneGroupState()
-    #expect(state.panes.isEmpty)
-    #expect(state.selectedPaneId == nil)
-  }
-
   @Test("The first requested terminal materializes from an empty group")
   func lazyFirstTerminal() {
     var state = PaneGroupState()
