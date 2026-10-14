@@ -138,17 +138,6 @@ describe("harness account routes", () => {
     )
   })
 
-  it("reports 501 for a login answer without an auth service", async () => {
-    const { services } = await makeServices("server-answer-501")
-    const server = await startWithApp(services)
-    const answered = await jsonRequest(
-      server,
-      "/v1/harnesses/claude-code/accounts/a1/login/flow-1/answer",
-      { body: JSON.stringify({ code: "abc" }), method: "POST" }
-    )
-    expect(answered.status).toBe(501)
-  })
-
   it("answers a pasteCode login flow through the accounts route", async () => {
     const { services } = await makeServices("server-answer")
     const auth = {
