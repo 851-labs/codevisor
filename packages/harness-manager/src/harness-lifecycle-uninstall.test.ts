@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -13,7 +13,8 @@ import {
   installableDefinition,
   makeBinDir,
   makeDb,
-  waitForLifecycleSettle
+  waitForLifecycleSettle,
+  fakeAgentRuntime
 } from "./harness-lifecycle-test-support.js"
 import type { HarnessLifecycleManagerConfig } from "./harness-lifecycle-types.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
@@ -24,25 +25,30 @@ afterEach(() => vi.useRealTimers())
 const fixture = async (
   path = "/tools/node/lib/node_modules/fake-cli/bin/cli.js",
   definition: HarnessDefinition = installableDefinition,
-  overrides: Partial<HarnessLifecycleManagerConfig> = {}
+  overrides: Partial<HarnessLifecycleManagerConfig> = {},
+  realFilesystem = false
 ) => {
   const state = { installed: true }
   const bin = makeBinDir(["npm", "brew", "uv"])
   const spawn = fakeSpawner()
   const terminal = fakeTerminal()
-  const agents = {
+  const agents = fakeAgentRuntime({
     catalog: [definition],
     discoverHarnesses: Effect.sync(() => (state.installed ? [harness(definition.id, path)] : [])),
     refreshEnvironment: Effect.void
-  } as unknown as AgentRuntimeService
+  })
   const lifecycle = makeHarnessLifecycleManager({
     db: await makeDb(),
     agents,
     ...spawn,
     terminal: terminal.terminal,
     resolveEnv: async () => ({ PATH: bin, HOME: "/test-home" }),
-    realpath: (value) => value,
-    pathExists: () => state.installed,
+    ...(realFilesystem
+      ? {}
+      : {
+          realpath: (value: string) => value,
+          pathExists: () => state.installed
+        }),
     fetchImpl: async () => ({
       ok: false,
       status: 404,
@@ -271,10 +277,7 @@ describe("harness uninstall", () => {
     const path = join(root, "lib/node_modules/fake-cli/bin/cli.js")
     mkdirSync(join(root, "lib/node_modules/fake-cli/bin"), { recursive: true })
     writeFileSync(path, "fixture")
-    const world = await fixture(path, undefined, {
-      realpath: undefined,
-      pathExists: undefined
-    } as unknown as Partial<HarnessLifecycleManagerConfig>)
+    const world = await fixture(path, undefined, {}, true)
     const releases: string[] = []
     world.lifecycle.onGateReleased((id) => releases.push(id))
     await world.lifecycle.beginUninstall("fake-cli")

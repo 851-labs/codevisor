@@ -10,6 +10,7 @@ import {
   type CredentialSource
 } from "./credential-ferry.js"
 import { run } from "./harness-auth-support.js"
+import { isRecord } from "./json-values.js"
 
 interface Profile {
   id: string
@@ -22,20 +23,14 @@ interface Profiles {
 const empty = (): Profiles => ({ profiles: [], activeProfileId: "default" })
 
 const parseProfiles = (value: unknown): Profiles => {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("profiles" in value) ||
-    !Array.isArray(value.profiles) ||
-    !("activeProfileId" in value)
-  ) {
+  if (!isRecord(value) || !Array.isArray(value.profiles) || !("activeProfileId" in value)) {
     throw new Error("Invalid shared OpenCode profiles")
   }
+  const profiles: Profile[] = []
   const ids = new Set<string>()
   for (const profile of value.profiles) {
     if (
-      typeof profile !== "object" ||
-      profile === null ||
+      !isRecord(profile) ||
       typeof profile.id !== "string" ||
       !/^shared-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(profile.id) ||
       typeof profile.label !== "string" ||
@@ -45,10 +40,15 @@ const parseProfiles = (value: unknown): Profiles => {
       throw new Error("Invalid shared OpenCode profile")
     }
     ids.add(profile.id)
+    profiles.push({ id: profile.id, label: profile.label })
   }
-  if (value.activeProfileId !== "default" && !ids.has(String(value.activeProfileId)))
+  const activeProfileId = value.activeProfileId
+  if (
+    activeProfileId !== "default" &&
+    (typeof activeProfileId !== "string" || !ids.has(activeProfileId))
+  )
     throw new Error("Invalid shared OpenCode selection")
-  return value as Profiles
+  return { profiles, activeProfileId }
 }
 
 const fingerprint = (value: unknown): string =>
@@ -62,17 +62,11 @@ export const sharedProfileCredentialSource = (id: string, directory: string): Cr
     tombstoneOnAbsence: false,
     read: async () => undefined,
     apply: async (content) => {
-      const incoming = JSON.parse(content) as Record<string, unknown>
+      const incoming: unknown = JSON.parse(content)
       if (
-        typeof incoming !== "object" ||
-        incoming === null ||
-        Array.isArray(incoming) ||
+        !isRecord(incoming) ||
         Object.values(incoming).some(
-          (value) =>
-            typeof value !== "object" ||
-            value === null ||
-            !("type" in value) ||
-            (value.type !== "api" && value.type !== "wellknown")
+          (value) => !isRecord(value) || (value.type !== "api" && value.type !== "wellknown")
         )
       ) {
         throw new Error("Shared profiles support static provider credentials only")

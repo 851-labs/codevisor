@@ -1,11 +1,14 @@
 import type { MuseClient, MuseSpawnRequest } from "@codevisor/adapter-muse"
-import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import type { HarnessAuthCore } from "./harness-auth-core.js"
-import { makeMuseAuth } from "./muse-auth.js"
+import type { HarnessAuthEvent } from "./harness-auth-types.js"
+import { harnessAccountRecord } from "./harness-lifecycle-test-support.js"
+import { isRecord } from "./json-values.js"
+import { makeMuseAuth, type MuseAuthCore } from "./muse-auth.js"
+
+const completedFlow = (payload: unknown): boolean => isRecord(payload) && payload.completed === true
 
 const host = (replies: Record<string, unknown> = {}) => {
   const requests: Array<{ method: string; params: unknown }> = []
@@ -21,6 +24,7 @@ const host = (replies: Record<string, unknown> = {}) => {
           ...replies
         }[method] ?? {}
       if (reply instanceof Error) throw reply
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       return reply as T
     },
     notify: () => undefined,
@@ -43,12 +47,7 @@ const host = (replies: Record<string, unknown> = {}) => {
 }
 
 const account = (fields: Partial<HarnessAccountRecord> = {}) =>
-  ({
-    id: "acct-1",
-    harnessId: "muse-code",
-    profileKind: "default",
-    ...fields
-  }) as HarnessAccountRecord
+  harnessAccountRecord({ harnessId: "muse-code", ...fields })
 
 const setup = (
   options: {
@@ -64,7 +63,7 @@ const setup = (
 ) => {
   const hosts: Array<ReturnType<typeof host>> = []
   const spawned: Array<MuseSpawnRequest> = []
-  const events: Array<{ kind: string; payload: unknown }> = []
+  const events: Array<HarnessAuthEvent> = []
   const loginFailed = vi.fn(async () => {
     if (options.shared === "broken") throw new Error("sync offline")
   })
@@ -75,15 +74,17 @@ const setup = (
   const setActive = vi.fn(() => Effect.void)
   const probe = vi.fn(async () => {
     if (options.probeError !== undefined) throw options.probeError
-    return {
+    return harnessAccountRecord({
       authState: options.signedIn === false ? "unauthenticated" : "authenticated"
-    } as HarnessAccount
+    })
   })
-  const core = {
+  const core: MuseAuthCore = {
     accountEnv: async () => (options.home === undefined ? {} : { HOME: options.home }),
     executable: async (harnessId: string) => `/bin/${harnessId}`,
     profilePath: () => options.profile,
-    emit: (event: { kind: string; payload: unknown }) => events.push(event),
+    emit: (event) => {
+      events.push(event)
+    },
     config: {
       db: { setActiveHarnessAccount: setActive },
       ...(options.shared === "absent"
@@ -93,7 +94,7 @@ const setup = (
               options.shared === "empty" ? undefined : { loginFailed, captureLogin, saveApiKey }
           })
     }
-  } as unknown as HarnessAuthCore
+  }
   const auth = makeMuseAuth(
     core,
     probe,
@@ -110,8 +111,7 @@ const setup = (
       const push = events.push.bind(events)
       events.push = (...added) => {
         const length = push(...added)
-        for (const event of added)
-          if ((event.payload as { completed?: boolean }).completed === true) resolve(event.payload)
+        for (const event of added) if (completedFlow(event.payload)) resolve(event.payload)
         return length
       }
     })
@@ -237,9 +237,7 @@ describe("Muse Code sign-in", () => {
     hosts[0]!.complete("cancelled")
     await auth.cancel(first.id)
     await auth.cancel("unknown")
-    expect(
-      events.filter((event) => (event.payload as { completed?: boolean }).completed === true)
-    ).toEqual([])
+    expect(events.filter((event) => completedFlow(event.payload))).toEqual([])
     expect(loginFailed).toHaveBeenCalledTimes(1)
     const gone = setup({ replies: { "account/loginCancel": new Error("muse exited") } })
     const flow = await gone.auth.begin(account(), "deviceCode", undefined)

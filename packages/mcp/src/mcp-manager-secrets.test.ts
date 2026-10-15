@@ -5,7 +5,11 @@ import { join } from "node:path"
 import { makeDatabase } from "@codevisor/db"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { McpManagerCore } from "./mcp-manager-core.js"
+import {
+  unavailableBrowserProvider,
+  unavailableComputerProvider
+} from "./mcp-automation-builtins.js"
+import { makeMcpManagerCore } from "./mcp-manager-core.js"
 import { makeMcpReplicationOperations } from "./mcp-manager-replication.js"
 import {
   cleanupMcpManagerTests,
@@ -221,18 +225,29 @@ describe("MCP manager secrets and replication", () => {
     expect((await manager.oauthSyncState(server.id))?.owner).toBe("other-machine")
   })
 
-  it("subscribes to the rotation source until unsubscribed", () => {
-    const rotationListeners = new Set<(id: string) => void>()
-    const { subscribeCredentialsRotated } = makeMcpReplicationOperations(
-      { rotationListeners } as McpManagerCore,
-      { scheduleRefresh: vi.fn(), connect: vi.fn(async () => undefined) }
+  it("subscribes to the rotation source until unsubscribed", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-rotation-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
     )
+    databases.push(db)
+    const core = makeMcpManagerCore({
+      db,
+      dataDir: directory,
+      makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
+      makeComputerProvider: () => unavailableComputerProvider("Not used in this test")
+    })
+    const { subscribeCredentialsRotated } = makeMcpReplicationOperations(core, {
+      scheduleRefresh: vi.fn(),
+      connect: vi.fn(async () => undefined)
+    })
     const listener = vi.fn()
     const unsubscribe = subscribeCredentialsRotated(listener)
-    for (const notify of rotationListeners) notify("oauth-server")
+    core.emitCredentialsRotated("oauth-server")
     expect(listener).toHaveBeenCalledExactlyOnceWith("oauth-server")
     unsubscribe()
-    for (const notify of rotationListeners) notify("oauth-server")
+    core.emitCredentialsRotated("oauth-server")
     expect(listener).toHaveBeenCalledOnce()
   })
 })

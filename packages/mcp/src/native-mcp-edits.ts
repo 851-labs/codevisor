@@ -6,6 +6,7 @@ import type { NativeMcpRemoval, NativeMcpScan, RemoveNativeMcpResult } from "@co
 import { isoTimestamp } from "@codevisor/api"
 import type { NativeMcpRemovalRecord } from "@codevisor/db"
 
+import { isNonArrayRecord } from "./mcp-guards.js"
 import { run } from "./mcp-support.js"
 import {
   appendTomlTable,
@@ -53,13 +54,9 @@ const entryFor = (
 ): Record<string, unknown> | undefined => {
   const parsed = parseNativeConfig(content, spec.format)
   const servers = getNestedValue(parsed, spec.key)
-  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
-    return undefined
-  }
-  const entry = (servers as Record<string, unknown>)[serverName]
-  return entry !== null && typeof entry === "object" && !Array.isArray(entry)
-    ? (entry as Record<string, unknown>)
-    : undefined
+  if (!isNonArrayRecord(servers)) return undefined
+  const entry = servers[serverName]
+  return isNonArrayRecord(entry) ? entry : undefined
 }
 
 const refuseUnsupported = <A>(operation: () => A): A => {
@@ -192,7 +189,7 @@ export const makeNativeMcpEditor = (
         "conflict"
       )
     }
-    const fragment = JSON.parse(record.fragment) as Record<string, unknown>
+    const fragment = parseNativeConfig(record.fragment, "json")
     const restored = refuseUnsupported(() =>
       spec.format === "json"
         ? setJsonConfigValue(content, [...spec.key.split("."), record.serverName], fragment)

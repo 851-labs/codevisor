@@ -4,18 +4,20 @@ import { join } from "node:path"
 
 import type { OpenCodeAuthFlow, OpenCodeAuthProvider } from "@codevisor/api"
 
-import { methodValues } from "./opencode-auth-methods.js"
+import {
+  methodValues,
+  parseAuthorization,
+  parseProviderList,
+  parseUpstreamMethods
+} from "./opencode-auth-methods.js"
 import {
   credentialTypes,
   failureMessage,
   request,
   startServer,
   workspaceQuery,
-  type AuthorizationResponse,
   type OpenCodeProfile,
-  type OpenCodeServer,
-  type ProviderListResponse,
-  type UpstreamMethod
+  type OpenCodeServer
 } from "./opencode-auth-server.js"
 
 export type { OpenCodeProfile } from "./opencode-auth-server.js"
@@ -108,7 +110,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
 
   const completeCallback = async (flow: InternalFlow, code?: string): Promise<void> => {
     try {
-      await request<boolean>(
+      await request(
         flow.server,
         `/provider/${encodeURIComponent(flow.value.providerId)}/oauth/callback${flow.workspaceQuery}`,
         {
@@ -148,11 +150,11 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
         server = await startServer(profile)
         const query = workspaceQuery(profile)
         const [catalog, authMethods, credentials] = await Promise.all([
-          request<ProviderListResponse>(server, `/provider${query}`),
-          request<Record<string, ReadonlyArray<UpstreamMethod>>>(server, `/provider/auth${query}`),
+          request(server, `/provider${query}`).then(parseProviderList),
+          request(server, `/provider/auth${query}`).then(parseUpstreamMethods),
           credentialTypes(profile.authPath)
         ])
-        return (catalog.all ?? [])
+        return catalog
           .map((provider): OpenCodeAuthProvider => ({
             id: provider.id,
             name: provider.name,
@@ -200,9 +202,8 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       }
       flows.set(id, flow)
       try {
-        const methods = await request<Record<string, ReadonlyArray<UpstreamMethod>>>(
-          server,
-          `/provider/auth${workspaceQuery(profile)}`
+        const methods = parseUpstreamMethods(
+          await request(server, `/provider/auth${workspaceQuery(profile)}`)
         )
         const upstream = methods[providerId]
         const candidates =
@@ -216,7 +217,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
         if (selected.type === "api") {
           const apiKey = rawApiKey?.trim()
           if (apiKey === undefined || apiKey.length === 0) throw new Error("API key is required")
-          await request<boolean>(server, `/auth/${encodeURIComponent(providerId)}`, {
+          await request(server, `/auth/${encodeURIComponent(providerId)}`, {
             method: "PUT",
             body: JSON.stringify({
               type: "api",
@@ -231,16 +232,18 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
           return structuredClone(flow.value)
         }
 
-        const authorization = await request<AuthorizationResponse>(
-          server,
-          `/provider/${encodeURIComponent(providerId)}/oauth/authorize${workspaceQuery(profile)}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              method: methodIndex,
-              ...(inputs === undefined ? {} : { inputs })
-            })
-          }
+        const authorization = parseAuthorization(
+          await request(
+            server,
+            `/provider/${encodeURIComponent(providerId)}/oauth/authorize${workspaceQuery(profile)}`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                method: methodIndex,
+                ...(inputs === undefined ? {} : { inputs })
+              })
+            }
+          )
         )
         if (
           authorization.url === undefined ||
@@ -299,7 +302,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       try {
         const profile = await config.profile(accountId)
         server = await startServer(profile)
-        await request<boolean>(server, `/auth/${encodeURIComponent(providerId)}`, {
+        await request(server, `/auth/${encodeURIComponent(providerId)}`, {
           method: "DELETE"
         })
       } finally {

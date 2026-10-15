@@ -1,6 +1,5 @@
 import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { HarnessLifecycleState, HarnessUpdateInfo } from "@codevisor/api"
-import type { FetchLike } from "@codevisor/updater"
 
 import {
   defaultReadBundleShortVersion,
@@ -21,7 +20,7 @@ export interface HarnessCheckState {
 
 export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) => {
   const listeners = new Set<(event: HarnessLifecycleEvent) => void>()
-  const fetchImpl = config.fetchImpl ?? (fetch as FetchLike)
+  const fetchImpl = config.fetchImpl ?? fetch
   const now = config.now ?? (() => Date.now())
   const platform = config.platform ?? process.platform
   const arch = config.arch ?? process.arch

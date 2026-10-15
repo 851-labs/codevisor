@@ -7,6 +7,7 @@ import * as jsonc from "jsonc-parser"
 import { parse as parseToml } from "smol-toml"
 import { parse as parseYaml } from "yaml"
 
+import { isMissingFileError, isNonArrayRecord, isRecord } from "./mcp-guards.js"
 import { NativeMcpError } from "./native-mcp-types.js"
 
 export interface NativeConfigFileSystem {
@@ -23,7 +24,7 @@ export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
     try {
       return await readFile(path, "utf8")
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      if (isMissingFileError(cause)) return undefined
       throw cause
     }
   },
@@ -37,7 +38,7 @@ export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
         try {
           current = readFileSync(path, "utf8")
         } catch (cause) {
-          if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+          if (!isMissingFileError(cause)) throw cause
         }
         if (current !== expected.content)
           throw new NativeMcpError(`${path} changed during the edit — try again`, "conflict")
@@ -105,17 +106,17 @@ export const parseNativeConfig = (
       parsed = parseYaml(content)
       break
   }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isNonArrayRecord(parsed)) {
     throw new Error(`config root is not an object (${format})`)
   }
-  return parsed as Record<string, unknown>
+  return parsed
 }
 
 export const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => {
   let current: unknown = obj
   for (const key of path.split(".")) {
-    if (current !== null && typeof current === "object" && key in current) {
-      current = (current as Record<string, unknown>)[key]
+    if (isRecord(current) && key in current) {
+      current = current[key]
     } else {
       return undefined
     }

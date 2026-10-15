@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { McpConnectionState } from "@codevisor/api"
 
 import { detectMcpAuth } from "./mcp-auth-detection.js"
-import type { BuiltinMcpId } from "./mcp-automation-builtins.js"
+import { isBuiltinMcpId } from "./mcp-automation-builtins.js"
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -153,9 +153,11 @@ export const makeMcpServerOperations = (
     const current = await record(id)
     if (!current.canEdit) {
       const unsupported = Object.keys(request).filter((field) => field !== "enabled")
-      if (unsupported.length > 0) throw new Error(`${current.name} is managed by Codevisor`)
+      if (unsupported.length > 0 || !isBuiltinMcpId(current.id)) {
+        throw new Error(`${current.name} is managed by Codevisor`)
+      }
       const enabled = request.enabled ?? current.enabled
-      const providerState = builtinProviderState(current.id as BuiltinMcpId, enabled)
+      const providerState = builtinProviderState(current.id, enabled)
       const saved = await saveRecord(current, {
         enabled,
         connectionState: providerState.connectionState,

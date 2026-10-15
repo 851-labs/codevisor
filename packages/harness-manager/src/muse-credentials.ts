@@ -2,14 +2,11 @@ import { createHash } from "node:crypto"
 import { chmod, lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
+import { recordOrEmpty } from "./json-values.js"
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 
 export const MUSE_HARNESS_ID = "muse-code"
 
-const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
@@ -26,7 +23,7 @@ export const parseMuseAuth = (
   document: unknown,
   ownership: SharedTokenBundle["ownership"]
 ): SharedTokenBundle | undefined => {
-  const meta = object(object(object(document).providers).meta)
+  const meta = recordOrEmpty(recordOrEmpty(recordOrEmpty(document).providers).meta)
   const accessToken = string(meta.access_token) ?? string(meta.api_key)
   if (accessToken === undefined) return undefined
   const email = string(meta.user_email)
@@ -47,7 +44,10 @@ export const writeMuseAuth = async (profile: string, bundle: SharedTokenBundle):
   const path = museAuthPath(profile)
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = `${path}.${process.pid}.tmp`
-  const document = { schema_version: 1, providers: { meta: object(bundle.credential?.meta) } }
+  const document = {
+    schema_version: 1,
+    providers: { meta: recordOrEmpty(bundle.credential?.meta) }
+  }
   await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 })
   await chmod(temporary, 0o600)
   await rename(temporary, path)

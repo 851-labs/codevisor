@@ -3,6 +3,8 @@ import { join } from "node:path"
 
 import { AGY_GEMINI_DIR_ENV } from "@codevisor/adapter-antigravity"
 
+import { recordOrEmpty } from "./json-values.js"
+
 export const ANTIGRAVITY_HARNESS_ID = "antigravity"
 
 export const antigravityGeminiDir = (profile: string): string => join(profile, "gemini")
@@ -34,10 +36,7 @@ const linkEntries = async (
 
 const settingsDocument = async (path: string): Promise<Record<string, unknown>> => {
   try {
-    const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {}
+    return recordOrEmpty(JSON.parse(await readFile(path, "utf8")))
   } catch {
     return {}
   }

@@ -2,6 +2,8 @@ import { setTimeout as sleep } from "node:timers/promises"
 
 import type { OAuthAuth } from "@earendil-works/pi-ai"
 
+import { isRecord } from "./json-values.js"
+
 export const GROK_ISSUER = "https://auth.x.ai"
 export const GROK_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 const scopes =
@@ -48,9 +50,8 @@ export const makeGrokDeviceLogin =
         },
         body: new URLSearchParams({ client_id: GROK_CLIENT_ID, ...fields })
       })
-      const body = (await response.json()) as Record<string, unknown>
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        throw new Error("Invalid Grok authorization response")
+      const body: unknown = await response.json()
+      if (!isRecord(body)) throw new Error("Invalid Grok authorization response")
       return { ok: response.ok, body }
     }
     const device = await post("device/code", { scope: scopes, referrer: "grok-build" })

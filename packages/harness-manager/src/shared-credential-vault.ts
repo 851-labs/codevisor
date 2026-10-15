@@ -4,6 +4,7 @@ import type { CoordinatedCredential } from "@codevisor/api"
 
 import {
   SharedCredentialError,
+  isSharedTokenBundle,
   type CredentialCoordinator,
   type SharedCredentialReference,
   type SharedTokenBundle
@@ -32,19 +33,10 @@ export const openSharedCredential = (
   )
   cipher.setAuthTag(bytes.subarray(12, 28))
   cipher.setAAD(Buffer.from(reference.id))
-  const bundle = JSON.parse(
+  const bundle: unknown = JSON.parse(
     Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString("utf8")
-  ) as SharedTokenBundle
-  if (
-    !["codex", "claude-code", "pi", "opencode", "grok-build", "muse-code", "antigravity"].includes(
-      bundle.harnessId
-    ) ||
-    typeof bundle.subject !== "string" ||
-    typeof bundle.accessToken !== "string" ||
-    !Number.isFinite(bundle.expiresAt) ||
-    (bundle.ownership !== "managed" && bundle.ownership !== "external")
   )
-    throw new Error("Invalid shared credential")
+  if (!isSharedTokenBundle(bundle)) throw new Error("Invalid shared credential")
   return bundle
 }
 

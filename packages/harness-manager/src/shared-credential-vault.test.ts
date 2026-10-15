@@ -203,11 +203,8 @@ describe("encrypted shared credential vault", () => {
   it("never rotates an external CLI grant and mirrors only newer access tokens", async () => {
     const f = fixture()
     const vault = makeSharedCredentialVault(f.config)
-    const external: SharedTokenBundle = {
-      ...original,
-      ownership: "external",
-      refreshToken: undefined
-    } as unknown as SharedTokenBundle
+    const { refreshToken: _refreshToken, ...withoutRefresh } = original
+    const external: SharedTokenBundle = { ...withoutRefresh, ownership: "external" }
     const ref = await vault.create(external)
     await expect(vault.token(ref)).rejects.toThrow("Sign in again")
     const updated = { ...external, accessToken: "native-new", expiresAt: refreshed.expiresAt }
@@ -223,12 +220,12 @@ describe("encrypted shared credential vault", () => {
   it("re-seeds an external mirror whose grant the coordinator lost, but not a revoked one", async () => {
     const f = fixture()
     const vault = makeSharedCredentialVault({ ...f.config, revalidateAfterMs: 0 })
-    const external = {
-      ...original,
+    const { refreshToken: _refreshToken, ...withoutRefresh } = original
+    const external: SharedTokenBundle = {
+      ...withoutRefresh,
       ownership: "external",
-      refreshToken: undefined,
       expiresAt: refreshed.expiresAt
-    } as unknown as SharedTokenBundle
+    }
     const ref = await vault.create(external)
     f.records.delete(ref.id)
     await expect(vault.token(ref)).rejects.toThrow("Sign in again")

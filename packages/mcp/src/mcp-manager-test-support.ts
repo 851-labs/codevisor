@@ -4,13 +4,17 @@ import type { Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Effect } from "effect"
 import { vi } from "vitest"
+import { z } from "zod"
 
 import type { McpManager } from "./mcp-manager-types.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import { readJsonBody } from "./mcp-support.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -66,6 +70,17 @@ export const testManager = async (
   return { db, manager, directory }
 }
 
+const UpstreamRequestSchema = z.object({
+  id: z.union([z.string(), z.number()]).optional(),
+  method: z.string(),
+  params: z.record(z.string(), z.unknown()).optional()
+})
+
+const UpstreamToolCallSchema = z.looseObject({
+  name: z.string(),
+  arguments: z.record(z.string(), z.unknown()).exactOptional()
+})
+
 export const workingUpstream = async () => {
   const requests: Array<{
     headers: Record<string, string | string[] | undefined>
@@ -73,13 +88,7 @@ export const workingUpstream = async () => {
   }> = []
   const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = []
   const server = createServer(async (request, response) => {
-    const chunks: Buffer[] = []
-    for await (const chunk of request) chunks.push(Buffer.from(chunk))
-    const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-      id?: string | number
-      method: string
-      params?: Record<string, unknown>
-    }
+    const message = UpstreamRequestSchema.parse(await readJsonBody(request))
     requests.push({ headers: request.headers, method: message.method })
     if (message.method === "notifications/initialized") {
       response.writeHead(202)
@@ -99,7 +108,7 @@ export const workingUpstream = async () => {
         }
       }
     } else if (message.method === "tools/list") {
-      const cursor = (message.params as { cursor?: string } | undefined)?.cursor
+      const cursor = message.params?.cursor
       result =
         cursor === undefined
           ? {
@@ -126,10 +135,7 @@ export const workingUpstream = async () => {
               ]
             }
     } else if (message.method === "tools/call") {
-      const params = message.params as {
-        name: string
-        arguments?: Record<string, unknown>
-      }
+      const params = UpstreamToolCallSchema.parse(message.params)
       calls.push(params)
       result =
         params.arguments?.binary === true
@@ -156,6 +162,24 @@ export const workingUpstream = async () => {
   })
   return { calls, requests, url: `${await listen(server)}/mcp` }
 }
+
+const ExecuteOutputSchema = z.object({ result: z.unknown() })
+
+export const executeResultValue = (result: unknown): unknown => {
+  const { content } = CallToolResultSchema.parse(result)
+  const block = content.find((entry) => entry.type === "text")
+  if (block?.type !== "text") throw new Error("The execute result has no text block")
+  const decoded: unknown = JSON.parse(block.text)
+  return ExecuteOutputSchema.parse(decoded).result
+}
+
+const ExecutionPayloadSchema = z.object({
+  kind: z.literal("codevisor_execution"),
+  execution: z.unknown()
+})
+
+export const executionOf = (event: RuntimeEvent): unknown =>
+  ExecutionPayloadSchema.parse(event.payload).execution
 
 export const connectionStateSettles = async (
   manager: McpManager,

@@ -1,8 +1,7 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
+import { waitForLifecycleSettle, fakeAgentRuntime } from "./harness-lifecycle-test-support.js"
 import {
   cleanupLifecycleTests,
   run,
@@ -15,6 +14,7 @@ import {
   installableDefinition,
   appBundleDefinition
 } from "./harness-lifecycle-test-support.js"
+import type { HarnessLifecycleEvent } from "./harness-lifecycle-types.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
@@ -26,13 +26,13 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     const events: Array<{ payload: { lifecycle?: { phase?: string } } }> = []
     const { terminal } = fakeTerminal()
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [appBundleDefinition],
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
         ]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       applyBundleSwap: async (options) => {
         swaps.push({ bundlePath: options.bundlePath })
         return { installedVersion: "26.715.52143" }
@@ -49,7 +49,7 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       resolveEnv: async () => ({}),
       terminal
     })
-    lifecycle.subscribe((event) => events.push(event as never))
+    lifecycle.subscribe((event) => events.push(event))
 
     const settled = waitForLifecycleSettle(lifecycle)
     await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
@@ -66,13 +66,13 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     const db = await makeDb()
     const { terminal } = fakeTerminal()
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [appBundleDefinition],
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
         ]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       applyBundleSwap: async () => {
         throw new Error("The download failed Sparkle signature verification")
       },
@@ -101,13 +101,13 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
   it("arms a durable pending update while the harness is busy, then runs it when idle", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([
         harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
       ]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const released: Array<string> = []
@@ -160,13 +160,13 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
   it("releases the gate on failure, supports Update Now and cancel", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([
         harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
       ]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const released: Array<string> = []
@@ -208,13 +208,13 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     const { terminal } = fakeTerminal()
     const { spawnShell, spawns } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [installableDefinition],
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
         ]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       db,
       gateEnabled: false,
       home: "/Users/dev",
@@ -241,16 +241,16 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
         timeoutAt: "2026-07-20T00:11:00.000Z"
       })
     )
-    const events: Array<{ payload: { lifecycle?: { phase?: string; error?: string } } }> = []
+    const events: Array<HarnessLifecycleEvent> = []
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [installableDefinition],
         discoverHarnesses: Effect.succeed([]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       db
     })
-    lifecycle.subscribe((event) => events.push(event as never))
+    lifecycle.subscribe((event) => events.push(event))
 
     await lifecycle.reconcileOnStartup()
     expect(lifecycle.isGated("fake-cli")).toBe(false)

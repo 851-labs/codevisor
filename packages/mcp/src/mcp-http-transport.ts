@@ -1,6 +1,8 @@
 import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { type JSONRPCMessage, JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js"
 
+import { isRecord } from "./mcp-guards.js"
+
 const messageFromSseBlock = (block: string): unknown => {
   const data = block
     .split(/\r?\n/)
@@ -121,13 +123,7 @@ export class NodeStreamableHttpTransport implements Transport {
         const messages = Array.isArray(decoded) ? decoded : [decoded]
         if (
           stopAfterId !== undefined &&
-          messages.some(
-            (message) =>
-              typeof message === "object" &&
-              message !== null &&
-              "id" in message &&
-              (message as { id?: unknown }).id === stopAfterId
-          )
+          messages.some((message) => isRecord(message) && message.id === stopAfterId)
         ) {
           /* v8 ignore next */
           await reader.cancel().catch(() => undefined)

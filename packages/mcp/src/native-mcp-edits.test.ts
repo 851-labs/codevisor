@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   cleanupNativeMcpTests,
+  fileJson,
+  fileText,
   run,
   HOME,
   testManager,
@@ -21,7 +23,7 @@ describe("destructive native operations", () => {
       manager.removeServer("claude-code", "a"),
       manager.removeServer("claude-code", "b")
     ])
-    expect(JSON.parse(files[path] as string).mcpServers).toEqual({})
+    expect(fileJson(files, path)).toEqual(expect.objectContaining({ mcpServers: {} }))
     const backup = await run(db.getNativeConfigBackup(path))
     expect(files[backup!.backupPath]).toBe(original)
     expect(await manager.listRemovals()).toHaveLength(2)
@@ -97,7 +99,7 @@ model = "gpt-5.1"
       harnessId: "claude-code",
       serverName: "docs"
     })
-    const after = files[`${HOME}/.claude.json`] as string
+    const after = fileText(files, `${HOME}/.claude.json`)
     expect(after).toContain("// personal settings — do not lose this comment")
     expect(after).toContain('"numStartups": 42')
     expect(after).toContain('"projects": { "/Users/u/app": { "history": ["one"] } }')
@@ -118,11 +120,9 @@ model = "gpt-5.1"
     }
     const { manager } = await testManager(files)
     await manager.removeServer("gemini", "docs")
-    const after = JSON.parse(files[`${HOME}/.gemini/settings.json`] as string) as Record<
-      string,
-      unknown
-    >
-    expect(after["mcpServers"]).toEqual({})
+    expect(fileJson(files, `${HOME}/.gemini/settings.json`)).toEqual(
+      expect.objectContaining({ mcpServers: {} })
+    )
   })
 
   it("excises codex tables (including subtables) and preserves surrounding TOML", async () => {
@@ -131,7 +131,7 @@ model = "gpt-5.1"
     }
     const { manager } = await testManager(files)
     const result = await manager.removeServer("codex", "docs")
-    const after = files[`${HOME}/.codex/config.toml`] as string
+    const after = fileText(files, `${HOME}/.codex/config.toml`)
     expect(after).toContain("# Codex configuration")
     expect(after).toContain('model = "gpt-5.2-codex"')
     expect(after).toContain("# keep me: linear notes")
@@ -181,7 +181,7 @@ docs = { command = "docs-mcp" }
     })
     const scan = await restoring
     await duplicate
-    const after = files[`${HOME}/.claude.json`] as string
+    const after = fileText(files, `${HOME}/.claude.json`)
     expect(after).toContain("docs-mcp")
     expect(after).toContain('"TOKEN": "secret"')
     expect(after).toContain("// personal settings — do not lose this comment")
@@ -203,7 +203,7 @@ docs = { command = "docs-mcp" }
     const { manager } = await testManager(files)
     const { removal } = await manager.removeServer("codex", "docs")
     const scan = await manager.restoreRemoval(removal.id)
-    const after = files[`${HOME}/.codex/config.toml`] as string
+    const after = fileText(files, `${HOME}/.codex/config.toml`)
     expect(after).toContain("# Codex configuration")
     expect(after).toContain("docs-mcp")
     expect(
@@ -225,11 +225,9 @@ docs = { command = "docs-mcp" }
     const { removal } = await manager.removeServer("gemini", "docs")
     delete files[`${HOME}/.gemini/settings.json`]
     const scan = await manager.restoreRemoval(removal.id)
-    const after = JSON.parse(files[`${HOME}/.gemini/settings.json`] as string) as Record<
-      string,
-      unknown
-    >
-    expect(after).toEqual({ mcpServers: { docs: { command: "docs-mcp" } } })
+    expect(fileJson(files, `${HOME}/.gemini/settings.json`)).toEqual({
+      mcpServers: { docs: { command: "docs-mcp" } }
+    })
     expect(harnessGroup(scan, "gemini").servers.map((s) => s.serverName)).toEqual(["docs"])
   })
 
@@ -264,28 +262,22 @@ docs = { command = "docs-mcp" }
     })
 
     const openScan = await manager.setNativeEnabled("opencode", "local", false)
-    const opencodeAfter = JSON.parse(files[`${HOME}/.config/opencode/opencode.json`] as string) as {
-      mcp: { local: { enabled: boolean } }
-    }
-    expect(opencodeAfter.mcp.local.enabled).toBe(false)
+    expect(fileJson(files, `${HOME}/.config/opencode/opencode.json`)).toMatchObject({
+      mcp: { local: { enabled: false } }
+    })
     expect(
       harnessGroup(openScan, "opencode").servers.find((s) => s.serverName === "local")?.enabled
     ).toBe(false)
 
     await manager.setNativeEnabled("cline", "docs", false)
-    const clineAfter = JSON.parse(
-      files[`${HOME}/.cline/data/settings/cline_mcp_settings.json`] as string
-    ) as { mcpServers: { docs: { disabled: boolean } } }
-    expect(clineAfter.mcpServers.docs.disabled).toBe(true)
+    expect(fileJson(files, `${HOME}/.cline/data/settings/cline_mcp_settings.json`)).toMatchObject({
+      mcpServers: { docs: { disabled: true } }
+    })
 
     await manager.setNativeEnabled("cline", "docs", true)
-    expect(
-      (
-        JSON.parse(files[`${HOME}/.cline/data/settings/cline_mcp_settings.json`] as string) as {
-          mcpServers: { docs: { disabled: boolean } }
-        }
-      ).mcpServers.docs.disabled
-    ).toBe(false)
+    expect(fileJson(files, `${HOME}/.cline/data/settings/cline_mcp_settings.json`)).toMatchObject({
+      mcpServers: { docs: { disabled: false } }
+    })
   })
 
   it("rejects operations on unknown, unwritable, or flagless harnesses", async () => {

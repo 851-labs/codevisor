@@ -3,28 +3,23 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { AgyRunner, AgyTerminal, AgyTerminalSpawner } from "@codevisor/adapter-antigravity"
-import type { HarnessAccount } from "@codevisor/api"
-import type { HarnessAccountRecord } from "@codevisor/db"
+import type { HarnessAccountRecord, SaveHarnessAccountRequest } from "@codevisor/db"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { makeAntigravityAuth } from "./antigravity-auth.js"
-import type { HarnessAuthCore } from "./harness-auth-core.js"
+import { makeAntigravityAuth, type AntigravityAuthCore } from "./antigravity-auth.js"
+import type { HarnessAuthEvent } from "./harness-auth-types.js"
+import { harnessAccountRecord, savedHarnessAccount } from "./harness-lifecycle-test-support.js"
 
 const SIGN_IN_URL = "https://accounts.google.com/o/oauth2/auth?client_id=1"
 
 const account = (fields: Partial<HarnessAccountRecord> = {}) =>
-  ({
-    id: "acct-1",
-    harnessId: "antigravity",
-    profileKind: "managed",
-    ...fields
-  }) as HarnessAccountRecord
+  harnessAccountRecord({ harnessId: "antigravity", profileKind: "managed", ...fields })
 
 const terminals = (agy: { signedIn: boolean; refuses: boolean; quits: boolean }) => {
   const opened: Array<{ written: Array<string>; killed: boolean }> = []
   const spawn: AgyTerminalSpawner = async () => {
-    const state = { written: [] as Array<string>, killed: false }
+    const state: { written: Array<string>; killed: boolean } = { written: [], killed: false }
     opened.push(state)
     let draw: ((data: string) => void) | undefined
     const terminal: AgyTerminal = {
@@ -63,33 +58,34 @@ const setup = (
   } = {}
 ) => {
   const saved: Array<HarnessAccountRecord> = []
-  const events: Array<{ kind: string; payload: unknown }> = []
+  const events: Array<HarnessAuthEvent> = []
   const setActive = vi.fn(() => Effect.void)
   const sync = {
     captureLogin: vi.fn(async () => undefined),
     loginFailed: vi.fn(async () => undefined)
   }
-  const core = {
+  const core: AntigravityAuthCore = {
     accountCommand: async () => ({
       cwd: "/profile",
       env: { HOME: "/home/me", CODEVISOR_AGY_GEMINI_DIR: "/profile/gemini" }
     }),
     executable: async () => "/bin/agy",
-    emit: (event: { kind: string; payload: unknown }) => void events.push(event),
-    profilePath: (record: HarnessAccountRecord) => join(options.profiles ?? "/profiles", record.id),
-    publicAccount: (record: HarnessAccountRecord) => ({ id: record.id }),
+    emit: (event) => void events.push(event),
+    profilePath: (record) => join(options.profiles ?? "/profiles", record.id),
+    publicAccount: (record) => record,
     config: {
       ...(options.sync === true ? { sharedAccounts: () => sync } : {}),
       db: {
         setActiveHarnessAccount: setActive,
         listHarnessAccounts: () => Effect.succeed(options.accounts ?? []),
-        saveHarnessAccount: (record: HarnessAccountRecord) => {
+        saveHarnessAccount: (request: SaveHarnessAccountRequest) => {
+          const record = savedHarnessAccount(request)
           saved.push(record)
           return Effect.succeed(record)
         }
       }
     }
-  } as unknown as HarnessAuthCore
+  }
   const agy = {
     signedIn: options.signedInBefore ?? false,
     refuses: options.refuses ?? false,
@@ -102,11 +98,10 @@ const setup = (
       return { stdout: "", stderr: "", ...options.logout, code: options.logout?.code ?? 0 }
     return { code: agy.signedIn ? 0 : 1, stdout: "", stderr: "" }
   }
-  const probe = vi.fn(
-    async () =>
-      ({
-        authState: options.signedIn === false ? "unauthenticated" : "authenticated"
-      }) as HarnessAccount
+  const probe = vi.fn(async () =>
+    harnessAccountRecord({
+      authState: options.signedIn === false ? "unauthenticated" : "authenticated"
+    })
   )
   const tty = terminals(agy)
   const auth = makeAntigravityAuth(core, probe, tty.spawn, runner, async () => undefined)
@@ -151,7 +146,7 @@ describe("Antigravity sign-in", () => {
       })
       expect((await stat(join(profiles, created.id))).mode & 0o777).toBe(0o700)
       expect(fresh.events).toEqual([
-        { kind: "harness.account.updated", subjectId: "antigravity", payload: { id: created.id } }
+        { kind: "harness.account.updated", subjectId: "antigravity", payload: created }
       ])
     } finally {
       await rm(profiles, { recursive: true, force: true })

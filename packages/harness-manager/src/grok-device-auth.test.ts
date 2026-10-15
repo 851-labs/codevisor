@@ -2,6 +2,11 @@ import { expect, it, vi } from "vitest"
 
 import { makeGrokDeviceLogin } from "./grok-device-auth.js"
 
+const formFields = (body: unknown): URLSearchParams => {
+  if (!(body instanceof URLSearchParams)) throw new Error("Expected form-encoded fields")
+  return body
+}
+
 const device = {
   device_code: "private-device",
   user_code: "ABCD-EFGH",
@@ -51,13 +56,13 @@ it("uses Grok's scopes, preserves identity, respects pending and slowdown, and k
     verificationUri: "https://auth.x.ai/device?user_code=ABCD-EFGH"
   })
   const start = f.request.mock.calls[0]![1]!
-  const fields = start.body as URLSearchParams
+  const fields = formFields(start.body)
   expect(fields.get("client_id")).toBe("b1a00492-073a-47ea-816f-4c329264a828")
   expect(fields.get("referrer")).toBe("grok-build")
   expect(fields.get("scope")).toContain("workspaces:write")
   expect(fields.get("scope")).toContain("conversations:read")
   expect(start.redirect).toBe("error")
-  const poll = f.request.mock.calls[1]![1]!.body as URLSearchParams
+  const poll = formFields(f.request.mock.calls[1]![1]!.body)
   expect(poll.get("device_code")).toBe("private-device")
   expect(JSON.stringify(f.notify.mock.calls)).not.toContain("private-device")
 })

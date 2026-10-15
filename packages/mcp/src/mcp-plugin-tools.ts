@@ -1,4 +1,4 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import { type Tool, ToolSchema } from "@modelcontextprotocol/sdk/types.js"
 
 import type { CatalogServer } from "./mcp-gateway-catalog.js"
 
@@ -22,6 +22,11 @@ export interface PluginToolSource {
 
 export const PLUGIN_CATALOG_SERVER: CatalogServer = { id: "plugin", name: "Plugins" }
 
+const toolInputSchema = (schema: unknown): Tool["inputSchema"] => {
+  const parsed = ToolSchema.shape.inputSchema.safeParse(schema)
+  return parsed.success ? parsed.data : { type: "object" }
+}
+
 export const pluginToolDefinitions = async (
   source: PluginToolSource | undefined
 ): Promise<ReadonlyArray<Tool>> => {
@@ -29,7 +34,7 @@ export const pluginToolDefinitions = async (
   return (await source.listTools()).map((tool) => ({
     name: `${tool.pluginId}.${tool.name}`,
     description: tool.description,
-    inputSchema: (tool.inputSchema ?? { type: "object" }) as Tool["inputSchema"]
+    inputSchema: toolInputSchema(tool.inputSchema)
   }))
 }
 

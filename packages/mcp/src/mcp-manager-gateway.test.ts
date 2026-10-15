@@ -2,7 +2,6 @@ import { createServer } from "node:http"
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -13,6 +12,7 @@ import {
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -41,7 +41,7 @@ describe("MCP manager gateway", () => {
         requestInit: { headers: authorization }
       })
       const client = new Client({ name: "redial-test", version: "1" })
-      await client.connect(transport as unknown as Transport)
+      await client.connect(sdkTransport(transport))
       return { client, transport }
     }
 
@@ -209,9 +209,11 @@ describe("MCP manager gateway", () => {
       const issued = await manager.issueGateway(session.id, project.id)
       const client = new Client({ name: "plugin-tools-test", version: "1" })
       await client.connect(
-        new StreamableHTTPClientTransport(new URL(issued.url), {
-          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-        }) as unknown as Transport
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(issued.url), {
+            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+          })
+        )
       )
       try {
         const advertised = (await client.listTools()).tools.find((tool) => tool.name === "execute")
@@ -315,9 +317,11 @@ describe("MCP manager gateway", () => {
     const issued = await manager.issueGateway(session.id, project.id)
     const client = new Client({ name: "skills-test", version: "1" })
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      }) as unknown as Transport
+      sdkTransport(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
+      )
     )
     try {
       const tools = (await client.listTools()).tools
@@ -366,9 +370,11 @@ describe("MCP manager gateway", () => {
     const issued = await manager.issueGateway(session.id, project.id)
     const client = new Client({ name: "no-plugins-test", version: "1" })
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      }) as unknown as Transport
+      sdkTransport(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
+      )
     )
     try {
       const executed = await client.callTool({

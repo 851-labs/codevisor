@@ -8,9 +8,10 @@ import type {
 } from "@codevisor/automation"
 import { browserResultPageUrl, CodeExecutionToolError } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { type CallToolResult, CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 
 import type { makeGatewayCatalog } from "./mcp-gateway-catalog.js"
+import { isRecord } from "./mcp-guards.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import type { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
@@ -31,15 +32,10 @@ export interface GatewayInvokeOptions {
 
 export const gatewayToolError = (cause: unknown): CodeExecutionToolError => {
   if (cause instanceof CodeExecutionToolError) return cause
-  const { code, details } =
-    typeof cause === "object" && cause !== null
-      ? (cause as { readonly code?: unknown; readonly details?: unknown })
-      : {}
+  const { code, details }: Record<string, unknown> = isRecord(cause) ? cause : {}
   return new CodeExecutionToolError(errorMessage(cause), {
     ...(typeof code === "string" ? { code } : {}),
-    ...(typeof details === "object" && details !== null
-      ? { details: details as Readonly<Record<string, unknown>> }
-      : {})
+    ...(isRecord(details) ? { details } : {})
   })
 }
 
@@ -102,11 +98,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     }
     const definition = provider.tools.find((candidate) => candidate.name === toolName)
     if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)
-    const schema = definition.inputSchema as { readonly properties?: unknown }
-    const properties =
-      typeof schema.properties === "object" && schema.properties !== null
-        ? (schema.properties as Readonly<Record<string, unknown>>)
-        : {}
+    const declared = definition.inputSchema.properties
+    const properties = isRecord(declared) ? declared : {}
     const unknownArguments = Object.keys(args).filter((key) => !(key in properties))
     if (unknownArguments.length > 0) {
       throw new Error(
@@ -218,7 +211,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     const sessionId = remote === undefined ? ctx.sessionId : undefined
     const projectId = remote === undefined ? ctx.projectId : undefined
     const artifacts = options.artifacts ?? newArtifactCollector()
-    const input = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
+    const input = isRecord(args) ? args : {}
     if (path === "search") {
       return searchCatalog(
         projectId,
@@ -273,15 +266,12 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       return sandboxSuccessfulToolResult(result, artifacts, path)
     }
     const connection = await connectUpstream(serverId)
-    return sandboxSuccessfulToolResult(
-      (await connection.client.callTool(
-        { name: toolName, arguments: input },
-        undefined,
-        options.signal === undefined ? undefined : { signal: options.signal }
-      )) as CallToolResult,
-      artifacts,
-      path
+    const result = await connection.client.callTool(
+      { name: toolName, arguments: input },
+      undefined,
+      options.signal === undefined ? undefined : { signal: options.signal }
     )
+    return sandboxSuccessfulToolResult(CallToolResultSchema.parse(result), artifacts, path)
   }
 
   const invokeRemoteGatewayCall = (

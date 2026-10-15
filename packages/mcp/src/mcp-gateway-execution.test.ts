@@ -1,5 +1,4 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import type { CodevisorExecutionState } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -14,6 +13,7 @@ import {
   siteIcon,
   type ExecutionTimers
 } from "./mcp-gateway-execution.js"
+import { executionOf } from "./mcp-manager-test-support.js"
 
 const manualTimers = () => {
   let now = 0
@@ -23,11 +23,11 @@ const manualTimers = () => {
     now: () => now,
     setTimeout: (callback, ms) => {
       nextId += 1
-      scheduled.set(nextId, { at: now + ms, callback })
-      return nextId
-    },
-    clearTimeout: (handle) => {
-      scheduled.delete(handle as number)
+      const id = nextId
+      scheduled.set(id, { at: now + ms, callback })
+      return () => {
+        scheduled.delete(id)
+      }
     }
   }
   const advance = (ms: number): void => {
@@ -51,8 +51,7 @@ const recording = (timers?: ExecutionTimers) => {
     argsHash: "hash-1",
     ...(timers === undefined ? {} : { timers })
   })
-  const states = () =>
-    events.map((event) => (event.payload as { execution: CodevisorExecutionState }).execution)
+  const states = () => events.map(executionOf)
   return { events, recorder, states }
 }
 
@@ -100,17 +99,14 @@ describe("execution recorder", () => {
   it("carries the workflow's label, one line and short", async () => {
     const { recorder, events } = labeledRecorder("\n  List my machines\nand more detail")
     await recorder.finish()
-    expect(
-      events.map((event) => (event.payload as { execution: CodevisorExecutionState }).execution)
-    ).toEqual([
+    expect(events.map(executionOf)).toEqual([
       { state: "running", description: "List my machines", calls: [] },
       { state: "completed", description: "List my machines", calls: [] }
     ])
     const long = labeledRecorder("x".repeat(200))
-    const first = (long.events[0]!.payload as { execution: CodevisorExecutionState }).execution
-    expect(first.description).toHaveLength(80)
+    expect(executionOf(long.events[0]!)).toMatchObject({ description: `${"x".repeat(79)}…` })
     const blank = labeledRecorder("  \n ")
-    expect((blank.events[0]!.payload as { execution: CodevisorExecutionState }).execution).toEqual({
+    expect(executionOf(blank.events[0]!)).toEqual({
       state: "running",
       calls: []
     })
@@ -178,13 +174,14 @@ describe("execution recorder", () => {
     recorder.status("s".repeat(300))
     await recorder.finish()
 
-    const final = states().at(-1)!
-    expect(final.state).toBe("completed")
-    expect(final.calls).toHaveLength(50)
-    expect(final.calls[0]?.path).toBe("tool.call_6")
-    expect(final.calls.at(-1)?.error).toHaveLength(200)
-    expect(final.calls.at(-1)?.error?.startsWith("bad x")).toBe(true)
-    expect(final.status).toHaveLength(120)
+    expect(states().at(-1)).toMatchObject({
+      state: "completed",
+      status: `${"s".repeat(119)}…`,
+      calls: [
+        ...Array.from({ length: 49 }, (_, index) => ({ path: `tool.call_${index + 6}` })),
+        { path: "tool.failed", error: `bad ${"x".repeat(195)}…` }
+      ]
+    })
   })
 
   it("never lets a failing or missing sink fail the execution", async () => {
@@ -358,8 +355,12 @@ describe("execution steps", () => {
     recorder.call({ path: "browser.screenshot", ok: true, ms: 1, files: files("b", 5) })
     recorder.call({ path: "browser.screenshot", ok: true, ms: 1, files: files("c", 1) })
     await recorder.finish()
-    const calls = states().at(-1)!.calls
-    expect(calls.map((call) => call.files?.length ?? 0)).toEqual([10, 2, 0])
-    expect(calls[2]).not.toHaveProperty("files")
+    expect(states().at(-1)).toMatchObject({
+      calls: [
+        { files: files("a", 10) },
+        { files: files("b", 2) },
+        expect.not.objectContaining({ files: expect.anything() })
+      ]
+    })
   })
 })

@@ -1,5 +1,7 @@
 import type { McpTransport } from "@codevisor/api"
 
+import { isNonArrayRecord } from "./mcp-guards.js"
+
 export interface NormalizedNativeServer {
   readonly transport: McpTransport
   readonly url?: string | undefined
@@ -62,19 +64,18 @@ export const normalizeNativeServer = (
   harnessId: string,
   raw: unknown
 ): NormalizedNativeServer | undefined => {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined
-  const entry = raw as Record<string, unknown>
+  if (!isNonArrayRecord(raw)) return undefined
   switch (harnessId) {
     case "opencode":
-      return normalizeOpenCodeServer(entry)
+      return normalizeOpenCodeServer(raw)
     case "codex":
-      return normalizeCodexServer(entry)
+      return normalizeCodexServer(raw)
     case "goose":
-      return normalizeGooseServer(entry)
+      return normalizeGooseServer(raw)
     case "cline":
-      return normalizeClineServer(entry)
+      return normalizeClineServer(raw)
     default:
-      return normalizeStandardServer(entry)
+      return normalizeStandardServer(raw)
   }
 }
 

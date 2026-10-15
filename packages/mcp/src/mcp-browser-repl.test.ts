@@ -6,18 +6,24 @@ import { join } from "node:path"
 import { makeBrowserUseProvider } from "@codevisor/automation"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { afterEach, expect, it } from "vitest"
+import { z } from "zod"
 
 import {
   cleanupMcpManagerTests,
   directories,
+  executeResultValue,
   listen,
   run,
   testManager
 } from "./mcp-manager-test-support.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
+
+const ExportedSchema = z.object({
+  artifacts: z.array(z.object({ fileId: z.string(), path: z.string() }))
+})
 it("preserves browser cells and applies gateway upload validation and attachment persistence to nested operations", async () => {
   const root = await mkdtemp(join(tmpdir(), "browser-repl-gateway-"))
   directories.push(root)
@@ -63,9 +69,11 @@ it("preserves browser cells and applies gateway upload validation and attachment
   const client = new Client({ name: "browser-repl-test", version: "1" })
   try {
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(gateway.url), {
-        requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-      }) as unknown as Transport
+      sdkTransport(
+        new StreamableHTTPClientTransport(new URL(gateway.url), {
+          requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+        })
+      )
     )
     const execute = (code: string) =>
       client.callTool({
@@ -79,11 +87,8 @@ it("preserves browser cells and applies gateway upload validation and attachment
     expect(JSON.stringify((await execute("retained + 1")).content)).toContain("42")
     const exported = await execute("await browser.content.export({format:'markdown'})")
     expect(exported.isError, JSON.stringify(exported)).not.toBe(true)
-    const content = exported.content as Array<{ type: string; text?: string }>
-    const output = JSON.parse(content.find((block) => block.type === "text")!.text!) as {
-      result: { artifacts: Array<{ fileId: string; path: string }> }
-    }
-    const artifact = output.result.artifacts[0]!
+    const output = ExportedSchema.parse(executeResultValue(exported))
+    const artifact = output.artifacts[0]!
     expect(await run(db.getFileMetadata(artifact.fileId))).toMatchObject({
       mimeType: "text/markdown"
     })

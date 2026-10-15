@@ -142,7 +142,28 @@ export const skillEntries = async (
   const visible = builtins.filter(
     (skill) => skill.gate === undefined || context.enabledIds.has(skill.gate)
   )
-  const saved = source === undefined ? [] : (await source.list()).skills
+  const saved =
+    source === undefined
+      ? []
+      : (await source.list()).skills
+          .filter((skill) => !RESERVED_SKILL_NAMES.has(skill.directoryName))
+          .map((skill) => ({
+            builtin: false,
+            name: skill.directoryName,
+            read: async () => {
+              const document = await source.document(skill.directoryName)
+              if (document === undefined) return undefined
+              const body = stripFrontmatter(document.content)
+              if (document.files.length === 0) return body
+              return [
+                body,
+                `Skill folder: ${document.path}`,
+                `Supporting files (relative to the skill folder; open them with your file tools): ${document.files.join(", ")}`
+              ].join("\n\n")
+            },
+            summary: skill.description ?? skill.name,
+            ...(skill.description === undefined ? {} : { composer: skill.description })
+          }))
   return [
     ...visible.map((skill) => ({
       builtin: true,
@@ -152,24 +173,6 @@ export const skillEntries = async (
       ...(skill.composer === undefined ? {} : { composer: skill.composer })
     })),
     ...saved
-      .filter((skill) => !RESERVED_SKILL_NAMES.has(skill.directoryName))
-      .map((skill) => ({
-        builtin: false,
-        name: skill.directoryName,
-        read: async () => {
-          const document = await (source as SkillSource).document(skill.directoryName)
-          if (document === undefined) return undefined
-          const body = stripFrontmatter(document.content)
-          if (document.files.length === 0) return body
-          return [
-            body,
-            `Skill folder: ${document.path}`,
-            `Supporting files (relative to the skill folder; open them with your file tools): ${document.files.join(", ")}`
-          ].join("\n\n")
-        },
-        summary: skill.description ?? skill.name,
-        ...(skill.description === undefined ? {} : { composer: skill.description })
-      }))
   ]
 }
 

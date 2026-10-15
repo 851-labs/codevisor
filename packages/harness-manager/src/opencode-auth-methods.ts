@@ -1,11 +1,67 @@
 import type { OpenCodeAuthMethod, OpenCodeAuthPrompt } from "@codevisor/api"
 
-import type { UpstreamMethod, UpstreamPrompt } from "./opencode-auth-server.js"
+import { optionalString, recordArray, recordOrEmpty } from "./json-values.js"
+import type {
+  AuthorizationResponse,
+  ProviderInfo,
+  UpstreamMethod,
+  UpstreamPrompt
+} from "./opencode-auth-server.js"
+
+const upstreamPrompt = (value: Record<string, unknown>): UpstreamPrompt => {
+  const when = recordOrEmpty(value.when)
+  return {
+    type: optionalString(value.type),
+    key: optionalString(value.key),
+    message: optionalString(value.message),
+    placeholder: optionalString(value.placeholder),
+    options: recordArray(value.options).map((option) => ({
+      value: optionalString(option.value),
+      label: optionalString(option.label),
+      hint: optionalString(option.hint)
+    })),
+    when: {
+      key: optionalString(when.key),
+      op: optionalString(when.op),
+      value: optionalString(when.value)
+    }
+  }
+}
+
+export const parseUpstreamMethods = (
+  value: unknown
+): Readonly<Record<string, ReadonlyArray<UpstreamMethod>>> =>
+  Object.fromEntries(
+    Object.entries(recordOrEmpty(value)).map(([providerId, methods]) => [
+      providerId,
+      recordArray(methods).map((method) => ({
+        type: optionalString(method.type),
+        label: optionalString(method.label),
+        prompts: recordArray(method.prompts).map(upstreamPrompt)
+      }))
+    ])
+  )
+
+export const parseProviderList = (value: unknown): ReadonlyArray<ProviderInfo> =>
+  recordArray(recordOrEmpty(value).all).flatMap((provider) =>
+    typeof provider.id === "string" && typeof provider.name === "string"
+      ? [{ id: provider.id, name: provider.name }]
+      : []
+  )
+
+export const parseAuthorization = (value: unknown): AuthorizationResponse => {
+  const authorization = recordOrEmpty(value)
+  return {
+    url: optionalString(authorization.url),
+    method: optionalString(authorization.method),
+    instructions: optionalString(authorization.instructions)
+  }
+}
 
 const promptCondition = (
   prompt: UpstreamPrompt
 ): { key: string; op: "eq" | "neq"; value: string } | undefined =>
-  prompt.when?.key !== undefined &&
+  prompt.when.key !== undefined &&
   (prompt.when.op === "eq" || prompt.when.op === "neq") &&
   prompt.when.value !== undefined
     ? { key: prompt.when.key, op: prompt.when.op, value: prompt.when.value }
@@ -13,7 +69,7 @@ const promptCondition = (
 
 const promptOptions = (prompt: UpstreamPrompt): OpenCodeAuthPrompt["options"] =>
   prompt.type === "select"
-    ? (prompt.options ?? []).flatMap((option) =>
+    ? prompt.options.flatMap((option) =>
         option.value === undefined || option.label === undefined
           ? []
           : [

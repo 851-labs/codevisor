@@ -75,15 +75,19 @@ describe("sandboxSuccessfulToolResult", () => {
         }
       }
     ] satisfies ReadonlyArray<SandboxArtifactCollector>) {
-      const result = (await sandboxSuccessfulToolResult(screenshotResult(), collector)) as {
-        artifacts: Array<Record<string, unknown>>
-        showToUser?: string
-      }
-      expect(result.artifacts).toEqual([
-        expect.objectContaining({ type: "artifact_ref", mediaType: "image/png", emitted: true })
-      ])
-      expect(result.artifacts[0]).not.toHaveProperty("path")
-      expect(result.showToUser).toBeUndefined()
+      const result = await sandboxSuccessfulToolResult(screenshotResult(), collector)
+      expect(result).toEqual({
+        value: "Page URL: https://example.com/",
+        artifacts: [
+          {
+            type: "artifact_ref",
+            artifactId: expect.any(String),
+            mediaType: "image/png",
+            sizeBytes: expect.any(Number),
+            emitted: true
+          }
+        ]
+      })
       expect(collector.content).toHaveLength(1)
     }
   })
