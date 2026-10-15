@@ -44,7 +44,9 @@ it.each([false, true])(
         db.appendEvent("session.output", session.id, {
           sessionUpdate: "question",
           questionId: "q",
-          questions: [{ id: "choice", question: "Continue?", options: [{ label: "Yes" }] }]
+          questions: [
+            { id: "choice", question: "Continue?", options: [{ label: "Yes" }], allowsOther: false }
+          ]
         })
       )
     const result = await run(

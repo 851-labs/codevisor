@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3"
 
+import { entryKeyRows, payloadRows } from "./common-rows.js"
 import { jsonRecord, payloadMarkdown, payloadText, type JsonRecord } from "./event-payloads.js"
+import { parseJsonObject } from "./json-column.js"
 import type { SessionEventRow } from "./rows.js"
 import { mergeTranscriptFields } from "./transcript-bodies.js"
 import { appendTranscriptText } from "./transcript-text-state.js"
@@ -108,9 +110,11 @@ const mergeSessionMetadata = (
   update: string | undefined
 ): void => {
   const key = update ?? event.kind
-  const old = db
-    .prepare("select payload from session_state where session_id = ? and state_key = ?")
-    .get(event.session_id, key) as { payload: string } | undefined
+  const old = payloadRows.maybe(
+    db
+      .prepare("select payload from session_state where session_id = ? and state_key = ?")
+      .get(event.session_id, key)
+  )
   db.prepare(
     `insert into session_state (session_id, state_key, revision, payload) values (?, ?, ?, ?)
       on conflict(session_id, state_key) do update set revision = excluded.revision, payload = excluded.payload`
@@ -151,9 +155,11 @@ const readTranscriptHead = (
   itemId: string,
   parent: string
 ): { entry_key: string } | undefined => {
-  return db
-    .prepare("select entry_key from transcript_heads where item_id = ? and parent_id = ?")
-    .get(itemId, parent) as { entry_key: string } | undefined
+  return entryKeyRows.maybe(
+    db
+      .prepare("select entry_key from transcript_heads where item_id = ? and parent_id = ?")
+      .get(itemId, parent)
+  )
 }
 
 const readLatestTranscriptAnswer = (
@@ -161,11 +167,13 @@ const readLatestTranscriptAnswer = (
   itemId: string,
   parent: string
 ): { entry_key: string } | undefined => {
-  return db
-    .prepare(
-      "select entry_key from transcript_entries where item_id = ? and parent_id = ? and category = 'text' order by position desc limit 1"
-    )
-    .get(itemId, parent) as { entry_key: string } | undefined
+  return entryKeyRows.maybe(
+    db
+      .prepare(
+        "select entry_key from transcript_entries where item_id = ? and parent_id = ? and category = 'text' order by position desc limit 1"
+      )
+      .get(itemId, parent)
+  )
 }
 
 const resolveTranscriptTextKey = (
@@ -191,11 +199,12 @@ const readTranscriptEntryPayload = (
   db: Database.Database,
   itemId: string,
   key: string
-): { payload: string } | undefined => {
-  return db
-    .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
-    .get(itemId, key) as { payload: string } | undefined
-}
+): { payload: string } | undefined =>
+  payloadRows.maybe(
+    db
+      .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
+      .get(itemId, key)
+  )
 
 const makeTranscriptTextMetadata = (
   prior: { payload: string } | undefined,
@@ -204,7 +213,7 @@ const makeTranscriptTextMetadata = (
   messageId: string | undefined,
   final: boolean
 ): JsonRecord => {
-  const previousMetadata = prior === undefined ? {} : (JSON.parse(prior.payload) as JsonRecord)
+  const previousMetadata = prior === undefined ? {} : parseJsonObject(prior.payload)
   return {
     ...previousMetadata,
     generation: Number(previousMetadata.generation ?? 0) + (final ? 1 : 0),
@@ -237,9 +246,7 @@ const mergeTranscriptTool = (
 ): void => {
   if (typeof payload.toolCallId !== "string") return
   const key = `tool:${payload.toolCallId}`
-  const previous = db
-    .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
-    .get(itemId, key) as { payload: string } | undefined
+  const previous = readTranscriptEntryPayload(db, itemId, key)
   if (previous === undefined) save(db, event, itemId, key, "tool", parent, {})
   const merged = mergeTranscriptFields(
     db,
@@ -266,9 +273,7 @@ const projectTranscriptCompaction = (
       key
     )
   } else {
-    const previous = db
-      .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
-      .get(itemId, key) as { payload: string } | undefined
+    const previous = readTranscriptEntryPayload(db, itemId, key)
     save(db, event, itemId, key, "compaction", parent, {
       ...(previous ? JSON.parse(previous.payload) : {}),
       ...payload

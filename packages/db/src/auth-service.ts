@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 
 import { isoTimestamp } from "@codevisor/api"
 
+import { readInstanceMeta } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
@@ -36,19 +37,15 @@ export const makeAuthService = (
         return row !== undefined
       }),
     getOrCreateInstanceId: attempt("getOrCreateInstanceId", () => {
-      const row = sqlite
-        .prepare("select value from instance_meta where key = 'machine-id'")
-        .get() as { readonly value: string } | undefined
-      if (row !== undefined) return row.value
+      const existing = readInstanceMeta(sqlite, "machine-id")
+      if (existing !== undefined) return existing
       const id = randomUUID()
       sqlite.prepare("insert into instance_meta (key, value) values ('machine-id', ?)").run(id)
       return id
     }),
     getOrCreateConnectionToken: attempt("getOrCreateConnectionToken", () => {
-      const row = sqlite
-        .prepare("select value from instance_meta where key = 'connection-token'")
-        .get() as { readonly value: string } | undefined
-      if (row !== undefined) return row.value
+      const existing = readInstanceMeta(sqlite, "connection-token")
+      if (existing !== undefined) return existing
       const token = `hm_${randomBytes(24).toString("base64url")}`
       const create = sqlite.transaction(() => {
         sqlite
@@ -64,15 +61,11 @@ export const makeAuthService = (
       return token
     }),
     rotateConnectionToken: attempt("rotateConnectionToken", () => {
-      const existing = sqlite
-        .prepare("select value from instance_meta where key = 'connection-token'")
-        .get() as { readonly value: string } | undefined
+      const existing = readInstanceMeta(sqlite, "connection-token")
       const token = `hm_${randomBytes(24).toString("base64url")}`
       const rotate = sqlite.transaction(() => {
         if (existing !== undefined) {
-          sqlite
-            .prepare("delete from auth_tokens where token_hash = ?")
-            .run(hashToken(existing.value))
+          sqlite.prepare("delete from auth_tokens where token_hash = ?").run(hashToken(existing))
         }
         sqlite
           .prepare(
@@ -90,11 +83,9 @@ export const makeAuthService = (
       return token
     }),
     getBrowserPreference: attempt("getBrowserPreference", () => {
-      const row = sqlite
-        .prepare("select value from instance_meta where key = 'browser-preference'")
-        .get() as { readonly value: string } | undefined
-      return row?.value === "chrome" || row?.value === "managed" || row?.value === "builtin"
-        ? row.value
+      const preference = readInstanceMeta(sqlite, "browser-preference")
+      return preference === "chrome" || preference === "managed" || preference === "builtin"
+        ? preference
         : undefined
     }),
     setBrowserPreference: (preference) =>

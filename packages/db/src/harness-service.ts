@@ -3,9 +3,18 @@ import { isoTimestamp } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { saveHarnessAccountId } from "./harness-account-save.js"
 import { harnessAccountFromRow } from "./row-mappers.js"
-import type { HarnessAccountRecord, HarnessAccountRow } from "./rows.js"
+import { rowReader, text } from "./row-reader.js"
+import { harnessAccountRows, type HarnessAccountRecord } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const harnessIdRows = rowReader({ harness_id: text })
+
+const accountByIdSql = `select a.*,
+                case when s.account_id = a.id then 1 else 0 end as is_active
+         from harness_accounts a
+         left join harness_account_selection s on s.harness_id = a.harness_id
+         where a.id = ? and a.removed_at is null`
 
 export const makeHarnessService = (
   context: ServiceContext
@@ -24,28 +33,25 @@ export const makeHarnessService = (
 > => {
   const { sqlite, getSession } = context
 
-  const harnessAccountRows = (harnessId: string): ReadonlyArray<HarnessAccountRow> =>
-    sqlite
-      .prepare(
-        `select a.*,
+  const listAccountRows = (harnessId: string) =>
+    harnessAccountRows.all(
+      sqlite
+        .prepare(
+          `select a.*,
                 case when s.account_id = a.id then 1 else 0 end as is_active
          from harness_accounts a
          left join harness_account_selection s on s.harness_id = a.harness_id
          where a.harness_id = ? and a.removed_at is null
          order by is_active desc, a.created_at asc`
-      )
-      .all(harnessId) as ReadonlyArray<HarnessAccountRow>
+        )
+        .all(harnessId)
+    )
+
+  const accountRow = (accountId: string) =>
+    harnessAccountRows.maybe(sqlite.prepare(accountByIdSql).get(accountId))
 
   const requiredHarnessAccount = (accountId: string): HarnessAccountRecord => {
-    const row = sqlite
-      .prepare(
-        `select a.*,
-                case when s.account_id = a.id then 1 else 0 end as is_active
-         from harness_accounts a
-         left join harness_account_selection s on s.harness_id = a.harness_id
-         where a.id = ? and a.removed_at is null`
-      )
-      .get(accountId) as HarnessAccountRow | undefined
+    const row = accountRow(accountId)
     if (row === undefined) throw new Error(`Harness account not found: ${accountId}`)
     return harnessAccountFromRow(row)
   }
@@ -63,28 +69,17 @@ export const makeHarnessService = (
     applyHarnessSettings: (harnesses) =>
       attempt("applyHarnessSettings", () => {
         const disabled = new Set(
-          sqlite
-            .prepare("select harness_id from harness_settings where enabled = 0")
-            .all()
-            .map((row) => (row as { readonly harness_id: string }).harness_id)
+          harnessIdRows
+            .all(sqlite.prepare("select harness_id from harness_settings where enabled = 0").all())
+            .map((row) => row.harness_id)
         )
         return harnesses.map((harness) => ({ ...harness, enabled: !disabled.has(harness.id) }))
       }),
     listHarnessAccounts: (harnessId) =>
-      attempt("listHarnessAccounts", () =>
-        harnessAccountRows(harnessId).map(harnessAccountFromRow)
-      ),
+      attempt("listHarnessAccounts", () => listAccountRows(harnessId).map(harnessAccountFromRow)),
     getHarnessAccount: (accountId) =>
       attempt("getHarnessAccount", () => {
-        const row = sqlite
-          .prepare(
-            `select a.*,
-                    case when s.account_id = a.id then 1 else 0 end as is_active
-             from harness_accounts a
-             left join harness_account_selection s on s.harness_id = a.harness_id
-             where a.id = ? and a.removed_at is null`
-          )
-          .get(accountId) as HarnessAccountRow | undefined
+        const row = accountRow(accountId)
         return row === undefined ? undefined : harnessAccountFromRow(row)
       }),
     saveHarnessAccount: (request) =>

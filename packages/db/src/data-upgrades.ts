@@ -3,13 +3,24 @@ import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import { chatState, createChatItem, setChatRoute } from "./chat-items.js"
+import { backfillJobRows, countRows, idRows, readInstanceMeta } from "./common-rows.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { parseAttachments } from "./row-mappers.js"
-import type { ConversationRow, EventRow, TranscriptRow } from "./rows.js"
+import { integer, rowReader } from "./row-reader.js"
+import { conversationRows, eventRows, transcriptRows, type TranscriptRow } from "./rows.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
 import { runTranscriptStateUpgrade } from "./transcript-state-upgrade.js"
 
 const canonicalChatBackfillId = "canonical-session-chat-v1"
+
+const rowIdRows = rowReader({ row_id: integer })
+
+const eventSizeRows = rowReader({ id: integer, bytes: integer })
+
+const legacyConversationRows = rowReader({ ...conversationRows.columns, row_id: integer })
+
+const countOf = (sqlite: Database.Database, sql: string): number =>
+  countRows.one(sqlite.prepare(sql).get()).count
 
 const reportDataUpgrade = (
   config: CodevisorDatabaseConfig,
@@ -43,11 +54,11 @@ const runCanonicalChatBackfill = (
   sqlite: Database.Database,
   config: CodevisorDatabaseConfig
 ): void => {
-  const existing = sqlite
-    .prepare("select state, cursor, completed, total from backfill_jobs where id = ?")
-    .get(canonicalChatBackfillId) as
-    | { state: string; cursor: string | null; completed: number; total: number }
-    | undefined
+  const existing = backfillJobRows.maybe(
+    sqlite
+      .prepare("select state, cursor, completed, total from backfill_jobs where id = ?")
+      .get(canonicalChatBackfillId)
+  )
   if (existing?.state === "completed") {
     reportDataUpgrade(config, {
       state: "completed",
@@ -59,20 +70,13 @@ const runCanonicalChatBackfill = (
     return
   }
 
-  const transcriptTotal = (
-    sqlite.prepare("select count(*) as count from transcript_items").get() as { count: number }
-  ).count
-  const eventTotal = (
-    sqlite
-      .prepare(
-        `select count(*) as count from events
+  const transcriptTotal = countOf(sqlite, "select count(*) as count from transcript_items")
+  const eventTotal = countOf(
+    sqlite,
+    `select count(*) as count from events
            where exists (select 1 from sessions where sessions.id = events.subject_id)`
-      )
-      .get() as { count: number }
-  ).count
-  const sessionTotal = (
-    sqlite.prepare("select count(*) as count from sessions").get() as { count: number }
-  ).count
+  )
+  const sessionTotal = countOf(sqlite, "select count(*) as count from sessions")
   const total = Math.max(1, transcriptTotal + eventTotal + sessionTotal)
   let completed = Math.min(existing?.completed ?? 0, total)
   let eventCursor = Number(existing?.cursor ?? 0)
@@ -114,21 +118,23 @@ const runCanonicalChatBackfill = (
   try {
     let transcriptCursor = 0
     while (true) {
-      const rows = sqlite
-        .prepare(
-          `select transcript_items.rowid as row_id from transcript_items
+      const rows = rowIdRows.all(
+        sqlite
+          .prepare(
+            `select transcript_items.rowid as row_id from transcript_items
            left join chat_items on chat_items.id = transcript_items.id
            where transcript_items.rowid > ? and chat_items.id is null order by transcript_items.rowid asc limit 100`
-        )
-        .all(transcriptCursor) as ReadonlyArray<{ row_id: number }>
+          )
+          .all(transcriptCursor)
+      )
       if (rows.length === 0) break
       sqlite.transaction(() => {
         for (const row of rows) {
           copyTranscriptItemToChat(
             sqlite,
-            sqlite
-              .prepare("select * from transcript_items where rowid = ?")
-              .get(row.row_id) as TranscriptRow
+            transcriptRows.one(
+              sqlite.prepare("select * from transcript_items where rowid = ?").get(row.row_id)
+            )
           )
           transcriptCursor = row.row_id
         }
@@ -145,23 +151,25 @@ const runCanonicalChatBackfill = (
     `)
 
     while (true) {
-      const rows = sqlite
-        .prepare(
-          `select events.id, length(cast(events.payload as blob)) as bytes from events
+      const rows = eventSizeRows.all(
+        sqlite
+          .prepare(
+            `select events.id, length(cast(events.payload as blob)) as bytes from events
            join sessions on sessions.id = events.subject_id
            left join session_events on session_events.global_event_id = events.id
            where events.id > ? and session_events.global_event_id is null
            order by events.id asc limit 256`
-        )
-        .all(eventCursor) as ReadonlyArray<{ id: number; bytes: number }>
+          )
+          .all(eventCursor)
+      )
       if (rows.length === 0) break
       sqlite.transaction(() => {
         let bytes = 0
         for (const candidate of rows) {
           if (bytes > 0 && bytes + candidate.bytes > 2 * 1024 * 1024) break
-          const row = sqlite
-            .prepare("select * from events where id = ?")
-            .get(candidate.id) as EventRow
+          const row = eventRows.one(
+            sqlite.prepare("select * from events where id = ?").get(candidate.id)
+          )
           bytes += candidate.bytes
           const linkedItem =
             row.transcript_item_id !== null &&
@@ -195,9 +203,7 @@ const runCanonicalChatBackfill = (
       progress("running")
     }
 
-    const sessions = sqlite.prepare("select id from sessions order by id").all() as ReadonlyArray<{
-      id: string
-    }>
+    const sessions = idRows.all(sqlite.prepare("select id from sessions order by id").all())
     for (const session of sessions) {
       sqlite.transaction(() => {
         const hasChat =
@@ -208,14 +214,14 @@ const runCanonicalChatBackfill = (
           let timestamp = ""
           let rowid = 0
           while (true) {
-            const row = sqlite
-              .prepare(
-                `select rowid as row_id, * from conversation_items where session_id = ?
+            const row = legacyConversationRows.maybe(
+              sqlite
+                .prepare(
+                  `select rowid as row_id, * from conversation_items where session_id = ?
               and (created_at, rowid) > (?, ?) order by created_at, rowid limit 1`
-              )
-              .get(session.id, timestamp, rowid) as
-              | (ConversationRow & { row_id: number })
-              | undefined
+                )
+                .get(session.id, timestamp, rowid)
+            )
             if (row === undefined) break
             timestamp = row.created_at
             rowid = row.row_id
@@ -232,29 +238,22 @@ const runCanonicalChatBackfill = (
       checkpoint(1)
     }
 
-    const missingTranscript = (
-      sqlite
-        .prepare(
-          `select count(*) as count from transcript_items
+    const missingTranscript = countOf(
+      sqlite,
+      `select count(*) as count from transcript_items
              left join chat_items on chat_items.id = transcript_items.id
              where chat_items.id is null`
-        )
-        .get() as { count: number }
-    ).count
-    const missingEvents = (
-      sqlite
-        .prepare(
-          `select count(*) as count from events
+    )
+    const missingEvents = countOf(
+      sqlite,
+      `select count(*) as count from events
              join sessions on sessions.id = events.subject_id
              left join session_events on session_events.global_event_id = events.id
              where session_events.global_event_id is null`
-        )
-        .get() as { count: number }
-    ).count
-    const mismatchedTranscript = (
-      sqlite
-        .prepare(
-          `select count(*) as count from transcript_items legacy
+    )
+    const mismatchedTranscript = countOf(
+      sqlite,
+      `select count(*) as count from transcript_items legacy
              join chat_items item on item.id = legacy.id
              left join chat_parts text_part
                on text_part.item_id = item.id and text_part.kind = 'text'
@@ -266,9 +265,7 @@ const runCanonicalChatBackfill = (
                 or coalesce(text_part.text, '') != legacy.text
                 or coalesce(plan_part.text, '') != coalesce(legacy.plan_document, '')
                 or coalesce(item.attachments, '') != coalesce(legacy.attachments, '')`
-        )
-        .get() as { count: number }
-    ).count
+    )
     if (missingTranscript !== 0 || missingEvents !== 0 || mismatchedTranscript !== 0) {
       throw new Error(
         `Canonical chat verification failed: ${missingTranscript} transcript items missing, ${mismatchedTranscript} differ, and ${missingEvents} session events are missing`
@@ -296,10 +293,7 @@ const runCanonicalChatBackfill = (
 
 const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabaseConfig): void => {
   sqlite.transaction(() => {
-    const previous = sqlite
-      .prepare("select value from instance_meta where key = 'adopted-server-id'")
-      .get() as { value: string } | undefined
-    if (previous?.value === config.serverId) return
+    if (readInstanceMeta(sqlite, "adopted-server-id") === config.serverId) return
     for (const table of ["sessions", "events", "session_events"]) {
       sqlite
         .prepare(`update ${table} set server_id = ? where server_id != ?`)

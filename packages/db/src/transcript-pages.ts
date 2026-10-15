@@ -1,6 +1,7 @@
 import type { TranscriptPage } from "@codevisor/api"
 
 import { chatAssistantSummary, sessionGoalSnapshot } from "./chat-items.js"
+import { entryKeyRows, payloadRows } from "./common-rows.js"
 import {
   backgroundTasksFromRaw,
   pendingQuestionFromRaw,
@@ -8,7 +9,8 @@ import {
 } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
-import type { ChatItemRow } from "./rows.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
+import { chatItemRows, type ChatItemRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import { readSessionSkills } from "./session-skills.js"
 import { sessionSetupState } from "./setup-state.js"
@@ -27,6 +29,15 @@ const renderableChatItemPredicate = `(
   )
 )`
 
+const positionRows = rowReader({ position: integer })
+
+const pageStateRows = rowReader({
+  cursor: integer,
+  pending_question: nullable(text),
+  background_tasks: text,
+  session_plan: nullable(text)
+})
+
 const maxInitialTranscriptPageCharacters = 24_000
 const maxOlderTranscriptPageCharacters = 64_000
 
@@ -37,14 +48,12 @@ const resolveTranscriptPosition = (
 ) => {
   const before =
     typeof rawBefore === "string"
-      ? (
+      ? positionRows.maybe(
           sqlite
             .prepare(
               "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)"
             )
-            .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore)) as
-            | { position: number }
-            | undefined
+            .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore))
         )?.position
       : rawBefore
   if (rawBefore !== undefined && before === undefined)
@@ -78,11 +87,13 @@ const transcriptPageItem = (
 ) => {
   const item = transcriptFromChatRow(row)
   if (row.role !== "assistant") {
-    const entry = sqlite
-      .prepare(
-        "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
-      )
-      .get(row.id) as { entry_key: string } | undefined
+    const entry = entryKeyRows.maybe(
+      sqlite
+        .prepare(
+          "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
+        )
+        .get(row.id)
+    )
     return {
       ...item,
       ...(entry === undefined
@@ -112,9 +123,10 @@ const readTranscriptPageRows = (
   bounded: number,
   forward: boolean
 ) => {
-  return sqlite
-    .prepare(
-      `select chat_items.*,
+  return chatItemRows.all(
+    sqlite
+      .prepare(
+        `select chat_items.*,
                coalesce((select substr(text, 1, 24000) from chat_parts
                  where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
                (select substr(text, 1, 24000) from chat_parts
@@ -124,8 +136,9 @@ const readTranscriptPageRows = (
                and ${renderableChatItemPredicate}
                and (? is null or position ${forward ? ">" : "<"} ?)
              order by position ${forward ? "asc" : "desc"} limit ?`
-    )
-    .all(sessionId, before ?? null, before ?? null, bounded + 1) as ReadonlyArray<ChatItemRow>
+      )
+      .all(sessionId, before ?? null, before ?? null, bounded + 1)
+  )
 }
 
 const hasOlderRenderableTranscriptItem = (
@@ -161,28 +174,27 @@ const hasNewerRenderableTranscriptItem = (
 }
 
 const readTranscriptPageState = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
-  return sqlite
-    .prepare(
-      `select revision as cursor, pending_question, background_tasks, session_plan
+  return pageStateRows.one(
+    sqlite
+      .prepare(
+        `select revision as cursor, pending_question, background_tasks, session_plan
              from sessions where id = ?`
-    )
-    .get(sessionId) as {
-    readonly cursor: number
-    readonly pending_question: string | null
-    readonly background_tasks: string
-    readonly session_plan: string | null
-  }
+      )
+      .get(sessionId)
+  )
 }
 
 const readTranscriptStateUpdates = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
-  return (
-    sqlite
-      .prepare(
-        `select payload from session_state where session_id = ?
+  return payloadRows
+    .all(
+      sqlite
+        .prepare(
+          `select payload from session_state where session_id = ?
             and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
-      )
-      .all(sessionId) as Array<{ payload: string }>
-  ).map((row) => JSON.parse(row.payload) as unknown)
+        )
+        .all(sessionId)
+    )
+    .map((row) => JSON.parse(row.payload) as unknown)
 }
 
 const makeTranscriptPage = (

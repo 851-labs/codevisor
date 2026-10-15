@@ -1,8 +1,9 @@
 import { isoTimestamp, type EventEnvelope } from "@codevisor/api"
 
+import { cursorRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { eventFromRow } from "./row-mappers.js"
-import type { EventRow } from "./rows.js"
+import { eventRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -13,15 +14,19 @@ export const makeTerminalPaneTitlesService = (
 
   const journaled = (update: (now: string) => void): ReadonlyArray<EventEnvelope> =>
     sqlite.transaction(() => {
-      const { cursor } = sqlite
-        .prepare("select coalesce(max(id), 0) as cursor from events")
-        .get() as { readonly cursor: number }
+      const { cursor } = cursorRows.one(
+        sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get()
+      )
       update(isoTimestamp())
-      return (
-        sqlite
-          .prepare("select * from events where id > ? and kind = 'navigation.changed' order by id")
-          .all(cursor) as ReadonlyArray<EventRow>
-      ).map(eventFromRow)
+      return eventRows
+        .all(
+          sqlite
+            .prepare(
+              "select * from events where id > ? and kind = 'navigation.changed' order by id"
+            )
+            .all(cursor)
+        )
+        .map(eventFromRow)
     })()
 
   return {

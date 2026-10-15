@@ -1,9 +1,9 @@
-import type { EventEnvelope, NavigationDelta } from "@codevisor/api"
+import type { EventEnvelope } from "@codevisor/api"
 import { expect, it } from "vitest"
 
 import { materializeNavigationDelta } from "./navigation-delta.js"
 import { createServiceContext } from "./service-context.js"
-import { memoryDatabase, run } from "./test-support.js"
+import { memoryDatabase, navigationDelta, run } from "./test-support.js"
 
 it("hydrates persisted runtime configuration and selects only durable work for resume", async () => {
   const { db, sqlite, session } = await memoryDatabase()
@@ -92,11 +92,11 @@ it("coalesces navigation entity upserts and deletions and rejects unusable or ov
       event(index, table, "gone")
     )
   )
-  expect((deleted.events[0]!.payload as NavigationDelta).deleted).toHaveLength(4)
+  expect(navigationDelta(deleted.events[0]).deleted).toHaveLength(4)
   expect(materialize([event(1, null, "bad")]).requiresSnapshot).toBe(true)
   expect(materialize([event(1, "project_locations", "bad")]).requiresSnapshot).toBe(true)
   expect(
-    (materialize([event(1, "projects", project.id)]).events[0]!.payload as NavigationDelta).sessions
+    navigationDelta(materialize([event(1, "projects", project.id)]).events[0]).sessions
   ).toEqual([])
   sqlite
     .prepare("update sessions set title = ? where id = ?")
@@ -113,6 +113,6 @@ it("coalesces navigation entity upserts and deletions and rejects unusable or ov
   expect(snapshot.projects[0]!.locations).toEqual([])
   expect(snapshot.sessions[0]!.cwd).toBeUndefined()
   expect(
-    (materialize([event(1, "sessions", session.id)]).events[0]!.payload as NavigationDelta).sessions
+    navigationDelta(materialize([event(1, "sessions", session.id)]).events[0]).sessions
   ).toHaveLength(1)
 })

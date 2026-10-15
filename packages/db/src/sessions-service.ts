@@ -4,11 +4,13 @@ import type { CreateSessionRequest, SessionSummary } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { pendingQuestionRows, revisionRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { pendingQuestionFromRaw, sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { serializeLabels, sessionFromRow } from "./row-mappers.js"
-import type { SessionRow } from "./rows.js"
+import { rowReader, text } from "./row-reader.js"
+import { sessionRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import {
@@ -93,19 +95,19 @@ export const makeSessionsService = (
           `${sessionSummarySelect} order by coalesce(sessions.updated_at, sessions.created_at) desc`
         )
         .all()
-        .map((row) =>
-          sessionFromRow(
-            row as SessionRow,
-            localLocationFor((row as SessionRow).project_id)?.folder_path
-          )
-        )
+        .map((raw) => {
+          const row = sessionRows.one(raw)
+          return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
+        })
     ),
     getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
     getSessionPendingQuestion: (rawId) =>
       attempt("getSessionPendingQuestion", () => {
-        const row = sqlite
-          .prepare("select pending_question from sessions where id = ?")
-          .get(canonicalUuid(rawId)) as { readonly pending_question: string | null } | undefined
+        const row = pendingQuestionRows.maybe(
+          sqlite
+            .prepare("select pending_question from sessions where id = ?")
+            .get(canonicalUuid(rawId))
+        )
         return pendingQuestionFromRaw(row?.pending_question ?? null)
       }),
     markSessionRead: (rawId, throughSequence) =>
@@ -171,9 +173,9 @@ export const makeSessionsService = (
     getSessionConfigSelections: (rawId) =>
       attempt("getSessionConfigSelections", () => {
         const id = canonicalUuid(rawId)
-        const row = sqlite
-          .prepare("select config_selections from sessions where id = ?")
-          .get(id) as { readonly config_selections: string } | undefined
+        const row = configSelectionRows.maybe(
+          sqlite.prepare("select config_selections from sessions where id = ?").get(id)
+        )
         if (row === undefined) throw new Error(`Session not found: ${id}`)
         return sessionConfigSelectionsFromRaw(row.config_selections)
       }),
@@ -271,13 +273,15 @@ export const makeSessionsService = (
   }
 }
 
+const configSelectionRows = rowReader({ config_selections: text })
+
 const readLatestAttentionRevision = (sqlite: ServiceContext["sqlite"], id: string): number => {
-  return (
+  return revisionRows.one(
     sqlite
       .prepare(
         "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
       )
-      .get(id) as { readonly revision: number }
+      .get(id)
   ).revision
 }
 

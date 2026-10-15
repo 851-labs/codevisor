@@ -1,8 +1,15 @@
 import type { AttachmentRef, EventEnvelope, PromptQueueItem, TranscriptItem } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
-import { withChatItemId } from "./event-payloads.js"
-import type { ChatItemRow, EventRow, PromptQueueRow, SessionEventRow } from "./rows.js"
+import { AttachmentRefs, withChatItemId } from "./event-payloads.js"
+import { parseJsonColumn } from "./json-column.js"
+import {
+  promptQueueRows,
+  type ChatItemRow,
+  type EventRow,
+  type PromptQueueRow,
+  type SessionEventRow
+} from "./rows.js"
 
 export const serializeAttachments = (
   attachments: ReadonlyArray<AttachmentRef> | undefined
@@ -13,7 +20,7 @@ export const parseAttachments = (raw: string | null): ReadonlyArray<AttachmentRe
   if (raw === null) {
     return undefined
   }
-  const parsed = JSON.parse(raw) as ReadonlyArray<AttachmentRef>
+  const parsed = parseJsonColumn(AttachmentRefs, raw)
   return parsed.length === 0 ? undefined : parsed
 }
 
@@ -74,7 +81,7 @@ export const listPromptQueueSync = (
        order by position asc, created_at asc, rowid asc`
     )
     .all(sessionId, state)
-    .map((row) => promptQueueFromRow(row as PromptQueueRow))
+    .map((row) => promptQueueFromRow(promptQueueRows.one(row)))
 
 export const eventFromRow = (row: EventRow): EventEnvelope => ({
   id: row.id,

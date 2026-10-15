@@ -12,11 +12,27 @@ import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { reorderPanePositions } from "./pane-position.js"
 import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
-import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
+import { rowReader, text } from "./row-reader.js"
+import { workspacePaneRows, workspaceRows } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
+
+const sidebarPositionRows = rowReader({ sidebar_position: text })
+
+export const readWorkspaceRow = (sqlite: ServiceContext["sqlite"], id: string) =>
+  workspaceRows.maybe(sqlite.prepare("select * from workspaces where id = ?").get(id))
+
+const readWorkspace = (sqlite: ServiceContext["sqlite"], id: string): Workspace =>
+  workspaceFromRow(
+    workspaceRows.one(sqlite.prepare("select * from workspaces where id = ?").get(id))
+  )
+
+export const listWorkspaceRows = (sqlite: ServiceContext["sqlite"]) =>
+  workspaceRows
+    .all(sqlite.prepare("select * from workspaces order by sidebar_position, id").all())
+    .map(workspaceFromRow)
 
 export const upsertWorkspaceRow = (
   context: ServiceContext,
@@ -28,12 +44,12 @@ export const upsertWorkspaceRow = (
   getProject(projectId)
   const now = isoTimestamp()
   const id = (request.id ?? randomUUID()).toLowerCase()
-  const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
-    | WorkspaceRow
-    | undefined
-  const head = sqlite
-    .prepare("select sidebar_position from workspaces order by sidebar_position limit 1")
-    .get() as { sidebar_position: string } | undefined
+  const existing = readWorkspaceRow(sqlite, id)
+  const head = sidebarPositionRows.maybe(
+    sqlite
+      .prepare("select sidebar_position from workspaces order by sidebar_position limit 1")
+      .get()
+  )
   const epoch = Math.max(
     Date.now(),
     head ? workspacePositionEpoch(head.sidebar_position) + 1 : 0,
@@ -77,9 +93,7 @@ export const upsertWorkspaceRow = (
       request.labels === undefined ? 0 : 1,
       now
     )
-  return workspaceFromRow(
-    sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
-  )
+  return readWorkspace(sqlite, id)
 }
 
 export const makeWorkspacesService = (
@@ -103,21 +117,13 @@ export const makeWorkspacesService = (
 
   return {
     ...makeSessionWorkspacesService(context),
-    listWorkspaces: attempt("listWorkspaces", () =>
-      (
-        sqlite
-          .prepare("select * from workspaces order by sidebar_position, id")
-          .all() as ReadonlyArray<WorkspaceRow>
-      ).map(workspaceFromRow)
-    ),
+    listWorkspaces: attempt("listWorkspaces", () => listWorkspaceRows(sqlite)),
     upsertWorkspace: (request) =>
       attempt("upsertWorkspace", () => upsertWorkspaceRow(context, request)),
     updateWorkspace: (rawId, request) =>
       attempt("updateWorkspace", () => {
         const id = canonicalUuid(rawId)
-        const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
-          | WorkspaceRow
-          | undefined
+        const existing = readWorkspaceRow(sqlite, id)
         if (existing === undefined) {
           throw new Error(`Workspace not found: ${id}`)
         }
@@ -149,9 +155,7 @@ export const makeWorkspacesService = (
             serializeLabels(request.labels),
             id
           )
-        return workspaceFromRow(
-          sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
-        )
+        return readWorkspace(sqlite, id)
       }),
     deleteWorkspace: (id) =>
       attempt("deleteWorkspace", () => {
@@ -162,16 +166,8 @@ export const makeWorkspacesService = (
       }),
     getWorkspaceSnapshot: attempt("getWorkspaceSnapshot", () =>
       sqlite.transaction(() => ({
-        workspaces: (
-          sqlite
-            .prepare("select * from workspaces order by sidebar_position, id")
-            .all() as ReadonlyArray<WorkspaceRow>
-        ).map(workspaceFromRow),
-        panes: (
-          sqlite
-            .prepare("select * from workspace_panes order by position, created_at, id")
-            .all() as ReadonlyArray<WorkspacePaneRow>
-        ).map(workspacePaneFromRow)
+        workspaces: listWorkspaceRows(sqlite),
+        panes: panes.listWorkspacePanes(sqlite)
       }))()
     ),
     listWorkspacePanes: attempt("listWorkspacePanes", () => panes.listWorkspacePanes(sqlite)),
@@ -188,11 +184,9 @@ export const makeWorkspacesService = (
           "select * from workspace_panes where workspace_id = ? order by position, created_at, id"
         )
         return sqlite.transaction(() => {
-          const currentPanes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
+          const currentPanes = workspacePaneRows.all(select.all(workspaceId))
           reorderPanePositions(sqlite, currentPanes, paneIds)
-          return (select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>).map(
-            workspacePaneFromRow
-          )
+          return workspacePaneRows.all(select.all(workspaceId)).map(workspacePaneFromRow)
         })()
       }),
     deleteWorkspacePane: (workspaceId, paneId) =>

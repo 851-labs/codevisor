@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto"
 
+import { idRows } from "./common-rows.js"
 import type { Migration } from "./migration-types.js"
+import { rowReader, text } from "./row-reader.js"
+
+const twinGroupRows = rowReader({ lid: text })
 
 export const migrations30To33: ReadonlyArray<Migration> = [
   {
@@ -34,16 +38,20 @@ export const migrations30To33: ReadonlyArray<Migration> = [
             undefined
         )
 
-      const twinGroups = sqlite
-        .prepare("select lower(id) as lid from sessions group by lower(id) having count(*) > 1")
-        .all() as ReadonlyArray<{ readonly lid: string }>
+      const twinGroups = twinGroupRows.all(
+        sqlite
+          .prepare("select lower(id) as lid from sessions group by lower(id) having count(*) > 1")
+          .all()
+      )
       for (const group of twinGroups) {
-        const rows = sqlite
-          .prepare(
-            `select id from sessions where lower(id) = ?
+        const rows = idRows.all(
+          sqlite
+            .prepare(
+              `select id from sessions where lower(id) = ?
              order by coalesce(updated_at, created_at) desc`
-          )
-          .all(group.lid) as ReadonlyArray<{ readonly id: string }>
+            )
+            .all(group.lid)
+        )
         const canonical = (rows.find((row) => hasTranscript(row.id)) ?? rows[0]!).id
         for (const row of rows) {
           if (row.id === canonical) {

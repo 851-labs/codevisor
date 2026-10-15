@@ -2,17 +2,21 @@ import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
+import { nameRows } from "./common-rows.js"
 import { DatabaseError, makeDatabase } from "./index.js"
+import { integer, rowReader, text } from "./row-reader.js"
 import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
 const legacyJournals = (filename: string): ReadonlyArray<string> => {
   const sqlite = new Database(filename)
   try {
-    return (
-      sqlite
-        .prepare("select name from sqlite_master where type = 'table' and name like 'legacy_%'")
-        .all() as Array<{ name: string }>
-    ).map((row) => row.name)
+    return nameRows
+      .all(
+        sqlite
+          .prepare("select name from sqlite_master where type = 'table' and name like 'legacy_%'")
+          .all()
+      )
+      .map((row) => row.name)
   } finally {
     sqlite.close()
   }
@@ -310,9 +314,13 @@ describe("@codevisor/db", () => {
     await run(db.close)
 
     const sqlite = new Database(filename)
-    const items = sqlite
-      .prepare("select id, has_details from chat_items where role = 'assistant' order by position")
-      .all() as Array<{ id: string; has_details: number }>
+    const items = rowReader({ id: text, has_details: integer }).all(
+      sqlite
+        .prepare(
+          "select id, has_details from chat_items where role = 'assistant' order by position"
+        )
+        .all()
+    )
     expect(items).toHaveLength(2)
     sqlite.prepare("update chat_items set has_details = 1 where id = ?").run(items[0]!.id)
     sqlite.prepare("update chat_items set has_details = 0 where id = ?").run(items[1]!.id)
@@ -394,11 +402,13 @@ describe("@codevisor/db", () => {
     const filename = tempDatabase()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
     const sqlite = new Database(filename)
-    const plan = (
-      sqlite
-        .prepare("explain query plan delete from chat_item_routes where item_id = ?")
-        .all("item") as Array<{ detail: string }>
-    ).map((row) => row.detail)
+    const plan = rowReader({ detail: text })
+      .all(
+        sqlite
+          .prepare("explain query plan delete from chat_item_routes where item_id = ?")
+          .all("item")
+      )
+      .map((row) => row.detail)
     sqlite.close()
     expect(plan.join("\n")).toContain("INDEX chat_item_routes_item_idx")
   })

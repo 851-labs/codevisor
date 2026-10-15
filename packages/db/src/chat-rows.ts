@@ -1,3 +1,5 @@
+import { integer, literal, nullable, rowReader, text } from "./row-reader.js"
+
 export interface ConversationRow {
   readonly id: string
   readonly role: "user" | "assistant" | "system"
@@ -53,3 +55,59 @@ export interface ChatItemRow {
   readonly text: string
   readonly plan_document: string | null
 }
+
+export const conversationRows = rowReader<ConversationRow>({
+  id: text,
+  role: literal("user", "assistant", "system"),
+  message_id: nullable(text),
+  text,
+  created_at: text,
+  is_generating: integer,
+  attachments: nullable(text)
+})
+
+export const transcriptRows = rowReader<TranscriptRow>({
+  id: text,
+  session_id: text,
+  sequence: integer,
+  role: literal("user", "assistant"),
+  text,
+  created_at: text,
+  updated_at: text,
+  is_generating: integer,
+  has_details: integer,
+  turn_id: nullable(text),
+  started_at: nullable(text),
+  ended_at: nullable(text),
+  stop_reason: nullable(text),
+  stop_detail: nullable(text),
+  retryable: integer,
+  plan_document: nullable(text),
+  attachments: nullable(text),
+  revision: integer
+})
+
+export const chatItemRows = rowReader<ChatItemRow>({
+  id: text,
+  session_id: text,
+  position: integer,
+  role: literal("user", "assistant", "system", "tool"),
+  message_id: nullable(text),
+  status: literal("streaming", "complete", "failed"),
+  created_at: text,
+  updated_at: text,
+  turn_id: nullable(text),
+  started_at: nullable(text),
+  completed_at: nullable(text),
+  plan_proposed_at: nullable(text),
+  plan_resumed_at: nullable(text),
+  stop_reason: nullable(text),
+  stop_detail: nullable(text),
+  stop_kind: nullable(text),
+  retryable: integer,
+  attachments: nullable(text),
+  has_details: integer,
+  revision: integer,
+  text,
+  plan_document: nullable(text)
+})

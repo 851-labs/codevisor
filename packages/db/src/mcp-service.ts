@@ -5,9 +5,17 @@ import { isoTimestamp } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { mcpServerFromRow, nativeMcpRemovalFromRow } from "./row-mappers.js"
-import type { McpServerRow, NativeConfigBackupRow, NativeMcpRemovalRow } from "./rows.js"
+import { integer, rowReader, text } from "./row-reader.js"
+import { mcpServerRows, nativeConfigBackupRows, nativeMcpRemovalRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const mcpSettingRows = rowReader({ mcp_server_id: text, enabled: integer })
+
+const listMcpServerRows = (sqlite: ServiceContext["sqlite"]) =>
+  mcpServerRows
+    .all(sqlite.prepare("select * from mcp_servers order by name collate nocase").all())
+    .map(mcpServerFromRow)
 
 const readProjectMcpSettings = (
   sqlite: ServiceContext["sqlite"],
@@ -16,14 +24,15 @@ const readProjectMcpSettings = (
   projectId === undefined
     ? new Map<string, boolean>()
     : new Map(
-        (
-          sqlite
-            .prepare("select mcp_server_id, enabled from project_mcp_settings where project_id = ?")
-            .all(canonicalUuid(projectId)) as ReadonlyArray<{
-            mcp_server_id: string
-            enabled: number
-          }>
-        ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+        mcpSettingRows
+          .all(
+            sqlite
+              .prepare(
+                "select mcp_server_id, enabled from project_mcp_settings where project_id = ?"
+              )
+              .all(canonicalUuid(projectId))
+          )
+          .map((row) => [row.mcp_server_id, row.enabled === 1] as const)
       )
 
 const readSessionMcpSettings = (
@@ -33,14 +42,15 @@ const readSessionMcpSettings = (
   sessionId === undefined
     ? new Map<string, boolean>()
     : new Map(
-        (
-          sqlite
-            .prepare("select mcp_server_id, enabled from session_mcp_settings where session_id = ?")
-            .all(canonicalUuid(sessionId)) as ReadonlyArray<{
-            mcp_server_id: string
-            enabled: number
-          }>
-        ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+        mcpSettingRows
+          .all(
+            sqlite
+              .prepare(
+                "select mcp_server_id, enabled from session_mcp_settings where session_id = ?"
+              )
+              .all(canonicalUuid(sessionId))
+          )
+          .map((row) => [row.mcp_server_id, row.enabled === 1] as const)
       )
 
 export const makeMcpService = (
@@ -63,18 +73,12 @@ export const makeMcpService = (
   const { sqlite } = context
 
   return {
-    listMcpServers: attempt("listMcpServers", () =>
-      (
-        sqlite
-          .prepare("select * from mcp_servers order by name collate nocase")
-          .all() as ReadonlyArray<McpServerRow>
-      ).map(mcpServerFromRow)
-    ),
+    listMcpServers: attempt("listMcpServers", () => listMcpServerRows(sqlite)),
     getMcpServer: (id) =>
       attempt("getMcpServer", () => {
-        const row = sqlite.prepare("select * from mcp_servers where id = ?").get(id) as
-          | McpServerRow
-          | undefined
+        const row = mcpServerRows.maybe(
+          sqlite.prepare("select * from mcp_servers where id = ?").get(id)
+        )
         return row === undefined ? undefined : mcpServerFromRow(row)
       }),
     saveMcpServer: (request) =>
@@ -114,7 +118,7 @@ export const makeMcpService = (
             now
           )
         return mcpServerFromRow(
-          sqlite.prepare("select * from mcp_servers where id = ?").get(id) as McpServerRow
+          mcpServerRows.one(sqlite.prepare("select * from mcp_servers where id = ?").get(id))
         )
       }),
     deleteMcpServer: (id) =>
@@ -143,25 +147,19 @@ export const makeMcpService = (
       attempt("resolveMcpServers", () => {
         const projectSettings = readProjectMcpSettings(sqlite, projectId)
         const sessionSettings = readSessionMcpSettings(sqlite, sessionId)
-        return (
-          sqlite
-            .prepare("select * from mcp_servers order by name collate nocase")
-            .all() as ReadonlyArray<McpServerRow>
-        )
-          .map(mcpServerFromRow)
-          .map((server) => ({
-            ...server,
-            enabled:
-              server.enabled &&
-              projectSettings.get(server.id) !== false &&
-              sessionSettings.get(server.id) !== false
-          }))
+        return listMcpServerRows(sqlite).map((server) => ({
+          ...server,
+          enabled:
+            server.enabled &&
+            projectSettings.get(server.id) !== false &&
+            sessionSettings.get(server.id) !== false
+        }))
       }),
     getNativeConfigBackup: (filePath) =>
       attempt("getNativeConfigBackup", () => {
-        const row = sqlite
-          .prepare("select * from native_config_backups where file_path = ?")
-          .get(filePath) as NativeConfigBackupRow | undefined
+        const row = nativeConfigBackupRows.maybe(
+          sqlite.prepare("select * from native_config_backups where file_path = ?").get(filePath)
+        )
         return row === undefined
           ? undefined
           : { backupPath: row.backup_path, createdAt: row.created_at, filePath: row.file_path }
@@ -187,20 +185,22 @@ export const makeMcpService = (
           )
           .run(id, request.harnessId, request.configPath, request.serverName, request.fragment, now)
         return nativeMcpRemovalFromRow(
-          sqlite
-            .prepare("select * from native_mcp_removals where id = ?")
-            .get(id) as NativeMcpRemovalRow
+          nativeMcpRemovalRows.one(
+            sqlite.prepare("select * from native_mcp_removals where id = ?").get(id)
+          )
         )
       }),
     listNativeMcpRemovals: () =>
       attempt("listNativeMcpRemovals", () =>
-        (
-          sqlite
-            .prepare(
-              "select * from native_mcp_removals where restored_at is null order by removed_at desc"
-            )
-            .all() as ReadonlyArray<NativeMcpRemovalRow>
-        ).map(nativeMcpRemovalFromRow)
+        nativeMcpRemovalRows
+          .all(
+            sqlite
+              .prepare(
+                "select * from native_mcp_removals where restored_at is null order by removed_at desc"
+              )
+              .all()
+          )
+          .map(nativeMcpRemovalFromRow)
       ),
     markNativeMcpRemovalRestored: (id) =>
       attempt("markNativeMcpRemovalRestored", () => {

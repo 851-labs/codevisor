@@ -9,7 +9,8 @@ import type Database from "better-sqlite3"
 
 import { canonicalUuid } from "./ids.js"
 import { workspacePaneFromRow } from "./row-mappers.js"
-import type { WorkspacePaneRow } from "./rows.js"
+import { rowReader, text } from "./row-reader.js"
+import { workspacePaneRows, type WorkspacePaneRow } from "./rows.js"
 import {
   discardConflictingPanes,
   writePaneUpsert,
@@ -18,17 +19,19 @@ import {
   assignPaneSession
 } from "./workspace-pane-writes.js"
 
-const readPane = (sqlite: Database.Database, id: string) =>
+const projectIdRows = rowReader({ project_id: text })
+
+const sessionProjectRows = rowReader({ id: text, project_id: text })
+
+export const readPane = (sqlite: Database.Database, id: string) =>
   workspacePaneFromRow(
-    sqlite.prepare("select * from workspace_panes where id = ?").get(id) as WorkspacePaneRow
+    workspacePaneRows.one(sqlite.prepare("select * from workspace_panes where id = ?").get(id))
   )
 
 export const listWorkspacePanes = (sqlite: Database.Database) =>
-  (
-    sqlite
-      .prepare("select * from workspace_panes order by position, created_at, id")
-      .all() as ReadonlyArray<WorkspacePaneRow>
-  ).map(workspacePaneFromRow)
+  workspacePaneRows
+    .all(sqlite.prepare("select * from workspace_panes order by position, created_at, id").all())
+    .map(workspacePaneFromRow)
 
 const upsertResourceId = (
   sqlite: Database.Database,
@@ -36,9 +39,9 @@ const upsertResourceId = (
   id: string,
   request: UpsertWorkspacePaneRequest
 ) => {
-  const existing = sqlite.prepare("select * from workspace_panes where id = ?").get(id) as
-    | WorkspacePaneRow
-    | undefined
+  const existing = workspacePaneRows.maybe(
+    sqlite.prepare("select * from workspace_panes where id = ?").get(id)
+  )
   if (existing !== undefined && existing.workspace_id !== workspaceId) {
     throw new Error(`Pane ${id} belongs to workspace ${existing.workspace_id}`)
   }
@@ -69,9 +72,11 @@ export const upsertWorkspacePane = (
 }
 
 const requireScopedPane = (sqlite: Database.Database, workspaceId: string, paneId: string) => {
-  const existing = sqlite
-    .prepare("select * from workspace_panes where id = ? and workspace_id = ?")
-    .get(paneId, workspaceId) as WorkspacePaneRow | undefined
+  const existing = workspacePaneRows.maybe(
+    sqlite
+      .prepare("select * from workspace_panes where id = ? and workspace_id = ?")
+      .get(paneId, workspaceId)
+  )
   if (existing === undefined) {
     throw new Error(`Workspace pane not found: ${paneId}`)
   }
@@ -148,12 +153,12 @@ const validatePromotion = (
     .prepare("select id from workspace_panes where id = ? and workspace_id = ?")
     .get(paneId, workspaceId)
   if (pane === undefined) throw new Error(`Workspace pane not found: ${paneId}`)
-  const workspace = sqlite
-    .prepare("select project_id from workspaces where id = ?")
-    .get(workspaceId) as { readonly project_id: string } | undefined
-  const session = sqlite
-    .prepare("select id, project_id from sessions where id = ?")
-    .get(sessionId) as { readonly id: string; readonly project_id: string } | undefined
+  const workspace = projectIdRows.maybe(
+    sqlite.prepare("select project_id from workspaces where id = ?").get(workspaceId)
+  )
+  const session = sessionProjectRows.maybe(
+    sqlite.prepare("select id, project_id from sessions where id = ?").get(sessionId)
+  )
   if (session === undefined) throw new Error(`Session not found: ${sessionId}`)
   /* v8 ignore next */
   if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)

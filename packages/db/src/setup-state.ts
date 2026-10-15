@@ -2,6 +2,21 @@ import type { TranscriptBodyPage } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import { jsonRecord } from "./event-payloads.js"
+import { parseJsonObject } from "./json-column.js"
+import { integer, rowReader, text } from "./row-reader.js"
+
+const nextPositionRows = rowReader({ n: integer })
+
+const setupRows = rowReader({
+  subject_id: text,
+  kind: text,
+  revision: integer,
+  created_at: text,
+  text_length: integer,
+  payload: text
+})
+
+const setupChunkRows = rowReader({ position: integer, text })
 
 export const projectSetupState = (
   db: Database.Database,
@@ -24,12 +39,12 @@ export const projectSetupState = (
     on conflict(subject_id, kind) do update set revision = excluded.revision,
       payload = case when json_extract(excluded.payload, '$.state') = 'log' then setup_state.payload else excluded.payload end`
   ).run(subject, kind, revision, createdAt, JSON.stringify(metadata))
-  let position = (
+  let position = nextPositionRows.one(
     db
       .prepare(
         "select coalesce(max(position), -1) + 1 as n from setup_text_chunks where subject_id = ? and kind = ?"
       )
-      .get(subject, kind) as { n: number }
+      .get(subject, kind)
   ).n
   for (let offset = 0; offset < line.length;) {
     let end = Math.min(offset + 8192, line.length)
@@ -55,16 +70,9 @@ const accessibleSetup = `select setup.* from setup_state setup join sessions s o
       select id from worktrees where project_id = s.project_id and name = s.worktree_name))`
 
 export const sessionSetupState = (db: Database.Database, sessionId: string): unknown[] => {
-  const rows = db.prepare(accessibleSetup).all(sessionId) as Array<{
-    subject_id: string
-    kind: string
-    revision: number
-    created_at: string
-    text_length: number
-    payload: string
-  }>
+  const rows = setupRows.all(db.prepare(accessibleSetup).all(sessionId))
   return rows.map((row) => ({
-    ...JSON.parse(row.payload),
+    ...parseJsonObject(row.payload),
     id: `${row.kind}:${row.subject_id}`,
     kind: row.kind,
     subjectId: row.subject_id,
@@ -95,11 +103,13 @@ export const readSetupBodyPage = (
     .prepare(`select 1 from (${accessibleSetup}) where subject_id = ? and kind = ?`)
     .get(sessionId, subject, key)
   if (allowed === undefined) return undefined
-  const rows = db
-    .prepare(
-      "select position, text from setup_text_chunks where subject_id = ? and kind = ? and position >= ? order by position limit 2"
-    )
-    .all(subject, key, position) as Array<{ position: number; text: string }>
+  const rows = setupChunkRows.all(
+    db
+      .prepare(
+        "select position, text from setup_text_chunks where subject_id = ? and kind = ? and position >= ? order by position limit 2"
+      )
+      .all(subject, key, position)
+  )
   return rows[0] === undefined
     ? undefined
     : {

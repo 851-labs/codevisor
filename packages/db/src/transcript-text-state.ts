@@ -1,7 +1,22 @@
 import type Database from "better-sqlite3"
 
 import { payloadMarkdown, payloadText, type JsonRecord } from "./event-payloads.js"
+import { parseJsonObject } from "./json-column.js"
+import { integer, rowReader, text as textColumn } from "./row-reader.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
+
+const lastChunkRows = rowReader({ position: integer, text: textColumn, char_offset: integer })
+
+const chunkTextRows = rowReader({ text: textColumn })
+
+const patchHeadRows = rowReader({
+  entry_key: textColumn,
+  payload: textColumn,
+  text_length: integer,
+  position: integer
+})
+
+type PatchHeadRow = ReturnType<typeof patchHeadRows.one>
 
 export const transcriptTextBlockSize = 8192
 const prefix = (text: string, count: number): string => {
@@ -11,11 +26,13 @@ const prefix = (text: string, count: number): string => {
 }
 
 const readLastTranscriptChunk = (db: Database.Database, itemId: string, key: string) => {
-  return db
-    .prepare(
-      "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1"
-    )
-    .get(itemId, key) as { position: number; text: string; char_offset: number } | undefined
+  return lastChunkRows.maybe(
+    db
+      .prepare(
+        "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1"
+      )
+      .get(itemId, key)
+  )
 }
 
 const extendTranscriptTail = (
@@ -85,15 +102,16 @@ export const readTranscriptText = (
 ): string => {
   const blocks: string[] = []
   let remaining = limit ?? Number.MAX_SAFE_INTEGER
-  for (const row of db
+  for (const raw of db
     .prepare(
       "select text from transcript_text_chunks where item_id = ? and entry_key = ? order by position"
     )
     .iterate(itemId, key)) {
-    const text = prefix((row as { text: string }).text, remaining)
+    const row = chunkTextRows.one(raw)
+    const text = prefix(row.text, remaining)
     blocks.push(text)
     remaining -= text.length
-    if (remaining <= 0 || text.length < (row as { text: string }).text.length) break
+    if (remaining <= 0 || text.length < row.text.length) break
   }
   return blocks.join("")
 }
@@ -104,15 +122,15 @@ const readTranscriptPatchHead = (
   parent: string,
   revision: number
 ) => {
-  return db
-    .prepare(
-      `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
+  return patchHeadRows.maybe(
+    db
+      .prepare(
+        `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
     join transcript_entries e on e.item_id = h.item_id and e.entry_key = h.entry_key
     where h.item_id = ? and h.parent_id = ? and e.revision = ?`
-    )
-    .get(itemId, parent, revision) as
-    | { entry_key: string; payload: string; text_length: number; position: number }
-    | undefined
+      )
+      .get(itemId, parent, revision)
+  )
 }
 
 const makeTranscriptEventPatch = (
@@ -120,9 +138,9 @@ const makeTranscriptEventPatch = (
   itemId: string,
   revision: number,
   payload: JsonRecord,
-  row: { entry_key: string; payload: string; text_length: number; position: number }
+  row: PatchHeadRow
 ): JsonRecord => {
-  const metadata = JSON.parse(row.payload) as JsonRecord
+  const metadata = parseJsonObject(row.payload)
   const final = payload.sessionUpdate === "assistant_message_finalized"
   const rawText = (final ? payloadMarkdown(payload) : payloadText(payload)) ?? ""
   const offset = final ? 0 : row.text_length - rawText.length
