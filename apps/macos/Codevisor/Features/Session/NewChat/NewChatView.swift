@@ -41,6 +41,8 @@ private struct DelayedNewChatLoadingView: View {
 }
 
 struct NewChatView: View {
+  static let favoriteProjectsKey = "composer.favoriteProjects"
+
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
   let store: SessionStore
@@ -62,7 +64,7 @@ struct NewChatView: View {
   @State var hoveredRunPicker: RunPicker?
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
-  @ClientPreference("composer.favoriteProjects", default: [])
+  @ClientPreference(Self.favoriteProjectsKey, default: [])
   var favoriteProjectIDs: [ProjectGroup.ID]
   @Namespace private var composerGlassNamespace
   @Environment(\.openSettings) var openSettings

@@ -5,11 +5,13 @@ import Autocomplete
 import SwiftUI
 
 struct ModelConfigMenu: View {
+  static let favoriteModelsKey = "composer.favoriteModels"
+
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openSettings) private var openSettings
   @Bindable var controller: SessionController
 
-  @ClientPreference("composer.favoriteModels", default: [])
+  @ClientPreference(Self.favoriteModelsKey, default: [])
   private var favoriteModelIDs: [ModelPickerFavorite]
   @State private var isPresented = false
   @State private var isParametersPresented = false

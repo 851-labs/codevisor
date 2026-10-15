@@ -25,6 +25,7 @@ public final class AppEnvironment {
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
+  @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
   public let navigationStore: NavigationStore

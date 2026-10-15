@@ -14,6 +14,7 @@ public final class ClientPreferences {
   @ObservationIgnored private var cacheIsComplete = false
   @ObservationIgnored private var pendingWrites = PendingPreferenceWrites()
   @ObservationIgnored private let persistenceOwner = UUID()
+  @ObservationIgnored var onLocalChange: ((LocalPreferenceChange) -> Void)?
 
   public init(database: ClientDatabase? = nil) {
     self.database = database
@@ -50,13 +51,10 @@ public final class ClientPreferences {
   public func set<Value: Codable>(_ value: Value, forKey key: String) {
     do {
       let data = try JSONEncoder().encode(value)
-      if database != nil {
-        persist { $0.set(data, forKey: key) }
-      } else {
-        fallback[key] = data
-      }
-      cache[key] = data
-      revision &+= 1
+      store(data, forKey: key)
+      onLocalChange?(
+        LocalPreferenceChange(key: key, data: data) { (try? JSONDecoder().decode(Value.self, from: $0)) != nil }
+      )
     } catch {
       Log.persistence.error(
         "Failed to save preference \(key, privacy: .public): \(String(describing: error), privacy: .public)"
@@ -65,13 +63,8 @@ public final class ClientPreferences {
   }
 
   public func removeValue(forKey key: String) {
-    if database != nil {
-      persist { $0.set(nil, forKey: key) }
-    } else {
-      fallback[key] = nil
-    }
-    cache.updateValue(nil, forKey: key)
-    revision &+= 1
+    store(nil, forKey: key)
+    onLocalChange?(LocalPreferenceChange(key: key, data: nil) { _ in true })
   }
 
   public func removeAll() {
@@ -82,6 +75,16 @@ public final class ClientPreferences {
       fallback.removeAll()
     }
     cache.removeAll()
+    revision &+= 1
+  }
+
+  func store(_ data: Data?, forKey key: String) {
+    if database != nil {
+      persist { $0.set(data, forKey: key) }
+    } else {
+      fallback[key] = data
+    }
+    cache.updateValue(data, forKey: key)
     revision &+= 1
   }
 
@@ -102,7 +105,7 @@ public final class ClientPreferences {
     }
   }
 
-  private func data(forKey key: String) -> Data? {
+  func data(forKey key: String) -> Data? {
     if let cached = cache[key] {
       return cached
     }
@@ -115,6 +118,12 @@ public final class ClientPreferences {
     cache[key] = data
     return data
   }
+}
+
+struct LocalPreferenceChange {
+  let key: String
+  let data: Data?
+  let canDecode: (Data) -> Bool
 }
 
 private final class PendingPreferenceWrites: @unchecked Sendable {

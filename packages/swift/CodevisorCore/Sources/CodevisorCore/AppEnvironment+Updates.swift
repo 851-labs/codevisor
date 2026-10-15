@@ -70,8 +70,15 @@ extension AppEnvironment {
     return refreshed
   }
 
+  public func syncClientPreferences(_ keys: Set<String>, preferences: ClientPreferences = .shared) {
+    let sync = ClientPreferenceSync(preferences: preferences, configSync: configSync, keys: keys)
+    clientPreferenceSync = sync
+    sync.start()
+  }
+
   func applySyncedNamespace(_ namespace: String) {
     if namespace == "settings" { applySyncedSettings() }
+    if namespace == ClientPreferenceSync.namespace { clientPreferenceSync?.adoptSyncedValues() }
     if namespace == ConfigSync.skillsNamespace { Task { await configSync.synchronizeSkills() } }
     if namespace == "harnesses" || namespace == "harness-accounts"
       || namespace == "harness-credentials" || namespace == "harness-shared-accounts"

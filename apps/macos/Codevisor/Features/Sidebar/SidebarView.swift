@@ -25,7 +25,7 @@ struct SidebarView: View {
   @ClientPreference("sidebar.pinnedExpanded", default: true) var pinnedExpanded
   @ClientPreference("sidebar.listExpanded", default: true) var listExpanded
   @State var archivedVisibleCount = archivedPageSize
-  @ClientPreference("sidebar.pinnedWorkspaces", default: []) var pinnedWorkspaceIDs: [String]
+  @ClientPreference(Self.pinnedWorkspacesKey, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
@@ -169,6 +169,7 @@ struct SidebarView: View {
   }
 
   static let groupIndent: CGFloat = 8
+  static let pinnedWorkspacesKey = "sidebar.pinnedWorkspaces"
 
   private func workspaceList(_ items: [WorkspaceSidebarItem]) -> some View {
     VStack(alignment: .leading, spacing: 1) {
