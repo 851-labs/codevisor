@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { CodexClient } from "./client.js"
 import { connectSharedCodexAccount } from "./shared-oauth.js"
+import { replyAs } from "./test-support.js"
 
 const fixture = () => {
   let handler!: Parameters<CodexClient["onRequest"]>[0]
+  const sent = vi.fn(async (_method: string, _params?: unknown): Promise<unknown> => ({}))
   const client: CodexClient = {
-    request: vi.fn(async () => ({})) as CodexClient["request"],
+    request: (method, params) => replyAs(sent(method, params)),
     notify: vi.fn(),
     onNotification: vi.fn(),
     onClose: vi.fn(),
@@ -17,7 +19,7 @@ const fixture = () => {
   }
   const request = (method: string, params: unknown = {}, signal = new AbortController().signal) =>
     handler(method, params, signal)
-  return { client, request }
+  return { client, request, sent }
 }
 describe("Codex external OAuth", () => {
   it("uses externally managed access tokens and retains refresh handling alongside approvals", async () => {
@@ -28,7 +30,7 @@ describe("Codex external OAuth", () => {
       planType: "pro"
     }))
     const client = await connectSharedCodexAccount(f.client, { token })
-    expect(f.client.request).toHaveBeenCalledWith("account/login/start", {
+    expect(f.sent).toHaveBeenCalledWith("account/login/start", {
       type: "chatgptAuthTokens",
       accessToken: "old",
       chatgptAccountId: "workspace",
@@ -73,13 +75,13 @@ describe("Codex external OAuth", () => {
     await client.request("turn/start", { threadId: "thread" })
     accessToken = "new"
     await client.request("turn/start", { threadId: "thread" })
-    expect(f.client.request).toHaveBeenNthCalledWith(3, "account/login/start", {
+    expect(f.sent).toHaveBeenNthCalledWith(3, "account/login/start", {
       type: "chatgptAuthTokens",
       accessToken: "new",
       chatgptAccountId: "work"
     })
     signedOut = true
     await expect(client.request("turn/start", {})).rejects.toThrow("signed out")
-    expect(f.client.request).toHaveBeenCalledTimes(4)
+    expect(f.sent).toHaveBeenCalledTimes(4)
   })
 })

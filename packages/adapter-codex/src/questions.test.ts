@@ -1,7 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { run, setup } from "./test-support.js"
+import { payloadField, payloadOf, run, setup, stringOf } from "./test-support.js"
 
 describe("CodexProvider", () => {
   afterEach(() => {
@@ -37,7 +37,7 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     await questionAsked
-    const asked = events.at(-1)?.payload as Record<string, unknown>
+    const asked = payloadOf(events.at(-1))
     expect(asked).toMatchObject({
       questionId: "item-q1",
       sessionUpdate: "question"
@@ -101,8 +101,8 @@ describe("CodexProvider", () => {
     const questionAsked = nextEvent(
       (event) =>
         event.kind === "session.output" &&
-        (event.payload as Record<string, unknown>).sessionUpdate === "question" &&
-        (event.payload as Record<string, unknown>).questionId === "item-q-dead"
+        payloadField(event, "sessionUpdate") === "question" &&
+        payloadField(event, "questionId") === "item-q-dead"
     )
     const request = client.serverRequest(
       "item/tool/requestUserInput",
@@ -158,8 +158,8 @@ describe("CodexProvider", () => {
     const questionAsked = nextEvent(
       (event) =>
         event.kind === "session.output" &&
-        (event.payload as Record<string, unknown>).sessionUpdate === "question" &&
-        (event.payload as Record<string, unknown>).questionId === "item-q4"
+        payloadField(event, "sessionUpdate") === "question" &&
+        payloadField(event, "questionId") === "item-q4"
     )
     const request = client.serverRequest("item/tool/requestUserInput", {
       itemId: "item-q4",
@@ -171,10 +171,11 @@ describe("CodexProvider", () => {
     await run(created!.handle.cancel)
     await expect(request).rejects.toThrow("cancelled with the turn")
     expect(
-      events.some((event) => {
-        const payload = event.payload as Record<string, unknown>
-        return payload.sessionUpdate === "question_resolved" && payload.outcome === "cancelled"
-      })
+      events.some(
+        (event) =>
+          payloadField(event, "sessionUpdate") === "question_resolved" &&
+          payloadField(event, "outcome") === "cancelled"
+      )
     ).toBe(true)
     client.emit("turn/completed", {
       threadId: "thread-new",
@@ -211,10 +212,10 @@ describe("CodexProvider", () => {
       turnId: null
     })
     await questionAsked
-    const asked = events.at(-1)?.payload as Record<string, unknown>
+    const asked = payloadOf(events.at(-1))
     expect(asked.sessionUpdate).toBe("question")
     expect(asked.message).toBe("GitHub needs a few details.")
-    const questionId = asked.questionId as string
+    const questionId = stringOf(asked.questionId)
     expect(asked.questions).toEqual([
       {
         allowsOther: false,
@@ -264,7 +265,7 @@ describe("CodexProvider", () => {
       turnId: null
     })
     await questionAsked
-    const asked = events.at(-1)?.payload as Record<string, unknown>
+    const asked = payloadOf(events.at(-1))
     expect(asked.questions).toEqual([
       {
         allowsOther: false,
@@ -273,7 +274,7 @@ describe("CodexProvider", () => {
         question: "choice"
       }
     ])
-    await run(created!.handle.answerQuestion!(asked.questionId as string, { outcome: "cancelled" }))
+    await run(created!.handle.answerQuestion!(stringOf(asked.questionId), { outcome: "cancelled" }))
     await expect(request).resolves.toEqual({ action: "cancel", content: null })
     expect(events.at(-1)?.payload).toMatchObject({
       outcome: "cancelled",
@@ -311,7 +312,7 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     await approvalAsked
-    const asked = events.at(-1)?.payload as Record<string, unknown>
+    const asked = payloadOf(events.at(-1))
     expect(asked).toMatchObject({
       message: "rm -rf build",
       sessionUpdate: "question"
@@ -326,7 +327,7 @@ describe("CodexProvider", () => {
       }
     ])
     await run(
-      created!.handle.answerQuestion!(asked.questionId as string, {
+      created!.handle.answerQuestion!(stringOf(asked.questionId), {
         answers: { approval: { answers: ["Allow for session"] } },
         outcome: "answered"
       })
@@ -340,9 +341,9 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     await denialAsked
-    const deniedAsk = events.at(-1)?.payload as Record<string, unknown>
+    const deniedAsk = payloadOf(events.at(-1))
     await run(
-      created!.handle.answerQuestion!(deniedAsk.questionId as string, {
+      created!.handle.answerQuestion!(stringOf(deniedAsk.questionId), {
         answers: { approval: { answers: ["Deny"] } },
         outcome: "answered"
       })
@@ -356,9 +357,9 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     await dismissalAsked
-    const dismissedAsk = events.at(-1)?.payload as Record<string, unknown>
+    const dismissedAsk = payloadOf(events.at(-1))
     await run(
-      created!.handle.answerQuestion!(dismissedAsk.questionId as string, { outcome: "cancelled" })
+      created!.handle.answerQuestion!(stringOf(dismissedAsk.questionId), { outcome: "cancelled" })
     )
     await expect(dismissed).resolves.toEqual({ decision: "cancel" })
   })
@@ -377,5 +378,4 @@ describe("CodexProvider", () => {
 })
 
 const isQuestion = (event: RuntimeEvent): boolean =>
-  event.kind === "session.output" &&
-  (event.payload as Record<string, unknown>).sessionUpdate === "question"
+  event.kind === "session.output" && payloadField(event, "sessionUpdate") === "question"

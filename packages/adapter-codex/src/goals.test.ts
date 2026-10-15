@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { run, setup } from "./test-support.js"
+import { payloadField, run, setup } from "./test-support.js"
 
 const goalSnapshot = (overrides: Record<string, unknown>) => ({
   createdAt: 1_700_000_000,
@@ -53,9 +53,7 @@ describe("CodexProvider", () => {
     expect(events.at(-1)?.payload).toEqual({ goalCleared: true })
 
     const cleared = nextEvent(
-      (event) =>
-        event.kind === "session.updated" &&
-        (event.payload as Record<string, unknown>).goalCleared === true
+      (event) => event.kind === "session.updated" && payloadField(event, "goalCleared") === true
     )
     client.emit("thread/goal/cleared", { threadId: "thread-new" })
     await cleared

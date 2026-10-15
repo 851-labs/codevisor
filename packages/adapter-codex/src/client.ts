@@ -9,6 +9,8 @@ import {
   trackProcessTree
 } from "@codevisor/processes"
 
+import { isRecord } from "./internal.js"
+
 export interface CodexClient {
   request: <T>(method: string, params?: unknown) => Promise<T>
   notify: (method: string, params?: unknown) => void
@@ -176,13 +178,13 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
   if (transport.onMessage !== undefined) transport.onMessage(handleMessage)
   else
     transport.onLine((line) => {
-      let message: Record<string, unknown>
+      let message: unknown
       try {
-        message = JSON.parse(line) as Record<string, unknown>
+        message = JSON.parse(line)
       } catch {
         return
       }
-      handleMessage(message)
+      if (isRecord(message)) handleMessage(message)
     })
 
   return {
@@ -210,6 +212,7 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
           reject(new Error("codex app-server connection is closed"))
           return
         }
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         pending.set(id, { reject, resolve: resolve as (value: unknown) => void })
         transport.send(params === undefined ? { id, method } : { id, method, params })
       })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { run, setup, UNIFIED_DIFF } from "./test-support.js"
+import { payloadOf, run, setup, UNIFIED_DIFF } from "./test-support.js"
 
 describe("CodexProvider", () => {
   it("maps image generation without relying on assistant Markdown", async () => {
@@ -83,7 +83,7 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         rawInput: { code: 'async () => tools["linear.find_organizations"]({})' },
@@ -169,7 +169,7 @@ describe("CodexProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads[0]).toMatchObject({
       initiatedBy: "user",
       turnId: "turn-1",
@@ -246,7 +246,7 @@ describe("CodexProvider", () => {
     })
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         kind: "web_search",
@@ -330,7 +330,7 @@ describe("CodexProvider", () => {
     })
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         content: { text: "Checking the workflow first.", type: "text" },
@@ -371,9 +371,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    expect((events.at(-1)!.payload as Record<string, unknown>).diffStats).toEqual([
-      { added: 3, path: "new.txt", removed: 0 }
-    ])
+    expect(payloadOf(events.at(-1)).diffStats).toEqual([{ added: 3, path: "new.txt", removed: 0 }])
     client.emit("item/completed", {
       item: {
         changes: [{ diff: "one\ntwo\nthree\n", kind: { type: "delete" }, path: "old.txt" }],
@@ -384,7 +382,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    const deleted = events.at(-1)?.payload as Record<string, unknown>
+    const deleted = payloadOf(events.at(-1))
     expect(deleted.diffStats).toEqual([{ added: 0, path: "old.txt", removed: 3 }])
     expect(deleted.content).toEqual([
       { newText: "", oldText: "one\ntwo\nthree\n", path: "old.txt", type: "diff" }
@@ -408,7 +406,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads.filter((payload) => payload.sessionUpdate === "plan_document")).toEqual([
       { markdown: "# Proposed Plan\n\n- step one", sessionUpdate: "plan_document" }
     ])
