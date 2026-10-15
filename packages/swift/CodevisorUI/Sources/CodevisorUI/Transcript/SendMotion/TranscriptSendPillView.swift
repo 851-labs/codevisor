@@ -29,7 +29,7 @@ final class TranscriptSendPillView: TranscriptSendPlatformView {
       forKey: "codevisor.send-fill")
   }
 
-  override init(frame: CGRect) {
+  init(frame: CGRect, cornerRadius: CGFloat) {
     super.init(frame: frame)
     #if canImport(UIKit)
       isUserInteractionEnabled = false
@@ -38,7 +38,7 @@ final class TranscriptSendPillView: TranscriptSendPlatformView {
       wantsLayer = true
     #endif
     for layer in shapeLayers {
-      layer.cornerRadius = UserBubbleBackground.cornerRadius
+      layer.cornerRadius = cornerRadius
       layer.cornerCurve = .continuous
       layer.frame = bounds
     }

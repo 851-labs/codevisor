@@ -108,7 +108,8 @@ public final class TranscriptSendStaging {
     let editorFrame = overlay.rect(of: textView, Self.visibleBounds(of: textView))
     let glyphRect = overlay.rect(of: textView, textRect)
     let pill = TranscriptSendPillView(
-      frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect))
+      frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect),
+      cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: textView)))
     pill.fill = Self.compositedColor(
       bubble, over: UserBubbleBackground.transcriptBackdrop(for: theme), in: textView)
     glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
@@ -262,6 +263,10 @@ public final class TranscriptSendStaging {
 
     private static func visibleBounds(of view: UIView) -> CGRect { view.bounds }
 
+    private static func dynamicTypeSize(of view: UIView) -> DynamicTypeSize {
+      DynamicTypeSize(view.traitCollection.preferredContentSizeCategory) ?? .large
+    }
+
     private static func snapshot(of view: UIView) -> UIView? {
       let tint = view.tintColor
       view.tintColor = .clear
@@ -272,6 +277,8 @@ public final class TranscriptSendStaging {
     }
   #else
     private static func visibleBounds(of view: NSView) -> CGRect { view.visibleRect }
+
+    private static func dynamicTypeSize(of _: NSView) -> DynamicTypeSize { .large }
 
     private static func snapshot(of view: NSView) -> NSView? {
       let bounds = view.visibleRect

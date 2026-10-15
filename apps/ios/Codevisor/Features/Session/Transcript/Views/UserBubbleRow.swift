@@ -7,10 +7,10 @@ import UIKit
 struct UserBubbleRow: View {
   @Environment(\.theme) private var theme
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let text: String
   let attachments: [Attachment]
   @State private var isSelecting = false
-  private let bubbleShape = RoundedRectangle(cornerRadius: UserBubbleBackground.cornerRadius, style: .continuous)
 
   var body: some View {
     HStack {
@@ -43,13 +43,15 @@ struct UserBubbleRow: View {
             \.streamMarkdownTextLayoutWidth,
             rowLayoutWidth.map { max(1, $0 - 64) }
           )
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
+          .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
+          .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
           .background {
             UserBubbleBackground(color: theme.bubbleBackground)
-              .background(UserBubbleBackground.transcriptBackdrop(for: theme), in: bubbleShape)
+              .background(
+                UserBubbleBackground.transcriptBackdrop(for: theme),
+                in: UserBubbleBackground.shape(for: dynamicTypeSize))
           }
-          .contentShape(.contextMenuPreview, bubbleShape)
+          .contentShape(.contextMenuPreview, UserBubbleBackground.shape(for: dynamicTypeSize))
           .contextMenu {
             if !isSelecting {
               Button("Copy", systemImage: "doc.on.doc") {

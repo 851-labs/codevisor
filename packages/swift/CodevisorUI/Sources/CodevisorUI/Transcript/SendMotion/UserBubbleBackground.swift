@@ -11,21 +11,38 @@ extension EnvironmentValues {
 }
 
 public struct UserBubbleBackground: View {
-  public static let cornerRadius: CGFloat = 14
-
   private let color: Color
   @Environment(\.isTranscriptSendProxy) private var isProxy
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   public init(color: Color) {
     self.color = color
   }
 
   public var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-    shape
+    Self.shape(for: dynamicTypeSize)
       .fill(isProxy ? Color.clear : color)
       .background { UserBubbleAnchor() }
   }
+
+  public static func shape(for dynamicTypeSize: DynamicTypeSize) -> RoundedRectangle {
+    RoundedRectangle(cornerRadius: cornerRadius(for: dynamicTypeSize), style: .continuous)
+  }
+
+  public static func cornerRadius(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+    (bodyLineHeight(for: dynamicTypeSize) + TranscriptSendFlightGeometry.bubbleTextInsets.vertical * 2) / 2
+  }
+
+  #if canImport(UIKit)
+    private static func bodyLineHeight(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+      let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+      return UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).lineHeight
+    }
+  #else
+    private static func bodyLineHeight(for _: DynamicTypeSize) -> CGFloat {
+      NSLayoutManager().defaultLineHeight(for: .preferredFont(forTextStyle: .body))
+    }
+  #endif
 
   public static func transcriptBackdrop(for theme: Theme) -> Color {
     guard theme.isSystem else { return theme.windowBackground }

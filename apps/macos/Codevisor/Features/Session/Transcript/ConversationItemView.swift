@@ -54,8 +54,8 @@ struct UserMessageView: View {
             \.streamMarkdownTextLayoutWidth,
             rowLayoutWidth.map { max(1, $0 - 64) }
           )
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
+          .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
+          .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
           .background { UserBubbleBackground(color: theme.bubbleBackground) }
           MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)
             .opacity(isHovered ? 1 : 0)
