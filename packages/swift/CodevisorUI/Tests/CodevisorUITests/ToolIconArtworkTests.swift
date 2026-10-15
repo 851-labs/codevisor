@@ -21,8 +21,8 @@ struct ToolIconArtworkTests {
 
   @Test("Only see-through marks with dark ink need a light plate in dark mode")
   func darkInk() throws {
-    #expect(ToolIconImages.isDarkInk(try mark(ink: 0.1)))
-    #expect(!ToolIconImages.isDarkInk(try mark(ink: 0.95)))
-    #expect(!ToolIconImages.isDarkInk(try mark(ink: 0.1, background: 0.05)))
+    #expect(ToolIconArtworkDecoder.isDarkInk(try mark(ink: 0.1)))
+    #expect(!ToolIconArtworkDecoder.isDarkInk(try mark(ink: 0.95)))
+    #expect(!ToolIconArtworkDecoder.isDarkInk(try mark(ink: 0.1, background: 0.05)))
   }
 }
