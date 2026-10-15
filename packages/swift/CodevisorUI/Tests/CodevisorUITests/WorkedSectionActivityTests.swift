@@ -56,6 +56,8 @@ struct WorkedSectionActivityTests {
     #expect(turn.workedSectionActivity == .step("Thinking"))
 
     turn.entries.append(.text(id: "answer", markdown: "Done."))
+    #expect(turn.workedSectionActivity == .writing)
+    turn.textPhases["answer"] = .final
     #expect(turn.workedSectionActivity == .answering)
   }
 

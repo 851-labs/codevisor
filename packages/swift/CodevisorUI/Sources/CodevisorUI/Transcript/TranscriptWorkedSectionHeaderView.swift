@@ -245,10 +245,10 @@ public struct TranscriptWorkedSectionHeaderView: View {
           .accessibilityLabel(step)
         TranscriptWorkingDurationLabel(turn: turn, kind: kind)
           .fixedSize()
-      case .step, .pending, .starting:
-        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
+      case .step, .writing, .pending, .starting:
+        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: .working)
       case .answering:
-        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Worked for ")
+        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: .worked)
       }
     }
     .onChange(of: activity, initial: true) { _, next in
@@ -324,14 +324,19 @@ public struct TranscriptWorkedDisclosureIndicator: View {
 }
 
 private struct TranscriptWorkingDurationLabel: View {
+  enum Prefix {
+    case none
+    case working
+    case worked
+  }
+
   let turn: AssistantTurn
   let kind: TranscriptWorkedSectionKind
-  var prefix = ""
+  var prefix = Prefix.none
   @State private var now = Date()
 
   var body: some View {
-    Text(prefix + turn.workedSectionElapsed(kind, now: now))
-      .font(prefix.isEmpty ? .callout.monospacedDigit() : .callout)
+    label(turn.workedSectionElapsed(kind, now: now))
       .task(id: turn.workedSectionStart(kind)) {
         now = Date()
         while !Task.isCancelled {
@@ -340,6 +345,29 @@ private struct TranscriptWorkingDurationLabel: View {
           now = Date()
         }
       }
+  }
+
+  @ViewBuilder
+  private func label(_ elapsed: String) -> some View {
+    switch prefix {
+    case .none: Text(elapsed).font(.callout.monospacedDigit())
+    case .working: TranscriptWorkingForLabel(elapsed: elapsed)
+    case .worked: Text("Worked for " + elapsed)
+    }
+  }
+}
+
+struct TranscriptWorkingForLabel: View {
+  let elapsed: String
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Text("Working for")
+        .shimmering()
+      Text(" " + elapsed)
+        .monospacedDigit()
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 
@@ -367,7 +395,7 @@ struct TranscriptStartingWorkedHeader: View {
 
   var body: some View {
     HStack(spacing: 6) {
-      Text("Working for " + AssistantTurn.formatWorkedDuration(now.timeIntervalSince(startedAt)))
+      TranscriptWorkingForLabel(elapsed: AssistantTurn.formatWorkedDuration(now.timeIntervalSince(startedAt)))
       Spacer(minLength: 0)
     }
     .frame(minHeight: TranscriptWorkedSectionHeaderView.lineHeight)
