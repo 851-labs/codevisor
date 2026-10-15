@@ -56,7 +56,12 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) private var archivedExpanded
   @ClientPreference(Self.expandedWorkspacesKey, default: []) private var expandedWorkspaceIDs: [String]
   @State private var archivedLimit = sidebarArchivedPageSize
-  @State private var pendingSelection: UUID?
+  @State private var pendingSelection: PendingSelection?
+
+  private struct PendingSelection {
+    let id: UUID
+    let expected: HomeSidebarSelection
+  }
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(
@@ -68,8 +73,9 @@ struct HomeSidebarList: View {
     list(content)
       .listStyle(.sidebar)
       .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
-      .onChange(of: selected) { _, _ in
-        pendingSelection = nil
+      .onChange(of: selected) { _, selected in
+        guard let expected = pendingSelection?.expected else { return }
+        if selected == expected || selected?.workspaceId != expected.workspaceId { pendingSelection = nil }
       }
       .refreshable {
         await actions.actions.refresh()
@@ -126,7 +132,9 @@ struct HomeSidebarList: View {
           } label: {
             HomeSidebarGroupLabel(
               heading: heading,
-              onNewChat: heading.newChatTarget.map { target in { actions.actions.newChat(target) } }
+              onNewChat: heading.newChatTarget.flatMap { target in
+                target.projectId == nil ? { actions.actions.newChat(target) } : nil
+              }
             )
           }
         } else {
@@ -240,12 +248,19 @@ struct HomeSidebarList: View {
   }
 
   private func holdSelection(_ id: UUID, until expected: HomeSidebarSelection) {
-    pendingSelection = expected == selected ? nil : id
+    pendingSelection = expected == selected ? nil : PendingSelection(id: id, expected: expected)
+  }
+
+  private func shownSelection(_ content: HomeSidebarContent) -> UUID? {
+    if let pending = pendingSelection, content.row(pending.id) != nil || content.workspace(pending.id) != nil {
+      return pending.id
+    }
+    return selectedRowID(content)
   }
 
   private func selection(_ content: HomeSidebarContent) -> Binding<UUID?> {
     Binding(
-      get: { pendingSelection ?? selectedRowID(content) },
+      get: { shownSelection(content) },
       set: { id in
         guard let id else { return }
         if let (row, workspace) = content.row(id) {
