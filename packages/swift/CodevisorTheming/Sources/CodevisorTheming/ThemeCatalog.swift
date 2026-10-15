@@ -87,21 +87,7 @@ public final class ThemeCatalog {
 
   @discardableResult
   public func importTheme(data: Data, suggestedName: String? = nil) throws -> ThemeDescriptor {
-    let theme: VSCodeTheme
-    do {
-      theme = try VSCodeTheme.decode(from: data)
-    } catch {
-      themingLog.debug(
-        "Imported file failed to decode as a theme: \(String(describing: error), privacy: .public)"
-      )
-      throw ThemeCatalogError.notATheme
-    }
-    guard theme.hasColorData else {
-      throw ThemeCatalogError.notATheme
-    }
-    guard PaletteDeriver.derive(from: theme) != nil else {
-      throw ThemeCatalogError.noLegibleForeground
-    }
+    let theme = try Self.decodeImportableTheme(from: data)
 
     let baseName = theme.displayName ?? theme.name ?? suggestedName ?? "Custom Theme"
     let slug = uniqueSlug(from: baseName)
@@ -122,6 +108,25 @@ public final class ThemeCatalog {
     customDescriptors.append(descriptor)
     parsedThemes[id] = theme
     return descriptor
+  }
+
+  private static func decodeImportableTheme(from data: Data) throws -> VSCodeTheme {
+    let theme: VSCodeTheme
+    do {
+      theme = try VSCodeTheme.decode(from: data)
+    } catch {
+      themingLog.debug(
+        "Imported file failed to decode as a theme: \(String(describing: error), privacy: .public)"
+      )
+      throw ThemeCatalogError.notATheme
+    }
+    guard theme.hasColorData else {
+      throw ThemeCatalogError.notATheme
+    }
+    guard PaletteDeriver.derive(from: theme) != nil else {
+      throw ThemeCatalogError.noLegibleForeground
+    }
+    return theme
   }
 
   public func deleteCustomTheme(id: String) throws {
@@ -169,29 +174,33 @@ public final class ThemeCatalog {
       .filter { $0.pathExtension.lowercased() == "json" }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
       .compactMap { url in
-        let theme: VSCodeTheme
-        do {
-          theme = try VSCodeTheme.decode(from: try Data(contentsOf: url))
-        } catch {
-          themingLog.error(
-            "Skipped custom theme \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
-          )
-          return nil
-        }
-        guard theme.hasColorData else {
-          themingLog.error(
-            "Skipped custom theme \(url.lastPathComponent, privacy: .public): no color data"
-          )
-          return nil
-        }
-        let slug = url.deletingPathExtension().lastPathComponent
-        return ThemeDescriptor(
-          id: "custom:\(slug)",
-          displayName: theme.displayName ?? theme.name ?? slug,
-          type: theme.resolvedIsDark ? .dark : .light,
-          group: .custom
-        )
+        ThemeCatalog.customThemeDescriptor(at: url)
       }
+  }
+
+  private static func customThemeDescriptor(at url: URL) -> ThemeDescriptor? {
+    let theme: VSCodeTheme
+    do {
+      theme = try VSCodeTheme.decode(from: try Data(contentsOf: url))
+    } catch {
+      themingLog.error(
+        "Skipped custom theme \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+      )
+      return nil
+    }
+    guard theme.hasColorData else {
+      themingLog.error(
+        "Skipped custom theme \(url.lastPathComponent, privacy: .public): no color data"
+      )
+      return nil
+    }
+    let slug = url.deletingPathExtension().lastPathComponent
+    return ThemeDescriptor(
+      id: "custom:\(slug)",
+      displayName: theme.displayName ?? theme.name ?? slug,
+      type: theme.resolvedIsDark ? .dark : .light,
+      group: .custom
+    )
   }
 
   private func customFileURL(for id: String) -> URL {
