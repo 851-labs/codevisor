@@ -11,6 +11,16 @@ enum SimulatorDeviceControls {
       model.send(.button(name: name, down: false))
     }
   }
+
+  static func toggleSoftwareKeyboard(on model: SimulatorPaneModel) {
+    press(ejectKey, on: model)
+  }
+
+  static func hasSoftwareKeyboard(_ device: ServerSimulatorDevice) -> Bool {
+    ["iPhone", "iPad"].contains(device.deviceType.productFamily)
+  }
+
+  private static let ejectKey = "hid:12:184"
 }
 
 extension View {
@@ -45,6 +55,18 @@ struct SimulatorHomeButtons: View {
         .help("Home (⇧⌘H)")
         .deviceShortcut("h", modifiers: [.command, .shift])
     }
+  }
+}
+
+struct SimulatorSoftwareKeyboardButton: View {
+  let model: SimulatorPaneModel
+
+  var body: some View {
+    Button("Toggle Software Keyboard", systemImage: "keyboard") {
+      SimulatorDeviceControls.toggleSoftwareKeyboard(on: model)
+    }
+    .help("Toggle Software Keyboard (⌘K)")
+    .deviceShortcut("k", modifiers: .command)
   }
 }
 
@@ -108,6 +130,9 @@ struct SimulatorRotateButton: View {
         HStack(spacing: 10) {
           HStack(spacing: 0) {
             SimulatorHomeButtons(model: model, device: device)
+            if SimulatorDeviceControls.hasSoftwareKeyboard(device) {
+              SimulatorSoftwareKeyboardButton(model: model)
+            }
             SimulatorScreenshotButton(model: model, device: device, onScreenshot: onScreenshot)
           }
           .padding(.horizontal, 2)

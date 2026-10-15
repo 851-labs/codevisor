@@ -16,28 +16,20 @@ struct SimulatorManagerSheet: View {
   private var devices: [ServerSimulatorDevice] { SimulatorFamilies.sorted(model.list?.devices ?? []) }
 
   var body: some View {
-    NavigationStack {
-      list
-        .navigationTitle("Simulators")
-        #if os(iOS)
-          .navigationBarTitleDisplayMode(.inline)
-          .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button(role: .close, action: done) }
-            ToolbarItem(placement: .primaryAction) {
-              Button("New Simulator", systemImage: "plus") { creating = true }
-            }
+    Group {
+      #if os(macOS)
+        VStack(spacing: 0) {
+          navigation
+          SheetFooter {
+            Button("Done", action: done).keyboardShortcut(.defaultAction)
           }
-        #endif
-    }
-    #if os(macOS)
-      .safeAreaInset(edge: .bottom, spacing: 0) {
-        SheetFooter {
-          Button("Done", action: done).keyboardShortcut(.defaultAction)
         }
-      }
-      .sheetSize(.list)
-      .themedSurface(.sheet)
-    #endif
+        .sheetSize(.list)
+        .themedSurface(.sheet)
+      #else
+        navigation
+      #endif
+    }
     .sheet(isPresented: $creating) {
       SimulatorCreateSheet(model: model) { creating = false }
     }
@@ -59,6 +51,22 @@ struct SimulatorManagerSheet: View {
       Button("Delete Simulator", role: .destructive) { model.delete([device.udid]) }
     } message: { _ in
       Text("Its apps and data are removed from the Mac.")
+    }
+  }
+
+  private var navigation: some View {
+    NavigationStack {
+      list
+        .navigationTitle("Simulators")
+        #if os(iOS)
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(role: .close, action: done) }
+            ToolbarItem(placement: .primaryAction) {
+              Button("New Simulator", systemImage: "plus") { creating = true }
+            }
+          }
+        #endif
     }
   }
 

@@ -32,6 +32,9 @@ public struct SimulatorPaneToolbar: ToolbarContent {
       if let device = model.runningDevice {
         ToolbarItemGroup(placement: .bottomBar) {
           SimulatorHomeButtons(model: model, device: device)
+          if SimulatorDeviceControls.hasSoftwareKeyboard(device) {
+            SimulatorSoftwareKeyboardButton(model: model)
+          }
           SimulatorScreenshotButton(model: model, device: device, onScreenshot: onScreenshot)
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)

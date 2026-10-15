@@ -20,6 +20,10 @@
         SimulatorDeviceControls.press("home", on: model)
       }
       .keyboardShortcut("h", modifiers: [.command, .shift])
+      if SimulatorDeviceControls.hasSoftwareKeyboard(device) {
+        Button("Toggle Software Keyboard") { SimulatorDeviceControls.toggleSoftwareKeyboard(on: model) }
+          .keyboardShortcut("k", modifiers: .command)
+      }
       Button("Save Screenshot") {
         Task { [model, device, onScreenshot] in
           guard let data = await model.screenshot() else { return }
