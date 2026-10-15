@@ -165,6 +165,23 @@ export async function internalGroup(client, appId, name) {
   return created.data
 }
 
+function assertRetryableAssignmentError(error, path, build) {
+  if (
+    !(error instanceof AppStoreConnectError) ||
+    error.status !== 404 ||
+    error.method !== "POST" ||
+    error.path !== path ||
+    error.errors.length === 0 ||
+    !error.errors.every(
+      (detail) =>
+        detail?.code === "NOT_FOUND" &&
+        detail.detail === `There is no resource of type 'builds' with id '${build.id}'`
+    )
+  ) {
+    throw error
+  }
+}
+
 export async function assignBuildToGroup(
   client,
   build,
@@ -219,20 +236,7 @@ export async function assignBuildToGroup(
         })
         accepted = true
       } catch (error) {
-        if (
-          !(error instanceof AppStoreConnectError) ||
-          error.status !== 404 ||
-          error.method !== "POST" ||
-          error.path !== path ||
-          error.errors.length === 0 ||
-          !error.errors.every(
-            (detail) =>
-              detail?.code === "NOT_FOUND" &&
-              detail.detail === `There is no resource of type 'builds' with id '${build.id}'`
-          )
-        ) {
-          throw error
-        }
+        assertRetryableAssignmentError(error, path, build)
         lastError = error
       }
       if (accepted && (await isAssigned())) return
