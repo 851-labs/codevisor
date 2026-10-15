@@ -2,6 +2,8 @@ import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
+import { record } from "./internal.js"
+
 type CursorTodoStatus = "pending" | "in_progress" | "completed" | "cancelled"
 
 interface CursorQuestionOption {
@@ -41,9 +43,6 @@ export type CursorCreatePlanResponse = {
     | { readonly outcome: "rejected"; readonly reason?: string }
     | { readonly outcome: "cancelled" }
 }
-
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined
 
 const cursorQuestions = (value: unknown): ReadonlyArray<CursorQuestion> => {
   if (!Array.isArray(value)) return []

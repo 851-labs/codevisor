@@ -1,9 +1,14 @@
+import { Schema } from "effect"
+
 import type { OpenCodeServer } from "./server.js"
 
-type MigrationStatus =
-  | { readonly status: "required" | "completed" }
-  | { readonly status: "running"; readonly progress?: { readonly label?: string } }
-  | { readonly status: "error"; readonly error: string }
+const MigrationStatus = Schema.Struct({
+  status: Schema.String,
+  error: Schema.optionalKey(Schema.String)
+})
+type MigrationStatus = typeof MigrationStatus.Type
+
+const decodeMigrationStatus = Schema.decodeUnknownSync(MigrationStatus)
 
 const STATUS_PATH = "/api/experimental/migration/v1"
 
@@ -24,7 +29,7 @@ export const pendingOpenCodeMigration = async (
     deps.wait ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms).unref()))
   const pollMs = deps.pollMs ?? 1_000
   const server = await deps.start()
-  const status = () => server.request<MigrationStatus>(STATUS_PATH)
+  const status = async () => decodeMigrationStatus(await server.request(STATUS_PATH))
   let first: MigrationStatus
   try {
     first = await status()

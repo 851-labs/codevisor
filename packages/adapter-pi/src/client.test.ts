@@ -59,6 +59,8 @@ describe("Pi RPC client", () => {
     client.onEvent((event) => events.push(event))
     pipe.write({ type: "agent_start" })
     pipe.write("not json")
+    pipe.write("null")
+    pipe.write(42)
     pipe.write({ type: "extension_ui_request", id: "d1", method: "confirm" })
     expect(events.map((event) => event.type)).toEqual(["agent_start", "extension_ui_request"])
     client.respond({ id: "d1", confirmed: true })

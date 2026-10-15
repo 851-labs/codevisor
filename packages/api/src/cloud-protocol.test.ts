@@ -222,6 +222,7 @@ describe("relay envelopes (binary)", () => {
       machineId: "m-2",
       frame
     })
+    expect(parseHubToAppRelayHeader({ peerId: "conn-1", frame })).toBeUndefined()
     expect(parseMachineOutboundRelayHeader({ peerId: "conn-1", frame })).toEqual({
       direction: "answer",
       peerId: "conn-1",

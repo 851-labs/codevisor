@@ -9,6 +9,14 @@ export interface MappedEvent {
 
 export type Edge = "started" | "updated" | "completed"
 
+const EDGES = new Map<unknown, Edge>([
+  ["item/started", "started"],
+  ["item/updated", "updated"],
+  ["item/completed", "completed"]
+])
+
+export const itemEdge = (method: unknown): Edge | undefined => EDGES.get(method)
+
 export const output = (payload: Record<string, unknown>): MappedEvent => ({
   kind: "session.output",
   payload

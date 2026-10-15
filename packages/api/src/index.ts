@@ -28,6 +28,7 @@ export * from "./simulators.js"
 export * from "./client-control.js"
 export * from "./client-ui.js"
 export * from "./codevisor-execution.js"
+export * from "./records.js"
 export * from "./machines.js"
 
 export * from "./workspace-position.js"

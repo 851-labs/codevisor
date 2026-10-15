@@ -45,7 +45,7 @@ const acceptSanitizedLine = (output: CommandOutput, stream: StreamOutput, raw: s
 const appendCompleteLines = (output: CommandOutput, stream: StreamOutput, chunk: string): void => {
   stream.buffered += chunk
   const lines = stream.buffered.split(/\r?\n|\r/)
-  stream.buffered = lines.pop() as string
+  stream.buffered = lines.splice(-1).join("")
   for (const line of lines) acceptSanitizedLine(output, stream, line)
 }
 

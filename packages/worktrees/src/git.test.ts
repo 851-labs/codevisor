@@ -1,6 +1,5 @@
 import childProcess from "node:child_process"
-import { execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process"
-import { EventEmitter } from "node:events"
+import { ChildProcess, execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
@@ -9,7 +8,7 @@ import { PassThrough } from "node:stream"
 
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { makeGitRepo, testTempDir } from "./git-test-support.js"
+import { expectInstanceOf, makeGitRepo, testTempDir } from "./git-test-support.js"
 import {
   CloneError,
   GitError,
@@ -45,8 +44,7 @@ describe("git helper", () => {
       "/tmp/nonexistent-codevisor-worktree",
       "codevisor/none"
     ).catch((cause: unknown) => cause)
-    expect(failure).toBeInstanceOf(GitError)
-    expect((failure as GitError).message.length).toBeGreaterThan(0)
+    expect(expectInstanceOf(failure, GitError).message.length).toBeGreaterThan(0)
   })
 
   it("treats a nonexistent directory as not a git worktree", async () => {
@@ -274,8 +272,7 @@ describe("git helper", () => {
     const failure = await addWorktree(repo, join(root, "worktree"), "codevisor/taken").catch(
       (cause: unknown) => cause
     )
-    expect(failure).toBeInstanceOf(GitError)
-    expect((failure as GitError).message).toContain("taken")
+    expect(expectInstanceOf(failure, GitError).message).toContain("taken")
     expect(isWorktreeBranchCollision(failure)).toBe(true)
     expect(isWorktreeBranchCollision(new GitError("add-worktree", "fatal: another failure"))).toBe(
       false
@@ -339,8 +336,7 @@ describe("git helper", () => {
       undefined,
       { ...process.env, PATH: fakeBin }
     ).catch((cause: unknown) => cause)
-    expect(failure).toBeInstanceOf(GitError)
-    expect((failure as GitError).message).toContain("exited with code 2")
+    expect(expectInstanceOf(failure, GitError).message).toContain("exited with code 2")
     expect(lines).toContainEqual(["stdout", "partial-stdout-line"])
   })
 })
@@ -387,8 +383,7 @@ describe("cloneRepository", () => {
       () => undefined,
       (cause: unknown) => cause
     )
-    expect(failure).toBeInstanceOf(CloneError)
-    expect((failure as CloneError).code).toBe("invalid_url")
+    expect(expectInstanceOf(failure, CloneError).code).toBe("invalid_url")
   })
 
   it("streams stdout lines and honors a caller-provided GIT_SSH_COMMAND", async () => {
@@ -419,8 +414,7 @@ describe("cloneRepository", () => {
       ...process.env,
       PATH: fakeBin
     }).catch((cause: unknown) => cause)
-    expect(silent).toBeInstanceOf(CloneError)
-    expect((silent as CloneError).message).toContain("exited with code 3")
+    expect(expectInstanceOf(silent, CloneError).message).toContain("exited with code 3")
     const spawnFailure = await cloneRepository(
       "https://example.com/x.git",
       "/tmp/unused",
@@ -430,8 +424,7 @@ describe("cloneRepository", () => {
         PATH: testTempDir(join(tmpdir(), "codevisor-empty-path-"))
       }
     ).catch((cause: unknown) => cause)
-    expect(spawnFailure).toBeInstanceOf(CloneError)
-    expect((spawnFailure as CloneError).code).toBeUndefined()
+    expect(expectInstanceOf(spawnFailure, CloneError).code).toBeUndefined()
   })
 })
 
@@ -441,15 +434,22 @@ describe("streamed Git command output", () => {
     async (operation) => {
       const stdout = new PassThrough()
       const stderr = new PassThrough()
-      const child = Object.assign(new EventEmitter(), { stdout, stderr })
+      const stdin = new PassThrough()
+      const child = Object.assign(new ChildProcess(), {
+        stdin,
+        stdout,
+        stderr,
+        stdio: [stdin, stdout, stderr, undefined, undefined] as const
+      })
       const spawn = vi.spyOn(childProcess, "spawn")
-      spawn.mockReturnValue(child as unknown as ChildProcessWithoutNullStreams)
+      spawn.mockReturnValue(child)
       syncBuiltinESMExports()
       onTestFinished(() => {
         spawn.mockRestore()
         syncBuiltinESMExports()
         stdout.destroy()
         stderr.destroy()
+        stdin.destroy()
       })
       const lines: Array<readonly [GitOutputStream, string]> = []
       const listener = (stream: GitOutputStream, line: string) => lines.push([stream, line])
@@ -479,10 +479,10 @@ describe("streamed Git command output", () => {
         ["stderr", "Authentication failed"]
       ])
       const failure = await completed
-      expect(failure).toBeInstanceOf(operation === "worktree" ? GitError : CloneError)
-      expect((failure as GitError).operation).toBe(operation)
-      expect((failure as GitError).message).toBe("A\ncomplete failure")
-      if (operation === "clone") expect((failure as CloneError).code).toBeUndefined()
+      const error = expectInstanceOf(failure, operation === "worktree" ? GitError : CloneError)
+      expect(error.operation).toBe(operation)
+      expect(error.message).toBe("A\ncomplete failure")
+      if (operation === "clone") expect(expectInstanceOf(error, CloneError).code).toBeUndefined()
     }
   )
 })

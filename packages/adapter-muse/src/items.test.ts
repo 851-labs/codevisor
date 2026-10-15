@@ -253,9 +253,9 @@ describe("Muse item mapping", () => {
     mapper.item(bash(1, "inProgress"), "started")
     mapper.delta("b1", "output", "x".repeat(64 * 1024))
     const [update] = payloads(mapper.delta("b1", "output", "END"))
-    const shown = (update!.content as Array<{ content: { text: string } }>)[0]!.content.text
-    expect(shown).toHaveLength(64 * 1024)
-    expect(shown.endsWith("END")).toBe(true)
+    expect(update!.content).toEqual([
+      { type: "content", content: { type: "text", text: `${"x".repeat(64 * 1024 - 3)}END` } }
+    ])
   })
 
   it("reports failures with Muse's reason, and shell output that isn't an envelope as-is", () => {

@@ -28,10 +28,9 @@ const scriptedServer = (answer: (path: string) => unknown) => {
   })
   const server: OpenCodeServer = {
     url: "http://oc",
-    request: async <A>(path: string): Promise<A> => {
+    request: async (path: string) => {
       calls.push(path)
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return answer(path) as A
+      return answer(path)
     },
     stop: vi.fn(async () => markStopped())
   }

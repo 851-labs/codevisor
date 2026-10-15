@@ -1,3 +1,4 @@
+import { isBoolean, isNumber, isRecord, isString, optional, shape } from "./json-shape.ts"
 import { rigIdentity } from "./screen-sharing-bundle.ts"
 
 export const rigLaunchAgentLabel = "com.codevisor.screen-sharing-rig"
@@ -31,6 +32,29 @@ export interface DeployRecord {
   remoteHome: string
   remoteUid: number
 }
+
+export const isRigConfiguration = shape<RigConfiguration>({
+  role: (value) => value === "host" || value === "viewer",
+  token: isString,
+  port: isNumber,
+  controlPort: isNumber,
+  hud: isBoolean,
+  peer: optional(isString),
+  capture: optional(isString),
+  width: optional(isNumber),
+  height: optional(isNumber),
+  fps: optional(isNumber),
+  bitrate: optional(isNumber),
+  codec: optional(isString),
+  tuning: optional(isRecord)
+})
+
+export const isDeployRecord = shape<DeployRecord>({
+  hostSSH: isString,
+  hostAddress: isString,
+  remoteHome: isString,
+  remoteUid: isNumber
+})
 
 export type Command = [command: string, ...args: string[]]
 export type Plan = Command[]
@@ -292,21 +316,20 @@ export function parseTuningArgument(argument: string | undefined): Tuning | null
   } catch {
     throw new Error(`tune: not JSON, a profile name, or default: ${argument}`)
   }
-  if (object === null || typeof object !== "object" || Array.isArray(object))
-    throw new Error("tune: expected an object")
-  return object as Tuning
+  if (!isRecord(object)) throw new Error("tune: expected an object")
+  return object
 }
 
 const topLevelTuningKeys = ["codec", "bitrate"]
 
-export function withTuning<T extends Record<string, unknown>>(
-  configuration: T,
+export function withTuning(
+  configuration: Readonly<Record<string, unknown>>,
   tuning: Tuning | null
-): T {
+): Record<string, unknown> {
   const next: Record<string, unknown> = { ...configuration }
   if (tuning === null) {
     delete next.tuning
-    return next as T
+    return next
   }
   const rest = { ...tuning }
   for (const key of topLevelTuningKeys) {
@@ -316,7 +339,7 @@ export function withTuning<T extends Record<string, unknown>>(
   }
   if (Object.keys(rest).length === 0) delete next.tuning
   else next.tuning = rest
-  return next as T
+  return next
 }
 
 export function errorMessage(error: unknown): string {

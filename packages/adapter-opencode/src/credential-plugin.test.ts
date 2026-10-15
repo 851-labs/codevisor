@@ -6,6 +6,10 @@ import { pathToFileURL } from "node:url"
 import { afterEach, expect, it, onTestFinished, vi } from "vitest"
 
 import { openCodeCredentialPluginFiles } from "./credential-plugin.js"
+import { record } from "./internal.js"
+
+const isPluginSetup = (value: unknown): value is (ctx: unknown) => Promise<void> =>
+  typeof value === "function"
 
 interface Registration {
   readonly integrationID: string
@@ -23,9 +27,10 @@ const load = async (options: unknown) => {
   onTestFinished(() => rm(directory, { recursive: true, force: true }))
   for (const [name, content] of Object.entries(openCodeCredentialPluginFiles))
     await writeFile(join(directory, name), content)
-  const plugin = (await import(pathToFileURL(join(directory, "index.mjs")).href)) as {
-    default: { id: string; setup: (ctx: unknown) => Promise<void> }
-  }
+  const imported: unknown = await import(pathToFileURL(join(directory, "index.mjs")).href)
+  const plugin = record(record(imported)?.default)
+  const setup = plugin?.setup
+  if (plugin === undefined || !isPluginSetup(setup)) throw new Error("The plugin has no setup")
   const builtIn: Record<string, ReadonlyArray<{ id?: string; type: string }>> = {
     openai: [
       { type: "key" },
@@ -35,7 +40,7 @@ const load = async (options: unknown) => {
     "github-copilot": [{ id: "device", type: "oauth" }]
   }
   const registered: Registration[] = []
-  await plugin.default.setup({
+  await setup({
     options,
     integration: {
       transform: async (edit: (editor: unknown) => void) => {
@@ -48,15 +53,15 @@ const load = async (options: unknown) => {
       }
     }
   })
-  return { id: plugin.default.id, registered }
+  return { id: plugin.id, registered }
 }
 
 it("refreshes Codevisor-shared sign-ins through the broker, never with a real refresh token", async () => {
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
-    const body = JSON.parse(init.body as string) as { rejectedAccessToken?: string }
+    const body: unknown = JSON.parse(typeof init.body === "string" ? init.body : "null")
     return Response.json({
       credential: {
-        access: `fresh-for-${body.rejectedAccessToken}`,
+        access: `fresh-for-${String(record(body)?.rejectedAccessToken)}`,
         expires: 9_000,
         refresh: "never"
       }

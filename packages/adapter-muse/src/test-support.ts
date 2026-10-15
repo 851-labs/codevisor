@@ -2,7 +2,7 @@ import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@code
 import { Effect } from "effect"
 
 import type { MuseClient, MuseSpawnRequest } from "./client.js"
-import { TESTED_SCHEMA_FINGERPRINT, type ModelCatalogEntry } from "./protocol.js"
+import { record, TESTED_SCHEMA_FINGERPRINT, type ModelCatalogEntry } from "./protocol.js"
 import { makeMuseProvider, type MuseProviderConfig } from "./provider.js"
 import { startMuseChat } from "./session.js"
 
@@ -93,14 +93,14 @@ export class FakeMuseClient implements MuseClient {
     return new Promise((resolve) => this.waiters.push({ method, resolve }))
   }
 
-  request<T>(method: string, params: unknown = {}): Promise<T> {
-    const fields = params as Record<string, unknown>
+  request(method: string, params: unknown = {}): Promise<unknown> {
+    const fields = record(params)
     this.requests.push({ method, params: fields })
     const index = this.waiters.findIndex((waiter) => waiter.method === method)
     if (index !== -1) this.waiters.splice(index, 1)[0]!.resolve()
     const reply = this.replies[method]
     if (reply instanceof Error) return Promise.reject(reply)
-    return Promise.resolve((typeof reply === "function" ? reply(fields) : reply) as T)
+    return Promise.resolve(typeof reply === "function" ? reply(fields) : reply)
   }
 
   sent(method: string): Array<Record<string, unknown>> {
@@ -157,7 +157,7 @@ export const setup = (config: MuseProviderConfig = {}, client = new FakeMuseClie
 }
 
 export const payloads = (events: ReadonlyArray<RuntimeEvent>) =>
-  events.map((event) => event.payload as Record<string, unknown>)
+  events.map((event) => record(event.payload))
 
 export const startChat = async (
   options: Partial<Parameters<typeof startMuseChat>[2]> = {},
@@ -179,7 +179,7 @@ export const send = async (
   const sent = client.nextRequest("turn/start")
   const finished = chat.prompt(input)
   await sent
-  return { finished, turnId: client.sent("turn/start").at(-1)!.commandId as string }
+  return { finished, turnId: String(client.sent("turn/start").at(-1)!.commandId) }
 }
 
 export const turns = (events: ReadonlyArray<RuntimeEvent>) =>

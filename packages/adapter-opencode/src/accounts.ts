@@ -1,6 +1,17 @@
-import { openCodeProvidersFromIntegrations, type OpenCodeIntegration } from "./integrations.js"
+import { Schema } from "effect"
+
+import { OpenCodeIntegration, openCodeProvidersFromIntegrations } from "./integrations.js"
+import { responseList } from "./internal.js"
 import type { makeOpenCodeServerPool } from "./pool.js"
 import { startOpenCodeServer, type OpenCodeServer, type OpenCodeServerOptions } from "./server.js"
+
+const credentialIds = responseList(Schema.Struct({ id: Schema.String }))
+
+const storedCredentials = responseList(
+  Schema.Struct({ id: Schema.String, integrationID: Schema.String })
+)
+
+const integrations = responseList(OpenCodeIntegration)
 
 export interface OpenCodeProfileRuntime {
   readonly command: string
@@ -41,10 +52,8 @@ export const makeOpenCode2Accounts = (deps: {
     hold,
     removeIntegration: (profile: OpenCodeProfileRuntime, integrationID: string) =>
       withServer(profile, async (server) => {
-        const stored = await server.request<{
-          readonly data: ReadonlyArray<{ readonly id: string; readonly integrationID: string }>
-        }>("/api/credential")
-        for (const { id } of stored.data.filter((entry) => entry.integrationID === integrationID))
+        const stored = storedCredentials(await server.request("/api/credential"))
+        for (const { id } of stored.filter((entry) => entry.integrationID === integrationID))
           await server.request(`/api/credential/${encodeURIComponent(id)}`, { method: "DELETE" })
       }),
     syncCredentials: (
@@ -52,10 +61,8 @@ export const makeOpenCode2Accounts = (deps: {
       desired: ReadonlyArray<SeededOpenCodeCredential>
     ) =>
       withServer(profile, async (server) => {
-        const stored = await server.request<{
-          readonly data: ReadonlyArray<{ readonly id: string }>
-        }>("/api/credential")
-        for (const { id } of stored.data) {
+        const stored = credentialIds(await server.request("/api/credential"))
+        for (const { id } of stored) {
           if (id.startsWith(SEEDED_CREDENTIAL_PREFIX))
             await server.request(`/api/credential/${encodeURIComponent(id)}`, { method: "DELETE" })
         }
@@ -67,12 +74,7 @@ export const makeOpenCode2Accounts = (deps: {
     providers: (profile: OpenCodeProfileRuntime) =>
       withServer(profile, async (server) =>
         openCodeProvidersFromIntegrations(
-          (
-            await server.request<{ readonly data: ReadonlyArray<OpenCodeIntegration> }>(
-              "/api/integration",
-              { location: profile.cwd }
-            )
-          ).data
+          integrations(await server.request("/api/integration", { location: profile.cwd }))
         )
       )
   }

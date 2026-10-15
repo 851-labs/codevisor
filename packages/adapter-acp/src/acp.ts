@@ -5,7 +5,7 @@ export {
   type AcpHarnessLaunchRequest
 } from "./connection.js"
 export { type ConfigureAcpClientApp } from "./client-app.js"
-export { runtimeEventFromNotification } from "./notifications.js"
+export { runtimeEventFromNotification, type AcpUpdateNotification } from "./notifications.js"
 export { turnLifecycleEvent } from "./internal.js"
 export { makeAcpProvider, type AcpLaunchContext, type AcpProviderConfig } from "./provider.js"
 export { type AcpMappedQuestion } from "./questions.js"

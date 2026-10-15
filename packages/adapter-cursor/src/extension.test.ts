@@ -1,15 +1,17 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk"
 import type { AcpAgentConnection } from "@codevisor/adapter-acp"
 import type { PromptInput, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { CURSOR_MAX_TRANSIENT_RETRIES, makeCursorExtension } from "./extension.js"
+import { record } from "./internal.js"
+import { recordOf } from "./test-support.js"
 
 const SESSION_ID = "cursor-session"
 const CONTINUE_PROMPT = "Please continue."
 
-type PromptScript = (emitNotification: (update: Record<string, unknown>) => void) => void
+type PromptScript = (emitNotification: (update: acp.SessionUpdate) => void) => void
 
 class FakeCursorConnection implements AcpAgentConnection {
   readonly prompts: Array<string | PromptInput> = []
@@ -64,57 +66,57 @@ class FakeCursorConnection implements AcpAgentConnection {
   readonly logout = Effect.void
   readonly close = Effect.void
 
-  emitNotification: (sessionId: string, update: Record<string, unknown>) => void = () => {
+  emitNotification: (sessionId: string, update: acp.SessionUpdate) => void = () => {
     throw new Error("Notification mapper was not installed")
   }
 }
 
-const userChunk = (text: string): Record<string, unknown> => ({
+const userChunk = (text: string): acp.SessionUpdate => ({
   content: { text, type: "text" },
   sessionUpdate: "user_message_chunk"
 })
 
-const agentChunk = (text: string): Record<string, unknown> => ({
+const agentChunk = (text: string): acp.SessionUpdate => ({
   content: { text, type: "text" },
   sessionUpdate: "agent_message_chunk"
 })
 
-const retriableError = (): Record<string, unknown> =>
+const retriableError = (): acp.SessionUpdate =>
   agentChunk("\n\nError: RetriableError: [unavailable] Error")
+
+const unexpectedQuestion = <Response>(): Promise<Response> =>
+  Promise.reject(new Error("Unexpected Cursor question"))
 
 const makeHarness = (scripts: Array<PromptScript>) => {
   const events: Array<RuntimeEvent> = []
   const extension = makeCursorExtension({
     emit: (event) => events.push(event),
-    enqueueQuestion: <Response>() =>
-      Promise.reject(new Error("Unexpected Cursor question")) as Promise<Response>
+    enqueueQuestion: unexpectedQuestion
   })
   const base = new FakeCursorConnection(scripts)
   base.emitNotification = (sessionId, update) => {
-    const notification = { sessionId, update } as unknown as acp.SessionNotification
-    const mapped = extension.mapSessionNotification?.(notification) ?? []
+    const mapped = extension.mapSessionNotification?.({ sessionId, update }) ?? []
     events.push(...mapped)
   }
   const connection = extension.sdkConnectionCustomization?.extendConnection?.(base, {
-    connection: {} as acp.ClientConnection
+    connection: new acp.ClientApp().connect(new acp.AgentApp())
   })
   if (connection === undefined) throw new Error("Cursor connection extension was not installed")
   return { base, connection, events }
 }
 
+const textOf = (payload: Record<string, unknown>): string | undefined => {
+  const content = record(payload.content)
+  return typeof content?.text === "string" ? content.text : undefined
+}
+
 const retryEvents = (events: ReadonlyArray<RuntimeEvent>): Array<Record<string, unknown>> =>
-  events
-    .map((event) => event.payload as Record<string, unknown>)
-    .filter((payload) => payload.retrying !== undefined)
+  events.map((event) => recordOf(event.payload)).filter((payload) => payload.retrying !== undefined)
 
 const outputText = (events: ReadonlyArray<RuntimeEvent>): string =>
   events
     .filter((event) => event.kind === "session.output")
-    .map((event) => {
-      const payload = event.payload as Record<string, unknown>
-      const content = payload.content as Record<string, unknown> | undefined
-      return typeof content?.text === "string" ? content.text : ""
-    })
+    .map((event) => textOf(recordOf(event.payload)) ?? "")
     .join("")
 
 afterEach(() => {
@@ -152,12 +154,9 @@ describe("Cursor ACP recovery", () => {
       })
     ])
     const responseChunks = events
-      .filter((event) => {
-        const payload = event.payload as Record<string, unknown>
-        const content = payload.content as Record<string, unknown> | undefined
-        return event.kind === "session.output" && typeof content?.text === "string"
-      })
-      .map((event) => event.payload as Record<string, unknown>)
+      .filter((event) => event.kind === "session.output")
+      .map((event) => recordOf(event.payload))
+      .filter((payload) => textOf(payload) !== undefined)
     expect(responseChunks.map((payload) => payload.messageId)).toEqual([
       "cursor:cursor-session:0:0",
       "cursor:cursor-session:0:0",
@@ -242,13 +241,10 @@ describe("Cursor ACP recovery", () => {
 
 describe("Cursor config_option_update mapping", () => {
   it("keeps ACP thought-level labels concise and remaps Cursor's fast toggle", () => {
-    const { extension } = {
-      extension: makeCursorExtension({
-        emit: () => undefined,
-        enqueueQuestion: <Response>() =>
-          Promise.reject(new Error("Unexpected Cursor question")) as Promise<Response>
-      })
-    }
+    const extension = makeCursorExtension({
+      emit: () => undefined,
+      enqueueQuestion: unexpectedQuestion
+    })
     const mapped = extension.mapSessionNotification?.({
       sessionId: SESSION_ID,
       update: {
@@ -275,7 +271,7 @@ describe("Cursor config_option_update mapping", () => {
         ],
         sessionUpdate: "config_option_update"
       }
-    } as never)
+    })
 
     expect(mapped).toEqual([
       {

@@ -6,12 +6,13 @@ import { networkInterfaces } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { expectShape } from "./json-shape.ts"
 import { errorMessage } from "./screen-sharing-rig-lib.ts"
 import {
   clockOffset,
   frameClockReport,
-  parseFrameClockArguments,
-  type FrameClockSummary
+  isFrameClockSummary,
+  parseFrameClockArguments
 } from "./vnc-frame-clock-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
@@ -134,7 +135,7 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
   const status = await new Promise<number | null>((resolve) => capture.on("close", resolve))
   server.close()
   if (status !== 0) throw new Error(`frame-clock capture failed (exit ${status})`)
-  const summary = JSON.parse(stdout) as FrameClockSummary
+  const summary = expectShape(JSON.parse(stdout), isFrameClockSummary, "frame-clock summary")
   if (clock !== undefined) summary.clock = clock
   writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n")
   const report = frameClockReport(summary, {

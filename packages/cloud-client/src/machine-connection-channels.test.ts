@@ -33,7 +33,10 @@ describe("incoming channels", () => {
     channel.send({ output: "done\n" })
     const dataEnvelopes = socket.sentRelay.filter((envelope) => envelope.header.frame.t === "data")
     expect(dataEnvelopes.map((envelope) => envelope.header.frame.seq)).toEqual([0, 1])
-    expect(dataEnvelopes.every((envelope) => envelope.header.peerId === "peer-1")).toBe(true)
+    expect(dataEnvelopes.map((envelope) => envelope.header)).toEqual([
+      expect.objectContaining({ direction: "answer", peerId: "peer-1" }),
+      expect.objectContaining({ direction: "answer", peerId: "peer-1" })
+    ])
     expect(
       openJson(opened.cipher, "ch-1", "responder-to-opener", 0, dataEnvelopes[0]!.payload)
     ).toEqual({ output: "file.txt\n" })
@@ -205,6 +208,16 @@ describe("incoming channels", () => {
       sealedOpen(42, "c3")
     )
     expect(socket.lastClose().reason).toBe("protocol-error")
+
+    socket.receiveRelay(
+      {
+        peerId: "p",
+        peerPublicKey: appKeys.publicKey,
+        frame: { t: "open", channelId: "c5", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      sealJson(opened.cipher, "c5", "opener-to-responder", 0, null)
+    )
+    expect(socket.lastClose()).toMatchObject({ channelId: "c5", reason: "protocol-error" })
 
     socket.receiveRelay(
       {

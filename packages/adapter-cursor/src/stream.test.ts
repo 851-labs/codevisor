@@ -3,14 +3,14 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { CursorStreamNormalizer } from "./stream.js"
+import { recordOf } from "./test-support.js"
 
 const notification = (
-  update: Readonly<Record<string, unknown>>,
+  update: acp.SessionUpdate,
   sessionId = "session-1"
-): acp.SessionNotification => ({ sessionId, update }) as unknown as acp.SessionNotification
+): acp.SessionNotification => ({ sessionId, update })
 
-const payload = (event: RuntimeEvent): Record<string, unknown> =>
-  event.payload as Record<string, unknown>
+const payload = (event: RuntimeEvent): Record<string, unknown> => recordOf(event.payload)
 
 describe("Cursor stream normalizer", () => {
   it("coalesces text deltas, demotes tool preambles, and finalizes only the last span", () => {
@@ -177,11 +177,12 @@ describe("Cursor stream normalizer", () => {
     const usage = normalizer.mapSessionNotification(
       notification({
         sessionUpdate: "usage_update",
-        totalTokens: 42
+        size: 200_000,
+        used: 42
       })
     )
     expect(usage.map(payload)).toEqual([
-      expect.objectContaining({ sessionUpdate: "usage_update", totalTokens: 42 })
+      expect.objectContaining({ sessionUpdate: "usage_update", used: 42 })
     ])
     expect(normalizer.settlePromptLeg("session-1").terminalError).toMatchObject({
       kind: "retriable",

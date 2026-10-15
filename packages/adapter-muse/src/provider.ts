@@ -23,8 +23,9 @@ import {
   type MuseClient,
   type MuseConnector
 } from "./client.js"
-import { record, text, type MuseSession } from "./protocol.js"
+import { messageOf, record, text } from "./protocol.js"
 import { startMuseChat, type MuseChat } from "./session.js"
+import { museSessions } from "./wire.js"
 
 export interface MuseProviderConfig {
   readonly connector?: MuseConnector
@@ -199,9 +200,7 @@ export const makeMuseProvider = (
               ...(cursor === undefined ? {} : { cursor })
             })
           )
-          for (const entry of Array.isArray(listed.sessions)
-            ? (listed.sessions as Array<MuseSession>)
-            : []) {
+          for (const entry of museSessions(listed.sessions)) {
             if ((entry.kind ?? "root") !== "root" || entry.workspaceRoot === null) continue
             const title = text(entry.name) ?? text(entry.title) ?? text(entry.firstUserPrompt)
             sessions.push({
@@ -237,7 +236,7 @@ export const makeMuseProvider = (
               clampFailureDetail(
                 cause instanceof MuseExitedError
                   ? `Muse Code couldn’t start: ${cause.message}`
-                  : (cause as Error).message
+                  : messageOf(cause)
               ) ?? "Couldn't check Muse Code's sign-in."
           }
         }

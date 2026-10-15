@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest"
 
 import { makeTerminalManager, TerminalError } from "./index.js"
 import { REPLAY_BUFFER_MAX_BYTES } from "./replay-buffer.js"
-import { FakeProcess, makeSpawner, replayedFrames, resizeFrame, run } from "./test-support.js"
+import {
+  clientFrame,
+  FakeProcess,
+  makeSpawner,
+  replayedFrames,
+  resizeFrame,
+  run,
+  type ClientFrameBody
+} from "./test-support.js"
 import { createVtTerminal } from "./vt/ghostty-vt.js"
 
 const screenText = (frames: ReadonlyArray<TerminalServerFrame>, cols = 80): string => {
@@ -101,14 +109,8 @@ describe("@codevisor/terminal server-side screen", () => {
         if (f.type === "size") sizes.push(f)
       })
     )
-    const frame = (clientId: string, clientSeq: number, rest: object) =>
-      run(
-        manager.handleClientFrame(created.terminalId, {
-          clientId,
-          clientSeq,
-          ...rest
-        } as never)
-      )
+    const frame = (clientId: string, clientSeq: number, body: ClientFrameBody) =>
+      run(manager.handleClientFrame(created.terminalId, clientFrame(clientId, clientSeq, body)))
     await frame("mac", 1, { type: "resize", cols: 200, rows: 50 })
     await frame("phone", 1, { type: "resize", cols: 60, rows: 30 })
     await frame("phone", 2, { type: "input", data: "\u001b[?62c", claim: false })

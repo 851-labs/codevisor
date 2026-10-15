@@ -1,6 +1,8 @@
 import { subagentFinished } from "./agents.js"
 import { makeMuseItemMapper, type MappedEvent, type MuseItemMapper } from "./items.js"
-import { record, text, type MuseItem } from "./protocol.js"
+import { list, record, text, type MuseItem } from "./protocol.js"
+import { itemEdge } from "./rows.js"
+import { museItem } from "./wire.js"
 
 const THREAD_UPDATES = new Set([
   "agent_message_chunk",
@@ -9,13 +11,8 @@ const THREAD_UPDATES = new Set([
   "tool_call_update"
 ])
 
-export interface ViewPage {
-  readonly events: ReadonlyArray<{ readonly method?: string; readonly params?: unknown }>
-  readonly nextCursor?: string | null
-}
-
 export interface MuseSubagentsOptions {
-  readonly page: (sessionId: string, cursor: string | undefined) => Promise<ViewPage>
+  readonly page: (sessionId: string, cursor: string | undefined) => Promise<unknown>
   readonly send: (event: MappedEvent) => void
   readonly intervalMs?: number
 }
@@ -50,11 +47,12 @@ export const makeMuseSubagents = (options: MuseSubagentsOptions): MuseSubagents 
     }
   }
 
-  const apply = (child: Child, method: string | undefined, params: Record<string, unknown>) => {
-    if (method === "item/started" || method === "item/updated" || method === "item/completed") {
-      const item = record(params.item) as unknown as MuseItem
-      if (typeof item.itemId !== "string") return
-      attribute(child, child.mapper.item(item, method.slice("item/".length) as "started"))
+  const apply = (child: Child, method: unknown, params: Record<string, unknown>) => {
+    const edge = itemEdge(method)
+    if (edge !== undefined) {
+      const item = museItem(params.item)
+      if (item === undefined) return
+      attribute(child, child.mapper.item(item, edge))
       observe(item, child.mapper.runRow)
     } else if (method === "item/delta" && typeof params.itemId === "string") {
       attribute(
@@ -68,13 +66,15 @@ export const makeMuseSubagents = (options: MuseSubagentsOptions): MuseSubagents 
     child.reading ??= (async () => {
       try {
         for (;;) {
-          const page = await options.page(sessionId, child.cursor)
-          for (const event of page.events) {
+          const page = record(await options.page(sessionId, child.cursor))
+          const events = list(page.events)
+          for (const entry of events) {
+            const event = record(entry)
             const params = record(event.params)
             apply(child, event.method, params)
             child.cursor = text(params.viewCursor) ?? child.cursor
           }
-          if (page.events.length > 0 && page.nextCursor) continue
+          if (events.length > 0 && page.nextCursor) continue
           if (!child.needsFinal) break
           child.needsFinal = false
         }

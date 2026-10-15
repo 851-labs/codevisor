@@ -96,6 +96,7 @@ export const loadNet = (addonPath = defaultAddonPath()): NetModule => {
   if (existing !== undefined) return existing
   const require = createRequire(import.meta.url)
   try {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     loaded.set(addonPath, require(addonPath) as NetModule)
   } catch (error) {
     throw new Error(

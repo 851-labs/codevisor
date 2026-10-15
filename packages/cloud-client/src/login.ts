@@ -1,3 +1,4 @@
+import { isRecord } from "@codevisor/api"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
@@ -26,6 +27,25 @@ const postJson = async (
     body: JSON.stringify(body)
   })
 
+const readJson = async (response: Response): Promise<Record<string, unknown>> => {
+  const body: unknown = await response.json()
+  return isRecord(body) ? body : {}
+}
+
+const readErrorJson = (response: Response): Promise<Record<string, unknown>> =>
+  readJson(response).catch(() => ({}))
+
+const optionalString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
+
+const optionalNumber = (value: unknown): number | undefined =>
+  typeof value === "number" ? value : undefined
+
+const requiredString = (value: unknown, response: Response, message: string): string => {
+  if (typeof value !== "string") throw new CloudApiError(message, response.status)
+  return value
+}
+
 export interface DeviceCodeGrant {
   deviceCode: string
   userCode: string
@@ -43,23 +63,16 @@ export const requestDeviceCode = async (
     client_id: MACHINE_CLIENT_ID
   })
   if (!response.ok) throw new CloudApiError("device code request failed", response.status)
-  const body = (await response.json()) as {
-    device_code: string
-    user_code: string
-    verification_uri: string
-    verification_uri_complete?: string
-    interval?: number
-    expires_in?: number
-  }
+  const body = await readJson(response)
+  const malformed = "malformed device code response"
+  const verificationUriComplete = optionalString(body.verification_uri_complete)
   return {
-    deviceCode: body.device_code,
-    userCode: body.user_code,
-    verificationUri: body.verification_uri,
-    ...(body.verification_uri_complete !== undefined
-      ? { verificationUriComplete: body.verification_uri_complete }
-      : {}),
-    interval: body.interval ?? 5,
-    expiresIn: body.expires_in ?? 1800
+    deviceCode: requiredString(body.device_code, response, malformed),
+    userCode: requiredString(body.user_code, response, malformed),
+    verificationUri: requiredString(body.verification_uri, response, malformed),
+    ...(verificationUriComplete !== undefined ? { verificationUriComplete } : {}),
+    interval: optionalNumber(body.interval) ?? 5,
+    expiresIn: optionalNumber(body.expires_in) ?? 1800
   }
 }
 
@@ -81,11 +94,14 @@ export const pollDeviceToken = async (
     client_id: MACHINE_CLIENT_ID
   })
   if (response.ok) {
-    const body = (await response.json()) as { access_token: string }
-    return { status: "granted", sessionToken: body.access_token }
+    const body = await readJson(response)
+    return {
+      status: "granted",
+      sessionToken: requiredString(body.access_token, response, "malformed device token response")
+    }
   }
-  const body = (await response.json().catch(() => ({}))) as { error?: string }
-  switch (body.error) {
+  const error = optionalString((await readErrorJson(response)).error)
+  switch (error) {
     case "authorization_pending":
       return { status: "pending" }
     case "slow_down":
@@ -95,7 +111,7 @@ export const pollDeviceToken = async (
     case "expired_token":
       return { status: "expired" }
     default:
-      throw new CloudApiError(body.error ?? "device token poll failed", response.status)
+      throw new CloudApiError(error ?? "device token poll failed", response.status)
   }
 }
 
@@ -125,13 +141,13 @@ export const provisionMachine = async (
     { authorization: `Bearer ${sessionToken}` }
   )
   if (!response.ok) throw new CloudApiError("machine credential creation failed", response.status)
-  const body = (await response.json()) as { key: string }
+  const body = await readJson(response)
   return {
     serverUrl,
     deviceId,
     publicKey: keys.publicKey,
     secretKey: keys.secretKey,
-    apiKey: body.key
+    apiKey: requiredString(body.key, response, "malformed machine credential response")
   }
 }
 
@@ -156,14 +172,25 @@ export interface CloudInstanceInfo {
   authProviders: string[]
 }
 
+const isArrayOf = (value: unknown, type: "string" | "number"): boolean =>
+  Array.isArray(value) && value.every((entry) => typeof entry === type)
+
+const isCloudInstanceInfo = (value: unknown): value is CloudInstanceInfo =>
+  isRecord(value) &&
+  value.service === "codevisor-cloud" &&
+  typeof value.instance === "string" &&
+  typeof value.version === "string" &&
+  isArrayOf(value.protocols, "number") &&
+  isArrayOf(value.authProviders, "string")
+
 export const discoverInstance = async (
   fetchImpl: FetchLike,
   serverUrl: string
 ): Promise<CloudInstanceInfo> => {
   const response = await fetchImpl(`${serverUrl}/.well-known/codevisor`)
   if (!response.ok) throw new CloudApiError("instance discovery failed", response.status)
-  const body = (await response.json()) as CloudInstanceInfo
-  if (body.service !== "codevisor-cloud") {
+  const body: unknown = await response.json()
+  if (!isCloudInstanceInfo(body)) {
     throw new CloudApiError("not a codevisor cloud instance", 200)
   }
   return body
@@ -218,17 +245,15 @@ export const createMachineInvite = async (
     method: "POST",
     headers: { "x-api-key": credentials.apiKey }
   })
-  const body = (await response.json().catch(() => ({}))) as {
-    token?: string
-    expiresAt?: string
-    error?: string
-  }
-  if (!response.ok || body.token === undefined || body.expiresAt === undefined) {
-    throw new CloudApiError(body.error ?? "machine invite failed", response.status)
+  const body = await readErrorJson(response)
+  const token = optionalString(body.token)
+  const expiresAt = optionalString(body.expiresAt)
+  if (!response.ok || token === undefined || expiresAt === undefined) {
+    throw new CloudApiError(optionalString(body.error) ?? "machine invite failed", response.status)
   }
   return {
-    code: encodeMachineInviteCode(serverUrl, body.token),
-    expiresAt: body.expiresAt
+    code: encodeMachineInviteCode(serverUrl, token),
+    expiresAt
   }
 }
 
@@ -247,16 +272,20 @@ export const redeemMachineInvite = async (
     deviceId,
     publicKey: keys.publicKey
   })
-  const body = (await response.json().catch(() => ({}))) as { key?: string; error?: string }
-  if (!response.ok || body.key === undefined) {
-    throw new CloudApiError(body.error ?? "machine invite redemption failed", response.status)
+  const body = await readErrorJson(response)
+  const apiKey = optionalString(body.key)
+  if (!response.ok || apiKey === undefined) {
+    throw new CloudApiError(
+      optionalString(body.error) ?? "machine invite redemption failed",
+      response.status
+    )
   }
   return {
     serverUrl: invite.serverUrl,
     deviceId,
     publicKey: keys.publicKey,
     secretKey: keys.secretKey,
-    apiKey: body.key
+    apiKey
   }
 }
 
@@ -270,7 +299,7 @@ export const removeMachinePeer = async (
     { method: "DELETE", headers: { "x-api-key": credentials.apiKey } }
   )
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string }
-    throw new CloudApiError(body.error ?? "machine removal failed", response.status)
+    const error = optionalString((await readErrorJson(response)).error)
+    throw new CloudApiError(error ?? "machine removal failed", response.status)
   }
 }

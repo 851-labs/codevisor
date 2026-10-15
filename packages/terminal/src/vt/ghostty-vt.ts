@@ -53,18 +53,36 @@ interface GhosttyExports {
   readonly ghostty_formatter_free: (formatter: number) => void
 }
 
-interface FieldLayout {
-  readonly offset: number
-}
+const GHOSTTY_FUNCTIONS = [
+  "ghostty_type_json",
+  "ghostty_wasm_alloc",
+  "ghostty_wasm_free",
+  "ghostty_wasm_alloc_opaque",
+  "ghostty_wasm_free_opaque",
+  "ghostty_wasm_take_opaque",
+  "ghostty_free",
+  "ghostty_terminal_new",
+  "ghostty_terminal_free",
+  "ghostty_terminal_resize",
+  "ghostty_terminal_vt_write",
+  "ghostty_terminal_set",
+  "ghostty_terminal_get",
+  "ghostty_terminal_continuation_alloc",
+  "ghostty_formatter_terminal_new",
+  "ghostty_formatter_format_alloc",
+  "ghostty_formatter_free"
+] as const satisfies ReadonlyArray<keyof GhosttyExports>
+
+export const isGhosttyExports = (
+  exports: WebAssembly.Exports
+): exports is WebAssembly.Exports & GhosttyExports =>
+  exports.memory instanceof WebAssembly.Memory &&
+  exports.__indirect_function_table instanceof WebAssembly.Table &&
+  GHOSTTY_FUNCTIONS.every((name) => typeof exports[name] === "function")
+
 interface StructLayout {
   readonly size: number
-  readonly fields: Record<string, FieldLayout>
-}
-interface EnumLayout {
-  readonly values: Record<string, number>
-}
-interface TypeLayout {
-  readonly types: Record<string, StructLayout & EnumLayout>
+  readonly offset: (field: string) => number
 }
 
 const CALLBACK_TRAMPOLINE = new Uint8Array([
@@ -106,6 +124,11 @@ const RESET_PREFIX = new TextEncoder().encode("\u001bc\u001b[3J")
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
+/* v8 ignore start */
+const layoutField = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined
+/* v8 ignore stop */
+
 const allocated = (ptr: number): number => {
   if (ptr === 0) throw new Error("libghostty-vt is out of memory")
   return ptr >>> 0
@@ -113,14 +136,15 @@ const allocated = (ptr: number): number => {
 
 class GhosttyVt {
   readonly exports: GhosttyExports
-  private readonly layout: TypeLayout
+  private readonly layout: unknown
   private readonly replyHandlers = new Map<number, (reply: Uint8Array) => void>()
   private replyCallbackIndex: number | undefined
   private nextHandle = 1
 
   constructor(bytes: Uint8Array<ArrayBuffer>) {
     const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {})
-    const raw = instance.exports as unknown as GhosttyExports
+    const raw = instance.exports
+    if (!isGhosttyExports(raw)) throw new Error("libghostty-vt exports are incompatible")
     this.exports = {
       ...raw,
       ghostty_type_json: () => raw.ghostty_type_json() >>> 0,
@@ -132,7 +156,7 @@ class GhosttyVt {
     const memory = this.bytes()
     let end = jsonPtr
     while (memory[end] !== 0) end += 1
-    this.layout = JSON.parse(decoder.decode(memory.subarray(jsonPtr, end))) as TypeLayout
+    this.layout = JSON.parse(decoder.decode(memory.subarray(jsonPtr, end)))
   }
 
   bytes(): Uint8Array {
@@ -152,16 +176,26 @@ class GhosttyVt {
   }
 
   /* v8 ignore start */
+  layoutType(name: string): unknown {
+    return layoutField(layoutField(this.layout, "types"), name)
+  }
+
   enumValue(type: string, name: string): number {
-    const value = this.layout.types[type]?.values[name]
-    if (value === undefined) throw new Error(`libghostty-vt has no ${type}.${name}`)
+    const value = layoutField(layoutField(this.layoutType(type), "values"), name)
+    if (typeof value !== "number") throw new Error(`libghostty-vt has no ${type}.${name}`)
     return value
   }
 
   struct(name: string): StructLayout {
-    const layout = this.layout.types[name]
-    if (layout === undefined) throw new Error(`libghostty-vt has no struct ${name}`)
-    return layout
+    const layout = this.layoutType(name)
+    const size = layoutField(layout, "size")
+    if (typeof size !== "number") throw new Error(`libghostty-vt has no struct ${name}`)
+    const offset = (field: string): number => {
+      const value = layoutField(layoutField(layoutField(layout, "fields"), field), "offset")
+      if (typeof value !== "number") throw new Error(`libghostty-vt has no ${name}.${field}`)
+      return value
+    }
+    return { size, offset }
   }
   /* v8 ignore stop */
 
@@ -233,8 +267,8 @@ class GhosttyVt {
       this.bytes().fill(0, ptr, ptr + layout.size)
       this.check(this.exports.ghostty_terminal_get(terminal, this.data(data), ptr), data)
       const view = this.view()
-      const start = view.getUint32(ptr + layout.fields.ptr!.offset, true)
-      const len = view.getUint32(ptr + layout.fields.len!.offset, true)
+      const start = view.getUint32(ptr + layout.offset("ptr"), true)
+      const len = view.getUint32(ptr + layout.offset("len"), true)
       return decoder.decode(this.bytes().subarray(start, start + len))
     } finally {
       this.exports.ghostty_wasm_free(ptr, layout.size)
@@ -253,7 +287,7 @@ class GhosttyVt {
       })
       const table = this.exports.__indirect_function_table
       const index = table.grow(1)
-      table.set(index, trampoline.exports.t as () => void)
+      table.set(index, trampoline.exports.t)
       this.replyCallbackIndex = index
     }
     this.replyHandlers.set(handle, handler)
@@ -292,18 +326,18 @@ class GhosttyVt {
       const view = this.view()
       view.setUint32(ptr, options.size, true)
       view.setInt32(
-        ptr + options.fields.emit!.offset,
+        ptr + options.offset("emit"),
         this.enumValue("GhosttyFormatterFormat", emit),
         true
       )
-      view.setUint8(ptr + options.fields.trim!.offset, 1)
-      const extraPtr = ptr + options.fields.extra!.offset
+      view.setUint8(ptr + options.offset("trim"), 1)
+      const extraPtr = ptr + options.offset("extra")
       view.setUint32(extraPtr, extra.size, true)
-      const screenPtr = extraPtr + extra.fields.screen!.offset
+      const screenPtr = extraPtr + extra.offset("screen")
       view.setUint32(screenPtr, screen.size, true)
       if (emit === "VT") {
         for (const field of ["modes", "scrolling_region", "tabstops", "pwd", "keyboard"]) {
-          view.setUint8(extraPtr + extra.fields[field]!.offset, 1)
+          view.setUint8(extraPtr + extra.offset(field), 1)
         }
         for (const field of [
           "cursor",
@@ -313,7 +347,7 @@ class GhosttyVt {
           "kitty_keyboard",
           "charsets"
         ]) {
-          view.setUint8(screenPtr + screen.fields[field]!.offset, 1)
+          view.setUint8(screenPtr + screen.offset(field), 1)
         }
       }
       formatter = this.takeOpaque("formatter_terminal_new", (slot) =>

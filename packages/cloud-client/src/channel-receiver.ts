@@ -2,7 +2,8 @@ import {
   GATEWAY_CHANNEL_TYPE,
   type ChannelCloseReason,
   type CloudDeviceKind,
-  type RelayFrameHeader
+  type RelayFrameHeader,
+  isRecord
 } from "@codevisor/api"
 import { acceptChannel, openJson, type ChannelCipher } from "@codevisor/cloud-crypto"
 
@@ -146,25 +147,15 @@ export class ChannelReceiver {
       }
     }
     let cipher: ChannelCipher
-    let openPayload: {
-      channelType?: unknown
-      params?: unknown
-      compress?: unknown
-      flowControl?: unknown
-    }
+    let openPayload: unknown
     try {
       cipher = acceptChannel(this.options.secretKey, peerPublicKey, frame.ephemeralKey)
-      openPayload = openJson(cipher, frame.channelId, "opener-to-responder", 0, payload) as {
-        channelType?: unknown
-        params?: unknown
-        compress?: unknown
-        flowControl?: unknown
-      }
+      openPayload = openJson(cipher, frame.channelId, "opener-to-responder", 0, payload)
     } catch {
       this.#refuse(peerId, frame.channelId, "crypto-error")
       return
     }
-    if (typeof openPayload.channelType !== "string") {
+    if (!isRecord(openPayload) || typeof openPayload.channelType !== "string") {
       this.#refuse(peerId, frame.channelId, "protocol-error")
       return
     }

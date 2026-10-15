@@ -184,7 +184,7 @@ export const spawnAgyTerminal: AgyTerminalSpawner = async (request) => {
     cols: 160,
     rows: 48,
     cwd: request.cwd,
-    env: request.env as Record<string, string>,
+    env: request.env,
     name: "xterm-256color"
   })
   return {

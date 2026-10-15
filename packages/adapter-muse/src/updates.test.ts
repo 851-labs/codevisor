@@ -171,7 +171,7 @@ describe("models", () => {
       ...spark,
       isActive: false,
       isDefault: true,
-      variants: {},
+      variants: undefined,
       reasoningEffortVariants: [{ tier: "low" }, { tier: "max" }],
       defaultReasoningEffort: "max"
     }
@@ -190,7 +190,7 @@ describe("models", () => {
     expect(configOptions({ models: [plain], modelId: undefined, effort: undefined })).toEqual([
       expect.objectContaining({ currentValue: "lite" })
     ])
-    expect(modelTiers({ ...plain, variants: ["low", 3 as unknown as string] })).toEqual(["low"])
+    expect(modelTiers({ ...plain, variants: ["low", 3] })).toEqual(["low"])
     expect(modelTiers(undefined)).toEqual([])
     expect(defaultTier({ ...spark, defaultReasoningEffort: "ultra" })).toBe("medium")
     expect(defaultTier({ ...lite, variants: ["xhigh", "low"] })).toBe("xhigh")
@@ -359,7 +359,7 @@ describe("questions", () => {
       }
     })
     expect(
-      userInputQuestion({ ...request, autoResolutionMs: undefined } as never).autoResolutionMs
+      userInputQuestion({ ...request, autoResolutionMs: undefined }).autoResolutionMs
     ).toBeUndefined()
   })
 })

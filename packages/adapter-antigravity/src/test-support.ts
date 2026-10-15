@@ -3,6 +3,7 @@ import { Effect } from "effect"
 
 import type { AgyTerminal, AgyTerminalSpawner } from "./auth.js"
 import type { AgyConnector, AgyProcess, AgyRunner, AgySpawnRequest } from "./client.js"
+import { record } from "./protocol.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -137,11 +138,11 @@ export const recorder = () => {
     outputs: () =>
       events
         .filter((event) => event.kind === "session.output")
-        .map((event) => event.payload as Record<string, unknown>),
+        .map((event) => record(event.payload)),
     updates: () =>
       events
         .filter((event) => event.kind === "session.updated")
-        .map((event) => event.payload as Record<string, unknown>)
+        .map((event) => record(event.payload))
   }
 }
 

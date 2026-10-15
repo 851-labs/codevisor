@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { MappedEvent } from "./items.js"
 import type { MuseItem } from "./protocol.js"
-import { makeMuseSubagents, type ViewPage } from "./subagents.js"
+import { makeMuseSubagents } from "./subagents.js"
 
 const CHILD = "child-1"
 
@@ -16,7 +16,16 @@ const agent = (fields: Partial<MuseItem> = {}): MuseItem => ({
   ...fields
 })
 
-const event = (cursor: number, method: string, params: Record<string, unknown> = {}) => ({
+interface ViewEvent {
+  readonly method: string
+  readonly params: Record<string, unknown>
+}
+
+const event = (
+  cursor: number,
+  method: string,
+  params: Record<string, unknown> = {}
+): ViewEvent => ({
   method,
   params: { sessionId: CHILD, viewCursor: `v:${CHILD}:${cursor}`, ...params }
 })
@@ -33,12 +42,12 @@ const read = (cursor: number, status: string, itemId = "r1") =>
   })
 
 const setup = (intervalMs = 1000) => {
-  const views = new Map<string, Array<ReturnType<typeof event>>>()
+  const views = new Map<string, Array<ViewEvent>>()
   const calls: Array<{ sessionId: string; cursor: string | undefined }> = []
   const sent: Array<MappedEvent> = []
   let failure: Error | undefined
   let gate: Promise<void> | undefined
-  const page = async (sessionId: string, cursor: string | undefined): Promise<ViewPage> => {
+  const page = async (sessionId: string, cursor: string | undefined) => {
     calls.push({ sessionId, cursor })
     const all = views.get(sessionId) ?? []
     await gate
@@ -60,7 +69,7 @@ const setup = (intervalMs = 1000) => {
     subagents,
     calls,
     sent,
-    append: (sessionId: string, ...added: Array<ReturnType<typeof event>>) =>
+    append: (sessionId: string, ...added: Array<ViewEvent>) =>
       views.set(sessionId, [...(views.get(sessionId) ?? []), ...added]),
     fail: (error: Error) => {
       failure = error
@@ -138,10 +147,7 @@ describe("Muse subagents", () => {
           status: "inProgress"
         }
       }),
-      {
-        method: "session/statusChanged",
-        params: { sessionId: CHILD }
-      } as unknown as ReturnType<typeof event>
+      { method: "session/statusChanged", params: { sessionId: CHILD } }
     )
     await vi.advanceTimersByTimeAsync(1000)
     expect(f.sent).toHaveLength(3)

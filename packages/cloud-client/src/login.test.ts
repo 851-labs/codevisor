@@ -1,3 +1,4 @@
+import { isRecord } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -15,6 +16,13 @@ import {
   requestDeviceCode,
   type FetchLike
 } from "./index.js"
+
+const sentJson = (init?: RequestInit): Record<string, unknown> => {
+  if (typeof init?.body !== "string") throw new Error("expected a JSON string request body")
+  const body: unknown = JSON.parse(init.body)
+  if (!isRecord(body)) throw new Error("expected a JSON object request body")
+  return body
+}
 
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -57,7 +65,7 @@ describe("requestDeviceCode", () => {
       expiresIn: 600
     })
     expect(calls[0]?.input).toBe("https://cloud.example/api/auth/device/code")
-    expect(JSON.parse(calls[0]?.init?.body as string)).toEqual({ client_id: MACHINE_CLIENT_ID })
+    expect(sentJson(calls[0]?.init)).toEqual({ client_id: MACHINE_CLIENT_ID })
   })
 
   it("applies defaults and surfaces failures", async () => {
@@ -73,6 +81,15 @@ describe("requestDeviceCode", () => {
     await expect(requestDeviceCode(failing.fetch, "https://cloud.example")).rejects.toThrow(
       CloudApiError
     )
+  })
+
+  it("rejects a grant that is missing its codes", async () => {
+    for (const body of [null, { device_code: "dc", verification_uri: "/device" }]) {
+      const malformed = fetchStub(() => jsonResponse(body))
+      await expect(requestDeviceCode(malformed.fetch, "https://cloud.example")).rejects.toThrow(
+        "malformed device code response"
+      )
+    }
   })
 })
 
@@ -93,6 +110,12 @@ describe("pollDeviceToken", () => {
     expect(await pollWithResponse({ error: "expired_token" }, 400)).toEqual({ status: "expired" })
   })
 
+  it("rejects a granted response without a session token", async () => {
+    await expect(pollWithResponse({ token_type: "bearer" }, 200)).rejects.toThrow(
+      "malformed device token response"
+    )
+  })
+
   it("throws on unexpected errors, including non-JSON bodies", async () => {
     await expect(pollWithResponse({ error: "invalid_grant" }, 400)).rejects.toThrow("invalid_grant")
     const broken = fetchStub(() => new Response("gateway timeout", { status: 504 }))
@@ -111,32 +134,34 @@ describe("provisionMachine", () => {
     expect(credentials.deviceId).toMatch(/[0-9a-f-]{36}/)
     expect(credentials.publicKey).not.toBe("")
     expect(credentials.secretKey).not.toBe("")
-    const body = JSON.parse(calls[0]?.init?.body as string) as {
-      name: string
-      metadata: { deviceId: string; publicKey: string }
-    }
-    expect(body.name).toBe("vps-1")
-    expect(body.metadata).toEqual({
-      deviceId: credentials.deviceId,
-      publicKey: credentials.publicKey
+    expect(sentJson(calls[0]?.init)).toEqual({
+      name: "vps-1",
+      metadata: {
+        deviceId: credentials.deviceId,
+        publicKey: credentials.publicKey
+      }
     })
-    const requestHeaders = (calls[0]?.init?.headers ?? {}) as Record<string, string>
-    expect(requestHeaders.authorization).toBe("Bearer session")
+    expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBe("Bearer session")
   })
 
   it("surfaces failures with status", async () => {
     const failing = fetchStub(() => jsonResponse({}, 401))
-    const error = await provisionMachine(failing.fetch, "https://c", "bad", "vps").catch(
-      (thrown: CloudApiError) => thrown
+    const failure = provisionMachine(failing.fetch, "https://c", "bad", "vps")
+    await expect(failure).rejects.toBeInstanceOf(CloudApiError)
+    await expect(failure).rejects.toMatchObject({ status: 401 })
+
+    const keyless = fetchStub(() => jsonResponse({}))
+    await expect(provisionMachine(keyless.fetch, "https://c", "s", "vps")).rejects.toThrow(
+      "malformed machine credential response"
     )
-    expect(error).toBeInstanceOf(CloudApiError)
-    expect((error as CloudApiError).status).toBe(401)
   })
 
   it("accepts hostnames longer than the Cloud credential label limit", async () => {
     const { calls, fetch } = fetchStub((_input, init) => {
-      const body = JSON.parse(init?.body as string) as { name: string }
-      return body.name.length <= 32 ? jsonResponse({ key: "api-key" }) : jsonResponse({}, 400)
+      const { name } = sentJson(init)
+      return typeof name === "string" && name.length <= 32
+        ? jsonResponse({ key: "api-key" })
+        : jsonResponse({}, 400)
     })
     const credentials = await provisionMachine(
       fetch,
@@ -145,7 +170,7 @@ describe("provisionMachine", () => {
       "codevisor-dev-dev-direct-cream--5ea97d382f"
     )
     expect(credentials.apiKey).toBe("api-key")
-    expect(JSON.parse(calls[0]?.init?.body as string).name).toBe("codevisor-dev-dev-direct-cream--")
+    expect(sentJson(calls[0]?.init).name).toBe("codevisor-dev-dev-direct-cream--")
   })
 })
 
@@ -164,10 +189,23 @@ describe("discoverInstance", () => {
     expect(info.instance).toBe("Test")
     expect(good.calls[0]?.input).toBe("https://cloud.example/.well-known/codevisor")
 
-    const wrongService = fetchStub(() => jsonResponse({ service: "something-else" }))
-    await expect(discoverInstance(wrongService.fetch, "https://x")).rejects.toThrow(
-      "not a codevisor cloud instance"
-    )
+    for (const body of [
+      null,
+      { service: "something-else" },
+      { service: "codevisor-cloud", instance: "Test", version: "0.1.0" },
+      {
+        service: "codevisor-cloud",
+        instance: "Test",
+        version: "0.1.0",
+        protocols: [1],
+        authProviders: [7]
+      }
+    ]) {
+      const wrongService = fetchStub(() => jsonResponse(body))
+      await expect(discoverInstance(wrongService.fetch, "https://x")).rejects.toThrow(
+        "not a codevisor cloud instance"
+      )
+    }
     const missing = fetchStub(() => jsonResponse({}, 404))
     await expect(discoverInstance(missing.fetch, "https://x")).rejects.toThrow(
       "instance discovery failed"
@@ -219,8 +257,7 @@ describe("machine invites", () => {
     const redeemed = fetchStub(() => jsonResponse({ key: "new-key" }))
     const credentials = await redeemMachineInvite(redeemed.fetch, invite.code, "hetzner-1")
     expect(redeemed.calls[0]?.input).toBe("http://localhost:8787/api/machine/invites/redeem")
-    const sent = JSON.parse(redeemed.calls[0]?.init?.body as string) as Record<string, string>
-    expect(sent).toEqual({
+    expect(sentJson(redeemed.calls[0]?.init)).toEqual({
       token,
       name: "hetzner-1",
       deviceId: credentials.deviceId,
