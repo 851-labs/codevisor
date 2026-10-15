@@ -59,6 +59,7 @@ describe("durable session checkpoints", () => {
         closers.forEach((handler) => handler())
       }
     }
+    const closed = new Promise<void>((resolve) => socket.on("close", resolve))
     const sink: EventSink = socket
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
     try {
@@ -78,7 +79,7 @@ describe("durable session checkpoints", () => {
       ])
       await vi.advanceTimersByTimeAsync(25_000)
       failReplay(new Error("database unavailable"))
-      await vi.advanceTimersByTimeAsync(0)
+      await closed
       expect(socket.readyState).toBe(3)
     } finally {
       socket.close()
