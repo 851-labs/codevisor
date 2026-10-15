@@ -304,7 +304,7 @@ async function resolveCloudSession(cloudUrl, ownedCloud) {
     }
   }
   console.warn(
-    `Cloud dev instance unavailable (${lastError instanceof Error ? lastError.message : lastError}); continuing without it.`
+    `Cloud dev instance unavailable (${lastError instanceof Error ? lastError.message : String(lastError)}); continuing without it.`
   )
   return undefined
 }

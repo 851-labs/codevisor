@@ -1,4 +1,4 @@
-import { type RawData, WebSocket } from "ws"
+import { WebSocket } from "ws"
 
 interface PendingCommand {
   readonly resolve: (value: unknown) => void
@@ -26,7 +26,7 @@ type SessionRecoveryHandler = (command: FailedSessionCommand) => Promise<string 
 
 interface CdpSocket {
   readonly readyState: number
-  on(event: "message", listener: (data: RawData) => void): unknown
+  on(event: "message", listener: (data: Buffer) => void): unknown
   on(event: "error", listener: (error: Error) => void): unknown
   on(event: "close", listener: () => void): unknown
   once(event: "close", listener: () => void): unknown
@@ -156,7 +156,7 @@ export class CdpConnection {
     })
   }
 
-  #receive(data: RawData): void {
+  #receive(data: Buffer): void {
     let message: {
       id?: unknown
       result?: unknown
@@ -176,10 +176,12 @@ export class CdpConnection {
       this.#pending.delete(message.id)
       clearTimeout(pending.timer)
       if (message.error !== undefined) {
+        const summary =
+          typeof message.error.message === "string"
+            ? message.error.message
+            : "Browser command failed"
         const detail = typeof message.error.data === "string" ? `: ${message.error.data}` : ""
-        pending.reject(
-          new Error(`${String(message.error.message ?? "Browser command failed")}${detail}`)
-        )
+        pending.reject(new Error(`${summary}${detail}`))
       } else pending.resolve(message.result ?? {})
       return
     }
@@ -228,7 +230,7 @@ export const evaluatedValue = (response: unknown): unknown => {
   if (result === undefined) throw new Error("Browser evaluation returned no result")
   if (!("value" in result)) {
     throw new Error(
-      `Browser evaluation could not be serialized: ${String(result.description ?? "unknown")}`
+      `Browser evaluation could not be serialized: ${typeof result.description === "string" ? result.description : "unknown"}`
     )
   }
   return result.value

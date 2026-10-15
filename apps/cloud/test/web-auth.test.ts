@@ -38,7 +38,7 @@ describe("web auth navigation", () => {
     await Promise.all(
       ["/login", "/login/github", "/dev-login"].map(async (path) => {
         const response = await worker.fetch(
-          new Request(`${BASE}${path}?${new URLSearchParams({ redirect })}`),
+          new Request(`${BASE}${path}?${new URLSearchParams({ redirect }).toString()}`),
           { ...baseEnv, DEV_AUTH: "1" }
         )
         expect(response.status).toBe(400)

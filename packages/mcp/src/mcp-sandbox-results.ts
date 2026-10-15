@@ -111,11 +111,12 @@ const callToolErrorMessage = (result: CallToolResult): string => {
 }
 
 const sandboxTextBlocks = (content: ReadonlyArray<unknown>): Array<string> =>
-  content.flatMap((block) =>
-    typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text"
-      ? [String((block as { text?: unknown }).text ?? "")]
-      : []
-  )
+  content.flatMap((block) => {
+    if (typeof block !== "object" || block === null) return []
+    const { type, text } = block as { type?: unknown; text?: unknown }
+    if (type !== "text") return []
+    return [typeof text === "string" ? text : ""]
+  })
 
 const sandboxArtifactReferences = (content: ReadonlyArray<unknown>): Array<unknown> =>
   content.filter(

@@ -46,6 +46,9 @@ const manifest = (version: string, buildNumber: number): string =>
 
 const customFeedURL = "https://feeds.example.test/appcast-dev.xml"
 
+const requestURL = (input: Parameters<typeof fetch>[0]): string =>
+  input instanceof Request ? input.url : input.toString()
+
 const db = {
   getSyncEntries: () => Effect.succeed([]),
   setUpdateInfo: (info: unknown) => Effect.succeed(info)
@@ -60,7 +63,7 @@ describe("makeSelfUpdater release resolution", () => {
     dataDir = mkdtempSync(join(tmpdir(), "codevisor-self-updater-"))
     feedStatus = 200
     fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
-      const url = String(input)
+      const url = requestURL(input)
       if (url === DEFAULT_ALPHA_SERVER_MANIFEST_URL)
         return new Response(manifest("0.1.102-alpha.661", 661))
       if (url === DEFAULT_STABLE_SERVER_MANIFEST_URL) return new Response(manifest("0.1.101", 644))
@@ -76,7 +79,7 @@ describe("makeSelfUpdater release resolution", () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  const requestedURLs = () => fetch.mock.calls.map((call) => String(call[0]))
+  const requestedURLs = () => fetch.mock.calls.map((call) => requestURL(call[0]))
 
   const updater = () =>
     makeSelfUpdater({

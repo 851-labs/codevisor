@@ -124,7 +124,7 @@ describe("direct pipe on a running server", () => {
 
     const socket = new WebSocket(`${server.url.replace("http:", "ws:")}/v1/direct`)
     const greeting = await new Promise<string>((resolve, reject) => {
-      socket.on("message", (data) => resolve(String(data)))
+      socket.on("message", (data: Buffer) => resolve(data.toString()))
       socket.on("error", reject)
     })
     expect(greeting).toBe("welcome-from-host")

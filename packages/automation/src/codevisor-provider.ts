@@ -212,7 +212,9 @@ const invokeApiTool = async (
       parameter.name,
       spec.name === "server.update_status" && parameter.name === "refresh" && value === true
         ? "1"
-        : String(value)
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value)
     )
   }
 

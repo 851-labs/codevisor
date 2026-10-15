@@ -290,7 +290,7 @@ describe("pane websockets", () => {
       `ws://127.0.0.1:${outer.port}/v1/plugins/owner.example/app/live?codevisorPaneToken=${token}&room=7`
     )
     const reply = await new Promise<string>((resolve) => {
-      socket.on("message", (data) => resolve(String(data)))
+      socket.on("message", (data: Buffer) => resolve(data.toString()))
       socket.send("hello")
     })
     expect(reply).toBe("echo:hello")
@@ -306,7 +306,7 @@ describe("pane websockets", () => {
       `ws://127.0.0.1:${outer.port}/v1/plugins/owner.example/app/live`
     )
     const reply = await new Promise<string>((resolve) => {
-      socket.on("message", (data) => resolve(String(data)))
+      socket.on("message", (data: Buffer) => resolve(data.toString()))
       socket.send("ping")
     })
     expect(reply).toBe("echo:ping")
@@ -334,7 +334,7 @@ describe("pane websockets", () => {
     const outer = await makeOuterServer(manager)
     const socket = await openSocket(`ws://127.0.0.1:${outer.port}/v1/plugins/owner.example/app`)
     const reply = await new Promise<string>((resolve) => {
-      socket.on("message", (data) => resolve(String(data)))
+      socket.on("message", (data: Buffer) => resolve(data.toString()))
       socket.send("root")
     })
     expect(reply).toBe("echo:root")

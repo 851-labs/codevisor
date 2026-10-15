@@ -53,7 +53,7 @@ describe("fetchPluginIcon", () => {
   it("fetches plugin and pane SVG paths with signed context and normalizes them to PNG", async () => {
     const urls: string[] = []
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      urls.push(String(input))
+      urls.push(input instanceof Request ? input.url : input.toString())
       expect(new Headers(init?.headers).get("accept")).toContain("image/svg+xml")
       expect(new Headers(init?.headers).get("x-test-signature")).toBe("signed")
       return response(safeSvg, "image/svg+xml; charset=utf-8")

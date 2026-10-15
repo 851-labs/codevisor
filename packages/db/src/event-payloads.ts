@@ -66,6 +66,9 @@ export const payloadText = (payload: JsonRecord): string | undefined => {
   return content?.type === "text" && typeof content.text === "string" ? content.text : undefined
 }
 
+export const payloadMarkdown = (payload: JsonRecord): string | undefined =>
+  typeof payload.markdown === "string" ? payload.markdown : undefined
+
 export const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   switch (update) {

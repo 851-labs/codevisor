@@ -169,15 +169,13 @@ describe("Browser live preview", () => {
     expect(
       chrome.sent
         .filter((sent) => sent.method.endsWith("Screencast"))
-        .map(
-          ({ method, session, params }) => `${method}@${session}:${String(params.maxWidth ?? "")}`
-        )
+        .map(({ method, session, params }) => [method, session, params.maxWidth])
     ).toEqual([
-      "Page.startScreencast@cdp:tab-1:320",
-      "Page.stopScreencast@cdp:tab-1:",
-      "Page.startScreencast@cdp:tab-1:1000",
-      "Page.stopScreencast@cdp:tab-1:",
-      "Page.startScreencast@cdp:tab-2:1000"
+      ["Page.startScreencast", "cdp:tab-1", 320],
+      ["Page.stopScreencast", "cdp:tab-1", undefined],
+      ["Page.startScreencast", "cdp:tab-1", 1000],
+      ["Page.stopScreencast", "cdp:tab-1", undefined],
+      ["Page.startScreencast", "cdp:tab-2", 1000]
     ])
     expect(first.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
   })

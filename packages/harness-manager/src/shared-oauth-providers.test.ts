@@ -207,7 +207,10 @@ describe("shared OAuth provider adapters", () => {
   it("uses the provider's refresh grant and preserves optional rotated fields", async () => {
     const requests: Array<{ url: string; body: Record<string, string> }> = []
     const fetcher = (async (url, options) => {
-      requests.push({ url: String(url), body: JSON.parse(String(options?.body)) })
+      requests.push({
+        url: url instanceof Request ? url.url : url.toString(),
+        body: JSON.parse(options?.body as string)
+      })
       return Response.json({
         access_token: jwt({ ...claims, exp: 5678 }),
         refresh_token: "rotated",

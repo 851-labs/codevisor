@@ -102,7 +102,7 @@ export async function prepareCloudSession({ cloudProcess, cloudUrl, sharedEnviro
     console.log("")
   } catch (error) {
     console.error(
-      `Cloud dev instance unavailable (${error instanceof Error ? error.message : error}); continuing without it.`
+      `Cloud dev instance unavailable (${error instanceof Error ? error.message : String(error)}); continuing without it.`
     )
   }
 }

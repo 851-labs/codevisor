@@ -65,69 +65,6 @@
   "overrides": [
     {
       "files": [
-        "apps/cloud/test/plugin-moderation.test.ts",
-        "apps/screen-sharing-rig/scripts/screen-sharing-rig-client.ts",
-        "apps/server/src/cli/support.ts",
-        "apps/server/src/infra/browser-forward-proxy.test.ts",
-        "apps/server/src/infra/client-control.ts",
-        "apps/server/src/infra/cloud-bridge-socket.ts",
-        "apps/server/src/infra/cloud-proxy-handlers.ts",
-        "apps/server/src/infra/credential-coordinator.test.ts",
-        "apps/server/src/infra/linux-data-migration.test.ts",
-        "apps/server/src/infra/shared-claude-gateway.test.ts",
-        "apps/server/src/infra/tool-icons.test.ts",
-        "apps/server/src/routes/live-preview-socket.ts",
-        "apps/server/src/routes/net-direct.test.ts",
-        "apps/server/src/routes/net-direct.ts",
-        "apps/server/src/routes/terminal-socket.test.ts",
-        "apps/server/src/routes/terminal-socket.ts",
-        "apps/server/src/routes/terminals.test.ts",
-        "apps/server/src/serve-self-updater.test.ts",
-        "apps/server/src/terminal-proxy.ts",
-        "apps/server/src/test-support.ts",
-        "packages/adapter-claude/src/assistant-messages.ts",
-        "packages/adapter-claude/src/provider.test.ts",
-        "packages/adapter-claude/src/stream-events.ts",
-        "packages/adapter-codex/src/items.ts",
-        "packages/adapter-codex/src/notifications.ts",
-        "packages/adapter-muse/src/subagents.ts",
-        "packages/adapter-opencode/src/credential-plugin.test.ts",
-        "packages/adapter-pi/src/session.ts",
-        "packages/automation/src/browser-cdp.ts",
-        "packages/automation/src/browser-cookie-sync.ts",
-        "packages/automation/src/browser-locator-parse.ts",
-        "packages/automation/src/browser-locator-resolve.ts",
-        "packages/automation/src/browser-logs.ts",
-        "packages/automation/src/browser-preview.test.ts",
-        "packages/automation/src/browser-runtime-events.ts",
-        "packages/automation/src/browser-snapshot.ts",
-        "packages/automation/src/browser-use-extension-tabs.test.ts",
-        "packages/automation/src/browser-use-invoke-interaction.ts",
-        "packages/automation/src/browser-use-invoke-mouse.ts",
-        "packages/automation/src/browser-use-invoke-page.ts",
-        "packages/automation/src/browser-use-invoke-playwright.ts",
-        "packages/automation/src/browser-use-provider.ts",
-        "packages/automation/src/codevisor-provider.ts",
-        "packages/automation/src/computer-use-wait.ts",
-        "packages/db/src/events-service.ts",
-        "packages/db/src/setup-state.ts",
-        "packages/db/src/transcript-state.ts",
-        "packages/db/src/transcript-text-state.ts",
-        "packages/harness-manager/src/shared-oauth-providers.test.ts",
-        "packages/harness-manager/src/shared-provider-oauth.test.ts",
-        "packages/mcp/src/mcp-sandbox-results.ts",
-        "packages/plugins/src/plugin-icon.test.ts",
-        "packages/plugins/src/plugins-manager.test.ts",
-        "packages/plugins/src/test-support.ts",
-        "scripts/dev-macos-reuse.test.mjs",
-        "scripts/release/install.test.mjs"
-      ],
-      "rules": {
-        "typescript/no-base-to-string": "off"
-      }
-    },
-    {
-      "files": [
         "apps/cloud/src/credential-routes.ts",
         "apps/cloud/src/index.ts",
         "apps/cloud/src/machine-invites.ts",
@@ -241,22 +178,6 @@
       ],
       "rules": {
         "typescript/no-unsafe-type-assertion": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/cloud/src/pages/auth-navigation.ts",
-        "apps/cloud/test/web-auth.test.ts",
-        "packages/db/src/events-service.ts",
-        "packages/db/src/transcript-state.ts",
-        "packages/mcp/src/mcp-gateway-dispatch.ts",
-        "scripts/dev-cloud.mjs",
-        "scripts/dev-ios-worker.mjs",
-        "scripts/dev-macos-reuse.test.mjs",
-        "scripts/release/install.test.mjs"
-      ],
-      "rules": {
-        "typescript/restrict-template-expressions": "off"
       }
     }
   ]

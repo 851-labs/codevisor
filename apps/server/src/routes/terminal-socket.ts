@@ -195,7 +195,7 @@ export const attachTerminalSocket = async (
     webSocket.close()
     return
   }
-  webSocket.on("message", (data) => {
+  webSocket.on("message", (data: Buffer) => {
     let message: unknown
     try {
       message = JSON.parse(data.toString())

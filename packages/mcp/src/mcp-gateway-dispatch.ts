@@ -98,7 +98,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
     if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
-      throw new Error(`Unknown automation provider: ${provider.id}`)
+      throw new Error(`Unknown automation provider: ${String(provider.id)}`)
     }
     const definition = provider.tools.find((candidate) => candidate.name === toolName)
     if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)

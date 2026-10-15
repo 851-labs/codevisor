@@ -2,6 +2,11 @@ import type { BrowserRuntime } from "./browser-cdp-engine.js"
 
 type Entry = Readonly<Record<string, unknown>>
 
+const primitiveText = (value: unknown): string | undefined =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : undefined
+
 interface BrowserLogEntry {
   readonly level: string
   readonly message: string
@@ -11,13 +16,21 @@ interface BrowserLogEntry {
 
 function consoleMessage(entry: Entry): string {
   const args = Array.isArray(entry.args) ? (entry.args as Array<Entry>) : []
-  return args.map((value) => String(value.value ?? value.description ?? value.type ?? "")).join(" ")
+  return args
+    .map(
+      (value) =>
+        primitiveText(value.value) ??
+        primitiveText(value.description) ??
+        primitiveText(value.type) ??
+        ""
+    )
+    .join(" ")
 }
 
 function consoleEntry(entry: Entry): BrowserLogEntry {
   const message = consoleMessage(entry)
   return {
-    level: entry.type === "warning" ? "warn" : String(entry.type ?? "log"),
+    level: entry.type === "warning" ? "warn" : (primitiveText(entry.type) ?? "log"),
     message,
     timestamp: new Date(Number(entry.timestamp ?? Date.now())).toISOString()
   }
@@ -27,8 +40,8 @@ function logEntry(entry: Entry): BrowserLogEntry {
   const value =
     entry.entry !== null && typeof entry.entry === "object" ? (entry.entry as Entry) : {}
   return {
-    level: value.level === "warning" ? "warn" : String(value.level ?? "log"),
-    message: String(value.text ?? ""),
+    level: value.level === "warning" ? "warn" : (primitiveText(value.level) ?? "log"),
+    message: primitiveText(value.text) ?? "",
     timestamp: new Date(Number(value.timestamp ?? Date.now())).toISOString(),
     ...(typeof value.url === "string" ? { url: value.url } : {})
   }
@@ -45,7 +58,8 @@ function exceptionEntry(entry: Entry): BrowserLogEntry {
       : {}
   return {
     level: "error",
-    message: String(exception.description ?? detail.text ?? "Uncaught page error"),
+    message:
+      primitiveText(exception.description) ?? primitiveText(detail.text) ?? "Uncaught page error",
     timestamp: new Date(Number(entry.timestamp ?? Date.now())).toISOString(),
     ...(typeof detail.url === "string" ? { url: detail.url } : {})
   }

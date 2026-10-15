@@ -1,5 +1,5 @@
 import type { McpManager } from "@codevisor/mcp"
-import type { RawData, WebSocket } from "ws"
+import type { WebSocket } from "ws"
 
 export const LIVE_PREVIEW_SOCKET_PATH = "/v1/live-preview/socket"
 
@@ -22,7 +22,7 @@ export const attachLivePreviewSocket = (
       if (socket.bufferedAmount <= MAX_BUFFERED_BYTES) send({ type: "frame", data })
     }
   })
-  socket.on("message", (raw: RawData) => {
+  socket.on("message", (raw: Buffer) => {
     let message: { readonly type?: unknown; readonly dimension?: unknown }
     try {
       message = JSON.parse(raw.toString()) as typeof message

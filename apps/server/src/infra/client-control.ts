@@ -98,7 +98,7 @@ export class ClientControlBroker {
     socket.on("error", () => {
       if (this.connections.get(clientId) === connection) this.disconnect(clientId)
     })
-    socket.on("message", (data) => {
+    socket.on("message", (data: Buffer) => {
       if (this.connections.get(clientId) !== connection) return
       try {
         const frame = decode(ClientControlFrame)(JSON.parse(data.toString()))

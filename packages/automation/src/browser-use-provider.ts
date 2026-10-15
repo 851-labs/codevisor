@@ -277,10 +277,14 @@ export const makeBrowserUseProvider = (
         return jsonResult({ reset: true })
       }
       if (toolName === "js")
-        return repls.execute(context.sessionId, String(args.code ?? ""), async (name, nested) => {
-          if (context.invokeBrowser) return context.invokeBrowser(name, nested)
-          return browserResultValue(await provider.invoke(context, name, nested))
-        })
+        return repls.execute(
+          context.sessionId,
+          typeof args.code === "string" ? args.code : "",
+          async (name, nested) => {
+            if (context.invokeBrowser) return context.invokeBrowser(name, nested)
+            return browserResultValue(await provider.invoke(context, name, nested))
+          }
+        )
       if (toolName === "backends") {
         const extension = browserExtensionInstallation()
         const current = await connectionStatus(context)

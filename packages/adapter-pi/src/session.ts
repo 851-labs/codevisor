@@ -257,7 +257,8 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         if (target === undefined) throw new Error(`Unknown model: ${value}`)
         model = piModel(await client.command("set_model", target)) ?? model
         levels = await thinkingLevels()
-        level = String(record(await client.command("get_state")).thinkingLevel ?? level)
+        const { thinkingLevel } = record(await client.command("get_state"))
+        if (typeof thinkingLevel === "string") level = thinkingLevel
       } else if (configId === THINKING_OPTION_ID) {
         await client.command("set_thinking_level", { level: value })
         level = value
