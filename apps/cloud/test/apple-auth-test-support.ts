@@ -1,10 +1,12 @@
 import { env } from "cloudflare:test"
 import { exportJWK, exportPKCS8, generateKeyPair, jwtVerify, SignJWT, type JWTPayload } from "jose"
 import { afterEach, beforeAll, beforeEach, expect, vi } from "vitest"
+import { z } from "zod"
 
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import { BASE } from "./cloud-test-support.js"
+import { readJson } from "./json-test-support.js"
 
 export const issuer = "https://appleid.apple.com"
 export const clientId = "com.example.codevisor.cloud"
@@ -162,9 +164,12 @@ export class Browser {
   }
 
   async session() {
-    return (await this.request("/api/auth/get-session")).json() as Promise<{
-      user: { id: string; email: string; name: string }
-    } | null>
+    return readJson(
+      await this.request("/api/auth/get-session"),
+      z
+        .object({ user: z.looseObject({ id: z.string(), email: z.string(), name: z.string() }) })
+        .nullable()
+    )
   }
 
   async handoff() {

@@ -5,7 +5,6 @@ import { bodyLimit } from "hono/body-limit"
 import { createAuth } from "./auth.js"
 import type { CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
-import type { UserHub } from "./user-hub.js"
 
 export const credentialRoutes = new Hono<{ Bindings: CloudEnv }>()
 
@@ -53,7 +52,7 @@ credentialRoutes.post(
       return c.json({ error: "invalid credential command" }, 400)
     }
     const locationHint = hubLocationHint(c.req.raw.cf)
-    const hub = (c.env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(
+    const hub = c.env.USER_HUB.getByName(
       machine.userId,
       locationHint === undefined ? undefined : { locationHint }
     )

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { makeCodeExecutor } from "./code-executor.js"
+import { expectRecord, recordOrEmpty } from "./unknown-values.js"
 
 describe.sequential("Codevisor browser facade", () => {
   it("exposes Playwright-shaped page mouse and keyboard on tab.playwright", async () => {
@@ -37,10 +38,10 @@ describe.sequential("Codevisor browser facade", () => {
     )
     expect(result).toMatchObject({ result: "ok" })
     const actions = calls.filter((call) => call.path !== "browser.tabs")
-    expect(actions.every((call) => (call.args as { tabId?: string }).tabId === "tab-1")).toBe(true)
+    expect(actions.every((call) => recordOrEmpty(call.args).tabId === "tab-1")).toBe(true)
     expect(
       actions.map((call) => {
-        const { tabId: _, ...args } = call.args as Record<string, unknown>
+        const { tabId: _, ...args } = expectRecord(call.args, "browser call args")
         return { ...call, args }
       })
     ).toEqual([
@@ -80,10 +81,7 @@ describe.sequential("Codevisor browser facade", () => {
       {
         invoke: async (call) => {
           calls.push(call)
-          if (
-            call.path === "browser.tabs" &&
-            (call.args as { action?: string }).action === "list"
-          ) {
+          if (call.path === "browser.tabs" && recordOrEmpty(call.args).action === "list") {
             return {
               tabs: [
                 {
@@ -168,7 +166,7 @@ describe.sequential("Codevisor browser facade", () => {
               ]
             }
           }
-          const action = (call.args as { action: string }).action
+          const { action } = recordOrEmpty(call.args)
           if (action === "ensure") return { group: { id: 7, title: "Research" }, created: true }
           if (action === "list")
             return { groups: [{ id: 7, title: "Research", tabIds: ["11", "12", "13"] }] }

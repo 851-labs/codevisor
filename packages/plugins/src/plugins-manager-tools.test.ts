@@ -8,6 +8,7 @@ import { PluginsError } from "./plugins-error.js"
 import {
   advancingClock,
   exampleManifest,
+  expectPluginsError,
   makeDir,
   makeManager,
   nextRunningState,
@@ -27,9 +28,9 @@ const invalid = async (
     await attempt
     expect.unreachable("invocation should have failed")
   } catch (cause) {
-    expect(cause).toBeInstanceOf(PluginsError)
-    expect((cause as PluginsError).code).toBe(code)
-    expect((cause as PluginsError).message).toMatch(messagePart)
+    const error = expectPluginsError(cause)
+    expect(error.code).toBe(code)
+    expect(error.message).toMatch(messagePart)
   }
 }
 
@@ -70,9 +71,9 @@ describe("plugin tool invocation", () => {
     expect(verifyPluginContext(fake.env()["CODEVISOR_PLUGIN_CONTEXT_SECRET"], seen!.headers)).toBe(
       true
     )
-    const context = JSON.parse(
+    const context: unknown = JSON.parse(
       Buffer.from(String(seen?.headers["x-codevisor-context"]), "base64").toString("utf8")
-    ) as Record<string, unknown>
+    )
     expect(context).toEqual({
       cwd: "/tmp/project",
       pluginId: "owner.notes",
@@ -84,11 +85,11 @@ describe("plugin tool invocation", () => {
   it("defaults the caller context to empty", async () => {
     const { fake, manager } = makeManager({}, toolManifest)
     await manager.invokeTool("owner.notes", "notes_add", {})
-    const context = JSON.parse(
+    const context: unknown = JSON.parse(
       Buffer.from(String(fake.requests[0]?.headers["x-codevisor-context"]), "base64").toString(
         "utf8"
       )
-    ) as Record<string, unknown>
+    )
     expect(context).toEqual({ pluginId: "owner.notes", toolName: "notes_add" })
   })
 

@@ -62,10 +62,14 @@ export const machineTunnel = (
   let directAddrs: string[] = []
   if (storedAddr !== null) {
     try {
-      const parsed = JSON.parse(storedAddr) as { relayUrl?: unknown; directAddrs?: unknown }
-      if (typeof parsed.relayUrl === "string") relayUrl = parsed.relayUrl
-      if (Array.isArray(parsed.directAddrs)) {
-        directAddrs = parsed.directAddrs.filter((addr): addr is string => typeof addr === "string")
+      const parsed: unknown = JSON.parse(storedAddr)
+      if (typeof parsed === "object" && parsed !== null) {
+        if ("relayUrl" in parsed && typeof parsed.relayUrl === "string") relayUrl = parsed.relayUrl
+        if ("directAddrs" in parsed && Array.isArray(parsed.directAddrs)) {
+          directAddrs = parsed.directAddrs.filter(
+            (addr: unknown): addr is string => typeof addr === "string"
+          )
+        }
       }
     } catch {}
   }

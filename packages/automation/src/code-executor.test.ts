@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { CodeExecutionToolError, makeCodeExecutor, type CodeToolInvoker } from "./code-executor.js"
+import { recordOrEmpty } from "./unknown-values.js"
 
 const unavailableTool: CodeToolInvoker = {
   invoke: async ({ path }) => {
@@ -165,7 +166,7 @@ describe.sequential("Codevisor code executor", () => {
       {
         invoke: async (call) => {
           calls.push(call)
-          if (call.path === "browser.tabs" && (call.args as { action?: string }).action === "new") {
+          if (call.path === "browser.tabs" && recordOrEmpty(call.args).action === "new") {
             return {
               tabs: [
                 {

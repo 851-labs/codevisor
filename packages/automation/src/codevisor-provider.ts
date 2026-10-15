@@ -12,6 +12,13 @@ import {
   type CodevisorApiToolSpec,
   type JsonSchema
 } from "./codevisor-api-tools.js"
+import {
+  isRecord,
+  isStringArray,
+  recordOrEmpty,
+  recordOrUndefined,
+  type UnknownRecord
+} from "./unknown-values.js"
 
 const pathParameterNames = (path: string): ReadonlyArray<string> =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
@@ -26,10 +33,21 @@ const idArgumentNames = {
   files: "fileId"
 } as const
 
+const isIdResource = (segment: string | undefined): segment is keyof typeof idArgumentNames =>
+  segment !== undefined && Object.hasOwn(idArgumentNames, segment)
+
 const pathArgumentName = (spec: CodevisorApiToolSpec, parameterName: string): string => {
-  if (parameterName !== "id") return parameterName
-  return idArgumentNames[spec.path.split("/")[2] as keyof typeof idArgumentNames]
+  const resource = spec.path.split("/")[2]
+  if (parameterName !== "id" || !isIdResource(resource)) return parameterName
+  return idArgumentNames[resource]
 }
+
+const schemaProperties = (schema: JsonSchema): Record<string, object> =>
+  Object.fromEntries(
+    Object.entries(recordOrEmpty(schema.properties)).filter(
+      (entry): entry is [string, UnknownRecord] => isRecord(entry[1])
+    )
+  )
 
 const contextDefault = (
   spec: CodevisorApiToolSpec,
@@ -45,8 +63,8 @@ const contextDefault = (
   return undefined
 }
 
-const toolInputSchema = (spec: CodevisorApiToolSpec): JsonSchema => {
-  const properties: Record<string, unknown> = {}
+const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"] => {
+  const properties: Record<string, object> = {}
   const required = new Set<string>()
   let definitions: unknown
 
@@ -91,8 +109,8 @@ const toolInputSchema = (spec: CodevisorApiToolSpec): JsonSchema => {
       properties.body = schema
       required.add("body")
     } else {
-      Object.assign(properties, schema.properties as Record<string, unknown>)
-      for (const name of (schema.required as ReadonlyArray<string> | undefined) ?? []) {
+      Object.assign(properties, schemaProperties(schema))
+      for (const name of isStringArray(schema.required) ? schema.required : []) {
         if (!(spec.name === "sessions.create" && name === "projectId")) required.add(name)
       }
       definitions = schema.$defs
@@ -128,7 +146,7 @@ const tools: ReadonlyArray<Tool> = [
   ...CODEVISOR_API_TOOLS.map((spec): Tool => ({
     name: spec.name,
     description: spec.description,
-    inputSchema: toolInputSchema(spec) as Tool["inputSchema"]
+    inputSchema: toolInputSchema(spec)
   }))
 ]
 
@@ -141,26 +159,19 @@ const loopbackBaseUrl = (value: string): URL => {
 }
 
 const bodyPropertyNames = (schema: Schema.Constraint): ReadonlyArray<string> =>
-  Object.keys(objectSchema(schema).properties as Record<string, unknown>)
+  Object.keys(recordOrEmpty(objectSchema(schema).properties))
 
 const responseError = async (spec: CodevisorApiToolSpec, response: Response): Promise<Error> => {
   const text = await response.text()
   let detail = text.trim()
-  let typed: { readonly message?: unknown; readonly code?: unknown; readonly details?: unknown } =
-    {}
+  let typed: UnknownRecord = {}
   try {
-    const parsed = JSON.parse(text) as { readonly error?: unknown; readonly code?: unknown }
-    typed =
-      typeof parsed.error === "object" && parsed.error !== null
-        ? (parsed.error as typeof typed)
-        : { ...parsed, message: parsed.error }
+    const parsed = recordOrEmpty(JSON.parse(text))
+    typed = isRecord(parsed.error) ? parsed.error : { ...parsed, message: parsed.error }
     if (typeof typed.message === "string") detail = typed.message
   } catch {}
   const code = typeof typed.code === "string" ? typed.code : undefined
-  const details =
-    typeof typed.details === "object" && typed.details !== null
-      ? (typed.details as Readonly<Record<string, unknown>>)
-      : undefined
+  const details = recordOrUndefined(typed.details)
   const message = `${spec.name} failed (${response.status}${response.statusText.length === 0 ? "" : ` ${response.statusText}`}): ${detail || "Codevisor request failed"}`
   return code === undefined
     ? new Error(message)

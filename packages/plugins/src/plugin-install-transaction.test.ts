@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
 import { readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
-import { exampleManifest, makeDir } from "./test-support.js"
+import { exampleManifest, expectDefined, makeDir } from "./test-support.js"
 
 const cloneFixture: NonNullable<PluginInstallerDeps["clone"]> = async (url, _ref, destination) => {
   await cp(url, destination, { recursive: true })
@@ -112,7 +112,7 @@ describe("transactional plugin preparation", () => {
     const times = [new Date("2026-08-01T00:00:00Z"), new Date("2026-08-02T00:00:00Z")]
     const setup = setupSpawn(0)
     const { installer, root, stopped } = installerFixture({
-      receiptNow: () => times.shift() as Date,
+      receiptNow: () => expectDefined(times.shift()),
       spawnShell: setup.spawn
     })
     await installer.importRemote({ source })

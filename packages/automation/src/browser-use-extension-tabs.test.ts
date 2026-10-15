@@ -1,6 +1,5 @@
 import { once } from "node:events"
 import { rmSync, mkdtempSync, readFileSync } from "node:fs"
-import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -9,8 +8,36 @@ import { WebSocket, WebSocketServer } from "ws"
 
 import { observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import {
+  expectNumber,
+  expectRecord,
+  expectString,
+  optionalString,
+  recordOrUndefined
+} from "./unknown-values.js"
 
 const directories: string[] = []
+
+const relayUrl = (relay: WebSocketServer): string => {
+  const address = relay.address()
+  if (address === null || typeof address === "string") throw new Error("Relay has no TCP port")
+  return `ws://127.0.0.1:${address.port.toString()}`
+}
+
+const relayRequest = (data: Buffer) => {
+  const request = expectRecord(JSON.parse(data.toString()), "relay request")
+  return {
+    id: expectNumber(request.id, "relay request id"),
+    method: expectString(request.method, "relay request method"),
+    params: recordOrUndefined(request.params),
+    sessionId: optionalString(request.sessionId)
+  }
+}
+
+const relaySocket = (value: unknown): WebSocket => {
+  if (!(value instanceof WebSocket)) throw new Error("Relay accepted a non-WebSocket connection")
+  return value
+}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -43,19 +70,12 @@ describe("Browser Use extension tab lifecycle", () => {
     const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await once(relay, "listening")
     const serverSocket = once(relay, "connection")
-    const client = new WebSocket(
-      `ws://127.0.0.1:${(relay.address() as AddressInfo).port.toString()}`
-    )
+    const client = new WebSocket(relayUrl(relay))
     let creates = 0
     let targetPolls = 0
     const extensionCommands: string[] = []
     client.on("message", (data: Buffer) => {
-      const request = JSON.parse(data.toString()) as {
-        id: number
-        method: string
-        params?: Readonly<Record<string, unknown>>
-        sessionId?: string
-      }
+      const request = relayRequest(data)
       let result: unknown = {}
       if (request.method === "Target.createTarget") {
         creates += 1
@@ -121,7 +141,7 @@ describe("Browser Use extension tab lifecycle", () => {
     })
     await once(client, "open")
     const [socket] = await serverSocket
-    provider.acceptExtensionConnection(socket as WebSocket)
+    provider.acceptExtensionConnection(relaySocket(socket))
 
     try {
       const context = { sessionId: "new-tab-test", projectId: "new-tab-test" }
@@ -132,9 +152,7 @@ describe("Browser Use extension tab lifecycle", () => {
       })
       const content = response.content[0]
       if (content?.type !== "text") throw new Error("Missing tab result")
-      const result = JSON.parse(content.text) as {
-        tabs: Array<{ selected: boolean; url: string }>
-      }
+      const result = expectRecord(JSON.parse(content.text), "tabs result")
 
       expect(creates).toBe(1)
       expect(targetPolls).toBe(2)
@@ -155,9 +173,9 @@ describe("Browser Use extension tab lifecycle", () => {
         timeoutMs: 1_000
       })
       if (download.content[0]?.type !== "text") throw new Error("Missing extension download")
-      const downloadValue = JSON.parse(download.content[0].text) as { downloadId: string }
+      const downloadValue = expectRecord(JSON.parse(download.content[0].text), "download result")
       const path = await provider.invoke(context, "playwright.downloadPath", {
-        downloadId: downloadValue.downloadId,
+        downloadId: expectString(downloadValue.downloadId, "download id"),
         timeoutMs: 1_000
       })
       if (path.content[0]?.type !== "text") throw new Error("Missing extension download path")
@@ -182,19 +200,12 @@ describe("Browser Use extension tab lifecycle", () => {
     const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await once(relay, "listening")
     const serverSocket = once(relay, "connection")
-    const client = new WebSocket(
-      `ws://127.0.0.1:${(relay.address() as AddressInfo).port.toString()}`
-    )
+    const client = new WebSocket(relayUrl(relay))
     let attachCount = 0
     let rejectNextSessionCommand: string | undefined
     const evaluatedSessions: string[] = []
     client.on("message", (data: Buffer) => {
-      const request = JSON.parse(data.toString()) as {
-        id: number
-        method: string
-        params?: Readonly<Record<string, unknown>>
-        sessionId?: string
-      }
+      const request = relayRequest(data)
       if (request.method === "Target.getTargets") {
         client.send(
           JSON.stringify({
@@ -238,7 +249,7 @@ describe("Browser Use extension tab lifecycle", () => {
     })
     await once(client, "open")
     const [socket] = await serverSocket
-    provider.acceptExtensionConnection(socket as WebSocket)
+    provider.acceptExtensionConnection(relaySocket(socket))
 
     try {
       const context = { sessionId: "session-recovery-test", projectId: "session-recovery-test" }

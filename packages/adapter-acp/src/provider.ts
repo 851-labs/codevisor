@@ -222,6 +222,7 @@ export const makeAcpProvider = (
         }
         return resolved
       })
+      const env = yield* adapterPromise("resolveEnvironment", () => environment.envFor(cwd))
       return yield* connector.connect(
         {
           args: launch.args,
@@ -229,7 +230,7 @@ export const makeAcpProvider = (
           cwd,
           env: launchEnv(
             {
-              ...withoutEnv(environment.env, account?.unsetEnv),
+              ...withoutEnv(env, account?.unsetEnv),
               ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
               ...account?.env
             },

@@ -208,7 +208,8 @@ export const restoreWorkspaceWorktree = async (
 
     const project = await getProjectOrFail(services.db, workspace.projectId)
     const location = localLocationOrFail(serverId, project)
-    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+    const environment = await (services.resolveGitEnvironment?.(location.folderPath) ??
+      Promise.resolve(process.env))
     const taken = new Set(
       (await run(services.db.listWorktrees(workspace.projectId)))
         .filter((candidate) => candidate.serverId === serverId)

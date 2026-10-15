@@ -31,10 +31,7 @@ type HonoEnv = { Bindings: CloudEnv }
 
 const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
   const locationHint = hubLocationHint(cf)
-  return (env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(
-    userId,
-    locationHint === undefined ? undefined : { locationHint }
-  )
+  return env.USER_HUB.getByName(userId, locationHint === undefined ? undefined : { locationHint })
 }
 
 const sessionUserId = async (env: CloudEnv, headers: Headers): Promise<string | undefined> => {
@@ -171,8 +168,8 @@ const metadataDeviceId = (raw: string | null): string | undefined => {
       return undefined
     }
   }
-  const deviceId = (value as { deviceId?: unknown } | null)?.deviceId
-  return typeof deviceId === "string" ? deviceId : undefined
+  if (typeof value !== "object" || value === null || !("deviceId" in value)) return undefined
+  return typeof value.deviceId === "string" ? value.deviceId : undefined
 }
 
 const removeMachine = async (

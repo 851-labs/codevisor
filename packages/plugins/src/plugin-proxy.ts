@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { request as httpRequest } from "node:http"
 import { connect } from "node:net"
-import type { Socket } from "node:net"
+import type { Duplex } from "node:stream"
 
 const HOP_BY_HOP_REQUEST_HEADERS = new Set([
   "authorization",
@@ -105,8 +105,8 @@ export const forwardHttp = (options: ForwardHttpOptions): Promise<ForwardHttpOut
 export interface SpliceUpgradeOptions {
   readonly port: number
   readonly targetPath: string
-  readonly request: IncomingMessage
-  readonly socket: Socket
+  readonly request: Pick<IncomingMessage, "method" | "rawHeaders">
+  readonly socket: Duplex
   readonly head: Buffer
   readonly contextHeaders: Readonly<Record<string, string>>
   readonly onClose?: () => void
@@ -132,15 +132,17 @@ export const spliceUpgrade = (options: SpliceUpgradeOptions): void => {
   options.socket.on("close", notifyClose)
   upstream.on("connect", () => {
     const lines = [`${options.request.method} ${options.targetPath} HTTP/1.1`]
-    const raw = options.request.rawHeaders
-    for (let index = 0; index < raw.length; index += 2) {
-      const name = raw[index] as string
-      const value = raw[index + 1] as string
-      const lower = name.toLowerCase()
-      if (lower === "host" || lower === "authorization" || lower === "cookie") {
+    let headerName: string | undefined
+    for (const entry of options.request.rawHeaders) {
+      if (headerName === undefined) {
+        headerName = entry
         continue
       }
-      lines.push(`${name}: ${value}`)
+      const lower = headerName.toLowerCase()
+      if (lower !== "host" && lower !== "authorization" && lower !== "cookie") {
+        lines.push(`${headerName}: ${entry}`)
+      }
+      headerName = undefined
     }
     lines.push(`Host: 127.0.0.1:${options.port}`)
     for (const [name, value] of Object.entries(options.contextHeaders)) {

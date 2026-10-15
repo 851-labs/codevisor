@@ -5,6 +5,7 @@ import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { serializedBrowserOperation } from "./browser-runtime-lifecycle.js"
 import { runtimeKey } from "./browser-use-invoke.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
+import { recordOrUndefined } from "./unknown-values.js"
 
 export type SessionTargets = Map<string, Map<string, "created" | "claimed">>
 
@@ -23,9 +24,7 @@ export const trackPopups = (
 ): void => {
   active.eventDisposers.push(
     active.connection.on("Target.targetCreated", (params) => {
-      const info = params.targetInfo as
-        | { readonly targetId?: unknown; readonly type?: unknown; readonly openerId?: unknown }
-        | undefined
+      const info = recordOrUndefined(params.targetInfo)
       if (
         typeof info?.targetId !== "string" ||
         info.type !== "page" ||

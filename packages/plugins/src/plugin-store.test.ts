@@ -11,7 +11,7 @@ import {
   findPluginOrFail,
   scanPlugins
 } from "./plugin-store.js"
-import { PluginsError } from "./plugins-error.js"
+import { expectPluginsError } from "./test-support.js"
 
 const roots: Array<string> = []
 
@@ -167,8 +167,7 @@ describe("findPluginOrFail", () => {
       findPluginOrFail({ invalid: [], plugins: [] }, "owner.gone")
       expect.unreachable("should have thrown")
     } catch (cause) {
-      expect(cause).toBeInstanceOf(PluginsError)
-      expect((cause as PluginsError).code).toBe("notFound")
+      expect(expectPluginsError(cause).code).toBe("notFound")
     }
   })
 })

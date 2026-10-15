@@ -10,6 +10,7 @@ import {
   makeComputerUseProvider,
   requestMacScreenSharing
 } from "./computer-use-provider.js"
+import { expectRecord } from "./unknown-values.js"
 
 describe("macOS Computer Use bridge discovery", () => {
   it("shares the native socket address across users and Unicode data paths", () => {
@@ -33,7 +34,7 @@ describe("macOS Computer Use bridge discovery", () => {
           pending += data.toString()
           let newline: number
           while ((newline = pending.indexOf("\n")) >= 0) {
-            const request = JSON.parse(pending.slice(0, newline)) as Record<string, unknown>
+            const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
             pending = pending.slice(newline + 1)
             requests.push(request)
             socket.write(`${JSON.stringify({ id: request.id, result: { content: [] } })}\n`)
@@ -84,7 +85,7 @@ describe("Computer Use turn lifecycle", () => {
           pending += data.toString()
           let newline: number
           while ((newline = pending.indexOf("\n")) >= 0) {
-            const request = JSON.parse(pending.slice(0, newline)) as Record<string, unknown>
+            const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
             pending = pending.slice(newline + 1)
             requests.push(request)
             const result = {
@@ -158,7 +159,7 @@ describe("native Screen Sharing bridge", () => {
           pending += data.toString()
           let newline: number
           while ((newline = pending.indexOf("\n")) >= 0) {
-            const request = JSON.parse(pending.slice(0, newline)) as Record<string, unknown>
+            const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
             pending = pending.slice(newline + 1)
             requests.push(request)
             const failure =

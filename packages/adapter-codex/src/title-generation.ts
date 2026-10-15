@@ -78,17 +78,18 @@ export class CodexTitleGenerator {
       this.abort = () => reject(new Error("Title generation stopped"))
     })
     const timer = setTimeout(() => this.close(), TITLE_TIMEOUT_MS)
-    const request = async <T>(method: string, params: unknown): Promise<T> => {
+    const request = async (method: string, params: unknown): Promise<unknown> => {
       if (this.stopped) throw new Error("Title generation stopped")
-      return Promise.race([this.client.request<T>(method, params), stopped])
+      return Promise.race([this.client.request(method, params), stopped])
     }
     try {
-      const config = await request<{ config?: Record<string, unknown> }>("config/read", {
+      const config = await request("config/read", {
         cwd: this.cwd,
         includeLayers: false
       })
-      const mcp = isRecord(config.config?.mcp_servers) ? config.config.mcp_servers : {}
-      const start = this.client.request<{ thread: { id: string } }>("thread/start", {
+      const configured = isRecord(config) && isRecord(config.config) ? config.config : {}
+      const mcp = isRecord(configured.mcp_servers) ? configured.mcp_servers : {}
+      const start = this.client.request("thread/start", {
         cwd: this.cwd,
         ephemeral: true,
         model: TITLE_MODEL,
@@ -119,21 +120,21 @@ export class CodexTitleGenerator {
         }
       })
       void start.then(
-        (result: unknown) => {
-          const threadId =
-            isRecord(result) && isRecord(result.thread) ? result.thread.id : undefined
-          if (this.stopped && typeof threadId === "string")
+        (result) => {
+          const threadId = nestedId(result, "thread")
+          if (this.stopped && threadId !== undefined)
             void this.client.request("thread/unsubscribe", { threadId }).catch(() => {})
         },
         () => {}
       )
-      const { thread } = await Promise.race([start, stopped])
-      this.temporaryThreadId = thread.id
+      const threadId = nestedId(await Promise.race([start, stopped]), "thread")
+      if (threadId === undefined) return
+      this.temporaryThreadId = threadId
       const completed = new Promise<string | undefined>((resolve) => {
         this.complete = resolve
       })
-      const turn = await request<{ turn: { id: string } }>("turn/start", {
-        threadId: thread.id,
+      const turn = await request("turn/start", {
+        threadId,
         input: [{ type: "text", text: `User's first message:\n${prompt}`, text_elements: [] }],
         model: TITLE_MODEL,
         effort: "low",
@@ -144,16 +145,20 @@ export class CodexTitleGenerator {
           additionalProperties: false
         }
       })
-      this.turnId = turn.turn.id
+      const turnId = nestedId(turn, "turn")
+      if (turnId === undefined) return
+      this.turnId = turnId
       const response = await Promise.race([completed, stopped])
       this.turnId = undefined
       const title = parseGeneratedTitle(response)
       if (title === undefined || this.named) return
-      const current = await request<{ thread?: { name?: unknown } }>("thread/read", {
+      const current = await request("thread/read", {
         threadId: this.threadId,
         includeTurns: false
       })
-      this.observeName(current.thread?.name)
+      this.observeName(
+        isRecord(current) && isRecord(current.thread) ? current.thread.name : undefined
+      )
       if (this.named) return
       await request("thread/name/set", { threadId: this.threadId, name: title })
     } catch {
@@ -176,6 +181,11 @@ export class CodexTitleGenerator {
       }
     }
   }
+}
+
+const nestedId = (value: unknown, key: string): string | undefined => {
+  const nested = isRecord(value) ? value[key] : undefined
+  return isRecord(nested) && typeof nested.id === "string" ? nested.id : undefined
 }
 
 const parseGeneratedTitle = (response: string | undefined): string | undefined => {

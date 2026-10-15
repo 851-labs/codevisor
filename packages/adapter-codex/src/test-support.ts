@@ -7,6 +7,7 @@ import type {
 import { Effect } from "effect"
 
 import type { CodexClient, CodexSpawnRequest } from "./client.js"
+import { isRecord } from "./internal.js"
 import { makeCodexProvider } from "./provider.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
@@ -21,9 +22,36 @@ export const definition: HarnessDefinition = {
 
 export const environment: ProviderEnvironment = {
   env: { PATH: "/bin" },
+  envFor: () => Promise.resolve(environment.env),
   executableExists: (name) => name === "codex",
   locateExecutable: (name) => (name === "codex" ? "/bin/codex" : undefined)
 }
+
+export const recordOf = (value: unknown): Record<string, unknown> => {
+  if (!isRecord(value)) throw new Error(`Expected an object, got ${JSON.stringify(value)}`)
+  return value
+}
+
+export const stringOf = (value: unknown): string => {
+  if (typeof value !== "string") throw new Error(`Expected a string, got ${JSON.stringify(value)}`)
+  return value
+}
+
+export const replyAs = <T>(reply: Promise<unknown>): Promise<T> => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return reply as Promise<T>
+}
+
+export const payloadOf = (event: RuntimeEvent | undefined): Record<string, unknown> =>
+  recordOf(event?.payload)
+
+export const payloadField = (event: RuntimeEvent, key: string): unknown =>
+  isRecord(event.payload) ? event.payload[key] : undefined
+
+const optionalString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
+
+const optionalNumber = (value: unknown): number | null => (typeof value === "number" ? value : null)
 
 export class FakeCodexClient implements CodexClient {
   readonly requests: Array<{ method: string; params: unknown }> = []
@@ -53,21 +81,25 @@ export class FakeCodexClient implements CodexClient {
       }
     | undefined
 
-  async request<T>(method: string, params?: unknown): Promise<T> {
+  request<T>(method: string, params?: unknown): Promise<T> {
+    return replyAs<T>(this.reply(method, params))
+  }
+
+  protected async reply(method: string, params?: unknown): Promise<unknown> {
     this.requests.push({ method, params })
     try {
       switch (method) {
         case "initialize":
-          return {} as T
+          return {}
         case "thread/start":
-          return { model: this.startModel, thread: { id: "thread-new" } } as T
+          return { model: this.startModel, thread: { id: "thread-new" } }
         case "thread/resume":
           if (this.failResume) {
             throw new Error("thread not found")
           }
-          return { model: this.startModel, thread: { id: "thread-resumed" } } as T
+          return { model: this.startModel, thread: { id: "thread-resumed" } }
         case "thread/list":
-          return { data: this.listedThreads, nextCursor: null } as T
+          return { data: this.listedThreads, nextCursor: null }
         case "thread/read":
           return {
             thread: {
@@ -75,38 +107,37 @@ export class FakeCodexClient implements CodexClient {
               name: this.threadName,
               preview: this.threadPreview
             }
-          } as T
-        case "turn/start":
-          return { turn: { id: "turn-1", status: "inProgress" } } as T
-        case "turn/interrupt":
-          return {} as T
-        case "thread/goal/set": {
-          const update = params as {
-            objective?: string
-            status?: string
-            tokenBudget?: number | null
           }
+        case "turn/start":
+          return { turn: { id: "turn-1", status: "inProgress" } }
+        case "turn/interrupt":
+          return {}
+        case "thread/goal/set": {
+          const update = recordOf(params)
           this.goal = {
             createdAt: this.goal?.createdAt ?? 1_700_000_000,
-            objective: update.objective ?? this.goal?.objective ?? "existing objective",
-            status: update.status ?? this.goal?.status ?? "active",
+            objective:
+              optionalString(update.objective) ?? this.goal?.objective ?? "existing objective",
+            status: optionalString(update.status) ?? this.goal?.status ?? "active",
             threadId: "thread-new",
             timeUsedSeconds: this.goal?.timeUsedSeconds ?? 0,
             tokenBudget:
-              "tokenBudget" in update ? update.tokenBudget! : (this.goal?.tokenBudget ?? null),
+              "tokenBudget" in update
+                ? optionalNumber(update.tokenBudget)
+                : (this.goal?.tokenBudget ?? null),
             tokensUsed: this.goal?.tokensUsed ?? 0,
             updatedAt: 1_700_000_100
           }
-          return { goal: this.goal } as T
+          return { goal: this.goal }
         }
         case "thread/goal/clear": {
           const cleared = this.goal !== undefined
           this.goal = undefined
-          return { cleared } as T
+          return { cleared }
         }
         case "skills/list":
           if (this.listedSkills === undefined) throw new Error(`Unexpected request: ${method}`)
-          return { data: [{ cwd: "/tmp/project", errors: [], skills: this.listedSkills }] } as T
+          return { data: [{ cwd: "/tmp/project", errors: [], skills: this.listedSkills }] }
         case "model/list":
           return {
             data: [
@@ -145,7 +176,7 @@ export class FakeCodexClient implements CodexClient {
                 model: "secret"
               }
             ]
-          } as T
+          }
         default:
           throw new Error(`Unexpected request: ${method}`)
       }

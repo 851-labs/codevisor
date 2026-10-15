@@ -9,7 +9,7 @@ import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.
 import { PLUGIN_INSTALL_RECEIPT_FILENAME, readPluginInstallReceipt } from "./plugin-receipt.js"
 import { MANAGED_PLUGIN_MARKER, MANAGED_PLUGIN_MARKER_CONTENT } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
-import { makeDir } from "./test-support.js"
+import { expectDefined, makeDir } from "./test-support.js"
 
 const manifest = (id: string, version: string, setup = false): PluginManifestV2 => ({
   id,
@@ -127,7 +127,7 @@ describe("prepared plugin update installation", () => {
     )
     const staleReceipt = await world.installer.prepareUpdate(request("receipt-plan"))
     const receiptPath = join(world.root, "owner.example", PLUGIN_INSTALL_RECEIPT_FILENAME)
-    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>
+    const receipt = expectDefined(readPluginInstallReceipt(join(world.root, "owner.example")))
     writeFileSync(receiptPath, JSON.stringify({ ...receipt, resolvedCommit: "c".repeat(40) }))
     await expect(world.installer.applyPreparedUpdate(staleReceipt)).rejects.toThrow(/changed after/)
   })

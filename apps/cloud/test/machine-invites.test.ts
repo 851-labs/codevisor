@@ -4,6 +4,7 @@ import { env, SELF } from "cloudflare:test"
 import { describe, expect, it, vi } from "vitest"
 
 import { authed, BASE, connectMachine, devLogin } from "./cloud-test-support.js"
+import { KeyBody, MachinesBody, readJson, TokenBody } from "./json-test-support.js"
 
 const mintInvite = (apiKey: string) =>
   SELF.fetch(`${BASE}/api/machine/invites`, { method: "POST", headers: { "x-api-key": apiKey } })
@@ -23,12 +24,12 @@ const redeem = (token: string, name = "hetzner-1", deviceId = crypto.randomUUID(
 const inviteToken = async (apiKey: string): Promise<string> => {
   const response = await mintInvite(apiKey)
   expect(response.status).toBe(200)
-  return ((await response.json()) as { token: string }).token
+  return (await readJson(response, TokenBody)).token
 }
 
 const machines = async (session: string): Promise<CloudMachinePresence[]> => {
   const response = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(session) })
-  return ((await response.json()) as { machines: CloudMachinePresence[] }).machines
+  return (await readJson(response, MachinesBody)).machines
 }
 
 const inviteCount = (): Promise<number> =>
@@ -45,7 +46,7 @@ describe("machine invites", () => {
     const deviceId = crypto.randomUUID()
     const redeemed = await redeem(token, "hetzner-1", deviceId)
     expect(redeemed.status).toBe(200)
-    const { key } = (await redeemed.json()) as { key: string }
+    const { key } = await readJson(redeemed, KeyBody)
     expect(key).not.toBe(inviter.apiKey)
 
     const joined = await connectMachine(session, "hetzner-1", deviceId, { apiKey: key })

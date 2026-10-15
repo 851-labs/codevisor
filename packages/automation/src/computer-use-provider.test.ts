@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { computerUseTools, linuxComputerUseHelperPath } from "./computer-use-provider.js"
+import { recordOrEmpty } from "./unknown-values.js"
 
 describe("Computer Use tool contract", () => {
   it("finds the Linux helper in a packaged runtime launched from another directory", () => {
@@ -56,16 +57,13 @@ describe("Computer Use tool contract", () => {
 
   it("exposes exact semantic text selection", () => {
     const select = computerUseTools.find((candidate) => candidate.name === "select_text")
-    const schema = select?.inputSchema as unknown as {
-      additionalProperties: boolean
-      properties: Record<string, { enum?: string[] }>
-      required: string[]
-    }
+    if (select === undefined) throw new Error("Missing select_text tool")
+    const schema = select.inputSchema
     expect(schema.properties).not.toHaveProperty("all")
     expect(schema.properties).toHaveProperty("text")
     expect(schema.properties).toHaveProperty("prefix")
     expect(schema.properties).toHaveProperty("suffix")
-    expect(schema.properties.selection_type?.enum).toEqual([
+    expect(recordOrEmpty(schema.properties?.selection_type).enum).toEqual([
       "text",
       "cursor_before",
       "cursor_after"
@@ -76,10 +74,7 @@ describe("Computer Use tool contract", () => {
 
   it("rejects undeclared action arguments", () => {
     for (const candidate of computerUseTools) {
-      const schema = candidate.inputSchema as unknown as {
-        properties?: Record<string, unknown>
-        additionalProperties?: boolean
-      }
+      const schema = candidate.inputSchema
       expect(schema.properties ?? {}).not.toHaveProperty("snapshotId")
       expect(schema.properties ?? {}).not.toHaveProperty("elementId")
       expect(schema.properties ?? {}).not.toHaveProperty("deliveryMode")

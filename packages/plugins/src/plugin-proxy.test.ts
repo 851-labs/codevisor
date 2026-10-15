@@ -1,4 +1,3 @@
-import type { IncomingMessage } from "node:http"
 import * as net from "node:net"
 import { createServer } from "node:net"
 import { Socket } from "node:net"
@@ -25,7 +24,7 @@ describe("spliceUpgrade", () => {
     const request = {
       method: "GET",
       rawHeaders: ["Upgrade", "websocket", "Connection", "Upgrade"]
-    } as unknown as IncomingMessage
+    }
     let closes = 0
     spliceUpgrade({
       contextHeaders: {},
@@ -75,7 +74,7 @@ describe("spliceUpgrade", () => {
         "Upgrade",
         "websocket"
       ]
-    } as unknown as IncomingMessage
+    }
     spliceUpgrade({
       contextHeaders: { "x-codevisor-context": "ctx" },
       head: Buffer.from("head-bytes"),

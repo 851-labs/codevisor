@@ -13,10 +13,7 @@ export const INVITE_TTL_MS = 10 * 60 * 1000
 
 const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
   const locationHint = hubLocationHint(cf)
-  return (env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(
-    userId,
-    locationHint === undefined ? undefined : { locationHint }
-  )
+  return env.USER_HUB.getByName(userId, locationHint === undefined ? undefined : { locationHint })
 }
 
 const base64url = (bytes: Uint8Array): string =>
@@ -47,7 +44,12 @@ const deviceHasCredential = async (
         return false
       }
     }
-    return (value as { deviceId?: unknown } | null)?.deviceId === deviceId
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      "deviceId" in value &&
+      value.deviceId === deviceId
+    )
   })
 }
 

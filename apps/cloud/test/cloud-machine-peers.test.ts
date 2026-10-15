@@ -1,17 +1,17 @@
-import {
-  MACHINE_PEERS_FEATURE,
-  type HubToAppRelayHeader,
-  type HubToMachine,
-  type HubToMachineRelayHeader
-} from "@codevisor/api"
+import { MACHINE_PEERS_FEATURE, type HubToMachine } from "@codevisor/api"
 import { acceptChannel, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it } from "vitest"
 
 import {
+  appRelayHeader,
   connectMachine,
   devLogin,
   disconnect,
+  expectDefined,
+  expectTag,
   expireResumeGrace,
+  hasTag,
+  machineRelayHeader,
   sendRelay
 } from "./cloud-test-support.js"
 
@@ -25,7 +25,7 @@ const nextOfKind = async <Kind extends HubToMachine["t"]>(
 ): Promise<Extract<HubToMachine, { t: Kind }>> => {
   for (;;) {
     const frame = await reader.next()
-    if (frame.t === kind) return frame as Extract<HubToMachine, { t: Kind }>
+    if (hasTag(frame, kind)) return frame
   }
 }
 
@@ -65,16 +65,16 @@ describe("machine peers", () => {
       sealJson(channel.cipher, "g-1", "opener-to-responder", 0, request)
     )
     const opened = await target.reader.nextEnvelope()
-    const header = opened.header as HubToMachineRelayHeader
+    const header = machineRelayHeader(opened)
     expect(header).toMatchObject({
       peerKind: "machine",
       peerDeviceId: opener.deviceId,
       peerPublicKey: opener.keys.publicKey
     })
-    const frame = header.frame as Extract<typeof header.frame, { t: "open" }>
+    const frame = expectTag(header.frame, "open")
     const responder = acceptChannel(
       target.keys.secretKey,
-      header.peerPublicKey!,
+      expectDefined(header.peerPublicKey),
       frame.ephemeralKey
     )
     expect(openJson(responder, "g-1", "opener-to-responder", 0, opened.payload)).toEqual(request)
@@ -85,7 +85,7 @@ describe("machine peers", () => {
       sealJson(responder, "g-1", "responder-to-opener", 0, { ok: true })
     )
     const answered = await opener.reader.nextEnvelope()
-    expect((answered.header as HubToAppRelayHeader).machineId).toBe(target.deviceId)
+    expect(appRelayHeader(answered).machineId).toBe(target.deviceId)
     expect(openJson(channel.cipher, "g-1", "responder-to-opener", 0, answered.payload)).toEqual({
       ok: true
     })

@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto"
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import type { CdpConnection } from "./browser-cdp.js"
 import { browserResultValue } from "./browser-repl.js"
-import { makeBrowserToolInvoker, type BrowserToolSessionState } from "./browser-use-invoke.js"
+import {
+  browserToolSessionState,
+  fakeBrowserRuntime,
+  fakeCdpConnection
+} from "./browser-runtime-test-support.js"
+import { makeBrowserToolInvoker } from "./browser-use-invoke.js"
 
 vi.mock("node:crypto", async (original) => ({
   ...(await original<typeof import("node:crypto")>()),
@@ -29,17 +32,13 @@ function fixture() {
     title: targetId,
     url: `https://${targetId}.test/`
   }))
-  const state: BrowserToolSessionState = {
-    assetInventories: new Map(),
-    assetsDir: "",
-    downloadsDir: "",
+  const state = browserToolSessionState({
     selectedTargets: new Map([[sessionKey, "second"]]),
     sessionBackends: new Map([[context.sessionId, "managed"]]),
-    sessionDispositions: new Map(),
     sessionTargets: new Map([
       [sessionKey, new Map(targets.map(({ targetId }) => [targetId, "created"]))]
     ])
-  }
+  })
   const reads = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>()
   const requested = new Map(
     targets.map(({ targetId }) => [targetId, Promise.withResolvers<void>()])
@@ -69,23 +68,10 @@ function fixture() {
     }
     throw new Error(`Unexpected CDP command ${method}`)
   })
-  const runtime: BrowserRuntime = {
-    connection: { send } as unknown as CdpConnection,
-    owned: false,
-    processHandle: undefined,
-    sessions: new Map(targets.map(({ targetId }) => [targetId, `cdp:${targetId}`])),
-    staleSessions: new Map(),
-    snapshots: new Map(),
-    eventLog: [],
-    logs: new Map(),
-    dialogs: new Map(),
-    fileChoosers: new Map(),
-    downloads: new Map(),
-    eventDisposers: [],
-    eventSequence: 0,
-    tabOrder: [],
-    queue: Promise.resolve()
-  }
+  const runtime = fakeBrowserRuntime({
+    connection: fakeCdpConnection({ send }).connection,
+    sessions: new Map(targets.map(({ targetId }) => [targetId, `cdp:${targetId}`]))
+  })
   const invoke = makeBrowserToolInvoker(state)
   const call = async (name: string, args: Record<string, unknown>, sessionId = context.sessionId) =>
     browserResultValue(await invoke({ ...context, sessionId }, runtime, name, args))

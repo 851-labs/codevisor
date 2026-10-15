@@ -13,6 +13,7 @@ import {
 } from "./browser-extension-relay.js"
 import { browserKeyDescription } from "./browser-keyboard.js"
 import { browserUseTools } from "./browser-use-provider.js"
+import { expectRecord, expectString } from "./unknown-values.js"
 
 const directories: string[] = []
 
@@ -49,11 +50,12 @@ describe("Browser Use tool contract", () => {
   it("keeps the bundled relay extension id stable", () => {
     const extension = browserExtensionPath()
     expect(extension).toBeDefined()
-    const manifest = JSON.parse(readFileSync(join(extension!, "manifest.json"), "utf8")) as {
-      key: string
-      permissions: string[]
-    }
-    const digest = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest()
+    const manifest = expectRecord(
+      JSON.parse(readFileSync(join(extension!, "manifest.json"), "utf8")),
+      "manifest"
+    )
+    const key = expectString(manifest.key, "manifest key")
+    const digest = createHash("sha256").update(Buffer.from(key, "base64")).digest()
     const id = [...digest.subarray(0, 16)]
       .flatMap((byte) => [byte >> 4, byte & 15])
       .map((nibble) => String.fromCharCode(97 + nibble))
@@ -108,9 +110,7 @@ describe("Browser Use tool contract", () => {
       ])
     )
     for (const tool of browserUseTools) {
-      expect((tool.inputSchema as { additionalProperties?: boolean }).additionalProperties).toBe(
-        false
-      )
+      expect(tool.inputSchema.additionalProperties).toBe(false)
     }
   })
 

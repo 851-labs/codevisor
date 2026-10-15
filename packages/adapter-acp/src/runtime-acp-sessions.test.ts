@@ -93,6 +93,25 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
   })
 
+  it("launches each session with the environment resolved for its directory", async () => {
+    const connector = makeConnector()
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`,
+      resolveDirectoryEnv: async (directory) => ({ PATH: `${directory}/node/bin:/bin` })
+    })
+
+    await run(runtime.createAgentSession("gemini", "/repo-a", sink))
+    await run(runtime.loadAgentSession("gemini", "agent-existing", "/repo-b", sink))
+
+    expect(connector.requests.map((request) => [request.cwd, request.env.PATH])).toEqual([
+      ["/repo-a", "/repo-a/node/bin:/bin"],
+      ["/repo-b", "/repo-b/node/bin:/bin"]
+    ])
+  })
+
   it("times out hung harness inspection and closes its connection", async () => {
     vi.useFakeTimers()
     const connector = makeConnector()

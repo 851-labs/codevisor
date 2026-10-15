@@ -7,11 +7,17 @@ import {
   SignJWT,
   type JWTPayload
 } from "jose"
+import { z } from "zod"
 
 import type { CloudEnv } from "./env.js"
 
 const issuer = "https://appleid.apple.com"
 const appleKeys = createRemoteJWKSet(new URL(`${issuer}/auth/keys`))
+const appleTokens = z.object({
+  id_token: z.string().exactOptional(),
+  access_token: z.string().exactOptional(),
+  refresh_token: z.string().exactOptional()
+})
 
 export const hasAppleAuth = (env: CloudEnv): boolean =>
   Boolean(env.APPLE_CLIENT_ID && env.APPLE_TEAM_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY)
@@ -104,12 +110,9 @@ export const exchangeNativeAppleCode = async (env: CloudEnv, code: string, nonce
     })
   })
   if (!response.ok) throw new Error("Apple could not verify this sign-in. Please try again.")
-  const tokens = (await response.json()) as {
-    id_token?: string
-    access_token?: string
-    refresh_token?: string
-  }
-  if (!tokens.id_token || !tokens.refresh_token)
+  const parsed = appleTokens.safeParse(await response.json())
+  const tokens = parsed.success ? parsed.data : undefined
+  if (!tokens?.id_token || !tokens.refresh_token)
     throw new Error("Apple did not complete sign-in. Please try again.")
   const { payload } = await jwtVerify(tokens.id_token, appleKeys, {
     issuer,

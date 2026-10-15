@@ -13,6 +13,7 @@ import {
 } from "./browser-input.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { isPlainRecord } from "./unknown-values.js"
 
 export const invokeMouseTools = async (
   invocation: BrowserToolInvocation,
@@ -130,11 +131,8 @@ export const invokeMouseTools = async (
     case "mouse_drag": {
       const path = Array.isArray(args.path)
         ? args.path.map((point) => {
-            if (point === null || typeof point !== "object" || Array.isArray(point)) {
-              throw new Error("Each drag path point must be an object")
-            }
-            const candidate = point as Readonly<Record<string, unknown>>
-            return { x: numberArgument(candidate, "x"), y: numberArgument(candidate, "y") }
+            if (!isPlainRecord(point)) throw new Error("Each drag path point must be an object")
+            return { x: numberArgument(point, "x"), y: numberArgument(point, "y") }
           })
         : [
             { x: numberArgument(args, "startX"), y: numberArgument(args, "startY") },

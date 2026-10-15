@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { FakeCodexClient } from "./test-support.js"
+import { FakeCodexClient, recordOf, stringOf } from "./test-support.js"
 import { CodexTitleGenerator } from "./title-generation.js"
 
 const deferred = <T>() => {
@@ -22,38 +22,38 @@ class TitleClient extends FakeCodexClient {
   failStart = false
   failCleanup = false
 
-  override request<T>(method: string, params?: unknown): Promise<T> {
-    const reply = this.reply<T>(method, params)
+  protected override reply(method: string, params?: unknown): Promise<unknown> {
+    const reply = this.titleReply(method, params)
     if (method === "thread/start") this.threadStart = reply
     return reply
   }
 
-  private async reply<T>(method: string, params?: unknown): Promise<T> {
+  private async titleReply(method: string, params?: unknown): Promise<unknown> {
     this.requests.push({ method, params })
     switch (method) {
       case "config/read":
         if (this.failConfig) throw new Error("offline")
-        return { config: { mcp_servers: { external: { command: "external" } } } } as T
+        return { config: { mcp_servers: { external: { command: "external" } } } }
       case "thread/start":
         this.startingThread.resolve()
         if (this.failStart) throw new Error("Cannot start temporary thread")
         if (this.holdStart) await this.holdStart
-        return this.startReply as T
+        return this.startReply
       case "turn/start":
         this.started.resolve()
-        return { turn: { id: "title-turn" } } as T
+        return { turn: { id: "title-turn" } }
       case "thread/read":
-        return { thread: { name: this.threadName } } as T
+        return { thread: { name: this.threadName } }
       case "thread/name/set":
-        this.threadName = (params as { name: string }).name
-        return {} as T
+        this.threadName = stringOf(recordOf(params).name)
+        return {}
       case "thread/unsubscribe":
         this.unsubscribed.resolve()
         if (this.failCleanup) throw new Error("Connection closed")
-        return {} as T
+        return {}
       case "turn/interrupt":
         if (this.failCleanup) throw new Error("Connection closed")
-        return {} as T
+        return {}
       default:
         throw new Error(`Unexpected title request: ${method}`)
     }

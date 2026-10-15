@@ -1,17 +1,25 @@
-import { CLOUD_PROTOCOL_VERSION, type CloudMachinePresence } from "@codevisor/api"
+import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { env, SELF } from "cloudflare:test"
 import { describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 
 import { SESSION_LIFETIME_SECONDS } from "../src/auth.js"
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import { BASE, devLogin, authed, connectMachine } from "./cloud-test-support.js"
+import {
+  AuthProvidersBody,
+  jsonRecord,
+  MachinesBody,
+  readJson,
+  SessionUserBody
+} from "./json-test-support.js"
 
 describe("discovery", () => {
   it("serves instance metadata", async () => {
     const response = await SELF.fetch(`${BASE}/.well-known/codevisor`)
     expect(response.status).toBe(200)
-    const body = (await response.json()) as Record<string, unknown>
+    const body = await readJson(response, jsonRecord)
     expect(body.service).toBe("codevisor-cloud")
     expect(body.protocols).toEqual([CLOUD_PROTOCOL_VERSION])
     expect(body.authProviders).toContain("dev")
@@ -63,16 +71,18 @@ describe("auth", () => {
   it("dev login issues a bearer-usable session token", async () => {
     const token = await devLogin()
     const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
-    const body = (await session.json()) as { user?: { email?: string } } | null
-    expect(body?.user?.email).toBe("dev@codevisor.local")
+    expect(await session.json()).toMatchObject({ user: { email: "dev@codevisor.local" } })
   })
 
   it("keeps a used session signed in: each day's use pushes expiry a year out", async () => {
     const token = await devLogin()
     const expiry = async (): Promise<number | undefined> => {
       const response = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
-      const body = (await response.json()) as { session?: { expiresAt: string } } | null
-      return body?.session === undefined ? undefined : Date.parse(body.session.expiresAt)
+      const body = await readJson(
+        response,
+        z.object({ session: z.object({ expiresAt: z.string() }) }).nullable()
+      )
+      return body === null ? undefined : Date.parse(body.session.expiresAt)
     }
     const year = SESSION_LIFETIME_SECONDS * 1000
     expect(await expiry()).toBe(Date.now() + year)
@@ -89,11 +99,10 @@ describe("auth", () => {
       body: JSON.stringify({ client_id: "codevisor-machine" })
     })
     expect(requested.status).toBe(200)
-    const grant = (await requested.json()) as {
-      device_code: string
-      user_code: string
-      verification_uri: string
-    }
+    const grant = await readJson(
+      requested,
+      z.object({ device_code: z.string(), user_code: z.string(), verification_uri: z.string() })
+    )
     expect(grant.verification_uri).toContain("/device")
 
     const pending = await SELF.fetch(`${BASE}/api/auth/device/token`, {
@@ -106,7 +115,7 @@ describe("auth", () => {
       })
     })
     expect(pending.status).toBe(400)
-    expect(((await pending.json()) as { error: string }).error).toBe("authorization_pending")
+    expect(await pending.json()).toMatchObject({ error: "authorization_pending" })
 
     const token = await devLogin()
     const claimed = await SELF.fetch(
@@ -131,12 +140,12 @@ describe("auth", () => {
       })
     })
     expect(granted.status).toBe(200)
-    const { access_token } = (await granted.json()) as { access_token: string }
+    const { access_token } = await readJson(granted, z.object({ access_token: z.string() }))
     const session = await SELF.fetch(`${BASE}/api/auth/get-session`, {
       headers: authed(access_token)
     })
-    const body = (await session.json()) as { user?: { id?: string } } | null
-    expect(body?.user?.id).toBeTruthy()
+    const body = await readJson(session, SessionUserBody)
+    expect(body?.user.id).toBeTruthy()
   })
 
   it("rejects unknown device-flow clients", async () => {
@@ -207,7 +216,7 @@ describe("dev auth gating", () => {
     )
     expect(response.status).toBe(404)
     const discovery = await worker.fetch(new Request(`${BASE}/.well-known/codevisor`), prodEnv)
-    const body = (await discovery.json()) as { authProviders: string[] }
+    const body = await readJson(discovery, AuthProvidersBody)
     expect(body.authProviders).not.toContain("dev")
   })
 })
@@ -241,9 +250,7 @@ describe("machine self-removal", () => {
     const sibling = await connectMachine(token, "vps-sibling")
     const listed = async (): Promise<string[]> => {
       const response = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
-      return ((await response.json()) as { machines: CloudMachinePresence[] }).machines.map(
-        (m) => m.deviceId
-      )
+      return (await readJson(response, MachinesBody)).machines.map((m) => m.deviceId)
     }
 
     expect((await deleteMachineSelf({})).status).toBe(401)

@@ -1,6 +1,7 @@
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
+import { recordOrEmpty, recordsIn, type UnknownRecord } from "./unknown-values.js"
 
-type Entry = Readonly<Record<string, unknown>>
+type Entry = UnknownRecord
 
 const primitiveText = (value: unknown): string | undefined =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean"
@@ -15,8 +16,7 @@ interface BrowserLogEntry {
 }
 
 function consoleMessage(entry: Entry): string {
-  const args = Array.isArray(entry.args) ? (entry.args as Array<Entry>) : []
-  return args
+  return recordsIn(entry.args)
     .map(
       (value) =>
         primitiveText(value.value) ??
@@ -37,8 +37,7 @@ function consoleEntry(entry: Entry): BrowserLogEntry {
 }
 
 function logEntry(entry: Entry): BrowserLogEntry {
-  const value =
-    entry.entry !== null && typeof entry.entry === "object" ? (entry.entry as Entry) : {}
+  const value = recordOrEmpty(entry.entry)
   return {
     level: value.level === "warning" ? "warn" : (primitiveText(value.level) ?? "log"),
     message: primitiveText(value.text) ?? "",
@@ -48,14 +47,8 @@ function logEntry(entry: Entry): BrowserLogEntry {
 }
 
 function exceptionEntry(entry: Entry): BrowserLogEntry {
-  const detail =
-    entry.exceptionDetails !== null && typeof entry.exceptionDetails === "object"
-      ? (entry.exceptionDetails as Entry)
-      : {}
-  const exception =
-    detail.exception !== null && typeof detail.exception === "object"
-      ? (detail.exception as Entry)
-      : {}
+  const detail = recordOrEmpty(entry.exceptionDetails)
+  const exception = recordOrEmpty(detail.exception)
   return {
     level: "error",
     message:

@@ -1,8 +1,10 @@
 import { createExecutionContext, env, SELF, waitOnExecutionContext } from "cloudflare:test"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 
 import worker from "../src/index.js"
 import { notifyPluginReports } from "../src/plugin-reports.js"
+import { parseJson, readJson, TokenBody } from "./json-test-support.js"
 
 const BASE = "https://cloud.example.com"
 const report = {
@@ -14,7 +16,7 @@ const report = {
 }
 const login = async () => {
   const response = await SELF.fetch(`${BASE}/dev/login`, { method: "POST" })
-  return ((await response.json()) as { token: string }).token
+  return (await readJson(response, TokenBody)).token
 }
 const request = (path: string, token?: string, body?: unknown, method = "POST") =>
   new Request(`${BASE}${path}`, {
@@ -53,7 +55,7 @@ describe("plugin moderation", () => {
     const token = await login()
     const sent: unknown[] = []
     const fetcher = vi.fn((_url: string, init?: RequestInit) => {
-      sent.push(JSON.parse(init?.body as string))
+      sent.push(parseJson(init?.body, z.unknown()))
       return Promise.resolve(new Response("unavailable", { status: 503 }))
     })
     const bindings = {

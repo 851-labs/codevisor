@@ -11,6 +11,7 @@ import { makeOpenCodeProvider } from "./provider.js"
 
 const environment: ProviderEnvironment = {
   env: { PATH: "/bin" },
+  envFor: () => Promise.resolve(environment.env),
   executableExists: (name) => name === "opencode",
   locateExecutable: (name) => (name === "opencode" ? "/bin/opencode" : undefined)
 }

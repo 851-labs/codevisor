@@ -13,7 +13,7 @@ interface FakeChild {
   readonly stderr: PassThrough
   readonly stdin: PassThrough
   exit: (error?: Error) => void
-  frames: () => Array<Record<string, unknown>>
+  frames: () => Array<unknown>
   killed: () => boolean
 }
 
@@ -45,7 +45,7 @@ const makeFakeChild = (): FakeChild => {
         .join("")
         .split("\n")
         .filter((line) => line.trim().length > 0)
-        .map((line) => JSON.parse(line) as Record<string, unknown>),
+        .map((line): unknown => JSON.parse(line)),
     killed: () => killed,
     stderr,
     stdin,
@@ -60,7 +60,7 @@ describe("codex client over the ndjson transport", () => {
   it("round-trips an outbound request", async () => {
     const child = makeFakeChild()
     const client = makeClient(child)
-    const reply = client.request<{ ok: boolean }>("thread/list", { cursor: null })
+    const reply = client.request("thread/list", { cursor: null })
     expect(child.frames()).toEqual([{ id: 1, method: "thread/list", params: { cursor: null } }])
     child.stdout.write(`${JSON.stringify({ id: 1, result: { ok: true } })}\n`)
     await expect(reply).resolves.toEqual({ ok: true })
@@ -83,6 +83,15 @@ describe("codex client over the ndjson transport", () => {
     child.stdout.write(frame.slice(0, 10))
     child.stdout.write(frame.slice(10))
     expect(seen).toEqual([{ method: "item/started", params: { itemId: "i1" } }])
+  })
+
+  it("ignores lines that are not JSON objects", () => {
+    const child = makeFakeChild()
+    const client = makeClient(child)
+    const seen: Array<string> = []
+    client.onNotification((method) => seen.push(method))
+    child.stdout.write(`not json\nnull\n${JSON.stringify({ method: "item/good" })}\n`)
+    expect(seen).toEqual(["item/good"])
   })
 
   it("skips a notification whose handler throws and keeps dispatching", ({ onTestFinished }) => {

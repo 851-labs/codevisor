@@ -130,7 +130,7 @@ const plainEnumOptions = (
   const labels = Array.isArray(names) ? names : []
   const options = values.flatMap((value, index) =>
     typeof value === "string"
-      ? [{ label: typeof labels[index] === "string" ? (labels[index] as string) : value, value }]
+      ? [{ label: typeof labels[index] === "string" ? labels[index] : value, value }]
       : []
   )
   return options.length > 0 ? options : undefined

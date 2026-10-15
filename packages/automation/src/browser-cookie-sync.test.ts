@@ -4,12 +4,12 @@ import {
   type BrowserCookieEntry,
   type BrowserCookieMutation
 } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CdpConnection } from "./browser-cdp.js"
 import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
+import { fakeCdpConnection } from "./browser-runtime-test-support.js"
+import { expectString, optionalString, recordsIn } from "./unknown-values.js"
 
 const cookie = (value = "login"): BrowserCookie => ({
   name: "session",
@@ -20,6 +20,14 @@ const cookie = (value = "login"): BrowserCookie => ({
   httpOnly: true,
   sameSite: "lax"
 })
+const jarKey = (raw: Readonly<Record<string, unknown>>): string =>
+  browserCookieKey({
+    domain: expectString(raw.domain, "cookie domain"),
+    path: optionalString(raw.path) ?? "",
+    name: optionalString(raw.name) ?? ""
+  })
+const firstCookieName = (params: Readonly<Record<string, unknown>> | undefined) =>
+  recordsIn(params?.cookies)[0]?.name
 const fixture = () => {
   let jar: Record<string, unknown>[] = []
   const entries = new Map<string, BrowserCookieEntry>()
@@ -27,7 +35,7 @@ const fixture = () => {
   let beforeReply: (() => void | Promise<void>) | undefined
   const change = (changed: BrowserCookie | null, key = browserCookieKey(changed!)) =>
     entries.set(key, { key, revision: ++revision, cookie: changed })
-  const exchange = vi.fn((mutations: BrowserCookieMutation[]) =>
+  const exchange = vi.fn((mutations: ReadonlyArray<BrowserCookieMutation>) =>
     Effect.promise(async () => {
       for (const mutation of mutations)
         if ((entries.get(mutation.key)?.revision ?? 0) === mutation.expectedRevision)
@@ -39,20 +47,16 @@ const fixture = () => {
       return snapshot
     })
   )
-  const send = vi.fn(async (method: string, params?: { cookies: Record<string, unknown>[] }) => {
+  const send = vi.fn(async (method: string, params: Readonly<Record<string, unknown>> = {}) => {
     if (method === "Storage.getCookies") return { cookies: structuredClone(jar) }
-    for (const raw of params!.cookies) {
+    for (const raw of recordsIn(params.cookies)) {
       const normalized: Record<string, unknown> = {
         ...raw,
         domain: raw.domain ?? new URL(String(raw.url)).hostname
       }
       delete normalized.url
-      const key = browserCookieKey(normalized as unknown as BrowserCookie)
-      jar = jar.filter(
-        (item) =>
-          typeof item.domain !== "string" ||
-          browserCookieKey(item as unknown as BrowserCookie) !== key
-      )
+      const key = jarKey(normalized)
+      jar = jar.filter((item) => typeof item.domain !== "string" || jarKey(item) !== key)
       if (raw.expires !== 1) jar.push(normalized)
     }
     return {}
@@ -72,10 +76,9 @@ const fixture = () => {
       beforeReply = callback
     },
     start: () =>
-      synchronizeManagedCookies(
-        { send } as unknown as CdpConnection,
-        { exchangeBrowserCookies: exchange } as unknown as CodevisorDatabaseService
-      )
+      synchronizeManagedCookies(fakeCdpConnection({ send }).connection, {
+        exchangeBrowserCookies: exchange
+      })
   }
 }
 afterEach(() => vi.useRealTimers())
@@ -129,6 +132,7 @@ describe("managed Chromium cookie synchronization", () => {
     f.jar = [
       cookie(),
       { ...cookie(), name: "defaults", path: undefined, sameSite: undefined, expires: -1 },
+      { ...cookie(), name: "future", sameSite: "Extended" },
       { ...cookie(), name: "partition", partitionKey: {} },
       { ...cookie(), name: "opaque", partitionKeyOpaque: true },
       { value: "x", domain: "example.test" },
@@ -137,10 +141,13 @@ describe("managed Chromium cookie synchronization", () => {
     ]
     let sync = await f.start()
     sync.stop()
-    expect([...f.entries.values()].filter((entry) => entry.cookie)).toHaveLength(2)
+    expect([...f.entries.values()].filter((entry) => entry.cookie)).toHaveLength(3)
     expect(
       [...f.entries.values()].find((entry) => entry.cookie?.name === "defaults")?.cookie
     ).toMatchObject({ path: "/", sameSite: "unspecified" })
+    expect(
+      [...f.entries.values()].find((entry) => entry.cookie?.name === "future")?.cookie
+    ).toMatchObject({ sameSite: "unspecified" })
     f.change(null, browserCookieKey(cookie()))
     sync = await f.start()
     try {
@@ -197,7 +204,7 @@ describe("managed Chromium cookie synchronization", () => {
     f.change(cookie())
     const send = f.send.getMockImplementation()!
     f.send.mockImplementation(async (method, params) => {
-      if (method === "Storage.setCookies" && params?.cookies[0]?.name === "rejected")
+      if (method === "Storage.setCookies" && firstCookieName(params) === "rejected")
         throw new Error("Invalid cookie fields")
       return send(method, params)
     })
@@ -207,7 +214,7 @@ describe("managed Chromium cookie synchronization", () => {
       await sync.synchronize()
       const attempts = f.send.mock.calls.filter(
         ([method, params]) =>
-          method === "Storage.setCookies" && params?.cookies[0]?.name === "rejected"
+          method === "Storage.setCookies" && firstCookieName(params) === "rejected"
       )
       expect(attempts).toHaveLength(1)
       expect(f.entries.get(browserCookieKey(rejected))?.cookie).toEqual(rejected)

@@ -215,7 +215,8 @@ export const runServe = (
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({
       providerFactories: agentProviderFactories,
-      resolveEnv: shellEnv.refresh
+      resolveEnv: shellEnv.refresh,
+      resolveDirectoryEnv: (cwd) => resolveShellEnv({ cwd })
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined
@@ -322,7 +323,8 @@ export const runServe = (
         agents,
         attachments,
         db,
-        resolveGitEnvironment: () => gitEnvironment,
+        resolveGitEnvironment: (directory) =>
+          directory === undefined ? gitEnvironment : resolveShellEnv({ cwd: directory }),
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(sharedAccounts === undefined ? {} : { sharedAccounts }),

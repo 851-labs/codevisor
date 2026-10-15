@@ -1,5 +1,5 @@
 import type { Context } from "hono"
-import { html } from "hono/html"
+import { html, raw } from "hono/html"
 
 import { isDevAuthEnabled, type CloudEnv } from "../env.js"
 import { validAuthRedirect } from "./auth-navigation.js"
@@ -26,7 +26,7 @@ export const page = (c: Ctx, title: string, body: unknown, script?: string) =>
             </main>
             {script !== undefined
               ? html`<script>
-                  ${html([script] as unknown as TemplateStringsArray)}
+                  ${raw(script)}
                 </script>`
               : null}
           </body>

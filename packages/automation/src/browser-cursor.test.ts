@@ -11,6 +11,8 @@ import {
   makeBrowserCursor,
   makeBrowserCursorRegistry
 } from "./browser-cursor.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
+import { expectNumber, expectRecord, expectString } from "./unknown-values.js"
 
 const page: PageHandle = {
   target: { targetId: "tab", type: "page", title: "", url: "about:blank" },
@@ -21,16 +23,25 @@ const fakeRuntime = (
   handler: (method: string, params: Readonly<Record<string, unknown>>) => unknown
 ): { runtime: BrowserRuntime; calls: Array<{ method: string; expression: string }> } => {
   const calls: Array<{ method: string; expression: string }> = []
-  const runtime = {
-    dialogs: new Map<string, Readonly<Record<string, unknown>>>(),
-    connection: {
-      send: async (method: string, params: Readonly<Record<string, unknown>>) => {
-        calls.push({ method, expression: String(params.expression) })
-        return handler(method, params)
-      }
+  const { connection } = fakeCdpConnection({
+    send: async (method, params) => {
+      calls.push({ method, expression: String(params.expression) })
+      return handler(method, params)
     }
-  } as unknown as BrowserRuntime
-  return { runtime, calls }
+  })
+  return { runtime: fakeBrowserRuntime({ connection }), calls }
+}
+
+const isOverlay = (value: unknown): value is (command: unknown) => unknown =>
+  typeof value === "function"
+
+const cursorIdentity = (expression: string | undefined) => {
+  const json = expression?.match(/\)\((\{.*\})\)$/)?.[1]
+  const identity = expectRecord(JSON.parse(expectString(json, "cursor command")), "cursor command")
+  return {
+    session: expectString(identity.session, "cursor session"),
+    color: expectNumber(identity.color, "cursor color")
+  }
 }
 
 describe("browser cursor presentation", () => {
@@ -39,7 +50,8 @@ describe("browser cursor presentation", () => {
     expect(() => parseExpression(pointerOverlaySource)).not.toThrow()
     expect(pointerOverlaySource).not.toContain("import(")
     expect(pointerOverlaySource).not.toContain("innerHTML")
-    const overlay = runInThisContext(`(${pointerOverlaySource})`) as (command: unknown) => unknown
+    const overlay: unknown = runInThisContext(`(${pointerOverlaySource})`)
+    if (!isOverlay(overlay)) throw new Error("Pointer overlay is not a function")
     expect(overlay({ kind: "move", session: "a", x: 1, y: 2 })).toEqual({
       duration: 0,
       visible: false
@@ -89,10 +101,7 @@ describe("browser cursor presentation", () => {
       b.track(2, 2),
       registry.cursorFor(runtime, page, "extension:a").track(3, 3)
     ]).then(() => {
-      const identities = calls.map((call) => {
-        const match = call.expression.match(/\)\((\{.*\})\)$/)
-        return JSON.parse(match![1]!) as { session: string; color: number }
-      })
+      const identities = calls.map((call) => cursorIdentity(call.expression))
       expect(identities[0]!.session).toBe(identities[2]!.session)
       expect(identities[0]!.color).not.toBe(identities[1]!.color)
       registry.release("extension:a")
@@ -101,9 +110,7 @@ describe("browser cursor presentation", () => {
         .cursorFor(runtime, page, "extension:b")
         .track(0, 0)
         .then(() => {
-          const reused = JSON.parse(calls.at(-1)!.expression.match(/\)\((\{.*\})\)$/)![1]!) as {
-            color: number
-          }
+          const reused = cursorIdentity(calls.at(-1)?.expression)
           expect(reused.color).toBe(cursorColorIndex("extension:b", new Set()))
         })
     })

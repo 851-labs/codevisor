@@ -2,6 +2,8 @@ import type { CallToolResult, ContentBlock } from "@modelcontextprotocol/sdk/typ
 
 import { buildBrowserReplSource } from "./code-executor-source.js"
 import { CodeExecutionToolError, makePersistentCodeExecutor } from "./code-executor.js"
+import { outputContentBlocks } from "./mcp-content.js"
+import { recordOrEmpty } from "./unknown-values.js"
 
 export const makeBrowserRepls = () => {
   const sessions = new Map<string, ReturnType<typeof makePersistentCodeExecutor>>()
@@ -18,7 +20,7 @@ export const makeBrowserRepls = () => {
     execute: async (
       id: string,
       code: string,
-      invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>
+      invoke: (name: string, args: Readonly<Record<string, unknown>>) => Promise<unknown>
     ): Promise<CallToolResult> => {
       let session = sessions.get(id)
       if (!session) {
@@ -33,17 +35,13 @@ export const makeBrowserRepls = () => {
               "Only browser operations are available inside browser.js"
             )
           try {
-            return await invoke(name, (args ?? {}) as Record<string, unknown>)
+            return await invoke(name, recordOrEmpty(args))
           } catch (error) {
             throw new CodeExecutionToolError(error instanceof Error ? error.message : String(error))
           }
         }
       })
-      const content: ContentBlock[] = (result.output ?? []).flatMap((output) =>
-        output && typeof output === "object" && "content" in output
-          ? [output.content as ContentBlock]
-          : []
-      )
+      const content: ContentBlock[] = outputContentBlocks(result.output)
       if (result.error) content.push({ type: "text", text: result.error })
       else if (result.result !== undefined)
         content.push({ type: "text", text: JSON.stringify(result.result) })

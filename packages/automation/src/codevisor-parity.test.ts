@@ -3,6 +3,7 @@ import { describe, expect, it, vi, afterEach } from "vitest"
 
 import { CODEVISOR_API_TOOLS } from "./codevisor-api-tools.js"
 import { makeCodevisorProvider } from "./codevisor-provider.js"
+import { expectString } from "./unknown-values.js"
 
 describe("Codevisor native action parity", () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -38,7 +39,7 @@ describe("Codevisor native action parity", () => {
         requests.push({
           path: url.pathname,
           method: init.method!,
-          body: JSON.parse(init.body as string)
+          body: JSON.parse(expectString(init.body, "request body"))
         })
         return new Response("{}", { headers: { "content-type": "application/json" } })
       })
@@ -87,7 +88,7 @@ describe("Codevisor native action parity", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: URL, init: RequestInit) => {
-        bodies.push(JSON.parse(init.body as string))
+        bodies.push(JSON.parse(expectString(init.body, "request body")))
         return new Response("{}", { headers: { "content-type": "application/json" } })
       })
     )

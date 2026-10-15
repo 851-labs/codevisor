@@ -58,6 +58,32 @@ const exists = async (path: string): Promise<boolean> =>
     () => false
   )
 
+const PLUGIN_TRANSACTION_PHASES: ReadonlyArray<PluginTransactionPhase> = [
+  "prepared",
+  "stopped",
+  "dataBackedUp",
+  "codeBackedUp",
+  "candidateInstalled",
+  "verified"
+]
+
+const isPluginTransactionPhase = (value: unknown): value is PluginTransactionPhase =>
+  PLUGIN_TRANSACTION_PHASES.some((phase) => phase === value)
+
+const isPluginTransactionJournal = (value: unknown): value is PluginTransactionJournal =>
+  typeof value === "object" &&
+  value !== null &&
+  "schemaVersion" in value &&
+  value.schemaVersion === 1 &&
+  "pluginId" in value &&
+  typeof value.pluginId === "string" &&
+  "hadExisting" in value &&
+  typeof value.hadExisting === "boolean" &&
+  "hadData" in value &&
+  typeof value.hadData === "boolean" &&
+  "phase" in value &&
+  isPluginTransactionPhase(value.phase)
+
 const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
@@ -150,23 +176,7 @@ export const makePluginTransactionEngine = (
     } catch {
       return undefined
     }
-    if (typeof value !== "object" || value === null) return undefined
-    const journal = value as Partial<PluginTransactionJournal>
-    const phases: ReadonlyArray<PluginTransactionPhase> = [
-      "prepared",
-      "stopped",
-      "dataBackedUp",
-      "codeBackedUp",
-      "candidateInstalled",
-      "verified"
-    ]
-    return journal.schemaVersion === 1 &&
-      journal.pluginId === pluginId &&
-      typeof journal.hadExisting === "boolean" &&
-      typeof journal.hadData === "boolean" &&
-      phases.some((phase) => phase === journal.phase)
-      ? (journal as PluginTransactionJournal)
-      : undefined
+    return isPluginTransactionJournal(value) && value.pluginId === pluginId ? value : undefined
   }
 
   const recoverPlugin = async (pluginId: string): Promise<void> => {

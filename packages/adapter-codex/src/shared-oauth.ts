@@ -1,6 +1,7 @@
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 
 import type { CodexClient } from "./client.js"
+import { isRecord } from "./internal.js"
 
 export const connectSharedCodexAccount = async (
   client: CodexClient,
@@ -15,8 +16,8 @@ export const connectSharedCodexAccount = async (
       return handler(method, params, signal)
     }
     signal.throwIfAborted()
-    const previous = params as { previousAccountId?: string }
-    if (previous?.previousAccountId && previous.previousAccountId !== current.accountId)
+    const previousAccountId = isRecord(params) ? params.previousAccountId : undefined
+    if (previousAccountId && previousAccountId !== current.accountId)
       throw new Error("ChatGPT account changed; reconnect this chat")
     const next = await oauth.token(current.accessToken)
     signal.throwIfAborted()

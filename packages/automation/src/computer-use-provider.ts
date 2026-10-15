@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
 
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationToolProvider } from "./automation-provider.js"
 import { computerResultApp, textToolResult } from "./automation-provider.js"
@@ -13,16 +13,23 @@ import { makeComputerUseRepls } from "./computer-use-repl.js"
 import { computerUseTools } from "./computer-use-tools.js"
 import { waitForComputerState } from "./computer-use-wait.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
+import { recordOrEmpty } from "./unknown-values.js"
 
 export { computerUseTools } from "./computer-use-tools.js"
 interface PendingRequest {
-  readonly resolve: (value: CallToolResult) => void
+  readonly resolve: (value: unknown) => void
   readonly reject: (cause: Error) => void
   readonly timer: ReturnType<typeof setTimeout>
 }
 
+const toolResult = (value: unknown): CallToolResult => {
+  const parsed = CallToolResultSchema.safeParse(value)
+  if (!parsed.success) throw new Error("Computer Use helper returned an invalid tool result")
+  return parsed.data
+}
+
 interface HelperClient {
-  readonly request: (payload: Readonly<Record<string, unknown>>) => Promise<CallToolResult>
+  readonly request: (payload: Readonly<Record<string, unknown>>) => Promise<unknown>
   readonly close: () => Promise<void>
   readonly isClosed: () => boolean
 }
@@ -52,14 +59,14 @@ const jsonLineClient = (
       buffer = buffer.slice(newline + 1)
       if (line.trim().length === 0) continue
       try {
-        const message = JSON.parse(line) as { id?: unknown; result?: unknown; error?: unknown }
+        const message = recordOrEmpty(JSON.parse(line))
         if (typeof message.id !== "string") continue
         const request = pending.get(message.id)
         if (request === undefined) continue
         pending.delete(message.id)
         clearTimeout(request.timer)
         if (typeof message.error === "string") request.reject(new Error(message.error))
-        else request.resolve(message.result as CallToolResult)
+        else request.resolve(message.result)
       } catch {}
     }
   }, failAll)
@@ -67,7 +74,7 @@ const jsonLineClient = (
     request: (payload) => {
       if (closed !== undefined) return Promise.reject(closed)
       const id = randomUUID()
-      return new Promise<CallToolResult>((resolve, reject) => {
+      return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id)
           reject(new Error("Computer Use helper timed out"))
@@ -191,7 +198,7 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
   const script = linuxComputerUseHelperPath()
   if (script === undefined) throw new Error("The Linux Computer Use helper is not installed")
   const processHandle: ChildProcessWithoutNullStreams = spawn("python3", [script], {
-    env: process.env as Record<string, string>,
+    env: process.env,
     stdio: ["pipe", "pipe", "pipe"]
   })
   let stderr = ""
@@ -325,15 +332,17 @@ export const makeComputerUseProvider = (
             true
           )
         }
-        const result = await (
-          await connect(context.sessionId)
-        ).request({
-          type: "tool",
-          sessionId: context.sessionId,
-          agentLabel: context.agentLabel,
-          tool: toolName,
-          arguments: args
-        })
+        const result = toolResult(
+          await (
+            await connect(context.sessionId)
+          ).request({
+            type: "tool",
+            sessionId: context.sessionId,
+            agentLabel: context.agentLabel,
+            tool: toolName,
+            arguments: args
+          })
+        )
         const app = computerResultApp(result)
         if (app !== undefined) context.onApp?.(app)
         return toolName === "stop_recording" || toolName === "recording_status"

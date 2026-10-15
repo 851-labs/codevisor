@@ -1,15 +1,17 @@
 import { parse } from "@babel/parser"
 import { transform } from "sucrase"
 
-const bindingNames = (value: unknown): string[] => {
-  if (!value || typeof value !== "object") return []
-  const node = value as Record<string, unknown>
+import { expectArray, isRecord, recordsIn } from "./unknown-values.js"
+
+const bindingNames = (node: unknown): string[] => {
+  if (!isRecord(node)) return []
   if (node.type === "Identifier") return [String(node.name)]
   if (node.type === "RestElement") return bindingNames(node.argument)
   if (node.type === "AssignmentPattern") return bindingNames(node.left)
-  if (node.type === "ArrayPattern") return (node.elements as unknown[]).flatMap(bindingNames)
+  if (node.type === "ArrayPattern")
+    return expectArray(node.elements, "ArrayPattern").flatMap(bindingNames)
   if (node.type === "ObjectPattern")
-    return (node.properties as Record<string, unknown>[]).flatMap((p) =>
+    return recordsIn(node.properties).flatMap((p) =>
       bindingNames(p.type === "RestElement" ? p.argument : p.value)
     )
   throw new Error("Unsupported REPL binding pattern")

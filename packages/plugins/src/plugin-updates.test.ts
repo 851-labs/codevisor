@@ -15,16 +15,15 @@ const manifest = (
   id: string,
   version: string,
   extra: Record<string, unknown> = {}
-): PluginManifest =>
-  ({
-    id,
-    name: id,
-    panes: [{ path: "/main/", title: "Main", type: "main" }],
-    protocolVersion: 2,
-    run: { argv: ["node", "server.js"] },
-    version,
-    ...extra
-  }) as PluginManifest
+): PluginManifest => ({
+  id,
+  name: id,
+  panes: [{ path: "/main/", title: "Main", type: "main" }],
+  protocolVersion: 2,
+  run: { argv: ["node", "server.js"] },
+  version,
+  ...extra
+})
 
 const installed = (options: {
   readonly id: string
@@ -107,21 +106,6 @@ const installerHarness = (
   const applied: Array<PreparedPluginUpdate> = []
   const discarded: Array<PreparedPluginUpdate> = []
   const prepared: Array<PreparePluginUpdateRequest> = []
-  const harness = {
-    applied,
-    discarded,
-    prepared,
-    candidate: {
-      directory: "/prepared/plan-1",
-      manifest: candidateManifest,
-      planId: "plan-1",
-      pluginId: current.id,
-      previousManifest: current,
-      previousResolvedCommit: "a".repeat(40),
-      resolvedCommit: "b".repeat(40)
-    },
-    installer: undefined as unknown as PluginInstaller
-  } as InstallerHarness
   const installer: PluginInstaller = {
     canRestore: () => false,
     applyPreparedUpdate: async (candidate) => {
@@ -169,7 +153,21 @@ const installerHarness = (
       throw new Error("unused")
     }
   }
-  Object.assign(harness, { installer })
+  const harness: InstallerHarness = {
+    applied,
+    discarded,
+    prepared,
+    candidate: {
+      directory: "/prepared/plan-1",
+      manifest: candidateManifest,
+      planId: "plan-1",
+      pluginId: current.id,
+      previousManifest: current,
+      previousResolvedCommit: "a".repeat(40),
+      resolvedCommit: "b".repeat(40)
+    },
+    installer
+  }
   return harness
 }
 

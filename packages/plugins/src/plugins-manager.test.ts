@@ -186,11 +186,10 @@ describe("pane proxy", () => {
       false
     )
     expect(seen?.headers["authorization"]).toBeUndefined()
-    const context = JSON.parse(
+    const context: unknown = JSON.parse(
       Buffer.from(String(seen?.headers["x-codevisor-context"]), "base64").toString("utf8")
-    ) as Record<string, unknown>
-    expect(context["cwd"]).toBe("/tmp/project")
-    expect(context["workspaceId"]).toBe("w1")
+    )
+    expect(context).toMatchObject({ cwd: "/tmp/project", workspaceId: "w1" })
 
     const cookie = setCookie.split(";")[0] ?? ""
     const asset = await fetch(`${outer.origin}/v1/plugins/owner.example/app/panes/main/asset.js`, {
@@ -226,8 +225,8 @@ describe("pane proxy", () => {
       `${outer.origin}/v1/plugins/owner.example/app/panes/main/?codevisorPaneToken=${cookieToken}`
     )
     expect(response.status).toBe(502)
-    const body = (await response.json()) as { code?: string }
-    expect(body.code).toBe("pluginUnreachable")
+    const body: unknown = await response.json()
+    expect(body).toMatchObject({ code: "pluginUnreachable" })
   })
 
   it("kicks the supervisor on 502 so automatic recovery relaunches the plugin", async () => {

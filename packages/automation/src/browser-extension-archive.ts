@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, relative, sep } from "node:path"
 
+import { optionalString, recordOrEmpty } from "./unknown-values.js"
+
 const zipCrcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index
   for (let bit = 0; bit < 8; bit += 1) {
@@ -27,10 +29,10 @@ const extensionFiles = (directory: string): ReadonlyArray<string> => {
 }
 
 const extensionArchiveName = (extension: string): string => {
-  const manifest = JSON.parse(readFileSync(join(extension, "manifest.json"), "utf8")) as {
-    name?: string
-  }
-  const name = (manifest.name ?? "Codevisor").replaceAll(/[/:\\]/g, "-").trim()
+  const manifest: unknown = JSON.parse(readFileSync(join(extension, "manifest.json"), "utf8"))
+  const name = (optionalString(recordOrEmpty(manifest).name) ?? "Codevisor")
+    .replaceAll(/[/:\\]/g, "-")
+    .trim()
   return `${name === "" ? "Codevisor" : name}.zip`
 }
 

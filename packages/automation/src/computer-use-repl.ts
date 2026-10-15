@@ -2,6 +2,8 @@ import type { CallToolResult, ContentBlock } from "@modelcontextprotocol/sdk/typ
 
 import { CodeExecutionToolError, makePersistentCodeExecutor } from "./code-executor.js"
 import { buildComputerUseReplSource } from "./computer-use-repl-source.js"
+import { contentBlock, outputContentBlocks } from "./mcp-content.js"
+import { recordOrEmpty } from "./unknown-values.js"
 
 export const makeComputerUseRepls = () => {
   const sessions = new Map<string, ReturnType<typeof makePersistentCodeExecutor>>()
@@ -18,7 +20,7 @@ export const makeComputerUseRepls = () => {
     execute: async (
       id: string,
       code: string,
-      invoke: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>
+      invoke: (name: string, args: Readonly<Record<string, unknown>>) => Promise<CallToolResult>
     ): Promise<CallToolResult> => {
       let session = sessions.get(id)
       if (!session) {
@@ -32,7 +34,7 @@ export const makeComputerUseRepls = () => {
             throw new CodeExecutionToolError(
               "Only Computer Use actions and observations are available in this REPL"
             )
-          const response = await invoke(name, (args ?? {}) as Record<string, unknown>)
+          const response = await invoke(name, recordOrEmpty(args))
           const message = response.content
             .filter((c) => c.type === "text")
             .map((c) => c.text)
@@ -43,18 +45,15 @@ export const makeComputerUseRepls = () => {
           return image && value && typeof value === "object" ? { ...value, image } : value
         }
       })
-      const content: ContentBlock[] = []
-      for (const output of result.output ?? []) {
-        if (output && typeof output === "object" && "content" in output)
-          content.push(output.content as ContentBlock)
-      }
+      const content: ContentBlock[] = outputContentBlocks(result.output)
       if (result.error) content.unshift({ type: "text", text: result.error.split("\n")[0]! })
       else if (result.result !== undefined && result.result !== null) {
         const value = result.result
         if (typeof value === "object" && "image" in value) {
           const { image, ...state } = value
           content.push({ type: "text", text: JSON.stringify(state) })
-          if (image) content.push(image as ContentBlock)
+          const block = contentBlock(image)
+          if (block !== undefined) content.push(block)
         } else
           content.push({
             type: "text",

@@ -1,31 +1,25 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import { makeBrowserToolInvoker, type BrowserToolSessionState } from "./browser-use-invoke.js"
+import {
+  browserToolSessionState,
+  fakeBrowserRuntime,
+  fakeCdpConnection
+} from "./browser-runtime-test-support.js"
+import { makeBrowserToolInvoker } from "./browser-use-invoke.js"
+import { expectArray, expectRecord } from "./unknown-values.js"
 
 const context = { sessionId: "tab-group-session", projectId: "project" }
 
 const harness = (backend: "extension" | "managed" = "extension") => {
   const sent: Array<{ method: string; params: unknown }> = []
-  const state: BrowserToolSessionState = {
-    assetInventories: new Map(),
+  const state = browserToolSessionState({
     assetsDir: "/tmp/assets",
     downloadsDir: "/tmp/downloads",
-    selectedTargets: new Map(),
-    sessionBackends: new Map([[context.sessionId, backend]]),
-    sessionDispositions: new Map(),
-    sessionTargets: new Map()
-  }
-  const runtime = {
-    tabOrder: [],
-    sessions: new Map(),
-    staleSessions: new Map(),
-    snapshots: new Map(),
-    logs: new Map(),
-    dialogs: new Map(),
-    fileChoosers: new Map(),
-    connection: {
-      send: async (method: string, params: unknown) => {
+    sessionBackends: new Map([[context.sessionId, backend]])
+  })
+  const runtime = fakeBrowserRuntime({
+    connection: fakeCdpConnection({
+      send: async (method, params) => {
         sent.push({ method, params })
         if (method === "Target.getTargets") {
           return {
@@ -41,8 +35,8 @@ const harness = (backend: "extension" | "managed" = "extension") => {
         }
         return {}
       }
-    }
-  } as unknown as BrowserRuntime
+    }).connection
+  })
   const invoke = makeBrowserToolInvoker(state)
   const call = async (args: Readonly<Record<string, unknown>>) => {
     const result = await invoke(context, runtime, "tab_groups", args)
@@ -56,7 +50,7 @@ const harness = (backend: "extension" | "managed" = "extension") => {
 const text = (result: Awaited<ReturnType<ReturnType<typeof harness>["invoke"]>>) => {
   const block = result.content[0]
   if (block?.type !== "text") throw new Error("Missing tool text")
-  return JSON.parse(block.text) as Record<string, unknown>
+  return expectRecord(JSON.parse(block.text), "tool text")
 }
 
 describe("tab_groups", () => {
@@ -85,11 +79,11 @@ describe("tab_groups", () => {
     const { call, sent } = harness()
     const listed = { groups: [{ id: 7, title: "Research", tabIds: ["11"] }] }
     const first = harness()
-    first.runtime.connection.send = (async (method: string, params: unknown) => {
+    vi.spyOn(first.runtime.connection, "send").mockImplementation(async (method, params) => {
       first.sent.push({ method, params })
       if (method === "Codevisor.tabGroups.list") return listed
       return { group: { id: 7, title: "Research", color: "green" } }
-    }) as never
+    })
     expect(
       await first.call({
         action: "ensure",
@@ -119,7 +113,7 @@ describe("tab_groups", () => {
 
   it("keeps handed-off tabs visible to later turns without ever closing them", async () => {
     const { invoke, runtime } = harness()
-    runtime.connection.send = (async (method: string) => {
+    vi.spyOn(runtime.connection, "send").mockImplementation(async (method) => {
       if (method === "Target.getTargets") {
         return {
           targetInfos: [
@@ -130,7 +124,7 @@ describe("tab_groups", () => {
       }
       if (method === "Target.createTarget") return { targetId: "11" }
       return {}
-    }) as never
+    })
     await invoke(context, runtime, "tabs", { action: "new", url: "https://a.test/" })
     expect(
       text(await invoke(context, runtime, "finalizeTabs", { native: true, keepIds: ["11"] }))
@@ -181,8 +175,8 @@ describe("tab_groups", () => {
     expect(JSON.parse(block.text)).toMatchObject({
       tabs: [{ id: "11", groupId: 7 }, { id: "12" }]
     })
-    expect((JSON.parse(block.text) as { tabs: Array<object> }).tabs[1]).not.toHaveProperty(
-      "groupId"
-    )
+    expect(
+      expectArray(expectRecord(JSON.parse(block.text), "tabs").tabs, "tabs")[1]
+    ).not.toHaveProperty("groupId")
   })
 })

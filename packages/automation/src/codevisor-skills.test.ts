@@ -24,7 +24,7 @@ const referencedTools = (text: string): string[] => {
   const viaTools = [...text.matchAll(/tools\.codevisor\.([a-z_]+\.[a-z_]+)/g)].map((m) => m[1]!)
   const bare = [...text.matchAll(/`([a-z_]+\.[a-z_]+)\(/g)]
     .map((m) => m[1]!)
-    .filter((name) => namespaces.has(name.split(".")[0]!))
+    .filter((name) => namespaces.has(name.split(".")[0]))
   return [...viaTools, ...bare]
 }
 
@@ -32,10 +32,7 @@ const argumentNames = new Map(
   makeCodevisorProvider(
     () => "http://unused",
     async () => "unused"
-  ).tools.map((tool) => [
-    tool.name,
-    new Set(Object.keys((tool.inputSchema as { properties?: object }).properties ?? {}))
-  ])
+  ).tools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties ?? {}))])
 )
 
 const objectKeys = (text: string, start: number): string[] => {
@@ -66,7 +63,7 @@ const toolArguments = (text: string) =>
   [...text.matchAll(/(?:tools\.codevisor\.|`)([a-z_]+\.[a-z_]+)\(\{/g)].flatMap((match) => {
     const tool = match[1]!
     if (!argumentNames.has(tool)) return []
-    return [{ tool, keys: objectKeys(text, match.index! + match[0].length - 1) }]
+    return [{ tool, keys: objectKeys(text, match.index + match[0].length - 1) }]
   })
 
 describe("managed Codevisor skills", () => {

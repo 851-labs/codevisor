@@ -51,6 +51,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     get env() {
       return state.currentEnv
     },
+    envFor: (cwd) => config.resolveDirectoryEnv?.(cwd) ?? Promise.resolve(state.currentEnv),
     executableExists,
     locateExecutable
   }

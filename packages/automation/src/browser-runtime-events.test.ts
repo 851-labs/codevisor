@@ -1,36 +1,22 @@
 import { expect, it, vi } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import type { CdpConnection } from "./browser-cdp.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
 function fixture() {
   const stopEvents = vi.fn()
   const stopRecovery = vi.fn()
   let listener: Parameters<CdpConnection["on"]>[1]
-  const runtime: BrowserRuntime = {
-    connection: {
-      on: (_method: string, handler: typeof listener) => {
+  const runtime = fakeBrowserRuntime({
+    connection: fakeCdpConnection({
+      on: (_method, handler) => {
         listener = handler
         return stopEvents
       },
       setSessionRecoveryHandler: () => stopRecovery
-    } as unknown as CdpConnection,
-    owned: false,
-    processHandle: undefined,
-    sessions: new Map(),
-    staleSessions: new Map(),
-    snapshots: new Map(),
-    eventLog: [],
-    logs: new Map(),
-    dialogs: new Map(),
-    fileChoosers: new Map(),
-    downloads: new Map(),
-    eventDisposers: [],
-    eventSequence: 0,
-    tabOrder: [],
-    queue: Promise.resolve()
-  }
+    }).connection
+  })
   observeBrowserRuntime(runtime, "/downloads", false)
   const emit = (method: string, params: Record<string, unknown> = {}, sessionId?: string) =>
     listener(params, { method, params, ...(sessionId === undefined ? {} : { sessionId }) })

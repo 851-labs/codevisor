@@ -5,8 +5,12 @@ import {
   decodeRelayEnvelopes,
   encodeCloudFrame,
   encodeRelayEnvelopes,
+  parseHubToAppRelayHeader,
+  parseHubToMachineRelayHeader,
   type HubToApp,
+  type HubToAppRelayHeader,
   type HubToMachine,
+  type HubToMachineRelayHeader,
   type WireRelayEnvelope
 } from "@codevisor/api"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
@@ -14,6 +18,7 @@ import { env, runInDurableObject, SELF } from "cloudflare:test"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 
 import type { UserHub } from "../src/user-hub.js"
+import { KeyBody, readJson, SessionUserBody, TokenBody } from "./json-test-support.js"
 
 export const BASE = "http://localhost:8787"
 
@@ -26,7 +31,7 @@ afterEach(() => vi.useRealTimers())
 export const devLogin = async (): Promise<string> => {
   const response = await SELF.fetch(`${BASE}/dev/login`, { method: "POST" })
   expect(response.status).toBe(200)
-  const body = (await response.json()) as { token: string }
+  const body = await readJson(response, TokenBody)
   expect(body.token).toBeTruthy()
   return body.token
 }
@@ -37,11 +42,9 @@ export const authed = (token: string): Record<string, string> => ({
 
 const hubStub = async (token: string): Promise<DurableObjectStub<UserHub>> => {
   const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
-  const body = (await session.json()) as { user?: { id?: string } } | null
-  const userId = body?.user?.id
-  if (userId === undefined) throw new Error("no session user for hub stub")
-  const namespace = env.USER_HUB as unknown as DurableObjectNamespace
-  return namespace.get(namespace.idFromName(userId)) as DurableObjectStub<UserHub>
+  const body = await readJson(session, SessionUserBody)
+  if (body === null) throw new Error("no session user for hub stub")
+  return env.USER_HUB.get(env.USER_HUB.idFromName(body.user.id))
 }
 
 export const disconnect = async (
@@ -104,7 +107,37 @@ export class Queue<Item> {
   }
 }
 
-export class SocketReader<Frame> {
+export const expectDefined = <Value>(value: Value): NonNullable<Value> => {
+  if (value === undefined || value === null) throw new Error("expected a defined value")
+  return value
+}
+
+export const hasTag = <Value extends { t: string }, Tag extends Value["t"]>(
+  value: Value,
+  t: Tag
+): value is Extract<Value, { t: Tag }> => value.t === t
+
+export const expectTag = <Value extends { t: string }, Tag extends Value["t"]>(
+  value: Value,
+  t: Tag
+): Extract<Value, { t: Tag }> => {
+  if (!hasTag(value, t)) throw new Error(`expected a ${t} frame, got ${value.t}`)
+  return value
+}
+
+export const machineRelayHeader = (envelope: WireRelayEnvelope): HubToMachineRelayHeader => {
+  const header = parseHubToMachineRelayHeader(envelope.header)
+  if (header === undefined) throw new Error("expected a hub-to-machine relay header")
+  return header
+}
+
+export const appRelayHeader = (envelope: WireRelayEnvelope): HubToAppRelayHeader => {
+  const header = parseHubToAppRelayHeader(envelope.header)
+  if (header === undefined) throw new Error("expected a hub-to-app relay header")
+  return header
+}
+
+export class SocketReader<Frame extends { t: string }> {
   readonly #controls = new Queue<Frame>()
   readonly #envelopes = new Queue<WireRelayEnvelope>()
   binaryMessages = 0
@@ -117,10 +150,10 @@ export class SocketReader<Frame> {
         return
       }
       this.binaryMessages += 1
-      const data = event.data
+      const data: unknown = event.data
       this.#chain = this.#chain.then(async () => {
-        const buffer =
-          data instanceof ArrayBuffer ? data : await (data as unknown as Blob).arrayBuffer()
+        const buffer = data instanceof Blob ? await data.arrayBuffer() : data
+        if (!(buffer instanceof ArrayBuffer)) throw new Error("unexpected binary message type")
         for (const envelope of decodeRelayEnvelopes(new Uint8Array(buffer))) {
           this.#envelopes.push({ ...envelope, payload: new Uint8Array(envelope.payload) })
         }
@@ -130,6 +163,10 @@ export class SocketReader<Frame> {
 
   async next(): Promise<Frame> {
     return this.#controls.next()
+  }
+
+  async nextFrame<Tag extends Frame["t"]>(t: Tag): Promise<Extract<Frame, { t: Tag }>> {
+    return expectTag(await this.#controls.next(), t)
   }
 
   async nextEnvelope(): Promise<WireRelayEnvelope> {
@@ -187,7 +224,7 @@ export const connectMachine = async (
       body: JSON.stringify({ name, metadata: { deviceId, publicKey: keys.publicKey } })
     })
     expect(created.status).toBe(200)
-    apiKey = ((await created.json()) as { key: string }).key
+    apiKey = (await readJson(created, KeyBody)).key
   }
   const tunnel = options.tunnelEndpointId
   const socket = await connectSocket({
@@ -213,7 +250,7 @@ export const connectMachine = async (
       ...(options.features === undefined ? {} : { features: options.features })
     })
   )
-  const welcome = (await reader.next()) as MachineSetup["welcome"]
+  const welcome = await reader.nextFrame("welcome")
   expect(welcome).toMatchObject({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION })
   return { token, apiKey, deviceId, keys, socket, reader, welcome }
 }
@@ -262,7 +299,7 @@ export const connectApp = async (
       ...(options.resume === undefined ? {} : { resume: options.resume })
     })
   )
-  const welcome = (await reader.next()) as AppSetup["welcome"]
+  const welcome = await reader.nextFrame("welcome")
   expect(welcome.t).toBe("welcome")
   return { keys, socket, reader, welcome, deviceId }
 }
