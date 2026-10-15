@@ -2,9 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { AuthInteraction, OAuthCredential, Provider } from "@earendil-works/pi-ai"
+import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { fakeProvider } from "./harness-lifecycle-test-support.js"
 import { makePiAuthManager, piAuthPath } from "./pi-auth.js"
 
 const directories: string[] = []
@@ -19,19 +20,24 @@ describe("Pi provider authentication", () => {
   it("saves a managed login before completing and never writes its refresh token to the native file", async () => {
     const home = mkdtempSync(join(tmpdir(), "codevisor-pi-managed-"))
     directories.push(home)
-    const credential = { type: "oauth", access: "access", refresh: "refresh", expires: 3_600_000 }
-    const provider = {
+    const credential = {
+      type: "oauth" as const,
+      access: "access",
+      refresh: "refresh",
+      expires: 3_600_000
+    }
+    const provider = fakeProvider({
       id: "test",
       name: "Test",
       auth: {
         oauth: {
+          name: "Test OAuth",
           login: async () => credential,
           refresh: async () => credential,
           toAuth: async () => ({ apiKey: "access" })
         }
-      },
-      getModels: () => []
-    } as unknown as Provider
+      }
+    })
     const saved = Promise.withResolvers<boolean>()
     const called = Promise.withResolvers<void>()
     const completed = Promise.withResolvers<void>()
@@ -125,7 +131,7 @@ describe("Pi provider authentication", () => {
     const home = mkdtempSync(join(tmpdir(), "codevisor-pi-callback-"))
     directories.push(home)
     let completeCallback: (() => void) | undefined
-    const provider = {
+    const provider = fakeProvider({
       id: "callback-provider",
       name: "Callback Provider",
       auth: {
@@ -159,9 +165,8 @@ describe("Pi provider authentication", () => {
           refresh: async (credential: OAuthCredential) => credential,
           toAuth: async (credential: OAuthCredential) => ({ apiKey: credential.access })
         }
-      },
-      getModels: () => []
-    } as unknown as Provider
+      }
+    })
     const completedFlow = Promise.withResolvers<void>()
     const manager = makePiAuthManager({
       onFlowChanged: (flow) => {

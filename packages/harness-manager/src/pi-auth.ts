@@ -14,7 +14,14 @@ import type { AuthEvent, AuthPrompt, Credential, Provider } from "@earendil-work
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all"
 import lockfile from "proper-lockfile"
 
-type AuthFile = Record<string, Credential>
+import { errnoCode, parseJsonRecord, recordOrEmpty } from "./json-values.js"
+
+type AuthFile = Record<string, unknown>
+
+const storedCredentialType = (credential: unknown): Credential["type"] | undefined => {
+  const type = recordOrEmpty(credential).type
+  return type === "api_key" || type === "oauth" ? type : undefined
+}
 
 export const piAuthPath = (env: NodeJS.ProcessEnv): string => {
   const home = env.HOME ?? homedir()
@@ -111,7 +118,7 @@ const ensureAuthFile = async (path: string): Promise<void> => {
   try {
     await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+    if (errnoCode(cause) !== "EEXIST") throw cause
   }
   await chmod(path, 0o600)
 }
@@ -136,9 +143,9 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
 
   const readCredentials = async (): Promise<AuthFile> => {
     try {
-      return JSON.parse(await readFile(await authPath(), "utf8")) as AuthFile
+      return parseJsonRecord(await readFile(await authPath(), "utf8"))
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return {}
+      if (errnoCode(cause) === "ENOENT") return {}
       throw cause
     }
   }
@@ -151,7 +158,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
       retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 1_000 }
     })
     try {
-      const current = JSON.parse(await readFile(path, "utf8")) as AuthFile
+      const current = parseJsonRecord(await readFile(path, "utf8"))
       await writeFile(path, `${JSON.stringify(change(current), null, 2)}\n`, {
         encoding: "utf8",
         mode: 0o600
@@ -238,6 +245,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
       return catalog
         .map((provider): PiAuthProvider | undefined => {
           const credential = credentials[provider.id]
+          const credentialType = storedCredentialType(credential)
           const methods: PiAuthMethod[] = []
           if (provider.auth.oauth !== undefined) methods.push("oauth")
           if (provider.auth.apiKey?.login !== undefined) methods.push("api_key")
@@ -246,7 +254,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
             id: provider.id,
             name: provider.name,
             methods,
-            ...(credential === undefined ? {} : { credentialType: credential.type })
+            ...(credentialType === undefined ? {} : { credentialType })
           }
         })
         .filter((provider): provider is PiAuthProvider => provider !== undefined)

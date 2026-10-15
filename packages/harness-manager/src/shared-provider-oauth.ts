@@ -3,20 +3,17 @@ import { createHash } from "node:crypto"
 import type { OAuthCredential, Provider } from "@earendil-works/pi-ai"
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all"
 
+import { recordOrEmpty } from "./json-values.js"
 import { SharedCredentialError, type SharedTokenBundle } from "./shared-credential-types.js"
 
 export type ProviderOAuthHarness = "pi" | "opencode" | "grok-build"
 export const MANAGED_REFRESH_PREFIX = "codevisor:"
 
-const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 const claims = (token: string): Record<string, unknown> => {
   try {
-    return object(JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()))
+    return recordOrEmpty(JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()))
   } catch {
     return {}
   }
@@ -48,7 +45,7 @@ export const parseProviderOAuth = (
   providers?: ReadonlyArray<Provider>
 ): SharedTokenBundle | undefined => {
   if (!providerOAuthSupported(harnessId, providerId, providers)) return undefined
-  const credential = object(value)
+  const credential = recordOrEmpty(value)
   const grok = harnessId === "grok-build"
   if (grok && credential.auth_mode === "api_key") {
     const key = string(credential.key)
@@ -84,7 +81,7 @@ export const parseProviderOAuth = (
   const identity = grok
     ? { ...claims(string(credential.id_token) ?? ""), ...accessIdentity }
     : accessIdentity
-  const auth = object(identity["https://api.openai.com/auth"])
+  const auth = recordOrEmpty(identity["https://api.openai.com/auth"])
   const subject =
     string(auth.chatgpt_user_id) ??
     string(identity.sub) ??
@@ -167,7 +164,7 @@ export const refreshProviderOAuth = async (
     }).toString()
   })
   if (!response.ok) throw new SharedCredentialError("reauthenticate")
-  const value = object(await response.json())
+  const value = recordOrEmpty(await response.json())
   const accessToken = string(value.access_token)
   const expiresIn = value.expires_in
   if (

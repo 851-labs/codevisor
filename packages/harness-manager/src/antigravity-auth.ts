@@ -12,16 +12,32 @@ import {
   type AgyTerminalSpawner
 } from "@codevisor/adapter-antigravity"
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
-import type { HarnessAccountRecord } from "@codevisor/db"
+import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
 
 import { ANTIGRAVITY_HARNESS_ID } from "./antigravity-profile.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import { run } from "./harness-auth-support.js"
+import type { SharedAccountIntegration } from "./shared-account-integration.js"
 
 export { ANTIGRAVITY_HARNESS_ID }
 
+export type AntigravityAuthCore = Pick<
+  HarnessAuthCore,
+  "accountCommand" | "executable" | "profilePath" | "emit" | "publicAccount"
+> & {
+  readonly config: {
+    readonly sharedAccounts?: () =>
+      | Pick<SharedAccountIntegration, "captureLogin" | "loginFailed">
+      | undefined
+    readonly db: Pick<
+      CodevisorDatabaseService,
+      "listHarnessAccounts" | "saveHarnessAccount" | "setActiveHarnessAccount"
+    >
+  }
+}
+
 export const makeAntigravityAuth = (
-  core: HarnessAuthCore,
+  core: AntigravityAuthCore,
   probeAccount: (accountId: string, force: boolean) => Promise<HarnessAccount>,
   spawn: AgyTerminalSpawner = spawnAgyTerminal,
   runner: AgyRunner = runAgy,

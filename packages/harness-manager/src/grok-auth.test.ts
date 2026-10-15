@@ -2,15 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { makeDatabase } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import type { OAuthAuth, OAuthCredential } from "@earendil-works/pi-ai"
 import { Effect } from "effect"
 import { afterEach, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeGrokDeviceLogin } from "./grok-device-auth.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import { fakeAgentRuntime, fakeTerminalManager } from "./harness-lifecycle-test-support.js"
+import { isRecord } from "./json-values.js"
 import type { SharedProviderIntegration } from "./shared-provider-integration.js"
 
 type ProviderAuthInteraction = Parameters<OAuthAuth["login"]>[0]
@@ -68,8 +68,8 @@ const fixture = async (grokOAuth?: OAuthAuth, available = true) => {
     db,
     dataDir: directory,
     resolveEnv: async () => ({ HOME: directory }),
-    terminal: {} as TerminalManagerService,
-    agents: { authenticateHarness } as unknown as AgentRuntimeService,
+    terminal: fakeTerminalManager(),
+    agents: fakeAgentRuntime({ authenticateHarness }),
     sharedProviders: () => (available ? shared : undefined),
     ...(grokOAuth ? { grokOAuth } : {})
   })
@@ -77,7 +77,8 @@ const fixture = async (grokOAuth?: OAuthAuth, available = true) => {
   manager.subscribe((event) => {
     if (
       event.kind === "harness.account.updated" &&
-      Object.keys(event.payload as object).length === 1
+      isRecord(event.payload) &&
+      Object.keys(event.payload).length === 1
     )
       finish.resolve()
   })

@@ -2,14 +2,18 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { harnessCatalog, type AgentRuntimeService } from "@codevisor/agent-runtime"
+import { harnessCatalog } from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import {
+  fakeAgentRuntime,
+  fakeSharedAccounts,
+  fakeTerminalManager
+} from "./harness-lifecycle-test-support.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -42,10 +46,10 @@ const codexMethodsFor = async (preferDeviceCode: boolean) => {
     })
   )
   const manager = makeHarnessAuthManager({
-    agents: {} as AgentRuntimeService,
+    agents: fakeAgentRuntime(),
     dataDir: directory,
     db,
-    terminal: {} as TerminalManagerService,
+    terminal: fakeTerminalManager(),
     preferDeviceCode,
     resolveEnv: () => Promise.resolve({ HOME: directory })
   })
@@ -100,10 +104,10 @@ describe("harness authentication decoration", () => {
       Effect.succeed({ state: "authenticated" as const, methods: [], canLogout: true })
     )
     const manager = makeHarnessAuthManager({
-      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
     const definition = harnessCatalog.find((candidate) => candidate.id === "gemini")!
@@ -147,10 +151,10 @@ describe("harness authentication decoration", () => {
       })
     )
     const manager = makeHarnessAuthManager({
-      agents: {} as AgentRuntimeService,
+      agents: fakeAgentRuntime(),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
 
@@ -209,10 +213,10 @@ describe("harness authentication decoration", () => {
       })
     )
     const manager = makeHarnessAuthManager({
-      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
     const definition = harnessCatalog.find((candidate) => candidate.id === "gemini")!
@@ -277,14 +281,10 @@ it("probes the selected shared account and publishes readiness when its credenti
   const manager = makeHarnessAuthManager({
     db,
     dataDir: directory,
-    agents: {} as AgentRuntimeService,
-    terminal: {} as TerminalManagerService,
+    agents: fakeAgentRuntime(),
+    terminal: fakeTerminalManager(),
     resolveEnv: async () => ({ HOME: directory }),
-    sharedAccounts: () =>
-      ({
-        reconcile: async () => {},
-        probe
-      }) as unknown as import("./shared-account-integration.js").SharedAccountIntegration
+    sharedAccounts: () => fakeSharedAccounts({ reconcile: async () => {}, probe })
   })
   const events: string[] = [],
     stop = manager.subscribe((event) => {
@@ -337,14 +337,10 @@ it("announces a shared sign-out so catalogs on other clients follow", async () =
   const manager = makeHarnessAuthManager({
     db,
     dataDir: directory,
-    agents: {} as AgentRuntimeService,
-    terminal: {} as TerminalManagerService,
+    agents: fakeAgentRuntime(),
+    terminal: fakeTerminalManager(),
     resolveEnv: async () => ({ HOME: directory }),
-    sharedAccounts: () =>
-      ({
-        reconcile: async () => {},
-        logout
-      }) as unknown as import("./shared-account-integration.js").SharedAccountIntegration
+    sharedAccounts: () => fakeSharedAccounts({ reconcile: async () => {}, logout })
   })
   const events: string[] = [],
     stop = manager.subscribe((event) => events.push(event.kind))
@@ -378,10 +374,10 @@ it("emits auth events only when a probe changes what clients render", async () =
     Effect.succeed({ state, methods: [], canLogout: state === "authenticated" })
   )
   const manager = makeHarnessAuthManager({
-    agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+    agents: fakeAgentRuntime({ probeHarnessAuth }),
     dataDir: directory,
     db,
-    terminal: {} as TerminalManagerService,
+    terminal: fakeTerminalManager(),
     resolveEnv: () => Promise.resolve({ HOME: directory })
   })
   const events: string[] = []

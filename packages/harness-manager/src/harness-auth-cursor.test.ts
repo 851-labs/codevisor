@@ -2,13 +2,12 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import { fakeAgentRuntime, fakeTerminalManager } from "./harness-lifecycle-test-support.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -47,10 +46,10 @@ const cursorAuthSetup = async (
     })
   )
   const manager = makeHarnessAuthManager({
-    agents: {} as AgentRuntimeService,
+    agents: fakeAgentRuntime(),
     dataDir: directory,
     db,
-    terminal: {} as TerminalManagerService,
+    terminal: fakeTerminalManager(),
     execFile: execute,
     resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory })
   })

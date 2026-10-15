@@ -3,13 +3,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { makeOpenCode2Logins, type OpenCodeServer } from "@codevisor/adapter-opencode"
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import { fakeAgentRuntime, fakeTerminalManager } from "./harness-lifecycle-test-support.js"
+import type { SharedProviderIntegration } from "./shared-provider-integration.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 const directories: string[] = []
@@ -26,14 +26,15 @@ const scriptedServer = (answer: (path: string) => unknown) => {
   const stopped = new Promise<void>((resolve) => {
     markStopped = resolve
   })
-  const server = {
+  const server: OpenCodeServer = {
     url: "http://oc",
-    request: vi.fn(async (path: string) => {
+    request: async <A>(path: string): Promise<A> => {
       calls.push(path)
-      return answer(path)
-    }),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      return answer(path) as A
+    },
     stop: vi.fn(async () => markStopped())
-  } as unknown as OpenCodeServer
+  }
   return { server, calls, stopped }
 }
 
@@ -71,8 +72,11 @@ const setup = async (overrides: { readonly removed?: boolean } = {}) => {
     configured: vi.fn(async () => ["openai"]),
     disabled: vi.fn(async () => []),
     capture: vi.fn(async () => true),
-    remove: vi.fn(async () => overrides.removed ?? false)
-  }
+    remove: vi.fn(async () => overrides.removed ?? false),
+    context: vi.fn<SharedProviderIntegration["context"]>(async () => {
+      throw new Error("context is not stubbed")
+    })
+  } satisfies SharedProviderIntegration
   const isolated = scriptedServer((path) => {
     if (path.endsWith("/connect/oauth"))
       return {
@@ -96,10 +100,10 @@ const setup = async (overrides: { readonly removed?: boolean } = {}) => {
   })
   const start = vi.fn(async (_options: { readonly env: NodeJS.ProcessEnv }) => isolated.server)
   const manager = makeHarnessAuthManager({
-    agents: {} as AgentRuntimeService,
+    agents: fakeAgentRuntime(),
     dataDir: directory,
     db,
-    terminal: {} as TerminalManagerService,
+    terminal: fakeTerminalManager(),
     resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory }),
     openCode: {
       majorVersion: async () => 2,
@@ -107,7 +111,7 @@ const setup = async (overrides: { readonly removed?: boolean } = {}) => {
       start,
       logins: makeOpenCode2Logins({ wait: async () => undefined })
     },
-    sharedProviders: () => shared as never
+    sharedProviders: () => shared
   })
   return { manager, accounts, shared, control, isolated, start, binary }
 }

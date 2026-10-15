@@ -2,14 +2,24 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import {
+  harnessCatalog,
+  type AgentRuntimeService,
+  type HarnessDefinition
+} from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { makeDatabase } from "@codevisor/db"
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import type {
+  CodevisorDatabaseService,
+  HarnessAccountRecord,
+  SaveHarnessAccountRequest
+} from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
+import type { Provider } from "@earendil-works/pi-ai"
 import { Effect } from "effect"
 
 import type { HarnessLifecycleManager, LifecycleProcess } from "./harness-lifecycle.js"
+import type { SharedAccountIntegration } from "./shared-account-integration.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -50,14 +60,104 @@ export const installMethodsFor = async (lifecycle: HarnessLifecycleManager, id: 
   return decorated?.installMethods ?? []
 }
 
+const unstubbed = (name: string) => (): never => {
+  throw new Error(`${name} is not stubbed`)
+}
+const unstubbedEffect = (name: string) => () => Effect.die(new Error(`${name} is not stubbed`))
+
+export const fakeAgentRuntime = (
+  overrides: Partial<AgentRuntimeService> = {}
+): AgentRuntimeService => ({
+  catalog: harnessCatalog,
+  discoverHarnesses: Effect.die(new Error("discoverHarnesses is not stubbed")),
+  refreshEnvironment: Effect.die(new Error("refreshEnvironment is not stubbed")),
+  listAgentSessions: unstubbedEffect("listAgentSessions"),
+  reconcileConfigValue: unstubbed("reconcileConfigValue"),
+  readHarnessUsageLimits: unstubbedEffect("readHarnessUsageLimits"),
+  createAgentSession: unstubbedEffect("createAgentSession"),
+  inspectHarness: unstubbedEffect("inspectHarness"),
+  loadAgentSession: unstubbedEffect("loadAgentSession"),
+  prompt: unstubbedEffect("prompt"),
+  cancel: unstubbedEffect("cancel"),
+  loadedAgentSessionIds: unstubbed("loadedAgentSessionIds"),
+  closeAgentSession: unstubbedEffect("closeAgentSession"),
+  setMode: unstubbedEffect("setMode"),
+  setConfigOption: unstubbedEffect("setConfigOption"),
+  setGoal: unstubbedEffect("setGoal"),
+  clearGoal: unstubbedEffect("clearGoal"),
+  answerQuestion: unstubbedEffect("answerQuestion"),
+  probeHarnessAuth: unstubbedEffect("probeHarnessAuth"),
+  authenticateHarness: unstubbedEffect("authenticateHarness"),
+  logoutHarness: unstubbedEffect("logoutHarness"),
+  ...overrides
+})
+
+export const fakeTerminalManager = (
+  overrides: Partial<TerminalManagerService> = {}
+): TerminalManagerService => ({
+  createTerminal: unstubbedEffect("createTerminal"),
+  connectTerminal: unstubbedEffect("connectTerminal"),
+  handleClientFrame: unstubbedEffect("handleClientFrame"),
+  closeTerminal: unstubbedEffect("closeTerminal"),
+  closeTerminalForSession: unstubbedEffect("closeTerminalForSession"),
+  closeTerminalsForSessionPrefix: unstubbedEffect("closeTerminalsForSessionPrefix"),
+  registerExternalTerminal: unstubbed("registerExternalTerminal"),
+  snapshotTerminals: unstubbed("snapshotTerminals"),
+  restoreTerminals: unstubbed("restoreTerminals"),
+  readScreen: unstubbedEffect("readScreen"),
+  outputRevision: unstubbed("outputRevision"),
+  subscribeTitles: unstubbed("subscribeTitles"),
+  releaseClient: unstubbed("releaseClient"),
+  ...overrides
+})
+
+export const harnessAccountRecord = (
+  fields: Partial<HarnessAccountRecord> = {}
+): HarnessAccountRecord => ({
+  id: "acct-1",
+  harnessId: "codex",
+  profileKind: "default",
+  label: "Account",
+  authState: "unauthenticated",
+  isActive: false,
+  canLogin: true,
+  canLogout: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  ...fields
+})
+
+export const savedHarnessAccount = (request: SaveHarnessAccountRequest): HarnessAccountRecord =>
+  harnessAccountRecord(request)
+
+export const fakeSharedAccounts = (
+  overrides: Partial<SharedAccountIntegration> = {}
+): SharedAccountIntegration => ({
+  reconcile: unstubbed("reconcile"),
+  probe: unstubbed("probe"),
+  context: unstubbed("context"),
+  activate: unstubbed("activate"),
+  accounts: unstubbed("accounts"),
+  captureLogin: unstubbed("captureLogin"),
+  prepareLogin: unstubbed("prepareLogin"),
+  logout: unstubbed("logout"),
+  loginFailed: unstubbed("loginFailed"),
+  saveApiKey: unstubbed("saveApiKey"),
+  ...overrides
+})
+
+export const fakeProvider = (provider: Pick<Provider, "id" | "name" | "auth">): Provider => ({
+  getModels: () => [],
+  stream: unstubbed("stream"),
+  streamSimple: unstubbed("streamSimple"),
+  ...provider
+})
+
 export const agentsStub = (
   definitions: ReadonlyArray<HarnessDefinition>,
   harnesses: ReadonlyArray<Harness>
 ): AgentRuntimeService =>
-  ({
-    catalog: definitions,
-    discoverHarnesses: Effect.succeed(harnesses)
-  }) as unknown as AgentRuntimeService
+  fakeAgentRuntime({ catalog: definitions, discoverHarnesses: Effect.succeed(harnesses) })
 
 export const npmDefinition: HarnessDefinition = {
   detectBinaries: ["fake-cli"],
@@ -98,15 +198,19 @@ export const makeBinDir = (names: ReadonlyArray<string>): string => {
 export const fakeTerminal = () => {
   const outputs: Array<string> = []
   const exits: Array<number | undefined> = []
-  const terminal = {
+  const terminal = fakeTerminalManager({
     registerExternalTerminal: () => ({
-      exit: (code?: number) => exits.push(code),
-      output: (data: string) => outputs.push(data),
+      exit: (code?: number) => {
+        exits.push(code)
+      },
+      output: (data: string) => {
+        outputs.push(data)
+      },
       remove: () => {},
-      response: {} as never,
+      response: { terminalId: "terminal-1", websocketPath: "", nextOutputSeq: 0 },
       terminalId: "terminal-1"
     })
-  } as unknown as TerminalManagerService
+  })
   return { exits, outputs, terminal }
 }
 
@@ -168,12 +272,10 @@ export const installableDefinition: HarnessDefinition = {
   }
 }
 
-export const waitForLifecycleSettle = (
-  lifecycle: import("./harness-lifecycle-types.js").HarnessLifecycleManager
-) =>
+export const waitForLifecycleSettle = (lifecycle: HarnessLifecycleManager) =>
   new Promise<void>((resolve) => {
     const unsubscribe = lifecycle.subscribe((event) => {
-      const phase = (event.payload as { lifecycle?: { phase?: string } }).lifecycle?.phase
+      const phase = event.payload.lifecycle?.phase
       if (phase !== "idle" && phase !== "failed") return
       unsubscribe()
       resolve()

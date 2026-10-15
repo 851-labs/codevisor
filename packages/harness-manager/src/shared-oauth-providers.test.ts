@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import type { HarnessAuthExec } from "./harness-auth-types.js"
-import type { SharedTokenBundle } from "./shared-credential-types.js"
 import {
   parseClaudeOAuth,
   parseCodexOAuth,
@@ -60,9 +59,8 @@ describe("shared OAuth provider adapters", () => {
       planType: "pro",
       expiresAt: 1234000
     })
-    expect(sharedOAuthIdentity(managed)).toBe(
-      sharedOAuthIdentity({ ...external, email: "changed@example.test" } as SharedTokenBundle)
-    )
+    const changedEmail = { ...external, email: "changed@example.test" }
+    expect(sharedOAuthIdentity(managed)).toBe(sharedOAuthIdentity(changedEmail))
     expect(sharedOAuthIdentity(managed)).not.toBe(
       sharedOAuthIdentity({ ...external, organizationId: "other" })
     )
@@ -209,7 +207,7 @@ describe("shared OAuth provider adapters", () => {
     const fetcher = (async (url, options) => {
       requests.push({
         url: url instanceof Request ? url.url : url.toString(),
-        body: JSON.parse(options?.body as string)
+        body: JSON.parse(typeof options?.body === "string" ? options.body : "{}")
       })
       return Response.json({
         access_token: jwt({ ...claims, exp: 5678 }),
@@ -253,13 +251,14 @@ describe("shared OAuth provider adapters", () => {
       Response.json({}),
       Response.json({ access_token: "a", expires_in: -1 })
     ]) {
-      await expect(
-        refreshSharedOAuth(bundle, (async () => response) as typeof fetch)
-      ).rejects.toThrow("Sign in again")
+      await expect(refreshSharedOAuth(bundle, async () => response)).rejects.toThrow(
+        "Sign in again"
+      )
     }
     await expect(
-      refreshSharedOAuth(parseCodexOAuth(codex, "managed")!, (async () =>
-        Response.json({ access_token: "invalid" })) as typeof fetch)
+      refreshSharedOAuth(parseCodexOAuth(codex, "managed")!, async () =>
+        Response.json({ access_token: "invalid" })
+      )
     ).rejects.toThrow("Sign in again")
   })
 })

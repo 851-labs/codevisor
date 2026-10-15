@@ -21,6 +21,7 @@ import { makeHarnessLoginOperations } from "./harness-auth-logins.js"
 import { makeHarnessAuthProbes } from "./harness-auth-probes.js"
 import { run } from "./harness-auth-support.js"
 import type { HarnessAuthManager, HarnessAuthManagerConfig } from "./harness-auth-types.js"
+import { parseJsonRecord } from "./json-values.js"
 import { makeMuseAuth } from "./muse-auth.js"
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 import type { OpenCodeProfile } from "./opencode-auth.js"
@@ -113,7 +114,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       return { ...profile, env, authPath: openCodeAuthPath(env) }
     },
     captureOAuth: async (accountId, providerId, path, shared) => {
-      const document = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>
+      const document = parseJsonRecord(await readFile(path, "utf8"))
       if (
         !(await config
           .sharedProviders?.()

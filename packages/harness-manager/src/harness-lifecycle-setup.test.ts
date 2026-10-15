@@ -1,4 +1,3 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -9,7 +8,8 @@ import {
   installableDefinition,
   makeBinDir,
   makeDb,
-  waitForLifecycleSettle
+  waitForLifecycleSettle,
+  fakeAgentRuntime
 } from "./harness-lifecycle-test-support.js"
 import type { PendingHarnessSetup } from "./harness-lifecycle-types.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
@@ -35,11 +35,11 @@ const makeLifecycle = async (
   harnessSetup: NonNullable<Parameters<typeof makeHarnessLifecycleManager>[0]["harnessSetup"]>
 ) => {
   const bin = makeBinDir(["brew"])
-  const agents = {
+  const agents = fakeAgentRuntime({
     catalog: [installableDefinition],
     discoverHarnesses: Effect.succeed([]),
     refreshEnvironment: Effect.void
-  } as unknown as AgentRuntimeService
+  })
   const spawner = fakeSpawner()
   const lifecycle = makeHarnessLifecycleManager({
     agents,
@@ -57,7 +57,7 @@ const makeLifecycle = async (
   })
   const phases: Array<string | undefined> = []
   lifecycle.subscribe((event) => {
-    phases.push((event.payload as { lifecycle?: { phase?: string } }).lifecycle?.phase)
+    phases.push(event.payload.lifecycle?.phase)
   })
   const released: Array<string> = []
   lifecycle.onGateReleased((harnessId) => released.push(harnessId))
@@ -151,7 +151,7 @@ describe("harness setup at startup", () => {
     const { lifecycle } = await makeLifecycle({})
     await lifecycle.finishPendingSetup()
     const bare = makeHarnessLifecycleManager({
-      agents: { catalog: [] } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ catalog: [] }),
       db: await makeDb()
     })
     await bare.finishPendingSetup()

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 
 import lockfile from "proper-lockfile"
 
+import { errnoCode, isRecord, parseJsonRecord } from "./json-values.js"
 import { openCodeAuthPath } from "./opencode-auth.js"
 
 export interface CredentialSource {
@@ -30,14 +31,12 @@ export const readJsonFile = async (path: string): Promise<Record<string, unknown
   try {
     raw = await readFile(path, "utf8")
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (errnoCode(cause) === "ENOENT") return undefined
     throw cause
   }
   const parsed: unknown = JSON.parse(raw)
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`Not a credential object: ${path}`)
-  }
-  return parsed as Record<string, unknown>
+  if (!isRecord(parsed)) throw new Error(`Not a credential object: ${path}`)
+  return parsed
 }
 
 export const atomicWriteJson = async (
@@ -56,7 +55,7 @@ export const withFileLock = async (path: string, body: () => Promise<void>): Pro
   try {
     await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+    if (errnoCode(cause) !== "EEXIST") throw cause
   }
   const release = await lockfile.lock(path, { retries: { retries: 5, minTimeout: 100 } })
   try {
@@ -67,9 +66,7 @@ export const withFileLock = async (path: string, body: () => Promise<void>): Pro
 }
 
 const credentialType = (value: unknown): string | undefined =>
-  typeof value === "object" && value !== null && "type" in value
-    ? String((value as { type: unknown }).type)
-    : undefined
+  typeof value === "object" && value !== null && "type" in value ? String(value.type) : undefined
 
 const mergeClassSource = (
   id: string,
@@ -94,8 +91,7 @@ const mergeClassSource = (
         ([provider, value]) => !local.has(provider) && travels(credentialType(value))
       )
     )
-    const shared =
-      sharedContent === undefined ? {} : (JSON.parse(sharedContent) as Record<string, unknown>)
+    const shared = sharedContent === undefined ? {} : parseJsonRecord(sharedContent)
     for (const [provider, value] of Object.entries(current)) {
       if ((local.has(provider) || !travels(credentialType(value))) && provider in shared)
         subset[provider] = shared[provider]
@@ -104,7 +100,7 @@ const mergeClassSource = (
     return canonicalCredentialJson(subset)
   },
   apply: async (content) => {
-    const incoming = JSON.parse(content) as Record<string, unknown>
+    const incoming = parseJsonRecord(content)
     const local = new Set(await localProviders())
     for (const provider of local) delete incoming[provider]
     const path = await pathFor()
@@ -155,7 +151,7 @@ export const credentialFerrySources = (
       const path = await codexPath()
       const current = await readJsonFile(path)
       if (codexHasRotatingTokens(current)) return
-      await atomicWriteJson(path, JSON.parse(content) as Record<string, unknown>)
+      await atomicWriteJson(path, parseJsonRecord(content))
     },
     applyDelete: async () => {
       const path = await codexPath()
@@ -179,7 +175,7 @@ export const credentialFerrySources = (
       try {
         return await readFile(await devinPath(), "utf8")
       } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+        if (errnoCode(cause) === "ENOENT") return undefined
         throw cause
       }
     },

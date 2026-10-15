@@ -4,6 +4,7 @@ import { join, resolve } from "node:path"
 
 import { antigravityAuthPath, parseAntigravityAuth } from "./antigravity-credentials.js"
 import type { HarnessAuthExec } from "./harness-auth-types.js"
+import { errnoCode, recordOrEmpty } from "./json-values.js"
 import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
 import {
   SharedCredentialError,
@@ -12,24 +13,22 @@ import {
 } from "./shared-credential-types.js"
 import { refreshProviderOAuth } from "./shared-provider-oauth.js"
 
-const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 const claims = (token: string): Record<string, unknown> => {
   try {
-    return object(JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")))
+    return recordOrEmpty(
+      JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"))
+    )
   } catch {
     return {}
   }
 }
 const jsonFile = async (path: string): Promise<Record<string, unknown> | undefined> => {
   try {
-    return object(JSON.parse(await readFile(path, "utf8")))
+    return recordOrEmpty(JSON.parse(await readFile(path, "utf8")))
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (errnoCode(cause) === "ENOENT") return undefined
     throw new Error("Saved sign-in could not be read", { cause })
   }
 }
@@ -55,16 +54,16 @@ export const parseCodexOAuth = (
   document: unknown,
   ownership: SharedTokenBundle["ownership"]
 ): SharedTokenBundle | undefined => {
-  const tokens = object(object(document).tokens)
+  const tokens = recordOrEmpty(recordOrEmpty(document).tokens)
   const accessToken = string(tokens.access_token)
   if (!accessToken) {
-    const key = string(object(document).OPENAI_API_KEY)
+    const key = string(recordOrEmpty(document).OPENAI_API_KEY)
     return key ? sharedApiKey("codex", key) : undefined
   }
   const access = claims(accessToken)
   const idToken = string(tokens.id_token)
   const identity = idToken ? claims(idToken) : access
-  const auth = object(
+  const auth = recordOrEmpty(
     identity["https://api.openai.com/auth"] ?? access["https://api.openai.com/auth"]
   )
   const subject = string(auth.chatgpt_user_id) ?? string(identity.sub)
@@ -92,8 +91,8 @@ export const parseClaudeOAuth = (
   settings: unknown,
   ownership: SharedTokenBundle["ownership"]
 ): SharedTokenBundle | undefined => {
-  const token = object(object(document).claudeAiOauth)
-  const identity = object(object(settings).oauthAccount)
+  const token = recordOrEmpty(recordOrEmpty(document).claudeAiOauth)
+  const identity = recordOrEmpty(recordOrEmpty(settings).oauthAccount)
   const accessToken = string(token.accessToken)
   const subject = string(identity.accountUuid)
   const organizationId = string(identity.organizationUuid)
@@ -158,7 +157,7 @@ export const readNativeOAuth = async (options: {
         ["find-generic-password", "-s", service, ...(account ? ["-a", account] : []), "-w"],
         { timeout: 5_000, maxBuffer: 100_000 }
       )
-      document = object(JSON.parse(stored.stdout))
+      document = recordOrEmpty(JSON.parse(stored.stdout))
     } catch {}
   }
   if (document === undefined) return undefined
@@ -199,7 +198,7 @@ export const refreshSharedOAuth = async (
     }
   )
   if (!response.ok) throw new SharedCredentialError("reauthenticate")
-  const value = object(await response.json())
+  const value = recordOrEmpty(await response.json())
   const accessToken = string(value.access_token)
   const refreshToken = string(value.refresh_token) ?? bundle.refreshToken
   if (!accessToken) throw new SharedCredentialError("reauthenticate")

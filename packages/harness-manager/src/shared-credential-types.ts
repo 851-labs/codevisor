@@ -1,13 +1,18 @@
 import type { CredentialCommand, CredentialCoordinationResult } from "@codevisor/api"
 
-export type SharedOAuthHarness =
-  | "claude-code"
-  | "codex"
-  | "pi"
-  | "opencode"
-  | "grok-build"
-  | "muse-code"
-  | "antigravity"
+import { isRecord } from "./json-values.js"
+
+const SHARED_OAUTH_HARNESSES = [
+  "codex",
+  "claude-code",
+  "pi",
+  "opencode",
+  "grok-build",
+  "muse-code",
+  "antigravity"
+] as const
+
+export type SharedOAuthHarness = (typeof SHARED_OAUTH_HARNESSES)[number]
 
 export interface SharedTokenBundle {
   readonly authMethod?: "apiKey"
@@ -25,6 +30,29 @@ export interface SharedTokenBundle {
   readonly credential?: Readonly<Record<string, unknown>>
   readonly ownership: "managed" | "external"
 }
+
+const isOptionalString = (value: unknown): boolean =>
+  value === undefined || typeof value === "string"
+
+export const isSharedTokenBundle = (value: unknown): value is SharedTokenBundle =>
+  isRecord(value) &&
+  SHARED_OAUTH_HARNESSES.some((harnessId) => harnessId === value.harnessId) &&
+  typeof value.subject === "string" &&
+  typeof value.accessToken === "string" &&
+  Number.isFinite(value.expiresAt) &&
+  (value.ownership === "managed" || value.ownership === "external") &&
+  (value.authMethod === undefined || value.authMethod === "apiKey") &&
+  [
+    value.organizationId,
+    value.email,
+    value.refreshToken,
+    value.idToken,
+    value.planType,
+    value.providerId
+  ].every(isOptionalString) &&
+  (value.scopes === undefined ||
+    (Array.isArray(value.scopes) && value.scopes.every((scope) => typeof scope === "string"))) &&
+  (value.credential === undefined || isRecord(value.credential))
 
 export interface SharedCredentialReference {
   readonly id: string

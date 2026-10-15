@@ -2,14 +2,14 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { harnessCatalog, type AgentRuntimeService } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, harnessCatalog } from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import { fakeAgentRuntime, fakeTerminalManager } from "./harness-lifecycle-test-support.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -46,7 +46,7 @@ describe("Pi harness authentication", () => {
     )
 
     const authenticateHarness = vi.fn(() => Effect.void)
-    const agents = {
+    const agents = fakeAgentRuntime({
       authenticateHarness,
       probeHarnessAuth: vi.fn(() =>
         Effect.succeed({
@@ -61,8 +61,8 @@ describe("Pi harness authentication", () => {
           canLogout: false
         })
       )
-    } as unknown as AgentRuntimeService
-    const terminal = {} as TerminalManagerService
+    })
+    const terminal = fakeTerminalManager()
     const manager = makeHarnessAuthManager({
       agents,
       dataDir: directory,
@@ -129,16 +129,16 @@ describe("activate-time account rebinding", () => {
       })
     )
 
-    const agents = {
+    const agents = fakeAgentRuntime({
       probeHarnessAuth: vi.fn(() =>
         Effect.succeed({ state: "authenticated" as const, methods: [], canLogout: true })
       )
-    } as unknown as AgentRuntimeService
+    })
     const manager = makeHarnessAuthManager({
       agents,
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
     await manager.activateAccount("gemini", fresh.id)
@@ -186,7 +186,12 @@ describe("harness authentication refresh", () => {
 
     const probeHarnessAuth = vi.fn((harnessId: string) =>
       harnessId === "gemini"
-        ? Effect.fail(new Error("ACP connection closed"))
+        ? Effect.fail(
+            new AgentRuntimeError({
+              operation: "probeHarnessAuth",
+              message: "ACP connection closed"
+            })
+          )
         : Effect.succeed({
             state: "notRequired" as const,
             methods: [],
@@ -194,10 +199,10 @@ describe("harness authentication refresh", () => {
           })
     )
     const manager = makeHarnessAuthManager({
-      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
 
@@ -245,10 +250,10 @@ describe("harness authentication refresh", () => {
       })
     )
     const manager = makeHarnessAuthManager({
-      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
     const events: string[] = []
@@ -291,10 +296,10 @@ describe("OpenCode profile authentication", () => {
       })
     )
     const manager = makeHarnessAuthManager({
-      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () =>
         Promise.resolve({ HOME: directory, OPENCODE_AUTH_CONTENT: '{"openai":{"type":"api"}}' })
     })
@@ -343,10 +348,10 @@ const claudeAuthSetup = async (
     })
   )
   const manager = makeHarnessAuthManager({
-    agents: {} as AgentRuntimeService,
+    agents: fakeAgentRuntime(),
     dataDir: directory,
     db,
-    terminal: {} as TerminalManagerService,
+    terminal: fakeTerminalManager(),
     execFile: execute,
     resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory })
   })
@@ -454,11 +459,11 @@ describe("Claude wrapped OAuth login", () => {
       }
     })
     const manager = makeHarnessAuthManager({
-      agents: {} as AgentRuntimeService,
+      agents: fakeAgentRuntime(),
       claudeAuth,
       dataDir: directory,
       db,
-      terminal: {} as TerminalManagerService,
+      terminal: fakeTerminalManager(),
       resolveEnv: () =>
         Promise.resolve({ HOME: directory, PATH: `${directory}:${process.env.PATH}` })
     })
