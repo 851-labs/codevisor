@@ -17,14 +17,15 @@ struct EntitySystemSymbolTests {
 
   @Test("A machine without an icon uses one fallback, wherever it runs")
   func machinesWithoutIcon() {
-    #expect(EntitySystemSymbol.machine(.local) == "desktopcomputer")
-    #expect(EntitySystemSymbol.machine(cloudMachine()) == "desktopcomputer")
+    #expect(MachineIcon.choice(MachineIcon.fallback) != nil)
+    #expect(EntitySystemSymbol.machine(.local) == MachineIcon.fallback)
+    #expect(EntitySystemSymbol.machine(cloudMachine()) == MachineIcon.fallback)
   }
 
   @Test("A machine's chosen icon wins, and unknown icons fall back")
   func chosenMachineIcons() {
     #expect(EntitySystemSymbol.machine(cloudMachine(icon: "macstudio")) == "macstudio")
-    #expect(EntitySystemSymbol.machine(cloudMachine(icon: "not.a.machine.icon")) == "desktopcomputer")
+    #expect(EntitySystemSymbol.machine(cloudMachine(icon: "not.a.machine.icon")) == MachineIcon.fallback)
   }
 
   @Test("A saved filled cloud reads as the outline Cloud choice")

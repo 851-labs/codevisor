@@ -30,4 +30,8 @@ public struct MachineIcon: Identifiable, Hashable, Sendable {
     let outline = systemImage == "cloud.fill" ? "cloud" : systemImage
     return choices.first { $0.systemImage == outline }
   }
+
+  public static func systemImage(for icon: String?) -> String {
+    choice(icon)?.systemImage ?? fallback
+  }
 }

@@ -6,6 +6,6 @@ public enum EntitySystemSymbol {
   public static let workspace = "square.grid.2x2.fill"
 
   public static func machine(_ machine: CodevisorMachine) -> String {
-    MachineIcon.choice(machine.icon)?.systemImage ?? MachineIcon.fallback
+    MachineIcon.systemImage(for: machine.icon)
   }
 }

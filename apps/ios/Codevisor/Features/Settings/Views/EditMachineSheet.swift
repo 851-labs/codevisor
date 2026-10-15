@@ -11,9 +11,7 @@ struct EditMachineSheet: View {
   init(machine: CloudMachine, onSave: @escaping (_ name: String, _ icon: String) -> Void) {
     self.onSave = onSave
     _name = State(initialValue: machine.name)
-    _icon = State(
-      initialValue: MachineIcon.choice(machine.icon)?.systemImage ?? MachineIcon.fallback
-    )
+    _icon = State(initialValue: MachineIcon.systemImage(for: machine.icon))
   }
 
   private var trimmedName: String {

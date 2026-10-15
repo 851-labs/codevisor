@@ -53,8 +53,8 @@ struct SidebarWorkspaceRow: View {
         if let machine {
           Image(systemName: machine.systemImage)
             .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.secondary, .clear)
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(.secondary)
             .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
             .help(machine.name)
             .accessibilityLabel("On \(machine.name)")
@@ -149,7 +149,6 @@ struct SidebarWorkspaceRowLabel: View {
 struct SidebarRowMachine: Equatable {
   let name: String
   let systemImage: String
-
 }
 
 enum SidebarWorkspaceIcon: Equatable {

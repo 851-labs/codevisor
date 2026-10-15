@@ -16,8 +16,8 @@ struct SidebarGroupRow: View {
             ZStack {
               Image(systemName: systemImage)
                 .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.secondary, .clear)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.secondary)
                 .opacity(isHovered ? 0 : 1)
               Image(systemName: "chevron.right")
                 .font(.caption2.weight(.semibold))

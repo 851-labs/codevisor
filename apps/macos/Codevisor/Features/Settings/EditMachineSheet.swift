@@ -21,9 +21,7 @@ struct EditMachineSheet: View {
     self.onSave = onSave
     self.onDisconnect = onDisconnect
     _name = State(initialValue: machine.name)
-    _icon = State(
-      initialValue: MachineIcon.choice(machine.icon)?.systemImage ?? MachineIcon.fallback
-    )
+    _icon = State(initialValue: MachineIcon.systemImage(for: machine.icon))
   }
 
   private var trimmedName: String {
