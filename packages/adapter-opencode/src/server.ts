@@ -56,6 +56,22 @@ const spawnOpenCode: NonNullable<OpenCodeServerOptions["spawnChild"]> = (command
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref())
 
+const decodeOpenCodeResponse = (response: Response, text: string): unknown => {
+  if (!response.ok) {
+    let message = text
+    try {
+      const body: unknown = JSON.parse(text)
+      if (isPlainRecord(body) && typeof body.message === "string") message = body.message
+    } catch {}
+    throw new OpenCodeServerError(
+      message.trim() || `OpenCode request failed (${response.status})`,
+      response.status
+    )
+  }
+  const body: unknown = text.length === 0 ? undefined : JSON.parse(text)
+  return body
+}
+
 export const startOpenCodeServer = async (
   options: OpenCodeServerOptions
 ): Promise<OpenCodeServer> => {
@@ -151,19 +167,7 @@ export const startOpenCodeServer = async (
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) })
     })
     const text = await response.text()
-    if (!response.ok) {
-      let message = text
-      try {
-        const body: unknown = JSON.parse(text)
-        if (isPlainRecord(body) && typeof body.message === "string") message = body.message
-      } catch {}
-      throw new OpenCodeServerError(
-        message.trim() || `OpenCode request failed (${response.status})`,
-        response.status
-      )
-    }
-    const body: unknown = text.length === 0 ? undefined : JSON.parse(text)
-    return body
+    return decodeOpenCodeResponse(response, text)
   }
 
   for (let waited = 0; ; waited += READY_POLL_MS) {
