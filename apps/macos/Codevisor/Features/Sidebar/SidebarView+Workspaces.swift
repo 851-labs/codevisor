@@ -10,7 +10,6 @@ extension SidebarView {
       subtitle: rowSubtitle(for: workspace),
       icon: icon(for: item),
       store: store,
-      updatedAt: rowDetails.contains(.updated) ? lastUpdated(item.workspace) : nil,
       pullRequest: rowDetails.contains(.pullRequest) ? store?.pullRequests.byWorkspace[id] : nil,
       machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
       isSelected: routesSelectedSession(workspace),
@@ -99,13 +98,6 @@ extension SidebarView {
           .init(workspaceId: $0.id, path: $0.path, client: environment.machines.client(for: $0.serverId))
         })
     }
-  }
-
-  func lastUpdated(_ workspace: Workspace) -> Date {
-    let chatDates = workspace.chatSessionIds.compactMap { id in
-      list.session(id, serverId: workspace.serverId).map { $0.updatedAt ?? $0.createdAt }
-    }
-    return chatDates.max() ?? workspace.createdAt
   }
 
   func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {
