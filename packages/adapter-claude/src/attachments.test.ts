@@ -57,6 +57,7 @@ describe("ClaudeProvider", () => {
             sizeBytes: 5
           },
           {
+            inline: { data: Buffer.from("heic-bytes"), mimeType: "image/heic" },
             kind: "image",
             mimeType: "image/heic",
             name: "raw.heic",

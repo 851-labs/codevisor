@@ -6,6 +6,7 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   run,
   streamEvent,
   systemMessage
@@ -45,7 +46,7 @@ describe("Claude subagent follow-ups", () => {
     await fake.drain()
 
     const updates = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter(
         (payload) => payload.sessionUpdate === "tool_call_update" && payload.title !== undefined
       )

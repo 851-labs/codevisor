@@ -15,7 +15,7 @@ import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { Deferred } from "./internal.js"
 import type { ClaudeSkillCall } from "./skill-tool.js"
-import type { ClaudeSkills } from "./skills.js"
+import type { ClaudeSkills, ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
 export interface DeferredClaudePrompt {
@@ -44,10 +44,23 @@ export interface ClaudeModel {
   readonly supportsFastMode: boolean
 }
 
+export type ClaudeQuery = AsyncIterable<SDKMessage> &
+  Pick<
+    Query,
+    | "applyFlagSettings"
+    | "interrupt"
+    | "setModel"
+    | "setPermissionMode"
+    | "supportedModels"
+    | "usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET"
+  > & {
+    readonly supportedCommands: () => Promise<ReadonlyArray<ClaudeSlashCommand>>
+  }
+
 export type ClaudeQueryFn = (input: {
   prompt: AsyncIterable<SDKUserMessage>
   options: ClaudeOptions
-}) => Query
+}) => ClaudeQuery
 
 export class InputQueue implements AsyncIterable<SDKUserMessage> {
   private buffer: Array<SDKUserMessage> = []
@@ -140,7 +153,7 @@ export interface ClaudeSession {
   readonly key: string
   readonly sdkSessionId: string
   readonly cwd: string
-  q: Query
+  q: ClaudeQuery
   input: InputQueue
   readonly emit: RuntimeEmit
   readonly getSessionInfo: typeof sdkGetSessionInfo

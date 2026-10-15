@@ -8,6 +8,8 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordsValue,
   resultMessage,
   run,
   systemMessage
@@ -43,7 +45,7 @@ describe("ClaudeProvider", () => {
     await fake.drain()
 
     const compactions = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter((payload) => payload.sessionUpdate === "context_compaction")
     expect(compactions).toEqual([
       expect.objectContaining({ sessionUpdate: "context_compaction", status: "started" }),
@@ -80,9 +82,7 @@ describe("ClaudeProvider", () => {
     fake.push(systemMessage("session_state_changed", { state: "idle" }))
     await fake.drain()
 
-    const states = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.runtimeState !== undefined)
+    const states = events.map(payloadOf).filter((payload) => payload.runtimeState !== undefined)
     expect(states).toEqual([{ runtimeState: "running" }, { runtimeState: "idle" }])
   })
 
@@ -123,9 +123,7 @@ describe("ClaudeProvider", () => {
     })
     expect(
       events.some(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).turnState === "ended"
+        (event) => event.kind === "session.updated" && payloadOf(event).turnState === "ended"
       )
     ).toBe(false)
 
@@ -183,7 +181,7 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         kind: "agent",
@@ -214,9 +212,9 @@ describe("ClaudeProvider", () => {
     const snapshots = () =>
       events
         .filter((event) => event.kind === "session.updated")
-        .map((event) => event.payload as Record<string, unknown>)
+        .map(payloadOf)
         .filter((payload) => Array.isArray(payload.backgroundTasks))
-        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+        .map((payload) => recordsValue(payload.backgroundTasks))
     expect(snapshots()).toContainEqual([])
 
     const promptPromise = run(created.handle.prompt("run tests in the background"))
@@ -262,7 +260,7 @@ describe("ClaudeProvider", () => {
       checkVersion: async () => "2.1.0",
       queryFn: (input) => {
         fake.options = input.options
-        return fake as never
+        return fake
       }
     })
     const events: Array<RuntimeEvent> = []
@@ -276,9 +274,9 @@ describe("ClaudeProvider", () => {
     const latest = () =>
       events
         .filter((event) => event.kind === "session.updated")
-        .map((event) => event.payload as Record<string, unknown>)
+        .map(payloadOf)
         .filter((payload) => Array.isArray(payload.backgroundTasks))
-        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+        .map((payload) => recordsValue(payload.backgroundTasks))
         .at(-1)
 
     fake.push(
@@ -339,9 +337,9 @@ describe("ClaudeProvider", () => {
     const snapshots = () =>
       events
         .filter((event) => event.kind === "session.updated")
-        .map((event) => event.payload as Record<string, unknown>)
+        .map(payloadOf)
         .filter((payload) => Array.isArray(payload.backgroundTasks))
-        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+        .map((payload) => recordsValue(payload.backgroundTasks))
     expect(snapshots().at(-1)).toEqual([
       {
         description: "Explore the codebase",

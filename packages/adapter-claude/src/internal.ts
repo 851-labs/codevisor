@@ -17,3 +17,5 @@ export const deferred = <A>(): Deferred<A> => {
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
+
+export const recordOf = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {})

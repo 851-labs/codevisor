@@ -192,6 +192,7 @@ const threadMessage = (
   }
   if (!isRecord(entry) || (entry.type !== "user" && entry.type !== "assistant")) return undefined
   if (!isRecord(entry.message)) return undefined
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return {
     message: entry.message,
     parent_tool_use_id: parentId,

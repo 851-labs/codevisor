@@ -1,4 +1,6 @@
-import { query } from "@anthropic-ai/claude-agent-sdk"
+import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+
+import { isRecord } from "./internal.js"
 
 export interface ClaudeAuthClient {
   readonly start: () => Promise<{ readonly url: string }>
@@ -10,7 +12,7 @@ export interface ClaudeAuthSpawn {
   readonly claudePath: string
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
-  readonly queryFn?: typeof query
+  readonly queryFn?: (input: Parameters<typeof query>[0]) => object
 }
 
 interface ClaudeAuthControl {
@@ -20,26 +22,35 @@ interface ClaudeAuthControl {
   close(): void
 }
 
+const CONTROL_METHODS = ["claudeAuthenticate", "claudeOAuthCallback", "interrupt", "close"]
+
+const isClaudeAuthControl = (value: object): value is ClaudeAuthControl =>
+  CONTROL_METHODS.every((name) => typeof Reflect.get(value, name) === "function")
+
+const pendingPrompt: AsyncIterable<SDKUserMessage> = {
+  [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) })
+}
+
+const stringField = (fields: Record<string, unknown>, key: string): string | undefined => {
+  const value = fields[key]
+  return typeof value === "string" ? value : undefined
+}
+
 export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient => {
-  const q = (spawn.queryFn ?? query)({
-    prompt: (async function* () {
-      await new Promise(() => {})
-      yield undefined as never
-    })(),
+  const control = (spawn.queryFn ?? query)({
+    prompt: pendingPrompt,
     options: {
       cwd: spawn.cwd,
-      env: spawn.env as Record<string, string>,
+      env: spawn.env,
       pathToClaudeCodeExecutable: spawn.claudePath
     }
   })
-  const control = q as unknown as ClaudeAuthControl
+  if (!isClaudeAuthControl(control)) throw new Error("Claude does not support signing in")
   return {
     start: async () => {
-      const response = (await control.claudeAuthenticate(true)) as {
-        manualUrl?: string
-        automaticUrl?: string
-      }
-      const url = response.manualUrl ?? response.automaticUrl
+      const response = await control.claudeAuthenticate(true)
+      const fields = isRecord(response) ? response : {}
+      const url = stringField(fields, "manualUrl") ?? stringField(fields, "automaticUrl")
       if (url === undefined) throw new Error("Claude did not provide a sign-in URL")
       return { url }
     },

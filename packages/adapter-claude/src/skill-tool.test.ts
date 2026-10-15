@@ -1,3 +1,4 @@
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
@@ -6,22 +7,24 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
-  run
+  run,
+  sdkMessage
 } from "./test-support.js"
 
 const skillUse = (id: string, input: unknown) => ({ id, input, name: "Skill", type: "tool_use" })
 
 const assistant = (content: ReadonlyArray<unknown>, parent: string | null = null) =>
-  ({
+  sdkMessage({
     message: { content, id: `msg-${Math.random()}`, role: "assistant" },
     parent_tool_use_id: parent,
     session_id: "sdk-session-1",
     type: "assistant"
-  }) as never
+  })
 
 const toolResult = (id: string, text: string, isError = false) =>
-  ({
+  sdkMessage({
     message: {
       content: [{ content: text, is_error: isError, tool_use_id: id, type: "tool_result" }],
       role: "user"
@@ -29,20 +32,20 @@ const toolResult = (id: string, text: string, isError = false) =>
     parent_tool_use_id: null,
     session_id: "sdk-session-1",
     type: "user"
-  }) as never
+  })
 
 const skill = (name: string, ok = true) => ({ codevisorSkill: { name, ok } })
 
 const synthetic = (text: string) =>
-  ({
+  sdkMessage({
     isSynthetic: true,
     message: { content: [{ text, type: "text" }], role: "user" },
     parent_tool_use_id: null,
     session_id: "sdk-session-1",
     type: "user"
-  }) as never
+  })
 
-const turn = async (messages: ReadonlyArray<never>) => {
+const turn = async (messages: ReadonlyArray<SDKMessage>) => {
   const fake = new FakeQuery()
   const events: Array<RuntimeEvent> = []
   const created = run(
@@ -57,9 +60,7 @@ const turn = async (messages: ReadonlyArray<never>) => {
   for (const message of messages) fake.push(message)
   fake.push(resultMessage())
   await prompt
-  return events
-    .map((event) => event.payload as Record<string, unknown>)
-    .filter((payload) => payload.sessionUpdate === "tool_call_update")
+  return events.map(payloadOf).filter((payload) => payload.sessionUpdate === "tool_call_update")
 }
 
 describe("Claude Code's Skill tool", () => {
@@ -125,7 +126,7 @@ describe("Claude Code's Skill tool", () => {
     const updates = await turn([
       assistant([skillUse("sub-sk", { skill: "deploy" })], "agent-1"),
       toolResult("sub-sk", "Launching skill: deploy"),
-      {
+      sdkMessage({
         isSynthetic: true,
         message: {
           content: [
@@ -137,7 +138,7 @@ describe("Claude Code's Skill tool", () => {
         parent_tool_use_id: null,
         session_id: "sdk-session-1",
         type: "user"
-      } as never
+      })
     ])
     expect(updates).toContainEqual(
       expect.objectContaining({

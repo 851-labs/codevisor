@@ -1,7 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { definition, FakeQuery, initMessage, makeProvider, run } from "./test-support.js"
+import { definition, FakeQuery, initMessage, makeProvider, payloadOf, run } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -36,13 +36,13 @@ describe("ClaudeProvider", () => {
         },
         tool_use_id: "tool-hook-1",
         transcript_path: "/tmp/transcript"
-      } as never,
+      },
       "tool-hook-1",
       { signal: new AbortController().signal }
     )
     await fake.drain()
 
-    const payload = events.at(-1)?.payload as Record<string, unknown>
+    const payload = payloadOf(events.at(-1))
     expect(payload).toMatchObject({
       sessionUpdate: "tool_call_update",
       toolCallId: "tool-hook-1",
@@ -76,13 +76,13 @@ describe("ClaudeProvider", () => {
         tool_response: { structuredPatch: [], type: "create" },
         tool_use_id: "tool-hook-2",
         transcript_path: "/tmp/transcript"
-      } as never,
+      },
       "tool-hook-2",
       { signal: new AbortController().signal }
     )
     await fake.drain()
 
-    const payload = events.at(-1)?.payload as Record<string, unknown>
+    const payload = payloadOf(events.at(-1))
     expect(payload).toMatchObject({
       sessionUpdate: "tool_call_update",
       toolCallId: "tool-hook-2",

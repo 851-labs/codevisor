@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events"
 
 import type {
+  CanUseTool,
+  ModelInfo,
   Options as ClaudeOptions,
   SDKMessage,
   SDKUserMessage
@@ -8,6 +10,7 @@ import type {
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
+import { isRecord } from "./internal.js"
 import { makeClaudeProvider, type ClaudeProviderConfig } from "./provider.js"
 import type { ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
@@ -108,10 +111,11 @@ export class FakeQuery {
     }
   }
 
-  async interrupt(): Promise<void> {
+  async interrupt(): Promise<undefined> {
     this.interrupts.push(Date.now())
     this.changed()
     await this.interruptImplementation?.()
+    return undefined
   }
 
   async setPermissionMode(mode: string): Promise<void> {
@@ -126,22 +130,17 @@ export class FakeQuery {
     this.flagSettings.push(settings)
   }
 
+  async usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(): Promise<never> {
+    throw new Error("Claude usage is unavailable")
+  }
+
   commands: Array<ClaudeSlashCommand> = []
 
   async supportedCommands(): Promise<Array<ClaudeSlashCommand>> {
     return this.commands
   }
 
-  async supportedModels(): Promise<
-    Array<{
-      value: string
-      displayName: string
-      description: string
-      supportsEffort?: boolean
-      supportedEffortLevels?: Array<string>
-      supportsFastMode?: boolean
-    }>
-  > {
+  async supportedModels(): Promise<Array<ModelInfo>> {
     return [
       {
         description: "",
@@ -180,20 +179,54 @@ export class FakeQuery {
   }
 }
 
+export interface SDKMessageFixture {
+  readonly type: SDKMessage["type"]
+  readonly [field: string]: unknown
+}
+
+export const sdkMessage = (fixture: SDKMessageFixture): SDKMessage => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return fixture as SDKMessage
+}
+
+export const recordValue = (value: unknown): Record<string, unknown> => {
+  if (!isRecord(value)) throw new Error(`Expected an object, got ${JSON.stringify(value)}`)
+  return value
+}
+
+export const recordsValue = (value: unknown): Array<Record<string, unknown>> => {
+  if (!Array.isArray(value)) throw new Error(`Expected an array, got ${JSON.stringify(value)}`)
+  return value.map(recordValue)
+}
+
+export const stringValue = (value: unknown): string => {
+  if (typeof value !== "string") throw new Error(`Expected a string, got ${JSON.stringify(value)}`)
+  return value
+}
+
+export const payloadOf = (event: RuntimeEvent | undefined): Record<string, unknown> =>
+  recordValue(event?.payload)
+
+export const toolCheck = (): Parameters<CanUseTool>[2] => ({
+  requestId: "request-1",
+  signal: new AbortController().signal,
+  toolUseID: "tool-use-1"
+})
+
 export const initMessage = (sessionId = "sdk-session-1", model = "claude-fable-5"): SDKMessage =>
-  ({
+  sdkMessage({
     apiKeySource: "none",
     cwd: "/tmp",
     model,
     session_id: sessionId,
     subtype: "init",
     type: "system"
-  }) as never
+  })
 
 export const resultMessage = (
   subtype: "success" | "error_during_execution" = "success"
 ): SDKMessage =>
-  ({
+  sdkMessage({
     duration_ms: 10,
     errors: subtype === "success" ? [] : ["boom"],
     is_error: subtype !== "success",
@@ -202,7 +235,7 @@ export const resultMessage = (
     session_id: "sdk-session-1",
     subtype,
     type: "result"
-  }) as never
+  })
 
 export const resultWith = (fields: {
   subtype?: "success" | "error_during_execution"
@@ -212,7 +245,7 @@ export const resultWith = (fields: {
   errors?: string[]
 }): SDKMessage => {
   const subtype = fields.subtype ?? "success"
-  return {
+  return sdkMessage({
     duration_ms: 10,
     errors: fields.errors ?? (subtype === "success" ? [] : ["boom"]),
     is_error: fields.is_error ?? subtype !== "success",
@@ -222,21 +255,21 @@ export const resultWith = (fields: {
     stop_reason: fields.stop_reason ?? "end_turn",
     subtype,
     type: "result"
-  } as never
+  })
 }
 
 export const assistantErrorMessage = (error: string): SDKMessage =>
-  ({
+  sdkMessage({
     error,
     message: { content: [], id: "msg-err", role: "assistant" },
     parent_tool_use_id: null,
     session_id: "sdk-session-1",
     type: "assistant",
     uuid: "00000000-0000-0000-0000-000000000002"
-  }) as never
+  })
 
 export const assistantApiErrorMessage = (text: string): SDKMessage =>
-  ({
+  sdkMessage({
     message: {
       content: [{ text, type: "text" }],
       id: "msg-apierr",
@@ -247,33 +280,33 @@ export const assistantApiErrorMessage = (text: string): SDKMessage =>
     session_id: "sdk-session-1",
     type: "assistant",
     uuid: "00000000-0000-0000-0000-000000000003"
-  }) as never
+  })
 
 export const rateLimitEvent = (rateLimitInfo: Record<string, unknown>): SDKMessage =>
-  ({
+  sdkMessage({
     rate_limit_info: rateLimitInfo,
     session_id: "sdk-session-1",
     type: "rate_limit_event",
     uuid: "00000000-0000-0000-0000-000000000004"
-  }) as never
+  })
 
 export const streamEvent = (event: unknown, parentToolUseId: string | null = null): SDKMessage =>
-  ({
+  sdkMessage({
     event,
     parent_tool_use_id: parentToolUseId,
     session_id: "sdk-session-1",
     type: "stream_event",
     uuid: "00000000-0000-0000-0000-000000000000"
-  }) as never
+  })
 
 export const systemMessage = (subtype: string, fields: Record<string, unknown>): SDKMessage =>
-  ({
+  sdkMessage({
     session_id: "sdk-session-1",
     subtype,
     type: "system",
     uuid: "00000000-0000-0000-0000-000000000001",
     ...fields
-  }) as never
+  })
 
 const NO_SUBAGENT_TRANSCRIPTS: SubagentTranscripts = {
   locate: () => undefined,
@@ -301,7 +334,7 @@ export const makeProvider = (
           target.changed()
         }
       })()
-      return target as never
+      return target
     },
     readFile: (path) => (path === "/tmp/existing.txt" ? "line1\nline2\nline3\n" : undefined)
   })
@@ -334,12 +367,12 @@ export const configUpdates = (
 ): Array<Record<string, unknown>> =>
   events
     .filter((event) => event.kind === "session.updated")
-    .map((event) => event.payload as Record<string, unknown>)
+    .map(payloadOf)
     .filter((payload) => Array.isArray(payload.configOptions))
 
 export const turnPayloads = (events: ReadonlyArray<RuntimeEvent>) =>
   events
-    .map((event) => event.payload as Record<string, unknown>)
+    .map(payloadOf)
     .filter(
       (payload) =>
         payload.backgroundTasks === undefined && payload.sessionUpdate !== "available_skills_update"

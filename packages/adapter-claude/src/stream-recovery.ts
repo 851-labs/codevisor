@@ -1,9 +1,9 @@
-import type { Options as ClaudeOptions, Query } from "@anthropic-ai/claude-agent-sdk"
+import type { Options as ClaudeOptions } from "@anthropic-ai/claude-agent-sdk"
 
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { claudeStartOptions } from "./models.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
-import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
+import { InputQueue, type ClaudeQuery, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { pushResumeAfterInterruptionPrompt } from "./turn-recovery.js"
 
 const MAX_STREAM_RECOVERIES = 2
@@ -11,7 +11,7 @@ const STREAM_RECOVERY_BACKOFF_MS = 1_000
 
 export interface StreamRecoveryDeps {
   readonly options: ClaudeOptions
-  readonly pump: (query: Query) => Promise<void>
+  readonly pump: (query: ClaudeQuery) => Promise<void>
   readonly queryFn: ClaudeQueryFn
 }
 

@@ -6,8 +6,10 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent,
   turnPayloads
 } from "./test-support.js"
@@ -22,12 +24,12 @@ describe("ClaudeProvider", () => {
     const provider = makeProvider(
       fake,
       async () => "2.1.0",
-      async () =>
-        ({
-          customTitle: "Harness title",
-          sessionId: "sdk-session-1",
-          summary: "Generated"
-        }) as never
+      async () => ({
+        customTitle: "Harness title",
+        lastModified: 0,
+        sessionId: "sdk-session-1",
+        summary: "Generated"
+      })
     )
     const events: RuntimeEvent[] = []
     const createPromise = run(
@@ -102,19 +104,15 @@ describe("ClaudeProvider", () => {
       return result
     })
     await fake.drain()
-    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
     await fake.drain()
     expect(promptResolved).toBe(false)
-    expect(
-      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
-    ).toHaveLength(0)
+    expect(events.filter((event) => payloadOf(event).turnState === "ended")).toHaveLength(0)
 
     fake.push(resultMessage())
     await prompt
     expect(promptResolved).toBe(true)
-    expect(
-      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
-    ).toHaveLength(1)
+    expect(events.filter((event) => payloadOf(event).turnState === "ended")).toHaveLength(1)
   })
 
   it("defers a prompt sent during an agent-initiated turn until that turn ends", async () => {
@@ -147,12 +145,10 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     expect(fake.userMessages).toHaveLength(0)
 
-    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
     await fake.drain()
     expect(promptResolved).toBe(false)
-    const turnEvents = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.turnState !== undefined)
+    const turnEvents = events.map(payloadOf).filter((payload) => payload.turnState !== undefined)
     expect(turnEvents).toMatchObject([
       { initiatedBy: "agent", turnState: "started" },
       { initiatedBy: "agent", turnState: "ended" },
@@ -163,8 +159,6 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await prompt
     expect(promptResolved).toBe(true)
-    expect(
-      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
-    ).toHaveLength(2)
+    expect(events.filter((event) => payloadOf(event).turnState === "ended")).toHaveLength(2)
   })
 })

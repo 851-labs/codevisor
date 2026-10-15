@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
 
 import type {
-  Query,
   getSessionInfo as sdkGetSessionInfo,
   Options as ClaudeOptions
 } from "@anthropic-ai/claude-agent-sdk"
@@ -30,7 +29,13 @@ import {
   SETTABLE_EFFORT_LEVELS
 } from "./models.js"
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
-import { InputQueue, type ClaudeModel, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
+import {
+  InputQueue,
+  type ClaudeModel,
+  type ClaudeQuery,
+  type ClaudeQueryFn,
+  type ClaudeSession
+} from "./session.js"
 import {
   learnClaudeSkills,
   makeClaudeCommandCatalog,
@@ -275,7 +280,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         queryFn
       })
 
-    const pump = async (query: Query): Promise<void> => {
+    const pump = async (query: ClaudeQuery): Promise<void> => {
       let streamFailure: string | undefined
       try {
         for await (const message of query) {

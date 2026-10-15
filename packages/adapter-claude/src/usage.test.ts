@@ -7,10 +7,12 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   rateLimitEvent,
   resultMessage,
   resultWith,
-  run
+  run,
+  sdkMessage
 } from "./test-support.js"
 import { claudeUsageLimitsFrom } from "./usage.js"
 
@@ -66,42 +68,45 @@ describe("ClaudeProvider", () => {
     const prompt = run(created.handle.prompt("hello"))
     await fake.nextPrompt()
 
-    fake.push({
-      message: {
-        content: [],
-        id: "msg-usage",
-        model: "claude-sonnet-4-6",
-        role: "assistant",
-        usage: {
-          cache_creation_input_tokens: 1_500,
-          cache_read_input_tokens: 30_000,
-          input_tokens: 1_300,
-          output_tokens: 100
-        }
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant",
-      uuid: "00000000-0000-0000-0000-000000000004"
-    } as never)
-    fake.push({
-      ...resultMessage(),
-      modelUsage: {
-        "claude-sonnet-4-6": { contextWindow: 200_000 }
-      },
-      total_cost_usd: 0.25,
-      usage: { input_tokens: 1_300, output_tokens: 100 }
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [],
+          id: "msg-usage",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          usage: {
+            cache_creation_input_tokens: 1_500,
+            cache_read_input_tokens: 30_000,
+            input_tokens: 1_300,
+            output_tokens: 100
+          }
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant",
+        uuid: "00000000-0000-0000-0000-000000000004"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        ...resultMessage(),
+        modelUsage: {
+          "claude-sonnet-4-6": { contextWindow: 200_000 }
+        },
+        total_cost_usd: 0.25,
+        usage: { input_tokens: 1_300, output_tokens: 100 }
+      })
+    )
 
     await prompt
     await fake.drain()
 
     const update = events.find(
       (event) =>
-        event.kind === "session.updated" &&
-        (event.payload as Record<string, unknown>).sessionUpdate === "usage_update"
+        event.kind === "session.updated" && payloadOf(event).sessionUpdate === "usage_update"
     )
-    expect(update?.payload as Record<string, unknown>).toMatchObject({
+    expect(payloadOf(update)).toMatchObject({
       sessionUpdate: "usage_update",
       size: 200_000,
       used: 32_800
@@ -139,14 +144,10 @@ describe("ClaudeProvider", () => {
     ).toHaveLength(0)
     expect(
       events.filter(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).retrying !== undefined
+        (event) => event.kind === "session.updated" && payloadOf(event).retrying !== undefined
       )
     ).toHaveLength(0)
-    const endedPayload = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .find((payload) => payload.turnState === "ended")
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(limitMessage)
     expect(endedPayload?.stopKind).toBe("usageLimit")
     expect(endedPayload?.retryable).toBeUndefined()
@@ -179,9 +180,7 @@ describe("ClaudeProvider", () => {
     expect(
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     ).toHaveLength(0)
-    const endedPayload = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .find((payload) => payload.turnState === "ended")
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(
       "You've reached your 5-hour Claude usage limit. Try again after it resets."
     )
