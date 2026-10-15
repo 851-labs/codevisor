@@ -15,7 +15,7 @@ extension HomeView {
         renamingTab = HomeTabRenameRequest(workspaceId: workspace.id, tabId: tabId, chatSessionId: row.chatSessionId)
       },
       newTab: { workspace in addSidebarTab(in: workspace) },
-      newChat: { target in startSidebarNewChat(target) },
+      newChat: { target in presentNewChat(serverId: target.serverId) },
       togglePin: { ref in withSidebarReflow { togglePin(ref.id) } },
       renameWorkspace: { ref in
         guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
@@ -92,20 +92,6 @@ extension HomeView {
         preferredPaneId: nil
       )
     )
-  }
-
-  private func startSidebarNewChat(_ target: NewChatTarget) {
-    guard let projectId = target.projectId,
-      let project = projectList.projects.first(where: { $0.serverId == target.serverId && $0.id == projectId })
-    else {
-      presentNewChat(serverId: target.serverId)
-      return
-    }
-    Task {
-      let controller = ChatControllerCache.shared.draftController(preferredProject: project, environment: environment)
-      await controller.retarget(to: project, serverClient: environment.machines.client(for: target.serverId))
-      presentNewChat(serverId: target.serverId)
-    }
   }
 
   private func togglePin(_ id: UUID) {

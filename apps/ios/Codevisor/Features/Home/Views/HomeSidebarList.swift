@@ -71,11 +71,6 @@ struct HomeSidebarList: View {
       .onChange(of: selected) { _, _ in
         pendingSelection = nil
       }
-      .task(id: pendingSelection) {
-        guard pendingSelection != nil else { return }
-        try? await Task.sleep(for: .seconds(1))
-        if !Task.isCancelled { pendingSelection = nil }
-      }
       .refreshable {
         await actions.actions.refresh()
       }
@@ -244,16 +239,20 @@ struct HomeSidebarList: View {
     return selected.workspaceId
   }
 
+  private func holdSelection(_ id: UUID, until expected: HomeSidebarSelection) {
+    pendingSelection = expected == selected ? nil : id
+  }
+
   private func selection(_ content: HomeSidebarContent) -> Binding<UUID?> {
     Binding(
       get: { pendingSelection ?? selectedRowID(content) },
       set: { id in
         guard let id else { return }
         if let (row, workspace) = content.row(id) {
-          pendingSelection = id
+          holdSelection(id, until: HomeSidebarSelection(workspaceId: workspace.id, paneId: row.id))
           actions.actions.open(row, workspace.workspace)
         } else if let workspace = content.workspace(id) {
-          pendingSelection = id
+          holdSelection(id, until: HomeSidebarSelection(workspaceId: workspace.id, paneId: workspace.primaryRow?.id))
           actions.actions.openWorkspace(workspace)
         } else {
           return
