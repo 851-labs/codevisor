@@ -15,7 +15,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 
@@ -37,9 +37,15 @@ const commit = (cwd: string, message: string) =>
     { cwd }
   )
 
+const createTestRoot = async (prefix: string): Promise<string> => {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  return root
+}
+
 describe("Codevisor tmp data dir migration", () => {
   it("relocates the database and sidecar state from the temp directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-"))
+    const root = await createTestRoot("codevisor-tmp-data-")
     const temporaryDirectory = join(root, "tmp")
     const dataDirectory = join(root, ".codevisor", "data")
     await mkdir(join(temporaryDirectory, "harness-secrets", "claude-code"), { recursive: true })
@@ -83,7 +89,7 @@ describe("Codevisor tmp data dir migration", () => {
   })
 
   it("does nothing when the canonical database already exists", async () => {
-    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-existing-"))
+    const root = await createTestRoot("codevisor-tmp-data-existing-")
     const temporaryDirectory = join(root, "tmp")
     const dataDirectory = join(root, ".codevisor", "data")
     await mkdir(temporaryDirectory, { recursive: true })
@@ -105,7 +111,7 @@ describe("Codevisor tmp data dir migration", () => {
   })
 
   it("does nothing when there is no temp database or the paths coincide", async () => {
-    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-noop-"))
+    const root = await createTestRoot("codevisor-tmp-data-noop-")
     const temporaryDirectory = join(root, "tmp")
     await mkdir(temporaryDirectory, { recursive: true })
 
@@ -128,7 +134,7 @@ describe("Codevisor tmp data dir migration", () => {
 
 describe("Codevisor legacy file layout migration", () => {
   it("moves application data, renames the database, and preserves worktrees", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-"))
+    const home = await createTestRoot("codevisor-layout-")
     const legacyData = join(home, "Library", "Application Support", "HerdMan")
     const data = join(home, "Library", "Application Support", "Codevisor")
     const legacyWorktrees = join(home, "herdman")
@@ -158,7 +164,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("merges directories without overwriting a conflicting destination file", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-conflict-"))
+    const home = await createTestRoot("codevisor-layout-conflict-")
     const legacyData = join(home, "Library", "Application Support", "HerdMan")
     const data = join(home, "Library", "Application Support", "Codevisor")
     await mkdir(legacyData, { recursive: true })
@@ -182,7 +188,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("deduplicates matching files and symlinks while merging", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-dedupe-"))
+    const home = await createTestRoot("codevisor-layout-dedupe-")
     const legacyData = join(home, "Library", "Application Support", "HerdMan")
     const data = join(home, "Library", "Application Support", "Codevisor")
     await mkdir(legacyData, { recursive: true })
@@ -210,7 +216,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("blocks conflicting symlinks and differently sized files", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-link-conflict-"))
+    const home = await createTestRoot("codevisor-layout-link-conflict-")
     const legacyData = join(home, "Library", "Application Support", "HerdMan")
     const data = join(home, "Library", "Application Support", "Codevisor")
     await mkdir(legacyData, { recursive: true })
@@ -245,7 +251,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("moves dot-directory databases and archives legacy updater logs", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-dotdir-"))
+    const home = await createTestRoot("codevisor-layout-dotdir-")
     const legacyData = join(home, ".herdman")
     const data = join(home, ".codevisor")
     await mkdir(legacyData, { recursive: true })
@@ -274,7 +280,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("repairs Git administration pointers after moving linked worktrees", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-git-"))
+    const home = await createTestRoot("codevisor-layout-git-")
     const repository = join(home, "repository")
     const submoduleRepository = join(home, "submodule")
     const legacyWorktree = join(home, "herdman", "project", "feature")
@@ -348,7 +354,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("leaves checked-out and deinitialized submodules in current worktrees alone", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-deinit-"))
+    const home = await createTestRoot("codevisor-layout-deinit-")
     const repository = join(home, "repository")
     const submoduleRepository = join(home, "submodule")
     const worktree = join(home, "codevisor", "project", "feature")
@@ -386,7 +392,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("skips a worktree Git can't read and stops rescanning once recorded", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-unreadable-"))
+    const home = await createTestRoot("codevisor-layout-unreadable-")
     const repository = join(home, "repository")
     const worktree = join(home, "codevisor", "project", "feature")
     await mkdir(repository, { recursive: true })
@@ -419,7 +425,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("repairs a worktree moved by an interrupted previous migration", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-interrupted-"))
+    const home = await createTestRoot("codevisor-layout-interrupted-")
     const repository = join(home, "repository")
     const legacyRoot = join(home, "herdman")
     const legacyWorktree = join(legacyRoot, "project", "feature")
@@ -473,7 +479,7 @@ describe("Codevisor legacy file layout migration", () => {
   })
 
   it("does not move production worktrees into an overridden development root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-development-"))
+    const home = await createTestRoot("codevisor-layout-development-")
     const legacyWorktree = join(home, "herdman", "project", "feature")
     const developmentRoot = join(home, "codevisor-development", "test-instance")
     await mkdir(legacyWorktree, { recursive: true })
