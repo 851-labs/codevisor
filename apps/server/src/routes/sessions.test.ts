@@ -2,37 +2,48 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-support.js"
-import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
+import {
+  CreatedSession,
+  Identified,
+  setUpWorkspace,
+  createFirstSession
+} from "./session-test-support.js"
 
 describe("sessions routes", () => {
   it("deleting a workspace's last session deletes the workspace too", async () => {
     const { server, services } = await start()
     const folder = mkdtempSync(join(tmpdir(), "codevisor-cascade-project-"))
     tempDirs.push(folder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: folder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const project = decode(Identified)(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: folder }),
+          method: "POST"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/workspaces/cascade-ws", {
       body: JSON.stringify({ projectId: project.id, name: "Cascade", hasCustomName: false }),
       method: "PUT"
     })
     const makeSession = async () =>
-      (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: project.id,
-            harnessId: "codex",
-            workspaceId: "cascade-ws"
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
+      decode(Identified)(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            body: JSON.stringify({
+              projectId: project.id,
+              harnessId: "codex",
+              workspaceId: "cascade-ws"
+            }),
+            method: "POST"
+          })
+        ).body
+      )
     const first = await makeSession()
     const second = await makeSession()
 
@@ -48,12 +59,14 @@ describe("sessions routes", () => {
     const events = listEvents(services)
     expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
 
-    const detached = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: project.id, harnessId: "codex" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const detached = decode(Identified)(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ projectId: project.id, harnessId: "codex" }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       (await jsonRequest(server, `/v1/sessions/${detached.id}`, { method: "DELETE" })).status
     ).toBe(204)
@@ -130,10 +143,9 @@ describe("sessions routes", () => {
     expect(reopened.status).toBe(200)
     expect(reopened.body).toMatchObject({ session: { title: "Renamed on open" } })
     expect(agents.creations).toHaveLength(1)
-    const projects = (await jsonRequest(server, "/v1/projects")).body as ReadonlyArray<{
-      readonly id: string
-      readonly name: string
-    }>
+    const projects = decode(
+      Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))
+    )((await jsonRequest(server, "/v1/projects")).body)
     expect(projects.find((candidate) => candidate.id === "open-project-1")?.name).toBe(
       "Renamed project"
     )
@@ -182,12 +194,14 @@ describe("sessions routes", () => {
 
     const lowerId = "ab12cd34-ef56-4789-a012-3456789abcde"
     const upperId = lowerId.toUpperCase()
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: workspaceFolder, id: "case-project" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const project = decode(Identified)(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: workspaceFolder, id: "case-project" }),
+          method: "POST"
+        })
+      ).body
+    )
     const created = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
         id: lowerId,
@@ -218,10 +232,9 @@ describe("sessions routes", () => {
       method: "PATCH"
     })
     expect(renamed.status).toBe(200)
-    const sessions = (await jsonRequest(server, "/v1/sessions")).body as ReadonlyArray<{
-      readonly id: string
-      readonly title: string
-    }>
+    const sessions = decode(
+      Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String }))
+    )((await jsonRequest(server, "/v1/sessions")).body)
     const twins = sessions.filter((session) => session.id.toLowerCase() === lowerId)
     expect(twins).toHaveLength(1)
     expect(twins[0]).toMatchObject({ id: lowerId, title: "Renamed from the Mac" })
@@ -292,10 +305,7 @@ describe("sessions routes", () => {
       }),
       method: "POST"
     })
-    const deferred = deferredResponse.body as {
-      readonly id: string
-      readonly agentSessionId?: string
-    }
+    const deferred = decode(CreatedSession)(deferredResponse.body)
     expect(deferred.agentSessionId).toBe("")
     expect(agents.creations).toEqual([["codex", workspaceFolder]])
     await jsonRequest(server, `/v1/sessions/${deferred.id}/prompt`, {
@@ -303,9 +313,9 @@ describe("sessions routes", () => {
       method: "POST"
     })
     await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello deferred"))
-    const deferredDetail = (await jsonRequest(server, `/v1/sessions/${deferred.id}`)).body as {
-      readonly session: { readonly agentSessionId?: string }
-    }
+    const deferredDetail = decode(
+      Schema.Struct({ session: Schema.Struct({ agentSessionId: Schema.optional(Schema.String) }) })
+    )((await jsonRequest(server, `/v1/sessions/${deferred.id}`)).body)
     expect(deferredDetail.session.agentSessionId).toBe("agent-codex-codevisor")
     expect(agents.prompts).toContainEqual(["agent-codex-codevisor", "hello deferred"])
 

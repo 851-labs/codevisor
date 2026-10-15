@@ -4,7 +4,7 @@ import { connect, type Socket } from "node:net"
 import { join } from "node:path"
 
 import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
-import { WebSocket, type WebSocketServer } from "ws"
+import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-filter.js"
@@ -106,13 +106,29 @@ const refuse = (socket: Socket, status: string): void => {
   socket.destroy()
 }
 
+type VNCWebSocket = Pick<WebSocket, "bufferedAmount" | "readyState" | "close"> & {
+  send(data: string | Buffer, options: { binary?: boolean }, callback: () => void): void
+  on(event: "message", listener: (bytes: Buffer, isBinary: boolean) => void): unknown
+  once(event: "error", listener: () => void): unknown
+  once(event: "close", listener: () => void): unknown
+}
+
+interface VNCUpgrader {
+  handleUpgrade(
+    request: IncomingMessage,
+    socket: Socket,
+    head: Buffer,
+    done: (webSocket: VNCWebSocket) => void
+  ): void
+}
+
 export const spliceVNCSocket = (
   config: ScreenSharingVNCConfig,
   url: URL,
   request: IncomingMessage,
   socket: Socket,
   head: Buffer,
-  webSocketServer: WebSocketServer,
+  webSocketServer: VNCUpgrader,
   dial: (port: number) => Socket = (port) => connect({ host: "127.0.0.1", port }),
   arbiter: VNCControlArbiter = vncControlArbiter(config.port),
   highWater = 4 * 1024 * 1024
@@ -127,7 +143,7 @@ export const spliceVNCSocket = (
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
     const upstream = dial(config.port)
-    const id = arbiter.join((text) => webSocket.send(text, () => undefined))
+    const id = arbiter.join((text) => webSocket.send(text, {}, () => undefined))
     const filter = new RFBClientStreamFilter()
     const allow = (kind: RFBClientMessageKind) =>
       kind === "input" || kind === "clipboard"

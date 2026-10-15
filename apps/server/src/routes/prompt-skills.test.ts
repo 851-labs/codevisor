@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { DatabaseError } from "@codevisor/db"
 import { makeSkillStore } from "@codevisor/skills"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
@@ -17,6 +18,7 @@ import {
   waitFor
 } from "../test-support.js"
 import { expandCodevisorSkills, withCodevisorSkills } from "./prompt-skills.js"
+import { field, itemsOf } from "./response-test-support.js"
 
 const NOTE =
   "The user invoked the Codevisor skill `release-notes`. Before anything else, read it with the Codevisor `skills` tool (pass the skill's name) and follow its instructions for this request."
@@ -40,14 +42,20 @@ describe("Codevisor skills in prompts", () => {
   })
 
   it("sends the prompt unchanged when the skill list can't be read", async () => {
-    const services = {
-      db: { getSessionSummary: () => Effect.fail(new Error("gone")) },
-      mcp: {}
-    } as unknown as CodevisorServerServices
+    const { services: base } = await makeServices()
+    const services: CodevisorServerServices = {
+      ...base,
+      db: {
+        ...base.db,
+        getSessionSummary: () =>
+          Effect.fail(new DatabaseError({ operation: "getSessionSummary", message: "gone" }))
+      }
+    }
     expect(await withCodevisorSkills(services, "session", "/release-notes", undefined)).toBe(
       "/release-notes"
     )
-    expect(await withCodevisorSkills({} as never, "session", "/release-notes", undefined)).toBe(
+    const { mcp: _mcp, ...withoutMcp } = base
+    expect(await withCodevisorSkills(withoutMcp, "session", "/release-notes", undefined)).toBe(
       "/release-notes"
     )
   })
@@ -83,7 +91,7 @@ describe("Codevisor skills in prompts", () => {
       `\`release-notes\` for v2.\n\n<codevisor-skills>\n${NOTE}\n</codevisor-skills>`
     )
     const transcript = await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)
-    const items = (transcript.body as { items: ReadonlyArray<unknown> }).items
+    const items = itemsOf(field(transcript.body, "items"))
     expect(items[0]).toMatchObject({ role: "user", text: "/release-notes for v2." })
   })
 
@@ -120,8 +128,7 @@ describe("Codevisor skills in prompts", () => {
     })
     expect(
       listSubjectEvents(services, session.id).filter(
-        (event) =>
-          (event.payload as { sessionUpdate?: string }).sessionUpdate === "available_skills_update"
+        (event) => field(event.payload, "sessionUpdate") === "available_skills_update"
       )
     ).toHaveLength(1)
   })
@@ -137,11 +144,12 @@ describe("Codevisor skills in prompts", () => {
     tempDirs.push(folderPath)
     const project = await run(services.db.createProject({ folderPath }))
     const offered = async () =>
-      (
-        (await jsonRequest(server, `/v1/composer-skills?projectId=${project.id}`)).body as {
-          skills: ReadonlyArray<{ name: string }>
-        }
-      ).skills.map((skill) => skill.name)
+      itemsOf(
+        field(
+          (await jsonRequest(server, `/v1/composer-skills?projectId=${project.id}`)).body,
+          "skills"
+        )
+      ).map((skill) => field(skill, "name"))
 
     expect(await offered()).toEqual([
       "browser-use",

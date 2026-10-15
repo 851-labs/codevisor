@@ -2,9 +2,14 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { idOf, itemsOf } from "./response-test-support.js"
+
+const Identified = Schema.Struct({ id: Schema.String })
 
 describe("workspace create route", () => {
   it("creates a workspace around its first chat atomically", async () => {
@@ -13,20 +18,22 @@ describe("workspace create route", () => {
     tempDirs.push(root)
     const projectFolder = join(root, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     const before = await run(services.db.latestEventCursor)
 
     expect(
       (
         await jsonRequest(server, "/v1/workspaces", {
           body: JSON.stringify({
-            workspace: { projectId: project.id, name: "Main", hasCustomName: false },
-            session: { projectId: project.id, harnessId: "codex" }
+            workspace: { projectId, name: "Main", hasCustomName: false },
+            session: { projectId, harnessId: "codex" }
           }),
           method: "POST"
         })
@@ -35,15 +42,15 @@ describe("workspace create route", () => {
 
     const created = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({
-        workspace: { id: "ws-atomic", projectId: project.id, name: "Main", hasCustomName: false },
-        session: { id: "chat-atomic", projectId: project.id, harnessId: "codex", title: "Hello" }
+        workspace: { id: "ws-atomic", projectId, name: "Main", hasCustomName: false },
+        session: { id: "chat-atomic", projectId, harnessId: "codex", title: "Hello" }
       }),
       method: "POST"
     })
     expect(created).toEqual({
       status: 201,
       body: {
-        workspace: expect.objectContaining({ id: "ws-atomic", projectId: project.id }),
+        workspace: expect.objectContaining({ id: "ws-atomic", projectId }),
         session: expect.objectContaining({ id: "chat-atomic", workspaceId: "ws-atomic" }),
         pane: expect.objectContaining({
           id: "chat-atomic",
@@ -71,8 +78,8 @@ describe("workspace create route", () => {
 
     const retried = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({
-        workspace: { id: "ws-atomic", projectId: project.id, name: "Main", hasCustomName: false },
-        session: { id: "chat-atomic", projectId: project.id, harnessId: "codex", title: "Hello" },
+        workspace: { id: "ws-atomic", projectId, name: "Main", hasCustomName: false },
+        session: { id: "chat-atomic", projectId, harnessId: "codex", title: "Hello" },
         pane: { title: "Renamed" }
       }),
       method: "POST"
@@ -81,60 +88,61 @@ describe("workspace create route", () => {
       status: 200,
       body: expect.objectContaining({ pane: expect.objectContaining({ title: "Renamed" }) })
     })
-    expect(((await jsonRequest(server, "/v1/sessions")).body as Array<unknown>).length).toBe(1)
+    expect(itemsOf((await jsonRequest(server, "/v1/sessions")).body).length).toBe(1)
 
     const minted = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({
-        workspace: { id: "ws-minted", projectId: project.id, name: "Minted", hasCustomName: false },
-        session: { projectId: project.id, harnessId: "codex", deferAgentSession: true }
+        workspace: { id: "ws-minted", projectId, name: "Minted", hasCustomName: false },
+        session: { projectId, harnessId: "codex", deferAgentSession: true }
       }),
       method: "POST"
     })
     expect(minted.status).toBe(201)
-    const mintedBody = minted.body as {
-      readonly session: { readonly id: string }
-      readonly pane: { readonly id: string }
-    }
+    const mintedBody = decode(Schema.Struct({ session: Identified, pane: Identified }))(minted.body)
     expect(mintedBody.pane.id).toBe(mintedBody.session.id)
 
-    const loose = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          projectId: project.id,
-          harnessId: "codex",
-          deferAgentSession: true
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const looseId = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId,
+            harnessId: "codex",
+            deferAgentSession: true
+          }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${loose.id}`, {
+        await jsonRequest(server, `/v1/sessions/${looseId}`, {
           body: JSON.stringify({ workspaceId: "ws-atomic" }),
           method: "PATCH"
         })
       ).body
     ).toMatchObject({ workspaceId: "ws-atomic" })
     expect(
-      (
-        (await jsonRequest(server, "/v1/workspace-panes")).body as Array<{ resourceId?: string }>
-      ).some((pane) => pane.resourceId === loose.id)
+      decode(Schema.Array(Schema.Struct({ resourceId: Schema.optional(Schema.String) })))(
+        (await jsonRequest(server, "/v1/workspace-panes")).body
+      ).some((pane) => pane.resourceId === looseId)
     ).toBe(true)
 
     const otherFolder = join(root, "other")
     mkdirSync(otherFolder)
-    const other = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: otherFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const otherId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: otherFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       (
         await jsonRequest(server, "/v1/workspaces", {
           body: JSON.stringify({
-            workspace: { id: "ws-other", projectId: other.id, name: "Other", hasCustomName: false },
-            session: { projectId: project.id, harnessId: "codex" }
+            workspace: { id: "ws-other", projectId: otherId, name: "Other", hasCustomName: false },
+            session: { projectId, harnessId: "codex" }
           }),
           method: "POST"
         })

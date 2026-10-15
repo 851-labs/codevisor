@@ -3,9 +3,9 @@ import { connect } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { PluginRegistryIndex } from "@codevisor/api"
+import { decode, type PluginRegistryIndex } from "@codevisor/api"
 import { PluginsError, type PluginRegistryClient, type PluginStateEvent } from "@codevisor/plugins"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import {
@@ -19,6 +19,7 @@ import {
   tempDirs,
   listEvents
 } from "../test-support.js"
+import { field, idOf, itemsOf } from "./response-test-support.js"
 
 const rawUpgradeStatus = (url: string, path: string): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -48,16 +49,18 @@ const seedWorkspaces = async (
   tempDirs.push(root)
   const projectFolder = join(root, "project")
   mkdirSync(projectFolder)
-  const project = (
-    await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: projectFolder }),
-      method: "POST"
-    })
-  ).body as { readonly id: string }
+  const projectId = idOf(
+    (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: projectFolder }),
+        method: "POST"
+      })
+    ).body
+  )
   await Promise.all(
     workspaceIds.map((workspaceId) =>
       jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
-        body: JSON.stringify({ hasCustomName: false, name: workspaceId, projectId: project.id }),
+        body: JSON.stringify({ hasCustomName: false, name: workspaceId, projectId }),
         method: "PUT"
       })
     )
@@ -172,11 +175,11 @@ describe("plugin routes", () => {
   it("advertises plugins-v1 only when the manager is present", async () => {
     const { services } = await makeServices("server-a")
     const without = await startWithApp(services)
-    const bare = (await jsonRequest(without, "/v1/info")).body as { features: Array<string> }
-    expect(bare.features).not.toContain("plugins-v1")
+    const bare = itemsOf(field((await jsonRequest(without, "/v1/info")).body, "features"))
+    expect(bare).not.toContain("plugins-v1")
     const withPlugins = await startWithApp({ ...services, plugins: pluginsStub([]) })
-    const info = (await jsonRequest(withPlugins, "/v1/info")).body as { features: Array<string> }
-    expect(info.features).toContain("plugins-v1")
+    const info = itemsOf(field((await jsonRequest(withPlugins, "/v1/info")).body, "features"))
+    expect(info).toContain("plugins-v1")
   })
 
   it("lists plugins, fetches details, and issues pane tokens", async () => {
@@ -186,18 +189,20 @@ describe("plugin routes", () => {
 
     const list = await jsonRequest(server, "/v1/plugins")
     expect(list.status).toBe(200)
-    expect((list.body as { plugins: Array<unknown> }).plugins).toHaveLength(1)
+    expect(itemsOf(field(list.body, "plugins"))).toHaveLength(1)
 
     const detail = await jsonRequest(server, "/v1/plugins/owner.example")
     expect(detail.status).toBe(200)
-    expect((detail.body as { id: string }).id).toBe("owner.example")
+    expect(idOf(detail.body)).toBe("owner.example")
 
     const token = await jsonRequest(server, "/v1/plugins/owner.example/panes/pane-1/token", {
       body: JSON.stringify({ cwd: "/tmp", paneType: "main" }),
       method: "POST"
     })
     expect(token.status).toBe(201)
-    const issued = token.body as { token: string; path: string; url: string }
+    const issued = decode(
+      Schema.Struct({ token: Schema.String, path: Schema.String, url: Schema.String })
+    )(token.body)
     expect(issued.token).toBe("tok")
     expect(issued.url).toBe(`${server.url}${issued.path}`)
 
@@ -236,7 +241,7 @@ describe("plugin routes", () => {
       method: "POST"
     })
     expect(restarted.status).toBe(200)
-    expect((restarted.body as { id: string; state: string }).state).toBe("stopped")
+    expect(field(restarted.body, "state")).toBe("stopped")
     expect(calls).toContainEqual(["restart", "owner.example"])
     expect(await live).toContainEqual(
       expect.objectContaining({
@@ -259,10 +264,10 @@ describe("plugin routes", () => {
     await seedPane(server, "ws-count", "pane-3", "plugin:owner.other")
 
     const list = await jsonRequest(server, "/v1/plugins")
-    const summaries = (list.body as { plugins: Array<{ openPaneCount: number }> }).plugins
-    expect(summaries[0]?.openPaneCount).toBe(2)
+    const summaries = itemsOf(field(list.body, "plugins"))
+    expect(field(summaries[0], "openPaneCount")).toBe(2)
     const detail = await jsonRequest(server, "/v1/plugins/owner.example")
-    expect((detail.body as { openPaneCount: number }).openPaneCount).toBe(2)
+    expect(field(detail.body, "openPaneCount")).toBe(2)
   })
 
   it("forwards plugin state events into the fanout and unsubscribes on close", async () => {
@@ -277,10 +282,9 @@ describe("plugin routes", () => {
       subjectId: "owner.example"
     })
     const events = await readSseEvents(server, 1)
-    const event = events[0] as { kind: string; subjectId: string; payload: { state: string } }
-    expect(event.kind).toBe("plugin.state.updated")
-    expect(event.subjectId).toBe("owner.example")
-    expect(event.payload.state).toBe("running")
+    expect(field(events[0], "kind")).toBe("plugin.state.updated")
+    expect(field(events[0], "subjectId")).toBe("owner.example")
+    expect(field(field(events[0], "payload"), "state")).toBe("running")
     await Effect.runPromise(server.close)
     expect(calls).toContainEqual(["unsubscribe"])
   })
@@ -318,7 +322,7 @@ describe("plugin routes", () => {
       method: "POST"
     })
     expect(imported.status).toBe(201)
-    expect((imported.body as { id: string; source: string }).source).toBe("managed")
+    expect(field(imported.body, "source")).toBe("managed")
     expect(calls).toContainEqual(["importRemote", { source: "owner/example" }])
     expect(
       (
@@ -334,7 +338,7 @@ describe("plugin routes", () => {
       method: "POST"
     })
     expect(linked.status).toBe(201)
-    expect((linked.body as { id: string }).id).toBe("owner.example")
+    expect(idOf(linked.body)).toBe("owner.example")
     expect(calls).toContainEqual(["link", { path: "/tmp/dev-plugin" }])
     expect(await live).toEqual([
       expect.objectContaining({
@@ -364,7 +368,7 @@ describe("plugin routes", () => {
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
     const removed = await jsonRequest(server, "/v1/plugins/owner.example", { method: "DELETE" })
     expect(removed.status).toBe(200)
-    expect((removed.body as { plugins: Array<unknown> }).plugins).toEqual([])
+    expect(field(removed.body, "plugins")).toEqual([])
     expect(calls).toContainEqual(["remove", "owner.example"])
     expect(
       (await jsonRequest(server, "/v1/plugins/owner.ghost", { method: "DELETE" })).status
@@ -400,12 +404,9 @@ describe("plugin routes", () => {
         payload: { id: "lonely-pane", workspaceId: "ws-lonely" }
       })
     )
-    const panes = (await jsonRequest(server, "/v1/workspace-panes")).body as Array<{
-      id: string
-      providerId: string
-    }>
-    expect(panes.some((pane) => pane.providerId === "plugin:owner.example")).toBe(false)
-    expect(panes.some((pane) => pane.id === "other-pane")).toBe(true)
+    const panes = itemsOf((await jsonRequest(server, "/v1/workspace-panes")).body)
+    expect(panes.some((pane) => field(pane, "providerId") === "plugin:owner.example")).toBe(false)
+    expect(panes.some((pane) => field(pane, "id") === "other-pane")).toBe(true)
   })
 
   it("404s unmatched plugin paths and methods", async () => {

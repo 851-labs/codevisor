@@ -45,7 +45,7 @@ const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {
   const chunks: Array<Buffer> = []
   for await (const chunk of request) {
     /* v8 ignore next */
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   return Buffer.concat(chunks)
 }

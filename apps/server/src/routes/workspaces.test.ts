@@ -2,9 +2,12 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
+import { field, idOf } from "./response-test-support.js"
 
 describe("workspace routes", () => {
   it("atomically promotes a new-tab pane into its deferred chat", async () => {
@@ -13,21 +16,23 @@ describe("workspace routes", () => {
     tempDirs.push(root)
     const projectFolder = join(root, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/workspaces/main", {
-      body: JSON.stringify({ projectId: project.id, name: "Main", hasCustomName: false }),
+      body: JSON.stringify({ projectId, name: "Main", hasCustomName: false }),
       method: "PUT"
     })
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/missing/panes/stable-pane/promote-chat", {
           body: JSON.stringify({
-            session: { projectId: project.id, harnessId: "codex" }
+            session: { projectId, harnessId: "codex" }
           }),
           method: "POST"
         })
@@ -37,7 +42,7 @@ describe("workspace routes", () => {
       (
         await jsonRequest(server, "/v1/workspaces/main/panes/missing/promote-chat", {
           body: JSON.stringify({
-            session: { projectId: project.id, harnessId: "codex" }
+            session: { projectId, harnessId: "codex" }
           }),
           method: "POST"
         })
@@ -54,17 +59,19 @@ describe("workspace routes", () => {
     expect(placeholder.body).toMatchObject({ id: "stable-pane", revision: 1 })
     const otherFolder = join(root, "other")
     mkdirSync(otherFolder)
-    const otherProject = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: otherFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const otherProjectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: otherFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/main/panes/stable-pane/promote-chat", {
           body: JSON.stringify({
-            session: { projectId: otherProject.id, harnessId: "codex" }
+            session: { projectId: otherProjectId, harnessId: "codex" }
           }),
           method: "POST"
         })
@@ -80,7 +87,7 @@ describe("workspace routes", () => {
         body: JSON.stringify({
           session: {
             id: "new-chat",
-            projectId: project.id,
+            projectId,
             harnessId: "codex",
             deferAgentSession: true,
             title: "New Chat"
@@ -124,7 +131,7 @@ describe("workspace routes", () => {
       "/v1/workspaces/main/panes/stable-pane/promote-chat",
       {
         body: JSON.stringify({
-          session: { id: "new-chat", projectId: project.id, harnessId: "codex" }
+          session: { id: "new-chat", projectId, harnessId: "codex" }
         }),
         method: "POST"
       }
@@ -148,7 +155,7 @@ describe("workspace routes", () => {
         body: JSON.stringify({
           session: {
             id: "empty-title-chat",
-            projectId: project.id,
+            projectId,
             harnessId: "codex",
             deferAgentSession: true,
             title: ""
@@ -168,14 +175,16 @@ describe("workspace routes", () => {
     tempDirs.push(root)
     const projectFolder = join(root, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/workspaces/workspace-panes", {
-      body: JSON.stringify({ projectId: project.id, name: "Main", hasCustomName: false }),
+      body: JSON.stringify({ projectId, name: "Main", hasCustomName: false }),
       method: "PUT"
     })
 
@@ -287,24 +296,26 @@ describe("workspace routes", () => {
     tempDirs.push(workspaceRoot)
     const projectFolder = join(workspaceRoot, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
 
     expect(await jsonRequest(server, "/v1/workspaces")).toEqual({ status: 200, body: [] })
 
     const put = await jsonRequest(server, "/v1/workspaces/workspace-1", {
-      body: JSON.stringify({ projectId: project.id, name: "Main", hasCustomName: false }),
+      body: JSON.stringify({ projectId, name: "Main", hasCustomName: false }),
       method: "PUT"
     })
     expect(put.status).toBe(200)
     expect(put.body).toMatchObject({
       id: "workspace-1",
       serverId: "server-a",
-      projectId: project.id,
+      projectId,
       name: "Main",
       hasCustomName: false,
       isArchived: false
@@ -315,7 +326,7 @@ describe("workspace routes", () => {
     const renamed = await jsonRequest(server, "/v1/workspaces/workspace-1", {
       body: JSON.stringify({
         id: "workspace-1",
-        projectId: project.id,
+        projectId,
         name: "Renamed",
         hasCustomName: true,
         rootDirectory: projectFolder,
@@ -329,7 +340,7 @@ describe("workspace routes", () => {
       hasCustomName: true,
       rootDirectory: projectFolder
     })
-    expect((renamed.body as { readonly updatedAt?: string }).updatedAt).toBeDefined()
+    expect(field(renamed.body, "updatedAt")).toBeDefined()
     expect(await livePut).toEqual([
       expect.objectContaining({
         kind: "workspace.updated",
@@ -341,16 +352,20 @@ describe("workspace routes", () => {
       { id: "workspace-1", name: "Renamed" }
     ])
 
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          projectId: project.id,
-          harnessId: "codex",
-          workspaceId: "workspace-1"
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string; readonly workspaceId?: string }
+    const session = decode(
+      Schema.Struct({ id: Schema.String, workspaceId: Schema.optional(Schema.String) })
+    )(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId,
+            harnessId: "codex",
+            workspaceId: "workspace-1"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(session.workspaceId).toBe("workspace-1")
 
     expect(
@@ -358,7 +373,7 @@ describe("workspace routes", () => {
         await jsonRequest(server, "/v1/workspaces/workspace-1", {
           body: JSON.stringify({
             id: "other",
-            projectId: project.id,
+            projectId,
             name: "Nope",
             hasCustomName: false
           }),
@@ -380,29 +395,31 @@ describe("workspace routes", () => {
     )
 
     await jsonRequest(server, "/v1/workspaces/occupied", {
-      body: JSON.stringify({ projectId: project.id, name: "Occupied", hasCustomName: false }),
+      body: JSON.stringify({ projectId, name: "Occupied", hasCustomName: false }),
       method: "PUT"
     })
-    const occupant = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          projectId: project.id,
-          workspaceId: "occupied",
-          harnessId: "codex",
-          deferAgentSession: true
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const occupantId = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId,
+            workspaceId: "occupied",
+            harnessId: "codex",
+            deferAgentSession: true
+          }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       (await jsonRequest(server, "/v1/workspaces/occupied", { method: "DELETE" })).status
     ).toBe(204)
     expect(
-      (await run(services.db.listSessions)).find((candidate) => candidate.id === occupant.id)
+      (await run(services.db.listSessions)).find((candidate) => candidate.id === occupantId)
         ?.workspaceId
     ).toBeUndefined()
     await jsonRequest(server, "/v1/workspaces/solo", {
-      body: JSON.stringify({ projectId: project.id, name: "Solo", hasCustomName: false }),
+      body: JSON.stringify({ projectId, name: "Solo", hasCustomName: false }),
       method: "PUT"
     })
     expect((await jsonRequest(server, "/v1/workspaces/solo", { method: "DELETE" })).status).toBe(

@@ -1,10 +1,17 @@
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { afterEach, expect, it, vi } from "vitest"
 
 import { waitFor } from "../changes-test-support.js"
 import { fleet } from "../infra/shared-accounts-test-support.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
+import { field, idOf } from "./response-test-support.js"
 afterEach(() => vi.useRealTimers())
+
+const AccountList = Schema.Struct({
+  accounts: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
+})
 
 it("manages shared accounts through authenticated HTTP without exposing credential material", async () => {
   vi.useFakeTimers({ toFake: ["Date"] })
@@ -20,7 +27,7 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
   expect((await send({ action: "list" })).body).toEqual({ accounts: [] })
   const created = await send({ action: "create", label: "Work" })
   expect(created.status).toBe(201)
-  const accountId = (created.body as { account: { id: string } }).account.id
+  const accountId = idOf(field(created.body, "account"))
   const login = await send({
     action: "login",
     accountId,
@@ -30,8 +37,11 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
   expect(login.status).toBe(200)
   const list = await send({ action: "list" })
   expect(JSON.stringify(list.body)).not.toContain("only-in-request")
-  const id = (list.body as { accounts: Array<{ id: string; label: string }> }).accounts[0]!.id
-  expect((list.body as { accounts: Array<{ label: string }> }).accounts[0]?.label).toBe("Work")
+  const [first] = decode(AccountList)(list.body).accounts
+  if (first === undefined) throw new Error("Expected a shared account")
+  const id = first.id
+  expect(first.label).toBe("Work")
+
   for (const action of ["probe", "activate", "inherit"])
     expect((await send({ action, accountId: id })).status).toBe(200)
   expect((await send({ action: "rename", accountId: id, label: "Personal" })).status).toBe(200)

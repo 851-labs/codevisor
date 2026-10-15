@@ -5,7 +5,6 @@ import { join } from "node:path"
 import type { EventEnvelope } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
 import { localArtifactPath, markdownFileReferences } from "./markdown-artifacts.js"
@@ -24,12 +23,7 @@ const fixture = async () => {
   const fanout = await run(makeEventFanout)
   const published: Array<EventEnvelope> = []
   fanout.subscribe((event) => published.push(event))
-  const sink = sessionEventSink(
-    services as unknown as CodevisorServerServices,
-    fanout,
-    "file-delivery",
-    session.id
-  )
+  const sink = sessionEventSink(services, fanout, "file-delivery", session.id)
   const output = (payload: Record<string, unknown>) =>
     sink({ kind: "session.output", subjectId: session.id, payload })
   const end = () =>

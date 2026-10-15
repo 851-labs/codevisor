@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { HttpFailure, matchRoute, matchRouteParams, run, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
+import { field } from "../unknown-values.js"
+import { routeParam } from "./route-params.js"
 import { withUpdateGate } from "./update-gate.js"
 
 export const routeSessionTranscript = async (
@@ -19,15 +21,25 @@ export const routeSessionTranscript = async (
 
   const body = matchRouteParams(url.pathname, "/v1/sessions/:id/transcript/:itemId/body")
   if (body !== undefined && request.method === "GET") {
-    const { id, itemId } = body as { readonly id: string; readonly itemId: string }
-    await readTranscriptBody(services, response, url, id, itemId)
+    await readTranscriptBody(
+      services,
+      response,
+      url,
+      routeParam(body, "id"),
+      routeParam(body, "itemId")
+    )
     return true
   }
 
   const details = matchRouteParams(url.pathname, "/v1/sessions/:id/transcript/:itemId/details")
   if (details !== undefined && request.method === "GET") {
-    const { id, itemId } = details as { readonly id: string; readonly itemId: string }
-    await readTranscriptDetails(services, response, url, id, itemId)
+    await readTranscriptDetails(
+      services,
+      response,
+      url,
+      routeParam(details, "id"),
+      routeParam(details, "itemId")
+    )
     return true
   }
 
@@ -96,12 +108,12 @@ const readTranscriptBody = async (
   itemId: string
 ): Promise<void> => {
   const key = url.searchParams.get("key")
-  const field = url.searchParams.get("field")
+  const bodyField = url.searchParams.get("field")
   const position = Number(url.searchParams.get("position") ?? "0")
-  if (key === null || field === null || !Number.isSafeInteger(position) || position < 0) {
+  if (key === null || bodyField === null || !Number.isSafeInteger(position) || position < 0) {
     throw new HttpFailure(400, "Invalid transcript body cursor")
   }
-  const page = await run(services.db.getTranscriptBodyPage(id, itemId, key, field, position))
+  const page = await run(services.db.getTranscriptBodyPage(id, itemId, key, bodyField, position))
   if (page === undefined) throw new HttpFailure(404, "Transcript body not found")
   writeJson(response, 200, page)
 }
@@ -128,15 +140,12 @@ const readTranscriptDetails = async (
 const validTranscriptDetailCursor = (after: string | undefined): boolean => {
   if (after !== undefined && after !== "latest") {
     try {
-      const cursor = JSON.parse(Buffer.from(after, "base64url").toString()) as {
-        position?: unknown
-        key?: unknown
-        reverse?: unknown
-      }
+      const cursor: unknown = JSON.parse(Buffer.from(after, "base64url").toString())
+      const reverse = field(cursor, "reverse")
       if (
-        !Number.isSafeInteger(cursor.position) ||
-        typeof cursor.key !== "string" ||
-        (cursor.reverse !== undefined && typeof cursor.reverse !== "boolean")
+        !Number.isSafeInteger(field(cursor, "position")) ||
+        typeof field(cursor, "key") !== "string" ||
+        (reverse !== undefined && typeof reverse !== "boolean")
       )
         throw new Error("Invalid cursor")
     } catch {

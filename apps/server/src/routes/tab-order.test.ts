@@ -2,10 +2,13 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { WorkspacePane } from "@codevisor/api"
+import { decode, WorkspacePane } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+
+const decodePanes = decode(Schema.Array(WorkspacePane))
 
 describe("shared tab order over HTTP", () => {
   it("appends new tabs at the end and reorders them for every client", async () => {
@@ -28,9 +31,7 @@ describe("shared tab order over HTTP", () => {
       })
     }
     const titles = async () =>
-      ((await jsonRequest(server, "/v1/workspace-panes")).body as WorkspacePane[]).map(
-        (pane) => pane.title
-      )
+      decodePanes((await jsonRequest(server, "/v1/workspace-panes")).body).map((pane) => pane.title)
     expect(await titles()).toEqual(["Chat", "Terminal", "Browser"])
 
     const reordered = await jsonRequest(server, "/v1/workspaces/alpha/panes/reorder", {
@@ -40,8 +41,8 @@ describe("shared tab order over HTTP", () => {
     expect(reordered.status).toBe(200)
     expect(await titles()).toEqual(["Terminal", "Chat", "Browser"])
 
-    const panes = (await jsonRequest(server, "/v1/workspace-panes")).body as WorkspacePane[]
-    const browser = panes[2]!
+    const browser = decodePanes((await jsonRequest(server, "/v1/workspace-panes")).body)[2]
+    if (browser === undefined) throw new Error("missing browser pane")
     const moved = await jsonRequest(server, `/v1/workspaces/alpha/panes/${browser.id}`, {
       method: "PATCH",
       body: JSON.stringify({ position: "0000000000018" })

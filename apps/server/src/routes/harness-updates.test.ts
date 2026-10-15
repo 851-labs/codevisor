@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Harness } from "@codevisor/api"
-import { Effect } from "effect"
+import { decode, Harness } from "@codevisor/api"
+import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "../changes-test-support.js"
@@ -15,6 +15,7 @@ import {
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
+import { field, idOf, itemsOf } from "./response-test-support.js"
 
 describe("harness update checks", () => {
   it("forces a check and returns the decorated harness list", async () => {
@@ -61,7 +62,7 @@ describe("harness update checks", () => {
     ])
 
     const plain = await jsonRequest(server, "/v1/harnesses")
-    expect((plain.body as Array<{ updateInfo?: unknown }>)[0]?.updateInfo).toBeUndefined()
+    expect(field(itemsOf(plain.body)[0], "updateInfo")).toBeUndefined()
     const decorated = await jsonRequest(server, "/v1/harnesses?include=lifecycle")
     expect(decorated.body).toMatchObject([{ id: "codex", updateInfo: { updateAvailable: true } }])
   })
@@ -210,7 +211,7 @@ describe("harness update checks", () => {
       desiredEnabled: false,
       settings: { global: { enabled: false, installed: true } }
     })
-    expect((disabled.body as Harness).settings?.override).toBeUndefined()
+    expect(decode(Harness)(disabled.body).settings?.override).toBeUndefined()
     expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
       { key: "codex", value: { name: "Codex", enabled: false, installed: true, uninstall: false } }
     ])
@@ -233,7 +234,7 @@ describe("harness update checks", () => {
       ])
     )
     expect(
-      ((await jsonRequest(server, "/v1/harnesses")).body as Array<Harness>).find(
+      decode(Schema.Array(Harness))((await jsonRequest(server, "/v1/harnesses")).body).find(
         (harness) => harness.id === "codex"
       )
     ).toMatchObject({ desiredEnabled: true })
@@ -309,48 +310,51 @@ describe("harness update checks", () => {
 
     const folder = join(mkdtempSync(join(tmpdir(), "codevisor-gate-")), "repo")
     mkdirSync(folder, { recursive: true })
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: folder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ harnessId: "codex", projectId: project.id, title: "Gated" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: folder }),
+          method: "POST"
+        })
+      ).body
+    )
+    const sessionId = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ harnessId: "codex", projectId, title: "Gated" }),
+          method: "POST"
+        })
+      ).body
+    )
 
     gated.add("codex")
-    const accepted = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+    const accepted = await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
       body: JSON.stringify({ text: "held prompt" }),
       method: "POST"
     })
     expect(accepted.status).toBe(202)
-    const second = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+    const second = await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
       body: JSON.stringify({ text: "also held" }),
       method: "POST"
     })
     expect(second.status).toBe(202)
     await waitFor(async () =>
-      listSubjectEvents(services, session.id).some(
+      listSubjectEvents(services, sessionId).some(
         (event) => event.kind === "session.updateGate.updated"
       )
     )
     expect(agents.prompts).toHaveLength(0)
-    const heldEvents = listSubjectEvents(services, session.id)
+    const heldEvents = listSubjectEvents(services, sessionId)
     expect(
       heldEvents.some(
         (event) =>
-          event.kind === "session.updateGate.updated" &&
-          (event.payload as { state?: string }).state === "waiting"
+          event.kind === "session.updateGate.updated" && field(event.payload, "state") === "waiting"
       )
     ).toBe(true)
-    expect((await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body).toMatchObject(
-      { updateGate: { harnessId: "codex" } }
-    )
-    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+    expect((await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body).toMatchObject({
+      updateGate: { harnessId: "codex" }
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${sessionId}`)).body).toMatchObject({
       updateGate: { harnessId: "codex" }
     })
 
@@ -364,7 +368,7 @@ describe("harness update checks", () => {
     await waitFor(() => turns.includes("end codex"))
     expect(turns[0]).toBe("start codex")
     expect(
-      (await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body
+      (await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body
     ).not.toHaveProperty("updateGate")
   })
 })

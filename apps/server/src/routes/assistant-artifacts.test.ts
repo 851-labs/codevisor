@@ -6,10 +6,10 @@ import { join } from "node:path"
 import type { EventEnvelope } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
 import { promoteAssistantArtifacts, referencedAttachmentIds } from "./assistant-artifacts.js"
+import { field } from "./response-test-support.js"
 import { sessionEventSink } from "./session-events.js"
 
 afterEach(() => {
@@ -55,12 +55,7 @@ describe("assistant artifact promotion", () => {
         createdAt: new Date().toISOString()
       })
     )
-    const sink = sessionEventSink(
-      services as unknown as CodevisorServerServices,
-      fanout,
-      "server-a",
-      session.id
-    )
+    const sink = sessionEventSink(services, fanout, "server-a", session.id)
     const markdown = `Here it is:\n\n![House](https://attachments.codevisor.invalid/${file.id})\n\nAlso https://attachments.codevisor.invalid/missing-id is unknown.`
     await sink({
       kind: "session.updated",
@@ -83,9 +78,7 @@ describe("assistant artifact promotion", () => {
     })
 
     const finalized = published.find(
-      (event) =>
-        event.kind === "session.output" &&
-        (event.payload as { isFinalized?: boolean }).isFinalized === true
+      (event) => event.kind === "session.output" && field(event.payload, "isFinalized") === true
     )
     expect(finalized?.payload).toMatchObject({
       text: markdown,
@@ -100,9 +93,7 @@ describe("assistant artifact promotion", () => {
         }
       ]
     })
-    const ended = published.findIndex(
-      (event) => (event.payload as { turnState?: string }).turnState === "ended"
-    )
+    const ended = published.findIndex((event) => field(event.payload, "turnState") === "ended")
     expect(published.indexOf(finalized!)).toBeLessThan(ended)
 
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
@@ -123,12 +114,7 @@ describe("assistant artifact promotion", () => {
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    const sink = sessionEventSink(
-      services as unknown as CodevisorServerServices,
-      fanout,
-      "server-c",
-      session.id
-    )
+    const sink = sessionEventSink(services, fanout, "server-c", session.id)
     await sink({
       kind: "session.updated",
       subjectId: "agent",
@@ -142,14 +128,9 @@ describe("assistant artifact promotion", () => {
         content: { type: "text", text: "![x](https://attachments.codevisor.invalid/nope)" }
       }
     })
-    await expect(
-      promoteAssistantArtifacts(
-        services as unknown as CodevisorServerServices,
-        fanout,
-        "server-c",
-        session.id
-      )
-    ).resolves.toBe(false)
+    await expect(promoteAssistantArtifacts(services, fanout, "server-c", session.id)).resolves.toBe(
+      false
+    )
   })
 
   it("still ends the turn when promotion fails", async () => {
@@ -173,7 +154,7 @@ describe("assistant artifact promotion", () => {
             throw failure
           }
         }
-      } as unknown as CodevisorServerServices
+      }
       const sink = sessionEventSink(failing, fanout, "server-d", session.id)
       await sink({
         kind: "session.updated",
@@ -190,9 +171,9 @@ describe("assistant artifact promotion", () => {
     expect(errors).toHaveBeenCalledWith(
       expect.stringContaining("Assistant artifact promotion failed")
     )
-    expect(
-      published.filter((event) => (event.payload as { turnState?: string }).turnState === "ended")
-    ).toHaveLength(2)
+    expect(published.filter((event) => field(event.payload, "turnState") === "ended")).toHaveLength(
+      2
+    )
     errors.mockRestore()
   })
 
@@ -219,12 +200,7 @@ describe("assistant artifact promotion", () => {
         createdAt: new Date().toISOString()
       })
     )
-    const sink = sessionEventSink(
-      services as unknown as CodevisorServerServices,
-      fanout,
-      "server-e",
-      session.id
-    )
+    const sink = sessionEventSink(services, fanout, "server-e", session.id)
     await sink({
       kind: "session.updated",
       subjectId: "agent",
@@ -243,9 +219,7 @@ describe("assistant artifact promotion", () => {
       subjectId: "agent",
       payload: { initiatedBy: "user", turnId: "turn-1", turnState: "ended", stopReason: "end_turn" }
     })
-    const finalized = published.find(
-      (event) => (event.payload as { isFinalized?: boolean }).isFinalized === true
-    )
+    const finalized = published.find((event) => field(event.payload, "isFinalized") === true)
     expect(finalized?.payload).toMatchObject({ attachments: [{ fileId: file.id }] })
     expect(finalized?.payload).toMatchObject({ messageId: expect.any(String), isFinalized: true })
   })
@@ -259,13 +233,8 @@ describe("assistant artifact promotion", () => {
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    await expect(
-      promoteAssistantArtifacts(
-        services as unknown as CodevisorServerServices,
-        fanout,
-        "server-b",
-        session.id
-      )
-    ).resolves.toBe(false)
+    await expect(promoteAssistantArtifacts(services, fanout, "server-b", session.id)).resolves.toBe(
+      false
+    )
   })
 })

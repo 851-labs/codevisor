@@ -50,7 +50,7 @@ export const reconcileProjectRepoUrls = async (
     try {
       if (locationChanged) await run(db.setProjectLocationGitState(location.id, isGitRepository))
       const updated = {
-        ...(remoteChanged ? await run(db.setProjectRepoUrl(project.id, url!)) : project),
+        ...(remoteChanged ? await run(db.setProjectRepoUrl(project.id, url)) : project),
         locations: project.locations.map((value) =>
           value.id === location.id ? { ...value, isGitRepository } : value
         )

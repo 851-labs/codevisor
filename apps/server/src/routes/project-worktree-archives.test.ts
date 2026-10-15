@@ -4,15 +4,24 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { decode, Worktree } from "@codevisor/api"
 import { runGit, snapshotRefFor } from "@codevisor/worktrees"
 import Database from "better-sqlite3"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { archiveJobs } from "../archive-jobs.js"
 import { jsonRequest, run, start, tempDirs, listSubjectEvents } from "../test-support.js"
+import { field, idOf } from "./response-test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
+const decodeWorktree = decode(Worktree)
+const decodeRooted = decode(
+  Schema.Struct({ isArchived: Schema.Boolean, rootDirectory: Schema.String })
+)
+const decodeChatCwd = decode(Schema.Struct({ session: Schema.Struct({ cwd: Schema.String }) }))
+const decodeDroppedPaths = decode(Schema.UndefinedOr(Schema.Array(Schema.String)))
 
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
@@ -27,7 +36,9 @@ const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>)
 
 const setUpGitProjects = async () => {
   const { agents, server, services } = await start()
-  const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
+  const serverDirectory = tempDirs.at(-1)
+  if (serverDirectory === undefined) throw new Error("missing server directory")
+  const serverDatabasePath = join(serverDirectory, "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
   tempDirs.push(repoRoot)
   const repoFolder = join(repoRoot, "repo")
@@ -54,10 +65,8 @@ const setUpGitProjects = async () => {
   })
   expect(plainResponse.body).toMatchObject({ locations: [{ isGitRepository: false }] })
   const worktreeNames = async () =>
-    (
-      (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as ReadonlyArray<{
-        readonly name: string
-      }>
+    decode(Schema.Array(Worktree))(
+      (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body
     ).map((entry) => entry.name)
   return {
     agents,
@@ -77,12 +86,14 @@ describe("project worktree archive routes", () => {
       const { server, services, repoFolder, worktreeNames } = await setUpGitProjects()
 
       const makeWorkspace = async (id: string, name: string, chats = 1) => {
-        const worktree = (
-          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-            body: JSON.stringify({ name }),
-            method: "POST"
-          })
-        ).body as { readonly id: string; readonly name: string; readonly path: string }
+        const worktree = decodeWorktree(
+          (
+            await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+              body: JSON.stringify({ name }),
+              method: "POST"
+            })
+          ).body
+        )
         await jsonRequest(server, `/v1/workspaces/${id}`, {
           body: JSON.stringify({
             projectId: "git-project",
@@ -95,7 +106,7 @@ describe("project worktree archive routes", () => {
         const sessions: Array<string> = []
         for (let index = 0; index < chats; index += 1) {
           sessions.push(
-            (
+            idOf(
               (
                 await jsonRequest(server, "/v1/sessions", {
                   body: JSON.stringify({
@@ -106,8 +117,8 @@ describe("project worktree archive routes", () => {
                   }),
                   method: "POST"
                 })
-              ).body as { readonly id: string }
-            ).id
+              ).body
+            )
           )
         }
         return { worktree, sessions }
@@ -148,17 +159,14 @@ describe("project worktree archive routes", () => {
 
       expect((await setArchived("sharer-ws", true)).status).toBe(200)
 
-      const restored = (await setArchived("solo-ws", false)).body as {
-        readonly isArchived: boolean
-        readonly rootDirectory: string
-      }
+      const restored = decodeRooted((await setArchived("solo-ws", false)).body)
       expect(restored.isArchived).toBe(false)
       expect(restored.rootDirectory).toBe(solo.path)
       expect(existsSync(solo.path)).toBe(true)
       expect(await worktreeNames()).toContain(solo.name)
-      const rejoined = (await jsonRequest(server, `/v1/sessions/${soloChats[0]}`)).body as {
-        readonly session: { readonly cwd: string }
-      }
+      const rejoined = decodeChatCwd(
+        (await jsonRequest(server, `/v1/sessions/${soloChats[0]}`)).body
+      )
       expect(rejoined.session.cwd).toBe(solo.path)
 
       const { worktree: ignoredTree, sessions: ignoredChats } = await makeWorkspace(
@@ -169,32 +177,29 @@ describe("project worktree archive routes", () => {
       writeFileSync(join(ignoredTree.path, ".gitignore"), ".env\n")
       writeFileSync(join(ignoredTree.path, ".env"), "SECRET=1\n")
       await setArchived("ignored-ws", true)
-      const ignoredHistory = listSubjectEvents(services, "ignored-ws") as ReadonlyArray<{
-        readonly payload?: { readonly archiveDroppedIgnoredPaths?: ReadonlyArray<string> }
-      }>
       expect(
-        ignoredHistory.some((event) =>
-          event.payload?.archiveDroppedIgnoredPaths?.some((path) => path.endsWith(".env"))
+        listSubjectEvents(services, "ignored-ws").some((event) =>
+          decodeDroppedPaths(field(event.payload, "archiveDroppedIgnoredPaths"))?.some((path) =>
+            path.endsWith(".env")
+          )
         )
       ).toBe(true)
 
-      const squatter = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: ignoredTree.name }),
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly path: string }
+      const squatter = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: ignoredTree.name }),
+            method: "POST"
+          })
+        ).body
+      )
       expect(squatter.name).toBe(ignoredTree.name)
-      const suffixed = (await setArchived("ignored-ws", false)).body as {
-        readonly rootDirectory: string
-      }
+      const suffixed = decodeRooted((await setArchived("ignored-ws", false)).body)
       expect(suffixed.rootDirectory).not.toBe(squatter.path)
       expect(suffixed.rootDirectory).not.toBe(ignoredTree.path)
       expect(existsSync(suffixed.rootDirectory)).toBe(true)
       for (const chatId of ignoredChats) {
-        const chat = (await jsonRequest(server, `/v1/sessions/${chatId}`)).body as {
-          readonly session: { readonly cwd: string }
-        }
+        const chat = decodeChatCwd((await jsonRequest(server, `/v1/sessions/${chatId}`)).body)
         expect(chat.session.cwd).toBe(suffixed.rootDirectory)
       }
 
@@ -202,12 +207,11 @@ describe("project worktree archive routes", () => {
       await setArchived("orphan-ws", true)
       await run(services.db.deleteArchivedWorktree(orphanTree.id))
       expect((await setArchived("orphan-ws", false)).body).toMatchObject({ isArchived: false })
-      const orphanHistory = listSubjectEvents(services, "orphan-ws") as ReadonlyArray<{
-        readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
-      }>
-      expect(orphanHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(
-        true
-      )
+      expect(
+        listSubjectEvents(services, "orphan-ws").some(
+          (event) => field(event.payload, "archiveRestoreIncomplete") === true
+        )
+      ).toBe(true)
 
       const { worktree: strayTree } = await makeWorkspace("stray-ws", "stray")
       await run(services.db.deleteWorktree(strayTree.id))
@@ -236,12 +240,11 @@ describe("project worktree archive routes", () => {
       await runGit("drop-snapshot", ["update-ref", "-d", snapshotRefFor(prunedTree.id)], repoFolder)
       const prunedBack = await setArchived("pruned-ws", false)
       expect(prunedBack.body).toMatchObject({ isArchived: false })
-      const prunedHistory = listSubjectEvents(services, "pruned-ws") as ReadonlyArray<{
-        readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
-      }>
-      expect(prunedHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(
-        true
-      )
+      expect(
+        listSubjectEvents(services, "pruned-ws").some(
+          (event) => field(event.payload, "archiveRestoreIncomplete") === true
+        )
+      ).toBe(true)
 
       await jsonRequest(server, "/v1/workspaces/plain-ws", {
         body: JSON.stringify({ projectId: "git-project", name: "plain", hasCustomName: false }),
@@ -256,12 +259,14 @@ describe("project worktree archive routes", () => {
   it("rejects sessions whose worktree or project folder is unavailable", async () => {
     await withWorktreesRoot(async () => {
       const { repoFolder, repoRoot, server, serverDatabasePath } = await setUpGitProjects()
-      const worktree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "fix-auth" }),
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly path: string }
+      const worktree = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: "fix-auth" }),
+            method: "POST"
+          })
+        ).body
+      )
       rmSync(worktree.path, { force: true, recursive: true })
       await git(["worktree", "prune"], repoFolder)
       const missingFolder = await jsonRequest(server, "/v1/sessions", {
@@ -274,9 +279,7 @@ describe("project worktree archive routes", () => {
         method: "POST"
       })
       expect(missingFolder.status).toBe(400)
-      expect((missingFolder.body as { readonly error: string }).error).toContain(
-        "Worktree folder does not exist"
-      )
+      expect(field(missingFolder.body, "error")).toContain("Worktree folder does not exist")
 
       await jsonRequest(server, "/v1/projects", {
         body: JSON.stringify({ folderPath: join(repoRoot, "detached"), id: "detached-project" }),
@@ -292,9 +295,7 @@ describe("project worktree archive routes", () => {
         method: "POST"
       })
       expect(detached.status).toBe(400)
-      expect((detached.body as { readonly error: string }).error).toContain(
-        "no folder on this machine"
-      )
+      expect(field(detached.body, "error")).toContain("no folder on this machine")
 
       expect(
         (

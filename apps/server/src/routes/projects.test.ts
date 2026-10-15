@@ -4,7 +4,8 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { Effect } from "effect"
+import { decode, Project } from "@codevisor/api"
+import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -17,8 +18,10 @@ import {
 } from "../test-support.js"
 import { resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
 import { isDeletableProjectFolder } from "./projects.js"
+import { field, idOf, itemsOf } from "./response-test-support.js"
 
 const execFileAsync = promisify(execFile)
+const decodeProject = decode(Project)
 
 const runGit = (args: ReadonlyArray<string>, cwd: string) =>
   execFileAsync("git", [...args], { cwd })
@@ -89,9 +92,7 @@ describe("project routes", () => {
     expect(second.body).toEqual(first.body)
     expect(scans).toBeGreaterThan(0)
     expect(listOptions).toHaveLength(scans)
-    expect(listOptions.every((options) => (options as { titles?: boolean }).titles === false)).toBe(
-      true
-    )
+    expect(listOptions.every((options) => field(options, "titles") === false)).toBe(true)
   })
 
   it("keeps unavailable harness stores from breaking project recommendations", async () => {
@@ -145,7 +146,7 @@ describe("project routes", () => {
       const events = listSubjectEvents(services, "cloned-project")
       const states = events
         .filter((event) => event.kind === "project.setup")
-        .map((event) => (event.payload as { state: string }).state)
+        .map((event) => field(event.payload, "state"))
       expect(states[0]).toBe("started")
       expect(states.at(-1)).toBe("completed")
 
@@ -178,21 +179,19 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(unnameable.status).toBe(400)
-      expect((unnameable.body as { error: string }).error).toContain("name")
+      expect(field(unnameable.body, "error")).toContain("name")
 
       const missing = await jsonRequest(server, "/v1/projects/from-git", {
         body: JSON.stringify({ id: "missing-project", url: `file://${origin}/gone.git` }),
         method: "POST"
       })
       expect(missing.status).toBe(422)
-      expect((missing.body as { code?: string }).code).toBeDefined()
+      expect(field(missing.body, "code")).toBeDefined()
       expect(existsSync(join(reposRoot, "gone"))).toBe(false)
       const failedEvents = listSubjectEvents(services, "missing-project")
       expect(
         failedEvents.some(
-          (event) =>
-            event.kind === "project.setup" &&
-            (event.payload as { state: string }).state === "failed"
+          (event) => event.kind === "project.setup" && field(event.payload, "state") === "failed"
         )
       ).toBe(true)
     } finally {
@@ -204,22 +203,24 @@ describe("project routes", () => {
     const { server, services } = await start()
     const folderPath = mkdtempSync(join(tmpdir(), "codevisor-rename-project-"))
     tempDirs.push(folderPath)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath }),
+          method: "POST"
+        })
+      ).body
+    )
 
-    const renamed = await jsonRequest(server, `/v1/projects/${project.id}`, {
+    const renamed = await jsonRequest(server, `/v1/projects/${projectId}`, {
       body: JSON.stringify({ name: "Renamed" }),
       method: "PATCH"
     })
 
-    expect(renamed).toMatchObject({ status: 200, body: { id: project.id, name: "Renamed" } })
-    expect(listSubjectEvents(services, project.id).at(-1)).toMatchObject({
+    expect(renamed).toMatchObject({ status: 200, body: { id: projectId, name: "Renamed" } })
+    expect(listSubjectEvents(services, projectId).at(-1)).toMatchObject({
       kind: "project.updated",
-      payload: { id: project.id, name: "Renamed" }
+      payload: { id: projectId, name: "Renamed" }
     })
   })
 
@@ -233,14 +234,14 @@ describe("project routes", () => {
       method: "POST"
     })
     expect(created.status).toBe(201)
-    expect((created.body as { id: string }).id).toBe(lowerId)
+    expect(idOf(created.body)).toBe(lowerId)
 
     const resync = await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: "/tmp/case-project", id: upperId }),
       method: "POST"
     })
-    expect((resync.body as { id: string }).id).toBe(lowerId)
-    expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(1)
+    expect(idOf(resync.body)).toBe(lowerId)
+    expect(itemsOf((await jsonRequest(server, "/v1/projects")).body).length).toBe(1)
 
     const session = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({ projectId: upperId, harnessId: "codex" }),
@@ -291,7 +292,7 @@ describe("project routes", () => {
       expect(existsSync(join(kept, "src", "index.ts"))).toBe(true)
       expect(existsSync(removed)).toBe(false)
       expect(existsSync(join(base, "kept"))).toBe(true)
-      expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(0)
+      expect(itemsOf((await jsonRequest(server, "/v1/projects")).body).length).toBe(0)
     } finally {
       delete process.env["CODEVISOR_WORKTREES_ROOT"]
     }
@@ -317,15 +318,11 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(created.status).toBe(201)
-      const scratch = created.body as {
-        readonly id: string
-        readonly name: string
-        readonly isScratch?: boolean
-        readonly locations: ReadonlyArray<{ readonly folderPath: string }>
-      }
+      const scratch = decodeProject(created.body)
       expect(scratch.id).toBe("scratch-project")
       expect(scratch.isScratch).toBe(true)
-      const scratchFolder = scratch.locations[0]?.folderPath as string
+      const scratchFolder = scratch.locations[0]?.folderPath
+      if (scratchFolder === undefined) throw new Error("missing scratch folder")
       expect(scratchFolder).toBe(join(worktreesRoot, "workspaces", scratch.name))
       expect(existsSync(scratchFolder)).toBe(true)
 
@@ -334,7 +331,7 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(replay.status).toBe(200)
-      expect((replay.body as { readonly id: string }).id).toBe("scratch-project")
+      expect(idOf(replay.body)).toBe("scratch-project")
       expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(1)
 
       const anonymous = await jsonRequest(server, "/v1/projects/scratch", {
@@ -342,19 +339,15 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(anonymous.status).toBe(201)
-      expect((anonymous.body as { readonly isScratch?: boolean }).isScratch).toBe(true)
+      expect(decodeProject(anonymous.body).isScratch).toBe(true)
       expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(2)
 
       resetRepoUrlDiscoveryCache()
       const listed = await jsonRequest(server, "/v1/projects", { method: "GET" })
       expect(listed.status).toBe(200)
-      const listedScratch = (
-        listed.body as ReadonlyArray<{
-          readonly id: string
-          readonly repoKey?: string
-          readonly isScratch?: boolean
-        }>
-      ).find((project) => project.id === "scratch-project")
+      const listedScratch = decode(Schema.Array(Project))(listed.body).find(
+        (project) => project.id === "scratch-project"
+      )
       expect(listedScratch).toMatchObject({ isScratch: true })
       expect(listedScratch?.repoKey).toBeUndefined()
 
@@ -365,7 +358,7 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(plain.status).toBe(201)
-      expect((plain.body as { readonly isScratch?: boolean }).isScratch).toBeUndefined()
+      expect(decodeProject(plain.body).isScratch).toBeUndefined()
 
       const sessionResponse = await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
@@ -377,7 +370,7 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(sessionResponse.status).toBe(201)
-      expect((sessionResponse.body as { readonly cwd?: string }).cwd).toBe(scratchFolder)
+      expect(field(sessionResponse.body, "cwd")).toBe(scratchFolder)
 
       const moved = await jsonRequest(server, "/v1/sessions/scratch-session", {
         body: JSON.stringify({ projectId: "plain-project" }),
@@ -400,7 +393,7 @@ describe("project routes", () => {
         method: "POST"
       })
       expect(startedResponse.status).toBe(201)
-      const startedId = (startedResponse.body as { readonly id: string }).id
+      const startedId = idOf(startedResponse.body)
       expect(
         (
           await jsonRequest(server, `/v1/sessions/${startedId}`, {

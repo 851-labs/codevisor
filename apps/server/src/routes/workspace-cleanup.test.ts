@@ -3,14 +3,18 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { Effect } from "effect"
+import { decode, Worktree } from "@codevisor/api"
+import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "../archive-jobs.js"
 import { makeEventFanout } from "../server.js"
 import { jsonRequest, run, start, tempDirs, idleRouteState, listEvents } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
+import { field } from "./response-test-support.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
+
+const Chat = Schema.Struct({ id: Schema.String, agentSessionId: Schema.String })
 
 const setup = async () => {
   const fixture = await start()
@@ -106,18 +110,20 @@ describe("workspace process cleanup", () => {
         method: "PUT",
         body: JSON.stringify({ projectId: "project", name: "Work", hasCustomName: false })
       })
-      const session = (
-        await jsonRequest(server, "/v1/sessions", {
-          method: "POST",
-          body: JSON.stringify({
-            id: "chat",
-            projectId: "project",
-            workspaceId: "work",
-            harnessId: "codex",
-            deferAgentSession: true
+      const session = decode(Chat)(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            method: "POST",
+            body: JSON.stringify({
+              id: "chat",
+              projectId: "project",
+              workspaceId: "work",
+              harnessId: "codex",
+              deferAgentSession: true
+            })
           })
-        })
-      ).body as { agentSessionId: string }
+        ).body
+      )
       const create = services.terminal.createTerminal
       vi.spyOn(services.terminal, "createTerminal").mockImplementation((request) =>
         Effect.gen(function* () {
@@ -222,8 +228,7 @@ describe("workspace process cleanup", () => {
       expect(
         listEvents(services).some(
           (event) =>
-            event.kind === "workspace.updated" &&
-            (event.payload as { isArchived?: boolean }).isArchived
+            event.kind === "workspace.updated" && field(event.payload, "isArchived") === true
         )
       ).toBe(true)
       expect(
@@ -266,12 +271,14 @@ describe("workspace process cleanup", () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-cleanup-worktrees-"))
     tempDirs.push(root)
     vi.stubEnv("CODEVISOR_WORKTREES_ROOT", root)
-    const worktree = (
-      await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        method: "POST",
-        body: JSON.stringify({ name: "cleanup" })
-      })
-    ).body as { name: string; path: string }
+    const worktree = decode(Worktree)(
+      (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          method: "POST",
+          body: JSON.stringify({ name: "cleanup" })
+        })
+      ).body
+    )
     writeFileSync(join(worktree.path, "changes.txt"), "preserve this edit")
     await jsonRequest(server, "/v1/workspaces/work", {
       method: "PUT",
@@ -285,18 +292,20 @@ describe("workspace process cleanup", () => {
     const chats: Array<{ id: string; agentSessionId: string }> = []
     for (const id of ["one", "two"]) {
       chats.push(
-        (
-          await jsonRequest(server, "/v1/sessions", {
-            method: "POST",
-            body: JSON.stringify({
-              id,
-              projectId: "git-project",
-              workspaceId: "work",
-              worktreeName: worktree.name,
-              harnessId: "codex"
+        decode(Chat)(
+          (
+            await jsonRequest(server, "/v1/sessions", {
+              method: "POST",
+              body: JSON.stringify({
+                id,
+                projectId: "git-project",
+                workspaceId: "work",
+                worktreeName: worktree.name,
+                harnessId: "codex"
+              })
             })
-          })
-        ).body as { id: string; agentSessionId: string }
+          ).body
+        )
       )
     }
     for (const chat of chats)

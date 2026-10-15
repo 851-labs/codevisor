@@ -1,5 +1,6 @@
 import { once } from "node:events"
-import type { IncomingMessage, ServerResponse } from "node:http"
+import { IncomingMessage, ServerResponse } from "node:http"
+import { Socket } from "node:net"
 
 import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
@@ -9,12 +10,13 @@ import { routeClientControl } from "./client-control.js"
 
 describe("client control routes", () => {
   it("reports unavailable control infrastructure", async () => {
+    const request = new IncomingMessage(new Socket())
     await expect(
       routeClientControl(
         undefined,
         { id: "server", name: "Server" },
-        {} as IncomingMessage,
-        {} as ServerResponse,
+        request,
+        new ServerResponse(request),
         new URL("http://fixture/v1/clients")
       )
     ).rejects.toThrow("Client control unavailable")

@@ -4,13 +4,18 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { decode, SessionSummary, Worktree, WorktreeSetupUpdate } from "@codevisor/api"
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-support.js"
+import { itemsOf } from "./response-test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
+const decodeWorktree = decode(Worktree)
+const decodeSetup = decode(WorktreeSetupUpdate)
 
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
@@ -25,7 +30,9 @@ const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>)
 
 const setUpGitProjects = async () => {
   const { agents, server, services } = await start()
-  const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
+  const serverDirectory = tempDirs.at(-1)
+  if (serverDirectory === undefined) throw new Error("missing server directory")
+  const serverDatabasePath = join(serverDirectory, "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
   tempDirs.push(repoRoot)
   const repoFolder = join(repoRoot, "repo")
@@ -52,10 +59,8 @@ const setUpGitProjects = async () => {
   })
   expect(plainResponse.body).toMatchObject({ locations: [{ isGitRepository: false }] })
   const worktreeNames = async () =>
-    (
-      (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as ReadonlyArray<{
-        readonly name: string
-      }>
+    decode(Schema.Array(Worktree))(
+      (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body
     ).map((entry) => entry.name)
   return {
     agents,
@@ -91,12 +96,7 @@ describe("project worktree routes", () => {
         method: "POST"
       })
       expect(worktreeResponse.status).toBe(201)
-      const worktree = worktreeResponse.body as {
-        readonly id: string
-        readonly name: string
-        readonly branch: string
-        readonly path: string
-      }
+      const worktree = decodeWorktree(worktreeResponse.body)
       expect(worktree).toMatchObject({
         id: "wt-fix-auth",
         projectId: "git-project",
@@ -109,15 +109,7 @@ describe("project worktree routes", () => {
 
       const setupPayloads = listEvents(services)
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-fix-auth")
-        .map(
-          (event) =>
-            event.payload as {
-              readonly state: string
-              readonly stream?: string
-              readonly line?: string
-              readonly durationMs?: number
-            }
-        )
+        .map((event) => decodeSetup(event.payload))
       expect(setupPayloads[0]).toMatchObject({
         state: "started",
         worktreeId: "wt-fix-auth",
@@ -138,39 +130,44 @@ describe("project worktree routes", () => {
         (event) =>
           event.kind === "worktree.setup" && event.subjectId === "session-awaiting-worktree"
       )
-      expect(
-        mirroredSetupPayloads.map((event) => (event.payload as { state: string }).state)
-      ).toEqual(setupPayloads.map((payload) => payload.state))
+      expect(mirroredSetupPayloads.map((event) => decodeSetup(event.payload).state)).toEqual(
+        setupPayloads.map((payload) => payload.state)
+      )
       expect(
         (await jsonRequest(server, "/v1/sessions/session-awaiting-worktree/events")).status
       ).toBe(410)
 
-      const secondWorktree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "fix auth" }),
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly branch: string }
+      const secondWorktree = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: "fix auth" }),
+            method: "POST"
+          })
+        ).body
+      )
       expect(secondWorktree.name).toBe("fix-auth-2")
       expect(secondWorktree.branch).toBe(`codevisor/${secondWorktree.name}`)
-      const thirdWorktree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "fix auth" }),
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly branch: string }
+      const thirdWorktree = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: "fix auth" }),
+            method: "POST"
+          })
+        ).body
+      )
       expect(thirdWorktree.name).toBe("fix-auth-3")
       expect(thirdWorktree.branch).toBe(`codevisor/${thirdWorktree.name}`)
-      const randomNamed = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly branch: string }
+      const randomNamed = decodeWorktree(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            method: "POST"
+          })
+        ).body
+      )
       expect(productionFoodWorktreeNames).toContain(randomNamed.name)
       expect(randomNamed.branch).toBe(`codevisor/${randomNamed.name}`)
       expect(
-        ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
-          .length
+        itemsOf((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body).length
       ).toBe(4)
 
       await git(["branch", "codevisor/doomed"], repoFolder)
@@ -186,13 +183,12 @@ describe("project worktree routes", () => {
       })
       const recoveredSetup = listEvents(services)
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-doomed")
-        .map((event) => (event.payload as { readonly state: string }).state)
+        .map((event) => decodeSetup(event.payload).state)
       expect(recoveredSetup[0]).toBe("started")
       expect(recoveredSetup.at(-1)).toBe("completed")
       expect(recoveredSetup).not.toContain("failed")
       expect(
-        ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
-          .length
+        itemsOf((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body).length
       ).toBe(5)
 
       const sessionResponse = await jsonRequest(server, "/v1/sessions", {
@@ -205,12 +201,7 @@ describe("project worktree routes", () => {
         method: "POST"
       })
       expect(sessionResponse.status).toBe(201)
-      const session = sessionResponse.body as {
-        readonly id: string
-        readonly agentSessionId: string
-        readonly cwd: string
-        readonly worktreeName: string
-      }
+      const session = decode(SessionSummary)(sessionResponse.body)
       expect(session.worktreeName).toBe(worktree.name)
       expect(session.cwd).toBe(worktree.path)
       expect(agents.creations).toContainEqual(["codex", worktree.path])

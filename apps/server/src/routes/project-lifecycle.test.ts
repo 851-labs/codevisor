@@ -4,11 +4,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { decode, Project, Workspace, WorkspaceSnapshot, Worktree } from "@codevisor/api"
 import { foodWorktreeNames } from "@codevisor/worktrees"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers, start, tempDirs } from "../test-support.js"
+import { field, idOf } from "./response-test-support.js"
 
 describe("project lifecycle routes", () => {
   it("archives workspaces independently, leaving chats and bystanders alone", async () => {
@@ -33,58 +36,55 @@ describe("project lifecycle routes", () => {
       }),
       method: "PUT"
     })
-    const workspace = (
-      await jsonRequest(server, "/v1/workspaces/archive-workspace", {
-        body: JSON.stringify({
-          projectId: "archive-project",
-          name: "main",
-          hasCustomName: false
-        }),
-        method: "PUT"
-      })
-    ).body as { readonly id: string }
+    const workspaceId = idOf(
+      (
+        await jsonRequest(server, "/v1/workspaces/archive-workspace", {
+          body: JSON.stringify({
+            projectId: "archive-project",
+            name: "main",
+            hasCustomName: false
+          }),
+          method: "PUT"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
         id: "workspace-chat",
         projectId: "archive-project",
         harnessId: "codex",
-        workspaceId: workspace.id
+        workspaceId
       }),
       method: "POST"
     })
 
     const archivedStateOf = async (id: string) =>
-      (
-        (await jsonRequest(server, "/v1/workspaces")).body as ReadonlyArray<{
-          readonly id: string
-          readonly isArchived: boolean
-        }>
-      ).find((candidate) => candidate.id === id)?.isArchived
+      decode(Schema.Array(Workspace))((await jsonRequest(server, "/v1/workspaces")).body).find(
+        (candidate) => candidate.id === id
+      )?.isArchived
     const paneCount = async (id: string) =>
-      (
-        (await jsonRequest(server, "/v1/workspace-snapshot")).body as {
-          readonly panes: ReadonlyArray<{ readonly workspaceId: string }>
-        }
+      decode(WorkspaceSnapshot)(
+        (await jsonRequest(server, "/v1/workspace-snapshot")).body
       ).panes.filter((pane) => pane.workspaceId === id).length
 
-    expect(await paneCount(workspace.id)).toBe(1)
+    expect(await paneCount(workspaceId)).toBe(1)
 
-    await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+    await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
       body: JSON.stringify({ isArchived: true }),
       method: "PATCH"
     })
-    expect(await archivedStateOf(workspace.id)).toBe(true)
-    expect(await paneCount(workspace.id)).toBe(1)
+    expect(await archivedStateOf(workspaceId)).toBe(true)
+    expect(await paneCount(workspaceId)).toBe(1)
     expect(await archivedStateOf("bystander-workspace")).toBe(false)
 
-    await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+    await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
       body: JSON.stringify({ isArchived: false }),
       method: "PATCH"
     })
-    expect(await archivedStateOf(workspace.id)).toBe(false)
-    expect(await paneCount(workspace.id)).toBe(1)
+    expect(await archivedStateOf(workspaceId)).toBe(false)
+    expect(await paneCount(workspaceId)).toBe(1)
 
-    const renamed = await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+    const renamed = await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
       body: JSON.stringify({ name: "renamed" }),
       method: "PATCH"
     })
@@ -201,7 +201,7 @@ describe("project lifecycle routes", () => {
         method: "POST"
       })
       expect(created.status).toBe(201)
-      const worktreePath = (created.body as { readonly path: string }).path
+      const worktreePath = decode(Worktree)(created.body).path
       expect((await git(["rev-parse", "HEAD"], worktreePath)).stdout.trim()).toBe(releaseSha)
 
       await jsonRequest(server, "/v1/projects/configured-base-project", {
@@ -213,7 +213,7 @@ describe("project lifecycle routes", () => {
         method: "POST"
       })
       expect(missing.status).toBe(422)
-      expect((missing.body as { readonly error: string }).error).toContain("Manage Project")
+      expect(field(missing.body, "error")).toContain("Manage Project")
     } finally {
       vi.unstubAllEnvs()
     }
@@ -260,7 +260,7 @@ describe("project lifecycle routes", () => {
         method: "POST"
       })
       expect(response.status).toBe(201)
-      const name = (response.body as { readonly name: string }).name
+      const name = decode(Worktree)(response.body).name
       const match = /^(.*)-(\d{4})$/.exec(name)
       expect(match).not.toBeNull()
       expect(foodWorktreeNames).toContain(match?.[1])
@@ -270,7 +270,7 @@ describe("project lifecycle routes", () => {
         method: "POST"
       })
       expect(scratch.status).toBe(201)
-      const scratchName = (scratch.body as { readonly name: string }).name
+      const scratchName = decode(Project)(scratch.body).name
       const scratchMatch = /^(.*)-(\d{4})$/.exec(scratchName)
       expect(scratchMatch).not.toBeNull()
       expect(foodWorktreeNames).toContain(scratchMatch?.[1])

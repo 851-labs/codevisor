@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { decode, Project } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeEventFanout } from "../server-context.js"
@@ -15,6 +17,8 @@ import {
 } from "./project-repo-identity.js"
 
 const execFileAsync = promisify(execFile)
+const decodeProject = decode(Project)
+const decodeProjects = decode(Schema.Array(Project))
 
 describe("project repo identity", () => {
   it("refreshes persisted navigation when a plain folder becomes a repository", async () => {
@@ -80,7 +84,7 @@ describe("project repo identity", () => {
       method: "POST"
     })
     expect(explicit.status).toBe(201)
-    expect((explicit.body as { readonly repoKey?: string }).repoKey).toBe("github.com/acme/other")
+    expect(decodeProject(explicit.body).repoKey).toBe("github.com/acme/other")
 
     const plainFolder = mkdtempSync(join(tmpdir(), "codevisor-plain-"))
     tempDirs.push(plainFolder)
@@ -89,8 +93,9 @@ describe("project repo identity", () => {
       method: "POST"
     })
     expect(plain.status).toBe(201)
-    expect((plain.body as { readonly repoUrl?: string }).repoUrl).toBeUndefined()
-    expect((plain.body as { readonly repoKey?: string }).repoKey).toBeUndefined()
+    const plainProject = decodeProject(plain.body)
+    expect(plainProject.repoUrl).toBeUndefined()
+    expect(plainProject.repoKey).toBeUndefined()
 
     await execFileAsync("git", ["init"], { cwd: plainFolder })
     await execFileAsync(
@@ -102,9 +107,7 @@ describe("project repo identity", () => {
     const listed = await jsonRequest(server, "/v1/projects", { method: "GET" })
     expect(listed.status).toBe(200)
     const byId = new Map(
-      (listed.body as ReadonlyArray<{ readonly id: string; readonly repoKey?: string }>).map(
-        (project) => [project.id, project.repoKey]
-      )
+      decodeProjects(listed.body).map((project) => [project.id, project.repoKey])
     )
     expect(byId.get("remote-project")).toBe("github.com/acme/widget")
     expect(byId.get("plain-project")).toBe("github.com/acme/widget-docs")
@@ -112,9 +115,7 @@ describe("project repo identity", () => {
     const relisted = await jsonRequest(server, "/v1/projects", { method: "GET" })
     expect(relisted.status).toBe(200)
     expect(
-      (relisted.body as ReadonlyArray<{ readonly id: string; readonly repoKey?: string }>).find(
-        (project) => project.id === "plain-project"
-      )?.repoKey
+      decodeProjects(relisted.body).find((project) => project.id === "plain-project")?.repoKey
     ).toBe("github.com/acme/widget-docs")
   })
 
@@ -175,11 +176,7 @@ describe("project repo identity", () => {
         method: "POST"
       })
       expect(created.status).toBe(201)
-      const scratch = created.body as {
-        readonly isScratch?: boolean
-        readonly repoKey?: string
-        readonly locations: ReadonlyArray<{ readonly isGitRepository?: boolean }>
-      }
+      const scratch = decodeProject(created.body)
       expect(scratch.isScratch).toBe(true)
       expect(scratch.locations[0]?.isGitRepository).toBe(false)
       expect(scratch.repoKey).toBeUndefined()

@@ -2,9 +2,11 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode, Project } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, start, tempDirs, listEvents } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
 
 describe("workspace materialization", () => {
   it("materializes native workspace identities when sessions assign them", async () => {
@@ -13,12 +15,14 @@ describe("workspace materialization", () => {
     tempDirs.push(root)
     const projectFolder = join(root, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string; readonly name: string }
+    const project = decode(Project)(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
 
     const created = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
@@ -35,17 +39,19 @@ describe("workspace materialization", () => {
       workspaceId: "native-workspace"
     })
 
-    const detached = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          id: "detached-chat",
-          projectId: project.id,
-          harnessId: "codex"
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-    const assigned = await jsonRequest(server, `/v1/sessions/${detached.id}`, {
+    const detachedId = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            id: "detached-chat",
+            projectId: project.id,
+            harnessId: "codex"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
+    const assigned = await jsonRequest(server, `/v1/sessions/${detachedId}`, {
       body: JSON.stringify({ workspaceId: "patched-workspace" }),
       method: "PATCH"
     })
@@ -54,17 +60,19 @@ describe("workspace materialization", () => {
 
     const otherProjectFolder = join(root, "other-project")
     mkdirSync(otherProjectFolder)
-    const otherProject = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: otherProjectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const otherProjectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: otherProjectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
           id: "conflicting-workspace-chat",
-          projectId: otherProject.id,
+          projectId: otherProjectId,
           harnessId: "codex",
           workspaceId: "native-workspace"
         }),
@@ -73,7 +81,7 @@ describe("workspace materialization", () => {
     ).toEqual({
       status: 409,
       body: {
-        error: `Workspace native-workspace belongs to project ${project.id}, not ${otherProject.id}`
+        error: `Workspace native-workspace belongs to project ${project.id}, not ${otherProjectId}`
       }
     })
 
