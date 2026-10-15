@@ -96,23 +96,21 @@ struct WorkspaceLayoutCommands: Commands {
         .disabled(actions == nil && sidebarActions == nil)
       ShortcutButton(.nextTab) { stepTab(1) }
         .disabled(actions == nil && sidebarActions == nil)
-      if FeatureFlag.sidebarRefresh.isEnabled {
-        ShortcutButton(.previousTabInWorkspace) {
-          if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
-        }
-        .disabled(actions == nil && tabCycling == nil)
-        ShortcutButton(.nextTabInWorkspace) {
-          if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
-        }
-        .disabled(actions == nil && tabCycling == nil)
-
-        Divider()
-
-        ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
-          .disabled(sidebarActions?.stepWorkspace == nil)
-        ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
-          .disabled(sidebarActions?.stepWorkspace == nil)
+      ShortcutButton(.previousTabInWorkspace) {
+        if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
       }
+      .disabled(actions == nil && tabCycling == nil)
+      ShortcutButton(.nextTabInWorkspace) {
+        if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
+      }
+      .disabled(actions == nil && tabCycling == nil)
+
+      Divider()
+
+      ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
+        .disabled(sidebarActions?.stepWorkspace == nil)
+      ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
+        .disabled(sidebarActions?.stepWorkspace == nil)
     }
   }
 
@@ -120,11 +118,7 @@ struct WorkspaceLayoutCommands: Commands {
     if let actions {
       if offset < 0 { actions.previousTab() } else { actions.nextTab() }
     } else {
-      if let stepWorkspace = sidebarActions?.stepWorkspace {
-        stepWorkspace(offset)
-      } else {
-        sidebarActions?.stepTab?(offset)
-      }
+      sidebarActions?.stepWorkspace?(offset)
     }
   }
 }

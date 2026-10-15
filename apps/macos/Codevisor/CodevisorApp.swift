@@ -231,7 +231,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      WorkspaceSidebar(selection: $selection, store: store)
+      SidebarView(selection: $selection, store: store)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
       Group {
@@ -249,7 +249,7 @@ struct RootView: View {
         edge: .leading,
         width: min(270, panelLayout.windowWidth - 16)
       ) {
-        WorkspaceSidebar(selection: $selection, store: store, publishesSceneActions: false)
+        SidebarView(selection: $selection, store: store, publishesSceneActions: false)
           .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
           .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
           .shadow(color: .black.opacity(0.22), radius: 18, y: 6)

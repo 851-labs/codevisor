@@ -95,10 +95,6 @@ struct ShortcutDefinition: Identifiable, Sendable {
 
 enum ShortcutCatalog {
   static func definition(for id: ShortcutID) -> ShortcutDefinition {
-    definition(for: id, refreshed: FeatureFlag.sidebarRefresh.isEnabled)
-  }
-
-  private static func definition(for id: ShortcutID, refreshed: Bool) -> ShortcutDefinition {
     switch id {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
@@ -131,33 +127,28 @@ enum ShortcutCatalog {
         displayOverride: "⌘1–⌘9", category: .tabsAndSplits
       )
     case .previousTab:
-      refreshed
-        ? ShortcutDefinition(
-          .previousTab, "Previous Sidebar Item", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits,
-          context: "Previous tab while the sidebar is hidden")
-        : ShortcutDefinition(
-          .previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits)
+      ShortcutDefinition(
+        .previousTab, "Previous Sidebar Item", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits,
+        context: "Previous tab while the sidebar is hidden")
     case .nextTab:
-      refreshed
-        ? ShortcutDefinition(
-          .nextTab, "Next Sidebar Item", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits,
-          context: "Next tab while the sidebar is hidden")
-        : ShortcutDefinition(.nextTab, "Next Tab", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits)
+      ShortcutDefinition(
+        .nextTab, "Next Sidebar Item", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits,
+        context: "Next tab while the sidebar is hidden")
     case .previousTabInWorkspace:
       ShortcutDefinition(
         .previousTabInWorkspace, "Previous Tab in Workspace",
-        refreshed ? ShortcutCombo(.leftArrow, [.command, .option]) : nil, category: .tabsAndSplits)
+        ShortcutCombo(.leftArrow, [.command, .option]), category: .tabsAndSplits)
     case .nextTabInWorkspace:
       ShortcutDefinition(
         .nextTabInWorkspace, "Next Tab in Workspace",
-        refreshed ? ShortcutCombo(.rightArrow, [.command, .option]) : nil, category: .tabsAndSplits)
+        ShortcutCombo(.rightArrow, [.command, .option]), category: .tabsAndSplits)
     case .previousWorkspace:
       ShortcutDefinition(
-        .previousWorkspace, "Previous Workspace", refreshed ? ShortcutCombo(.upArrow, [.command, .option]) : nil,
+        .previousWorkspace, "Previous Workspace", ShortcutCombo(.upArrow, [.command, .option]),
         category: .tabsAndSplits)
     case .nextWorkspace:
       ShortcutDefinition(
-        .nextWorkspace, "Next Workspace", refreshed ? ShortcutCombo(.downArrow, [.command, .option]) : nil,
+        .nextWorkspace, "Next Workspace", ShortcutCombo(.downArrow, [.command, .option]),
         category: .tabsAndSplits)
     case .previousSplit:
       ShortcutDefinition(.previousSplit, "Previous Split", ShortcutCombo("[", .command), category: .tabsAndSplits)
@@ -173,21 +164,13 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .splitDown, "Split Down", ShortcutCombo("d", [.command, .shift]), category: .tabsAndSplits)
     case .focusSplitLeft:
-      ShortcutDefinition(
-        .focusSplitLeft, "Focus Split Left", refreshed ? nil : ShortcutCombo(.leftArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitLeft, "Focus Split Left", nil, category: .tabsAndSplits)
     case .focusSplitRight:
-      ShortcutDefinition(
-        .focusSplitRight, "Focus Split Right", refreshed ? nil : ShortcutCombo(.rightArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitRight, "Focus Split Right", nil, category: .tabsAndSplits)
     case .focusSplitAbove:
-      ShortcutDefinition(
-        .focusSplitAbove, "Focus Split Above", refreshed ? nil : ShortcutCombo(.upArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitAbove, "Focus Split Above", nil, category: .tabsAndSplits)
     case .focusSplitBelow:
-      ShortcutDefinition(
-        .focusSplitBelow, "Focus Split Below", refreshed ? nil : ShortcutCombo(.downArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitBelow, "Focus Split Below", nil, category: .tabsAndSplits)
 
     case .toggleDebugOverlay:
       ShortcutDefinition(

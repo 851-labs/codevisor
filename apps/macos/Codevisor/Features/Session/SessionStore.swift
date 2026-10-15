@@ -9,15 +9,8 @@ struct ClosedPaneRecord: Equatable {
   let tabIndex: Int
 }
 
-struct CenterTabRequest: Equatable {
-  enum Action: Equatable {
-    case close(UUID)
-    case new
-    case closeLeaf(UUID)
-  }
-
+struct NewCenterTabRequest: Equatable {
   let workspaceId: UUID
-  let action: Action
 }
 
 @MainActor
@@ -71,10 +64,9 @@ final class SessionStore {
     }
   }
   @ObservationIgnored var navigationRevision = 0
-  var centerTabRequest: CenterTabRequest?
+  var newCenterTabRequest: NewCenterTabRequest?
   @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
   @ObservationIgnored var isSidebarVisible = true
-  @ObservationIgnored var sidebarTabStepHandler: ((Int) -> Bool)?
   @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]
   static let maxClosedPanesPerWorkspace = 20
 

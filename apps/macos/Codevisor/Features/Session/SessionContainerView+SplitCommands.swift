@@ -63,12 +63,8 @@ extension SessionContainerView {
   }
 
   func stepTab(offset: Int) {
-    if FeatureFlag.sidebarRefresh.isEnabled {
-      if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
-        stepWorkspace(offset)
-        return
-      }
-    } else if store.sidebarTabStepHandler?(offset) == true {
+    if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
+      stepWorkspace(offset)
       return
     }
     selectRelativeCenterTab(offset: offset)

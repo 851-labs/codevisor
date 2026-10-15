@@ -11,7 +11,6 @@ struct SidebarActions: Equatable {
   let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
-  var stepTab: (@MainActor (Int) -> Void)? = nil
   var archiveWorkspace: (@MainActor () -> Void)? = nil
 
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
