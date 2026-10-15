@@ -71,7 +71,7 @@ struct SidebarView: View {
         .contextMenu { sidebarOptionsMenu }
         .onChange(of: revealedWorkspaceID) { _, id in
           guard let id else { return }
-          withAnimation(Motion.quick(reduceMotion: reduceMotion)) { proxy.scrollTo(id) }
+          proxy.scrollTo(id)
           revealedWorkspaceID = nil
         }
         .onChange(of: selectedWorkspaceID) { previous, _ in
