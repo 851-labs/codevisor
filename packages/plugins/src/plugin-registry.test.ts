@@ -7,7 +7,7 @@ import {
   PLUGIN_REGISTRY_CACHE_TTL_MS,
   resolvePluginRegistryUrl
 } from "./plugin-registry.js"
-import { PluginsError } from "./plugins-error.js"
+import { expectPluginsError } from "./test-support.js"
 
 const index = (generatedAt: string): PluginRegistryIndex => ({
   generatedAt,
@@ -145,9 +145,9 @@ describe("makePluginRegistryClient", () => {
       () => undefined,
       (cause: unknown) => cause
     )
-    expect(failure).toBeInstanceOf(PluginsError)
-    expect((failure as PluginsError).code).toBe("unavailable")
-    expect((failure as PluginsError).message).toContain("network down")
+    const error = expectPluginsError(failure)
+    expect(error.code).toBe("unavailable")
+    expect(error.message).toContain("network down")
 
     const throwsValue = makePluginRegistryClient({
       baseUrl: "https://registry.example",
@@ -173,8 +173,7 @@ describe("makePluginRegistryClient", () => {
       () => undefined,
       (cause: unknown) => cause
     )
-    expect(failure).toBeInstanceOf(PluginsError)
-    expect((failure as PluginsError).code).toBe("unavailable")
+    expect(expectPluginsError(failure).code).toBe("unavailable")
   })
 
   it("defaults to global fetch and the real clock", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parsePluginManifest } from "./plugin-manifest.js"
-import { PluginsError } from "./plugins-error.js"
+import { expectPluginsError } from "./test-support.js"
 
 const validManifest = {
   id: "owner.example",
@@ -17,9 +17,9 @@ const expectInvalid = (manifest: unknown, messagePart: string): void => {
     parsePluginManifest(JSON.stringify(manifest))
     expect.unreachable("manifest should have been rejected")
   } catch (cause) {
-    expect(cause).toBeInstanceOf(PluginsError)
-    expect((cause as PluginsError).code).toBe("invalid")
-    expect((cause as PluginsError).message).toContain(messagePart)
+    const error = expectPluginsError(cause)
+    expect(error.code).toBe("invalid")
+    expect(error.message).toContain(messagePart)
   }
 }
 
@@ -136,9 +136,9 @@ describe("parsePluginManifest", () => {
       parsePluginManifest(JSON.stringify(manifest))
       expect.unreachable("manifest should have been rejected")
     } catch (cause) {
-      expect(cause).toBeInstanceOf(PluginsError)
-      expect((cause as PluginsError).code).toBe("invalid")
-      expect((cause as PluginsError).message).toBe(message)
+      const error = expectPluginsError(cause)
+      expect(error.code).toBe("invalid")
+      expect(error.message).toBe(message)
     }
   })
 

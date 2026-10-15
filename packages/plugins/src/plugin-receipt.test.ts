@@ -27,6 +27,13 @@ const receipt = (overrides: Partial<PluginInstallReceipt> = {}): PluginInstallRe
   ...overrides
 })
 
+const malformedReceipt = (
+  overrides: Readonly<Record<string, unknown>>
+): Record<string, unknown> => ({
+  ...receipt(),
+  ...overrides
+})
+
 describe("plugin install receipts", () => {
   it("writes and reads a valid receipt", async () => {
     const directory = makeDir("codevisor-plugin-receipt-")
@@ -49,20 +56,20 @@ describe("plugin install receipts", () => {
     const path = join(directory, PLUGIN_INSTALL_RECEIPT_FILENAME)
     const invalid: ReadonlyArray<unknown> = [
       null,
-      receipt({ schemaVersion: 2 as 1 }),
+      malformedReceipt({ schemaVersion: 2 }),
       receipt({ pluginId: "" }),
-      receipt({ resolvedCommit: 7 as unknown as string }),
+      malformedReceipt({ resolvedCommit: 7 }),
       receipt({ resolvedCommit: "not-a-sha" }),
       receipt({ installedVersion: "" }),
-      receipt({ installedAt: 7 as unknown as string }),
+      malformedReceipt({ installedAt: 7 }),
       receipt({ installedAt: "" }),
       receipt({ installedAt: "not-a-date" }),
       receipt({ updatedAt: "not-a-date" }),
-      receipt({ source: undefined as unknown as PluginInstallReceipt["source"] }),
-      receipt({ source: { kind: "invalid" as "git", tracking: "pinned", url: "git:x" } }),
+      malformedReceipt({ source: undefined }),
+      malformedReceipt({ source: { kind: "invalid", tracking: "pinned", url: "git:x" } }),
       receipt({ source: { kind: "git", tracking: "pinned", url: "" } }),
-      receipt({
-        source: { kind: "git", tracking: "invalid" as "pinned", url: "git:x" }
+      malformedReceipt({
+        source: { kind: "git", tracking: "invalid", url: "git:x" }
       }),
       receipt({
         source: { kind: "git", repo: "", tracking: "pinned", url: "git:x" }

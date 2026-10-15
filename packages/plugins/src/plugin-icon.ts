@@ -20,16 +20,13 @@ interface FetchPluginIconOptions {
     payload: Readonly<Record<string, unknown>>
   ) => Record<string, string>
   readonly timeoutMs: number
-  readonly fetchImpl?: typeof fetch
+  readonly fetchImpl?: (input: string, init: RequestInit) => Promise<Response>
 }
 
 type PluginIconSourceContentType = "image/png" | "image/svg+xml" | "image/webp"
 
-const contentTypes = new Set<PluginIconSourceContentType>([
-  "image/png",
-  "image/svg+xml",
-  "image/webp"
-])
+const isSourceContentType = (value: string | undefined): value is PluginIconSourceContentType =>
+  value === "image/png" || value === "image/svg+xml" || value === "image/webp"
 
 const iconPath = (plugin: InstalledPlugin, paneType: string | undefined): string => {
   if (paneType === undefined) {
@@ -199,7 +196,7 @@ export const fetchPluginIcon = async (
     throw new PluginsError("invalid", `Plugin ${plugin.id} icon failed (HTTP ${response.status})`)
   }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim()
-  if (!contentTypes.has(contentType as PluginIconSourceContentType)) {
+  if (!isSourceContentType(contentType)) {
     throw new PluginsError(
       "invalid",
       `Plugin ${plugin.id} icon must be SVG, PNG, or WebP (received ${contentType ?? "no Content-Type"})`
@@ -213,5 +210,5 @@ export const fetchPluginIcon = async (
     )
   }
   const data = await readBoundedBody(plugin.id, response)
-  return normalizeIcon(plugin.id, contentType as PluginIconSourceContentType, data)
+  return normalizeIcon(plugin.id, contentType, data)
 }

@@ -2,12 +2,11 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server } from "node:http"
-import type { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { PluginManifestV1 } from "@codevisor/api"
-import { afterEach } from "vitest"
+import { afterEach, expect } from "vitest"
 import { WebSocketServer } from "ws"
 
 import type { ClonePluginSourceResult } from "./plugin-source.js"
@@ -23,6 +22,20 @@ afterEach(() => {
     cleanup()
   }
 })
+
+export const expectDefined = <Value>(value: Value | undefined): Value => {
+  if (value === undefined) {
+    expect.unreachable("expected a defined value")
+  }
+  return value
+}
+
+export const expectPluginsError = (cause: unknown): PluginsError => {
+  if (!(cause instanceof PluginsError)) {
+    expect.unreachable(`expected a PluginsError, received ${String(cause)}`)
+  }
+  return cause
+}
 
 export const makeDir = (prefix: string): string => {
   const dir = mkdtempSync(join(tmpdir(), prefix))
@@ -316,7 +329,7 @@ export const makeOuterServer = async (
       })
   })
   server.on("upgrade", (request, socket, head) => {
-    void manager.handleUpgrade(request, socket as Socket, head).then((handled) => {
+    void manager.handleUpgrade(request, socket, head).then((handled) => {
       if (!handled) {
         socket.destroy()
       }
