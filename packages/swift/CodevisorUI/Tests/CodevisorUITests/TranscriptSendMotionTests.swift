@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 import Testing
 @testable import CodevisorUI
 
@@ -34,6 +35,20 @@ struct TranscriptSendMotionTests {
     #expect(abs(animation.damping - spring.damping) < 0.001)
     #expect(animation.isAdditive)
     #expect(animation.duration == spring.settlingDuration())
+  }
+
+  @Test("Rows mounted after a send share one reveal, so a replacement row never restarts the fade")
+  func followersShareOneReveal() {
+    let sent: CFTimeInterval = 50
+    let revealAt = sent + TranscriptSendMotion.followerRevealDelay
+    let mounts = [sent, revealAt + 0.05, revealAt + TranscriptSendMotion.followerFadeDuration - 0.01]
+
+    let reveals = mounts.map { TranscriptSendLayerAnimations.followerReveal(sendStartedAt: sent, now: $0) }
+
+    #expect(reveals.allSatisfy { $0?.beginTime == revealAt })
+    #expect(
+      TranscriptSendLayerAnimations.followerReveal(
+        sendStartedAt: sent, now: revealAt + TranscriptSendMotion.followerFadeDuration) == nil)
   }
 }
 

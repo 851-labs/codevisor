@@ -191,27 +191,30 @@ extension SessionModel {
 
   @discardableResult
   public func loadOlderHistory() async -> Int {
-    guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
-      let cursor = olderHistoryCursor
-    else { return 0 }
+    guard usesPaginatedHistory, !isLoadingOlderHistory else { return 0 }
     isLoadingOlderHistory = true
     defer { isLoadingOlderHistory = false }
     do {
-      let page = try await transport.completeHistoryPage(
-        transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
-        before: cursor, limit: Self.olderTranscriptPageSize)
-      try Task.checkCancellation()
-      let existing = Set(conversation.map(\.id))
-      let unique = page.conversation
-        .map(restoringCachedTranscriptDetails)
-        .filter {
-          $0.hasRenderableTranscriptContent && !existing.contains($0.id)
-        }
-      settledConversation.insert(contentsOf: unique, at: 0)
-      rebuildSettledIndex()
-      olderHistoryCursor = page.nextBefore
-      hasOlderHistory = page.hasMore
-      return unique.count
+      while hasOlderHistory, let cursor = olderHistoryCursor {
+        let anchor = conversation.first?.id
+        let page = try await transport.completeHistoryPage(
+          transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
+          before: cursor, limit: Self.olderTranscriptPageSize)
+        try Task.checkCancellation()
+        guard olderHistoryCursor == cursor, conversation.first?.id == anchor else { continue }
+        let existing = Set(conversation.map(\.id))
+        let unique = page.conversation
+          .map(restoringCachedTranscriptDetails)
+          .filter {
+            $0.hasRenderableTranscriptContent && !existing.contains($0.id)
+          }
+        settledConversation.insert(contentsOf: unique, at: 0)
+        rebuildSettledIndex()
+        olderHistoryCursor = page.nextBefore
+        hasOlderHistory = page.hasMore
+        return unique.count
+      }
+      return 0
     } catch {
       if !isTaskCancellation(error) {
         errorMessage = serverErrorMessage(error)

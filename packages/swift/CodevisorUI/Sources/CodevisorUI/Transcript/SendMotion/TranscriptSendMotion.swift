@@ -96,6 +96,12 @@ public enum TranscriptSendLayerAnimations {
     return fade
   }
 
+  public static func followerReveal(sendStartedAt: CFTimeInterval, now: CFTimeInterval) -> CABasicAnimation? {
+    let revealAt = sendStartedAt + TranscriptSendMotion.followerRevealDelay
+    guard now < revealAt + TranscriptSendMotion.followerFadeDuration else { return nil }
+    return fade(from: 0, to: 1, duration: TranscriptSendMotion.followerFadeDuration, beginTime: revealAt)
+  }
+
   public static func hide(duration: CFTimeInterval) -> CABasicAnimation {
     let hold = CABasicAnimation(keyPath: "opacity")
     hold.fromValue = 0
