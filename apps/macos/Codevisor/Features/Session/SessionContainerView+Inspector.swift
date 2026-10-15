@@ -2,10 +2,6 @@ import CodevisorCore
 import SwiftUI
 
 extension SessionContainerView {
-  var supportsScreenSharing: Bool {
-    environment.machines.statusByMachineId[selectedWorkspace.serverId]?.supportsScreenSharing == true
-  }
-
   func openInspectorDestination(_ destination: WorkspaceInspectorView.Destination) {
     switch destination {
     case .changes: openCenterTab { $0.convertNewTabPane(id: $1, to: .review) }

@@ -4,7 +4,7 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorView: View {
-  enum Destination {
+  enum Destination: Equatable {
     case changes, pullRequest(URL), desktop, browser, terminal, files
   }
 

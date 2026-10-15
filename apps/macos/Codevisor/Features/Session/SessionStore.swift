@@ -66,6 +66,7 @@ final class SessionStore {
   }
   @ObservationIgnored var navigationRevision = 0
   var newCenterTabRequest: NewCenterTabRequest?
+  var inspectorOpenRequest: WorkspaceInspectorOpenRequest?
   @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
   @ObservationIgnored var isSidebarVisible = true
   @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]

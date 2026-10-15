@@ -4,16 +4,6 @@ import CodevisorUI
 import SwiftUI
 import StreamMarkdown
 
-extension Attachment {
-  var isPDF: Bool {
-    mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
-  }
-
-  var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
-
-  var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
-}
-
 extension PreviewFile {
   var isPDF: Bool {
     mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
