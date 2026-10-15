@@ -64,3 +64,8 @@ export const GitPullRequestLookup = Schema.Struct({
   pullRequest: Schema.NullOr(GitPullRequest)
 })
 export type GitPullRequestLookup = typeof GitPullRequestLookup.Type
+
+export const WorkspaceGitBranch = Schema.Struct({
+  branch: Schema.NullOr(Schema.String)
+})
+export type WorkspaceGitBranch = typeof WorkspaceGitBranch.Type

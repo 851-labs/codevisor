@@ -52,6 +52,8 @@ export const endpoints = [
   "GET /v1/workspace-panes",
   "PUT /v1/workspaces/:id",
   "DELETE /v1/workspaces/:id",
+  "GET /v1/workspaces/:workspaceId/git/branch",
+  "GET /v1/workspaces/:workspaceId/git/pull-request",
   "PUT /v1/workspaces/:workspaceId/panes/:paneId",
   "PATCH /v1/workspaces/:workspaceId/panes/:paneId",
   "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat",

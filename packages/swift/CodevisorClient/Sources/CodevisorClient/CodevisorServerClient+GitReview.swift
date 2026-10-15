@@ -145,6 +145,10 @@ struct ServerGitPullRequestLookup: Decodable {
   let pullRequest: ServerGitPullRequest?
 }
 
+struct ServerWorkspaceGitBranch: Decodable {
+  let branch: String?
+}
+
 extension CodevisorServerClient {
   public func gitDiff(
     path: String, mode: ServerGitDiffMode, base: String?, revision: String?
@@ -170,6 +174,20 @@ extension CodevisorServerClient {
     return lookup.pullRequest
   }
 
+  public func workspaceGitBranch(workspaceId: UUID) async throws -> String? {
+    let lookup: ServerWorkspaceGitBranch = try await get(
+      "/v1/workspaces/\(workspaceId.uuidString)/git/branch"
+    )
+    return lookup.branch
+  }
+
+  public func workspaceGitPullRequest(workspaceId: UUID) async throws -> ServerGitPullRequest? {
+    let lookup: ServerGitPullRequestLookup = try await get(
+      "/v1/workspaces/\(workspaceId.uuidString)/git/pull-request"
+    )
+    return lookup.pullRequest
+  }
+
   private func gitRequestPath(_ endpoint: String, items: [URLQueryItem]) throws -> String {
     var components = URLComponents()
     components.path = endpoint
@@ -191,6 +209,12 @@ extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   public func gitPullRequest(path: String) async throws -> ServerGitPullRequest? {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func workspaceGitBranch(workspaceId: UUID) async throws -> String? {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func workspaceGitPullRequest(workspaceId: UUID) async throws -> ServerGitPullRequest? {
     throw CodevisorServerClientError.invalidResponse
   }
 }

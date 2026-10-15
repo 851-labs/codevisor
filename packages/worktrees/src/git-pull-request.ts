@@ -84,16 +84,25 @@ export const parseGitPullRequest = (json: string): GitPullRequest | null => {
   }
 }
 
-export const gitPullRequest = async (
+export const gitCurrentBranch = async (
   dir: string,
   env: NodeJS.ProcessEnv
-): Promise<GitPullRequest | null> => {
+): Promise<string | null> => {
   const branch = await runGit(
     "current-branch",
     ["symbolic-ref", "--short", "--quiet", "HEAD"],
     dir,
     env
   ).catch(() => null)
+  return branch === null || branch.length === 0 ? null : branch
+}
+
+export const gitPullRequest = async (
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  knownBranch?: string
+): Promise<GitPullRequest | null> => {
+  const branch = knownBranch ?? (await gitCurrentBranch(dir, env))
   if (branch === null || branch.length === 0) return null
   const output = await gh(
     ["pr", "view", branch, "--json", "number,title,state,isDraft,url,statusCheckRollup"],

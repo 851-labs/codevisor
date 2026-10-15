@@ -45,6 +45,19 @@ describe("gitPullRequest", () => {
     expect(await gitPullRequest(repo, env)).toBeNull()
   })
 
+  it("asks gh about a branch it is given instead of the checkout's", async () => {
+    const { root, repo } = makeGitRepo()
+    const answer = { number: 7, title: "t", state: "OPEN", isDraft: false, url: "u" }
+    const { env, argsFile } = fakeGh(root, `echo '${JSON.stringify(answer)}'`)
+
+    expect(await gitPullRequest(repo, env, "codevisor/archived")).toMatchObject({ number: 7 })
+    expect(readFileSync(argsFile, "utf8").split("\n").slice(0, 3)).toEqual([
+      "pr",
+      "view",
+      "codevisor/archived"
+    ])
+  })
+
   it("is null on a detached HEAD without asking gh", async () => {
     const { root, repo } = makeGitRepo()
     execFileSync("git", ["checkout", "-q", "--detach"], { cwd: repo })

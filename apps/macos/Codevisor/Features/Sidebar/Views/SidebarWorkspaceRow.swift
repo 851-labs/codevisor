@@ -4,6 +4,13 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarWorkspaceRow: View {
+  enum Lifecycle {
+    case active(
+      isPinned: Bool, onTogglePin: () -> Void, onNewTab: () -> Void, onRename: () -> Void, onArchive: () -> Void
+    )
+    case archived(onRestore: () -> Void)
+  }
+
   let name: String
   var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
@@ -13,12 +20,13 @@ struct SidebarWorkspaceRow: View {
   let isSelected: Bool
   let isReordering: Bool
   let onActivate: () -> Void
-  let onNewTab: () -> Void
-  let onRename: () -> Void
-  let onArchive: () -> Void
-  var isPinned = false
-  var onTogglePin: (() -> Void)? = nil
+  let lifecycle: Lifecycle
   @GestureState private var isPressed = false
+
+  private var isArchived: Bool {
+    if case .archived = lifecycle { return true }
+    return false
+  }
 
   var body: some View {
     HoverableRow(
@@ -28,6 +36,7 @@ struct SidebarWorkspaceRow: View {
     ) { isHovered in
       HStack(spacing: 7) {
         SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
+          .opacity(isArchived ? 0.8 : 1)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
           .gesture(
@@ -40,12 +49,18 @@ struct SidebarWorkspaceRow: View {
           )
           .accessibilityElement(children: .combine)
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+          .accessibilityValue(isArchived ? "Archived" : "")
           .accessibilityAction(.default, onActivate)
           .accessibilityActions {
-            if let onTogglePin { Button(isPinned ? "Unpin" : "Pin", action: onTogglePin) }
-            Button("New Tab", action: onNewTab)
-            Button("Rename", action: onRename)
-            Button("Archive", action: onArchive)
+            switch lifecycle {
+            case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
+              Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
+              Button("New Tab", action: onNewTab)
+              Button("Rename", action: onRename)
+              Button("Archive", action: onArchive)
+            case let .archived(onRestore):
+              Button("Restore", action: onRestore)
+            }
           }
         if let pullRequest {
           SidebarPullRequestBadge(pullRequest: pullRequest)
@@ -60,17 +75,7 @@ struct SidebarWorkspaceRow: View {
             .accessibilityLabel("On \(machine.name)")
         }
         if isHovered {
-          Button(action: onArchive) {
-            Image(systemName: "archivebox")
-              .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-              .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-              .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .foregroundStyle(.secondary)
-          .help("Archive workspace")
-          .accessibilityLabel("Archive \(SidebarWorkspaceRowLabel.title(for: name))")
-          .accessibilityHidden(true)
+          hoverAction
         }
       }
       .padding(.horizontal, 8)
@@ -78,22 +83,56 @@ struct SidebarWorkspaceRow: View {
       .contentShape(Rectangle())
     }
     .contextMenu {
-      if let onTogglePin {
+      switch lifecycle {
+      case let .active(isPinned, onTogglePin, _, onRename, onArchive):
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
         }
-      }
-      Button(action: onRename) {
-        Label("Rename", systemImage: "pencil")
-          .labelStyle(.titleAndIcon)
-      }
-      Divider()
-      Button(action: onArchive) {
-        Label("Archive", systemImage: "archivebox")
-          .labelStyle(.titleAndIcon)
+        Button(action: onRename) {
+          Label("Rename", systemImage: "pencil")
+            .labelStyle(.titleAndIcon)
+        }
+        Divider()
+        Button(action: onArchive) {
+          Label("Archive", systemImage: "archivebox")
+            .labelStyle(.titleAndIcon)
+        }
+      case let .archived(onRestore):
+        Button(action: onRestore) {
+          Label("Restore", systemImage: "arrow.uturn.backward")
+            .labelStyle(.titleAndIcon)
+        }
       }
     }
+  }
+
+  @ViewBuilder
+  private var hoverAction: some View {
+    switch lifecycle {
+    case let .active(_, _, _, _, onArchive):
+      hoverButton(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: onArchive)
+    case let .archived(onRestore):
+      hoverButton(
+        systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore
+      )
+    }
+  }
+
+  private func hoverButton(
+    systemImage: String, help: String, label: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: systemImage)
+        .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
+        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(.secondary)
+    .help(help)
+    .accessibilityLabel("\(label) \(SidebarWorkspaceRowLabel.title(for: name))")
+    .accessibilityHidden(true)
   }
 }
 

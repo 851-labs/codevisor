@@ -112,6 +112,7 @@ import {
   WaitForSessionsRequest,
   WaitForSessionsResponse,
   Workspace,
+  WorkspaceGitBranch,
   WorkspacePane,
   WorkspaceSnapshot,
   Worktree
@@ -236,6 +237,8 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/workspace-snapshot": WorkspaceSnapshot,
   "GET /v1/workspace-panes": arrayOf(WorkspacePane),
   "PUT /v1/workspaces/:id": Workspace,
+  "GET /v1/workspaces/:workspaceId/git/branch": WorkspaceGitBranch,
+  "GET /v1/workspaces/:workspaceId/git/pull-request": GitPullRequestLookup,
   "PUT /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
   "PATCH /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
   "POST /v1/workspaces/:workspaceId/panes/reorder": arrayOf(WorkspacePane),

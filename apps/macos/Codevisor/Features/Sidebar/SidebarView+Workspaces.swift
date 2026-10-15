@@ -6,24 +6,21 @@ extension SidebarView {
   func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
     let workspace = item.workspace
     let id = workspace.id
-    return SidebarWorkspaceRow(
-      name: workspace.name,
-      subtitle: rowSubtitle(for: workspace),
+    return row(
+      for: workspace,
       icon: icon(for: item),
-      store: store,
-      pullRequest: rowDetails.contains(.pullRequest) ? store?.pullRequests.byWorkspace[id] : nil,
-      machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
       isSelected: routesSelectedSession(workspace),
-      isReordering: isReordering,
       onActivate: { activateWorkspace(item) },
-      onNewTab: { addTab(in: item) },
-      onRename: {
-        workspaceRenameTitle = workspace.name
-        renamingWorkspace = workspace
-      },
-      onArchive: { archiveWorkspace(workspace) },
-      isPinned: isPinned(workspace),
-      onTogglePin: { togglePin(workspace) }
+      lifecycle: .active(
+        isPinned: isPinned(workspace),
+        onTogglePin: { togglePin(workspace) },
+        onNewTab: { addTab(in: item) },
+        onRename: {
+          workspaceRenameTitle = workspace.name
+          renamingWorkspace = workspace
+        },
+        onArchive: { archiveWorkspace(workspace) }
+      )
     )
     .opacity(draggingID == id ? 0.4 : 1)
     .onGeometryChange(for: CGRect.self) { proxy in
@@ -35,21 +32,46 @@ extension SidebarView {
     .simultaneousGesture(reorderGesture(for: id))
   }
 
+  func row(
+    for workspace: Workspace,
+    icon: SidebarWorkspaceIcon,
+    isSelected: Bool,
+    onActivate: @escaping () -> Void,
+    lifecycle: SidebarWorkspaceRow.Lifecycle
+  ) -> SidebarWorkspaceRow {
+    SidebarWorkspaceRow(
+      name: workspace.name,
+      subtitle: rowSubtitle(for: workspace),
+      icon: icon,
+      store: store,
+      pullRequest: rowDetails.contains(.pullRequest) ? store?.pullRequests.byWorkspace[workspace.id] : nil,
+      machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
+      isSelected: isSelected,
+      isReordering: isReordering,
+      onActivate: onActivate,
+      lifecycle: lifecycle
+    )
+  }
+
+  func isUnderGroupHeading(_ workspace: Workspace) -> Bool {
+    !workspace.isArchived && !isPinned(workspace)
+  }
+
   func machineName(forServer serverId: String) -> String? {
     let machine = environment.machines.machine(for: serverId)
     return machine.map { $0.isLocal ? "This Mac" : $0.name }
   }
 
   func rowMachine(for workspace: Workspace) -> SidebarRowMachine? {
-    guard grouping != .machine || isPinned(workspace),
+    guard grouping != .machine || !isUnderGroupHeading(workspace),
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }
     return SidebarRowMachine(name: name, systemImage: machine.icon.systemImage)
   }
 
-  func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {
-    let groupNamesProject = !isArchived && grouping == .project && !isPinned(workspace)
+  func rowSubtitle(for workspace: Workspace) -> String? {
+    let groupNamesProject = grouping == .project && isUnderGroupHeading(workspace)
     let projectName = ProjectGroup.grouping(list.projects).first {
       $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
     }?.name
@@ -77,27 +99,31 @@ extension SidebarView {
     let branches = rowDetails.contains(.branch)
     guard pullRequests || branches else { return nil }
     return GitLookupRefreshKey(
-      pullRequests: pullRequests, branches: branches, workspaceIds: listedSidebarItems.map(\.id)
+      pullRequests: pullRequests, branches: branches,
+      workspaceIds: listedSidebarItems.map(\.id) + visibleArchivedItems.map(\.id)
     )
   }
 
   func refreshGitLookups() {
     guard let store else { return }
-    let checkouts = listedWorkspaceItems.compactMap { item -> (id: UUID, path: String, serverId: String)? in
+    let active = listedWorkspaceItems.compactMap { item -> (Workspace, SidebarGitLookupSource)? in
       guard let path = item.workspace.rootDirectory, !path.isEmpty else { return nil }
-      return (item.workspace.id, path, item.workspace.serverId)
+      return (item.workspace, .checkout(path: path))
+    }
+    let archived = listedArchivedWorkspaces.compactMap { workspace -> (Workspace, SidebarGitLookupSource)? in
+      workspace.rootDirectory?.isEmpty == false ? (workspace, .archived) : nil
+    }
+    let workspaces = active + archived
+    func targets<Value>() -> [SidebarGitLookup<Value>.Target] {
+      workspaces.map { workspace, source in
+        .init(workspaceId: workspace.id, source: source, client: environment.machines.client(for: workspace.serverId))
+      }
     }
     if rowDetails.contains(.pullRequest) {
-      store.pullRequests.refresh(
-        checkouts.map {
-          .init(workspaceId: $0.id, path: $0.path, client: environment.machines.client(for: $0.serverId))
-        })
+      store.pullRequests.refresh(targets())
     }
     if rowDetails.contains(.branch) {
-      store.branches.refresh(
-        checkouts.map {
-          .init(workspaceId: $0.id, path: $0.path, client: environment.machines.client(for: $0.serverId))
-        })
+      store.branches.refresh(targets())
     }
   }
 

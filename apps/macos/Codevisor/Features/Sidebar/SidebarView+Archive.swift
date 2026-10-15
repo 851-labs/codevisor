@@ -58,15 +58,13 @@ extension SidebarView {
 
   private func archivedRow(_ workspace: Workspace, item: WorkspaceSidebarItem) -> some View {
     let listItem = SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
-    return SidebarArchivedWorkspaceRow(
-      name: workspace.name,
-      subtitle: rowSubtitle(for: workspace, isArchived: true),
+    let selected = SidebarSelection.archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
+    return row(
+      for: workspace,
       icon: icon(for: listItem),
-      store: store,
-      isSelected: selection == .archivedWorkspace(serverId: workspace.serverId, id: workspace.id),
-      isReordering: isReordering,
-      onActivate: { selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id) },
-      onRestore: { environment.unarchiveWorkspace(workspace) }
+      isSelected: selection == selected,
+      onActivate: { selection = selected },
+      lifecycle: .archived(onRestore: { environment.unarchiveWorkspace(workspace) })
     )
   }
 }

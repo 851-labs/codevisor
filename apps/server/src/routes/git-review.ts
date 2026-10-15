@@ -42,18 +42,20 @@ const pullRequests = new Map<
   { readonly at: number; readonly lookup: Promise<GitPullRequest | null> }
 >()
 
-const cachedPullRequest = (
+export const cachedPullRequest = (
   directory: string,
   env: NodeJS.ProcessEnv,
+  branch?: string,
   now = Date.now()
 ): Promise<GitPullRequest | null> => {
   for (const [key, entry] of pullRequests) {
     if (now - entry.at >= pullRequestTtlMs) pullRequests.delete(key)
   }
-  const cached = pullRequests.get(directory)
+  const key = branch === undefined ? directory : `${directory}\0${branch}`
+  const cached = pullRequests.get(key)
   if (cached !== undefined) return cached.lookup
-  const lookup = gitPullRequest(directory, env)
-  pullRequests.set(directory, { at: now, lookup })
+  const lookup = gitPullRequest(directory, env, branch)
+  pullRequests.set(key, { at: now, lookup })
   return lookup
 }
 
