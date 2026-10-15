@@ -34,8 +34,9 @@ private struct ShimmerSweep<Shape: View>: View {
 @MainActor
 final class ShimmerSweepLayer: CAGradientLayer {
   static let animationKey = "codevisor.text-shimmer"
-  private static let duration: CFTimeInterval = 1.2
+  static let duration: CFTimeInterval = 1.2
 
+  var mediaTime: () -> CFTimeInterval = CACurrentMediaTime
   private var animatedSize: CGSize = .zero
   private var renderedColorScheme: ColorScheme?
 
@@ -98,6 +99,8 @@ final class ShimmerSweepLayer: CAGradientLayer {
     sweep.repeatCount = .infinity
     sweep.timingFunction = CAMediaTimingFunction(name: .linear)
     sweep.isRemovedOnCompletion = false
+    let now = mediaTime()
+    sweep.beginTime = convertTime(now, from: nil) - now.truncatingRemainder(dividingBy: Self.duration)
     add(sweep, forKey: Self.animationKey)
   }
 }

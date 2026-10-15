@@ -5,6 +5,7 @@ import TranscriptKit
 enum WorkedSectionActivity: Equatable {
   case step(String)
   case answering
+  case writing
   case pending
   case starting
 }
@@ -27,7 +28,7 @@ extension AssistantTurn {
       guard hasProviderContent else { return .starting }
       label = "Thinking"
     } else {
-      return .answering
+      return finalTextIsAsserted ? .answering : .writing
     }
     while let last = label.last, last == "…" || last == "." {
       label.removeLast()

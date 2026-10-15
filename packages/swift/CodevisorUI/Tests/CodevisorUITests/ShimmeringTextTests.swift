@@ -72,6 +72,20 @@
       #expect((animation?.toValue as? NSNumber)?.doubleValue == 240)
     }
 
+    @Test("Sweeps started at different times share one phase, so a remounted shimmer continues")
+    func sharesOnePhase() {
+      let first = ShimmerSweepLayer()
+      first.mediaTime = { 100.3 }
+      first.update(size: CGSize(width: 120, height: 18), colorScheme: .light)
+      let second = ShimmerSweepLayer()
+      second.mediaTime = { 100.7 }
+      second.update(size: CGSize(width: 80, height: 18), colorScheme: .light)
+
+      let begins = [first, second].compactMap { $0.animation(forKey: ShimmerSweepLayer.animationKey)?.beginTime }
+      #expect(begins.count == 2)
+      #expect(begins.allSatisfy { abs($0 - 99.6) < 0.0001 })
+    }
+
     private func containsShimmerAnimation(in view: NSView) -> Bool {
       if let layer = view.layer, containsShimmerAnimation(in: layer) {
         return true

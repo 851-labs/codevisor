@@ -114,11 +114,9 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       let sendIndex = adapter?.sendTransitionRowIndex(for: latest.rowKey),
       rowIndex > sendIndex
     {
-      let revealAt = max(now, latest.startedAt + TranscriptSendMotion.followerRevealDelay)
-      layer.add(
-        TranscriptSendLayerAnimations.fade(
-          from: 0, to: 1, duration: TranscriptSendMotion.followerFadeDuration, beginTime: revealAt),
-        forKey: TranscriptSendAnimationKeys.follower)
+      if let reveal = TranscriptSendLayerAnimations.followerReveal(sendStartedAt: latest.startedAt, now: now) {
+        layer.add(reveal, forKey: TranscriptSendAnimationKeys.follower)
+      }
       return
     }
     if let running = shifts.filter({ $0.shift.isRunning(at: now) }).max(by: { $0.members < $1.members }) {
