@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { makeEventFanout } from "../server.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
+import { isRecord } from "../unknown-values.js"
 import { markdownLinks } from "./markdown-links.js"
 import { sessionEventSink } from "./session-events.js"
 import { toolImageCandidates } from "./tool-images.js"
@@ -78,6 +79,32 @@ describe("workspace media routes", () => {
     const published = JSON.stringify(f.published)
     expect(published).not.toContain(mcp)
     expect(published.split(claude)).toHaveLength(3)
+    const update = (toolCallId: string) =>
+      f.published.findLast(
+        (event) => isRecord(event.payload) && event.payload.toolCallId === toolCallId
+      )?.payload
+    expect(update("browser")).toMatchObject({
+      rawOutput: {
+        content: [
+          {
+            type: "image",
+            data: "",
+            mimeType: "image/jpeg",
+            attachment: { mimeType: "image/jpeg" }
+          }
+        ]
+      }
+    })
+    expect(update("read")).toMatchObject({
+      rawOutput: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/png", data: "" },
+          attachment: { mimeType: "image/png" }
+        },
+        { type: "image", source: { media_type: "text/plain", data: claude } }
+      ]
+    })
 
     const all = photoPage((await f.get("photos")).body)
     expect(all.photos.map((photo) => [photo.attachment.mimeType, photo.source])).toEqual([
@@ -207,6 +234,14 @@ describe("markdownLinks", () => {
     ["```\n[in code](https://example.com/in-code)\n```", []],
     ["\\[escaped](https://example.com/escaped)", [{ url: "https://example.com/escaped" }]],
     ["`<https://example.com/code>`", []],
+    [
+      "[![CI](https://img.shields.io/badge.svg)](https://github.com/o/r/actions)",
+      [{ url: "https://github.com/o/r/actions", title: "CI" }]
+    ],
+    [
+      "[Foo](https://en.wikipedia.org/wiki/Foo_(bar))",
+      [{ url: "https://en.wikipedia.org/wiki/Foo_(bar)", title: "Foo" }]
+    ],
     [
       "[<https://a.example>](https://b.example)",
       [{ url: "https://b.example/", title: "<https://a.example>" }]

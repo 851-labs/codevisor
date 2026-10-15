@@ -31,10 +31,13 @@ final class WorkspaceInspectorMediaModel {
   private(set) var links: [ServerWorkspaceLink] = []
   private(set) var photosPhase = Phase.idle
   private(set) var linksPhase = Phase.idle
-  @ObservationIgnored private var photosNextBefore: String?
-  @ObservationIgnored private var linksNextBefore: String?
+  private var photosNextBefore: String?
+  private(set) var linksNextBefore: String?
   @ObservationIgnored private var workspaceId: UUID?
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
+
+  var hasMorePhotos: Bool { photosNextBefore != nil }
+  var hasMoreLinks: Bool { linksNextBefore != nil }
 
   func reload(_ tab: WorkspaceInspectorTab, workspaceId: UUID, client: any CodevisorServerClienting) async {
     if self.workspaceId != workspaceId {
@@ -69,8 +72,10 @@ final class WorkspaceInspectorMediaModel {
       let page = try await client.workspacePhotos(
         workspaceId: workspaceId, before: before, limit: Self.photoPageSize)
       guard workspaceId == self.workspaceId else { return }
-      photos = before == nil ? page.photos : Self.appending(page.photos, to: photos)
-      photosNextBefore = page.nextBefore
+      (photos, photosNextBefore) =
+        before == nil
+        ? Self.refreshing(photos, cursor: photosNextBefore, with: page.photos, nextBefore: page.nextBefore)
+        : (Self.appending(page.photos, to: photos), page.nextBefore)
       photosPhase = .loaded
     } catch {
       guard workspaceId == self.workspaceId, !Task.isCancelled else { return }
@@ -85,13 +90,23 @@ final class WorkspaceInspectorMediaModel {
       let page = try await client.workspaceLinks(
         workspaceId: workspaceId, before: before, limit: Self.linkPageSize)
       guard workspaceId == self.workspaceId else { return }
-      links = before == nil ? page.links : Self.appending(page.links, to: links)
-      linksNextBefore = page.nextBefore
+      (links, linksNextBefore) =
+        before == nil
+        ? Self.refreshing(links, cursor: linksNextBefore, with: page.links, nextBefore: page.nextBefore)
+        : (Self.appending(page.links, to: links), page.nextBefore)
       linksPhase = .loaded
     } catch {
       guard workspaceId == self.workspaceId, !Task.isCancelled else { return }
       linksPhase = .failed(error.localizedDescription)
     }
+  }
+
+  private static func refreshing<Element: Identifiable>(
+    _ existing: [Element], cursor: String?, with page: [Element], nextBefore: String?
+  ) -> ([Element], String?) {
+    let fresh = Set(page.map(\.id))
+    let older = existing.filter { !fresh.contains($0.id) }
+    return older.isEmpty ? (page, nextBefore) : (page + older, cursor)
   }
 
   private static func appending<Element: Identifiable>(_ page: [Element], to existing: [Element]) -> [Element] {
