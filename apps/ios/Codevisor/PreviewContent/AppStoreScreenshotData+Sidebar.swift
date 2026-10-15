@@ -2,18 +2,20 @@
   import CodevisorCore
 
   extension AppStoreScreenshotData {
-    static var homeSections: [HomeSidebarSection] {
+    static var homeEntries: [HomeSidebarSampleData.Entry] {
       sections.map { section in
-        HomeSidebarSection(
-          id: section.id, serverId: section.serverId, name: section.name,
-          machineName: section.machineName, anchorSessionId: section.anchorSessionId,
-          status: section.status.homeStatus,
-          rows: section.rows.map { row in
-            HomeSidebarTabRow(
-              id: row.id, title: row.title, icon: row.icon.homeIcon, status: row.status.homeStatus,
-              chatSessionId: row.chatSessionId, renamableTabId: row.renamableTabId
-            )
-          }
+        HomeSidebarSampleData.Entry(
+          workspace: HomeSidebarWorkspace(
+            id: section.id, serverId: section.serverId, name: section.name,
+            anchorSessionId: section.anchorSessionId, primaryRowId: section.rows.first?.id,
+            rows: section.rows.map { row in
+              HomeSidebarTabRow(
+                id: row.id, title: row.title, icon: row.icon.homeIcon, status: row.status.homeStatus,
+                chatSessionId: row.chatSessionId, renamableTabId: row.renamableTabId
+              )
+            }
+          ),
+          projectId: section.id
         )
       }
     }

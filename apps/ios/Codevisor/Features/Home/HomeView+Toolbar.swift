@@ -15,6 +15,9 @@ extension HomeView {
         machineConnectionWarningButton
       }
     }
+    if hasRemoteMachines || showsSampleSidebar {
+      ToolbarItem(placement: .topBarTrailing) { HomeSidebarOptionsMenu() }
+    }
     if syncIndicator.isSyncing, failedSyncMachines.isEmpty {
       ToolbarItem(placement: .principal) {
         HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")

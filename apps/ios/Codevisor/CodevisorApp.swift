@@ -94,7 +94,7 @@ struct CodevisorApp: App {
       launchSnapshot: launchSnapshot
     )
     composerDrafts.removeUnreferencedAttachmentFiles()
-    return AppEnvironment(
+    let environment = AppEnvironment(
       navigationPersistence: store,
       launchSnapshot: launchSnapshot,
       transcriptCache: .shared,
@@ -106,6 +106,14 @@ struct CodevisorApp: App {
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store)
     )
+    #if DEBUG
+      if !HomeSidebarSampleData.isEnabled {
+        environment.syncClientPreferences(SidebarPreferenceKey.synced)
+      }
+    #else
+      environment.syncClientPreferences(SidebarPreferenceKey.synced)
+    #endif
+    return environment
   }
 
   private func retryStartup() {

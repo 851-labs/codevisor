@@ -1,9 +1,8 @@
+import CodevisorUI
+
 enum SyncedPreferences {
-  static let keys: Set<String> = [
-    SidebarGrouping.preferenceKey,
-    SidebarRowDetail.preferenceKey,
-    SidebarView.pinnedWorkspacesKey,
+  static let keys: Set<String> = SidebarPreferenceKey.synced.union([
     ModelConfigMenu.favoriteModelsKey,
     NewChatView.favoriteProjectsKey,
-  ]
+  ])
 }

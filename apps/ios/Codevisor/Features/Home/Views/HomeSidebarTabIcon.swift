@@ -8,7 +8,7 @@ struct HomeSidebarTabIcon: View {
 
   let row: HomeSidebarTabRow
   let serverId: String
-  var size: CGFloat = 18
+  @ScaledMetric(relativeTo: .body) private var size: CGFloat = 17
 
   var body: some View {
     if row.status != .idle {
@@ -60,7 +60,6 @@ struct HomeSidebarTabIcon: View {
 
   private func symbol(_ name: String) -> some View {
     Image(systemName: name)
-      .font(.system(size: size, weight: .medium))
       .foregroundStyle(glyphStyle)
   }
 

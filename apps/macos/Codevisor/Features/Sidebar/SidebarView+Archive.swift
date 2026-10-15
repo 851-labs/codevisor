@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-let archivedPageSize = 10
-
 extension SidebarView {
   var archivedSidebarItems: [WorkspaceSidebarItem] {
     environment.navigationStore.workspaceEntries.archived.filter {
@@ -33,7 +31,7 @@ extension SidebarView {
     if !items.isEmpty {
       SidebarSectionHeader(title: "Archived", isExpanded: archivedExpanded) {
         fold(Self.archivedFoldID) {
-          if !archivedExpanded { archivedVisibleCount = archivedPageSize }
+          if !archivedExpanded { archivedVisibleCount = sidebarArchivedPageSize }
           archivedExpanded.toggle()
         }
       }
@@ -78,7 +76,7 @@ extension SidebarView {
             title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,
             titleStyle: .secondary
           ) {
-            fold(Self.archivedPageFoldID) { archivedVisibleCount += archivedPageSize }
+            fold(Self.archivedPageFoldID) { archivedVisibleCount += sidebarArchivedPageSize }
           }
           .sidebarFoldingRow(isFolding || !hasMore, progress: progress, shows: archivedExpanded && hasMore)
         }
@@ -88,8 +86,8 @@ extension SidebarView {
   }
 
   private func archivedPages(_ rows: [WorkspaceSidebarItem]) -> [[WorkspaceSidebarItem]] {
-    let pages = stride(from: 0, to: rows.count, by: archivedPageSize).map {
-      Array(rows[$0..<min($0 + archivedPageSize, rows.count)])
+    let pages = stride(from: 0, to: rows.count, by: sidebarArchivedPageSize).map {
+      Array(rows[$0..<min($0 + sidebarArchivedPageSize, rows.count)])
     }
     return pages.isEmpty ? [[]] : pages
   }

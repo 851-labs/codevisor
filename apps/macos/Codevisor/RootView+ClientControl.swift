@@ -2,6 +2,7 @@ import CodevisorCore
 import Foundation
 import SwiftUI
 import AppKit
+import CodevisorUI
 
 extension RootView {
   func clientControlContext(serverId: String) -> NativeClientContext {

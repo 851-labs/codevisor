@@ -29,7 +29,7 @@ struct WorkspaceInspectorView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             } icon: {
-              Image(pullRequest.statusIconName)
+              pullRequest.statusImage
                 .resizable()
                 .scaledToFit()
                 .frame(width: 14, height: 14)
