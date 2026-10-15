@@ -221,9 +221,7 @@ public struct ShimmeringText: View {
       .shimmering()
       .accessibilityLabel(text)
   }
-}
 
-extension ShimmeringText {
   public static var thinking: ShimmeringText {
     ShimmeringText(text: "Thinking...")
   }
