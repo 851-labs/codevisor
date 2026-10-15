@@ -14,11 +14,13 @@ import type {
 } from "@codevisor/api"
 
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
+import { StringArray, parseJsonColumn } from "./json-column.js"
 import { scratchWorkspacesRoot } from "./paths.js"
 import { resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,
-  FileRow,
+  FileMetadataRow,
+  FileStorageRow,
   FileStorageRecord,
   HarnessAccountRecord,
   HarnessAccountRow,
@@ -240,7 +242,7 @@ export const harnessAccountFromRow = (row: HarnessAccountRow): HarnessAccountRec
   updatedAt: row.updated_at
 })
 
-export const fileMetadataFromRow = (row: FileRow): FileMetadata => ({
+export const fileMetadataFromRow = (row: FileMetadataRow): FileMetadata => ({
   id: row.id,
   name: row.name,
   mimeType: row.mime_type,
@@ -250,9 +252,7 @@ export const fileMetadataFromRow = (row: FileRow): FileMetadata => ({
   createdAt: row.created_at
 })
 
-export const fileStorageRecordFromRow = (
-  row: FileRow & { readonly data: Buffer }
-): FileStorageRecord => ({
+export const fileStorageRecordFromRow = (row: FileStorageRow): FileStorageRecord => ({
   metadata: fileMetadataFromRow(row),
   storageState: row.storage_state,
   data: row.data
@@ -302,7 +302,7 @@ export const mcpServerFromRow = (row: McpServerRow): McpServerRecord => ({
   transport: row.transport,
   ...(row.url === null ? {} : { url: row.url }),
   ...(row.command === null ? {} : { command: row.command }),
-  args: JSON.parse(row.args) as ReadonlyArray<string>,
+  args: parseJsonColumn(StringArray, row.args),
   enabled: row.enabled === 1,
   authType: row.auth_type,
   ...(row.oauth_scope === null ? {} : { oauthScope: row.oauth_scope }),

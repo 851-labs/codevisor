@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { publishPromptQueue } from "../routes/prompt-queue.js"
 import { appendAndPublish, makeEventFanout, run } from "../server-context.js"
+import { field } from "../unknown-values.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
+
+const unreadCount = (event: EventEnvelope): number => {
+  const count = field(event.payload, "unreadCount")
+  return typeof count === "number" ? count : 0
+}
 
 describe("queue completion notifications", () => {
   beforeEach(() => {
@@ -58,9 +64,7 @@ describe("queue completion notifications", () => {
           expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
           await run(db.completePromptQueueItem(session.id, item.id))
         }
-        expect(
-          attention.some((event) => (event.payload as { unreadCount: number }).unreadCount > 0)
-        ).toBe(false)
+        expect(attention.some((event) => unreadCount(event) > 0)).toBe(false)
         await publishPromptQueue(db, fanout, session.id)
         if (hasSubagent) {
           await vi.advanceTimersByTimeAsync(11_999)
@@ -72,14 +76,10 @@ describe("queue completion notifications", () => {
           latestAttentionSequence: 1,
           unreadCount: 1
         })
-        expect(
-          attention.filter((event) => (event.payload as { unreadCount: number }).unreadCount > 0)
-        ).toHaveLength(1)
+        expect(attention.filter((event) => unreadCount(event) > 0)).toHaveLength(1)
         await publishPromptQueue(db, fanout, session.id)
         await vi.advanceTimersByTimeAsync(24_000)
-        expect(
-          attention.filter((event) => (event.payload as { unreadCount: number }).unreadCount > 0)
-        ).toHaveLength(1)
+        expect(attention.filter((event) => unreadCount(event) > 0)).toHaveLength(1)
       } finally {
         unsubscribe()
         scheduler.close()

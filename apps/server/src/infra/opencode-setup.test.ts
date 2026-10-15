@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import type { OpenCodeMigration } from "@codevisor/adapter-opencode"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
+import type { HarnessAccount } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./opencode-setup.js"
@@ -35,6 +36,17 @@ const migrations = (pendingFor: ReadonlyArray<string | undefined>) => {
   )
   return { finished, migration }
 }
+
+const harnessAccount = (id: string): HarnessAccount => ({
+  id,
+  harnessId: "opencode",
+  profileKind: "managed",
+  label: id,
+  authState: "authenticated",
+  canLogin: true,
+  canLogout: true,
+  isActive: false
+})
 
 const account = (id: string, data?: string): HarnessAccountContext => ({
   id,
@@ -120,13 +132,13 @@ describe("OpenCode setup", () => {
 
   it("prepares every OpenCode account's chat environment it can", async () => {
     const auth = {
-      accounts: vi.fn(async () => [{ id: "default" }, { id: "broken" }, { id: "work" }]),
+      accounts: vi.fn(async () => ["default", "broken", "work"].map(harnessAccount)),
       accountContext: vi.fn(async (id: string) => {
         if (id === "broken") throw new Error("no credentials")
         return account(id)
       })
     }
-    const contexts = await openCodeAccountContexts(auth as never)()
+    const contexts = await openCodeAccountContexts(auth)()
     expect(auth.accounts).toHaveBeenCalledWith("opencode")
     expect(contexts.map((context) => context.id)).toEqual(["default", "work"])
   })

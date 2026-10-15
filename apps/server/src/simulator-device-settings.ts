@@ -8,6 +8,7 @@ import type {
 
 import { SimulatorRequestError } from "./simulator-errors.js"
 import type { SimulatorEnvironment } from "./simulators.js"
+import { isRecord } from "./unknown-values.js"
 
 export type SimulatorDeviceSettings = Pick<
   SimulatorSettings,
@@ -29,9 +30,7 @@ export const systemAudioRoute = "system"
 const audioDevicesTTL = 10_000
 
 const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Readonly<Record<string, unknown>>)
-    : undefined
+  isRecord(value) ? value : undefined
 
 const enabled = (value: unknown): boolean | undefined => {
   if (typeof value === "boolean") return value

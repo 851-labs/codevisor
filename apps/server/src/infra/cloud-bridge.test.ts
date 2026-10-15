@@ -16,6 +16,21 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+const bridgeOptions = (
+  options: Pick<CloudBridgeOptions, "credentialsPath"> & Partial<CloudBridgeOptions>
+): CloudBridgeOptions => ({
+  machineName: "test-machine",
+  appVersion: "0.0.0-test",
+  localBaseUrl: "http://127.0.0.1:1",
+  env: {},
+  log: () => undefined,
+  ...options
+})
+
+const notUsed = async (): Promise<never> => {
+  throw new Error("The cloud bridge fixture does not fake this call")
+}
+
 const storedControl = (respond: FetchLike) => {
   const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))
   dirs.push(dir)
@@ -32,14 +47,14 @@ const storedControl = (respond: FetchLike) => {
   )
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const logs: string[] = []
-  const options = {
+  const options = bridgeOptions({
     credentialsPath,
     log: (line: string) => void logs.push(line),
     fetchImpl: (url: string, init?: RequestInit) => {
       calls.push({ url, ...(init === undefined ? {} : { init }) })
       return respond(url, init)
     }
-  } as unknown as CloudBridgeOptions
+  })
   return { control: makeCloudServerControl(options, undefined), credentialsPath, calls, logs }
 }
 
@@ -92,11 +107,22 @@ describe("cloud disconnect", () => {
 describe("cloud connect", () => {
   it("keeps an existing registration instead of provisioning another", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 500 }))
-    const existing = { deviceId: "device-1", stop: () => undefined } as unknown as CloudBridge
+    const existing: CloudBridge = {
+      deviceId: "device-1",
+      serverUrl: "https://cloud.example",
+      managedBy: "external",
+      machineName: "test-machine",
+      stop: () => undefined,
+      state: () => "connected",
+      acceptDirect: () => undefined,
+      machines: () => undefined,
+      requestGateway: notUsed,
+      bridgeTunnelMedia: notUsed
+    }
     const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))
     dirs.push(dir)
     const control = makeCloudServerControl(
-      { credentialsPath: join(dir, "cloud.json"), fetchImpl } as unknown as CloudBridgeOptions,
+      bridgeOptions({ credentialsPath: join(dir, "cloud.json"), fetchImpl }),
       existing
     )
 

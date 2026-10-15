@@ -6,6 +6,7 @@ import {
   machinesListCommand,
   machinesRemoveCommand
 } from "./machines.js"
+import { makeWorld } from "./support-test-support.js"
 import type { CliDeps } from "./support.js"
 
 type Answer = { status: number; body: unknown } | undefined
@@ -14,18 +15,17 @@ const world = (routes: Record<string, Answer>) => {
   const logs: string[] = []
   const errors: string[] = []
   const requests: { method: string; path: string; body?: unknown }[] = []
-  const deps = {
-    fetchJson: async (url: string, init?: { method?: string; body?: unknown }) => {
+  const deps: CliDeps = {
+    ...makeWorld({ env: { CODEVISOR_PORT: "49361" } }).deps,
+    fetchJson: async (url, init) => {
       const method = init?.method ?? "GET"
       const path = new URL(url).pathname
       requests.push({ method, path, ...(init?.body === undefined ? {} : { body: init.body }) })
       return routes[`${method} ${path}`]
     },
-    env: { CODEVISOR_PORT: "49361" },
-    readTextFile: () => undefined,
-    log: (line: string) => void logs.push(line),
-    error: (line: string) => void errors.push(line)
-  } as unknown as CliDeps
+    log: (line) => void logs.push(line),
+    error: (line) => void errors.push(line)
+  }
   return { deps, logs, errors, requests }
 }
 

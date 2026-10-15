@@ -3,16 +3,17 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { isRecord, recordField } from "../unknown-values.js"
+
 export const HARNESSES_SYNC_NAMESPACE = "harnesses"
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 export const harnessPreference = (value: unknown): HarnessPreference | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const candidate = value as Record<string, unknown>
-  if (typeof candidate.enabled !== "boolean" || typeof candidate.installed !== "boolean")
-    return undefined
-  if (!candidate.installed && candidate.uninstall !== true) return undefined
-  return { enabled: candidate.enabled, installed: candidate.installed }
+  if (!isRecord(value)) return undefined
+  const { enabled, installed, uninstall } = value
+  if (typeof enabled !== "boolean" || typeof installed !== "boolean") return undefined
+  if (!installed && uninstall !== true) return undefined
+  return { enabled, installed }
 }
 
 export const readHarnessSettings = async (
@@ -48,10 +49,7 @@ export const setHarnessPreference = async (
 ): Promise<ReadonlyArray<SyncEntryRecord>> => {
   const entries = await run(db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
   const previous = entries.find((entry) => entry.key === harness.id && !entry.deleted)
-  const previousFields =
-    typeof previous?.value === "object" && previous.value !== null
-      ? (previous.value as Record<string, unknown>)
-      : {}
+  const previousFields = recordField(previous, "value")
   const result = await run(
     db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
       {

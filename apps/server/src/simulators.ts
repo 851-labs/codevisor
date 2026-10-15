@@ -3,25 +3,29 @@ import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type {
-  SimulatorChrome,
-  SimulatorDevice,
-  SimulatorDeviceTypeDetail,
-  SimulatorList,
-  SimulatorSettings,
-  SimulatorSettingsChange
+import {
+  SimulatorContentSize,
+  type SimulatorChrome,
+  type SimulatorDevice,
+  type SimulatorDeviceTypeDetail,
+  type SimulatorList,
+  type SimulatorSettings,
+  type SimulatorSettingsChange
 } from "@codevisor/api"
+import { Schema } from "effect"
 
 import { makeSimulatorDeviceSettings } from "./simulator-device-settings.js"
 import { SimulatorCommandError, SimulatorRequestError } from "./simulator-errors.js"
 import {
   chromeImageNames,
+  decodeRawList,
   parseDisplays,
   parseFeatures,
   parseSimulatorList,
   stringField,
   type RawList
 } from "./simulator-parsing.js"
+import { asRecord, field } from "./unknown-values.js"
 
 export interface SimulatorCommandResult {
   readonly stdout: Buffer
@@ -112,20 +116,7 @@ const locationScenarios: Readonly<Record<SimulatorSettings["location"], string |
   "freeway-drive": "Freeway Drive"
 }
 
-const contentSizes = new Set<string>([
-  "extra-small",
-  "small",
-  "medium",
-  "large",
-  "extra-large",
-  "extra-extra-large",
-  "extra-extra-extra-large",
-  "accessibility-medium",
-  "accessibility-large",
-  "accessibility-extra-large",
-  "accessibility-extra-extra-large",
-  "accessibility-extra-extra-extra-large"
-])
+const isContentSize = Schema.is(SimulatorContentSize)
 
 const requireUDID = (udid: string): string => {
   if (!udidPattern.test(udid)) throw new SimulatorRequestError(400, "Invalid simulator id")
@@ -149,17 +140,19 @@ export const makeSimulators = (
     (await environment.run("xcrun", ["simctl", ...args], { timeoutMs, maxBytes })).stdout
 
   const rawList = async (): Promise<RawList> =>
-    JSON.parse((await simctl(["list", "-j"])).toString("utf8")) as RawList
+    decodeRawList(JSON.parse((await simctl(["list", "-j"])).toString("utf8")))
 
-  const plistJSON = async (path: string): Promise<Record<string, unknown>> =>
-    JSON.parse(
-      (
-        await environment.run("plutil", ["-convert", "json", "-o", "-", path], {
-          timeoutMs: 10_000,
-          maxBytes: 4 * 1024 * 1024
-        })
-      ).stdout.toString("utf8")
-    ) as Record<string, unknown>
+  const plistJSON = async (path: string): Promise<Readonly<Record<string, unknown>>> =>
+    asRecord(
+      JSON.parse(
+        (
+          await environment.run("plutil", ["-convert", "json", "-o", "-", path], {
+            timeoutMs: 10_000,
+            maxBytes: 4 * 1024 * 1024
+          })
+        ).stdout.toString("utf8")
+      )
+    )
 
   const requireDevice = async (udid: string): Promise<SimulatorDevice> => {
     const id = requireUDID(udid)
@@ -192,9 +185,7 @@ export const makeSimulators = (
     return {
       ...more,
       ...(appearance === "light" || appearance === "dark" ? { appearance } : {}),
-      ...(contentSize !== undefined && contentSizes.has(contentSize)
-        ? { contentSize: contentSize as SimulatorSettings["contentSize"] & string }
-        : {}),
+      ...(isContentSize(contentSize) ? { contentSize } : {}),
       ...(contrast === "enabled" || contrast === "disabled"
         ? { increaseContrast: contrast === "enabled" }
         : {}),
@@ -251,9 +242,7 @@ export const makeSimulators = (
       let rawDisplays: unknown = []
       try {
         const capabilities = await plistJSON(join(resources, "capabilities.plist"))
-        rawDisplays = (capabilities["capabilities"] as Record<string, unknown> | undefined)?.[
-          "displays"
-        ]
+        rawDisplays = field(capabilities["capabilities"], "displays")
       } catch {
         rawDisplays = []
       }

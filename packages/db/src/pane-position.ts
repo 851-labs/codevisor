@@ -2,19 +2,24 @@ import { isoTimestamp, nextPanePosition } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import { canonicalUuid } from "./ids.js"
+import { nullable, rowReader, text } from "./row-reader.js"
 import type { WorkspacePaneRow } from "./rows.js"
+
+export const panePositionRows = rowReader({ position: nullable(text) })
 
 export const nextPanePositionIn = (
   sqlite: Database.Database,
   workspaceId: string,
   paneId: string
 ): string => {
-  const last = sqlite
-    .prepare(
-      "select max(position) as position from workspace_panes where workspace_id = ? and position <> '' and id <> ?"
-    )
-    .get(workspaceId, paneId) as { readonly position: string | null } | undefined
-  return nextPanePosition(last?.position ?? undefined, Date.now(), paneId)
+  const last = panePositionRows.one(
+    sqlite
+      .prepare(
+        "select max(position) as position from workspace_panes where workspace_id = ? and position <> '' and id <> ?"
+      )
+      .get(workspaceId, paneId)
+  )
+  return nextPanePosition(last.position ?? undefined, Date.now(), paneId)
 }
 
 const orderedPaneIds = (

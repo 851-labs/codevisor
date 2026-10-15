@@ -4,12 +4,16 @@ import type { CreateProjectRequest, Project, ProjectLocation } from "@codevisor/
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { idRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { detectGitLocation } from "./project-location-state.js"
 import { projectFromRow } from "./row-mappers.js"
-import type { ProjectRow } from "./rows.js"
+import { rowReader, text } from "./row-reader.js"
+import { projectRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const projectIdRows = rowReader({ project_id: text })
 
 export const makeProjectsService = (
   context: ServiceContext
@@ -32,16 +36,20 @@ export const makeProjectsService = (
       const projectId = (request.id ?? randomUUID()).toLowerCase()
       const createdAt = request.createdAt ?? now
 
-      const byId = sqlite
-        .prepare("select id from projects where id = ? collate nocase")
-        .get(projectId) as { id: string } | undefined
+      const byId = idRows.maybe(
+        sqlite.prepare("select id from projects where id = ? collate nocase").get(projectId)
+      )
       if (byId !== undefined) {
         return getProject(byId.id)
       }
 
-      const claimed = sqlite
-        .prepare("select project_id from project_locations where server_id = ? and folder_path = ?")
-        .get(config.serverId, request.folderPath) as { project_id: string } | undefined
+      const claimed = projectIdRows.maybe(
+        sqlite
+          .prepare(
+            "select project_id from project_locations where server_id = ? and folder_path = ?"
+          )
+          .get(config.serverId, request.folderPath)
+      )
       if (claimed !== undefined) {
         if (request.id === undefined || claimed.project_id.toLowerCase() === projectId) {
           return getProject(claimed.project_id)
@@ -82,10 +90,9 @@ export const makeProjectsService = (
   return {
     createProject,
     listProjects: attempt("listProjects", () =>
-      sqlite
-        .prepare("select * from projects order by created_at desc")
-        .all()
-        .map((row) => projectFromRow(row as ProjectRow, locationRowsFor((row as ProjectRow).id)))
+      projectRows
+        .all(sqlite.prepare("select * from projects order by created_at desc").all())
+        .map((row) => projectFromRow(row, locationRowsFor(row.id)))
     ),
     updateProject: (id, request) =>
       attempt("updateProject", () => {

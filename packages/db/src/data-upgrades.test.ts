@@ -172,7 +172,7 @@ describe("@codevisor/db", () => {
         "end_turn",
         "done",
         "legacy plan",
-        '[{"fileId":"file-1","name":"a.txt","mimeType":"text/plain","sizeBytes":1,"kind":"document"}]',
+        '[{"fileId":"file-1","name":"a.txt","mimeType":"text/plain","sizeBytes":1,"kind":"file"}]',
         4
       )
     sqlite
@@ -216,7 +216,7 @@ describe("@codevisor/db", () => {
         "2026-06-01T00:03:00.000Z",
         1,
         "legacy-message",
-        '[{"fileId":"file-2","name":"b.txt","mimeType":"text/plain","sizeBytes":2,"kind":"document"}]'
+        '[{"fileId":"file-2","name":"b.txt","mimeType":"text/plain","sizeBytes":2,"kind":"file"}]'
       )
     sqlite
       .prepare("insert into transcript_routes (session_id, route_key, item_id) values (?, ?, ?)")
@@ -253,7 +253,7 @@ describe("@codevisor/db", () => {
           name: "a.txt",
           mimeType: "text/plain",
           sizeBytes: 1,
-          kind: "document"
+          kind: "file"
         }
       ],
       stopDetail: "done",

@@ -4,7 +4,7 @@ import type Database from "better-sqlite3"
 
 import { canonicalUuid } from "./ids.js"
 import { projectFromRow, sessionFromRow } from "./row-mappers.js"
-import type { ProjectLocationRow, ProjectRow, SessionRow } from "./rows.js"
+import { projectLocationRows, projectRows, sessionRows, type ProjectLocationRow } from "./rows.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
 
 export interface ServiceContext {
@@ -32,14 +32,18 @@ export const createServiceContext = (
   config: CodevisorDatabaseConfig
 ): ServiceContext => {
   const locationRowsFor = (projectId: string): ReadonlyArray<ProjectLocationRow> =>
-    sqlite
-      .prepare("select * from project_locations where project_id = ? order by created_at asc")
-      .all(projectId) as ReadonlyArray<ProjectLocationRow>
+    projectLocationRows.all(
+      sqlite
+        .prepare("select * from project_locations where project_id = ? order by created_at asc")
+        .all(projectId)
+    )
 
   const localLocationFor = (projectId: string): ProjectLocationRow | undefined =>
-    sqlite
-      .prepare("select * from project_locations where project_id = ? and server_id = ?")
-      .get(projectId, config.serverId) as ProjectLocationRow | undefined
+    projectLocationRows.maybe(
+      sqlite
+        .prepare("select * from project_locations where project_id = ? and server_id = ?")
+        .get(projectId, config.serverId)
+    )
 
   const sessionSummarySelect = `
     select sessions.*,
@@ -82,9 +86,9 @@ export const createServiceContext = (
     from sessions`
 
   const getProject = (id: string): Project => {
-    const row = sqlite.prepare("select * from projects where id = ? collate nocase").get(id) as
-      | ProjectRow
-      | undefined
+    const row = projectRows.maybe(
+      sqlite.prepare("select * from projects where id = ? collate nocase").get(id)
+    )
     if (row === undefined) {
       throw new Error(`Project not found: ${id}`)
     }
@@ -93,9 +97,9 @@ export const createServiceContext = (
 
   const getSession = (rawId: string): SessionSummary => {
     const id = canonicalUuid(rawId)
-    const row = sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id) as
-      | SessionRow
-      | undefined
+    const row = sessionRows.maybe(
+      sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id)
+    )
     if (row === undefined) {
       throw new Error(`Session not found: ${id}`)
     }

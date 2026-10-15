@@ -1,7 +1,9 @@
 import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
-import type { SessionEventRow } from "./rows.js"
+import { backfillJobRows } from "./common-rows.js"
+import { integer, rowReader } from "./row-reader.js"
+import { sessionEventRows } from "./rows.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
 import { activateSyncJournals } from "./sync-journal.js"
 import { seedImportedTranscript, migrateSetupState } from "./transcript-import-upgrade.js"
@@ -11,21 +13,22 @@ const id = "persisted-transcript-state-v1"
 const batchBytes = 2 * 1024 * 1024
 const batchRows = 256
 
+const tallyRows = rowReader({ n: integer })
+
+const candidateRows = rowReader({ cursor: integer, bytes: integer })
+
 export const runTranscriptStateUpgrade = (
   db: Database.Database,
   config: CodevisorDatabaseConfig
 ): void => {
-  const existing = db
-    .prepare("select state, cursor, completed, total from backfill_jobs where id = ?")
-    .get(id) as
-    | { state: string; cursor: string | null; completed: number; total: number }
-    | undefined
+  const existing = backfillJobRows.maybe(
+    db.prepare("select state, cursor, completed, total from backfill_jobs where id = ?").get(id)
+  )
   if (existing?.state === "completed") return
   let cursor = existing?.cursor ? Number(existing.cursor) : 0
   let completed = existing?.completed ?? 0
   const total =
-    existing?.total ??
-    (db.prepare("select count(*) as n from session_events").get() as { n: number }).n
+    existing?.total ?? tallyRows.one(db.prepare("select count(*) as n from session_events").get()).n
   if (existing === undefined)
     db.transaction(() => {
       db.exec(
@@ -49,11 +52,13 @@ export const runTranscriptStateUpgrade = (
   report("running")
   try {
     while (true) {
-      const candidates = db
-        .prepare(
-          "select rowid as cursor, length(cast(payload as blob)) as bytes from session_events where rowid > ? order by rowid limit ?"
-        )
-        .all(cursor, batchRows) as Array<{ cursor: number; bytes: number }>
+      const candidates = candidateRows.all(
+        db
+          .prepare(
+            "select rowid as cursor, length(cast(payload as blob)) as bytes from session_events where rowid > ? order by rowid limit ?"
+          )
+          .all(cursor, batchRows)
+      )
       if (candidates.length === 0) break
       let bytes = 0
       const batch: number[] = []
@@ -64,9 +69,9 @@ export const runTranscriptStateUpgrade = (
       }
       db.transaction(() => {
         for (const next of batch) {
-          const event = db
-            .prepare("select * from session_events where rowid = ?")
-            .get(next) as SessionEventRow
+          const event = sessionEventRows.one(
+            db.prepare("select * from session_events where rowid = ?").get(next)
+          )
           projectTranscriptState(db, event, event.chat_item_id ?? undefined)
           cursor = next
           completed += 1
@@ -79,10 +84,8 @@ export const runTranscriptStateUpgrade = (
     }
     seedImportedTranscript(db, () => report("running"))
     migrateSetupState(db, () => report("running"))
-    const count = (
-      db.prepare("select count(*) as n from session_events where rowid <= ?").get(cursor) as {
-        n: number
-      }
+    const count = tallyRows.one(
+      db.prepare("select count(*) as n from session_events where rowid <= ?").get(cursor)
     ).n
     if (count !== total || completed !== total)
       throw new Error(

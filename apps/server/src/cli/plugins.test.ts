@@ -185,9 +185,9 @@ describe("codevisor plugin link", () => {
     expect(world.logs.join("\n")).toContain("Linked local.dev 0.0.1")
 
     expect(await pluginLinkCommand(world.deps, { path: "relative/plugin" })).toBe(0)
-    const second = world.requests[1]?.body as { path: string }
-    expect(second.path.startsWith("/")).toBe(true)
-    expect(second.path.endsWith("/relative/plugin")).toBe(true)
+    expect(world.requests[1]?.body).toEqual({
+      path: expect.stringMatching(/^\/.*\/relative\/plugin$/)
+    })
   })
 
   it("surfaces link failures and an unreachable server", async () => {

@@ -65,16 +65,6 @@
   "overrides": [
     {
       "files": [
-        "apps/server/src/cli/cloud-control.ts",
-        "apps/server/src/infra/active-work-sleep-inhibitor.test.ts",
-        "apps/server/src/infra/browser-forward-proxy.test.ts",
-        "apps/server/src/infra/credential-coordinator.test.ts",
-        "apps/server/src/infra/harness-sync.test.ts",
-        "apps/server/src/infra/media-preview-lifecycle.test.ts",
-        "apps/server/src/infra/plugin-sync.test.ts",
-        "apps/server/src/infra/shared-claude-gateway.test.ts",
-        "apps/server/src/infra/shared-provider-runtime.ts",
-        "apps/server/src/infra/terminal-persistence.ts",
         "apps/server/src/routes/assistant-artifacts.test.ts",
         "apps/server/src/routes/cloud.ts",
         "apps/server/src/routes/events.test.ts",
@@ -84,7 +74,6 @@
         "apps/server/src/routes/session-browser-cleanup.test.ts",
         "apps/server/src/routes/transcript-storage.test.ts",
         "apps/server/src/routes/workspaces.ts",
-        "apps/server/src/server-identity.test.ts",
         "packages/adapter-acp/src/notifications.ts",
         "packages/adapter-acp/src/runtime-account-handoff.test.ts",
         "packages/adapter-acp/src/runtime-acp-inspection-config.test.ts",
@@ -97,8 +86,6 @@
         "packages/adapter-opencode/src/skill-tool.ts",
         "packages/api/src/openapi.ts",
         "packages/cloud-crypto/src/index.ts",
-        "packages/db/src/migrations-projects.test.ts",
-        "packages/db/src/transcript-state-pages.ts",
         "packages/skills/src/skills-remote-source.ts",
         "packages/terminal/src/vt/ghostty-vt.ts"
       ],
@@ -109,11 +96,7 @@
     {
       "files": [
         "apps/screen-sharing-rig/**",
-        "apps/server/src/*.ts",
-        "apps/server/src/cli/**",
-        "apps/server/src/infra/**",
         "apps/server/src/routes/**",
-        "apps/server/test/**",
         "apps/www/**",
         "packages/adapter-acp/**",
         "packages/adapter-antigravity/**",
@@ -126,7 +109,6 @@
         "packages/api/**",
         "packages/cloud-client/**",
         "packages/cloud-crypto/**",
-        "packages/db/**",
         "packages/net/**",
         "packages/processes/**",
         "packages/skills/**",

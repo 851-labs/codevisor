@@ -1,5 +1,10 @@
 import { isRenderableWorkedEvent, parseJsonRecord } from "./event-payloads.js"
 import type { Migration } from "./migration-types.js"
+import { integer, rowReader, text } from "./row-reader.js"
+
+const detailEventRows = rowReader({ chat_item_id: text, payload: text })
+
+const detailItemRows = rowReader({ id: text, has_details: integer })
 
 export const migrations09To29: ReadonlyArray<Migration> = [
   {
@@ -54,20 +59,18 @@ export const migrations09To29: ReadonlyArray<Migration> = [
            where chat_item_id is not null and kind = 'session.output'
            order by session_id, revision asc`
         )
-        .iterate() as Iterable<{
-        readonly chat_item_id: string
-        readonly payload: string
-      }>
-      for (const event of detailEvents) {
+        .iterate()
+      for (const raw of detailEvents) {
+        const event = detailEventRows.one(raw)
         const payload = parseJsonRecord(event.payload)
         if (payload !== undefined && isRenderableWorkedEvent(payload)) {
           itemIdsWithDetails.add(event.chat_item_id)
         }
       }
 
-      const items = sqlite
-        .prepare("select id, has_details from chat_items where role = 'assistant'")
-        .all() as ReadonlyArray<{ readonly id: string; readonly has_details: number }>
+      const items = detailItemRows.all(
+        sqlite.prepare("select id, has_details from chat_items where role = 'assistant'").all()
+      )
       const updateItem = sqlite.prepare(
         `update chat_items set has_details = ?, revision = revision + 1
          where id = ? and has_details != ?`

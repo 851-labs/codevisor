@@ -1,7 +1,8 @@
-import type { TranscriptBodyPage } from "@codevisor/api"
+import type { EventKind, TranscriptBodyPage } from "@codevisor/api"
 import { expect, it } from "vitest"
 
 import type { JsonRecord } from "./event-payloads.js"
+import type { SessionEventRow } from "./rows.js"
 import { projectSetupState, sessionSetupState } from "./setup-state.js"
 import { memoryDatabase, run } from "./test-support.js"
 import {
@@ -120,10 +121,10 @@ it("folds final answers, metadata, compaction and parented text into current sta
   let revision = 10
   const put = (
     payload: JsonRecord,
-    kind = "session.output",
+    kind: EventKind = "session.output",
     itemId: string | undefined = item.id
   ) => {
-    const event = {
+    const event: SessionEventRow = {
       session_id: session.id,
       revision: revision++,
       server_id: "local",
@@ -133,7 +134,7 @@ it("folds final answers, metadata, compaction and parented text into current sta
       payload: JSON.stringify(payload),
       chat_item_id: itemId ?? null
     }
-    projectTranscriptState(sqlite, event as never, itemId)
+    projectTranscriptState(sqlite, event, itemId)
     return textPatchForEvent(sqlite, item.id, event.revision, payload)
   }
   expect(put({ sessionUpdate: "agent_message_chunk" })).toBeUndefined()

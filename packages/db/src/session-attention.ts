@@ -3,6 +3,7 @@ import type Database from "better-sqlite3"
 import { sessionGoalSnapshot } from "./chat-items.js"
 import type { JsonRecord } from "./event-payloads.js"
 import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
 import { holdsInProgress, projectSessionSidebarState } from "./session-sidebar-state.js"
 
@@ -16,30 +17,38 @@ export const ensureSessionAttentionState = (sqlite: Database.Database, sessionId
     .run(sessionId)
 }
 
-interface AttentionRow {
-  readonly attention_revision: number
-  readonly turn_active: number
-  readonly runtime_state: string
-  readonly has_runtime_state: number
-  readonly current_mode_id: string | null
-  readonly pending_plan_approval: number
-  readonly errored: number
-  readonly pending_finish: number
-  readonly settle_due_at: string | null
-}
+const attentionRows = rowReader({
+  attention_revision: integer,
+  turn_active: integer,
+  runtime_state: text,
+  has_runtime_state: integer,
+  current_mode_id: nullable(text),
+  pending_plan_approval: integer,
+  errored: integer,
+  pending_finish: integer,
+  settle_due_at: nullable(text)
+})
 
-const attentionRow = (sqlite: Database.Database, sessionId: string): AttentionRow | undefined =>
-  sqlite.prepare("select * from session_attention where session_id = ?").get(sessionId) as
-    | AttentionRow
-    | undefined
+const backgroundTaskRows = rowReader({ background_tasks: text })
+
+const settleRows = rowReader({ session_id: text, settle_due_at: nullable(text) })
+
+const settleDueRows = rowReader({ settle_due_at: nullable(text) })
+
+const modeRows = rowReader({ current_mode_id: nullable(text), harness_id: text })
+
+const attentionRow = (sqlite: Database.Database, sessionId: string) =>
+  attentionRows.maybe(
+    sqlite.prepare("select * from session_attention where session_id = ?").get(sessionId)
+  )
 
 const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>
   sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
 
 const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean => {
-  const session = sqlite
-    .prepare("select background_tasks from sessions where id = ?")
-    .get(sessionId) as { readonly background_tasks: string } | undefined
+  const session = backgroundTaskRows.maybe(
+    sqlite.prepare("select background_tasks from sessions where id = ?").get(sessionId)
+  )
   /* v8 ignore next */
   if (session === undefined) return false
   return (
@@ -128,25 +137,26 @@ export const settleSessionAttention = (
 export const listPendingAttentionSettles = (
   sqlite: Database.Database
 ): ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }> =>
-  (
-    sqlite
-      .prepare("select session_id, settle_due_at from session_attention where pending_finish = 1")
-      .all() as ReadonlyArray<{
-      readonly session_id: string
-      readonly settle_due_at: string | null
-    }>
-  ).map((row) => ({ sessionId: row.session_id, dueAt: row.settle_due_at }))
+  settleRows
+    .all(
+      sqlite
+        .prepare("select session_id, settle_due_at from session_attention where pending_finish = 1")
+        .all()
+    )
+    .map((row) => ({ sessionId: row.session_id, dueAt: row.settle_due_at }))
 
 export const attentionSettleDeadline = (
   sqlite: Database.Database,
   sessionId: string
 ): string | undefined => {
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return undefined
-  const row = sqlite
-    .prepare(
-      "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0"
-    )
-    .get(sessionId) as { readonly settle_due_at: string | null } | undefined
+  const row = settleDueRows.maybe(
+    sqlite
+      .prepare(
+        "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0"
+      )
+      .get(sessionId)
+  )
   return row?.settle_due_at ?? undefined
 }
 
@@ -248,16 +258,15 @@ const completedTurnNeedsPlanApproval = (
   event: SessionEventRow,
   initiatedBy: "agent" | "user"
 ): boolean => {
-  const state = sqlite
-    .prepare(
-      `select sa.current_mode_id, s.harness_id
+  const state = modeRows.one(
+    sqlite
+      .prepare(
+        `select sa.current_mode_id, s.harness_id
          from session_attention sa join sessions s on s.id = sa.session_id
          where sa.session_id = ?`
-    )
-    .get(event.session_id) as {
-    readonly current_mode_id: string | null
-    readonly harness_id: string
-  }
+      )
+      .get(event.session_id)
+  )
   const completedTurnPlan = sqlite
     .prepare(
       `select 1 from session_events se

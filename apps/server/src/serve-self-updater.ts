@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process"
 import { createWriteStream, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 
 import type { UpdateInfo } from "@codevisor/api"
@@ -221,10 +220,7 @@ export const makeSelfUpdater = (options: {
     if (!response.ok || response.body === null) {
       throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
     }
-    await pipeline(
-      Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
-      createWriteStream(archivePath)
-    )
+    await pipeline(response.body, createWriteStream(archivePath))
 
     if (release.checksumURL !== undefined) {
       const checksumResponse = await fetch(release.checksumURL, {

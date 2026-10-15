@@ -1,4 +1,7 @@
-import type { EventKind } from "@codevisor/api"
+import { EventKind } from "@codevisor/api"
+import { Schema } from "effect"
+
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 
 export interface EventRow {
   readonly id: number
@@ -20,3 +23,24 @@ export interface SessionEventRow {
   readonly payload: string
   readonly chat_item_id: string | null
 }
+
+export const eventRows = rowReader<EventRow>({
+  id: integer,
+  server_id: text,
+  kind: Schema.is(EventKind),
+  subject_id: text,
+  created_at: text,
+  payload: text,
+  transcript_item_id: nullable(text)
+})
+
+export const sessionEventRows = rowReader<SessionEventRow>({
+  session_id: text,
+  revision: integer,
+  global_event_id: nullable(integer),
+  server_id: text,
+  kind: Schema.is(EventKind),
+  created_at: text,
+  payload: text,
+  chat_item_id: nullable(text)
+})

@@ -1,3 +1,5 @@
+import { field, recordField, stringField } from "../unknown-values.js"
+
 export interface ExecResult {
   readonly code: number
   readonly stdout: string
@@ -75,11 +77,7 @@ const isAnswering = async (deps: CliDeps, port: number): Promise<boolean> => {
 
 const isHealthy = async (deps: CliDeps, port: number): Promise<boolean> => {
   const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
-  return (
-    health !== undefined &&
-    health.status === 200 &&
-    (health.body as { readonly ok?: unknown } | null)?.ok === true
-  )
+  return health !== undefined && health.status === 200 && field(health.body, "ok") === true
 }
 
 const waitFor = async (
@@ -248,25 +246,19 @@ interface HarnessSummary {
 const harnessSummaries = (body: unknown): ReadonlyArray<HarnessSummary> => {
   if (!Array.isArray(body)) return []
   return body.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) return []
-    const harness = entry as {
-      readonly id?: string
-      readonly readiness?: {
-        readonly state?: string
-        readonly detail?: string
-        readonly version?: string
-        readonly path?: string
-      }
-    }
-    if (typeof harness.id !== "string") return []
-    const readiness = harness.readiness
+    const id = stringField(entry, "id")
+    if (id === undefined) return []
+    const readiness = field(entry, "readiness")
+    const detail = stringField(readiness, "detail")
+    const version = stringField(readiness, "version")
+    const path = stringField(readiness, "path")
     return [
       {
-        id: harness.id,
-        state: readiness?.state ?? "unknown",
-        ...(readiness?.detail === undefined ? {} : { detail: readiness.detail }),
-        ...(readiness?.version === undefined ? {} : { version: readiness.version }),
-        ...(readiness?.path === undefined ? {} : { path: readiness.path })
+        id,
+        state: stringField(readiness, "state") ?? "unknown",
+        ...(detail === undefined ? {} : { detail }),
+        ...(version === undefined ? {} : { version }),
+        ...(path === undefined ? {} : { path })
       }
     ]
   })
@@ -298,7 +290,7 @@ export const statusCommand = async (
     return 1
   }
 
-  const manifest = info.body as Record<string, unknown>
+  const manifest = recordField(info, "body")
   const harnesses = harnessSummaries((await deps.fetchJson(`${baseUrl(port)}/v1/harnesses`))?.body)
   if (options.json === true) {
     deps.log(
@@ -347,7 +339,7 @@ export const tokenCommand = async (deps: CliDeps, options: TokenOptions = {}): P
     deps.error(`Codevisor server is not running on port ${port}; start it first: codevisor start`)
     return 1
   }
-  const token = (response.body as { readonly token?: string }).token
+  const token = stringField(response.body, "token")
   /* v8 ignore next 4 */
   if (token === undefined) {
     deps.error("Server did not return a token")
@@ -370,10 +362,10 @@ export const updateCommand = async (
     deps.error("Start it (codevisor start) or re-run the install script to update in place.")
     return 1
   }
-  const state = update.body as {
-    readonly updateAvailable?: boolean
-    readonly currentVersion?: string
-    readonly latestVersion?: string
+  const state = {
+    updateAvailable: field(update.body, "updateAvailable"),
+    currentVersion: stringField(update.body, "currentVersion"),
+    latestVersion: stringField(update.body, "latestVersion")
   }
   if (state.updateAvailable !== true) {
     deps.log(`Already up to date (${state.currentVersion ?? "unknown version"})`)
@@ -381,22 +373,22 @@ export const updateCommand = async (
   }
   deps.log(`Updating ${state.currentVersion ?? "?"} → ${state.latestVersion ?? "?"}`)
   const initialHealth = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
-  const initialBootId = (initialHealth?.body as { readonly bootId?: string } | undefined)?.bootId
+  const initialBootId = stringField(initialHealth?.body, "bootId")
   const applyURL = `${baseUrl(port)}/v1/update/apply${options.alpha === true ? "?channel=alpha" : ""}`
   const apply = await deps.fetchJson(applyURL, { method: "POST" })
-  const accepted = (apply?.body as { readonly accepted?: boolean } | undefined)?.accepted
+  const accepted = field(apply?.body, "accepted")
   if (apply === undefined || accepted !== true) {
     deps.error("Server declined the update (a chat may be mid-turn); retry shortly")
     return 1
   }
   const updated = await waitFor(deps, 240, async () => {
     const info = await deps.fetchJson(`${baseUrl(port)}/v1/info`)
-    const version = (info?.body as { readonly version?: string } | undefined)?.version
+    const version = stringField(info?.body, "version")
     if (info === undefined || info.status !== 200) return false
     if (version === state.latestVersion) return true
 
     const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
-    const bootId = (health?.body as { readonly bootId?: string } | undefined)?.bootId
+    const bootId = stringField(health?.body, "bootId")
     const restarted =
       (initialBootId !== undefined && bootId !== undefined && bootId !== initialBootId) ||
       (state.currentVersion !== undefined && version !== state.currentVersion)
@@ -405,7 +397,7 @@ export const updateCommand = async (
     return (
       refreshed !== undefined &&
       refreshed.status === 200 &&
-      (refreshed.body as { readonly updateAvailable?: boolean }).updateAvailable === false
+      field(refreshed.body, "updateAvailable") === false
     )
   })
   if (!updated) {

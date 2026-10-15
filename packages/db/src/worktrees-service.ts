@@ -7,7 +7,7 @@ import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { worktreePath } from "./paths.js"
 import { archivedWorktreeFromRow, worktreeFromRow } from "./row-mappers.js"
-import type { ArchivedWorktreeRow, WorktreeRow } from "./rows.js"
+import { archivedWorktreeRows, worktreeRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -50,11 +50,13 @@ export const makeWorktreesService = (
       }),
     listWorktrees: (projectId) =>
       attempt("listWorktrees", () =>
-        (
-          sqlite
-            .prepare("select * from worktrees where project_id = ? order by created_at asc")
-            .all(canonicalUuid(projectId)) as ReadonlyArray<WorktreeRow>
-        ).map(worktreeFromRow)
+        worktreeRows
+          .all(
+            sqlite
+              .prepare("select * from worktrees where project_id = ? order by created_at asc")
+              .all(canonicalUuid(projectId))
+          )
+          .map(worktreeFromRow)
       ),
     deleteWorktree: (id) =>
       attempt("deleteWorktree", () => {
@@ -88,33 +90,35 @@ export const makeWorktreesService = (
             record.state
           )
         return archivedWorktreeFromRow(
-          sqlite
-            .prepare("select * from archived_worktrees where id = ?")
-            .get(id) as ArchivedWorktreeRow
+          archivedWorktreeRows.one(
+            sqlite.prepare("select * from archived_worktrees where id = ?").get(id)
+          )
         )
       }),
     findArchivedWorktree: (rawProjectId, serverId, originalName) =>
       attempt("findArchivedWorktree", () => {
-        const row = sqlite
-          .prepare(
-            `select * from archived_worktrees
+        const row = archivedWorktreeRows.maybe(
+          sqlite
+            .prepare(
+              `select * from archived_worktrees
              where project_id = ? collate nocase and server_id = ? and original_name = ?
              order by created_at desc limit 1`
-          )
-          .get(canonicalUuid(rawProjectId), serverId, originalName) as
-          | ArchivedWorktreeRow
-          | undefined
+            )
+            .get(canonicalUuid(rawProjectId), serverId, originalName)
+        )
         return row === undefined ? undefined : archivedWorktreeFromRow(row)
       }),
     listArchivedWorktrees: (rawProjectId) =>
       attempt("listArchivedWorktrees", () =>
-        (
-          sqlite
-            .prepare(
-              "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc"
-            )
-            .all(canonicalUuid(rawProjectId)) as ReadonlyArray<ArchivedWorktreeRow>
-        ).map(archivedWorktreeFromRow)
+        archivedWorktreeRows
+          .all(
+            sqlite
+              .prepare(
+                "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc"
+              )
+              .all(canonicalUuid(rawProjectId))
+          )
+          .map(archivedWorktreeFromRow)
       ),
     deleteArchivedWorktree: (id) =>
       attempt("deleteArchivedWorktree", () => {

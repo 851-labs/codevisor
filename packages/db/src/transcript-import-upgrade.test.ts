@@ -1,7 +1,10 @@
 import Database from "better-sqlite3"
+import { Schema } from "effect"
 import { expect, it, onTestFinished, vi } from "vitest"
 
+import { valueRows } from "./common-rows.js"
 import { makeDatabase } from "./index.js"
+import { parseJsonColumn } from "./json-column.js"
 import { run, tempDatabase } from "./test-support.js"
 import { seedImportedTranscript } from "./transcript-import-upgrade.js"
 import { readTranscriptText } from "./transcript-state.js"
@@ -32,11 +35,12 @@ it.each([1, 2])(
       "interrupted"
     )
     expect(interrupted).toHaveBeenCalledOnce()
-    const checkpoint = JSON.parse(
-      (
+    const checkpoint = parseJsonColumn(
+      Schema.Struct({ offset: Schema.Number }),
+      valueRows.one(
         raw
           .prepare("select value from instance_meta where key = 'transcript-import-cursor-v1'")
-          .get() as { value: string }
+          .get()
       ).value
     )
     expect(checkpoint.offset).toBe(1 + blocksPerCheckpoint * 8192)

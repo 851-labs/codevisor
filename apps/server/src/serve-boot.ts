@@ -24,6 +24,7 @@ import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-
 import type { ScreenSharingVNCConfig } from "./server-context-types.js"
 import { makeSimulators, systemSimulatorEnvironment, type Simulators } from "./simulators.js"
 import type { StartupReporter } from "./startup-progress.js"
+import { field, stringField } from "./unknown-values.js"
 
 export const SERVER_PROCESS_TITLE = "codevisor-server"
 export const nativeScreenSharing = (dataDir: string) =>
@@ -220,17 +221,16 @@ export const bundledBuildMetadata = (): {
   const metadataPath = join(dirname(fileURLToPath(import.meta.url)), "BUILD.json")
   if (!existsSync(metadataPath)) return {}
   try {
-    const value = JSON.parse(readFileSync(metadataPath, "utf8")) as {
-      readonly buildNumber?: unknown
-      readonly sourceRevision?: unknown
-    }
+    const value: unknown = JSON.parse(readFileSync(metadataPath, "utf8"))
+    const storedBuildNumber = field(value, "buildNumber")
+    const storedSourceRevision = stringField(value, "sourceRevision")
     const buildNumber =
-      typeof value.buildNumber === "number" && Number.isSafeInteger(value.buildNumber)
-        ? value.buildNumber
+      typeof storedBuildNumber === "number" && Number.isSafeInteger(storedBuildNumber)
+        ? storedBuildNumber
         : undefined
     const sourceRevision =
-      typeof value.sourceRevision === "string" && value.sourceRevision.length > 0
-        ? value.sourceRevision
+      storedSourceRevision !== undefined && storedSourceRevision.length > 0
+        ? storedSourceRevision
         : undefined
     return {
       ...(buildNumber === undefined ? {} : { buildNumber }),

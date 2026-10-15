@@ -1,12 +1,18 @@
 import type { SessionSummary, TranscriptBodyPage } from "@codevisor/api"
 import Database from "better-sqlite3"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { integer, rowReader } from "./row-reader.js"
 import { run, tempDatabase } from "./test-support.js"
 
+const StatePayload = Schema.Struct({
+  sessionUpdate: Schema.optional(Schema.String),
+  statePosition: Schema.Number
+})
 const payload = (entry: { payload: unknown }) =>
-  entry.payload as { sessionUpdate?: string; statePosition: number }
+  Schema.decodeUnknownSync(StatePayload)(entry.payload)
 const live = (event: { payload: unknown }) => payload(event).statePosition
 
 describe("persisted transcript state", () => {
@@ -197,17 +203,21 @@ describe("persisted transcript state", () => {
       )
     ).rejects.toThrow("simulated interruption")
     const check = new Database(filename)
-    const checkpoint = check
-      .prepare("select completed from backfill_jobs where id = 'persisted-transcript-state-v1'")
-      .get() as { completed: number }
+    const checkpoint = rowReader({ completed: integer }).one(
+      check
+        .prepare("select completed from backfill_jobs where id = 'persisted-transcript-state-v1'")
+        .get()
+    )
     expect(checkpoint.completed).toBeGreaterThanOrEqual(256)
     expect(checkpoint.completed).toBeLessThan(count)
     check.close()
     const migrated = await run(makeDatabase({ filename, serverId: "local" }))
     const verify = new Database(filename)
-    const stored = verify
-      .prepare("select sum(length(text)) as size from transcript_text_chunks where item_id = ?")
-      .get(itemId) as { size: number }
+    const stored = rowReader({ size: integer }).one(
+      verify
+        .prepare("select sum(length(text)) as size from transcript_text_chunks where item_id = ?")
+        .get(itemId)
+    )
     expect(stored.size).toBe(count * chunk.length)
     const job = verify
       .prepare(

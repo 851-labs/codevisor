@@ -15,7 +15,9 @@ import {
   type SharedCredentialVault,
   type ProviderOAuthHarness
 } from "@codevisor/harness-manager"
+import { Schema } from "effect"
 
+import { errorCode, field, isRecord } from "../unknown-values.js"
 import {
   makeOpenCode2Deps,
   makeOpenCode2Materializer,
@@ -26,20 +28,21 @@ import { providerDigest, providerSlot, type SharedProviderStore } from "./shared
 export const readProviderDocument = async (path: string): Promise<Record<string, unknown>> => {
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"))
-    if (value === null || typeof value !== "object" || Array.isArray(value))
-      throw new Error("Invalid credential file")
-    return value as Record<string, unknown>
+    if (!isRecord(value)) throw new Error("Invalid credential file")
+    return { ...value }
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return {}
+    if (errorCode(cause) === "ENOENT") return {}
     throw new Error("Saved provider credentials could not be read", { cause })
   }
 }
 
-interface Capability {
-  capability: string
-  slot: string
-  credentialId: string
-}
+const Capability = Schema.Struct({
+  capability: Schema.String,
+  slot: Schema.String,
+  credentialId: Schema.String
+})
+type Capability = typeof Capability.Type
+const isCapability = Schema.is(Capability)
 interface ManifestProvider {
   capability: string
   endpoint?: string
@@ -55,7 +58,7 @@ const linkResource = async (source: string, destination: string) => {
   try {
     await symlink(source, destination)
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+    if (errorCode(cause) !== "EEXIST") throw cause
   }
 }
 
@@ -101,10 +104,7 @@ export const makeSharedProviderRuntime = (options: {
     const rows = await store.records("opencode", profile)
     const shared = new Set(rows.map((row) => row.providerId))
     for (const [id, value] of Object.entries(document)) {
-      if (
-        !shared.has(id) &&
-        (value as { refresh?: unknown } | null)?.refresh === OPENCODE_MANAGED_REFRESH
-      )
+      if (!shared.has(id) && field(value, "refresh") === OPENCODE_MANAGED_REFRESH)
         delete document[id]
     }
     let dueAt = Number.POSITIVE_INFINITY
@@ -160,9 +160,9 @@ export const makeSharedProviderRuntime = (options: {
   ): Promise<Capability> => {
     const slot = providerSlot(harness, profile, row.providerId)
     const capKey = `cap:${providerDigest(slot)}`
-    const previous = (await store.local(capKey)) as Capability | undefined
+    const previous = await store.local(capKey)
     const cap: Capability =
-      previous?.credentialId === row.credential.id
+      isCapability(previous) && previous.credentialId === row.credential.id
         ? previous
         : {
             capability: randomBytes(32).toString("base64url"),
@@ -310,7 +310,7 @@ export const makeSharedProviderRuntime = (options: {
         runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = "false"
         return { ...base, env: runtimeEnv, unsetEnv }
       }
-      const managed = manifest.providers.xai!
+      const managed = manifest.providers.xai
       const curlConfig = join(root, "curl.conf")
       await script(
         curlConfig,
@@ -345,8 +345,8 @@ export const makeSharedProviderRuntime = (options: {
       const bearer = request.headers.authorization?.match(/^Bearer ([\w-]{43})$/)?.[1]
       const cap = (await store.localEntries())
         .filter((entry) => entry.key.startsWith("cap:"))
-        .map((entry) => entry.value as Capability | null)
-        .filter((value): value is Capability => value !== null && typeof value === "object")
+        .map((entry) => entry.value)
+        .filter(isCapability)
         .find((value) => value.capability === bearer)
       if (!bearer || !cap) {
         response.writeHead(401).end()
@@ -368,26 +368,22 @@ export const makeSharedProviderRuntime = (options: {
           }
           chunks.push(Buffer.from(chunk))
         }
-        let body: { rejectedAccessToken?: unknown; force?: unknown }
+        let body: unknown
         try {
-          body = JSON.parse(Buffer.concat(chunks).toString()) as typeof body
+          body = JSON.parse(Buffer.concat(chunks).toString())
         } catch {
           response.writeHead(400).end()
           return
         }
+        const rejectedAccessToken = field(body, "rejectedAccessToken")
         if (
-          !body ||
-          typeof body !== "object" ||
-          Array.isArray(body) ||
-          (body.rejectedAccessToken !== undefined && typeof body.rejectedAccessToken !== "string")
+          !isRecord(body) ||
+          (rejectedAccessToken !== undefined && typeof rejectedAccessToken !== "string")
         ) {
           response.writeHead(400).end()
           return
         }
-        let token = await vault.token(
-          row.credential,
-          body.rejectedAccessToken as string | undefined
-        )
+        let token = await vault.token(row.credential, rejectedAccessToken)
         if (body.force === true && row.harnessId === "grok-build")
           token = await vault.token(row.credential, token.accessToken)
         response.writeHead(200, { "Content-Type": "application/json" }).end(

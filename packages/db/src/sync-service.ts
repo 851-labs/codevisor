@@ -1,20 +1,21 @@
 import { mergeSyncEntries, type SyncEntryRecord } from "@codevisor/sync"
 
 import { attempt } from "./errors.js"
+import { integer, rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
-interface SyncRow {
-  readonly namespace: string
-  readonly key: string
-  readonly value: string
-  readonly deleted: number
-  readonly ts_wall: number
-  readonly ts_counter: number
-  readonly ts_device: string
-}
+const syncRows = rowReader({
+  namespace: text,
+  key: text,
+  value: text,
+  deleted: integer,
+  ts_wall: integer,
+  ts_counter: integer,
+  ts_device: text
+})
 
-const recordFromRow = (row: SyncRow): SyncEntryRecord => ({
+const recordFromRow = (row: ReturnType<typeof syncRows.one>): SyncEntryRecord => ({
   key: row.key,
   value: JSON.parse(row.value) as unknown,
   ...(row.deleted === 1 ? { deleted: true } : {}),
@@ -27,11 +28,11 @@ export const makeSyncService = (
   const { sqlite } = context
 
   const load = (namespace: string): ReadonlyArray<SyncEntryRecord> =>
-    (
-      sqlite
-        .prepare("select * from sync_entries where namespace = ? order by key")
-        .all(namespace) as Array<SyncRow>
-    ).map(recordFromRow)
+    syncRows
+      .all(
+        sqlite.prepare("select * from sync_entries where namespace = ? order by key").all(namespace)
+      )
+      .map(recordFromRow)
 
   return {
     getSyncEntries: (namespace) => attempt("getSyncEntries", () => load(namespace)),

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 
 import type { SharedTokenBundle } from "@codevisor/harness-manager"
@@ -108,7 +107,7 @@ export const makeSharedClaudeGateway = (options: {
         }
         response.writeHead(upstream.result.status)
         if (upstream.result.body)
-          await pipeline(Readable.fromWeb(upstream.result.body as never), response, {
+          await pipeline(upstream.result.body, response, {
             signal: abort.signal
           })
         else response.end()

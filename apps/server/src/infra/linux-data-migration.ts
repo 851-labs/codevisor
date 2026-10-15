@@ -16,6 +16,7 @@ import {
 } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
+import { errorCode } from "../unknown-values.js"
 import type { ServerDataLayout } from "./data-dir.js"
 import { acquireServerLease, type ServerLease } from "./server-lease.js"
 
@@ -31,7 +32,7 @@ const statIfPresent = async (path: string) => {
   try {
     return await lstat(path)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (errorCode(error) === "ENOENT") return undefined
     throw error
   }
 }
@@ -80,7 +81,7 @@ export const moveLinuxDataEntry = async (source: string, target: string): Promis
   try {
     await rename(source, target)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error
+    if (errorCode(error) !== "EXDEV") throw error
     const staging = `${target}.codevisor-migrating`
     await rm(staging, { recursive: true, force: true })
     await cp(source, staging, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true })
@@ -126,7 +127,7 @@ const updateService = async (options: MigrationOptions, source: string): Promise
       mode: stat.mode & 0o777
     })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    if (errorCode(error) !== "EEXIST") throw error
   }
   const temporary = `${path}.canonical-data.tmp`
   await writeFile(temporary, updated, { mode: stat.mode & 0o777 })

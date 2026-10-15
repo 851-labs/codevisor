@@ -1,13 +1,16 @@
 import {
+  BrowserCookieSnapshot,
+  BrowserNavigation,
   browserCookieKey,
   shareableBrowserURL,
   type BrowserCookieEntry,
-  type BrowserCookieMutation,
-  type BrowserCookieSnapshot,
-  type BrowserNavigation
+  type BrowserCookieMutation
 } from "@codevisor/api"
+import { Schema } from "effect"
 
+import { readInstanceMeta } from "./common-rows.js"
 import { attempt } from "./errors.js"
+import { parseJsonColumn } from "./json-column.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -54,11 +57,9 @@ export const makeBrowserStateService = ({
   CodevisorDatabaseService,
   "exchangeBrowserCookies" | "getBrowserNavigation" | "setBrowserNavigation"
 > => {
-  const read = (key: string): unknown => {
-    const row = sqlite.prepare("select value from instance_meta where key = ?").get(key) as
-      | { value: string }
-      | undefined
-    return row ? JSON.parse(row.value) : undefined
+  const read = <S extends Schema.Constraint>(key: string, schema: S): S["Type"] | undefined => {
+    const value = readInstanceMeta(sqlite, key)
+    return value === undefined ? undefined : parseJsonColumn(schema, value)
   }
   const write = (key: string, value: unknown) =>
     sqlite
@@ -71,7 +72,7 @@ export const makeBrowserStateService = ({
       attempt("exchangeBrowserCookies", () =>
         sqlite.transaction(() => {
           if (mutations.length > 20_000) throw new Error("Too many cookie changes")
-          const current = (read("browser-cookies-v1") as BrowserCookieSnapshot | undefined) ?? {
+          const current = read("browser-cookies-v1", BrowserCookieSnapshot) ?? {
             revision: 0,
             entries: []
           }
@@ -88,9 +89,8 @@ export const makeBrowserStateService = ({
         })()
       ),
     getBrowserNavigation: (paneId) =>
-      attempt(
-        "getBrowserNavigation",
-        () => read(`browser-navigation:${paneId}`) as BrowserNavigation | undefined
+      attempt("getBrowserNavigation", () =>
+        read(`browser-navigation:${paneId}`, BrowserNavigation)
       ),
     setBrowserNavigation: (paneId, navigation) =>
       attempt("setBrowserNavigation", () => {

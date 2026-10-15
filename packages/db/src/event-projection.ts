@@ -7,6 +7,7 @@ import {
   finishAssistantChatItem
 } from "./chat-items.js"
 import { projectChatOutput } from "./chat-output-projection.js"
+import { idRows, revisionRows } from "./common-rows.js"
 import { jsonRecord, type JsonRecord } from "./event-payloads.js"
 import type { SessionEventRow } from "./rows.js"
 import { projectSessionEventState } from "./session-event-state.js"
@@ -36,14 +37,14 @@ const resolveTerminalAssistant = (
   const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
   const currentItemId = chatState(sqlite, sessionId).current_item_id ?? undefined
   const latestStreamingItem = (): string | undefined =>
-    (
+    idRows.maybe(
       sqlite
         .prepare(
           `select id from chat_items
              where session_id = ? and role = 'assistant' and status = 'streaming'
              order by position desc limit 1`
         )
-        .get(sessionId) as { readonly id: string } | undefined
+        .get(sessionId)
     )?.id
   const itemId =
     (turnId === undefined ? undefined : chatRoute(sqlite, sessionId, `turn:${turnId}`)) ??
@@ -130,10 +131,10 @@ export const insertSessionEvent = (
     readonly chat_item_id?: string | null
   }
 ): SessionEventRow => {
-  const revision = (
+  const revision = revisionRows.one(
     sqlite
       .prepare("update sessions set revision = revision + 1 where id = ? returning revision")
-      .get(row.session_id) as { revision: number }
+      .get(row.session_id)
   ).revision
   const event: SessionEventRow = {
     ...row,

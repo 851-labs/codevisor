@@ -2,15 +2,19 @@ import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
+import { nameRows } from "./common-rows.js"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
+
+const tableColumns = (sqlite: Database.Database, table: string): ReadonlyArray<string> =>
+  nameRows
+    .all(sqlite.prepare(`select name from pragma_table_info(?)`).all(table))
+    .map((column) => column.name)
 
 const sqliteColumns = (filename: string, table: string): ReadonlyArray<string> => {
   const sqlite = new Database(filename)
   try {
-    return (sqlite.pragma(`table_info(${table})`) as ReadonlyArray<{ readonly name: string }>).map(
-      (column) => column.name
-    )
+    return tableColumns(sqlite, table)
   } finally {
     sqlite.close()
   }
@@ -83,8 +87,7 @@ describe("@codevisor/db project and archive upgrades", () => {
     expect(workspaces.find((w) => w.id === liveWorkspace.id)?.isArchived).toBe(false)
     expect(workspaces.find((w) => w.id === archivedWorkspace.id)?.isArchived).toBe(true)
 
-    const columns = (name: string) =>
-      (sqliteColumns(filename, name) as ReadonlyArray<string>).join(",")
+    const columns = (name: string) => sqliteColumns(filename, name).join(",")
     expect(columns("sessions")).not.toContain("is_archived")
     expect(columns("projects")).not.toContain("is_archived")
     expect(columns("workspaces")).not.toContain("archive_cascade_from")
@@ -129,23 +132,13 @@ describe("@codevisor/db project and archive upgrades", () => {
 
     const sqlite = new Database(filename)
     expect(
-      (
-        sqlite.prepare("select title_is_user_set from sessions where id = 'sess-1'").get() as {
-          title_is_user_set: number
-        }
-      ).title_is_user_set
-    ).toBe(1)
-    const workspaceColumns = (
-      sqlite.pragma("table_info(workspaces)") as ReadonlyArray<{ readonly name: string }>
-    ).map((column) => column.name)
+      sqlite.prepare("select title_is_user_set from sessions where id = 'sess-1'").get()
+    ).toEqual({ title_is_user_set: 1 })
+    const workspaceColumns = tableColumns(sqlite, "workspaces")
     expect(workspaceColumns).toContain("project_id")
     expect(workspaceColumns).not.toContain("folder_path")
     expect(workspaceColumns).not.toContain("symbol_name")
-    expect(
-      (sqlite.pragma("table_info(projects)") as ReadonlyArray<{ readonly name: string }>).map(
-        (column) => column.name
-      )
-    ).not.toContain("symbol_name")
+    expect(tableColumns(sqlite, "projects")).not.toContain("symbol_name")
     expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
     expect(
       sqlite
@@ -157,11 +150,9 @@ describe("@codevisor/db project and archive upgrades", () => {
         .prepare("select count(*) as count from events where kind = 'workspace.notes.updated'")
         .get()
     ).toEqual({ count: 0 })
-    expect(
-      (sqlite.pragma("table_info(sessions)") as ReadonlyArray<{ readonly name: string }>).map(
-        (column) => column.name
-      )
-    ).toEqual(expect.arrayContaining(["workspace_id", "config_selections"]))
+    expect(tableColumns(sqlite, "sessions")).toEqual(
+      expect.arrayContaining(["workspace_id", "config_selections"])
+    )
     expect(sqlite.pragma("foreign_key_check")).toEqual([])
     sqlite.close()
 

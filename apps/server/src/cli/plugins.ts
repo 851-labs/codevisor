@@ -1,5 +1,8 @@
 import { resolve } from "node:path"
 
+import { Schema } from "effect"
+
+import { stringField } from "../unknown-values.js"
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface PluginsCliDeps extends CliDeps {
@@ -8,67 +11,91 @@ export interface PluginsCliDeps extends CliDeps {
 
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 
-interface DiscoveredPlugin {
-  readonly id?: string
-  readonly name?: string
-  readonly version?: string
-  readonly description?: string
-  readonly panes?: ReadonlyArray<{ readonly title?: string; readonly type?: string }>
-  readonly tools?: ReadonlyArray<{ readonly name?: string; readonly description?: string }>
-  readonly installCommand?: string
-  readonly runCommand?: string
-  readonly alreadyInstalled?: boolean
-}
+const DiscoveredPlugin = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  panes: Schema.optional(
+    Schema.Array(
+      Schema.Struct({ title: Schema.optional(Schema.String), type: Schema.optional(Schema.String) })
+    )
+  ),
+  tools: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.optional(Schema.String),
+        description: Schema.optional(Schema.String)
+      })
+    )
+  ),
+  installCommand: Schema.optional(Schema.String),
+  runCommand: Schema.optional(Schema.String),
+  alreadyInstalled: Schema.optional(Schema.Boolean)
+})
 
-interface PluginSummary {
-  readonly enabled?: boolean
-  readonly id?: string
-  readonly name?: string
-  readonly version?: string
-  readonly source?: string
-  readonly state?: string
-}
+const PluginSummary = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  id: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String),
+  source: Schema.optional(Schema.String),
+  state: Schema.optional(Schema.String)
+})
 
-interface PluginUpdateStatus {
-  readonly pluginId: string
-  readonly installedVersion: string
-  readonly state: string
-  readonly registryVersion?: string
-  readonly reason?: string
-}
+const PluginList = Schema.Struct({ plugins: Schema.optional(Schema.Array(PluginSummary)) })
 
-interface PluginUpdateReview {
-  readonly version: string
-  readonly setupCommands: ReadonlyArray<string>
-  readonly runCommand: string
-  readonly requirements?: {
-    readonly executables?: ReadonlyArray<{
-      readonly name: string
-      readonly installHint?: string
-      readonly helpUrl?: string
-    }>
-  }
-}
+const PluginUpdateStatus = Schema.Struct({
+  pluginId: Schema.String,
+  installedVersion: Schema.String,
+  state: Schema.String,
+  registryVersion: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String)
+})
 
-interface PluginNamedChanges {
-  readonly added: ReadonlyArray<string>
-  readonly removed: ReadonlyArray<string>
-  readonly changed: ReadonlyArray<string>
-}
+const PluginUpdates = Schema.Struct({ updates: Schema.optional(Schema.Array(PluginUpdateStatus)) })
 
-interface PluginUpdatePlan {
-  readonly planId: string
-  readonly pluginId: string
-  readonly name: string
-  readonly resolvedCommit: string
-  readonly current: PluginUpdateReview
-  readonly candidate: PluginUpdateReview
-  readonly paneChanges: PluginNamedChanges
-  readonly toolChanges: PluginNamedChanges
-}
+const PluginUpdateReview = Schema.Struct({
+  version: Schema.String,
+  setupCommands: Schema.Array(Schema.String),
+  runCommand: Schema.String,
+  requirements: Schema.optional(
+    Schema.Struct({
+      executables: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            name: Schema.String,
+            installHint: Schema.optional(Schema.String),
+            helpUrl: Schema.optional(Schema.String)
+          })
+        )
+      )
+    })
+  )
+})
+type PluginUpdateReview = typeof PluginUpdateReview.Type
+
+const PluginNamedChanges = Schema.Struct({
+  added: Schema.Array(Schema.String),
+  removed: Schema.Array(Schema.String),
+  changed: Schema.Array(Schema.String)
+})
+type PluginNamedChanges = typeof PluginNamedChanges.Type
+
+const PluginUpdatePlan = Schema.Struct({
+  planId: Schema.String,
+  pluginId: Schema.String,
+  name: Schema.String,
+  resolvedCommit: Schema.String,
+  current: PluginUpdateReview,
+  candidate: PluginUpdateReview,
+  paneChanges: PluginNamedChanges,
+  toolChanges: PluginNamedChanges
+})
+type PluginUpdatePlan = typeof PluginUpdatePlan.Type
 
 const errorText = (body: unknown, fallback: string): string => {
-  const message = (body as { readonly error?: string } | undefined)?.error
+  const message = stringField(body, "error")
   return message === undefined || message === "" ? fallback : message
 }
 
@@ -97,7 +124,7 @@ export const pluginInstallCommand = async (
     deps.error(errorText(discovered.body, `Discovery failed (status ${discovered.status})`))
     return 1
   }
-  const plugin = discovered.body as DiscoveredPlugin
+  const plugin = Schema.decodeUnknownSync(DiscoveredPlugin)(discovered.body)
   deps.log(`${plugin.name ?? plugin.id} ${plugin.version ?? ""}`.trim())
   deps.log(`  id:      ${plugin.id}`)
   if (plugin.description !== undefined) deps.log(`  about:   ${plugin.description}`)
@@ -132,7 +159,7 @@ export const pluginInstallCommand = async (
     deps.error(errorText(imported.body, `Install failed (status ${imported.status})`))
     return 1
   }
-  const summary = imported.body as PluginSummary
+  const summary = Schema.decodeUnknownSync(PluginSummary)(imported.body)
   deps.log(`Installed ${summary.id} ${summary.version ?? ""}`.trim())
   return 0
 }
@@ -155,7 +182,7 @@ export const pluginLinkCommand = async (
     deps.error(errorText(linked.body, `Link failed (status ${linked.status})`))
     return 1
   }
-  const summary = linked.body as PluginSummary
+  const summary = Schema.decodeUnknownSync(PluginSummary)(linked.body)
   deps.log(`Linked ${summary.id} ${summary.version ?? ""}`.trim())
   return 0
 }
@@ -171,8 +198,7 @@ export const pluginListCommand = async (
     deps.error(errorText(response.body, `Listing plugins failed (status ${response.status})`))
     return 1
   }
-  const plugins =
-    (response.body as { readonly plugins?: ReadonlyArray<PluginSummary> }).plugins ?? []
+  const plugins = Schema.decodeUnknownSync(PluginList)(response.body).plugins ?? []
   if (plugins.length === 0) {
     deps.log("No plugins installed. Install one with: codevisor plugin install owner/repo")
     return 0
@@ -221,8 +247,7 @@ export const pluginUpdatesCommand = async (
     )
     return 1
   }
-  const updates =
-    (response.body as { readonly updates?: ReadonlyArray<PluginUpdateStatus> }).updates ?? []
+  const updates = Schema.decodeUnknownSync(PluginUpdates)(response.body).updates ?? []
   if (updates.length === 0) {
     deps.log("No plugin updates to report.")
     return 0
@@ -298,7 +323,7 @@ export const pluginUpdateCommand = async (
     deps.error(errorText(prepared.body, `Preparing update failed (status ${prepared.status})`))
     return 1
   }
-  const plan = prepared.body as PluginUpdatePlan
+  const plan = Schema.decodeUnknownSync(PluginUpdatePlan)(prepared.body)
   printUpdatePlan(deps, plan)
   deps.log("")
   if (options.yes !== true) {
@@ -317,7 +342,7 @@ export const pluginUpdateCommand = async (
     deps.error(errorText(applied.body, `Update failed (status ${applied.status})`))
     return 1
   }
-  const summary = applied.body as PluginSummary
+  const summary = Schema.decodeUnknownSync(PluginSummary)(applied.body)
   deps.log(`Updated ${summary.id} ${summary.version ?? ""}`.trim())
   return 0
 }
@@ -340,7 +365,7 @@ export const pluginRestoreCommand = async (
     deps.error(errorText(restored.body, `Restore failed (status ${restored.status})`))
     return 1
   }
-  const summary = restored.body as PluginSummary
+  const summary = Schema.decodeUnknownSync(PluginSummary)(restored.body)
   deps.log(`Restored ${summary.id} ${summary.version ?? ""}`.trim())
   return 0
 }

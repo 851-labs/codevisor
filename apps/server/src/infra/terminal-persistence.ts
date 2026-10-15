@@ -1,10 +1,31 @@
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import type { TerminalManagerService, TerminalSnapshot } from "@codevisor/terminal"
+import { TerminalServerFrame } from "@codevisor/api"
+import type { TerminalManagerService } from "@codevisor/terminal"
+import { Schema } from "effect"
 
 const SNAPSHOT_FILE = "terminal-buffers.json"
 export const PERIODIC_FLUSH_INTERVAL_MS = 30_000
+
+const TerminalSnapshot = Schema.Struct({
+  version: Schema.Literals([1, 2, 3]),
+  terminals: Schema.Array(
+    Schema.Struct({
+      terminalId: Schema.String,
+      sessionId: Schema.String,
+      nextOutputSeq: Schema.Number,
+      closed: Schema.Boolean,
+      external: Schema.Boolean,
+      screen: Schema.optionalKey(Schema.String),
+      cols: Schema.optionalKey(Schema.Number),
+      rows: Schema.optionalKey(Schema.Number),
+      exitCode: Schema.optionalKey(Schema.Number),
+      frames: Schema.optionalKey(Schema.Array(TerminalServerFrame))
+    })
+  )
+})
+const isTerminalSnapshot = Schema.is(TerminalSnapshot)
 
 export interface TerminalPersistenceOptions {
   readonly dataDir: string
@@ -42,13 +63,8 @@ export const makeTerminalPersistence = (
       unlinkSync(snapshotPath)
     } catch {}
     try {
-      const snapshot = JSON.parse(raw) as TerminalSnapshot
-      if (
-        (snapshot.version !== 1 && snapshot.version !== 2 && snapshot.version !== 3) ||
-        !Array.isArray(snapshot.terminals)
-      ) {
-        return
-      }
+      const snapshot: unknown = JSON.parse(raw)
+      if (!isTerminalSnapshot(snapshot)) return
       const total = snapshot.terminals.length
       options.onRestoreProgress?.(0, total)
       for (let index = 0; index < total; index += 32) {
@@ -81,9 +97,7 @@ export const makeTerminalPersistence = (
   let flushedRevision: number | undefined
   const startPeriodicFlush = (): void => {
     /* v8 ignore next */
-    const schedule =
-      options.setInterval ??
-      ((run: () => void, ms: number) => setInterval(run, ms) as unknown as { unref: () => void })
+    const schedule = options.setInterval ?? ((run: () => void, ms: number) => setInterval(run, ms))
     const timer = schedule(() => {
       const revision = options.terminal.outputRevision()
       if (revision === flushedRevision) return

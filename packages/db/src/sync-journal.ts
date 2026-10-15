@@ -1,8 +1,18 @@
 import type { EventEnvelope } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
+import { cursorRows, nameRows } from "./common-rows.js"
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
-import type { EventRow, SessionEventRow } from "./rows.js"
+import { integer, rowReader } from "./row-reader.js"
+import { eventRows, sessionEventRows } from "./rows.js"
+
+const bytesRows = rowReader({ bytes: integer })
+
+const journalSizeRows = rowReader({ sequence: integer, bytes: integer })
+
+const replaySizeRows = rowReader({ id: integer, bytes: integer })
+
+const floorRows = rowReader({ floor: integer })
 
 export interface SyncBatch {
   readonly events: ReadonlyArray<EventEnvelope>
@@ -21,14 +31,16 @@ export const trimSyncJournal = (
   sessionId?: string
 ): void => {
   const subject = sessionId === undefined ? "global" : `session:${sessionId}`
-  const state = db
-    .prepare(
-      `insert into sync_watermarks (subject_id, bytes) values (?, ?)
+  const state = bytesRows.one(
+    db
+      .prepare(
+        `insert into sync_watermarks (subject_id, bytes) values (?, ?)
     on conflict(subject_id) do update set bytes = bytes + excluded.bytes returning bytes`
-    )
-    .get(subject, addedBytes) as { bytes: number }
+      )
+      .get(subject, addedBytes)
+  )
   if (state.bytes <= maxJournalBytes && sequence % 64 !== 0) return
-  const rows = (
+  const rows = journalSizeRows.all(
     sessionId === undefined
       ? db
           .prepare(
@@ -40,7 +52,7 @@ export const trimSyncJournal = (
             "select revision as sequence, length(cast(payload as blob)) as bytes from session_events where session_id = ? order by revision desc limit ?"
           )
           .all(sessionId, maxJournalRows + 64)
-  ) as Array<{ sequence: number; bytes: number }>
+  )
   let bytes = 0
   let keep = 0
   let floor = 0
@@ -72,29 +84,22 @@ export const readSyncBatch = (
   db.transaction(() => {
     const subject = sessionId === undefined ? "global" : `session:${sessionId}`
     const floor =
-      (
-        db.prepare("select floor from sync_watermarks where subject_id = ?").get(subject) as
-          | { floor: number }
-          | undefined
+      floorRows.maybe(
+        db.prepare("select floor from sync_watermarks where subject_id = ?").get(subject)
       )?.floor ?? 0
     const cursor =
       sessionId === undefined
         ? Math.max(
             floor,
-            (
-              db.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
-                cursor: number
-              }
-            ).cursor
+            cursorRows.one(db.prepare("select coalesce(max(id), 0) as cursor from events").get())
+              .cursor
           )
-        : ((
-            db.prepare("select revision as cursor from sessions where id = ?").get(sessionId) as
-              | { cursor: number }
-              | undefined
+        : (cursorRows.maybe(
+            db.prepare("select revision as cursor from sessions where id = ?").get(sessionId)
           )?.cursor ?? 0)
     const reset = (): SyncBatch => ({ events: [], cursor, requiresSnapshot: true })
     if (since < floor || since > cursor) return reset()
-    const metadata = (
+    const metadata = replaySizeRows.all(
       sessionId === undefined
         ? db
             .prepare(
@@ -106,7 +111,7 @@ export const readSyncBatch = (
               "select revision as id, length(cast(payload as blob)) as bytes from session_events where session_id = ? and revision > ? order by revision limit ?"
             )
             .all(sessionId, since, maxReplayRows + 1)
-    ) as Array<{ id: number; bytes: number }>
+    )
     if (
       metadata.length > maxReplayRows ||
       metadata.reduce((sum, row) => sum + row.bytes, 0) > maxReplayBytes
@@ -114,28 +119,34 @@ export const readSyncBatch = (
       return reset()
     const events =
       sessionId === undefined
-        ? (
-            db
-              .prepare("select * from events where id > ? order by id limit ?")
-              .all(since, maxReplayRows) as EventRow[]
-          ).map(eventFromRow)
-        : (
-            db
-              .prepare(
-                "select * from session_events where session_id = ? and revision > ? order by revision limit ?"
-              )
-              .all(sessionId, since, maxReplayRows) as SessionEventRow[]
-          ).map(sessionEventFromRow)
+        ? eventRows
+            .all(
+              db
+                .prepare("select * from events where id > ? order by id limit ?")
+                .all(since, maxReplayRows)
+            )
+            .map(eventFromRow)
+        : sessionEventRows
+            .all(
+              db
+                .prepare(
+                  "select * from session_events where session_id = ? and revision > ? order by revision limit ?"
+                )
+                .all(sessionId, since, maxReplayRows)
+            )
+            .map(sessionEventFromRow)
     return { events, cursor, requiresSnapshot: false }
   })()
 
 export const activateSyncJournals = (db: Database.Database): void => {
-  const global = (
-    db.prepare("select coalesce(max(id), 0) as cursor from events").get() as { cursor: number }
+  const global = cursorRows.one(
+    db.prepare("select coalesce(max(id), 0) as cursor from events").get()
   ).cursor
-  for (const row of db
-    .prepare("select name from sqlite_master where type = 'trigger' and name glob 'navigation_*'")
-    .all() as Array<{ name: string }>) {
+  for (const row of nameRows.all(
+    db
+      .prepare("select name from sqlite_master where type = 'trigger' and name glob 'navigation_*'")
+      .all()
+  )) {
     db.exec(`drop trigger "${row.name.replaceAll('"', '""')}"`)
   }
   db.exec(`

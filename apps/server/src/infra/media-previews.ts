@@ -7,6 +7,7 @@ import { Worker } from "node:worker_threads"
 import ffmpeg from "ffmpeg-static"
 import sharp from "sharp"
 
+import { errorCode } from "../unknown-values.js"
 import { trimMediaPreviewCache } from "./media-preview-cache.js"
 
 const inFlight = new Map<string, Promise<Buffer>>()
@@ -96,7 +97,7 @@ export const mediaPreview = async (
   try {
     return await readFile(target)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    if (errorCode(error) !== "ENOENT") throw error
   }
   const existing = inFlight.get(target)
   if (existing !== undefined) return existing

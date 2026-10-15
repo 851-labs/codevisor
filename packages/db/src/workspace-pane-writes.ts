@@ -2,7 +2,7 @@ import { isoTimestamp } from "@codevisor/api"
 import type { UpdateWorkspacePaneRequest, UpsertWorkspacePaneRequest } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
-import { nextPanePositionIn } from "./pane-position.js"
+import { nextPanePositionIn, panePositionRows } from "./pane-position.js"
 import type { WorkspacePaneRow } from "./rows.js"
 
 export const discardConflictingPanes = (
@@ -12,15 +12,15 @@ export const discardConflictingPanes = (
   resourceId: string,
   targetWorkspaceId: string
 ): string | undefined => {
-  const replaced = sqlite
-    .prepare(
-      `select min(position) as position from workspace_panes
+  const replaced = panePositionRows.one(
+    sqlite
+      .prepare(
+        `select min(position) as position from workspace_panes
          where id <> ? and resource_kind = ? and resource_id = ? and workspace_id = ?
            and position <> ''`
-    )
-    .get(paneId, resourceKind, resourceId, targetWorkspaceId) as
-    | { readonly position: string | null }
-    | undefined
+      )
+      .get(paneId, resourceKind, resourceId, targetWorkspaceId)
+  )
   sqlite
     .prepare(
       `delete from workspace_panes
@@ -28,7 +28,7 @@ export const discardConflictingPanes = (
            and (workspace_id = ? or ? = 'session')`
     )
     .run(paneId, resourceKind, resourceId, targetWorkspaceId, resourceKind)
-  return replaced?.position ?? undefined
+  return replaced.position ?? undefined
 }
 
 const sameResource = `workspace_panes.resource_kind is excluded.resource_kind

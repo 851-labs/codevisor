@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 
+import { pendingQuestionRows } from "./common-rows.js"
 import {
   jsonRecord,
   parseJsonRecord,
@@ -45,9 +46,9 @@ const projectPendingQuestion = (
     update === "question_resolved" &&
     typeof payload.questionId === "string"
   ) {
-    const current = sqlite
-      .prepare("select pending_question from sessions where id = ?")
-      .get(sessionId) as { readonly pending_question: string | null }
+    const current = pendingQuestionRows.one(
+      sqlite.prepare("select pending_question from sessions where id = ?").get(sessionId)
+    )
     const projected =
       current.pending_question === null ? undefined : parseJsonRecord(current.pending_question)
     if (projected?.questionId === payload.questionId) {

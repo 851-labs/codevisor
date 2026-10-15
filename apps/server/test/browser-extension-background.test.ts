@@ -58,7 +58,11 @@ class FakeWebSocket {
   }
 
   private async emit(type: string) {
-    const property = this[`on${type}` as "onmessage" | "onclose" | "onerror"]
+    const property = new Map([
+      ["message", this.onmessage],
+      ["close", this.onclose],
+      ["error", this.onerror]
+    ]).get(type)
     await Promise.all([
       property?.(),
       ...[...(this.listeners.get(type) ?? [])].map((listener) => listener())

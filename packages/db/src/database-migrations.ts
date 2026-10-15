@@ -4,7 +4,10 @@ import { runBlockingDataUpgrades } from "./data-upgrades.js"
 import { migrations } from "./migrations.js"
 import { installNavigationJournal } from "./navigation-journal.js"
 import { migrateProjectLocationState } from "./project-location-state.js"
+import { integer, rowReader } from "./row-reader.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
+
+const schemaMigrationRows = rowReader({ id: integer })
 
 const loadAppliedMigrations = (sqlite: Database.Database): Set<number> => {
   sqlite.exec(
@@ -14,7 +17,7 @@ const loadAppliedMigrations = (sqlite: Database.Database): Set<number> => {
     sqlite
       .prepare("select id from schema_migrations")
       .all()
-      .map((row) => (row as { readonly id: number }).id)
+      .map((row) => schemaMigrationRows.one(row).id)
   )
 }
 
@@ -49,8 +52,8 @@ const initializeUpdateState = (sqlite: Database.Database): void => {
 }
 
 const validateSchemaAndResetAdoption = (sqlite: Database.Database): void => {
-  const violations = sqlite.pragma("foreign_key_check") as ReadonlyArray<unknown>
-  if (violations.length > 0) {
+  const violations = sqlite.pragma("foreign_key_check")
+  if (Array.isArray(violations) && violations.length > 0) {
     throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
   }
   sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()

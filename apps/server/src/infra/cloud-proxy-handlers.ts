@@ -228,7 +228,11 @@ export const wsChannelHandler =
       queued.length = 0
     })
     socket.on("message", (data, isBinary) => {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+      const bytes = Array.isArray(data)
+        ? Buffer.concat(data)
+        : data instanceof ArrayBuffer
+          ? Buffer.from(data)
+          : data
       for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : bytes.toString())) {
         channel.send(frame)
       }

@@ -1,4 +1,7 @@
-import type { SessionSidebarState, SessionSummary } from "@codevisor/api"
+import { SessionOrigin, SessionSidebarState, type SessionSummary } from "@codevisor/api"
+import { Schema } from "effect"
+
+import { integer, literal, nullable, optional, real, rowReader, text } from "./row-reader.js"
 
 export interface SessionRow {
   readonly id: string
@@ -60,3 +63,64 @@ export interface PromptQueueRow {
   readonly position: number
   readonly client_id?: string | null
 }
+
+export const sessionRows = rowReader<SessionRow>({
+  id: text,
+  project_id: text,
+  server_id: text,
+  harness_id: text,
+  harness_account_id: nullable(text),
+  agent_session_id: nullable(text),
+  title: text,
+  title_is_user_set: integer,
+  origin: Schema.is(SessionOrigin),
+  worktree_name: nullable(text),
+  workspace_id: nullable(text),
+  created_at: text,
+  updated_at: nullable(text),
+  sidebar_state: Schema.is(SessionSidebarState),
+  sidebar_state_changed_at: text,
+  usage_used: nullable(integer),
+  usage_size: nullable(integer),
+  input_tokens: nullable(integer),
+  cached_input_tokens: nullable(integer),
+  output_tokens: nullable(integer),
+  reasoning_output_tokens: nullable(integer),
+  total_tokens: nullable(integer),
+  cost_amount: nullable(real),
+  cost_currency: nullable(text),
+  cost_kind: nullable(literal("reported", "estimated")),
+  pending_question: nullable(text),
+  background_tasks: text,
+  session_plan: nullable(text),
+  config_selections: text,
+  unavailable_config_selections: text,
+  attention_latest_sequence: integer,
+  attention_last_seen_sequence: integer,
+  attention_unread_count: integer,
+  attention_has_unread_error: integer,
+  attention_manually_unread: integer,
+  pending_plan_approval: integer,
+  parent_session_id: optional(nullable(text)),
+  labels: optional(nullable(text))
+})
+
+export const sessionActionRows = rowReader<SessionActionRow>({
+  session_id: text,
+  client_action_id: text,
+  action_kind: text,
+  response: text,
+  created_at: text
+})
+
+export const promptQueueRows = rowReader<PromptQueueRow>({
+  id: text,
+  session_id: text,
+  text,
+  created_at: text,
+  updated_at: text,
+  attachments: nullable(text),
+  state: literal("pending", "processing"),
+  position: integer,
+  client_id: optional(nullable(text))
+})

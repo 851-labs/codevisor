@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
@@ -113,6 +114,10 @@ describe("mcp readiness mapping", () => {
   })
 })
 
+const Readiness = Schema.Struct({
+  servers: Schema.Array(Schema.Struct({ name: Schema.String, state: Schema.String }))
+})
+
 describe("publishMcpReadiness", () => {
   it("publishes one single-writer entry per machine, only on change", async () => {
     const { services } = await makeServices("ready-host")
@@ -122,9 +127,7 @@ describe("publishMcpReadiness", () => {
     const first = await publishMcpReadiness(deps)
     expect(first.changedEntries).toHaveLength(1)
     expect(first.changedEntries[0]?.key).toBe("ready-host")
-    const value = first.changedEntries[0]?.value as {
-      servers: Array<{ name: string; state: string }>
-    }
+    const value = Schema.decodeUnknownSync(Readiness)(first.changedEntries[0]?.value)
     expect(value.servers.map((s) => s.name)).toContain("Computer Use")
     expect(value.servers.map((s) => s.name)).toEqual(
       value.servers.map((s) => s.name).toSorted((a, b) => a.localeCompare(b))
@@ -144,9 +147,7 @@ describe("publishMcpReadiness", () => {
     )
     const second = await publishMcpReadiness(deps)
     expect(second.changedEntries).toHaveLength(1)
-    const updated = second.changedEntries[0]?.value as {
-      servers: Array<{ name: string; state: string; reason?: string }>
-    }
+    const updated = Schema.decodeUnknownSync(Readiness)(second.changedEntries[0]?.value)
     expect(updated.servers.find((s) => s.name === target)?.state).toBe("disabled")
     const document = await run(services.db.getSyncEntries(MCP_READINESS_NAMESPACE))
     expect(document).toHaveLength(1)

@@ -1,4 +1,7 @@
-import type { HarnessAccount, HarnessAuthState } from "@codevisor/api"
+import { HarnessAccount, HarnessAuthState } from "@codevisor/api"
+import { Schema } from "effect"
+
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 
 export interface HarnessAccountRow {
   readonly id: string
@@ -53,3 +56,23 @@ export interface UpdateHarnessAccountAuthRequest {
   readonly lastCheckedAt?: string
   readonly detail?: string | null
 }
+
+export const harnessAccountRows = rowReader<HarnessAccountRow>({
+  id: text,
+  harness_id: text,
+  profile_kind: Schema.is(HarnessAccount.fields.profileKind),
+  profile_key: nullable(text),
+  label: text,
+  email: nullable(text),
+  organization_id: nullable(text),
+  auth_method: nullable(text),
+  auth_state: Schema.is(HarnessAuthState),
+  can_login: integer,
+  can_logout: integer,
+  last_checked_at: nullable(text),
+  detail: nullable(text),
+  created_at: text,
+  updated_at: text,
+  removed_at: nullable(text),
+  is_active: integer
+})

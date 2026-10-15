@@ -1,6 +1,8 @@
+import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
+import { field } from "../unknown-values.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 
 const makeMachine = async (serverId: string, nowMs: number) => {
@@ -16,13 +18,8 @@ const makeMachine = async (serverId: string, nowMs: number) => {
 
 type Machine = Awaited<ReturnType<typeof makeMachine>>
 
-const gossip = async (from: { changedEntries: ReadonlyArray<unknown> }, to: Machine) => {
-  await run(
-    to.db.mergeSyncEntries(
-      MCPS_SYNC_NAMESPACE,
-      from.changedEntries as Parameters<typeof to.db.mergeSyncEntries>[1]
-    )
-  )
+const gossip = async (from: { changedEntries: ReadonlyArray<SyncEntryRecord> }, to: Machine) => {
+  await run(to.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, from.changedEntries))
 }
 
 const serverNamed = async (machine: Machine, name: string) => {
@@ -40,7 +37,7 @@ const oauthMaterial = (token: string, savedAt: number) =>
 const scopedEnvelopeOwner = async (machine: Machine) => {
   const entries = await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
   const scoped = entries.find((entry) => entry.key === "Scoped")
-  return (scoped!.value as { oauth?: { owner?: string } }).oauth?.owner
+  return field(field(scoped?.value, "oauth"), "owner")
 }
 
 describe("config sync hardening", () => {
