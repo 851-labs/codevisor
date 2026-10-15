@@ -36,6 +36,9 @@ export const machineRow = (overrides: Partial<MachineRow> = {}): MachineRow => (
   peer_aware: 0,
   tunnel_endpoint_id: null,
   tunnel_addr: null,
+  display_name: null,
+  icon: null,
+  reported_icon: null,
   added_by_device_id: null,
   added_by_name: null,
   ...overrides

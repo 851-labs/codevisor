@@ -247,8 +247,8 @@ struct CloudAccountControllerTests {
     #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
   }
 
-  @Test("Rename applies optimistically, calls the server, and refreshes")
-  func renameMachine() async throws {
+  @Test("Editing a machine applies its name and icon optimistically, calls the server, and refreshes")
+  func updateMachine() async throws {
     let client = FakeCloudClient()
     client.verifyResult = .success("t")
     client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
@@ -256,13 +256,17 @@ struct CloudAccountControllerTests {
     let (controller, _, _) = makeController(client: client)
     await controller.completeSignIn(ott: "ott")
 
-    client.machinesResult = .success([testMachine("m1", name: "Studio")])
-    await controller.rename(deviceId: "m1", name: "  Studio  ")
+    var edited = testMachine("m1", name: "Studio")
+    edited.icon = "macstudio"
+    client.machinesResult = .success([edited])
+    await controller.updateMachine(deviceId: "m1", name: "  Studio  ", icon: "macstudio")
 
-    #expect(client.renames.count == 1)
-    #expect(client.renames.first?.deviceId == "m1")
-    #expect(client.renames.first?.name == "Studio")
+    #expect(client.machineUpdates.count == 1)
+    #expect(client.machineUpdates.first?.deviceId == "m1")
+    #expect(client.machineUpdates.first?.name == "Studio")
+    #expect(client.machineUpdates.first?.icon == "macstudio")
     #expect(controller.machines.first?.name == "Studio")
+    #expect(controller.machines.first?.icon == "macstudio")
   }
 
   @Test("Remove drops the machine optimistically and on the server")

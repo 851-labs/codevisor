@@ -43,7 +43,14 @@ describe("connection lifecycle", () => {
     connect(h)
     const hello = h.sockets[0]!.hello()
     expect(hello.device.os).toBeUndefined()
+    expect(hello.device.icon).toBeUndefined()
     expect(hello.device.appVersion).toBeUndefined()
+  })
+
+  it("reports the machine's guessed icon in its hello", () => {
+    const h = harness({ device: { name: "studio", icon: "macstudio" } })
+    connect(h)
+    expect(h.sockets[0]!.hello().device.icon).toBe("macstudio")
   })
 
   it("reconnects with jittered backoff and resets attempts on welcome", () => {

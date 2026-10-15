@@ -23,6 +23,7 @@ export const CloudDeviceInfo = Schema.Struct({
   kind: CloudDeviceKind,
   name: Schema.String,
   os: Schema.optional(Schema.String),
+  icon: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
   serverId: Schema.optional(Schema.String),
@@ -35,6 +36,7 @@ export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
 export const CloudMachinePresence = Schema.Struct({
   deviceId: Schema.String,
   name: Schema.String,
+  icon: Schema.optional(Schema.String),
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,

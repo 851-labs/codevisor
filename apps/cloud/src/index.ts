@@ -6,6 +6,7 @@ import { createAuth } from "./auth.js"
 import { credentialRoutes, verifyMachineKey } from "./credential-routes.js"
 import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
+import { isMachineIcon, type MachineUpdate } from "./hub-registry.js"
 import { relayMap } from "./hub-tunnel.js"
 import { hubLocationHint } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
@@ -144,18 +145,46 @@ app.get("/api/machines", async (c) => {
   return c.json({ machines: await hub(c.env, userId, c.req.raw.cf).listMachines() })
 })
 
+const machineName = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const name = value.trim()
+  return name.length === 0 || name.length > 120 ? undefined : name
+}
+
+const parseMachineUpdate = (body: unknown): MachineUpdate | undefined => {
+  if (typeof body !== "object" || body === null) return undefined
+  const fields = body as { name?: unknown; icon?: unknown }
+  const name = fields.name === undefined ? undefined : machineName(fields.name)
+  if (fields.name !== undefined && name === undefined) return undefined
+  if (fields.icon !== undefined && !isMachineIcon(fields.icon)) return undefined
+  if (name === undefined && fields.icon === undefined) return undefined
+  return {
+    ...(name === undefined ? {} : { name }),
+    ...(fields.icon === undefined ? {} : { icon: fields.icon })
+  }
+}
+
+app.patch("/api/machines/:deviceId", async (c) => {
+  const userId = await sessionUserId(c.env, c.req.raw.headers)
+  if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
+  const update = parseMachineUpdate(await c.req.json<unknown>().catch(() => undefined))
+  if (update === undefined) return c.json({ error: "invalid machine update" }, 400)
+  const updated = await hub(c.env, userId, c.req.raw.cf).updateMachine(
+    c.req.param("deviceId"),
+    update
+  )
+  return updated ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
+})
+
 app.post("/api/machines/:deviceId/rename", async (c) => {
   const userId = await sessionUserId(c.env, c.req.raw.headers)
   if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
-  const body = await c.req.json<{ name?: string }>().catch(() => ({ name: undefined }))
-  const name = body.name?.trim()
-  if (name === undefined || name.length === 0 || name.length > 120) {
-    return c.json({ error: "invalid name" }, 400)
-  }
-  const renamed = await hub(c.env, userId, c.req.raw.cf).renameMachine(
-    c.req.param("deviceId"),
+  const body = await c.req.json<{ name?: unknown }>().catch(() => ({ name: undefined }))
+  const name = machineName(body.name)
+  if (name === undefined) return c.json({ error: "invalid name" }, 400)
+  const renamed = await hub(c.env, userId, c.req.raw.cf).updateMachine(c.req.param("deviceId"), {
     name
-  )
+  })
   return renamed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 

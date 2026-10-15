@@ -248,7 +248,20 @@ extension MachineController {
   }
 
   public var machines: [CodevisorMachine] {
-    includesLocalMachine ? [CodevisorMachine.local] : []
+    guard includesLocalMachine else { return [] }
+    var local = CodevisorMachine.local
+    if let presence = localCloudMachine {
+      local.name = presence.name
+      local.icon = presence.icon
+    }
+    return [local]
+  }
+
+  public var localCloudMachine: CloudMachine? {
+    guard let deviceId = statusByMachineId[CodevisorMachine.local.id]?.cloudDeviceId,
+      let cloudProvider, cloudProvider.isCloudSignedIn
+    else { return nil }
+    return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
   }
 
   public func machine(for id: String) -> CodevisorMachine? {

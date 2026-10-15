@@ -85,6 +85,39 @@ describe("hub presence", () => {
     expect(missing.status).toBe(404)
   })
 
+  it("keeps a machine's edited name and icon over the one it reports when it reconnects", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "vps-edit", undefined, { icon: "laptopcomputer" })
+    const update = (body: unknown) =>
+      SELF.fetch(`${BASE}/api/machines/${machine.deviceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", ...authed(token) },
+        body: JSON.stringify(body)
+      })
+    const listed = async (): Promise<CloudMachinePresence | undefined> => {
+      const response = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
+      const { machines } = await readJson(response, MachinesBody)
+      return machines.find((m) => m.deviceId === machine.deviceId)
+    }
+    expect(await listed()).toMatchObject({ name: "vps-edit", icon: "laptopcomputer" })
+
+    expect((await update({ name: " Build box ", icon: "server.rack" })).status).toBe(200)
+    expect(await listed()).toMatchObject({ name: "Build box", icon: "server.rack" })
+
+    await disconnect(token, machine.socket, "restart")
+    await connectMachine(token, "vps-edit", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      icon: "laptopcomputer"
+    })
+    expect(await listed()).toMatchObject({ name: "Build box", icon: "server.rack" })
+
+    expect((await update({ icon: "../etc" })).status).toBe(400)
+    expect((await update({ icon: null })).status).toBe(400)
+    expect((await update({ name: "" })).status).toBe(400)
+    expect((await update({})).status).toBe(400)
+  })
+
   it("closes connections that speak an unsupported protocol", async () => {
     const token = await devLogin()
     const socket = await connectSocket(authed(token))

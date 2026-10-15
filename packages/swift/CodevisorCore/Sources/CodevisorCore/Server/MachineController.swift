@@ -173,7 +173,7 @@ public final class MachineController {
         .values
         .compactMap(\.cloudDeviceId)
     )
-    let knownNames = Set(machines.map(\.name))
+    let knownNames: Set<String> = includesLocalMachine ? [CodevisorMachine.local.name] : []
     return cloudProvider.cloudMachines.filter {
       !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
     }

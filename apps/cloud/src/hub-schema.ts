@@ -42,7 +42,10 @@ export const HUB_MIGRATIONS: readonly string[] = [
      device_id TEXT PRIMARY KEY,
      added_by_device_id TEXT NOT NULL,
      added_by_name TEXT NOT NULL
-   )`
+   )`,
+  `ALTER TABLE machines ADD COLUMN display_name TEXT;
+   ALTER TABLE machines ADD COLUMN icon TEXT;
+   ALTER TABLE machines ADD COLUMN reported_icon TEXT`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {
@@ -57,6 +60,9 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   peer_aware: number
   tunnel_endpoint_id: string | null
   tunnel_addr: string | null
+  display_name: string | null
+  icon: string | null
+  reported_icon: string | null
   added_by_device_id: string | null
   added_by_name: string | null
 }
@@ -78,16 +84,20 @@ const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
   FROM machines LEFT JOIN machine_origins USING (device_id)`
 
 export const machineRows = (sql: SqlStorage): MachineRow[] =>
-  sql.exec<MachineRow>(`${MACHINE_SELECT} ORDER BY name, device_id`).toArray()
+  sql
+    .exec<MachineRow>(`${MACHINE_SELECT} ORDER BY COALESCE(display_name, name), device_id`)
+    .toArray()
 
 export const machineRow = (sql: SqlStorage, deviceId: string): MachineRow | undefined =>
   sql.exec<MachineRow>(`${MACHINE_SELECT} WHERE device_id = ?`, deviceId).toArray()[0]
 
 export const machinePresence = (row: MachineRow, online: boolean): CloudMachinePresence => {
   const tunnel = machineTunnel(row.tunnel_endpoint_id, row.tunnel_addr)
+  const icon = row.icon ?? row.reported_icon
   return {
     deviceId: row.device_id,
-    name: row.name,
+    name: row.display_name ?? row.name,
+    ...(icon == null ? {} : { icon }),
     ...(row.os !== null ? { os: row.os } : {}),
     ...(row.app_version !== null ? { appVersion: row.app_version } : {}),
     publicKey: row.public_key,

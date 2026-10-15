@@ -136,7 +136,7 @@ export const harness = (
   overrides: {
     handlers?: Record<string, (channel: IncomingChannel) => void>
     credentials?: typeof credentials
-    device?: { name: string; os?: string; appVersion?: string; serverId?: string }
+    device?: { name: string; os?: string; icon?: string; appVersion?: string; serverId?: string }
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
     relayCoalesceMs?: number

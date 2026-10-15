@@ -26,7 +26,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.20.3",
+    "@cloudflare/vitest-plugin": "1.4.2",
     "@tailwindcss/cli": "4.3.3",
     "drizzle-kit": "0.31.10",
     "tailwindcss": "4.3.3",

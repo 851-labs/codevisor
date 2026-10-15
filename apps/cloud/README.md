@@ -43,7 +43,7 @@ dev`, local D1 + DOs persisted under `tmp/wrangler`) with `DEV_AUTH=1`:
 
 Standalone: `bun run --cwd apps/cloud dev`, tests with
 `bun run --cwd apps/cloud test` (they run in workerd via
-`@cloudflare/vitest-pool-workers` — real D1, real Durable Objects).
+`@cloudflare/vitest-plugin` — real D1, real Durable Objects).
 
 ## Machine login flow
 

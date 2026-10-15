@@ -35,7 +35,12 @@ struct MachineControllerCloudTests {
 
   private func makeRegisteredLocal(
     deviceId: String
-  ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
+  ) -> (
+    controller: MachineController,
+    projectList: ProjectListModel,
+    provider: FakeCloudProvider,
+    localTransport: FakeRelayRequestTransport
+  ) {
     let localTransport = FakeRelayRequestTransport()
     localTransport.responsesByPath["/v1/info"] = """
       {"id":"local","name":"Local","kind":"local","version":"1.0.0",
@@ -51,13 +56,14 @@ struct MachineControllerCloudTests {
           webSocketTransport: UnusedWebSocketTransport()
         ))
     }
-    return makeController(provider: provider, clientFactory: factory)
+    let (controller, projectList, _) = makeController(provider: provider, clientFactory: factory)
+    return (controller, projectList, provider, localTransport)
   }
 
   @Test("This Mac's own cloud registration is hidden by device id, then name")
   func dedup() async throws {
     let deviceId = "dev-this-mac"
-    let (controller, _, provider) = makeRegisteredLocal(deviceId: deviceId)
+    let (controller, _, provider, _) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [
       makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)"),
       makeCloudMachine(deviceId: "dev-name-clash", name: CodevisorMachine.local.name),
@@ -72,10 +78,33 @@ struct MachineControllerCloudTests {
     #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-only"])
   }
 
+  @Test("This Mac keeps its edited name and icon, even while its server is unreachable")
+  func localMachineAdoptsCloudEdits() async throws {
+    let deviceId = "dev-edited-mac"
+    let (controller, _, provider, localTransport) = makeRegisteredLocal(deviceId: deviceId)
+    var registration = makeCloudMachine(deviceId: deviceId, name: "Studio Desk")
+    registration.icon = "macstudio"
+    provider.cloudMachines = [registration]
+    #expect(controller.machines.first?.name == CodevisorMachine.local.name)
+
+    await controller.refreshStatus(for: "local")
+
+    #expect(controller.machines.first?.name == "Studio Desk")
+    #expect(controller.machines.first?.icon == "macstudio")
+    #expect(controller.allMachines.map(\.id) == ["local"])
+
+    localTransport.responsesByPath["/v1/info"] = nil
+    await controller.refreshStatus(for: "local")
+
+    #expect(controller.statusByMachineId["local"]?.isReachable == false)
+    #expect(controller.machines.first?.name == "Studio Desk")
+    #expect(controller.allMachines.map(\.id) == ["local"])
+  }
+
   @Test("This Mac's probe prunes records under its cloud twin id")
   func probePrunesCloudTwinRecords() async throws {
     let deviceId = "dev-twin"
-    let (controller, projectList, provider) = makeRegisteredLocal(deviceId: deviceId)
+    let (controller, projectList, provider, _) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)")]
 
     let twinId = "cloud:\(deviceId)"
