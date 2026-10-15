@@ -44,46 +44,51 @@ struct MachineControllerAttentionSyncTests {
       State(sidebar: .errored, latest: 2, seen: 1, unread: 1, error: true),
       State(sidebar: .idle, latest: 2, seen: 2),
     ]
-    for (index, state) in states.enumerated() {
-      let payload: JSONValue = .object([
-        "id": .string(background.id.uuidString),
-        "projectId": .string(project.id.uuidString),
-        "serverId": .string("local"),
-        "title": .string(background.title),
-        "harnessId": .string("codex"),
-        "origin": .string("codevisor"),
-        "isArchived": .bool(false),
-        "createdAt": .string("2026-09-15T00:00:00.000Z"),
-        "sidebarState": .string(state.sidebar.rawValue),
-        "sidebarStateChangedAt": .string("2026-09-15T00:00:0\(index).000Z"),
-        "latestAttentionSequence": .number(Double(state.latest)),
-        "lastSeenAttentionSequence": .number(Double(state.seen)),
-        "unreadCount": .number(Double(state.unread)),
-        "hasUnreadError": .bool(state.error),
-        "actionRequired": .bool(state.action),
-        "pendingPlanApproval": .bool(state.plan),
-      ])
-      fake.emit(kind: "session.attention.updated", subjectId: background.id.uuidString, payload: payload)
-      for client in clients {
-        await client.applied.wait(for: index + 1)
-        let session = try #require(client.model.sessions.first { $0.id == background.id })
-        #expect(session.serverId == serverId)
-        #expect(session.sidebarState == state.sidebar)
-        #expect(session.unreadCount == state.unread)
-        #expect(session.hasUnreadError == state.error)
-        #expect(session.actionRequired == state.action)
-        #expect(session.pendingPlanApproval == state.plan)
-        #expect(session.lastSeenAttentionSequence == state.seen)
-        #expect(client.coordinator.focusedSession?.sessionId == foreground.id)
+    do {
+      for (index, state) in states.enumerated() {
+        let payload: JSONValue = .object([
+          "id": .string(background.id.uuidString),
+          "projectId": .string(project.id.uuidString),
+          "serverId": .string("local"),
+          "title": .string(background.title),
+          "harnessId": .string("codex"),
+          "origin": .string("codevisor"),
+          "isArchived": .bool(false),
+          "createdAt": .string("2026-09-15T00:00:00.000Z"),
+          "sidebarState": .string(state.sidebar.rawValue),
+          "sidebarStateChangedAt": .string("2026-09-15T00:00:0\(index).000Z"),
+          "latestAttentionSequence": .number(Double(state.latest)),
+          "lastSeenAttentionSequence": .number(Double(state.seen)),
+          "unreadCount": .number(Double(state.unread)),
+          "hasUnreadError": .bool(state.error),
+          "actionRequired": .bool(state.action),
+          "pendingPlanApproval": .bool(state.plan),
+        ])
+        fake.emit(kind: "session.attention.updated", subjectId: background.id.uuidString, payload: payload)
+        for client in clients {
+          await client.applied.wait(for: index + 1)
+          let session = try #require(client.model.sessions.first { $0.id == background.id })
+          #expect(session.serverId == serverId)
+          #expect(session.sidebarState == state.sidebar)
+          #expect(session.unreadCount == state.unread)
+          #expect(session.hasUnreadError == state.error)
+          #expect(session.actionRequired == state.action)
+          #expect(session.pendingPlanApproval == state.plan)
+          #expect(session.lastSeenAttentionSequence == state.seen)
+          #expect(client.coordinator.focusedSession?.sessionId == foreground.id)
+        }
       }
+    } catch {
+      for client in clients {
+        await client.shutdown(serverId: serverId)
+      }
+      throw error
     }
     #expect(fake.listSessionCallCount == 0)
     for client in clients {
       #expect(client.delivery.delivered.map(\.kind) == [.actionRequired, .finished, .actionRequired])
       #expect(client.delivery.cleared.contains(background.id))
-      let stream = client.machine.connection(for: serverId).eventSyncTask
-      client.machine.stopEventSync()
-      await stream?.value
+      await client.shutdown(serverId: serverId)
     }
   }
 }
@@ -113,6 +118,12 @@ private final class Client {
     let applied = applied
     machine.onSessionStateChanged = { _, _ in applied.signal() }
     machine.startEventSync(serverId: background.serverId, client: fake, since: 0)
+  }
+
+  func shutdown(serverId: String) async {
+    let stream = machine.connection(for: serverId).eventSyncTask
+    machine.stopEventSync()
+    await stream?.value
   }
 }
 

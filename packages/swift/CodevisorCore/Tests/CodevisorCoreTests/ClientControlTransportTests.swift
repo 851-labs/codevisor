@@ -77,13 +77,19 @@ struct ClientControlTransportTests {
         navigate: { _ in Issue.record("Context reads must not navigate") }
       )
     }
-    await transport.socket.didSend.wait()
-    let request = try #require(transport.connectedRequest)
-    #expect(request.url?.scheme == "wss")
-    #expect(request.url?.path == "/v1/clients/\(id.uuidString.lowercased())/socket")
-    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
-    transport.socket.deliver(.string(#"{"requestId":"context","method":"context"}"#))
-    await transport.socket.didSend.wait(for: 2)
+    do {
+      await transport.socket.didSend.wait()
+      let request = try #require(transport.connectedRequest)
+      #expect(request.url?.scheme == "wss")
+      #expect(request.url?.path == "/v1/clients/\(id.uuidString.lowercased())/socket")
+      #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
+      transport.socket.deliver(.string(#"{"requestId":"context","method":"context"}"#))
+      await transport.socket.didSend.wait(for: 2)
+    } catch {
+      task.cancel()
+      await task.value
+      throw error
+    }
     task.cancel()
     await task.value
     #expect(transport.socket.closeCode == .goingAway)
