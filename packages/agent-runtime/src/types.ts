@@ -97,14 +97,14 @@ export interface ProviderEnvironment {
   readonly locateExecutable: (name: string, env: NodeJS.ProcessEnv) => string | undefined
 }
 
-export const withoutEnv = <T extends Readonly<Record<string, string | undefined>>>(
-  env: T,
+export const withoutEnv = (
+  env: Readonly<NodeJS.ProcessEnv>,
   unset: ReadonlyArray<string> | undefined
-): T => {
+): NodeJS.ProcessEnv => {
   if (unset === undefined || unset.length === 0) return env
-  const result: Record<string, string | undefined> = { ...env }
+  const result: NodeJS.ProcessEnv = { ...env }
   for (const name of unset) delete result[name]
-  return result as T
+  return result
 }
 
 export interface HarnessAccountContext {

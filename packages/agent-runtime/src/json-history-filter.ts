@@ -20,7 +20,7 @@ export class JsonHistoryFilter {
           if (this.keyString) {
             const current = this.stack.at(-1)!
             try {
-              current.key = JSON.parse(this.key) as string
+              current.key = String(JSON.parse(this.key))
             } catch {
               current.key = ""
             }

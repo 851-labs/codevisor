@@ -1,3 +1,4 @@
+import { isPlainRecord } from "@codevisor/api"
 import { llms } from "fumadocs-core/source/llms"
 
 import { source } from "./source"
@@ -72,8 +73,7 @@ export function markdownResponse(markdown: string | undefined) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
+  return isPlainRecord(value) ? value : undefined
 }
 
 function operationSummary(operation: Record<string, unknown>) {

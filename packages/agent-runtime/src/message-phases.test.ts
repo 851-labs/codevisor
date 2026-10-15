@@ -1,3 +1,4 @@
+import { isRecord } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { makeMessagePhases } from "./message-phases.js"
@@ -17,6 +18,8 @@ const turn = (turnState: string): RuntimeEvent => ({
   subjectId: "s",
   payload: { turnState }
 })
+const messageIdOf = (event: RuntimeEvent): unknown =>
+  isRecord(event.payload) ? event.payload.messageId : undefined
 const commentary = (messageId: string) =>
   output({
     content: { text: "", type: "text" },
@@ -67,7 +70,7 @@ describe("message phases", () => {
         text("Two"),
         text("Three", { messageId: "x" }),
         text("Four")
-      ]).map((event) => (event.payload as { messageId?: string }).messageId)
+      ]).map(messageIdOf)
     ).toEqual(["run-1", undefined, "run-2", "x", "run-3"])
   })
 
@@ -148,7 +151,8 @@ describe("message phases", () => {
 
   it("gives ID-less text a unique ID by default", () => {
     const phases = makeMessagePhases()
-    const [first] = phases.label(text("Hi")) as [RuntimeEvent]
-    expect((first.payload as { messageId?: string }).messageId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(phases.label(text("Hi")).map(messageIdOf)).toEqual([
+      expect.stringMatching(/^[0-9a-f-]{36}$/)
+    ])
   })
 })

@@ -1,4 +1,4 @@
-import type { PluginRegistryEntry } from "@codevisor/api"
+import { decode, PluginRegistryEntry } from "@codevisor/api"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import type { ReactNode } from "react"
@@ -56,7 +56,7 @@ const fetchPlugin = createServerFn({ method: "GET" })
       )
       if (response.status === 404) return { plugin: "missing" }
       if (!response.ok) return { plugin: null }
-      return { plugin: toDetail((await response.json()) as PluginRegistryEntry) }
+      return { plugin: toDetail(decode(PluginRegistryEntry)(await response.json())) }
     } catch {
       return { plugin: null }
     }
