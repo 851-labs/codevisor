@@ -17,4 +17,19 @@ struct EntitySystemSymbolTests {
     #expect(EntitySystemSymbol.machine(.local) == "desktopcomputer")
     #expect(EntitySystemSymbol.machine(cloud) == "cloud.fill")
   }
+
+  @Test("A machine's chosen icon wins, and unknown icons fall back to the default")
+  func chosenMachineIcons() {
+    var cloud = CodevisorMachine(
+      id: "cloud:studio",
+      name: "Studio",
+      baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
+      kind: "cloud",
+      icon: "macstudio"
+    )
+    #expect(EntitySystemSymbol.machine(cloud) == "macstudio")
+
+    cloud.icon = "not.a.machine.icon"
+    #expect(EntitySystemSymbol.machine(cloud) == "cloud.fill")
+  }
 }

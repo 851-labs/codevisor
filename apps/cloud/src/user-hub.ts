@@ -20,7 +20,8 @@ import {
   recordMachineOrigin,
   registerMachine,
   removeHubMachine,
-  renameHubMachine
+  updateHubMachine,
+  type MachineUpdate
 } from "./hub-registry.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
@@ -86,8 +87,8 @@ export class UserHub extends DurableObject<CloudEnv> {
     return removeHubMachine(this.#notices(), deviceId, CLOSE_REVOKED)
   }
 
-  renameMachine(deviceId: string, name: string): boolean {
-    return renameHubMachine(this.#notices(), deviceId, name)
+  updateMachine(deviceId: string, update: MachineUpdate): boolean {
+    return updateHubMachine(this.#notices(), deviceId, update)
   }
 
   recordMachineOrigin(deviceId: string, addedBy: { deviceId: string; name: string }): void {

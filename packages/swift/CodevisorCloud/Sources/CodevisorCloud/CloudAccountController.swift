@@ -309,16 +309,17 @@ public final class CloudAccountController {
     }
   }
 
-  public func rename(deviceId: String, name: String) async {
+  public func updateMachine(deviceId: String, name: String, icon: String) async {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let token = storedToken else { return }
     if let index = machines.firstIndex(where: { $0.deviceId == deviceId }) {
       machines[index].name = trimmed
+      machines[index].icon = icon
     }
     do {
-      try await client.rename(deviceId: deviceId, name: trimmed, token: token)
+      try await client.updateMachine(deviceId: deviceId, name: trimmed, icon: icon, token: token)
     } catch {
-      Log.cloud.error("Cloud machine rename failed: \(String(describing: error), privacy: .public)")
+      Log.cloud.error("Cloud machine update failed: \(String(describing: error), privacy: .public)")
       lastError = error.localizedDescription
     }
     await refreshMachines()

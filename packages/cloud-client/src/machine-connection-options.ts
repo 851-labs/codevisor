@@ -20,6 +20,7 @@ export interface MachineConnectionOptions {
   device: {
     name: string
     os?: string
+    icon?: string
     appVersion?: string
     serverId?: string
     releaseChannel?: () => "stable" | "alpha" | undefined
