@@ -8,6 +8,7 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   resultWith,
   run,
@@ -48,9 +49,7 @@ describe("ClaudeProvider", () => {
 
     const endedEvents = () =>
       events.filter(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).turnState === "ended"
+        (event) => event.kind === "session.updated" && payloadOf(event).turnState === "ended"
       )
     const continuations = () =>
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
@@ -115,9 +114,7 @@ describe("ClaudeProvider", () => {
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     const endedEvents = () =>
       events.filter(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).turnState === "ended"
+        (event) => event.kind === "session.updated" && payloadOf(event).turnState === "ended"
       )
 
     expect(continuations()).toHaveLength(0)
@@ -167,15 +164,11 @@ describe("ClaudeProvider", () => {
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     const retryingEvents = () =>
       events.filter(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).retrying !== undefined
+        (event) => event.kind === "session.updated" && payloadOf(event).retrying !== undefined
       )
     const endedEvents = () =>
       events.filter(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).turnState === "ended"
+        (event) => event.kind === "session.updated" && payloadOf(event).turnState === "ended"
       )
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -204,9 +197,7 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
-    const endedPayload = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .find((payload) => payload.turnState === "ended")
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(errorText)
     expect(endedPayload?.retryable).toBe(true)
     expect(retryingEvents()).toHaveLength(3)
@@ -234,9 +225,7 @@ describe("ClaudeProvider", () => {
     expect(
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     ).toHaveLength(0)
-    const endedPayload = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .find((payload) => payload.turnState === "ended")
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe("Claude authentication failed.")
     expect(events.some((event) => event.kind === "session.error")).toBe(false)
   })

@@ -8,8 +8,11 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordValue,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent,
   systemMessage
 } from "./test-support.js"
@@ -18,15 +21,15 @@ const FORK = "forked-command-code-review"
 const SKILL_PROMPT = "Review the diff. Report at most 4 findings."
 
 const forkMessage = (type: "assistant" | "user", content: Array<unknown>): SDKMessage =>
-  ({
+  sdkMessage({
     message: { content, role: type },
     parent_tool_use_id: FORK,
     session_id: "sdk-session-1",
     type
-  }) as never
+  })
 
 const syntheticReply = (text: string): SDKMessage =>
-  ({
+  sdkMessage({
     message: {
       content: [{ text, type: "text" }],
       id: "9d9fe63e-4752-4dcc-882f-c150c6673467",
@@ -36,7 +39,7 @@ const syntheticReply = (text: string): SDKMessage =>
     parent_tool_use_id: null,
     session_id: "sdk-session-1",
     type: "assistant"
-  }) as never
+  })
 
 const BASH_CALL = {
   id: "tool-1",
@@ -108,7 +111,7 @@ const startTurn = async (transcripts?: SubagentTranscripts) => {
   const created = await createPromise
   const turn = run(created.handle.prompt("/code-review low"))
   await fake.nextPrompt()
-  const payloads = () => events.map((event) => event.payload as Record<string, unknown>)
+  const payloads = () => events.map(payloadOf)
   return { fake, payloads, turn }
 }
 
@@ -129,7 +132,7 @@ const claudeReply: Array<SDKMessage> = [
     index: 0,
     type: "content_block_delta"
   }),
-  {
+  sdkMessage({
     message: {
       content: [{ text: CLAUDE_REPLY, type: "text" }],
       id: "msg-reply",
@@ -138,7 +141,7 @@ const claudeReply: Array<SDKMessage> = [
     parent_tool_use_id: null,
     session_id: "sdk-session-1",
     type: "assistant"
-  } as never,
+  }),
   resultMessage()
 ]
 
@@ -157,7 +160,7 @@ const textUnder = (payloads: Array<Record<string, unknown>>, parent: string | un
       (payload) =>
         payload.sessionUpdate === "agent_message_chunk" && payload.parentToolCallId === parent
     )
-    .map((payload) => (payload.content as { text: string }).text)
+    .map((payload) => recordValue(payload.content).text)
 
 const mainText = (payloads: Array<Record<string, unknown>>) => textUnder(payloads, undefined)
 
@@ -277,12 +280,12 @@ describe("a streamed reply", () => {
         index: 0,
         type: "content_block_delta"
       }),
-      {
+      sdkMessage({
         message: { content: [{ text: "Hello.", type: "text" }], id: "msg-1", role: "assistant" },
         parent_tool_use_id: null,
         session_id: "sdk-session-1",
         type: "assistant"
-      } as never
+      })
     ])
 
     expect(mainText(payloads)).toEqual(["Hello."])

@@ -2,7 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { authoritativeStatsFromInput } from "./diff-stats.js"
 import { settleForkedCommands } from "./forked-commands.js"
-import { isRecord } from "./internal.js"
+import { isRecord, recordOf } from "./internal.js"
 import { HIDDEN_TOOLS, PLAN_TOOLS, TASK_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
 import { SKILL_TOOL, skillCallMeta } from "./skill-tool.js"
@@ -26,7 +26,7 @@ export const handleAssistantMessage = (
   const isErrorReply = parentId === undefined ? observeAssistantStatus(session, message) : false
   const content = message.message.content
   if (!Array.isArray(content)) return
-  const inner = message.message as unknown as Record<string, unknown>
+  const inner = recordOf(message.message)
   const messageId = typeof inner.id === "string" ? inner.id : undefined
   const alreadyStreamed =
     parentId !== undefined &&

@@ -6,6 +6,7 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   run,
   streamEvent,
@@ -49,7 +50,7 @@ describe("ClaudeProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("cancelled")
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         sessionUpdate: "tool_call_update",
@@ -68,7 +69,7 @@ describe("ClaudeProvider", () => {
     let releaseTerminal: (() => void) | undefined
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
-      const payload = event.payload as Record<string, unknown>
+      const payload = payloadOf(event)
       if (payload.turnState === "ended") {
         await new Promise<void>((resolvePromise) => {
           releaseTerminal = resolvePromise
@@ -115,7 +116,7 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.abortController?.signal.aborted).toBe(true)
     expect(
       events.filter((event) => {
-        const payload = event.payload as Record<string, unknown>
+        const payload = payloadOf(event)
         return payload.turnState === "ended"
       })
     ).toHaveLength(1)
@@ -129,9 +130,9 @@ describe("ClaudeProvider", () => {
       })
     )
     const backgroundSnapshots = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter((payload) => Array.isArray(payload.backgroundTasks))
-      .map((payload) => payload.backgroundTasks as Array<unknown>)
+      .map((payload) => payload.backgroundTasks)
     expect(backgroundSnapshots.at(-1)).toEqual([])
   })
 
@@ -166,7 +167,7 @@ describe("ClaudeProvider", () => {
       expect(fake.interrupts).toHaveLength(1)
       expect(
         events.filter((event) => {
-          const payload = event.payload as Record<string, unknown>
+          const payload = payloadOf(event)
           return payload.turnState === "ended"
         })
       ).toHaveLength(1)
@@ -194,7 +195,7 @@ describe("ClaudeProvider", () => {
     await expect(promptPromise).resolves.toEqual({ stopReason: "cancelled" })
     expect(
       events.filter((event) => {
-        const payload = event.payload as Record<string, unknown>
+        const payload = payloadOf(event)
         return payload.turnState === "ended"
       })
     ).toHaveLength(1)
@@ -226,7 +227,7 @@ describe("ClaudeProvider", () => {
     expect(events).toHaveLength(countBeforeLateResult)
     expect(
       events.filter((event) => {
-        const payload = event.payload as Record<string, unknown>
+        const payload = payloadOf(event)
         return payload.turnState === "ended"
       })
     ).toHaveLength(1)

@@ -8,6 +8,7 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   run,
   streamEvent
@@ -22,11 +23,15 @@ describe("ClaudeProvider", () => {
 
   it("prefers SDK session titles while retaining scanner fallbacks", async () => {
     const provider = makeClaudeProvider(environment, {
-      listSdkSessions: async () =>
-        [
-          { customTitle: "Renamed by Claude", sessionId: "one", summary: "Generated" },
-          { sessionId: "two", summary: "" }
-        ] as never,
+      listSdkSessions: async () => [
+        {
+          customTitle: "Renamed by Claude",
+          lastModified: 0,
+          sessionId: "one",
+          summary: "Generated"
+        },
+        { lastModified: 0, sessionId: "two", summary: "" }
+      ],
       scanAgentSessions: async () => [
         { cwd: "/one", sessionId: "one", title: "First prompt one" },
         { cwd: "/two", sessionId: "two", title: "First prompt two" }
@@ -199,16 +204,14 @@ describe("ClaudeProvider", () => {
     })
     expect(resumed.userMessages).toHaveLength(1)
     expect(resumed.userMessages[0]?.message.content).toContain("interrupted and restarted")
-    expect(events.map((event) => event.payload as Record<string, unknown>)).not.toContainEqual(
+    expect(events.map(payloadOf)).not.toContainEqual(
       expect.objectContaining({ turnState: "ended" })
     )
 
     resumed.push(resultMessage())
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
-    const ended = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.turnState === "ended")
+    const ended = events.map(payloadOf).filter((payload) => payload.turnState === "ended")
     expect(ended).toHaveLength(1)
     expect(ended[0]).not.toHaveProperty("stopDetail")
   })
@@ -247,7 +250,7 @@ describe("ClaudeProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         retryable: true,

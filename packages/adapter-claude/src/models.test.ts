@@ -7,8 +7,11 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordsValue,
   RELEASE_MODELS,
   run,
+  sdkMessage,
   systemMessage
 } from "./test-support.js"
 
@@ -36,12 +39,10 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     await run(created.handle.setConfigOption("speed", "fast"))
 
-    const updated = events.at(-1)?.payload as {
-      configOptions?: Array<{ currentValue: string; id: string }>
-    }
-    const model = updated.configOptions?.find((option) => option.id === "model")
+    const updated = payloadOf(events.at(-1))
+    const model = recordsValue(updated.configOptions).find((option) => option.id === "model")
     expect(model?.currentValue).toBe("claude-fable-5")
-    const effort = updated.configOptions?.find((option) => option.id === "effort")
+    const effort = recordsValue(updated.configOptions).find((option) => option.id === "effort")
     expect(effort?.currentValue).toBe("high")
   })
 
@@ -59,12 +60,10 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     await run(created.handle.setConfigOption("speed", "fast"))
 
-    const updated = events.at(-1)?.payload as {
-      configOptions?: Array<{ currentValue: string; id: string }>
-    }
-    const model = updated.configOptions?.find((option) => option.id === "model")
+    const updated = payloadOf(events.at(-1))
+    const model = recordsValue(updated.configOptions).find((option) => option.id === "model")
     expect(model?.currentValue).toBe("claude-fable-5")
-    const effort = updated.configOptions?.find((option) => option.id === "effort")
+    const effort = recordsValue(updated.configOptions).find((option) => option.id === "effort")
     expect(effort?.currentValue).toBe("high")
   })
 
@@ -119,8 +118,12 @@ describe("ClaudeProvider", () => {
       }
     ])
     await run(created.handle.setConfigOption("model", "sonnet"))
-    const latest = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
-    expect(latest.configOptions?.map((option) => option.id)).toEqual(["model", "effort", "speed"])
+    const latest = payloadOf(events.at(-1))
+    expect(recordsValue(latest.configOptions).map((option) => option.id)).toEqual([
+      "model",
+      "effort",
+      "speed"
+    ])
   })
 
   it("reconciles a late model list with the model init already reported", async () => {
@@ -192,9 +195,7 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    const updates = events
-      .filter((event) => event.kind === "session.updated")
-      .map((event) => event.payload as Record<string, unknown>)
+    const updates = events.filter((event) => event.kind === "session.updated").map(payloadOf)
     expect(updates).toContainEqual({
       modelFallback: {
         category: "cyber",
@@ -266,7 +267,7 @@ describe("ClaudeProvider", () => {
 
     await run(created.handle.setConfigOption("speed", "fast"))
     expect(fake.flagSettings).toEqual([{ fastMode: true }])
-    const updated = events.at(-1)?.payload as Record<string, unknown>
+    const updated = payloadOf(events.at(-1))
     expect(updated.configId).toBe("speed")
     expect(updated.configOptions).toContainEqual(
       expect.objectContaining({ currentValue: "fast", id: "speed" })
@@ -274,7 +275,7 @@ describe("ClaudeProvider", () => {
 
     await run(created.handle.setConfigOption("model", "claude-opus-4-8"))
     expect(fake.flagSettings).toEqual([{ fastMode: true }, { fastMode: false }])
-    const afterModel = events.at(-1)?.payload as Record<string, unknown>
+    const afterModel = payloadOf(events.at(-1))
     expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
   })
 
@@ -429,14 +430,12 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push({ ...(initMessage() as object), fast_mode_state: "on" } as never)
+    fake.push(sdkMessage({ ...initMessage(), fast_mode_state: "on" }))
     const created = await createPromise
 
     await run(created.handle.setConfigOption("effort", "medium"))
-    const updated = events.at(-1)?.payload as Record<string, unknown>
-    const speed = (
-      updated.configOptions as Array<{ id: string; currentValue: string }> | undefined
-    )?.find((option) => option.id === "speed")
+    const updated = payloadOf(events.at(-1))
+    const speed = recordsValue(updated.configOptions).find((option) => option.id === "speed")
     expect(speed?.currentValue).toBe("fast")
   })
 })

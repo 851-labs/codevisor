@@ -2,7 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { settleForkedCommands } from "./forked-commands.js"
 import { settleGoalOnTurnEnd } from "./goals.js"
-import { isRecord } from "./internal.js"
+import { isRecord, recordOf } from "./internal.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
 import { classifyResult, MAX_TRANSIENT_RETRIES, type TurnResolution } from "./result-resolution.js"
 import type { ClaudeSession } from "./session.js"
@@ -91,12 +91,10 @@ export const handleResult = (
   message: SDKMessage & { type: "result" }
 ): void => {
   const isTaskNotification = message.origin?.kind === "task-notification"
-  const raw = message as unknown as Record<string, unknown>
+  const raw = recordOf(message)
   const usage = isRecord(raw.usage) ? raw.usage : {}
   const token = (key: string): number | undefined =>
-    typeof usage[key] === "number" && Number.isFinite(usage[key])
-      ? (usage[key] as number)
-      : undefined
+    typeof usage[key] === "number" && Number.isFinite(usage[key]) ? usage[key] : undefined
   const inputTokens = token("input_tokens")
   const cachedInputTokens =
     (token("cache_creation_input_tokens") ?? 0) + (token("cache_read_input_tokens") ?? 0)

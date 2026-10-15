@@ -6,8 +6,12 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordsValue,
+  recordValue,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent,
   turnPayloads
 } from "./test-support.js"
@@ -65,35 +69,39 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     fake.push(streamEvent({ index: 1, type: "content_block_stop" }))
     await fake.drain()
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "tool-1",
-            input: {
-              file_path: "/tmp/a.txt",
-              new_string: "one\nthree\nfour\n",
-              old_string: "one\ntwo\n"
-            },
-            name: "Edit",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
-    fake.push({
-      message: {
-        content: [{ content: "ok", is_error: false, tool_use_id: "tool-1", type: "tool_result" }],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "tool-1",
+              input: {
+                file_path: "/tmp/a.txt",
+                new_string: "one\nthree\nfour\n",
+                old_string: "one\ntwo\n"
+              },
+              name: "Edit",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [{ content: "ok", is_error: false, tool_use_id: "tool-1", type: "tool_result" }],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
     fake.push(resultMessage())
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
@@ -110,12 +118,12 @@ describe("ClaudeProvider", () => {
       (payload) => payload.sessionUpdate === "tool_call_update" && payload.diffStats !== undefined
     )
     expect(statUpdates.length).toBeGreaterThanOrEqual(2)
-    const firstStats = statUpdates[0]?.diffStats as Array<{ added: number; removed: number }>
-    const lastStreamed = statUpdates.at(-2)?.diffStats as Array<{ added: number; removed: number }>
+    const firstStats = recordsValue(statUpdates[0]?.diffStats)
+    const lastStreamed = recordsValue(statUpdates.at(-2)?.diffStats)
     expect(firstStats[0]?.removed).toBe(2)
     expect(firstStats[0]?.added).toBe(1)
-    expect(lastStreamed[0]?.added).toBeGreaterThanOrEqual(firstStats[0]?.added ?? 0)
-    const authoritative = statUpdates.at(-1)?.diffStats as Array<{ added: number; removed: number }>
+    expect(lastStreamed[0]?.added).toBeGreaterThanOrEqual(Number(firstStats[0]?.added ?? 0))
+    const authoritative = recordsValue(statUpdates.at(-1)?.diffStats)
     expect(authoritative[0]).toMatchObject({ added: 2, removed: 1 })
 
     expect(payloads).toContainEqual(
@@ -179,7 +187,7 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         sessionUpdate: "tool_call",
@@ -225,28 +233,30 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await fake.nextPrompt()
-    fake.push({
-      message: {
-        content: [
-          { text: "Looking at the files now.", type: "text" },
-          {
-            id: "sub-bash-1",
-            input: { command: "ls -la", description: "List files" },
-            name: "Bash",
-            type: "tool_use"
-          }
-        ],
-        id: "msg-sub-agent-1",
-        role: "assistant"
-      },
-      parent_tool_use_id: "parent-agent-1",
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            { text: "Looking at the files now.", type: "text" },
+            {
+              id: "sub-bash-1",
+              input: { command: "ls -la", description: "List files" },
+              name: "Bash",
+              type: "tool_use"
+            }
+          ],
+          id: "msg-sub-agent-1",
+          role: "assistant"
+        },
+        parent_tool_use_id: "parent-agent-1",
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         content: { text: "Looking at the files now.", type: "text" },
@@ -290,21 +300,23 @@ describe("ClaudeProvider", () => {
         "parent-1"
       )
     )
-    fake.push({
-      message: {
-        content: [{ text: "streamed text", type: "text" }],
-        id: "msg-sub-1",
-        role: "assistant"
-      },
-      parent_tool_use_id: "parent-1",
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [{ text: "streamed text", type: "text" }],
+          id: "msg-sub-1",
+          role: "assistant"
+        },
+        parent_tool_use_id: "parent-1",
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
     const chunks = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter(
         (payload) =>
           payload.sessionUpdate === "agent_message_chunk" && payload.parentToolCallId === "parent-1"
@@ -352,7 +364,7 @@ describe("ClaudeProvider", () => {
     await promptPromise
 
     const updates = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter(
         (payload) =>
           payload.sessionUpdate === "agent_thought_chunk" ||
@@ -400,9 +412,9 @@ describe("ClaudeProvider", () => {
     await promptPromise
 
     const chunks = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter((payload) => payload.sessionUpdate === "agent_message_chunk")
-    const texts = chunks.map((payload) => (payload.content as Record<string, unknown>).text)
+    const texts = chunks.map((payload) => recordValue(payload.content).text)
     expect(texts).toEqual(["The answer is 42."])
   })
 
@@ -453,7 +465,7 @@ describe("ClaudeProvider", () => {
     await promptPromise
 
     const chunks = events
-      .map((event) => event.payload as Record<string, unknown>)
+      .map(payloadOf)
       .filter((payload) => payload.sessionUpdate === "agent_message_chunk")
     expect(chunks[0]).toMatchObject({
       content: { text: "Let me check the tests.", type: "text" },
