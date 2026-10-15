@@ -11,6 +11,7 @@ import {
 import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
+import { persistToolImages, toolImageCandidates } from "./tool-images.js"
 
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
 
@@ -55,14 +56,15 @@ export const sessionEventSink =
       )
     }
     if (event.kind === "session.output") {
-      const annotated = executionAnnotator(services).annotate(sessionId, event)
-      if (annotated.length !== 1 || annotated[0] !== event) {
-        return (async () => {
-          for (const next of annotated) {
-            await materializeRuntimeEvent(services.db, fanout, serverId, next, sessionId)
-          }
-        })()
+      const deliver = async (output: RuntimeEvent): Promise<void> => {
+        for (const next of executionAnnotator(services).annotate(sessionId, output)) {
+          await materializeRuntimeEvent(services.db, fanout, serverId, next, sessionId)
+        }
       }
+      const images = toolImageCandidates(payload)
+      return images.size > 0
+        ? persistToolImages(services, event, payload, images).then(deliver)
+        : deliver(event)
     }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
       executionAnnotator(services).endSession(sessionId)

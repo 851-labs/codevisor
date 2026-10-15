@@ -1,3 +1,4 @@
+import CodevisorClient
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
@@ -14,11 +15,20 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let project: Project
   }
 
+  private struct RefreshKey: Equatable {
+    let workspaceId: UUID
+    let tab: WorkspaceInspectorTab
+    let activity: Date?
+  }
+
   static let presentedKey = "workspace.inspectorPresented"
 
   @Environment(AppEnvironment.self) private var environment
   @ClientPreference(FeatureFlag.workspaceInspector.preferenceKey, default: false) private var isEnabled
   @ClientPreference(Self.presentedKey, default: true) private var isPresented
+  @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
+  @State private var media = WorkspaceInspectorMediaModel()
+  @State private var imageStores = WorkspaceInspectorImageStores()
   let store: SessionStore?
   let selection: SidebarSelection?
 
@@ -39,11 +49,20 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           pullRequest: store.gitLookups.pullRequest(for: workspace),
           machineName: environment.machines.fleetMachineName(for: workspace.serverId),
           supportsDesktop: environment.machines.statusByMachineId[workspace.serverId]?.supportsScreenSharing == true,
+          tab: $tab,
+          media: media,
+          openTabs: openTabs(in: workspace, store: store),
+          client: environment.machines.client(for: workspace.serverId),
+          onReload: { Task { await reload(workspace) } },
           onOpen: { destination in
             store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
               workspaceId: workspace.id, destination: destination)
           }
         )
+        .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
+        .task(id: RefreshKey(workspaceId: workspace.id, tab: tab, activity: activity(in: workspace))) {
+          await reload(workspace)
+        }
         .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
         .toolbar {
           ToolbarSpacer(.flexible)
@@ -57,6 +76,30 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           }
         }
       }
+    }
+  }
+
+  private func reload(_ workspace: Workspace) async {
+    await media.reload(tab, workspaceId: workspace.id, client: environment.machines.client(for: workspace.serverId))
+  }
+
+  private func activity(in workspace: Workspace) -> Date? {
+    environment.projectList.sessions
+      .filter {
+        $0.serverId == workspace.serverId && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+      }
+      .map(\.sidebarStateChangedAt)
+      .max()
+  }
+
+  private func openTabs(in workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorOpenTab] {
+    workspace.allPanes.compactMap { pane in
+      guard pane.kind == .browser, let url = pane.browserURL.flatMap(URL.init(string:)) else { return nil }
+      let model = store.localBrowserModel(paneId: pane.id)
+      let title = model?.title ?? pane.name
+      return WorkspaceInspectorOpenTab(
+        id: pane.id, url: url, title: title.isEmpty ? BrowserLocation.display(url) : title,
+        favicon: model?.favicon)
     }
   }
 
@@ -84,5 +127,32 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func project(serverId: String, id: UUID) -> Project? {
     environment.projectList.projects.first { $0.serverId == serverId && $0.id == id }
+  }
+}
+
+@MainActor
+final class WorkspaceInspectorImageStores {
+  private var stores: [String: AttachmentImageStore] = [:]
+
+  func store(for serverId: String, environment: AppEnvironment) -> AttachmentImageStore {
+    if let existing = stores[serverId] { return existing }
+    let client = { environment.machines.client(for: serverId) }
+    let store = AttachmentImageStore(
+      namespace: "\(serverId):workspace-media",
+      fetch: { source in
+        guard case let .attachment(fileId) = source else { throw CodevisorServerClientError.invalidResponse }
+        return try await client().fileData(id: fileId)
+      },
+      fetchPreview: { source in
+        guard case let .attachment(fileId) = source else { throw CodevisorServerClientError.invalidResponse }
+        return try await client().filePreview(id: fileId)
+      },
+      version: { source in
+        guard case let .attachment(fileId) = source else { return nil }
+        return "attachment:\(fileId)"
+      }
+    )
+    stores[serverId] = store
+    return store
   }
 }

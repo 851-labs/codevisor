@@ -19,6 +19,7 @@ import {
 import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import { nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
+import { recordToolMedia } from "./tool-media-projection.js"
 
 const attachmentsRows = rowReader({ attachments: nullable(text) })
 
@@ -175,6 +176,7 @@ const projectWorkedDetail = (
     projectPlanTiming(sqlite, event, payload, update, itemId)
     if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
     appendCompletedImage(sqlite, payload, itemId, parent)
+    recordToolMedia(sqlite, event, payload, itemId)
     return itemId
   }
   return undefined
