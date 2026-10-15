@@ -107,7 +107,21 @@ extension SidebarView {
     }
   }
 
+  var selectedWorkspaceID: UUID? {
+    switch selection {
+    case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
+    case let .workspace(_, id), let .archivedWorkspace(_, id): id
+    case .newChat, .none: nil
+    }
+  }
+
+  func visibleItems(of group: SidebarWorkspaceGroup) -> [WorkspaceSidebarItem] {
+    if isShowing(group) { return group.items }
+    guard let selectedWorkspaceID else { return [] }
+    return group.items.filter { $0.id == selectedWorkspaceID }
+  }
+
   var listedWorkspaceItems: [SidebarWorkspaceListItem] {
-    workspaceGroups.filter(isShowing).flatMap(\.items).compactMap(listItem(for:))
+    workspaceGroups.flatMap(visibleItems(of:)).compactMap(listItem(for:))
   }
 }
