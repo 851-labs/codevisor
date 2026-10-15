@@ -1,4 +1,5 @@
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { PiClient, PiSpawnRequest } from "./client.js"
@@ -59,12 +60,12 @@ export class FakePiClient implements PiClient {
     })
   }
 
-  command<T>(type: string, fields: Record<string, unknown> = {}): Promise<T> {
+  command(type: string, fields: Record<string, unknown> = {}): Promise<unknown> {
     this.commands.push({ type, fields })
     const index = this.commandWaiters.findIndex((waiter) => waiter.type === type)
     if (index !== -1) this.commandWaiters.splice(index, 1)[0]!.resolve()
     const reply = this.replies[type]
-    return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply as T)
+    return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply)
   }
 
   onEvent(handler: (event: Record<string, unknown>) => void): void {
@@ -110,5 +111,10 @@ export const setup = (config: PiProviderConfig = {}) => {
   return { client, spawned, events, provider, emit }
 }
 
-export const payloads = (events: ReadonlyArray<RuntimeEvent>) =>
-  events.map((event) => event.payload as Record<string, unknown>)
+export const recordPayload = (event: Pick<RuntimeEvent, "payload">): Record<string, unknown> => {
+  if (!isRecord(event.payload)) throw new Error("Expected a record payload")
+  return event.payload
+}
+
+export const payloads = (events: ReadonlyArray<Pick<RuntimeEvent, "payload">>) =>
+  events.map(recordPayload)

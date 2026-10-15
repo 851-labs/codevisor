@@ -16,6 +16,7 @@ import { Effect } from "effect"
 import { PiExitedError, spawnPiClient, type PiConnector } from "./client.js"
 import { gatewayExtension, writeTemporaryExtension, type ExtensionWriter } from "./gateway.js"
 import { startPiSession, type PiSession } from "./session.js"
+import { errorMessage, record } from "./values.js"
 
 export interface PiProviderConfig {
   readonly connector?: PiConnector
@@ -132,8 +133,8 @@ export const makePiProvider = (
           env: { ...withoutEnv(environment.env, account?.unsetEnv), ...account?.env }
         })
         try {
-          const available = (await client.command("get_available_models")) as { models?: unknown }
-          const signedIn = Array.isArray(available?.models) && available.models.length > 0
+          const available = record(await client.command("get_available_models"))
+          const signedIn = Array.isArray(available.models) && available.models.length > 0
           return {
             state: signedIn ? ("authenticated" as const) : ("unauthenticated" as const),
             methods: [],
@@ -149,7 +150,7 @@ export const makePiProvider = (
               clampFailureDetail(
                 cause instanceof PiExitedError
                   ? `Pi couldn’t start: ${cause.message}`
-                  : (cause as Error).message
+                  : errorMessage(cause)
               ) ?? "Couldn't check Pi's sign-in."
           }
         } finally {

@@ -1,3 +1,7 @@
+import { isRecord } from "@codevisor/api"
+
+import { record, type JsonRecord } from "./record.js"
+
 interface AcpReasoningEffortOption {
   readonly id: string
   readonly value: string
@@ -59,17 +63,17 @@ const parseReasoningEffortOptions = (
   meta: Readonly<Record<string, unknown>>
 ): ReadonlyArray<AcpReasoningEffortOption> => {
   if (meta.supportsReasoningEffort !== true) return []
-  const raw = meta.reasoningEfforts
+  const raw: unknown = meta.reasoningEfforts
   if (!Array.isArray(raw)) return legacyReasoningEfforts()
-  const parsed = raw.flatMap((entry) => {
-    if (typeof entry === "string") {
-      const value = canonicalReasoningEffort(entry)
+  const entries: ReadonlyArray<unknown> = raw
+  const parsed = entries.flatMap((option): Array<AcpReasoningEffortOption> => {
+    if (typeof option === "string") {
+      const value = canonicalReasoningEffort(option)
       return value === undefined
         ? []
         : [{ id: value, value, name: reasoningEffortName(value), isDefault: false }]
     }
-    if (typeof entry !== "object" || entry === null) return []
-    const option = entry as Record<string, unknown>
+    if (!isRecord(option)) return []
     const value = canonicalReasoningEffort(option.value)
     if (value === undefined) return []
     return [
@@ -86,20 +90,17 @@ const parseReasoningEffortOptions = (
 }
 
 const selectedGrokReasoningOptionId = (response: unknown): string | undefined => {
-  if (typeof response !== "object" || response === null) return undefined
-  const meta = (response as { readonly _meta?: unknown })._meta
-  if (typeof meta !== "object" || meta === null) return undefined
-  const sessionConfig = (meta as Record<string, unknown>)["x.ai/sessionConfig"]
-  if (typeof sessionConfig !== "object" || sessionConfig === null) return undefined
-  const options = (sessionConfig as Record<string, unknown>).options
+  if (!isRecord(response)) return undefined
+  const meta = response._meta
+  if (!isRecord(meta)) return undefined
+  const sessionConfig = meta["x.ai/sessionConfig"]
+  if (!isRecord(sessionConfig)) return undefined
+  const options: unknown = sessionConfig.options
   if (!Array.isArray(options)) return undefined
-  const selected = options.find(
-    (entry) =>
-      typeof entry === "object" &&
-      entry !== null &&
-      (entry as Record<string, unknown>).category === "mode" &&
-      (entry as Record<string, unknown>).selected === true
-  ) as Record<string, unknown> | undefined
+  const entries: ReadonlyArray<unknown> = options
+  const selected = entries
+    .filter(isRecord)
+    .find((entry) => entry.category === "mode" && entry.selected === true)
   return typeof selected?.id === "string" ? selected.id : undefined
 }
 
@@ -119,28 +120,17 @@ const reasoningStateFromMeta = (
   return currentOption === undefined ? undefined : { currentOptionId: currentOption.id, options }
 }
 
-interface RawAcpModelInfo {
-  readonly modelId?: unknown
-  readonly name?: unknown
-  readonly description?: unknown
-  readonly _meta?: unknown
-  readonly meta?: unknown
-}
-
-const modelMetadata = (model: RawAcpModelInfo): Readonly<Record<string, unknown>> | undefined => {
-  const rawMeta = model._meta ?? model.meta
-  return typeof rawMeta === "object" && rawMeta !== null
-    ? (rawMeta as Readonly<Record<string, unknown>>)
-    : undefined
-}
+const modelMetadata = (model: JsonRecord): Readonly<JsonRecord> | undefined =>
+  record(model._meta ?? model.meta)
 
 const decodedModelEntry = (
-  model: RawAcpModelInfo,
+  model: JsonRecord,
+  modelId: string,
   reasoning: AcpReasoningEffortState | undefined
 ): Array<AcpModelInfo> => [
   {
-    modelId: model.modelId as string,
-    name: typeof model.name === "string" ? model.name : (model.modelId as string),
+    modelId,
+    name: typeof model.name === "string" ? model.name : modelId,
     ...(typeof model.description === "string" ? { description: model.description } : {}),
     ...(reasoning === undefined ? {} : { reasoning })
   }
@@ -151,39 +141,31 @@ const availableModelEntry = (
   currentModelId: string,
   selectedReasoningOptionId: string | undefined
 ): Array<AcpModelInfo> => {
-  if (typeof entry !== "object" || entry === null) {
+  if (!isRecord(entry)) {
     return []
   }
-  const model = entry as RawAcpModelInfo
-  if (typeof model.modelId !== "string") {
+  const modelId = entry.modelId
+  if (typeof modelId !== "string") {
     return []
   }
-  const meta = modelMetadata(model)
+  const meta = modelMetadata(entry)
   const reasoning = reasoningStateFromMeta(
     meta,
-    model.modelId === currentModelId ? selectedReasoningOptionId : undefined
+    modelId === currentModelId ? selectedReasoningOptionId : undefined
   )
-  return decodedModelEntry(model, reasoning)
+  return decodedModelEntry(entry, modelId, reasoning)
 }
 
-const admittedModels = (response: unknown): object | undefined => {
-  if (typeof response !== "object" || response === null) {
-    return undefined
-  }
-  const models = (response as { readonly models?: unknown }).models
-  if (typeof models !== "object" || models === null) {
-    return undefined
-  }
-  return models
-}
+const admittedModels = (response: unknown): JsonRecord | undefined =>
+  isRecord(response) ? record(response.models) : undefined
 
 export const extractAcpModelState = (response: unknown): AcpModelState | undefined => {
   const models = admittedModels(response)
   if (models === undefined) {
     return undefined
   }
-  const currentModelId = (models as { readonly currentModelId?: unknown }).currentModelId
-  const rawAvailable = (models as { readonly availableModels?: unknown }).availableModels
+  const currentModelId = models.currentModelId
+  const rawAvailable: unknown = models.availableModels
   if (typeof currentModelId !== "string" || !Array.isArray(rawAvailable)) {
     return undefined
   }

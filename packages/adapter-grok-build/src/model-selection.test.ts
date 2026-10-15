@@ -8,10 +8,15 @@ import {
   applyAcpModelSelection,
   applyAcpReasoningEffortSelection,
   extractAcpModelState,
+  type AcpModelRequester,
   mergeAcpModelConfigOptions,
   usesAcpModelSelectionExtension,
   usesAcpReasoningEffortExtension
 } from "./index.js"
+
+const fakeConnection = (
+  request: (method: string, params: unknown) => Promise<unknown>
+): AcpModelRequester => ({ agent: { request } })
 
 describe("Grok Build model-selection extension", () => {
   it("distinguishes a native model option from the optional model extension", () => {
@@ -33,11 +38,6 @@ describe("Grok Build model-selection extension", () => {
     expect(usesAcpReasoningEffortExtension("reasoning_effort", new Set(["model"]))).toBe(true)
     expect(usesAcpReasoningEffortExtension("model", undefined)).toBe(false)
   })
-
-  type ModelSetter = Parameters<typeof applyAcpModelSelection>[0]
-  const fakeConnection = (
-    request: (method: string, params: unknown) => Promise<unknown>
-  ): ModelSetter => ({ agent: { request } }) as unknown as ModelSetter
 
   it("reads the models extension off a session/new response into a model picker", () => {
     const state = extractAcpModelState({

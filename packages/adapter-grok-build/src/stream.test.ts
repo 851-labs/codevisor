@@ -1,21 +1,24 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
+import { type JsonRecord } from "./record.js"
 import { GrokStreamNormalizer } from "./stream.js"
 
 const notification = (
-  update: Readonly<Record<string, unknown>>,
+  update: acp.SessionUpdate & Readonly<JsonRecord>,
   promptId: string | null = "prompt-1"
-): acp.SessionNotification =>
-  ({
-    ...(promptId === null ? {} : { _meta: { promptId } }),
-    sessionId: "session-1",
-    update
-  }) as unknown as acp.SessionNotification
+): acp.SessionNotification => ({
+  ...(promptId === null ? {} : { _meta: { promptId } }),
+  sessionId: "session-1",
+  update
+})
 
-const payload = (event: RuntimeEvent): Record<string, unknown> =>
-  event.payload as Record<string, unknown>
+const payload = (event: RuntimeEvent): JsonRecord => {
+  if (!isRecord(event.payload)) throw new Error("Expected a record payload")
+  return event.payload
+}
 
 describe("Grok stream normalizer", () => {
   it("assigns response ids, demotes tool preamble, and asserts the final response", () => {

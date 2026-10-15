@@ -1,7 +1,8 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import { isRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 
 import type { AcpModelState, AcpReasoningEffortState } from "./acp-model-state.js"
+import { record, type JsonRecord } from "./record.js"
 
 export { extractAcpModelState, type AcpModelState } from "./acp-model-state.js"
 
@@ -9,13 +10,14 @@ export const acpModelConfigId = "model"
 export const acpReasoningEffortConfigId = "reasoning_effort"
 
 export const acpConfigOptionIds = (response: unknown): ReadonlySet<string> => {
-  if (typeof response !== "object" || response === null) return new Set()
-  const options = (response as { readonly configOptions?: unknown }).configOptions
+  if (!isRecord(response)) return new Set()
+  const options: unknown = response.configOptions
   if (!Array.isArray(options)) return new Set()
+  const entries: ReadonlyArray<unknown> = options
   return new Set(
-    options.flatMap((option) => {
-      if (typeof option !== "object" || option === null) return []
-      const id = (option as { readonly id?: unknown }).id
+    entries.flatMap((option) => {
+      if (!isRecord(option)) return []
+      const id = option.id
       return typeof id === "string" ? [id] : []
     })
   )
@@ -87,23 +89,26 @@ export const mergeAcpModelConfigOptions = (
   return merged
 }
 
-interface AcpSetModelResult {
-  readonly _meta?: {
-    readonly model?: { readonly Ok?: unknown; readonly Err?: unknown }
-  }
+export interface AcpModelRequester {
+  readonly agent: { readonly request: (method: string, params: unknown) => Promise<unknown> }
+}
+
+const setModelOutcome = (result: unknown): JsonRecord | undefined => {
+  const meta = isRecord(result) ? record(result._meta) : undefined
+  return record(meta?.model)
 }
 
 export const applyAcpModelSelection = async (
-  connection: acp.ClientConnection,
+  connection: AcpModelRequester,
   modelStates: Map<string, AcpModelState>,
   sessionId: string,
   modelId: string
 ): Promise<ReadonlyArray<SessionConfigOption>> => {
-  const result = (await connection.agent.request("session/set_model", {
+  const result: unknown = await connection.agent.request("session/set_model", {
     modelId,
     sessionId
-  })) as AcpSetModelResult
-  const outcome = result?._meta?.model
+  })
+  const outcome = setModelOutcome(result)
   if (outcome?.Err !== undefined) {
     const detail = typeof outcome.Err === "string" ? outcome.Err : JSON.stringify(outcome.Err)
     throw new Error(`session/set_model failed: ${detail}`)
@@ -122,7 +127,7 @@ export const applyAcpModelSelection = async (
 }
 
 export const applyAcpReasoningEffortSelection = async (
-  connection: acp.ClientConnection,
+  connection: AcpModelRequester,
   modelStates: Map<string, AcpModelState>,
   sessionId: string,
   optionId: string
@@ -135,12 +140,12 @@ export const applyAcpReasoningEffortSelection = async (
   if (existing === undefined || current === undefined || selected === undefined) {
     throw new Error(`Unknown reasoning effort option: ${optionId}`)
   }
-  const result = (await connection.agent.request("session/set_model", {
+  const result: unknown = await connection.agent.request("session/set_model", {
     _meta: { reasoningEffort: selected.value },
     modelId: existing.currentModelId,
     sessionId
-  })) as AcpSetModelResult
-  const outcome = result?._meta?.model
+  })
+  const outcome = setModelOutcome(result)
   if (outcome?.Err !== undefined) {
     const detail = typeof outcome.Err === "string" ? outcome.Err : JSON.stringify(outcome.Err)
     throw new Error(`session/set_model failed: ${detail}`)

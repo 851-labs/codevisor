@@ -5,6 +5,8 @@ import {
 } from "@codevisor/agent-runtime"
 import type { EventKind } from "@codevisor/api"
 
+import { record } from "./values.js"
+
 export interface MappedEvent {
   readonly kind: EventKind
   readonly payload: Record<string, unknown>
@@ -14,9 +16,6 @@ export interface PiAssistantOutcome {
   readonly stopReason: string
   readonly errorMessage?: string
 }
-
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
 
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined

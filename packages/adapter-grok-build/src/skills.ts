@@ -5,10 +5,7 @@ import type { AcpLaunchContext } from "@codevisor/adapter-acp"
 import { SUPERSEDED_NATIVE_SKILLS } from "@codevisor/agent-runtime"
 import { parse as parseToml } from "smol-toml"
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
+import { objectRecord as record } from "./record.js"
 
 const disabledSkills = (config: Record<string, unknown> | undefined): ReadonlyArray<string> => {
   const disabled = record(config?.skills)?.disabled

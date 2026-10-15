@@ -270,23 +270,16 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
       }
       return app
     },
-    mapSessionNotification: (rawNotification) => {
-      const notification = {
-        ...rawNotification,
-        update: subagents.mapToolUpdate(
-          rawNotification.sessionId,
-          rawNotification.update as unknown as Record<string, unknown>
-        ) as unknown as typeof rawNotification.update
+    mapSessionNotification: (notification) => {
+      const sessionId = notification.sessionId
+      if (subagents.isChildSession(sessionId) && !subagents.isThreadUpdate(notification.update)) {
+        return []
       }
-      if (subagents.isChildSession(notification.sessionId)) {
-        return subagents.isThreadUpdate(notification.update as unknown as Record<string, unknown>)
-          ? subagents.childEvents(
-              notification.sessionId,
-              normalizer.mapSessionNotification(notification)
-            )
-          : []
-      }
-      return normalizer.mapSessionNotification(notification)
+      const events = subagents.mapToolEvents(
+        sessionId,
+        normalizer.mapSessionNotification(notification)
+      )
+      return subagents.isChildSession(sessionId) ? subagents.childEvents(sessionId, events) : events
     },
     sdkConnectionCustomization: {
       customizeSessionMetadata: (sessionId, response, metadata) => {

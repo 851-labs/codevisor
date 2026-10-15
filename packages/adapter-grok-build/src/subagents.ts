@@ -1,5 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
+import { objectRecord as record, type JsonRecord } from "./record.js"
+
 const CHILD_THREAD_UPDATES = new Set([
   "agent_message_chunk",
   "agent_thought_chunk",
@@ -8,13 +10,6 @@ const CHILD_THREAD_UPDATES = new Set([
 ])
 
 const TASK_TOOL_NAMES = new Set(["task", "Task", "spawn_subagent"])
-
-type JsonRecord = Record<string, unknown>
-
-const record = (value: unknown): JsonRecord | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
 
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
@@ -49,11 +44,23 @@ export class GrokSubagents {
     return string(notification?.sessionId)
   }
 
-  isThreadUpdate(update: JsonRecord): boolean {
-    return CHILD_THREAD_UPDATES.has(String(update.sessionUpdate))
+  isThreadUpdate(update: { readonly sessionUpdate: string }): boolean {
+    return CHILD_THREAD_UPDATES.has(update.sessionUpdate)
   }
 
-  mapToolUpdate(sessionId: string, update: JsonRecord): JsonRecord {
+  mapToolEvents(
+    sessionId: string,
+    events: ReadonlyArray<RuntimeEvent>
+  ): ReadonlyArray<RuntimeEvent> {
+    return events.map((event) => {
+      const payload = record(event.payload)
+      return payload === undefined
+        ? event
+        : { ...event, payload: this.mapToolUpdate(sessionId, payload) }
+    })
+  }
+
+  private mapToolUpdate(sessionId: string, update: JsonRecord): JsonRecord {
     if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") {
       return update
     }
@@ -112,7 +119,7 @@ export class GrokSubagents {
     const child = this.children.get(childSessionId)
     if (child === undefined) return []
     return events.map((event) => {
-      const payload = { ...(event.payload as JsonRecord) }
+      const payload = { ...record(event.payload) }
       const toolCallId = string(payload.toolCallId)
       if (toolCallId !== undefined) payload.toolCallId = `${childSessionId}:${toolCallId}`
       return {
