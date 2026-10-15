@@ -83,7 +83,7 @@ export const makeStartSession = ({
             }
           })
     }
-    let response: { thread?: { id?: string }; model?: string }
+    let response: unknown
     if (resumeThreadId === undefined) {
       response = await client.request("thread/start", {
         cwd,
@@ -97,7 +97,10 @@ export const makeStartSession = ({
       })
     }
 
-    const threadId = response.thread?.id
+    const threadId =
+      isRecord(response) && isRecord(response.thread) && typeof response.thread.id === "string"
+        ? response.thread.id
+        : undefined
     if (threadId === undefined) {
       client.close()
       throw new Error("codex app-server did not return a thread id")
@@ -110,7 +113,9 @@ export const makeStartSession = ({
       collaborationEngaged: false,
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
-      currentModel: sanitizeModelValue(response.model ?? ""),
+      currentModel: sanitizeModelValue(
+        isRecord(response) && typeof response.model === "string" ? response.model : ""
+      ),
       currentSpeed: undefined,
       cwd,
       emit,
@@ -131,20 +136,16 @@ export const makeStartSession = ({
       threadId
     }
     try {
-      const modelList = await client.request<{ data?: Array<Record<string, unknown>> }>(
-        "model/list",
-        {}
-      )
-      session.models = (modelList.data ?? []).flatMap((model) => {
-        if (model.hidden === true) return []
+      const modelList = await client.request("model/list", {})
+      const listed = isRecord(modelList) && Array.isArray(modelList.data) ? modelList.data : []
+      session.models = listed.flatMap((model: unknown) => {
+        if (!isRecord(model) || model.hidden === true) return []
         const value = typeof model.model === "string" ? model.model : undefined
         if (value === undefined) return []
         const efforts = Array.isArray(model.supportedReasoningEfforts)
           ? model.supportedReasoningEfforts.flatMap((option) =>
-              typeof option === "object" &&
-              option !== null &&
-              typeof (option as Record<string, unknown>).reasoningEffort === "string"
-                ? [(option as Record<string, unknown>).reasoningEffort as string]
+              isRecord(option) && typeof option.reasoningEffort === "string"
+                ? [option.reasoningEffort]
                 : []
             )
           : []

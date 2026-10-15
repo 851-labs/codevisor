@@ -2,7 +2,7 @@ import type { ToolGatewayConfig } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { makeCodexProvider } from "./provider.js"
-import { definition, environment, FakeCodexClient, run, setup } from "./test-support.js"
+import { definition, environment, FakeCodexClient, recordOf, run, setup } from "./test-support.js"
 
 const expectedNativeCodexSkills = {
   bundled: { enabled: false },
@@ -76,14 +76,14 @@ describe("CodexProvider", () => {
   it("disables native Codex skills and the unified computer use plugin without a tool gateway", async () => {
     const { client } = await setup()
     const start = client.requests.find((request) => request.method === "thread/start")
-    const params = start?.params as { config: Record<string, unknown> }
-    expect(params.config).toMatchObject({
+    const config = recordOf(recordOf(start?.params).config)
+    expect(config).toMatchObject({
       plugins: {
         "unified-computer-use@openai-bundled": { enabled: false }
       },
       skills: expectedNativeCodexSkills
     })
-    expect(params.config).not.toHaveProperty("mcp_servers")
+    expect(config).not.toHaveProperty("mcp_servers")
   })
 
   it("omits native automation disables when the codex config does not define those servers", async () => {
@@ -94,8 +94,7 @@ describe("CodexProvider", () => {
     }
     const { client } = await setup({ toolGateway, codexConfigToml: null })
     const start = client.requests.find((request) => request.method === "thread/start")
-    const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
-    expect(config.config.mcp_servers).toEqual({
+    expect(recordOf(recordOf(start?.params).config).mcp_servers).toEqual({
       codevisor: {
         url: toolGateway.url,
         bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
@@ -117,11 +116,9 @@ describe("CodexProvider", () => {
         codexConfigToml: `[mcp_servers."${serverName}"]\ncommand = "native-automation"\n`
       })
       const start = client.requests.find((request) => request.method === "thread/start")
-      const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
-      expect(Object.keys(config.config.mcp_servers).toSorted()).toEqual(
-        ["codevisor", serverName].toSorted()
-      )
-      expect(config.config.mcp_servers[serverName]).toEqual({ enabled: false })
+      const servers = recordOf(recordOf(recordOf(start?.params).config).mcp_servers)
+      expect(Object.keys(servers).toSorted()).toEqual(["codevisor", serverName].toSorted())
+      expect(servers[serverName]).toEqual({ enabled: false })
     }
   )
 

@@ -1,8 +1,7 @@
 import { type CloudDeviceInfo, encodeCloudFrame } from "@codevisor/api"
-import { SELF } from "cloudflare:test"
+import { env, SELF } from "cloudflare:test"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import type { CloudEnv } from "../src/env.js"
 import { machineTunnelScope } from "../src/hub-tunnel-events.js"
 import { relayMap, tunnelRollout, tunnelScopedDevice } from "../src/hub-tunnel.js"
 import { registerTunnelEndpoint } from "../src/relay-routes.js"
@@ -20,10 +19,8 @@ const authorize = (endpoint: string, token = "relay-secret"): Promise<Response> 
 describe("tunnel control plane", () => {
   it("advertises the relay map, and turns the tunnel on for machines and tunnel apps", async () => {
     const relays = [{ url: "https://relay-test.codevisor.dev", quicPort: 7842 }]
-    const discovery = (await (await SELF.fetch(`${BASE}/.well-known/codevisor`)).json()) as {
-      relays: unknown
-    }
-    expect(discovery.relays).toEqual(relays)
+    const discovery = await SELF.fetch(`${BASE}/.well-known/codevisor`)
+    expect(await discovery.json()).toMatchObject({ relays })
 
     const token = await devLogin()
     const machine = await connectMachine(token, "Relay Map Machine", undefined, alpha)
@@ -184,12 +181,10 @@ describe("tunnel control plane", () => {
       deviceId: "device",
       kind: "machine"
     }
-    const failingDb = {
-      prepare: () => {
-        throw new Error("D1 unavailable")
-      }
-    }
-    const env = { DB: failingDb } as unknown as CloudEnv
+    const prepare = vi.spyOn(env.DB, "prepare").mockImplementation(() => {
+      throw new Error("D1 unavailable")
+    })
+    onTestFinished(() => prepare.mockRestore())
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
     onTestFinished(() => logged.mockRestore())
     await registerTunnelEndpoint(env, registration)

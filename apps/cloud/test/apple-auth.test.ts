@@ -17,13 +17,14 @@ import {
   signingKey,
   subject
 } from "./apple-auth-test-support.js"
-import { authed, BASE, connectMachine, devLogin } from "./cloud-test-support.js"
+import { authed, BASE, connectMachine, devLogin, expectDefined } from "./cloud-test-support.js"
+import { AuthProvidersBody, readJson, SessionUserBody, UrlBody } from "./json-test-support.js"
 
 describe("Apple Cloud authorization", () => {
   it("advertises Apple only when all four credentials exist", async () => {
     for (const configured of [appleEnv, { ...appleEnv, APPLE_PRIVATE_KEY: "" }]) {
       const response = await worker.fetch(new Request(`${BASE}/.well-known/codevisor`), configured)
-      const data = (await response.json()) as { authProviders: string[] }
+      const data = await readJson(response, AuthProvidersBody)
       expect(data.authProviders.includes("apple")).toBe(Boolean(configured.APPLE_PRIVATE_KEY))
     }
   })
@@ -147,7 +148,7 @@ describe("Apple Cloud authorization", () => {
       new Request(`${BASE}/api/auth/get-session`, { headers: authed(token) }),
       appleEnv
     )
-    const { user } = (await current.json()) as { user: { id: string } }
+    const { user } = expectDefined(await readJson(current, SessionUserBody))
     await env.DB.prepare(
       "INSERT INTO account (id, account_id, provider_id, user_id, updated_at) VALUES (?, ?, 'github', ?, ?)"
     )
@@ -164,7 +165,7 @@ describe("Apple Cloud authorization", () => {
       authed(token)
     )
     expect(link.status).toBe(200)
-    const { url } = (await link.json()) as { url: string }
+    const { url } = await readJson(link, UrlBody)
     const completed = await browser.finish(
       new URL(url).searchParams.get("state")!,
       await identityToken()
@@ -205,7 +206,7 @@ describe("Apple Cloud authorization", () => {
       },
       authed(token)
     )
-    const { url } = (await link.json()) as { url: string }
+    const { url } = await readJson(link, UrlBody)
     const deniedLink = await owner.finish(
       new URL(url).searchParams.get("state")!,
       await identityToken()

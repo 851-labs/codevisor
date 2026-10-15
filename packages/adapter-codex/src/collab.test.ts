@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { run, setup } from "./test-support.js"
+import { payloadOf, run, setup } from "./test-support.js"
 
 const activity = (kind: string, id: string, turnId = "turn-1") => ({
   item: {
@@ -98,7 +98,7 @@ describe("CodexProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         kind: "agent",
@@ -152,9 +152,7 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
 
-    const spawn = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .find((payload) => payload.toolCallId === "collab-long")
+    const spawn = events.map(payloadOf).find((payload) => payload.toolCallId === "collab-long")
     expect(spawn?.title).toBe("Agent: You are one of a couple sub-agents being…")
   })
 
@@ -171,7 +169,7 @@ describe("CodexProvider", () => {
     client.emit("item/started", activity("interacted", "call-message"))
     client.emit("item/completed", activity("interacted", "call-message"))
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     const chips = payloads.filter(
       (payload) => payload.sessionUpdate === "tool_call" && payload.kind === "agent"
     )
@@ -217,7 +215,7 @@ describe("CodexProvider", () => {
       activity("completed", "subagent-completed-turn-child-2", "turn-2")
     )
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(
       payloads.filter(
         (payload) => payload.sessionUpdate === "tool_call" && payload.kind === "agent"
@@ -274,7 +272,7 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         sessionUpdate: "tool_call_update",

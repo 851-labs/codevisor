@@ -7,6 +7,7 @@ import {
   type PluginRequirements,
   type PluginToolDescriptor
 } from "@codevisor/api"
+import { z } from "zod"
 
 import type { CloudEnv } from "./env.js"
 
@@ -59,13 +60,16 @@ export interface PluginRefreshSummary {
 
 type FetchLike = NonNullable<CloudEnv["GITHUB_FETCH"]>
 
-interface GitHubSearchRepo {
-  full_name: string
-  default_branch: string
-  stargazers_count: number
-  pushed_at: string
-  owner: { login: string; avatar_url?: string } | null
-}
+const GitHubSearchRepo = z.object({
+  full_name: z.string(),
+  default_branch: z.string(),
+  stargazers_count: z.number(),
+  pushed_at: z.string(),
+  owner: z.object({ login: z.string(), avatar_url: z.string().exactOptional() }).nullable()
+})
+type GitHubSearchRepo = z.infer<typeof GitHubSearchRepo>
+const GitHubSearchPage = z.object({ items: z.array(GitHubSearchRepo).exactOptional() })
+const GitHubCommit = z.object({ sha: z.unknown() })
 
 const githubHeaders = (token: string | undefined): Record<string, string> => ({
   accept: "application/vnd.github+json",
@@ -87,7 +91,7 @@ const searchTaggedRepos = async (
     const url = `https://api.github.com/search/repositories?q=${query}&per_page=${SEARCH_PAGE_SIZE}&page=${page}`
     const response = await fetchImpl(url, { headers: githubHeaders(token) })
     if (!response.ok) throw new Error(`GitHub search failed with status ${response.status}`)
-    const body = (await response.json()) as { items?: GitHubSearchRepo[] }
+    const body = GitHubSearchPage.parse(await response.json())
     const items = body.items ?? []
     repos.push(...items)
     if (items.length < SEARCH_PAGE_SIZE) break
@@ -105,11 +109,12 @@ const resolveDefaultBranchCommit = async (
   if (!response.ok) {
     throw new Error(`commit resolution failed with status ${response.status}`)
   }
-  const body = (await response.json()) as { sha?: unknown }
-  if (typeof body.sha !== "string" || !/^[0-9a-f]{40}$/i.test(body.sha)) {
+  const body = GitHubCommit.safeParse(await response.json())
+  const sha = body.success ? body.data.sha : undefined
+  if (typeof sha !== "string" || !/^[0-9a-f]{40}$/i.test(sha)) {
     throw new Error("commit resolution returned an invalid SHA")
   }
-  return body.sha
+  return sha
 }
 
 const manifestUrl = (repo: GitHubSearchRepo, commit: string): string =>

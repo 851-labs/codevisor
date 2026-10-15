@@ -6,6 +6,7 @@ import {
   waitOnExecutionContext
 } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
@@ -13,10 +14,9 @@ import {
   PLUGIN_INDEX_KEY,
   pluginEntryKey,
   refreshPluginIndex,
-  validateManifestForIndex,
-  type PluginIndex,
-  type PluginIndexEntry
+  validateManifestForIndex
 } from "../src/plugin-registry.js"
+import { parseJson, readJson } from "./json-test-support.js"
 
 const BASE = "http://localhost:8787"
 const SEARCH_URL = "https://api.github.com/search/repositories"
@@ -97,11 +97,16 @@ const failingFetch =
   () =>
     Promise.resolve(new Response(body, { status }))
 
-const readIndex = async (): Promise<PluginIndex> => {
-  const raw = await env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY)
-  expect(raw).not.toBeNull()
-  return JSON.parse(raw as string) as PluginIndex
-}
+const IndexEntry = z.looseObject({ id: z.string() })
+type IndexEntry = z.infer<typeof IndexEntry>
+const StoredIndex = z.object({
+  generatedAt: z.string().nullable(),
+  entries: z.array(IndexEntry),
+  rejected: z.array(z.object({ repo: z.string(), reason: z.string() }))
+})
+
+const readIndex = async (): Promise<z.infer<typeof StoredIndex>> =>
+  parseJson(await env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY), StoredIndex)
 
 describe("manifest validation", () => {
   it("accepts a well-formed manifest owned by the repo owner", () => {
@@ -212,7 +217,7 @@ describe("refreshPluginIndex", () => {
     expect(reasons["octocat/broken"]).toContain("not valid JSON")
 
     const entry = await env.PLUGIN_INDEX.get(pluginEntryKey("octocat.notes"))
-    expect(JSON.parse(entry as string)).toMatchObject({
+    expect(parseJson(entry, IndexEntry)).toMatchObject({
       id: "octocat.notes",
       repo: "octocat/notes"
     })
@@ -285,12 +290,12 @@ describe("refreshPluginIndex", () => {
   })
 })
 
-const seedNotesPlugin = async (): Promise<PluginIndexEntry> => {
+const seedNotesPlugin = async (): Promise<IndexEntry | undefined> => {
   const stub = githubStub([
     { owner: "octocat", name: "notes", manifest: JSON.stringify(manifest()) }
   ])
   await refreshPluginIndex({ ...env, GITHUB_FETCH: stub.fetch })
-  return (await readIndex()).entries[0] as PluginIndexEntry
+  return (await readIndex()).entries[0]
 }
 
 describe("plugin registry routes", () => {
@@ -310,7 +315,7 @@ describe("plugin registry routes", () => {
     expect(index.headers.get("cache-control")).toBe(
       "public, max-age=300, stale-while-revalidate=900"
     )
-    expect(((await index.json()) as PluginIndex).entries).toEqual([entry])
+    expect((await readJson(index, StoredIndex)).entries).toEqual([entry])
 
     const single = await SELF.fetch(`${BASE}/plugins/octocat.notes.json`)
     expect(single.status).toBe(200)

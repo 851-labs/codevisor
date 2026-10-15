@@ -1,12 +1,4 @@
-import {
-  encodeCloudFrame,
-  encodeRelayEnvelopes,
-  type CloudMachinePresence,
-  type HubToApp,
-  type HubToMachine,
-  type HubToAppRelayHeader,
-  type HubToMachineRelayHeader
-} from "@codevisor/api"
+import { encodeCloudFrame, encodeRelayEnvelopes, type CloudMachinePresence } from "@codevisor/api"
 import {
   acceptChannel,
   fromBase64Url,
@@ -17,6 +9,7 @@ import {
 } from "@codevisor/cloud-crypto"
 import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import {
   BASE,
@@ -27,8 +20,13 @@ import {
   sendRelay,
   connectSocket,
   connectMachine,
-  connectApp
+  connectApp,
+  appRelayHeader,
+  expectDefined,
+  expectTag,
+  machineRelayHeader
 } from "./cloud-test-support.js"
+import { MachinesBody, readJson } from "./json-test-support.js"
 
 describe("hub presence", () => {
   it("registers machines and reflects live presence to apps", async () => {
@@ -41,7 +39,7 @@ describe("hub presence", () => {
 
     await disconnect(token, machine.socket, "bye")
     await expireResumeGrace(token)
-    const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
+    const presence = await app.reader.nextFrame("presence")
     expect(presence.t).toBe("presence")
     expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: false })
   })
@@ -53,7 +51,7 @@ describe("hub presence", () => {
     const list = async (): Promise<CloudMachinePresence[]> => {
       const response = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
       expect(response.status).toBe(200)
-      return ((await response.json()) as { machines: CloudMachinePresence[] }).machines
+      return (await readJson(response, MachinesBody)).machines
     }
     expect((await list()).some((m) => m.deviceId === machine.deviceId && m.online)).toBe(true)
 
@@ -135,13 +133,13 @@ describe("hub relay", () => {
     )
 
     const opened = await machine.reader.nextEnvelope()
-    const openHeader = opened.header as HubToMachineRelayHeader
+    const openHeader = machineRelayHeader(opened)
     expect(openHeader.peerPublicKey).toBe(app.keys.publicKey)
     expect(openHeader.peerDeviceId).toBe(app.deviceId)
-    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
+    const openFrame = expectTag(openHeader.frame, "open")
     const responder = acceptChannel(
       machine.keys.secretKey,
-      openHeader.peerPublicKey!,
+      expectDefined(openHeader.peerPublicKey),
       openFrame.ephemeralKey
     )
     expect(openJson(responder, "ch-1", "opener-to-responder", 0, opened.payload)).toEqual(
@@ -158,7 +156,7 @@ describe("hub relay", () => {
       })
     )
     const answered = await app.reader.nextEnvelope()
-    const answeredHeader = answered.header as HubToAppRelayHeader
+    const answeredHeader = appRelayHeader(answered)
     expect(answeredHeader.machineId).toBe(machine.deviceId)
     expect(openJson(channel.cipher, "ch-1", "responder-to-opener", 0, answered.payload)).toEqual({
       type: "output",
@@ -171,7 +169,7 @@ describe("hub relay", () => {
       frame: { t: "credit", channelId: "ch-1", seq: 1, bytes: 65536 }
     })
     const credit = await machine.reader.nextEnvelope()
-    expect((credit.header as HubToMachineRelayHeader).frame).toMatchObject({
+    expect(machineRelayHeader(credit).frame).toMatchObject({
       t: "credit",
       bytes: 65536
     })
@@ -180,7 +178,7 @@ describe("hub relay", () => {
       frame: { t: "close", channelId: "ch-1", seq: 2, reason: "done" }
     })
     const closeRelay = await machine.reader.nextEnvelope()
-    expect((closeRelay.header as HubToMachineRelayHeader).frame.t).toBe("close")
+    expect(machineRelayHeader(closeRelay).frame.t).toBe("close")
   })
 
   it("keeps a coalesced envelope batch one message through the hop", async () => {
@@ -213,7 +211,7 @@ describe("hub relay", () => {
     const third = await machine.reader.nextEnvelope()
     expect([...first.payload]).toEqual([1])
     expect([...second.payload]).toEqual([2, 2])
-    expect((third.header as HubToMachineRelayHeader).frame).toMatchObject({ t: "credit" })
+    expect(machineRelayHeader(third).frame).toMatchObject({ t: "credit" })
     expect(machine.reader.binaryMessages - before).toBe(1)
   })
 
@@ -235,11 +233,11 @@ describe("hub relay", () => {
       })
     )
     const opened = await machine.reader.nextEnvelope()
-    const openHeader = opened.header as HubToMachineRelayHeader
-    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
+    const openHeader = machineRelayHeader(opened)
+    const openFrame = expectTag(openHeader.frame, "open")
     const responder = acceptChannel(
       machine.keys.secretKey,
-      openHeader.peerPublicKey!,
+      expectDefined(openHeader.peerPublicKey),
       openFrame.ephemeralKey
     )
 
@@ -259,7 +257,7 @@ describe("hub relay", () => {
       frame: { t: "credit", channelId, seq: 0, bytes: request.payload.byteLength }
     })
     const credit = await app.reader.nextEnvelope()
-    expect((credit.header as HubToAppRelayHeader).frame).toEqual({
+    expect(appRelayHeader(credit).frame).toEqual({
       t: "credit",
       channelId,
       seq: 0,
@@ -305,23 +303,22 @@ describe("hub relay", () => {
     )
 
     const opened = await machine.reader.nextEnvelope()
-    const openHeader = opened.header as HubToMachineRelayHeader
-    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
+    const openHeader = machineRelayHeader(opened)
+    const openFrame = expectTag(openHeader.frame, "open")
     const responder = acceptChannel(
       machine.keys.secretKey,
-      openHeader.peerPublicKey!,
+      expectDefined(openHeader.peerPublicKey),
       openFrame.ephemeralKey
     )
-    const request = openJson(responder, "http-1", "opener-to-responder", 0, opened.payload) as {
-      params: { method: string; path: string }
-    }
-    expect(request).toEqual(openPayload)
+    expect(openJson(responder, "http-1", "opener-to-responder", 0, opened.payload)).toEqual(
+      openPayload
+    )
     const ended = await machine.reader.nextEnvelope()
     expect(openJson(responder, "http-1", "opener-to-responder", 1, ended.payload)).toEqual({
       kind: "end"
     })
 
-    const response = infoOnlyLocalServer(request.params.method, request.params.path)
+    const response = infoOnlyLocalServer(openPayload.params.method, openPayload.params.path)
     const answer = (seq: number, value: unknown): void =>
       sendRelay(
         machine.socket,
@@ -345,12 +342,11 @@ describe("hub relay", () => {
       status: 200,
       headers: { "content-type": "application/json" }
     })
-    const chunk = (await read(1)) as { kind: string; data: string }
-    expect(chunk.kind).toBe("chunk")
+    const chunk = z.object({ kind: z.literal("chunk"), data: z.string() }).parse(await read(1))
     expect(new TextDecoder().decode(fromBase64Url(chunk.data))).toBe(response.body)
     expect(await read(2)).toEqual({ kind: "end" })
     const closed = await app.reader.nextEnvelope()
-    expect((closed.header as HubToAppRelayHeader).frame).toMatchObject({
+    expect(appRelayHeader(closed).frame).toMatchObject({
       t: "close",
       channelId: "http-1",
       reason: "done"
@@ -364,7 +360,7 @@ describe("hub relay", () => {
     await disconnect(token, machine.socket, "gone")
     await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
-    const broadcast = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const broadcast = await app.reader.nextFrame("error")
     expect(broadcast).toMatchObject({
       t: "error",
       code: "machine-offline",
@@ -373,11 +369,11 @@ describe("hub relay", () => {
 
     const frame = { t: "data", channelId: "ch-x", seq: 0 } as const
     sendRelay(app.socket, { machineId: machine.deviceId, frame }, new Uint8Array([1]))
-    const offline = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const offline = await app.reader.nextFrame("error")
     expect(offline).toMatchObject({ t: "error", code: "machine-offline", channelId: "ch-x" })
 
     sendRelay(app.socket, { machineId: "never-existed", frame }, new Uint8Array([1]))
-    const unknown = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const unknown = await app.reader.nextFrame("error")
     expect(unknown.code).toBe("unknown-machine")
   })
 
@@ -397,14 +393,14 @@ describe("hub relay", () => {
       new Uint8Array([1])
     )
     const relayed = await reborn.reader.nextEnvelope()
-    expect((relayed.header as HubToMachineRelayHeader).frame).toMatchObject({
+    expect(machineRelayHeader(relayed).frame).toMatchObject({
       channelId: "ch-fresh"
     })
 
     expect(await superseded).toBe(4003)
-    const reset = (await app.reader.next()) as Extract<HubToApp, { t: "machine-reset" }>
+    const reset = await app.reader.nextFrame("machine-reset")
     expect(reset).toMatchObject({ t: "machine-reset", machineId: machine.deviceId })
-    const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
+    const presence = await app.reader.nextFrame("presence")
     expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: true })
   })
 
@@ -414,7 +410,7 @@ describe("hub relay", () => {
     const app = await connectApp(token)
     await disconnect(token, app.socket, "app quit")
     await expireResumeGrace(token)
-    const gone = (await machine.reader.next()) as Extract<HubToMachine, { t: "peer-gone" }>
+    const gone = await machine.reader.nextFrame("peer-gone")
     expect(gone).toMatchObject({ t: "peer-gone", peerId: app.welcome.connectionId })
   })
 
@@ -431,15 +427,15 @@ describe("hub relay", () => {
     expect((await machine.reader.next()).t).toBe("pong")
 
     app.socket.send("this is not json")
-    const notJson = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const notJson = await app.reader.nextFrame("error")
     expect(notJson.code).toBe("invalid-frame")
 
     app.socket.send(new Uint8Array([0, 0, 0, 99]).buffer)
-    const truncated = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const truncated = await app.reader.nextFrame("error")
     expect(truncated.code).toBe("invalid-frame")
 
     app.socket.send(encodeRelayEnvelopes([{ header: { nope: true }, payload: new Uint8Array(0) }]))
-    const badHeader = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const badHeader = await app.reader.nextFrame("error")
     expect(badHeader.code).toBe("invalid-frame")
   })
 })

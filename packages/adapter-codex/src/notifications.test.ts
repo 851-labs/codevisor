@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { run, setup, UNIFIED_DIFF } from "./test-support.js"
+import { payloadField, payloadOf, run, setup, UNIFIED_DIFF } from "./test-support.js"
 
 describe("CodexProvider", () => {
   it("keeps last-turn and cumulative usage distinct and omits nonfinite counters", async () => {
@@ -191,9 +191,7 @@ describe("CodexProvider", () => {
 
     expect(
       events.some(
-        (event) =>
-          event.kind === "session.updated" &&
-          (event.payload as Record<string, unknown>).retrying !== undefined
+        (event) => event.kind === "session.updated" && payloadField(event, "retrying") !== undefined
       )
     ).toBe(false)
     expect(events.at(-1)?.payload).toMatchObject({
@@ -201,7 +199,7 @@ describe("CodexProvider", () => {
       stopKind: "usageLimit",
       turnState: "ended"
     })
-    expect((events.at(-1)!.payload as Record<string, unknown>).retryable).toBeUndefined()
+    expect(payloadOf(events.at(-1)).retryable).toBeUndefined()
   })
 
   it("labels a retryable HTTP 429 as temporary request throttling", async () => {
@@ -249,7 +247,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    const opened = events.at(-1)?.payload as Record<string, unknown>
+    const opened = payloadOf(events.at(-1))
     expect(opened).toMatchObject({
       sessionUpdate: "tool_call",
       toolCallId: "item-early",
@@ -265,7 +263,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    const streamed = events.at(-1)?.payload as Record<string, unknown>
+    const streamed = payloadOf(events.at(-1))
     expect(streamed).toMatchObject({
       sessionUpdate: "tool_call_update",
       toolCallId: "item-early",
@@ -283,7 +281,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    expect((events.at(-1)!.payload as Record<string, unknown>).sessionUpdate).toBe("tool_call")
+    expect(payloadOf(events.at(-1)).sessionUpdate).toBe("tool_call")
   })
 
   it("drives the thinking state from reasoning item lifecycles", async () => {

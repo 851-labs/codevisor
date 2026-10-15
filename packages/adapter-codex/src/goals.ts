@@ -1,26 +1,18 @@
-import type { GoalStatus, SessionGoal } from "@codevisor/api"
+import { GoalStatus } from "@codevisor/api"
+import type { SessionGoal } from "@codevisor/api"
+import { Schema } from "effect"
 
 import { isRecord } from "./internal.js"
 import type { CodexSession } from "./session.js"
 
 export const GOAL_ACCOUNTING_INTERVAL_MS = 2000
 
-const GOAL_STATUSES: ReadonlySet<string> = new Set([
-  "active",
-  "paused",
-  "blocked",
-  "usageLimited",
-  "budgetLimited",
-  "complete"
-])
+const isGoalStatus = Schema.is(GoalStatus)
 
 export const sessionGoalFrom = (value: unknown): SessionGoal | undefined => {
   if (!isRecord(value)) return undefined
   const objective = typeof value.objective === "string" ? value.objective : undefined
-  const status =
-    typeof value.status === "string" && GOAL_STATUSES.has(value.status)
-      ? (value.status as GoalStatus)
-      : undefined
+  const status = isGoalStatus(value.status) ? value.status : undefined
   if (objective === undefined || status === undefined) return undefined
   return {
     createdAt: isoFromUnixSeconds(value.createdAt),

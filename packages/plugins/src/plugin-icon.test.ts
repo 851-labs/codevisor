@@ -17,7 +17,7 @@ const response = (body: BodyInit | null, contentType?: string, headers = {}): Re
   })
 
 const setup = (
-  fetchImpl: typeof fetch,
+  fetchImpl: (input: string, init: RequestInit) => Promise<Response>,
   manifest: Parameters<typeof plugin>[0] = {
     iconPath: "/assets/plugin.svg",
     panes: [
@@ -57,7 +57,7 @@ describe("fetchPluginIcon", () => {
       expect(new Headers(init?.headers).get("accept")).toContain("image/svg+xml")
       expect(new Headers(init?.headers).get("x-test-signature")).toBe("signed")
       return response(safeSvg, "image/svg+xml; charset=utf-8")
-    }) as unknown as typeof fetch
+    })
     const fixture = setup(fetchImpl)
 
     const pluginAsset = await fetchPluginIcon(fixture.options)
@@ -79,9 +79,7 @@ describe("fetchPluginIcon", () => {
   })
 
   it("inherits the plugin icon for panes without an override", async () => {
-    const fetchImpl = vi.fn(async () =>
-      response(safeSvg, "image/svg+xml")
-    ) as unknown as typeof fetch
+    const fetchImpl = vi.fn(async () => response(safeSvg, "image/svg+xml"))
     const fixture = setup(fetchImpl, {
       iconPath: "/assets/plugin.svg",
       panes: [{ path: "/panes/main/", title: "Main", type: "main" }]
@@ -101,9 +99,7 @@ describe("fetchPluginIcon", () => {
       [new Uint8Array(png), "image/png"],
       [new Uint8Array(webp), "image/webp"]
     ] as const) {
-      const fixture = setup(
-        vi.fn(async () => response(body, contentType)) as unknown as typeof fetch
-      )
+      const fixture = setup(vi.fn(async () => response(body, contentType)))
       const asset = await fetchPluginIcon(fixture.options)
       expect(asset.contentType).toBe("image/png")
       expect(asset.data.byteLength).toBeGreaterThan(0)
@@ -111,7 +107,7 @@ describe("fetchPluginIcon", () => {
   })
 
   it("rejects missing icon declarations and unknown pane types before fetching", async () => {
-    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const fetchImpl = vi.fn()
     const noIcon = setup(fetchImpl, {
       panes: [{ path: "/panes/main/", title: "Main", type: "main" }]
     })
@@ -138,7 +134,7 @@ describe("fetchPluginIcon", () => {
         /exceeds/
       ]
     ] as const) {
-      const fixture = setup(vi.fn(async () => reply) as unknown as typeof fetch)
+      const fixture = setup(vi.fn(async () => reply))
       await expect(fetchPluginIcon(fixture.options)).rejects.toThrow(message)
       expect(fixture.noteSuccess).toHaveBeenCalledOnce()
     }
@@ -146,19 +142,13 @@ describe("fetchPluginIcon", () => {
 
   it("stops reading a chunked response once it exceeds the byte cap", async () => {
     const body = new Uint8Array(MAX_PLUGIN_ICON_BYTES + 1)
-    const fixture = setup(vi.fn(async () => response(body, "image/png")) as unknown as typeof fetch)
+    const fixture = setup(vi.fn(async () => response(body, "image/png")))
     await expect(fetchPluginIcon(fixture.options)).rejects.toThrow(/exceeds/)
   })
 
   it("handles an empty response body and malformed raster data", async () => {
-    const emptyResponse = {
-      body: null,
-      headers: new Headers({ "content-type": "image/png" }),
-      ok: true,
-      status: 200
-    } as Response
-    for (const reply of [emptyResponse, response("not a png", "image/png")]) {
-      const fixture = setup(vi.fn(async () => reply) as unknown as typeof fetch)
+    for (const reply of [response(null, "image/png"), response("not a png", "image/png")]) {
+      const fixture = setup(vi.fn(async () => reply))
       await expect(fetchPluginIcon(fixture.options)).rejects.toThrow(/could not be decoded/)
     }
   })
@@ -174,9 +164,7 @@ describe("fetchPluginIcon", () => {
       ['<svg><rect fill="url(https://example.com/a.svg#x)"/></svg>', /external resource/]
     ]
     for (const [body, message] of cases) {
-      const fixture = setup(
-        vi.fn(async () => response(body, "image/svg+xml")) as unknown as typeof fetch
-      )
+      const fixture = setup(vi.fn(async () => response(body, "image/svg+xml")))
       await expect(fetchPluginIcon(fixture.options)).rejects.toThrow(message)
     }
   })
@@ -189,7 +177,7 @@ describe("fetchPluginIcon", () => {
       const fixture = setup(
         vi.fn(async () => {
           throw cause
-        }) as unknown as typeof fetch
+        })
       )
       await expect(fetchPluginIcon(fixture.options)).rejects.toThrow(
         cause.name === "TimeoutError" ? /did not respond within/ : /request failed/

@@ -4,8 +4,7 @@ import { expect, it, vi } from "vitest"
 import { ResumeSessions } from "../src/resume-sessions.js"
 
 it("one resume token can adopt its identity only once during concurrent rotation", async () => {
-  const namespace = env.USER_HUB as unknown as DurableObjectNamespace
-  const stub = namespace.get(namespace.idFromName("resume-token-ownership"))
+  const stub = env.USER_HUB.get(env.USER_HUB.idFromName("resume-token-ownership"))
   await runInDurableObject(stub, async (_hub, state) => {
     const sessions = new ResumeSessions(state.storage.sql, 60_000)
     const token = await sessions.register("original", "app", "device", "key")

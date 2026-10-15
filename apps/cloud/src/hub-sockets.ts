@@ -5,13 +5,14 @@ import {
   type HubToMachine
 } from "@codevisor/api"
 
-import type { SocketAttachment } from "./hub-schema.js"
+import { SocketAttachment } from "./hub-schema.js"
 
 export class HubSockets {
-  constructor(private readonly ctx: DurableObjectState) {}
+  constructor(private readonly ctx: Pick<DurableObjectState, "getWebSockets">) {}
 
   attachment(socket: WebSocket): SocketAttachment | undefined {
-    return (socket.deserializeAttachment() as SocketAttachment | null) ?? undefined
+    const parsed = SocketAttachment.safeParse(socket.deserializeAttachment())
+    return parsed.success ? parsed.data : undefined
   }
 
   byTag(tag: string): WebSocket[] {

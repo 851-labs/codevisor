@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import type { Socket } from "node:net"
+import type { Duplex } from "node:stream"
 
 import type {
   DiscoverRemotePluginRequest,
@@ -61,7 +61,7 @@ export interface PluginsManager {
   ) => Promise<boolean>
   readonly handleUpgrade: (
     request: IncomingMessage,
-    socket: Socket,
+    socket: Duplex,
     head: Buffer
   ) => Promise<boolean>
   readonly restart: (pluginId: string) => Promise<PluginSummary>

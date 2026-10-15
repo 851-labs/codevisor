@@ -1,42 +1,19 @@
 import { decodeHubToApp, encodeRelayEnvelopes } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
-import { abandonSession, type HubNoticesPort } from "../src/hub-notices.js"
-import type { MachineRow, SocketAttachment } from "../src/hub-schema.js"
-import type { ResumeSessionRow } from "../src/resume-sessions.js"
+import { abandonSession } from "../src/hub-notices.js"
+import { ResumeSessions, type ResumeSessionRow } from "../src/resume-sessions.js"
+import {
+  insertMachine,
+  machineRow,
+  openSocket,
+  taggedSockets,
+  withHubStorage
+} from "./hub-port-test-support.js"
 
 describe("abandoned machine session", () => {
-  it("fails buffered channels even while the machine is connected under another session", () => {
-    const row: MachineRow = {
-      device_id: "machine-1",
-      name: "Machine",
-      os: "macOS",
-      app_version: "1",
-      public_key: "key",
-      last_seen_at: "now",
-      active_generation: 3,
-      server_id: null,
-      peer_aware: 0,
-      tunnel_endpoint_id: null,
-      tunnel_addr: null,
-      added_by_device_id: null,
-      added_by_name: null
-    }
-    const machineSocket = { readyState: WebSocket.OPEN } as WebSocket
-    const appSocket = { readyState: WebSocket.OPEN } as WebSocket
-    const attachments = new Map<WebSocket, SocketAttachment>([
-      [
-        machineSocket,
-        {
-          kind: "machine",
-          connectionId: "machine-now",
-          deviceId: row.device_id,
-          machineGeneration: row.active_generation,
-          helloDone: true
-        }
-      ],
-      [appSocket, { kind: "app", connectionId: "app-1", helloDone: true }]
-    ])
+  it("fails buffered channels even while the machine is connected under another session", async () => {
+    const row = machineRow({ active_generation: 3 })
     const expired: ResumeSessionRow = {
       connection_id: "machine-before",
       kind: "machine",
@@ -70,42 +47,49 @@ describe("abandoned machine session", () => {
       ])
     ]
     const sent: { socket: WebSocket; frame: unknown }[] = []
-    const remove = vi.fn()
-    const broadcastMachineNotice = vi.fn()
-    const port = {
-      sql: { exec: () => ({ toArray: () => [row] }) },
-      net: {
-        machine: () => [machineSocket],
-        attachment: (socket: WebSocket) => attachments.get(socket),
-        isRoutable: (socket: WebSocket) => attachments.get(socket)?.helloDone === true,
-        byConnectionId: (id: string) =>
-          [...attachments].filter(([, a]) => a.connectionId === id).map(([socket]) => socket),
-        byTag: () => [],
-        broadcastMachineNotice,
-        broadcastToPeerMachines: vi.fn(),
-        send: (socket: WebSocket, encoded: string) => {
-          sent.push({ socket, frame: decodeHubToApp(encoded) })
-          return true
-        }
-      },
-      resume: { drainBuffers: () => buffered, delete: remove }
-    } as unknown as HubNoticesPort
 
-    abandonSession(port, expired)
+    await withHubStorage((sql) => {
+      insertMachine(sql, row)
+      const machineSocket = openSocket({
+        kind: "machine",
+        connectionId: "machine-now",
+        deviceId: row.device_id,
+        machineGeneration: row.active_generation,
+        helloDone: true
+      })
+      const appSocket = openSocket({ kind: "app", connectionId: "app-1", helloDone: true })
+      const net = taggedSockets(
+        new Map([
+          [machineSocket, ["machine", `machine:${row.device_id}`]],
+          [appSocket, ["app"]]
+        ])
+      )
+      vi.spyOn(net, "send").mockImplementation((socket, encoded) => {
+        if (typeof encoded !== "string") throw new Error("expected a JSON control frame")
+        sent.push({ socket, frame: decodeHubToApp(encoded) })
+        return true
+      })
+      const broadcastMachineNotice = vi.spyOn(net, "broadcastMachineNotice")
+      const resume = new ResumeSessions(sql, 60_000)
+      vi.spyOn(resume, "drainBuffers").mockReturnValue(buffered)
+      const remove = vi.spyOn(resume, "delete")
 
-    expect(remove).toHaveBeenCalledWith("machine-before")
-    expect(broadcastMachineNotice).not.toHaveBeenCalled()
-    expect(sent).toEqual([
-      {
-        socket: appSocket,
-        frame: {
-          t: "error",
-          code: "machine-offline",
-          message: "machine relay delivery failed",
-          machineId: row.device_id,
-          channelId: "ch-1"
+      abandonSession({ net, resume, sql }, expired)
+
+      expect(remove).toHaveBeenCalledWith("machine-before")
+      expect(broadcastMachineNotice).not.toHaveBeenCalled()
+      expect(sent).toEqual([
+        {
+          socket: appSocket,
+          frame: {
+            t: "error",
+            code: "machine-offline",
+            message: "machine relay delivery failed",
+            machineId: row.device_id,
+            channelId: "ch-1"
+          }
         }
-      }
-    ])
+      ])
+    })
   })
 })

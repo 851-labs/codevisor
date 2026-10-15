@@ -9,12 +9,13 @@ import { notifyPluginReports } from "./plugin-reports.js"
 const pluginIdPattern = /^[a-z0-9-]+\.[a-z0-9-]+$/
 const publisherPattern = /^[a-z0-9-]{1,100}$/
 const reportReasons = new Set(["Harmful content", "Privacy or security", "Spam or abuse", "Other"])
-const readBody = async (request: Request): Promise<Record<string, unknown>> => {
-  const value: unknown = await request.json().catch(() => null)
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+const jsonRecord = z.record(z.string(), z.unknown())
+const recordOrEmpty = (value: unknown): Record<string, unknown> => {
+  const parsed = jsonRecord.safeParse(value)
+  return parsed.success ? parsed.data : {}
 }
+const readBody = async (request: Request): Promise<Record<string, unknown>> =>
+  recordOrEmpty(await request.json().catch(() => null))
 type ModerationEnv = { Bindings: CloudEnv; Variables: { userId: string } }
 const catalogMetadata = z.object({
   name: z.string().min(1).max(120),
@@ -104,7 +105,7 @@ pluginModeration.get("/api/plugins/index", async (c) => {
     .all<{ plugin_id: string; consent_key: string; metadata: string }>()
   return c.json({
     entries: rows.results.map((row) => ({
-      ...(JSON.parse(row.metadata) as Record<string, unknown>),
+      ...recordOrEmpty(JSON.parse(row.metadata)),
       id: row.plugin_id,
       consentKey: row.consent_key,
       url: `https://www.codevisor.dev/plugins/${row.plugin_id}`

@@ -3,6 +3,7 @@ import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime
 
 import { codexInput } from "./attachments.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
+import { isRecord } from "./internal.js"
 import {
   CODEX_FAST_TIER,
   CODEX_MODES,
@@ -116,13 +117,13 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     }),
   setGoal: (update: SetGoalUpdate) =>
     adapterPromise("setGoal", async () => {
-      const response = await session.client.request<{ goal?: unknown }>("thread/goal/set", {
+      const response = await session.client.request("thread/goal/set", {
         threadId: session.threadId,
         ...(update.objective === undefined ? {} : { objective: update.objective }),
         ...(update.status === undefined ? {} : { status: update.status }),
         ...("tokenBudget" in update ? { tokenBudget: update.tokenBudget ?? null } : {})
       })
-      const goal = sessionGoalFrom(response.goal)
+      const goal = sessionGoalFrom(isRecord(response) ? response.goal : undefined)
       if (goal === undefined) {
         throw new Error("codex app-server returned no goal for thread/goal/set")
       }

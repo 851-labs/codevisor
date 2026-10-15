@@ -1,8 +1,8 @@
-import { EventEmitter } from "node:events"
 import * as http from "node:http"
 import { createServer, type Server } from "node:http"
+import { Socket } from "node:net"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest"
 
 import type { InstalledPlugin } from "./plugin-store.js"
 import {
@@ -10,8 +10,14 @@ import {
   type PluginTerminalProcess,
   type RegisterPluginTerminal
 } from "./plugin-supervisor.js"
-import { PluginsError } from "./plugins-error.js"
-import { advancingClock, cleanups, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
+import {
+  advancingClock,
+  cleanups,
+  expectPluginsError,
+  fakeSpawn,
+  makeDataDir,
+  plugin
+} from "./test-support.js"
 
 vi.mock("node:http", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:http")>()
@@ -185,18 +191,16 @@ describe("makePluginSupervisor", () => {
   })
 
   it("times out an HTTP health endpoint that never answers", async () => {
-    const requests: Array<EventEmitter & { destroy: ReturnType<typeof vi.fn> }> = []
+    const destroys: Array<MockInstance<http.ClientRequest["destroy"]>> = []
     vi.mocked(http.request).mockImplementation(() => {
-      const request = Object.assign(new EventEmitter(), {
-        destroy: vi.fn(() => {
-          request.emit("error", new Error("socket destroyed"))
-        }),
-        end: () => {
-          request.emit("timeout")
-        }
+      const request = new http.ClientRequest({ createConnection: () => new Socket() })
+      request.on("error", () => undefined)
+      vi.spyOn(request, "end").mockImplementation(() => {
+        request.emit("timeout")
+        return request
       })
-      requests.push(request)
-      return request as unknown as http.ClientRequest
+      destroys.push(vi.spyOn(request, "destroy"))
+      return request
     })
     const clock = advancingClock()
     const supervisor = makePluginSupervisor({
@@ -208,8 +212,8 @@ describe("makePluginSupervisor", () => {
     await expect(supervisor.ensureRunning(plugin({ healthPath: "/health" }))).rejects.toThrow(
       /did not start listening/
     )
-    expect(requests.length).toBeGreaterThan(0)
-    expect(requests.every((request) => request.destroy.mock.calls.length === 1)).toBe(true)
+    expect(destroys.length).toBeGreaterThan(0)
+    expect(destroys.every((destroy) => destroy.mock.calls.length === 1)).toBe(true)
   })
 
   it("fails fast when the process exits before it is ready", async () => {
@@ -229,8 +233,7 @@ describe("makePluginSupervisor", () => {
       await supervisor.ensureRunning(plugin())
       expect.unreachable("start should have failed")
     } catch (cause) {
-      expect(cause).toBeInstanceOf(PluginsError)
-      expect((cause as PluginsError).message).toContain("exited with code 3")
+      expect(expectPluginsError(cause).message).toContain("exited with code 3")
     }
   })
 
@@ -391,8 +394,9 @@ describe("makePluginSupervisor", () => {
       await supervisor.ensureRunning(target)
       expect.unreachable("start should have failed")
     } catch (cause) {
-      expect((cause as PluginsError).message).toContain("exited with code 3")
-      expect((cause as PluginsError).message).toContain("boom")
+      const error = expectPluginsError(cause)
+      expect(error.message).toContain("exited with code 3")
+      expect(error.message).toContain("boom")
     }
   })
 

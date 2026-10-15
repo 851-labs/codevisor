@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { run, setup } from "./test-support.js"
+import { payloadField, payloadOf, recordOf, run, setup } from "./test-support.js"
 
 describe("CodexProvider", () => {
   it("asks for reasoning summaries, so reasoning is reported as it starts, until the account refuses them", async () => {
@@ -114,10 +114,7 @@ describe("CodexProvider", () => {
       await promptPromise
     }
     const lastTurnStart = (): Record<string, unknown> =>
-      client.requests.findLast((request) => request.method === "turn/start")?.params as Record<
-        string,
-        unknown
-      >
+      recordOf(client.requests.findLast((request) => request.method === "turn/start")?.params)
 
     await run(created!.handle.setConfigOption("speed", "fast"))
     expect(events.at(-1)?.payload).toMatchObject({ configId: "speed", value: "fast" })
@@ -129,8 +126,9 @@ describe("CodexProvider", () => {
     expect(lastTurnStart()).toMatchObject({ serviceTier: "default" })
 
     await run(created!.handle.setConfigOption("model", "gpt-5.5"))
-    const afterModel = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
-    expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
+    expect(payloadOf(events.at(-1)).configOptions).not.toContainEqual(
+      expect.objectContaining({ id: "speed" })
+    )
     await runTurn("go", "t3")
     expect("serviceTier" in lastTurnStart()).toBe(false)
   })
@@ -143,8 +141,8 @@ describe("CodexProvider", () => {
     const started = nextEvent(
       (event) =>
         event.kind === "session.updated" &&
-        (event.payload as Record<string, unknown>).turnState === "started" &&
-        (event.payload as Record<string, unknown>).turnId === "turn-9"
+        payloadField(event, "turnState") === "started" &&
+        payloadField(event, "turnId") === "turn-9"
     )
     client.emit("turn/started", {
       threadId: "thread-new",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { run, setup } from "./test-support.js"
+import { payloadField, run, setup } from "./test-support.js"
 
 const skill = (name: string, fields: Record<string, unknown> = {}) => ({
   description: `${name} description`,
@@ -72,8 +72,7 @@ describe("Codex skills", () => {
     client.listedSkills = [skill("triage"), skill("ship")]
 
     const update = nextEvent(
-      (event) =>
-        (event.payload as { sessionUpdate?: unknown }).sessionUpdate === "available_skills_update"
+      (event) => payloadField(event, "sessionUpdate") === "available_skills_update"
     )
     client.emit("skills/changed", {})
 

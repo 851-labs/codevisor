@@ -1,10 +1,12 @@
 import { env } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import { loginURL, validAuthRedirect } from "../src/pages/auth-navigation.js"
 import { BASE } from "./cloud-test-support.js"
+import { parseJson, readJson } from "./json-test-support.js"
 
 const baseEnv: CloudEnv = {
   ...env,
@@ -117,7 +119,7 @@ describe("browser email sessions", () => {
       ...baseEnv,
       RESEND_API_KEY: "test-key",
       AUTH_EMAIL_FETCH: async (_input, init) => {
-        mail = (JSON.parse(init!.body as string) as { text: string }).text
+        mail = parseJson(init?.body, z.object({ text: z.string() })).text
         return Response.json({ id: "web-test-mail" })
       }
     }
@@ -157,7 +159,7 @@ describe("browser email sessions", () => {
     })
 
     const grant = await request("device/code", { client_id: "codevisor-machine" })
-    const { user_code: userCode } = (await grant.json()) as { user_code: string }
+    const { user_code: userCode } = await readJson(grant, z.object({ user_code: z.string() }))
     expect(grant.status).toBe(200)
     const claimed = await worker.fetch(
       new Request(`${BASE}/api/auth/device?user_code=${encodeURIComponent(userCode)}`, {

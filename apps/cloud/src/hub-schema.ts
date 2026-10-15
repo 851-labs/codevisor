@@ -1,4 +1,5 @@
 import type { CloudMachinePresence } from "@codevisor/api"
+import { z } from "zod"
 
 import { machineTunnel } from "./hub-tunnel.js"
 
@@ -60,16 +61,17 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   added_by_name: string | null
 }
 
-export interface SocketAttachment {
-  kind: "app" | "machine"
-  connectionId: string
-  deviceId?: string
-  publicKey?: string
-  peerAware?: boolean
-  machineGeneration?: number
-  tunnel?: boolean
-  helloDone: boolean
-}
+export const SocketAttachment = z.object({
+  kind: z.enum(["app", "machine"]),
+  connectionId: z.string(),
+  deviceId: z.string().exactOptional(),
+  publicKey: z.string().exactOptional(),
+  peerAware: z.boolean().exactOptional(),
+  machineGeneration: z.number().exactOptional(),
+  tunnel: z.boolean().exactOptional(),
+  helloDone: z.boolean()
+})
+export type SocketAttachment = z.infer<typeof SocketAttachment>
 
 const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
     machine_origins.added_by_name
