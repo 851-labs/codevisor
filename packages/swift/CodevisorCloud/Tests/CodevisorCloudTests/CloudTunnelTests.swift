@@ -40,7 +40,7 @@ struct CloudTunnelTests {
     await hub.setTunnelConfigHandler { recorder.record($0) }
 
     try await hub.waitUntilReady()
-    #expect(await waitUntil { !recorder.configs.isEmpty })
+    #expect(!recorder.configs.isEmpty)
     #expect(recorder.configs.first == CloudTunnelConfig(relays: relays, enabled: true))
     let identity = try store.ensureAppDeviceIdentity()
     #expect(scripted.helloTunnelEndpointId == CloudTunnelIdentity.endpointId(for: identity))
@@ -81,7 +81,7 @@ struct CloudTunnelTests {
     let recorder = ConfigRecorder()
     await hub.setTunnelConfigHandler { recorder.record($0) }
     try await hub.waitUntilReady()
-    #expect(await waitUntil { !recorder.configs.isEmpty })
+    #expect(!recorder.configs.isEmpty)
     #expect(recorder.configs.first == CloudTunnelConfig(relays: [], enabled: false))
     await hub.shutdown()
   }
