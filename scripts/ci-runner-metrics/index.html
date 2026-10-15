@@ -1,0 +1,1110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CI runner metrics</title>
+    <style>
+      .viz-root {
+        color-scheme: light;
+        --page: #f9f9f7;
+        --surface-1: #fcfcfb;
+        --text-primary: #0b0b0b;
+        --text-secondary: #52514e;
+        --text-muted: #898781;
+        --grid: #e1e0d9;
+        --axis: #c3c2b7;
+        --border: rgba(11, 11, 11, 0.1);
+        --wash: rgba(11, 11, 11, 0.05);
+        --series-1: #2a78d6;
+        --series-2: #eb6834;
+        --good: #0ca30c;
+        --critical: #d03b3b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:where(:not([data-theme="light"])) .viz-root {
+          color-scheme: dark;
+          --page: #0d0d0d;
+          --surface-1: #1a1a19;
+          --text-primary: #f0efec;
+          --text-secondary: #c3c2b7;
+          --text-muted: #898781;
+          --grid: #2c2c2a;
+          --axis: #383835;
+          --border: rgba(255, 255, 255, 0.1);
+          --wash: rgba(255, 255, 255, 0.06);
+          --series-1: #3987e5;
+          --series-2: #d95926;
+        }
+      }
+      :root[data-theme="dark"] .viz-root {
+        color-scheme: dark;
+        --page: #0d0d0d;
+        --surface-1: #1a1a19;
+        --text-primary: #f0efec;
+        --text-secondary: #c3c2b7;
+        --text-muted: #898781;
+        --grid: #2c2c2a;
+        --axis: #383835;
+        --border: rgba(255, 255, 255, 0.1);
+        --wash: rgba(255, 255, 255, 0.06);
+        --series-1: #3987e5;
+        --series-2: #d95926;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      .viz-root {
+        min-height: 100vh;
+        background: var(--page);
+        color: var(--text-primary);
+        font:
+          14px/1.4 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        padding: 24px clamp(16px, 3vw, 40px) 48px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .sub {
+        color: var(--text-secondary);
+        margin: 2px 0 20px;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--surface-1);
+      }
+      .seg button {
+        font: inherit;
+        color: var(--text-secondary);
+        background: none;
+        border: 0;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      .seg button + button {
+        border-left: 1px solid var(--border);
+      }
+      .seg button:hover {
+        background: var(--wash);
+      }
+      .seg button[aria-pressed="true"] {
+        color: var(--text-primary);
+        font-weight: 600;
+        background: var(--wash);
+      }
+      .legend {
+        display: flex;
+        gap: 16px;
+        color: var(--text-secondary);
+      }
+      .key {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .key i {
+        display: inline-block;
+        width: 14px;
+        height: 2px;
+        border-radius: 1px;
+      }
+      .updated {
+        color: var(--text-muted);
+        margin-left: auto;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .card {
+        background: var(--surface-1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .card h2 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .card .hint {
+        color: var(--text-muted);
+        font-size: 12px;
+        margin: 2px 0 8px;
+      }
+
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .tile-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .tile-head .status {
+        margin-left: auto;
+        color: var(--text-secondary);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px 16px;
+      }
+      .stat .label {
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+      .stat .value {
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .stat .value small {
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--text-muted);
+      }
+
+      .charts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+        gap: 16px;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+      .chart {
+        position: relative;
+      }
+      .chart svg {
+        display: block;
+        width: 100%;
+        overflow: visible;
+      }
+      .chart svg:focus {
+        outline: none;
+      }
+      .chart svg:focus-visible {
+        outline: 2px solid var(--series-1);
+        outline-offset: 4px;
+        border-radius: 4px;
+      }
+      .chart text {
+        fill: var(--text-muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .chart .ref-label {
+        fill: var(--text-secondary);
+      }
+      .tooltip {
+        position: absolute;
+        pointer-events: none;
+        z-index: 2;
+        min-width: 150px;
+        background: var(--surface-1);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .tooltip .when {
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .tooltip .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tooltip .row i {
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        flex: none;
+      }
+      .tooltip .row b {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+      }
+      .tooltip .row span {
+        color: var(--text-secondary);
+      }
+      .tooltip .extra {
+        color: var(--text-muted);
+        margin-left: 4px;
+      }
+      .empty {
+        color: var(--text-muted);
+        padding: 24px 0;
+        text-align: center;
+      }
+      .loading svg {
+        opacity: 0.5;
+      }
+
+      details {
+        margin-top: 16px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--text-secondary);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+      th,
+      td {
+        padding: 4px 8px;
+        text-align: right;
+        border-bottom: 1px solid var(--grid);
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        color: var(--text-secondary);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        background: var(--surface-1);
+      }
+      th:first-child,
+      td:first-child,
+      th:nth-child(2),
+      td:nth-child(2) {
+        text-align: left;
+      }
+      .table-wrap {
+        max-height: 420px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="viz-root">
+      <h1>CI runner metrics</h1>
+      <p class="sub">Self-hosted Mac mini runners · one sample per minute · last 35 days kept</p>
+
+      <div class="filters">
+        <div class="seg" id="ranges" role="group" aria-label="Time range"></div>
+        <div class="legend" id="legend"></div>
+        <div class="updated" id="updated"></div>
+      </div>
+
+      <div class="tiles" id="tiles"></div>
+
+      <div class="charts" id="charts"></div>
+
+      <details class="card" id="table-card">
+        <summary>Table view</summary>
+        <div class="table-wrap"><table id="table"></table></div>
+      </details>
+    </div>
+
+    <script>
+      "use strict"
+
+      const HOSTS = [
+        { id: "croissant", url: "http://croissants-mac-mini:9187", color: "var(--series-1)" },
+        { id: "tamale", url: "http://tamales-mac-mini:9187", color: "var(--series-2)" }
+      ]
+      const RANGES = [
+        { id: "6h", label: "Last 6 hours", seconds: 6 * 3600, step: 60 },
+        { id: "24h", label: "Last 24 hours", seconds: 86400, step: 120 },
+        { id: "7d", label: "Last 7 days", seconds: 7 * 86400, step: 900 },
+        { id: "30d", label: "Last 30 days", seconds: 30 * 86400, step: 3600 }
+      ]
+
+      const state = {
+        range:
+          RANGES.find((r) => r.id === new URLSearchParams(location.search).get("range")) ||
+          RANGES[1],
+        data: {},
+        since: 0,
+        until: 0,
+        hoverTs: null
+      }
+
+      const $ = (sel) => document.querySelector(sel)
+      const el = (tag, attrs = {}, ...children) => {
+        const n = document.createElement(tag)
+        for (const [k, v] of Object.entries(attrs)) {
+          if (k === "style") n.style.cssText = v
+          else n.setAttribute(k, v)
+        }
+        for (const c of children) n.append(c)
+        return n
+      }
+      const SVGNS = "http://www.w3.org/2000/svg"
+      const svgEl = (tag, attrs = {}) => {
+        const n = document.createElementNS(SVGNS, tag)
+        for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v)
+        return n
+      }
+
+      const fmtTime = (ts, withDate) =>
+        new Date(ts * 1000).toLocaleString(
+          undefined,
+          withDate
+            ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+            : { hour: "numeric", minute: "2-digit" }
+        )
+      const fmtNum = (v, digits = 1) => (v == null ? "–" : v.toFixed(digits))
+      const fmtGb = (v) =>
+        v == null ? "–" : v < 1 ? `${Math.round(v * 1024)} MB` : `${v.toFixed(1)} GB`
+
+      const METRICS = [
+        {
+          id: "cpu",
+          title: "CPU usage",
+          unit: "%",
+          hint: (r) =>
+            r.step > 60
+              ? "Average across all cores per interval · tooltip shows the 5-second peak"
+              : "Average across all cores per minute · tooltip shows the 5-second peak",
+          value: (r) => r.cpu_user + r.cpu_sys,
+          extra: (r) => `peak ${Math.round(r.cpu_peak)}%`,
+          format: (v) => `${Math.round(v)}%`,
+          domain: () => [0, 100]
+        },
+        {
+          id: "mem",
+          title: "Memory used",
+          unit: "GB",
+          hint: () => "App memory + wired + compressed, as Activity Monitor counts it",
+          value: (r) => r.mem_app_gb + r.mem_wired_gb + r.mem_compressed_gb,
+          extra: (r) => `${Math.round(r.mem_avail_pct)}% available`,
+          format: (v) => `${v.toFixed(1)} GB`,
+          domain: (metas) => [0, Math.max(...metas.map((m) => m.memTotalGb))],
+          refs: (metas) => [
+            {
+              y: Math.max(...metas.map((m) => m.memTotalGb)),
+              label: `${Math.round(Math.max(...metas.map((m) => m.memTotalGb)))} GB installed`
+            }
+          ]
+        },
+        {
+          id: "load",
+          title: "Load average (1 min)",
+          unit: "",
+          hint: () => "Runnable threads; above the core count means work is queueing",
+          value: (r) => r.load1,
+          format: (v) => v.toFixed(2),
+          domain: (metas, max) => [0, Math.max(max, ...metas.map((m) => m.cores)) * 1.1],
+          refs: (metas) => [{ y: metas[0].cores, label: `${metas[0].cores} cores` }]
+        },
+        {
+          id: "swap",
+          title: "Swap used",
+          unit: "GB",
+          hint: () => "Non-zero and rising means memory is running short",
+          value: (r) => r.swap_used_gb,
+          format: fmtGb,
+          domain: (metas, max) => [0, Math.max(1, max * 1.15)]
+        }
+      ]
+
+      async function fetchHost(host, range) {
+        const until = Math.floor(Date.now() / 1000)
+        const since = until - range.seconds
+        const res = await fetch(
+          `${host.url}/api/metrics?since=${since}&until=${until}&step=${range.step}`,
+          { cache: "no-store" }
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const body = await res.json()
+        const rows = body.rows.map((r) => Object.fromEntries(body.columns.map((c, i) => [c, r[i]])))
+        return { meta: body, rows }
+      }
+
+      let loadSeq = 0
+      async function load() {
+        const seq = ++loadSeq
+        const range = state.range
+        document.body.classList.add("loading")
+        const results = await Promise.all(
+          HOSTS.map((h) => fetchHost(h, range).catch((error) => ({ error })))
+        )
+        if (seq !== loadSeq) return
+        state.until = Math.floor(Date.now() / 1000)
+        state.since = state.until - range.seconds
+        HOSTS.forEach((h, i) => {
+          state.data[h.id] = results[i]
+        })
+        document.body.classList.remove("loading")
+        $("#updated").textContent = `Updated ${fmtTime(state.until)} · refreshes every minute`
+        render()
+      }
+
+      function renderControls() {
+        const seg = $("#ranges")
+        seg.replaceChildren(
+          ...RANGES.map((r) => {
+            const b = el(
+              "button",
+              { type: "button", "aria-pressed": String(r === state.range) },
+              r.label
+            )
+            b.onclick = () => {
+              state.range = r
+              history.replaceState(null, "", `?range=${r.id}`)
+              renderControls()
+              load()
+            }
+            return b
+          })
+        )
+        $("#legend").replaceChildren(
+          ...HOSTS.map((h) =>
+            el("span", { class: "key" }, el("i", { style: `background:${h.color}` }), h.id)
+          )
+        )
+      }
+
+      function latest(rows, seconds) {
+        if (!rows.length) return null
+        const end = rows[rows.length - 1].ts
+        return rows.filter((r) => r.ts > end - seconds)
+      }
+      const avg = (rows, f) => rows.reduce((s, r) => s + f(r), 0) / rows.length
+
+      function renderTiles() {
+        $("#tiles").replaceChildren(
+          ...HOSTS.map((h) => {
+            const d = state.data[h.id] || {}
+            const head = el(
+              "div",
+              { class: "tile-head" },
+              el("span", { class: "key" }, el("i", { style: `background:${h.color}` })),
+              el("h2", {}, h.id)
+            )
+            const card = el("div", { class: "card" }, head)
+            if (d.error || !d.rows || !d.rows.length) {
+              head.append(
+                el("span", { class: "status" }, d.error ? "⚠ Unreachable" : "No samples yet")
+              )
+              card.append(
+                el(
+                  "div",
+                  { class: "empty" },
+                  d.error
+                    ? String(d.error.message || d.error)
+                    : "The collector writes its first row within a minute."
+                )
+              )
+              return card
+            }
+            const recent = latest(d.rows, 5 * 60)
+            const last = d.rows[d.rows.length - 1]
+            const stale = state.until - last.ts > 5 * 60
+            const busy = last.busy > 0
+            head.append(
+              el(
+                "span",
+                { class: "status" },
+                el(
+                  "span",
+                  {
+                    style: `color:${stale ? "var(--critical)" : busy ? "var(--good)" : "var(--text-muted)"}`
+                  },
+                  stale ? "⚠" : busy ? "●" : "○"
+                ),
+                stale
+                  ? `No data since ${fmtTime(last.ts, true)}`
+                  : busy
+                    ? "Running a CI job"
+                    : "Idle"
+              )
+            )
+            const m = d.meta
+            const busyShare = avg(d.rows, (r) => r.busy) * 100
+            const stat = (label, value, small) =>
+              el(
+                "div",
+                { class: "stat" },
+                el("div", { class: "label" }, label),
+                el("div", { class: "value" }, value, small ? el("small", {}, ` ${small}`) : "")
+              )
+            card.append(
+              el(
+                "div",
+                { class: "stats" },
+                stat(
+                  "CPU, last 5 min",
+                  `${Math.round(avg(recent, METRICS[0].value))}%`,
+                  `${m.cores} cores`
+                ),
+                stat(
+                  "Memory used",
+                  fmtNum(avg(recent, METRICS[1].value)),
+                  `of ${Math.round(m.memTotalGb)} GB`
+                ),
+                stat("Memory available", `${Math.round(last.mem_avail_pct)}%`),
+                stat("Swap used", fmtGb(last.swap_used_gb)),
+                stat(
+                  "Disk free",
+                  `${Math.round(last.disk_free_gb)}`,
+                  `of ${Math.round(m.diskTotalGb)} GB`
+                ),
+                stat("Busy with CI jobs", `${Math.round(busyShare)}%`, "of sampled time")
+              )
+            )
+            return card
+          })
+        )
+      }
+
+      const charts = []
+
+      function niceTicks(max, count = 4) {
+        const raw = max / count
+        const mag = 10 ** Math.floor(Math.log10(raw))
+        const step = [1, 2, 2.5, 4, 5, 10].map((m) => m * mag).find((s) => s >= raw)
+        const ticks = [0]
+        while (ticks[ticks.length - 1] < max - 1e-9) ticks.push(+(ticks.length * step).toFixed(6))
+        return ticks
+      }
+
+      function timeTicks(since, until, width) {
+        const H = 3600,
+          D = 86400
+        const span = until - since
+        const target = Math.max(2, Math.floor(width / 110))
+        const steps = [15 * 60, 30 * 60, H, 2 * H, 3 * H, 6 * H, 12 * H, D, 2 * D, 7 * D]
+        const step = steps.find((s) => span / s <= target) || steps[steps.length - 1]
+        const d = new Date(since * 1000)
+        const ticks = []
+        if (step >= D) {
+          d.setHours(0, 0, 0, 0)
+          for (; d.getTime() / 1000 <= until; d.setDate(d.getDate() + 1)) {
+            const t = d.getTime() / 1000
+            if (t >= since && Math.round(t / D) % (step / D) === 0) ticks.push(t)
+          }
+        } else {
+          d.setMinutes(0, 0, 0)
+          for (; d.getTime() / 1000 <= until; d.setTime(d.getTime() + Math.min(step, H) * 1000)) {
+            const t = d.getTime() / 1000
+            if (t >= since && (d.getHours() * 60 + d.getMinutes()) % (step / 60) === 0)
+              ticks.push(t)
+          }
+        }
+        const dateLabel = (t) =>
+          new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        return ticks.map((t) => ({
+          t,
+          label:
+            step >= D || (span > D && new Date(t * 1000).getHours() === 0)
+              ? dateLabel(t)
+              : fmtTime(t)
+        }))
+      }
+
+      function seriesFor(metric) {
+        return HOSTS.map((h) => {
+          const d = state.data[h.id]
+          if (!d || d.error) return { host: h, points: [] }
+          return {
+            host: h,
+            points: d.rows
+              .map((r) => ({ ts: r.ts, v: metric.value(r), row: r }))
+              .filter((p) => Number.isFinite(p.v))
+          }
+        })
+      }
+
+      function metas() {
+        return HOSTS.map((h) => state.data[h.id])
+          .filter((d) => d && d.meta)
+          .map((d) => d.meta)
+      }
+
+      function nearestIndex(points, ts) {
+        let lo = 0,
+          hi = points.length - 1
+        if (hi < 0) return -1
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1
+          if (points[mid].ts < ts) lo = mid + 1
+          else hi = mid
+        }
+        if (lo > 0 && Math.abs(points[lo - 1].ts - ts) < Math.abs(points[lo].ts - ts)) lo--
+        return lo
+      }
+
+      function makeChart(container, opts) {
+        const svg = svgEl("svg", { tabindex: "0", role: "img" })
+        const tip = el("div", { class: "tooltip", hidden: "" })
+        container.append(svg, tip)
+        const chart = { svg, tip, container, opts, x: null, w: 0 }
+
+        const tsFromEvent = (ev) => {
+          const rect = svg.getBoundingClientRect()
+          const px = ev.clientX - rect.left - opts.margin.left
+          return (
+            state.since +
+            (Math.max(0, Math.min(chart.w, px)) / chart.w) * (state.until - state.since)
+          )
+        }
+        svg.addEventListener("pointermove", (ev) => setHover(tsFromEvent(ev), chart, ev))
+        svg.addEventListener("pointerleave", () => setHover(null))
+        svg.addEventListener("focus", () => setHover(state.until - state.range.step, chart))
+        svg.addEventListener("blur", () => setHover(null))
+        svg.addEventListener("keydown", (ev) => {
+          if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return
+          ev.preventDefault()
+          const dir = ev.key === "ArrowLeft" ? -1 : 1
+          const step = state.range.step * (ev.shiftKey ? 10 : 1)
+          setHover(
+            Math.max(
+              state.since,
+              Math.min(state.until, (state.hoverTs ?? state.until) + dir * step)
+            ),
+            chart
+          )
+        })
+        charts.push(chart)
+        return chart
+      }
+
+      function drawChart(chart) {
+        const { svg, container, opts } = chart
+        const width = container.clientWidth
+        const m = opts.margin
+        const w = Math.max(10, width - m.left - m.right)
+        const h = opts.height
+        chart.w = w
+        chart.x = (ts) => m.left + ((ts - state.since) / (state.until - state.since)) * w
+        svg.setAttribute("viewBox", `0 0 ${width} ${h + m.top + m.bottom}`)
+        svg.setAttribute("height", h + m.top + m.bottom)
+        svg.replaceChildren()
+        const g = svgEl("g")
+        svg.append(g)
+        opts.draw(g, chart.x, w, h)
+        for (const { t, label } of timeTicks(state.since, state.until, w)) {
+          const tx = chart.x(t)
+          const text = svgEl("text", { x: tx, y: m.top + h + 16, "text-anchor": "middle" })
+          text.textContent = label
+          g.append(text)
+        }
+        chart.cross = svgEl("line", {
+          y1: m.top,
+          y2: m.top + h,
+          stroke: "var(--axis)",
+          "stroke-width": 1,
+          visibility: "hidden"
+        })
+        chart.dots = svgEl("g")
+        svg.append(chart.cross, chart.dots)
+      }
+
+      function lineChart(container, metric) {
+        const margin = { top: 12, right: 16, bottom: 24, left: 44 }
+        const chart = makeChart(container, {
+          height: 180,
+          margin,
+          draw(g, x, w, h) {
+            const series = seriesFor(metric)
+            const ms = metas()
+            const allV = series.flatMap((s) => s.points.map((p) => p.v))
+            if (!ms.length) return
+            const [, dmax] = metric.domain(ms, allV.length ? Math.max(...allV) : 0)
+            const ticks = niceTicks(dmax)
+            const ymax = ticks[ticks.length - 1]
+            const y = (v) => margin.top + h - (v / ymax) * h
+            chart.y = y
+            chart.series = series
+            for (const t of ticks) {
+              g.append(
+                svgEl("line", {
+                  x1: margin.left,
+                  x2: margin.left + w,
+                  y1: y(t),
+                  y2: y(t),
+                  stroke: t === 0 ? "var(--axis)" : "var(--grid)",
+                  "stroke-width": 1
+                })
+              )
+              const label = svgEl("text", { x: margin.left - 8, y: y(t) + 4, "text-anchor": "end" })
+              label.textContent =
+                metric.unit === "%" ? `${t}%` : metric.unit ? `${t} ${metric.unit}` : `${t}`
+              g.append(label)
+            }
+            for (const ref of metric.refs ? metric.refs(ms) : []) {
+              if (ref.y > ymax) continue
+              g.append(
+                svgEl("line", {
+                  x1: margin.left,
+                  x2: margin.left + w,
+                  y1: y(ref.y),
+                  y2: y(ref.y),
+                  stroke: "var(--text-muted)",
+                  "stroke-width": 1
+                })
+              )
+              const t = svgEl("text", {
+                x: margin.left + w,
+                y: y(ref.y) - 5,
+                "text-anchor": "end",
+                class: "ref-label"
+              })
+              t.textContent = ref.label
+              g.append(t)
+            }
+            const gapLimit = state.range.step * 2.5
+            for (const s of series) {
+              let d = ""
+              s.points.forEach((p, i) => {
+                const brk = i === 0 || p.ts - s.points[i - 1].ts > gapLimit
+                d += `${brk ? "M" : "L"}${x(p.ts).toFixed(1)},${y(p.v).toFixed(1)}`
+              })
+              if (d)
+                g.append(
+                  svgEl("path", {
+                    d,
+                    fill: "none",
+                    stroke: s.host.color,
+                    "stroke-width": 2,
+                    "stroke-linejoin": "round",
+                    "stroke-linecap": "round"
+                  })
+                )
+              const last = s.points[s.points.length - 1]
+              if (last)
+                g.append(
+                  svgEl("circle", {
+                    cx: x(last.ts),
+                    cy: y(last.v),
+                    r: 4,
+                    fill: s.host.color,
+                    stroke: "var(--surface-1)",
+                    "stroke-width": 2
+                  })
+                )
+            }
+            if (!allV.length) {
+              const t = svgEl("text", {
+                x: margin.left + w / 2,
+                y: margin.top + h / 2,
+                "text-anchor": "middle"
+              })
+              t.textContent = "No samples in this range yet"
+              g.append(t)
+            }
+          },
+          hoverDots(ts) {
+            return (chart.series || [])
+              .map((s) => {
+                const i = nearestIndex(s.points, ts)
+                const p = s.points[i]
+                if (!p || Math.abs(p.ts - ts) > state.range.step * 1.5) return null
+                return { cx: chart.x(p.ts), cy: chart.y(p.v), color: s.host.color }
+              })
+              .filter(Boolean)
+          },
+          tooltipRows(ts) {
+            return (chart.series || []).map((s) => {
+              const i = nearestIndex(s.points, ts)
+              const p = s.points[i]
+              const ok = p && Math.abs(p.ts - ts) <= state.range.step * 1.5
+              return {
+                color: s.host.color,
+                name: s.host.id,
+                value: ok ? metric.format(p.v) : "no data",
+                extra: ok && metric.extra ? metric.extra(p.row) : ""
+              }
+            })
+          }
+        })
+        container.setAttribute(
+          "aria-label",
+          `${metric.title} line chart for ${HOSTS.map((h) => h.id).join(" and ")}`
+        )
+        return chart
+      }
+
+      function busyChart(container) {
+        const lane = 16,
+          gap = 8
+        const margin = { top: 4, right: 16, bottom: 24, left: 72 }
+        const chart = makeChart(container, {
+          height: HOSTS.length * lane + (HOSTS.length - 1) * gap,
+          margin,
+          draw(g, x, w) {
+            const step = state.range.step
+            HOSTS.forEach((host, hi) => {
+              const top = margin.top + hi * (lane + gap)
+              const label = svgEl("text", {
+                x: margin.left - 8,
+                y: top + lane / 2 + 4,
+                "text-anchor": "end",
+                class: "ref-label"
+              })
+              label.textContent = host.id
+              g.append(label)
+              g.append(
+                svgEl("rect", {
+                  x: margin.left,
+                  y: top,
+                  width: w,
+                  height: lane,
+                  rx: 4,
+                  fill: "var(--wash)"
+                })
+              )
+              const d = state.data[host.id]
+              if (!d || d.error) return
+              let run = null
+              const flush = () => {
+                if (!run) return
+                const x0 = x(run.start),
+                  x1 = x(run.end)
+                g.append(
+                  svgEl("rect", {
+                    x: x0,
+                    y: top,
+                    width: Math.max(2, x1 - x0),
+                    height: lane,
+                    rx: 4,
+                    fill: host.color,
+                    "fill-opacity": (0.35 + (0.65 * run.sum) / run.n).toFixed(2)
+                  })
+                )
+                run = null
+              }
+              for (const r of d.rows) {
+                if (r.busy > 0) {
+                  if (run && r.ts - step - run.end <= 1) {
+                    run.end = r.ts
+                    run.sum += r.busy
+                    run.n++
+                  } else {
+                    flush()
+                    run = { start: r.ts - step, end: r.ts, sum: r.busy, n: 1 }
+                  }
+                } else flush()
+              }
+              flush()
+            })
+          },
+          hoverDots: () => [],
+          tooltipRows(ts) {
+            return HOSTS.map((h) => {
+              const d = state.data[h.id]
+              const rows = d && d.rows ? d.rows : []
+              const i = nearestIndex(rows, ts)
+              const r = rows[i]
+              const ok = r && Math.abs(r.ts - ts) <= state.range.step * 1.5
+              const value = !ok
+                ? "no data"
+                : r.busy === 0
+                  ? "Idle"
+                  : r.busy >= 0.999
+                    ? "Running a job"
+                    : `Running a job ${Math.round(r.busy * 100)}% of the time`
+              return { color: h.color, name: h.id, value, extra: "" }
+            })
+          }
+        })
+        container.setAttribute("aria-label", "Timeline of when each runner was running a CI job")
+        return chart
+      }
+
+      function setHover(ts, source, ev) {
+        state.hoverTs = ts
+        for (const c of charts) {
+          if (ts == null || !c.x) {
+            c.cross && c.cross.setAttribute("visibility", "hidden")
+            c.dots && c.dots.replaceChildren()
+            c.tip.hidden = true
+            continue
+          }
+          const step = state.range.step
+          const snapped = Math.round(ts / step) * step
+          const cx = c.x(Math.min(state.until, Math.max(state.since, snapped)))
+          c.cross.setAttribute("x1", cx)
+          c.cross.setAttribute("x2", cx)
+          c.cross.setAttribute("visibility", "visible")
+          c.dots.replaceChildren(
+            ...c.opts.hoverDots(snapped).map((d) =>
+              svgEl("circle", {
+                cx: d.cx,
+                cy: d.cy,
+                r: 4,
+                fill: d.color,
+                stroke: "var(--surface-1)",
+                "stroke-width": 2
+              })
+            )
+          )
+          if (c !== source) {
+            c.tip.hidden = true
+            continue
+          }
+          const rows = c.opts.tooltipRows(snapped)
+          const when = el(
+            "div",
+            { class: "when" },
+            step > 60
+              ? `${fmtTime(snapped - step, true)} – ${fmtTime(snapped)}`
+              : fmtTime(snapped, true)
+          )
+          c.tip.replaceChildren(
+            when,
+            ...rows.map((r) => {
+              const row = el(
+                "div",
+                { class: "row" },
+                el("i", { style: `background:${r.color}` }),
+                el("b", {}, r.value),
+                el("span", {}, r.name)
+              )
+              if (r.extra) row.append(el("span", { class: "extra" }, `· ${r.extra}`))
+              return row
+            })
+          )
+          c.tip.hidden = false
+          const box = c.container.getBoundingClientRect()
+          const tw = c.tip.offsetWidth
+          let left = cx + 12
+          if (left + tw > box.width) left = cx - tw - 12
+          c.tip.style.left = `${Math.max(0, left)}px`
+          const py = ev ? ev.clientY - box.top : 0
+          const th = c.tip.offsetHeight
+          c.tip.style.top = `${py - th - 8 >= 0 ? py - th - 8 : py + 16}px`
+        }
+      }
+
+      function buildCharts() {
+        const root = $("#charts")
+        const busyCard = el(
+          "div",
+          { class: "card wide" },
+          el("h2", {}, "CI jobs"),
+          el(
+            "div",
+            { class: "hint" },
+            "When each runner had a job in progress; lighter means busy for only part of the interval"
+          )
+        )
+        const busyBox = el("div", { class: "chart" })
+        busyCard.append(busyBox)
+        root.append(busyCard)
+        busyChart(busyBox)
+        for (const metric of METRICS) {
+          const hint = el("div", { class: "hint" })
+          const box = el("div", { class: "chart" })
+          root.append(el("div", { class: "card" }, el("h2", {}, metric.title), hint, box))
+          const chart = lineChart(box, metric)
+          chart.hintEl = hint
+          chart.metric = metric
+        }
+        new ResizeObserver(() => charts.forEach(drawChart)).observe(root)
+      }
+
+      function renderTable() {
+        const bucket = state.range.seconds > 7 * 86400 ? 86400 : 3600
+        const head = [
+          "Period",
+          "Runner",
+          "CPU avg",
+          "CPU peak",
+          "Memory used",
+          "Mem. available",
+          "Swap",
+          "Load",
+          "Busy"
+        ]
+        const out = []
+        for (const h of HOSTS) {
+          const d = state.data[h.id]
+          if (!d || !d.rows) continue
+          const groups = new Map()
+          for (const r of d.rows) {
+            const date = new Date((r.ts - 1) * 1000)
+            if (bucket === 86400) date.setHours(0, 0, 0, 0)
+            else date.setMinutes(0, 0, 0)
+            const k = date.getTime() / 1000
+            if (!groups.has(k)) groups.set(k, [])
+            groups.get(k).push(r)
+          }
+          for (const [k, rs] of groups) out.push({ k, host: h.id, rs })
+        }
+        out.sort((a, b) => b.k - a.k || a.host.localeCompare(b.host))
+        const table = $("#table")
+        table.replaceChildren(
+          el("thead", {}, el("tr", {}, ...head.map((t) => el("th", {}, t)))),
+          el(
+            "tbody",
+            {},
+            ...out.map(({ k, host, rs }) =>
+              el(
+                "tr",
+                {},
+                el(
+                  "td",
+                  {},
+                  bucket === 86400 ? new Date(k * 1000).toLocaleDateString() : fmtTime(k, true)
+                ),
+                el("td", {}, host),
+                el("td", {}, `${Math.round(avg(rs, METRICS[0].value))}%`),
+                el("td", {}, `${Math.round(Math.max(...rs.map((r) => r.cpu_peak)))}%`),
+                el("td", {}, `${avg(rs, METRICS[1].value).toFixed(1)} GB`),
+                el("td", {}, `${Math.round(avg(rs, (r) => r.mem_avail_pct))}%`),
+                el("td", {}, fmtGb(Math.max(...rs.map((r) => r.swap_used_gb)))),
+                el("td", {}, avg(rs, (r) => r.load1).toFixed(2)),
+                el("td", {}, `${Math.round(avg(rs, (r) => r.busy) * 100)}%`)
+              )
+            )
+          )
+        )
+      }
+
+      function render() {
+        renderTiles()
+        for (const c of charts) {
+          if (c.hintEl) c.hintEl.textContent = c.metric.hint(state.range)
+          drawChart(c)
+        }
+        if (state.hoverTs != null) setHover(null)
+        if ($("#table-card").open) renderTable()
+      }
+
+      $("#table-card").addEventListener("toggle", () => {
+        if ($("#table-card").open) renderTable()
+      })
+      renderControls()
+      buildCharts()
+      load()
+      setInterval(load, 60_000)
+    </script>
+  </body>
+</html>
