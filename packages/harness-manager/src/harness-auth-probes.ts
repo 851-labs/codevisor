@@ -1,6 +1,6 @@
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount } from "@codevisor/api"
-import type { HarnessAccountRecord } from "@codevisor/db"
+import type { HarnessAccountRecord, UpdateHarnessAccountAuthRequest } from "@codevisor/db"
 
 import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
@@ -16,6 +16,49 @@ import {
   withTimeout
 } from "./harness-auth-support.js"
 import { MUSE_HARNESS_ID } from "./muse-auth.js"
+
+const claudeProbeFailure = (cause: unknown): UpdateHarnessAccountAuthRequest => {
+  const error = execFailure(cause)
+  const output = `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase()
+  const status = parseClaudeAuthStatus(error.stdout)
+  const signedOut =
+    status?.loggedIn === false ||
+    output.includes("not logged in") ||
+    /"loggedin"\s*:\s*false/.test(output)
+  return {
+    authState: signedOut ? "unauthenticated" : "error",
+    ...(status?.authMethod === undefined ? {} : { authMethod: status.authMethod }),
+    ...(status?.email === undefined ? {} : { email: status.email }),
+    ...(status?.orgId === undefined ? {} : { organizationId: status.orgId }),
+    canLogin: true,
+    canLogout: false,
+    detail: signedOut
+      ? null
+      : `Unable to check Claude sign-in${
+          error.code === undefined ? "" : ` (Claude exited with status ${error.code})`
+        }`
+  }
+}
+
+const cursorProbeFailure = (cause: unknown): UpdateHarnessAccountAuthRequest => {
+  const error = execFailure(cause)
+  const status = parseCursorAuthStatus(error.stdout)
+  const signedOut =
+    status?.isAuthenticated === false ||
+    `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase().includes("not authenticated")
+  return {
+    authState: signedOut ? "unauthenticated" : "error",
+    authMethod: null,
+    email: null,
+    canLogin: true,
+    canLogout: false,
+    detail: signedOut
+      ? null
+      : `Unable to check Cursor sign-in${
+          error.code === undefined ? "" : ` (cursor-agent exited with status ${error.code})`
+        }`
+  }
+}
 
 export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => {
   const {
@@ -121,26 +164,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         detail: null
       })
     } catch (cause) {
-      const error = execFailure(cause)
-      const output = `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase()
-      const status = parseClaudeAuthStatus(error.stdout)
-      const signedOut =
-        status?.loggedIn === false ||
-        output.includes("not logged in") ||
-        /"loggedin"\s*:\s*false/.test(output)
-      return persistProbe(account, {
-        authState: signedOut ? "unauthenticated" : "error",
-        ...(status?.authMethod === undefined ? {} : { authMethod: status.authMethod }),
-        ...(status?.email === undefined ? {} : { email: status.email }),
-        ...(status?.orgId === undefined ? {} : { organizationId: status.orgId }),
-        canLogin: true,
-        canLogout: false,
-        detail: signedOut
-          ? null
-          : `Unable to check Claude sign-in${
-              error.code === undefined ? "" : ` (Claude exited with status ${error.code})`
-            }`
-      })
+      return persistProbe(account, claudeProbeFailure(cause))
     }
   }
 
@@ -176,23 +200,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         detail: null
       })
     } catch (cause) {
-      const error = execFailure(cause)
-      const status = parseCursorAuthStatus(error.stdout)
-      const signedOut =
-        status?.isAuthenticated === false ||
-        `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase().includes("not authenticated")
-      return persistProbe(account, {
-        authState: signedOut ? "unauthenticated" : "error",
-        authMethod: null,
-        email: null,
-        canLogin: true,
-        canLogout: false,
-        detail: signedOut
-          ? null
-          : `Unable to check Cursor sign-in${
-              error.code === undefined ? "" : ` (cursor-agent exited with status ${error.code})`
-            }`
-      })
+      return persistProbe(account, cursorProbeFailure(cause))
     }
   }
 
