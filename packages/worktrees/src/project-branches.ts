@@ -12,24 +12,10 @@ const remoteNames = async (
     .filter((name) => name.length > 0)
     .toSorted((left, right) => right.length - left.length)
 
-export const listProjectGitBranches = async (
-  repoDir: string,
-  env?: NodeJS.ProcessEnv
-): Promise<ReadonlyArray<ProjectGitBranch>> => {
-  await runGit(
-    "fetch-branches",
-    ["fetch", "--all", "--prune", "--no-tags", "--no-recurse-submodules"],
-    repoDir,
-    env
-  ).catch(() => undefined)
-
-  const remotes = await remoteNames(repoDir, env)
-  const output = await runGit(
-    "list-remote-branches",
-    ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/remotes/"],
-    repoDir,
-    env
-  )
+const parseRemoteBranches = (
+  output: string,
+  remotes: ReadonlyArray<string>
+): ReadonlyArray<ProjectGitBranch> => {
   const records = output
     .split("\n")
     .filter((line) => line.length > 0)
@@ -56,6 +42,27 @@ export const listProjectGitBranches = async (
       if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1
       return `${left.remote}/${left.branch}`.localeCompare(`${right.remote}/${right.branch}`)
     })
+}
+
+export const listProjectGitBranches = async (
+  repoDir: string,
+  env?: NodeJS.ProcessEnv
+): Promise<ReadonlyArray<ProjectGitBranch>> => {
+  await runGit(
+    "fetch-branches",
+    ["fetch", "--all", "--prune", "--no-tags", "--no-recurse-submodules"],
+    repoDir,
+    env
+  ).catch(() => undefined)
+
+  const remotes = await remoteNames(repoDir, env)
+  const output = await runGit(
+    "list-remote-branches",
+    ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/remotes/"],
+    repoDir,
+    env
+  )
+  return parseRemoteBranches(output, remotes)
 }
 
 export const worktreeStartPoint = async (
