@@ -43,6 +43,20 @@ export const fakeFs = (files: Record<string, string | Error>): NativeConfigFileS
   }
 })
 
+export const fileText = (files: Readonly<Record<string, string | Error>>, path: string): string => {
+  const content = files[path]
+  if (typeof content !== "string") throw new Error(`${path} holds no text`)
+  return content
+}
+
+export const fileJson = (
+  files: Readonly<Record<string, string | Error>>,
+  path: string
+): unknown => {
+  const decoded: unknown = JSON.parse(fileText(files, path))
+  return decoded
+}
+
 export interface ImportFakes {
   readonly createRequests: Array<CreateMcpServerRequest>
   readonly detectedUrls: Array<string>

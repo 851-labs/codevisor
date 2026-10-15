@@ -47,7 +47,9 @@ export const makeNativeMcpImporter = (
 
     for (const identity of request.identities) {
       const candidate = current.candidates.find((entry) => entry.identity === identity)
-      if (candidate === undefined) {
+      const matches = discovered.filter((entry) => entry.row.identity === identity)
+      const source = matches.find((entry) => entry.row.scope === "global") ?? matches[0]
+      if (candidate === undefined || source === undefined) {
         outcomes.push({
           detail: "Not found in any harness — rescan and try again",
           identity,
@@ -65,11 +67,6 @@ export const makeNativeMcpImporter = (
         })
         continue
       }
-      const source =
-        discovered.find(
-          (entry) => entry.row.identity === identity && entry.row.scope === "global"
-        ) ?? (discovered.find((entry) => entry.row.identity === identity) as DiscoveredServer)
-
       try {
         outcomes.push(await importOne(identity, candidate.name, source, names))
       } catch (cause) {

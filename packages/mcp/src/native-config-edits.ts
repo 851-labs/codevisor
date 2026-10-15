@@ -1,6 +1,7 @@
 import * as jsonc from "jsonc-parser"
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml"
 
+import { isRecord } from "./mcp-guards.js"
 import { detectIndent, NativeConfigUnsupportedError } from "./native-config-files.js"
 
 export const removeJsonConfigKey = (
@@ -35,8 +36,8 @@ const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(",")}]`
   }
-  if (value !== null && typeof value === "object" && !(value instanceof Date)) {
-    const entries = Object.entries(value as Record<string, unknown>)
+  if (isRecord(value) && !(value instanceof Date)) {
+    const entries = Object.entries(value)
       .toSorted(([a], [b]) => a.localeCompare(b))
       .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     return `{${entries.join(",")}}`
@@ -51,8 +52,8 @@ const withoutKeyVariants = (
 ): ReadonlyArray<Record<string, unknown>> => {
   const parent = parsed[parentKey]
   /* v8 ignore next */
-  if (parent === null || typeof parent !== "object") return [parsed]
-  const { [name]: _removed, ...rest } = parent as Record<string, unknown>
+  if (!isRecord(parent)) return [parsed]
+  const { [name]: _removed, ...rest } = parent
   if (Object.keys(rest).length === 0) {
     const { [parentKey]: _parent, ...withoutParent } = parsed
     return [{ ...parsed, [parentKey]: {} }, withoutParent]
@@ -79,13 +80,9 @@ const readTomlRemovalTarget = (
   parentKey: string,
   name: string
 ): Record<string, unknown> => {
-  const before = parseToml(content) as Record<string, unknown>
+  const before = parseToml(content)
   const parent = before[parentKey]
-  if (
-    parent === null ||
-    typeof parent !== "object" ||
-    !(name in (parent as Record<string, unknown>))
-  ) {
+  if (!isRecord(parent) || !(name in parent)) {
     throw new NativeConfigUnsupportedError(`No entry named ${name} to remove`)
   }
   return before
@@ -100,8 +97,8 @@ const exciseTomlSections = (
 ): string => {
   const remove = new Set<number>()
   let excised = false
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!headerPattern.test(lines[index] as string)) continue
+  for (const [index, line] of lines.entries()) {
+    if (!headerPattern.test(line)) continue
     excised = true
     const end = tomlSectionEnd(lines, index, anyHeaderPattern)
     const last = tomlSectionContentEnd(lines, index, end)
@@ -117,32 +114,21 @@ const exciseTomlSections = (
 }
 
 const tomlSectionEnd = (lines: Array<string>, index: number, anyHeaderPattern: RegExp): number => {
-  let end = lines.length
-  for (let next = index + 1; next < lines.length; next += 1) {
-    if (anyHeaderPattern.test(lines[next] as string)) {
-      end = next
-      break
-    }
-  }
-  return end
+  const offset = lines.slice(index + 1).findIndex((line) => anyHeaderPattern.test(line))
+  return offset === -1 ? lines.length : index + 1 + offset
 }
 
 const tomlSectionContentEnd = (lines: Array<string>, index: number, end: number): number => {
-  let last = end - 1
-  while (last > index) {
-    const line = (lines[last] as string).trim()
-    if (line === "" || line.startsWith("#")) {
-      last -= 1
-      continue
-    }
-    break
-  }
-  return last
+  const offset = lines.slice(index + 1, end).findLastIndex((line) => {
+    const trimmed = line.trim()
+    return trimmed !== "" && !trimmed.startsWith("#")
+  })
+  return index + 1 + offset
 }
 
 const parseTomlAfterRemoval = (after: string, name: string): Record<string, unknown> => {
   try {
-    return parseToml(after) as Record<string, unknown>
+    return parseToml(after)
   } catch {
     throw new NativeConfigUnsupportedError(
       `Removing ${name} would corrupt the file — edit it manually`
@@ -175,7 +161,7 @@ export const appendTomlTable = (
   name: string,
   fragment: Record<string, unknown>
 ): string => {
-  const before = parseToml(content) as Record<string, unknown>
+  const before = parseToml(content)
   const block = stringifyToml({ [parentKey]: { [name]: fragment } })
   const separator = content.trim() === "" ? "" : `${content.trimEnd()}\n\n`
   const after = `${separator}${block.trim()}\n`
@@ -186,7 +172,7 @@ export const appendTomlTable = (
 
 const parseTomlAfterRestoration = (after: string, name: string): Record<string, unknown> => {
   try {
-    return parseToml(after) as Record<string, unknown>
+    return parseToml(after)
   } catch {
     /* v8 ignore next 3 */
     throw new NativeConfigUnsupportedError(
@@ -201,12 +187,11 @@ const restoredTomlDocument = (
   name: string,
   fragment: Record<string, unknown>
 ): Record<string, unknown> => {
+  const parent = before[parentKey]
   return {
     ...before,
     [parentKey]: {
-      ...(before[parentKey] !== null && typeof before[parentKey] === "object"
-        ? (before[parentKey] as Record<string, unknown>)
-        : {}),
+      ...(isRecord(parent) ? parent : {}),
       [name]: fragment
     }
   }

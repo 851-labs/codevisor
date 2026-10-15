@@ -1,6 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
@@ -16,6 +15,16 @@ export type ConnectUpstream = (
   id: string,
   options?: ConnectUpstreamOptions
 ) => Promise<UpstreamConnection>
+
+const definedEnvironment = (
+  env: Readonly<Record<string, string | undefined>>
+): Record<string, string> => {
+  const defined: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) defined[key] = value
+  }
+  return defined
+}
 
 const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>> => {
   const tools: Tool[] = []
@@ -84,7 +93,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
               /* v8 ignore next */
               command: server.command ?? "",
               args: [...server.args],
-              env: { ...process.env, ...stored.env } as Record<string, string>,
+              env: definedEnvironment({ ...process.env, ...stored.env }),
               stderr: "pipe"
             })
           : new NodeStreamableHttpTransport(
@@ -94,7 +103,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
             )
       let phase = "initialize"
       try {
-        await client.connect(transport as unknown as Transport)
+        await client.connect(transport)
         phase = "tools/list"
         const tools = await listAllUpstreamTools(client)
         const latest = await record(id)

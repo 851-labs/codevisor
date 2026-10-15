@@ -1,12 +1,10 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import type { CodevisorExecutionState } from "@codevisor/api"
-import type { McpServerRecord } from "@codevisor/db"
 import { describe, expect, it } from "vitest"
 
 import { makeExecutionRecorder } from "./mcp-gateway-execution.js"
 import { makeExecutionSteps } from "./mcp-gateway-steps.js"
+import { executionOf } from "./mcp-manager-test-support.js"
 import type { SandboxArtifactCollector } from "./mcp-sandbox-results.js"
-import type { UpstreamConnection } from "./mcp-support.js"
 
 const harness = (stored: ReadonlyArray<string | undefined>) => {
   const events: Array<RuntimeEvent> = []
@@ -36,7 +34,7 @@ const harness = (stored: ReadonlyArray<string | undefined>) => {
       }
     }
   }
-  const servers: Record<string, Partial<McpServerRecord>> = {
+  const servers: Record<string, { readonly url?: string }> = {
     remote: { url: "https://mcp.linear.app/mcp" },
     local: {}
   }
@@ -44,20 +42,21 @@ const harness = (stored: ReadonlyArray<string | undefined>) => {
     recorder,
     collector,
     record: async (id) => {
-      if (servers[id] === undefined) throw new Error("missing")
-      return servers[id] as McpServerRecord
+      const server = servers[id]
+      if (server === undefined) throw new Error("missing")
+      return server
     },
     automationProviders: new Map(),
     connectUpstream: async (id) => {
       if (id !== "remote") throw new Error("not connected")
       return {
         tools: [{ name: "list_issues", title: "List issues", inputSchema: { type: "object" } }]
-      } as unknown as UpstreamConnection
+      }
     }
   })
   const finished = async () => {
     await recorder.finish()
-    return (events.at(-1)!.payload as { execution: CodevisorExecutionState }).execution
+    return executionOf(events.at(-1)!)
   }
   return { steps, finished }
 }
@@ -96,41 +95,45 @@ describe("execution steps", () => {
     steps.onComputerApp({ bundleId: "com.apple.Music", name: "Music" })
     await desktop({ ok: true, value: null })
 
-    expect((await finished()).calls).toEqual([
-      {
-        path: "remote.list_issues",
-        title: "List issues",
-        icon: { kind: "mcp", serverId: "remote", host: "mcp.linear.app" },
-        ok: true,
-        ms: expect.any(Number),
-        files: [
-          { fileId: "shot-1", name: "shot-1.png", mimeType: "image/png" },
-          { fileId: "export-2" }
+    expect(await finished()).toEqual(
+      expect.objectContaining({
+        calls: [
+          {
+            path: "remote.list_issues",
+            title: "List issues",
+            icon: { kind: "mcp", serverId: "remote", host: "mcp.linear.app" },
+            ok: true,
+            ms: expect.any(Number),
+            files: [
+              { fileId: "shot-1", name: "shot-1.png", mimeType: "image/png" },
+              { fileId: "export-2" }
+            ]
+          },
+          {
+            path: "local.run",
+            title: "Run",
+            icon: { kind: "mcp", serverId: "local" },
+            ok: false,
+            ms: expect.any(Number),
+            error: "boom"
+          },
+          {
+            path: "remote.list_issues",
+            title: "List issues",
+            icon: { kind: "mcp", serverId: "remote", host: "mcp.linear.app" },
+            machine: "MacBook Pro",
+            ok: true,
+            ms: expect.any(Number)
+          },
+          {
+            path: "computer.js",
+            title: "Used the desktop",
+            icon: { kind: "app", bundleId: "com.apple.Music", name: "Music" },
+            ok: true,
+            ms: expect.any(Number)
+          }
         ]
-      },
-      {
-        path: "local.run",
-        title: "Run",
-        icon: { kind: "mcp", serverId: "local" },
-        ok: false,
-        ms: expect.any(Number),
-        error: "boom"
-      },
-      {
-        path: "remote.list_issues",
-        title: "List issues",
-        icon: { kind: "mcp", serverId: "remote", host: "mcp.linear.app" },
-        machine: "MacBook Pro",
-        ok: true,
-        ms: expect.any(Number)
-      },
-      {
-        path: "computer.js",
-        title: "Used the desktop",
-        icon: { kind: "app", bundleId: "com.apple.Music", name: "Music" },
-        ok: true,
-        ms: expect.any(Number)
-      }
-    ])
+      })
+    )
   })
 })

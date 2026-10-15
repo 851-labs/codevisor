@@ -3,10 +3,17 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path"
 
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js"
-import type {
-  OAuthClientInformationMixed,
-  OAuthTokens
+import {
+  type OAuthClientInformationMixed,
+  OAuthClientInformationFullSchema,
+  OAuthClientInformationSchema,
+  OAuthMetadataSchema,
+  OAuthProtectedResourceMetadataSchema,
+  type OAuthTokens,
+  OAuthTokensSchema,
+  OpenIdProviderDiscoveryMetadataSchema
 } from "@modelcontextprotocol/sdk/shared/auth.js"
+import { z } from "zod"
 
 export interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined
@@ -26,6 +33,37 @@ export interface StoredSecrets {
   readonly headers?: Record<string, string> | undefined
   readonly bearerToken?: string | undefined
   readonly oauth?: StoredOAuth | undefined
+}
+
+const OAuthDiscoveryStateSchema = z.object({
+  authorizationServerUrl: z.string(),
+  resourceMetadataUrl: z.string().exactOptional(),
+  resourceMetadata: OAuthProtectedResourceMetadataSchema.exactOptional(),
+  authorizationServerMetadata: z
+    .union([OAuthMetadataSchema, OpenIdProviderDiscoveryMetadataSchema])
+    .exactOptional()
+})
+
+const ReplicatedOAuthSchema = z.object({
+  clientInformation: z
+    .union([OAuthClientInformationFullSchema, OAuthClientInformationSchema])
+    .optional(),
+  tokens: OAuthTokensSchema.optional(),
+  tokensSavedAt: z.number().optional(),
+  discoveryState: OAuthDiscoveryStateSchema.optional(),
+  configuredClientId: z.string().optional(),
+  configuredClientSecret: z.string().optional()
+})
+
+export const parseReplicatedOAuth = (material: string): StoredOAuth | undefined => {
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(material)
+  } catch {
+    return undefined
+  }
+  const parsed = ReplicatedOAuthSchema.safeParse(decoded)
+  return parsed.success ? parsed.data : undefined
 }
 
 export const loadEncryptionKey = (dataDir: string): Buffer => {
@@ -59,7 +97,7 @@ export const decryptSecrets = (key: Buffer, value: string | undefined): StoredSe
   if (encoded.length < 29) throw new Error("Invalid encrypted MCP credentials")
   const decipher = createDecipheriv("aes-256-gcm", key, encoded.subarray(0, 12))
   decipher.setAuthTag(encoded.subarray(12, 28))
-  return JSON.parse(
-    Buffer.concat([decipher.update(encoded.subarray(28)), decipher.final()]).toString("utf8")
-  ) as StoredSecrets
+  const plaintext = Buffer.concat([decipher.update(encoded.subarray(28)), decipher.final()])
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return JSON.parse(plaintext.toString("utf8")) as StoredSecrets
 }

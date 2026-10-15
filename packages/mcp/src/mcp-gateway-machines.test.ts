@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor/api"
+import { canonicalExecutionArgs } from "@codevisor/api"
 import {
   CodeExecutionToolError,
   computerUseTools,
@@ -15,18 +15,20 @@ import {
 } from "@codevisor/automation"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
 import {
   cleanupMcpManagerTests,
   directories,
+  executeResultValue,
+  executionOf,
   listen,
   run,
   testManager
 } from "./mcp-manager-test-support.js"
 import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -99,18 +101,13 @@ const studioGateway = async () => {
 const connectClient = async (issued: { url: string; bearerToken: string }) => {
   const client = new Client({ name: "machines-test", version: "1" })
   await client.connect(
-    new StreamableHTTPClientTransport(new URL(issued.url), {
-      requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-    }) as unknown as Transport
+    sdkTransport(
+      new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+      })
+    )
   )
   return client
-}
-
-const resultValue = (content: unknown): unknown => {
-  const text = (content as Array<{ type: string; text?: string }>).find(
-    (block) => block.type === "text"
-  )?.text
-  return (JSON.parse(text!) as { result: unknown }).result
 }
 
 describe("gateway machines and execution annotations", () => {
@@ -146,7 +143,7 @@ describe("gateway machines and execution annotations", () => {
       const executed = await client.callTool({ name: "execute", arguments: args })
 
       expect(executed.isError).not.toBe(true)
-      expect(resultValue(executed.content)).toEqual({
+      expect(executeResultValue(executed)).toEqual({
         built: { built: true },
         lost: {
           isClass: true,
@@ -177,7 +174,7 @@ describe("gateway machines and execution annotations", () => {
 
       const annotations = events.map((event) => {
         expect(event).toMatchObject({ kind: "session.output", subjectId: session.id })
-        return event.payload as { kind: string; argsHash: string; execution: unknown }
+        return event.payload
       })
       const argsHash = createHash("sha256").update(canonicalExecutionArgs(args)).digest("hex")
       expect(annotations[0]).toEqual({
@@ -232,7 +229,7 @@ describe("gateway machines and execution annotations", () => {
         }
       })
       expect(failed.isError).toBe(true)
-      expect((events.at(-1)!.payload as { execution: unknown }).execution).toEqual({
+      expect(executionOf(events.at(-1)!)).toEqual({
         state: "failed",
         description: `${"Check ".repeat(13)}C…`,
         calls: [],
@@ -305,21 +302,23 @@ describe("gateway machines and execution annotations", () => {
       })
       expect(executed.isError, JSON.stringify(executed)).not.toBe(true)
       const site = { kind: "site", origin: "https://linear.app" }
-      const execution = (events.at(-1)!.payload as { execution: CodevisorExecutionState }).execution
-      expect(execution).toMatchObject({
+      expect(executionOf(events.at(-1)!)).toMatchObject({
         state: "completed",
         icon: site,
-        activeIcon: site
+        activeIcon: site,
+        calls: [
+          { title: "Navigate", icon: site },
+          { title: "Snapshot", icon: site },
+          {
+            title: "Screenshot",
+            icon: site,
+            files: [
+              { fileId: expect.any(String), name: "browser-screenshot.png", mimeType: "image/png" }
+            ]
+          },
+          { title: "Tabs", icon: site }
+        ]
       })
-      expect(execution.calls.map((call) => [call.title, call.icon])).toEqual([
-        ["Navigate", site],
-        ["Snapshot", site],
-        ["Screenshot", site],
-        ["Tabs", site]
-      ])
-      expect(execution.calls[2]?.files).toEqual([
-        { fileId: expect.any(String), name: "browser-screenshot.png", mimeType: "image/png" }
-      ])
     } finally {
       await client.close()
       await provider.close()
@@ -393,7 +392,7 @@ describe("gateway machines and execution annotations", () => {
           }`
         }
       })
-      expect(resultValue(executed.content)).toEqual({
+      expect(executeResultValue(executed)).toEqual({
         isClass: true,
         machineId: "mbp",
         phase: "before-send"

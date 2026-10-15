@@ -16,18 +16,21 @@ import {
 } from "@codevisor/api"
 import type { ComputerUseApp } from "@codevisor/automation"
 
+import { isRecord } from "./mcp-guards.js"
+
 export const EXECUTION_EMIT_INTERVAL_MS = 250
 
 export interface ExecutionTimers {
   readonly now: () => number
-  readonly setTimeout: (callback: () => void, ms: number) => unknown
-  readonly clearTimeout: (handle: unknown) => void
+  readonly setTimeout: (callback: () => void, ms: number) => () => void
 }
 
 const systemTimers: ExecutionTimers = {
   now: () => performance.now(),
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+  setTimeout: (callback, ms) => {
+    const handle = setTimeout(callback, ms)
+    return () => clearTimeout(handle)
+  }
 }
 
 export const truncateText = (text: string, max: number): string => {
@@ -85,7 +88,7 @@ export const makeExecutionRecorder = (options: {
   let icon: CodevisorExecutionIcon | undefined
   let activeIcon: CodevisorExecutionIcon | undefined
   let lastEmitAt = Number.NEGATIVE_INFINITY
-  let pending: unknown
+  let cancelPending: (() => void) | undefined
   let finished = false
   let delivery: Promise<void> = Promise.resolve()
 
@@ -120,14 +123,14 @@ export const makeExecutionRecorder = (options: {
   }
 
   const scheduleRunning = (): void => {
-    if (finished || pending !== undefined) return
+    if (finished || cancelPending !== undefined) return
     const wait = lastEmitAt + EXECUTION_EMIT_INTERVAL_MS - timers.now()
     if (wait <= 0) {
       emit("running")
       return
     }
-    pending = timers.setTimeout(() => {
-      pending = undefined
+    cancelPending = timers.setTimeout(() => {
+      cancelPending = undefined
       emit("running")
     }, wait)
   }
@@ -164,8 +167,8 @@ export const makeExecutionRecorder = (options: {
     finish: async (error) => {
       if (!finished) {
         finished = true
-        if (pending !== undefined) timers.clearTimeout(pending)
-        pending = undefined
+        cancelPending?.()
+        cancelPending = undefined
         emit(
           error === undefined ? "completed" : "failed",
           error === undefined ? undefined : errorSummary(error, CODEVISOR_EXECUTION_MAX_ERROR)
@@ -250,18 +253,17 @@ export const executionFiles = (value: unknown): Array<CodevisorExecutionFile> =>
       for (const item of node.slice(0, 50)) visit(item, depth + 1)
       return
     }
-    if (typeof node !== "object" || node === null) return
-    const record = node as Record<string, unknown>
-    if (typeof record.fileId === "string" && !files.has(record.fileId)) {
-      const mimeType = record.mediaType ?? record.mimeType
-      files.set(record.fileId, {
-        fileId: record.fileId,
-        ...(typeof record.name === "string" ? { name: record.name } : {}),
+    if (!isRecord(node)) return
+    if (typeof node.fileId === "string" && !files.has(node.fileId)) {
+      const mimeType = node.mediaType ?? node.mimeType
+      files.set(node.fileId, {
+        fileId: node.fileId,
+        ...(typeof node.name === "string" ? { name: node.name } : {}),
         ...(typeof mimeType === "string" ? { mimeType } : {})
       })
       return
     }
-    for (const child of Object.values(record).slice(0, 50)) visit(child, depth + 1)
+    for (const child of Object.values(node).slice(0, 50)) visit(child, depth + 1)
   }
   visit(value, 0)
   return [...files.values()]

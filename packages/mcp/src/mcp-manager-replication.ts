@@ -3,7 +3,7 @@ import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
 
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
-import type { StoredOAuth } from "./mcp-secret-store.js"
+import { parseReplicatedOAuth, type StoredOAuth } from "./mcp-secret-store.js"
 import { run } from "./mcp-support.js"
 
 export type McpReplicationOperations = Pick<
@@ -75,13 +75,8 @@ export const makeMcpReplicationOperations = (
 
   const importOAuthMaterial: McpManager["importOAuthMaterial"] = async (id, incoming) => {
     const current = secrets(await record(id)).oauth
-    let parsed: StoredOAuth
-    try {
-      parsed = JSON.parse(incoming.material) as StoredOAuth
-    } catch {
-      return
-    }
-    if (typeof parsed !== "object" || parsed === null) return
+    const parsed = parseReplicatedOAuth(incoming.material)
+    if (parsed === undefined) return
     if (
       current?.refreshOwner === incoming.owner &&
       (current?.tokensSavedAt ?? 0) === (parsed.tokensSavedAt ?? 0)

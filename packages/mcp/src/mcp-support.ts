@@ -1,7 +1,11 @@
 import type { IncomingMessage } from "node:http"
+import { buffer } from "node:stream/consumers"
 
 import type { CreateMcpServerRequest } from "@codevisor/api"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import type { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import type { Implementation, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Effect } from "effect"
 
@@ -15,11 +19,15 @@ export interface UpstreamConnection {
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
 export const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
-  const chunks: Array<Buffer> = []
-  for await (const chunk of request) {
-    chunks.push(chunk as Buffer)
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown
+  const body = await buffer(request)
+  return JSON.parse(body.toString("utf8")) as unknown
+}
+
+export const sdkTransport = (
+  transport: StreamableHTTPClientTransport | StreamableHTTPServerTransport
+): Transport => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return transport as Transport
 }
 
 export const errorMessage = (cause: unknown): string => {
