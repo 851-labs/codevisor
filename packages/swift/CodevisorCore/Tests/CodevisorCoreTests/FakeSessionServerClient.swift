@@ -51,6 +51,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var detailCursor = 0
   var initialTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPage: ServerTranscriptPage?
+  var olderTranscriptPageHandler: (@Sendable (String) async throws -> ServerTranscriptPage)?
+  let olderTranscriptPageRequests = TestSignal()
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
   var transcriptDetailHandler: (@Sendable (String, String?) async throws -> ServerTranscriptItemDetails)?
@@ -249,6 +251,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
       return true
     }
     if shouldFail { throw URLError(.networkConnectionLost) }
+    if before != nil { olderTranscriptPageRequests.signal() }
+    if let before, let olderTranscriptPageHandler { return try await olderTranscriptPageHandler(before) }
     if before == nil, let initialTranscriptPage { return initialTranscriptPage }
     if before != nil, let olderTranscriptPage { return olderTranscriptPage }
     return ServerTranscriptPage(items: [], hasMore: false, eventCursor: detailCursor)
