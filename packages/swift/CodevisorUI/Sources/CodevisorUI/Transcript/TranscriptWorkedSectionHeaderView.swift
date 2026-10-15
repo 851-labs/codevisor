@@ -31,7 +31,6 @@ public final class TranscriptWorkedRowsVisibilityCache {
     let sourceVersion: UInt64
     let disclosureIdentity: ObjectIdentifier
     let disclosureRevision: UInt64
-    let runningSubagentRunToolCallIDs: Set<String>
   }
 
   private var key: Key?
@@ -42,21 +41,18 @@ public final class TranscriptWorkedRowsVisibilityCache {
   public func presentSettled(
     _ rows: [TranscriptPresentationRow],
     sourceVersion: UInt64,
-    disclosure: TranscriptDisclosureStore,
-    runningSubagentRunToolCallIDs: Set<String>
+    disclosure: TranscriptDisclosureStore
   ) -> TranscriptWorkedRowsPresentation {
     let currentKey = Key(
       sourceVersion: sourceVersion,
       disclosureIdentity: ObjectIdentifier(disclosure),
-      disclosureRevision: disclosure.workedSectionRevision,
-      runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+      disclosureRevision: disclosure.workedSectionRevision
     )
     if key == currentKey, let presentation { return presentation }
     let presentation = TranscriptWorkedRowsVisibility.present(
       rows,
       disclosure: disclosure,
-      activeItem: nil,
-      runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+      activeItem: nil
     )
     key = currentKey
     self.presentation = presentation
@@ -69,8 +65,7 @@ public enum TranscriptWorkedRowsVisibility {
   public static func present(
     _ rows: [TranscriptPresentationRow],
     disclosure: TranscriptDisclosureStore,
-    activeItem: ConversationItem?,
-    runningSubagentRunToolCallIDs: Set<String>
+    activeItem: ConversationItem?
   ) -> TranscriptWorkedRowsPresentation {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
@@ -84,22 +79,16 @@ public enum TranscriptWorkedRowsVisibility {
       }
       switch membership.role {
       case let .header(defaultExpanded, isFixedExpanded):
-        let currentTurn = turn(for: row, activeItem: activeItem)
-        let defaultsExpanded =
-          currentTurn.map { turn in
-            turn.workedSectionDefaultsExpanded(
-              membership.identity.kind,
-              runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
-            )
-          } ?? false
-        let isLive = currentTurn.map { $0.workedSectionTicks(membership.identity.kind) } ?? isFixedExpanded
+        let isLive =
+          turn(for: row, activeItem: activeItem).map { $0.workedSectionTicks(membership.identity.kind) }
+          ?? isFixedExpanded
         let expanded =
           isLive
           || disclosure.isExpanded(
             membership.identity.kind.disclosureKey(
               messageID: membership.identity.messageID
             ),
-            default: defaultExpanded || defaultsExpanded
+            default: defaultExpanded
           )
         expansion[membership.identity] = expanded
         result.append(row)
@@ -152,7 +141,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
   public let kind: TranscriptWorkedSectionKind
 
   @Environment(\.transcriptDisclosure) private var disclosureStore
-  @Environment(\.runningSubagentRunToolCallIds) private var runningSubagentRunToolCallIDs
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
   private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
@@ -196,13 +184,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
 
   private var isExpanded: Bool {
     turn.workedSectionTicks(kind)
-      || store.isExpanded(
-        disclosureKey,
-        default: turn.workedSectionDefaultsExpanded(
-          kind,
-          runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
-        )
-      )
+      || store.isExpanded(disclosureKey, default: false)
   }
 
   @ViewBuilder
@@ -373,15 +355,6 @@ struct TranscriptWorkingForLabel: View {
         .monospacedDigit()
     }
     .accessibilityElement(children: .combine)
-  }
-}
-
-extension AssistantTurn {
-  fileprivate func workedSectionDefaultsExpanded(
-    _ kind: TranscriptWorkedSectionKind,
-    runningSubagentRunToolCallIDs: Set<String>
-  ) -> Bool {
-    !workedSectionTicks(kind) && startedRunningSubagent(runningSubagentRunToolCallIDs)
   }
 }
 

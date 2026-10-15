@@ -14,7 +14,6 @@ struct AssistantTurnView: View {
   let presentation: AssistantTurnPresentation
   private let initiallyExpanded: Bool?
   @Environment(\.transcriptDisclosure) private var disclosureStore
-  @Environment(\.runningSubagentRunToolCallIds) private var runningSubagentRunToolCallIds
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
@@ -60,12 +59,8 @@ struct AssistantTurnView: View {
   }
 
   private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
-    let settled = (!turn.isGenerating || turn.finalTextIsAsserted) && !turnHasRunningSubagent
+    let settled = !turn.isGenerating || turn.finalTextIsAsserted
     return store.isExpanded(key, default: initiallyExpanded ?? !settled)
-  }
-
-  private var turnHasRunningSubagent: Bool {
-    turn.startedRunningSubagent(runningSubagentRunToolCallIds)
   }
 
   private func showsWorkedSection(
@@ -158,9 +153,6 @@ struct AssistantTurnView: View {
       } else {
         reopenForActiveWork()
       }
-    }
-    .onChange(of: turnHasRunningSubagent) { _, running in
-      if !running, !turn.isGenerating { autoCollapse() }
     }
   }
 
@@ -275,7 +267,6 @@ struct AssistantTurnView: View {
 
   private func autoCollapse() {
     guard !hasAutoCollapsed else { return }
-    guard !turnHasRunningSubagent else { return }
     hasAutoCollapsed = true
     for key in sectionKeys { store.setExpanded(key, false) }
     invalidateRowMeasurement?()

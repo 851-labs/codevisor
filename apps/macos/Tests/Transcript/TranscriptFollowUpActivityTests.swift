@@ -349,12 +349,10 @@ private final class ActivityFixture {
     sendRequest: UserSendAnimationRequest? = nil
   ) {
     let settledVisibility = TranscriptWorkedRowsVisibility.present(
-      rows, disclosure: controller.disclosure, activeItem: controller.activeItem,
-      runningSubagentRunToolCallIDs: []
+      rows, disclosure: controller.disclosure, activeItem: controller.activeItem
     ).visibilityRevision
     let activeVisibility = TranscriptWorkedRowsVisibility.present(
-      activeRows, disclosure: controller.disclosure, activeItem: controller.activeItem,
-      runningSubagentRunToolCallIDs: []
+      activeRows, disclosure: controller.disclosure, activeItem: controller.activeItem
     ).visibilityRevision
     view.configure(
       TranscriptSurfaceInput(

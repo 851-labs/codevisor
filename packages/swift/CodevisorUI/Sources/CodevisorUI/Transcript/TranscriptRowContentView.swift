@@ -184,7 +184,6 @@ public struct TranscriptActiveItemRow: View {
       item, controller.pendingQuestion != nil, waitingOnBackgroundTask, goalActivity, controller
     )
     .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
-    .environment(\.runningSubagentRunToolCallIds, controller.runningSubagentRunToolCallIds)
     .id(item.id)
     .onChange(of: revision, initial: true) { _, _ in
       invalidateRowMeasurement?()

@@ -90,10 +90,6 @@ public final class SessionModel {
       if ids != runningSubagentToolCallIds {
         runningSubagentToolCallIds = ids
       }
-      let runIds = Set(waitingBackgroundTasks.compactMap(\.toolUseId))
-      if runIds != runningSubagentRunToolCallIds {
-        runningSubagentRunToolCallIds = runIds
-      }
     }
   }
   public internal(set) var persistedSetupPhases: [SessionSetupPhase] = [] {
@@ -117,7 +113,6 @@ public final class SessionModel {
   }
 
   public private(set) var runningSubagentToolCallIds: Set<String> = []
-  public private(set) var runningSubagentRunToolCallIds: Set<String> = []
 
   public internal(set) var goal: SessionGoal?
   public internal(set) var pendingQuestion: QuestionRequest?

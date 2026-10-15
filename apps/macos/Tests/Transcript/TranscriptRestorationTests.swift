@@ -30,8 +30,7 @@ struct TranscriptRestorationTests {
     preparing: Bool = false
   ) {
     let visibility = TranscriptWorkedRowsVisibilityCache().presentSettled(
-      rows, sourceVersion: revision, disclosure: controller.disclosure,
-      runningSubagentRunToolCallIDs: []
+      rows, sourceVersion: revision, disclosure: controller.disclosure
     ).visibilityRevision
     view.configure(
       TranscriptSurfaceInput(

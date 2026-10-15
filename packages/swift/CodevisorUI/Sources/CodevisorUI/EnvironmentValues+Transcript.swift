@@ -6,8 +6,6 @@ extension EnvironmentValues {
 
   @Entry public var runningSubagentToolCallIds: Set<String> = []
 
-  @Entry public var runningSubagentRunToolCallIds: Set<String> = []
-
   @Entry public var openSubagent: OpenSubagentAction?
 
   @Entry public var transcriptController: SessionController?

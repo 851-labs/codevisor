@@ -155,17 +155,6 @@ public struct AssistantTurn: Sendable, Equatable {
       }
   }
 
-  public func startedRunningSubagent(_ runToolCallIds: Set<String>) -> Bool {
-    guard !runToolCallIds.isEmpty else { return false }
-    func holds(_ entries: [TranscriptEntry]) -> Bool {
-      entries.contains { entry in
-        if case let .tool(call) = entry { return runToolCallIds.contains(call.toolCallId) }
-        return false
-      }
-    }
-    return holds(entries) || subagents.values.contains { holds($0.entries) }
-  }
-
   public var subagentActivityFingerprint: Int {
     var hasher = Hasher()
     for key in subagents.keys.sorted() {

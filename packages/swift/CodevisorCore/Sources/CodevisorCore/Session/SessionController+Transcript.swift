@@ -179,8 +179,6 @@ extension SessionController {
 
   public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
 
-  public var runningSubagentRunToolCallIds: Set<String> { model?.runningSubagentRunToolCallIds ?? [] }
-
   public var canSend: Bool {
     (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || !composerAttachments.isEmpty)
