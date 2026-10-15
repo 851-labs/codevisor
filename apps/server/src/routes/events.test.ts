@@ -1,17 +1,20 @@
 import { once } from "node:events"
 import { mkdirSync, mkdtempSync } from "node:fs"
+import { IncomingMessage } from "node:http"
 import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
 
-import { makeEventFanout } from "../server.js"
+import { defaultServerConfig, makeEventFanout } from "../server.js"
 import {
   jsonRequest,
   makeServices,
+  pluginsStub,
   readSseEvents,
   readWebSocketEvents,
   run,
@@ -20,24 +23,34 @@ import {
   tempDirs,
   listSubjectEvents
 } from "../test-support.js"
-import { attachEventSocket, handleUpgrade } from "./events.js"
+import { handleUpgrade } from "./events.js"
+import { idOf } from "./response-test-support.js"
+import {
+  CreatedSession,
+  memoryDatabase,
+  parseFrame,
+  type EventSink
+} from "./session-test-support.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 
 const makeFakeSocket = () => {
   const sent: string[] = []
   const closers: Array<() => void> = []
-  return {
+  const socket = {
     sent,
     readyState: 1,
+    bufferedAmount: 0,
     send: (raw: string) => sent.push(raw),
     on: (event: string, handler: () => void) => {
       if (event === "close") closers.push(handler)
     },
     close: () => closers.forEach((handler) => handler())
   }
+  const sink: EventSink = socket
+  return Object.assign(socket, { sink })
 }
 
-const parseSentEvent = (raw: string): { kind: string; id: number } =>
-  JSON.parse(raw) as { kind: string; id: number }
+const parseSentEvent = parseFrame
 
 describe("event routes", () => {
   afterEach(() => {
@@ -80,18 +93,28 @@ describe("event routes", () => {
     tempDirs.push(workspaceRoot)
     const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
-    const workspace = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: workspaceFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Background" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string; readonly agentSessionId: string }
+    const workspace = {
+      id: idOf(
+        (
+          await jsonRequest(server, "/v1/projects", {
+            body: JSON.stringify({ folderPath: workspaceFolder }),
+            method: "POST"
+          })
+        ).body
+      )
+    }
+    const session = decode(CreatedSession)(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: workspace.id,
+            harnessId: "codex",
+            title: "Background"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
 
     await agents.emit(session.agentSessionId, {
       kind: "session.output",
@@ -206,7 +229,7 @@ describe("event routes", () => {
       fanout
     )
     const publish = async (event: import("@codevisor/api").EventEnvelope) => {
-      durable.push(event as typeof replayEvent)
+      durable.push(event)
       await run(fanout.publish(event))
     }
 
@@ -307,11 +330,11 @@ describe("event routes", () => {
 
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
     const scoped = makeFakeSocket()
-    await attachEventSocket(
+    await attachSyncEventSocket(
       services.db,
       fanout,
       Number.MAX_SAFE_INTEGER,
-      scoped as never,
+      scoped.sink,
       "server-a",
       "session-keepalive"
     )
@@ -331,7 +354,7 @@ describe("event routes", () => {
     )
     scoped.close()
     const connected = makeFakeSocket()
-    await attachEventSocket(services.db, fanout, 0, connected as never, "server-a", session.id)
+    await attachSyncEventSocket(services.db, fanout, 0, connected.sink, "server-a", session.id)
     const committed = await run(services.db.appendEvent("session.output", session.id, {}))
     await run(fanout.publish(committed))
     await vi.advanceTimersByTimeAsync(25_000)
@@ -345,11 +368,11 @@ describe("event routes", () => {
     expect(connected.sent.length).toBe(sentAtClose)
 
     const global = makeFakeSocket()
-    await attachEventSocket(
+    await attachSyncEventSocket(
       services.db,
       fanout,
       Number.MAX_SAFE_INTEGER,
-      global as never,
+      global.sink,
       "server-a",
       undefined
     )
@@ -372,37 +395,30 @@ describe("event routes", () => {
       createdAt: "2026-09-10T00:00:00.000Z",
       payload: {}
     }))
-    const db = {
-      readSyncBatch: (since: number) =>
+    const db = await memoryDatabase({
+      readSyncBatch: (since) =>
         Effect.sync(() => ({
           events: durable.filter((event) => event.id > since),
           cursor: durable.at(-1)?.id ?? since,
           requiresSnapshot: false
         }))
-    }
+    })
     const sent: Array<{ id: number; kind: string }> = []
     const closers: Array<() => void> = []
     const socket = {
       readyState: 1,
-      send: (raw: string) => sent.push(JSON.parse(raw)),
+      bufferedAmount: 0,
+      send: (raw: string) => sent.push(parseFrame(raw)),
       on: (_name: string, handler: () => void) => closers.push(handler),
       close: () => {
         socket.readyState = 3
         closers.forEach((handler) => handler())
       }
     }
+    const sink: EventSink = socket
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
     try {
-      await attachEventSocket(
-        db as never,
-        fanout,
-        1,
-        socket as never,
-        "server-a",
-        "chat",
-        25_000,
-        true
-      )
+      await attachSyncEventSocket(db, fanout, 1, sink, "server-a", "chat", 25_000)
       expect(sent.map(({ id, kind }) => [id, kind])).toEqual([
         [2, "session.output"],
         [2, "keepalive"]
@@ -432,16 +448,21 @@ describe("event routes", () => {
 describe("websocket upgrades", () => {
   it("drops an upgrade socket that resets while a plugin decides on it", async () => {
     let decide!: (handled: boolean) => void
-    const services = {
-      plugins: { handleUpgrade: () => new Promise<boolean>((resolve) => (decide = resolve)) }
+    const { services } = await makeServices("server-a")
+    const plugins = {
+      ...pluginsStub([]),
+      handleUpgrade: () => new Promise<boolean>((resolve) => (decide = resolve))
     }
-    const request = { method: "GET", url: "/v1/plugins/p/socket", headers: {} }
+    const request = Object.assign(new IncomingMessage(new Socket()), {
+      method: "GET",
+      url: "/v1/plugins/p/socket"
+    })
     const socket = new Socket()
     const upgraded = handleUpgrade(
-      services as never,
-      {} as never,
-      {} as never,
-      request as never,
+      { ...services, plugins },
+      defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 }),
+      await run(makeEventFanout),
+      request,
       socket,
       Buffer.alloc(0),
       new WebSocketServer({ noServer: true })
@@ -459,7 +480,7 @@ describe("websocket upgrades", () => {
     await once(socket, "open")
     const closed = once(socket, "close")
     socket.send(Buffer.from([0xff, 0xfe]), { binary: false })
-    const [code] = (await closed) as [number]
+    const [code] = await closed
     expect(code).toBe(1007)
     expect((await jsonRequest(server, "/v1/health")).status).toBe(200)
   })

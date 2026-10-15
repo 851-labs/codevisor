@@ -2,7 +2,8 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { SessionSummary } from "@codevisor/api"
+import { decode, SessionSummary } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
@@ -29,12 +30,14 @@ describe("a new chat's starting picks", () => {
     await run(services.db.replaceSessionConfigSelections(otherHarness.id, { model: "other-model" }))
     const server = await startWithApp(services)
     const create = async (body: Readonly<Record<string, unknown>>) =>
-      (
-        (await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ projectId: project.id, harnessId: "codex", ...body }),
-          method: "POST"
-        })) as { readonly body: SessionSummary }
-      ).body.configSelections
+      decode(SessionSummary)(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            body: JSON.stringify({ projectId: project.id, harnessId: "codex", ...body }),
+            method: "POST"
+          })
+        ).body
+      ).configSelections
 
     const inherited = { model: "model-saved", reasoning: "high" }
     expect(await create({ parentSessionId: parent.id })).toEqual(inherited)
@@ -42,15 +45,22 @@ describe("a new chat's starting picks", () => {
       await create({ parentSessionId: parent.id, configSelections: { model: "model-picked" } })
     ).toEqual({ model: "model-picked" })
     expect(await create({ parentSessionId: otherHarness.id })).toBeUndefined()
-    const workspace = (
-      (await jsonRequest(server, "/v1/workspaces", {
-        body: JSON.stringify({
-          workspace: { id: "ws-child", projectId: project.id, name: "Child", hasCustomName: false },
-          session: { projectId: project.id, harnessId: "codex", parentSessionId: parent.id }
-        }),
-        method: "POST"
-      })) as { readonly body: { readonly session: SessionSummary } }
-    ).body
+    const workspace = decode(Schema.Struct({ session: SessionSummary }))(
+      (
+        await jsonRequest(server, "/v1/workspaces", {
+          body: JSON.stringify({
+            workspace: {
+              id: "ws-child",
+              projectId: project.id,
+              name: "Child",
+              hasCustomName: false
+            },
+            session: { projectId: project.id, harnessId: "codex", parentSessionId: parent.id }
+          }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(workspace.session.configSelections).toEqual(inherited)
     expect(agents.startSelections).toEqual([
       inherited,

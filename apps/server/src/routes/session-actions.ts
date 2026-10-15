@@ -30,6 +30,7 @@ import type {
   RouteState
 } from "../server-context.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
+import { routeParam } from "./route-params.js"
 import { applySessionConfigPick } from "./session-config.js"
 import { openSessionAction } from "./session-open-action.js"
 import { routeSessionTranscript } from "./session-transcript.js"
@@ -84,7 +85,8 @@ export const routeSessionActions = async (
 
   const queueItemRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId")
   if (queueItemRoute !== undefined && request.method === "PATCH") {
-    const { id, queueId } = queueItemRoute as { readonly id: string; readonly queueId: string }
+    const id = routeParam(queueItemRoute, "id")
+    const queueId = routeParam(queueItemRoute, "queueId")
     const payload = await readSchema(request, UpdateQueuedPromptRequest)
     const item = await run(services.db.updatePromptQueueItem(id, queueId, payload.text))
     await publishPromptQueue(services.db, fanout, id)
@@ -93,7 +95,8 @@ export const routeSessionActions = async (
   }
 
   if (queueItemRoute !== undefined && request.method === "DELETE") {
-    const { id, queueId } = queueItemRoute as { readonly id: string; readonly queueId: string }
+    const id = routeParam(queueItemRoute, "id")
+    const queueId = routeParam(queueItemRoute, "queueId")
     await run(services.db.deletePromptQueueItem(id, queueId))
     await publishPromptQueue(services.db, fanout, id)
     writeNoContent(response)
@@ -275,8 +278,8 @@ export const routeSessionActions = async (
     "/v1/sessions/:id/questions/:questionId/answer"
   )
   if (answerRoute !== undefined && request.method === "POST") {
-    const answerSessionId = answerRoute.id as string
-    const questionId = answerRoute.questionId as string
+    const answerSessionId = routeParam(answerRoute, "id")
+    const questionId = routeParam(answerRoute, "questionId")
     const payload = await readSchema(request, SetQuestionAnswerRequest)
     await writeIdempotentAction(
       services,

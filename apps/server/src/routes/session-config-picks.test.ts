@@ -2,7 +2,8 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { SessionConfigOption, SessionSummary } from "@codevisor/api"
+import { decode, SessionConfigOption, SessionSummary } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { dependencyConfigOptions } from "../test-support-config-options.js"
@@ -15,6 +16,11 @@ import {
   startWithApp,
   tempDirs
 } from "../test-support.js"
+import { field } from "./response-test-support.js"
+
+const ConfigOptions = Schema.Struct({ configOptions: Schema.Array(SessionConfigOption) })
+
+const SessionEnvelope = Schema.Struct({ session: SessionSummary })
 
 describe("session configuration picks", () => {
   it("persists session config and restores model before dependent reasoning and speed", async () => {
@@ -67,9 +73,9 @@ describe("session configuration picks", () => {
     })
 
     agents.configs.splice(0)
-    const restored = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const restored = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
     expect(agents.configs).toEqual([
       [session.agentSessionId, "model", "model-saved"],
       [session.agentSessionId, "reasoning", "high"],
@@ -97,9 +103,9 @@ describe("session configuration picks", () => {
       )
     )
     agents.configs.splice(0)
-    const fallback = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const fallback = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
     expect(agents.configs).toEqual([])
     expect(configSelectionsFromTestOptions(fallback.configOptions)).toEqual({
       model: "model-default",
@@ -107,8 +113,9 @@ describe("session configuration picks", () => {
       speed: "standard",
       tone: "brief"
     })
-    const { session: afterFallback } = (await jsonRequest(server, `/v1/sessions/${session.id}`))
-      .body as { readonly session: SessionSummary }
+    const { session: afterFallback } = decode(SessionEnvelope)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}`)).body
+    )
     expect(afterFallback.configSelections).toEqual({
       model: "model-removed",
       reasoning: "high",
@@ -151,9 +158,9 @@ describe("session configuration picks", () => {
       })
     )
     agents.configFailures.push(["agent-session-config", "model", "model-saved"])
-    const transientFallback = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const transientFallback = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
     expect(configSelectionsFromTestOptions(transientFallback.configOptions).model).toBe(
       "model-default"
     )
@@ -182,7 +189,7 @@ describe("session configuration picks", () => {
       method: "POST"
     })
     expect(opened.status).toBe(200)
-    expect((opened.body as { readonly configOptions: unknown }).configOptions).toEqual([])
+    expect(field(opened.body, "configOptions")).toEqual([])
     expect(agents.configs).toEqual([])
     expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
@@ -223,9 +230,9 @@ describe("session configuration picks", () => {
       reasoning: "low"
     })
 
-    const restored = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const restored = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
     expect(agents.startSelections).toEqual([{ model: "model-saved", reasoning: "low" }])
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "model-saved"]])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-saved")
@@ -256,7 +263,7 @@ describe("session configuration picks", () => {
     })
     expect(picked.status).toBe(202)
     expect(agents.configs).toEqual([])
-    const body = picked.body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const body = decode(ConfigOptions)(picked.body)
     expect(configSelectionsFromTestOptions(body.configOptions)).toMatchObject({
       model: "model-saved",
       reasoning: "low"
@@ -298,13 +305,9 @@ describe("session configuration picks", () => {
       method: "POST"
     })
 
-    const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
-      readonly configOptions: ReadonlyArray<SessionConfigOption>
-    }
+    const runtime = decode(ConfigOptions)(await run(services.db.getSessionRuntimeState(session.id)))
     expect(configSelectionsFromTestOptions(runtime.configOptions).model).toBe("model-default")
-    const published = listSubjectEvents(services, session.id, since).map(
-      (event) => event.payload as Record<string, unknown>
-    )
+    const published = listSubjectEvents(services, session.id, since).map((event) => event.payload)
     expect(published).toContainEqual(
       expect.objectContaining({
         configOptions: expect.arrayContaining([
@@ -345,9 +348,7 @@ describe("session configuration picks", () => {
     await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
 
     expect(agents.configs).toEqual([])
-    const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
-      readonly configOptions: ReadonlyArray<SessionConfigOption>
-    }
+    const runtime = decode(ConfigOptions)(await run(services.db.getSessionRuntimeState(session.id)))
     expect(configSelectionsFromTestOptions(runtime.configOptions).model).toBe("model-saved")
   })
 
@@ -391,9 +392,9 @@ describe("session configuration picks", () => {
     )
     const server = await startWithApp(services)
 
-    const restored = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const restored = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
 
     expect(agents.configs).toEqual([])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-default")
@@ -422,9 +423,9 @@ describe("session configuration picks", () => {
     )
     const server = await startWithApp(services)
 
-    const restored = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    const restored = decode(ConfigOptions)(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).body
+    )
 
     expect(agents.configs).toEqual([
       [session.agentSessionId, "model", "model-saved"],

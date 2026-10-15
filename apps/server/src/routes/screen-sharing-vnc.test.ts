@@ -5,10 +5,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
-import { WebSocket } from "ws"
+import { WebSocket, type RawData } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
+import { field } from "./response-test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
@@ -74,9 +75,12 @@ const fakeVNC = async (): Promise<{ server: Server; port: number; connections: S
   return { server, port, connections }
 }
 
+const bytesOf = (data: RawData): Buffer =>
+  Array.isArray(data) ? Buffer.concat(data) : Buffer.from(new Uint8Array(data))
+
 const nextMessage = (socket: WebSocket): Promise<Buffer> =>
   new Promise((resolve, reject) => {
-    socket.once("message", (data) => resolve(Buffer.from(data as Buffer)))
+    socket.once("message", (data) => resolve(bytesOf(data)))
     socket.once("error", reject)
     socket.once("close", (code) => reject(new Error(`closed ${code}`)))
   })
@@ -115,7 +119,7 @@ describe("VNC screen sharing provider", () => {
     const config = { port: 5901, name: "Studio" }
     const { server } = await start(config)
     const info = await jsonRequest(server, "/v1/info")
-    expect((info.body as { features: string[] }).features).toContain("screen-sharing-v1")
+    expect(field(info.body, "features")).toContain("screen-sharing-v1")
     const reply = await jsonRequest(server, "/v1/screen-sharing", {
       method: "POST",
       body: JSON.stringify({

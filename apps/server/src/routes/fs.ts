@@ -17,6 +17,7 @@ import {
   type ByteRange,
   type CodevisorServerServices
 } from "../server-context.js"
+import { stringField } from "../unknown-values.js"
 import { routeFileDocuments } from "./file-documents.js"
 import { directoryEntries } from "./fs-directory-entries.js"
 import { expandFsPath } from "./fs-paths.js"
@@ -100,7 +101,7 @@ const expandRequestedFilePath = (url: URL): string => {
 
 const throwFilesystemFileFailure = (path: string, lastError: unknown): never => {
   /* v8 ignore next */
-  const code = (lastError as NodeJS.ErrnoException | undefined)?.code ?? ""
+  const code = stringField(lastError, "code") ?? ""
   if (code === "ENOENT") {
     throw new HttpFailure(404, `No such file: ${path}`, "not_found")
   }
@@ -234,7 +235,7 @@ const serveFilesystemFile = async (
 
 const throwFilesystemMkdirFailure = (path: string, cause: unknown): never => {
   /* v8 ignore next */
-  const code = (cause as NodeJS.ErrnoException).code ?? ""
+  const code = stringField(cause, "code") ?? ""
   if (["EACCES", "EPERM"].includes(code)) {
     throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
   }
@@ -263,7 +264,7 @@ const createFilesystemDirectory = async (
 
 const throwFilesystemListFailure = (path: string, cause: unknown): never => {
   /* v8 ignore next */
-  const code = (cause as NodeJS.ErrnoException).code ?? ""
+  const code = stringField(cause, "code") ?? ""
   if (code === "ENOENT") {
     throw new HttpFailure(404, `No such directory: ${path}`, "not_found")
   }

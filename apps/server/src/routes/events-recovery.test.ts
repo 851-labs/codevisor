@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeEventFanout } from "../server.js"
 import { run } from "../test-support.js"
-import { attachEventSocket } from "./events.js"
+import { memoryDatabase, parseFrame, type EventSink } from "./session-test-support.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 
 const outputEvent = (revision: number): import("@codevisor/api").EventEnvelope => ({
   id: revision,
@@ -23,8 +24,8 @@ describe("durable session checkpoints", () => {
     let resolveReplay!: (events: Array<import("@codevisor/api").EventEnvelope>) => void
     let failReplay!: (error: Error) => void
     let reads = 0
-    const db = {
-      readSyncBatch: (since: number) =>
+    const db = await memoryDatabase({
+      readSyncBatch: (since) =>
         Effect.promise(() => {
           reads += 1
           if (reads === 1)
@@ -40,14 +41,15 @@ describe("durable session checkpoints", () => {
             requiresSnapshot: false
           }))
         })
-    }
+    })
     const delivered = Promise.withResolvers<void>()
     const sent: Array<{ id: number; kind: string }> = []
     const closers: Array<() => void> = []
     const socket = {
       readyState: 1,
+      bufferedAmount: 0,
       send: (raw: string) => {
-        const event = JSON.parse(raw)
+        const event = parseFrame(raw)
         sent.push(event)
         if (event.id === 3 && event.kind === "keepalive") delivered.resolve()
       },
@@ -57,18 +59,10 @@ describe("durable session checkpoints", () => {
         closers.forEach((handler) => handler())
       }
     }
+    const sink: EventSink = socket
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
     try {
-      await attachEventSocket(
-        db as never,
-        fanout,
-        1,
-        socket as never,
-        "server",
-        "chat",
-        25_000,
-        true
-      )
+      await attachSyncEventSocket(db, fanout, 1, sink, "server", "chat", 25_000)
       await vi.advanceTimersByTimeAsync(25_000)
       await run(fanout.publish(outputEvent(3)))
       await vi.advanceTimersByTimeAsync(25_000)

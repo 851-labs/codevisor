@@ -22,6 +22,7 @@ import {
   listSubjectEvents
 } from "../test-support.js"
 import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
+import { field, idOf } from "./response-test-support.js"
 
 describe("streaming turn sweeps and prompt gating", () => {
   it("sweeps quiet orphaned streaming turns while the server keeps running", async () => {
@@ -157,10 +158,8 @@ describe("streaming turn sweeps and prompt gating", () => {
       events.some(
         (event) =>
           event.kind === "session.updated" &&
-          typeof event.payload === "object" &&
-          event.payload !== null &&
-          (event.payload as { stopReason?: string; turnState?: string }).turnState === "ended" &&
-          (event.payload as { stopReason?: string }).stopReason === "end_turn"
+          field(event.payload, "turnState") === "ended" &&
+          field(event.payload, "stopReason") === "end_turn"
       )
     ).toBe(true)
 
@@ -235,11 +234,10 @@ describe("streaming turn sweeps and prompt gating", () => {
 
     const userTurnEnded = Promise.withResolvers<void>()
     const stopWatching = fanout.subscribe((event) => {
-      const payload = event.payload as { turnState?: string; turnId?: string }
       if (
         event.subjectId === session.id &&
-        payload?.turnState === "ended" &&
-        payload.turnId !== "agent-turn-1"
+        field(event.payload, "turnState") === "ended" &&
+        field(event.payload, "turnId") !== "agent-turn-1"
       )
         userTurnEnded.resolve()
     })
@@ -270,7 +268,7 @@ describe("streaming turn sweeps and prompt gating", () => {
         subjectId: session.id,
         createdAt: "2026-08-23T00:00:00.000Z",
         payload: malformed
-      } as never)
+      })
       expect(routeState.activeTurnSessions.has(session.id)).toBe(false)
     }
     unsubscribe()
@@ -291,8 +289,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     const fanout = await run(makeEventFanout)
     const routeState = idleRouteState()
     const unsubscribe = fanout.subscribe((event) => {
-      const payload = event.payload as Record<string, unknown>
-      if (event.kind === "session.updated" && payload.turnState === "ended") {
+      if (event.kind === "session.updated" && field(event.payload, "turnState") === "ended") {
         routeState.activeTurnSessions.add(session.id)
       }
     })
@@ -318,18 +315,26 @@ describe("streaming turn sweeps and prompt gating", () => {
     runningServers.push(server)
     const folder = join(mkdtempSync(join(tmpdir(), "codevisor-prompt-id-")), "repo")
     mkdirSync(folder, { recursive: true })
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: folder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: project.id, harnessId: "codex", title: "Identity" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const project = {
+      id: idOf(
+        (
+          await jsonRequest(server, "/v1/projects", {
+            body: JSON.stringify({ folderPath: folder }),
+            method: "POST"
+          })
+        ).body
+      )
+    }
+    const session = {
+      id: idOf(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            body: JSON.stringify({ projectId: project.id, harnessId: "codex", title: "Identity" }),
+            method: "POST"
+          })
+        ).body
+      )
+    }
 
     const messageId = "0f6b2c8e-8a34-4b9d-9f2e-1a7c5d3e9b01"
     const accepted = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -337,14 +342,14 @@ describe("streaming turn sweeps and prompt gating", () => {
       method: "POST"
     })
     expect(accepted.status).toBe(202)
-    expect((accepted.body as { queueItemId?: string }).queueItemId).toBe(messageId)
+    expect(field(accepted.body, "queueItemId")).toBe(messageId)
 
     await waitFor(async () =>
       listSubjectEvents(services, session.id).some(
         (event) =>
           event.kind === "session.output" &&
-          (event.payload as { messageId?: string }).messageId === messageId &&
-          (event.payload as { role?: string }).role === "user"
+          field(event.payload, "messageId") === messageId &&
+          field(event.payload, "role") === "user"
       )
     )
   })

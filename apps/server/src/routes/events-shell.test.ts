@@ -1,21 +1,21 @@
 import type { EventEnvelope } from "@codevisor/api"
+import { DatabaseError } from "@codevisor/db"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeEventFanout, run } from "../server-context.js"
-import { attachEventSocket } from "./events.js"
-
-type Frame = Omit<EventEnvelope, "kind"> & { kind: string; previousEventId?: number }
+import { memoryDatabase, parseFrame, type EventSink } from "./session-test-support.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 
 const makeSocket = () => {
-  const frames: Frame[] = []
+  const frames: Array<ReturnType<typeof parseFrame>> = []
   const closers: Array<() => void> = []
   const listeners = new Set<() => void>()
   const socket = {
     readyState: 1,
     bufferedAmount: 0,
     send: (raw: string) => {
-      frames.push(JSON.parse(raw) as Frame)
+      frames.push(parseFrame(raw))
       for (const listener of listeners) listener()
     },
     on: (_name: string, handler: () => void) => closers.push(handler),
@@ -35,7 +35,8 @@ const makeSocket = () => {
       listeners.add(check)
       check()
     })
-  return { socket, frames, checkpoint }
+  const sink: EventSink = socket
+  return { socket, sink, frames, checkpoint }
 }
 
 const attention = (id: number, sidebarState: string): EventEnvelope => ({
@@ -53,28 +54,22 @@ const shellFixture = async (since = 1) => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
   const log: EventEnvelope[] = []
   const fanout = await run(makeEventFanout)
-  const listEvents = vi.fn((cursor: number) => Effect.sync(() => log.filter((e) => e.id > cursor)))
+  const listEvents = vi.fn<
+    (cursor: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  >((cursor) => Effect.sync(() => log.filter((e) => e.id > cursor)))
+  const db = await memoryDatabase({
+    readSyncBatch: (cursor) =>
+      Effect.map(listEvents(cursor), (events) => ({
+        events,
+        cursor: Math.max(cursor, ...events.map((event) => event.id)),
+        requiresSnapshot: false
+      }))
+  })
   const sockets: ReturnType<typeof makeSocket>[] = []
   const connect = async () => {
     const client = makeSocket()
     sockets.push(client)
-    await attachEventSocket(
-      {
-        readSyncBatch: (cursor: number) =>
-          Effect.map(listEvents(cursor), (events) => ({
-            events,
-            cursor: Math.max(cursor, ...events.map((event) => event.id)),
-            requiresSnapshot: false
-          }))
-      } as never,
-      fanout,
-      since,
-      client.socket as never,
-      "server",
-      undefined,
-      25_000,
-      true
-    )
+    await attachSyncEventSocket(db, fanout, since, client.sink, "server", undefined, 25_000)
     return client
   }
   return {
@@ -209,8 +204,10 @@ describe("durable shell subscriptions", () => {
     const f = await shellFixture()
     try {
       const client = await f.connect()
-      f.listEvents.mockImplementationOnce(
-        () => Effect.fail(new Error("database unavailable")) as never
+      f.listEvents.mockImplementationOnce(() =>
+        Effect.fail(
+          new DatabaseError({ operation: "readSyncBatch", message: "database unavailable" })
+        )
       )
       await vi.advanceTimersByTimeAsync(25_000)
       expect(client.socket.readyState).toBe(3)

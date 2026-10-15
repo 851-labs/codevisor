@@ -15,6 +15,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { isRecord } from "../unknown-values.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
@@ -71,10 +72,7 @@ export const makeTurnDispatchListener =
   ) =>
   (event: EventEnvelope): void => {
     if (event.kind !== "session.updated" && event.kind !== "session.error") return
-    const payload =
-      typeof event.payload === "object" && event.payload !== null && !Array.isArray(event.payload)
-        ? (event.payload as Record<string, unknown>)
-        : {}
+    const payload = isRecord(event.payload) ? event.payload : {}
     if (event.kind === "session.updated" && payload.turnState === "started") {
       routeState.activeTurnSessions.add(event.subjectId)
       void forgetTurnIfArchived(services, routeState, event.subjectId).catch(swallowError)

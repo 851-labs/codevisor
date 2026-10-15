@@ -3,22 +3,25 @@ import { createHash } from "node:crypto"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
 import { run, type CodevisorServerServices } from "../server-context.js"
+import { field, isRecord } from "../unknown-values.js"
 import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
 
 export const persistGeneratedImage = async (
   services: CodevisorServerServices,
   event: RuntimeEvent
 ): Promise<RuntimeEvent> => {
-  const payload = event.payload as Record<string, unknown>
+  const payload = event.payload
   if (
     event.kind !== "session.output" ||
-    payload?.kind !== "image_generation" ||
+    !isRecord(payload) ||
+    payload.kind !== "image_generation" ||
     payload.sessionUpdate !== "tool_call_update"
   )
     return event
   const { generatedImage, ...published } = payload
   if (payload.status !== "completed") return { ...event, payload: published }
-  const input = generatedImage as { result?: string; savedPath?: string } | undefined
+  const result = field(generatedImage, "result")
+  const savedPath = field(generatedImage, "savedPath")
   try {
     const fileId =
       "generated-" +
@@ -30,14 +33,14 @@ export const persistGeneratedImage = async (
       existing === undefined
         ? await captureAssistantFile(
             services,
-            input?.result
+            typeof result === "string" && result !== ""
               ? {
-                  data: Buffer.from(input.result, "base64"),
+                  data: Buffer.from(result, "base64"),
                   name: "Generated image.png",
                   mimeType: "image/png"
                 }
-              : input?.savedPath
-                ? { path: input.savedPath }
+              : typeof savedPath === "string" && savedPath !== ""
+                ? { path: savedPath }
                 : (() => {
                     throw new Error("Image generation returned no image")
                   })(),

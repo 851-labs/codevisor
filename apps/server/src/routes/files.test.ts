@@ -13,13 +13,18 @@ import { request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
+import { ConversationItem, decode } from "@codevisor/api"
 import { makeAttachmentStore } from "@codevisor/db"
 import Database from "better-sqlite3"
+import { Schema } from "effect"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { sweepAttachmentTempFiles } from "../server.js"
 import { jsonRequest, run, start, tempDirs, waitFor, listSubjectEvents } from "../test-support.js"
 import { limitedUploadBody } from "./files.js"
+import { field, idOf } from "./response-test-support.js"
+
+const decodeConversation = decode(Schema.Struct({ conversation: Schema.Array(ConversationItem) }))
 
 const withAttachmentTempDirectory = (operation: (directory: string) => void): void => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-attachment-sweep-"))
@@ -82,11 +87,14 @@ describe("file routes", () => {
     ) => {
       const query = options.name === undefined ? "" : `?name=${encodeURIComponent(options.name)}`
       const response = await fetch(`${server.url}/v1/files${query}`, {
-        body: body as unknown as BodyInit,
+        body: new Uint8Array(body),
         headers: options.contentType === undefined ? {} : { "Content-Type": options.contentType },
         method: "POST"
       })
-      return { body: (await response.json()) as Record<string, unknown>, status: response.status }
+      return {
+        body: decode(Schema.Record(Schema.String, Schema.Unknown))(await response.json()),
+        status: response.status
+      }
     }
 
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
@@ -203,19 +211,19 @@ describe("file routes", () => {
 
     const sessionResponse = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
-        projectId: (
+        projectId: idOf(
           (
             await jsonRequest(server, "/v1/projects", {
               body: JSON.stringify({ folderPath: projectFolder, id: "attachment-project" }),
               method: "POST"
             })
-          ).body as { readonly id: string }
-        ).id,
+          ).body
+        ),
         harnessId: "codex"
       }),
       method: "POST"
     })
-    const session = sessionResponse.body as { readonly id: string }
+    const sessionId = idOf(sessionResponse.body)
 
     const pngRef = {
       fileId: String(png.body.id),
@@ -234,7 +242,7 @@ describe("file routes", () => {
 
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
           body: JSON.stringify({
             attachments: [{ ...pngRef, fileId: "missing-file" }],
             text: "nope"
@@ -245,7 +253,7 @@ describe("file routes", () => {
     ).toBe(422)
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
           body: JSON.stringify({
             attachments: Array.from({ length: 11 }, () => pngRef),
             text: "too many"
@@ -257,7 +265,7 @@ describe("file routes", () => {
 
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
           body: JSON.stringify({ attachments: [pngRef, textRef], text: "look at these" }),
           method: "POST"
         })
@@ -272,73 +280,63 @@ describe("file routes", () => {
       ],
       text: "look at these"
     })
-    const materialized = (promptInput as { attachments: ReadonlyArray<{ path: string }> })
-      .attachments[0]?.path
+    const materialized = decode(
+      Schema.Struct({ attachments: Schema.Array(Schema.Struct({ path: Schema.String })) })
+    )(promptInput).attachments[0]?.path
     expect(materialized).toBeTruthy()
     expect(readFileSync(String(materialized)).equals(pngBytes)).toBe(true)
 
-    await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+    await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
       body: JSON.stringify({ attachments: [pngRef], text: "again" }),
       method: "POST"
     })
     await waitFor(() => agents.prompts.length === 2)
 
-    const detail = (await jsonRequest(server, `/v1/sessions/${session.id}`)).body as {
-      readonly conversation: ReadonlyArray<{
-        readonly text: string
-        readonly attachments?: ReadonlyArray<{ readonly fileId: string }>
-      }>
-    }
+    const detail = decodeConversation((await jsonRequest(server, `/v1/sessions/${sessionId}`)).body)
     const userItem = detail.conversation.find((item) => item.text === "look at these")
     expect(userItem?.attachments).toMatchObject([
       { fileId: pngRef.fileId },
       { fileId: textRef.fileId }
     ])
-    const history = listSubjectEvents(services, session.id) as ReadonlyArray<{
-      readonly payload: Record<string, unknown>
-    }>
     expect(
-      history.some(
+      listSubjectEvents(services, sessionId).some(
         (event) =>
-          event.payload.text === "look at these" && Array.isArray(event.payload.attachments)
+          field(event.payload, "text") === "look at these" &&
+          Array.isArray(field(event.payload, "attachments"))
       )
     ).toBe(true)
 
     await run(
-      services.db.createPromptQueueItem(session.id, "stale file", [
+      services.db.createPromptQueueItem(sessionId, "stale file", [
         { ...pngRef, fileId: "vanished-file" }
       ])
     )
-    await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+    await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
       body: JSON.stringify({ text: "after stale" }),
       method: "POST"
     })
     await waitFor(async () => {
-      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
-        readonly kind: string
-        readonly payload: Record<string, unknown>
-      }>
-      return events.some(
+      return listSubjectEvents(services, sessionId).some(
         (event) =>
-          event.kind === "session.error" && String(event.payload.message).includes("vanished-file")
+          event.kind === "session.error" &&
+          String(field(event.payload, "message")).includes("vanished-file")
       )
     })
 
-    const agentSessionId = agents.prompts[0]?.[0] as string
+    const agentSessionId = decode(Schema.String)(agents.prompts[0]?.[0])
     await agents.emit(agentSessionId, {
       kind: "session.output",
       payload: { attachments: "bogus", role: "user", text: "malformed" },
       subjectId: agentSessionId
     })
     await waitFor(async () => {
-      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
-        readonly payload: Record<string, unknown>
-      }>
-      return events.some((event) => event.payload.text === "malformed")
+      return listSubjectEvents(services, sessionId).some(
+        (event) => field(event.payload, "text") === "malformed"
+      )
     })
-    const refreshed = (await jsonRequest(server, `/v1/sessions/${session.id}`)).body as {
-      readonly conversation: ReadonlyArray<{ readonly text: string }>
-    }
+    const refreshed = decodeConversation(
+      (await jsonRequest(server, `/v1/sessions/${sessionId}`)).body
+    )
     expect(refreshed.conversation.some((item) => item.text === "malformed")).toBe(false)
 
     writeFileSync(
@@ -347,42 +345,34 @@ describe("file routes", () => {
     )
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
           body: JSON.stringify({ attachments: [pngRef], text: "corrupt disk object" }),
           method: "POST"
         })
       ).status
     ).toBe(202)
     await waitFor(async () => {
-      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
-        readonly kind: string
-        readonly payload: Record<string, unknown>
-      }>
-      return events.some(
+      return listSubjectEvents(services, sessionId).some(
         (event) =>
           event.kind === "session.error" &&
-          String(event.payload.message).includes("missing or corrupt")
+          String(field(event.payload, "message")).includes("missing or corrupt")
       )
     })
     rmSync(services.attachments.objectPath(String(png.body.sha256)), { force: true })
     expect((await fetch(`${server.url}/v1/files/${String(png.body.id)}`)).status).toBe(500)
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
           body: JSON.stringify({ attachments: [pngRef], text: "missing disk object" }),
           method: "POST"
         })
       ).status
     ).toBe(202)
     await waitFor(async () => {
-      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
-        readonly kind: string
-        readonly payload: Record<string, unknown>
-      }>
-      return events.some(
+      return listSubjectEvents(services, sessionId).some(
         (event) =>
           event.kind === "session.error" &&
-          String(event.payload.message).includes("Attachment object is missing:")
+          String(field(event.payload, "message")).includes("Attachment object is missing:")
       )
     })
   })

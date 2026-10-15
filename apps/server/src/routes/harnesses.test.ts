@@ -2,6 +2,8 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -288,12 +290,14 @@ describe("harness routes", () => {
     const server = await startWithApp({ ...services, auth })
     const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-auth-project-"))
     tempDirs.push(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        method: "POST",
-        body: JSON.stringify({ folderPath: projectFolder })
-      })
-    ).body as { id: string }
+    const project = decode(Schema.Struct({ id: Schema.String }))(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          method: "POST",
+          body: JSON.stringify({ folderPath: projectFolder })
+        })
+      ).body
+    )
     await run(
       services.db.saveHarnessAccount({
         id: account.id,
@@ -311,11 +315,14 @@ describe("harness routes", () => {
       body: JSON.stringify({ projectId: project.id, harnessId: "codex" })
     })
     expect(createdResponse.status).toBe(201)
-    const created = createdResponse.body as {
-      id: string
-      agentSessionId: string
-      harnessAccountId: string
-    }
+    const created = decode(
+      Schema.Struct({
+        id: Schema.String,
+        agentSessionId: Schema.String,
+        harnessAccountId: Schema.String
+      })
+    )(createdResponse.body)
+
     expect(created.harnessAccountId).toBe(account.id)
     await agents.emit(created.agentSessionId, {
       kind: "session.authRequired",

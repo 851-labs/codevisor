@@ -2,17 +2,30 @@ import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { writePluginInstallReceipt } from "@codevisor/plugins"
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
+import { defaultServerConfig } from "../server-config.js"
 import {
   makeEventFanout,
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
+import {
+  jsonRequest,
+  makeServices,
+  pluginSummary,
+  run,
+  startWithApp,
+  tempDirs
+} from "../test-support.js"
+import { fakeHarnessAuth, fakePlugins } from "./harness-auth-test-support.js"
+import { field } from "./response-test-support.js"
 import {
   makeAuthSyncRefreshScheduler,
   refreshHarnessReadiness,
@@ -26,7 +39,9 @@ import {
   runBackgroundSyncReconcile
 } from "./sync-reconcilers.js"
 
-const config = { id: "server-x" } as unknown as CodevisorServerConfig
+const config: CodevisorServerConfig = defaultServerConfig({ bootId: "test-boot", id: "server-x" })
+
+const EntryKeys = Schema.Array(Schema.Struct({ key: Schema.String }))
 
 describe("configMutationNamespace", () => {
   it("maps config mutations to their plane and ignores everything else", () => {
@@ -99,12 +114,9 @@ describe("runBackgroundSyncReconcile", () => {
     expect(await run(bare.db.getSyncEntries("codevisor-skills"))).toEqual([])
 
     const { services: broken } = await makeServices("server-bg-broken")
-    const throwing = {
+    const throwing: CodevisorServerServices = {
       ...broken,
-      mcp: {
-        ...broken.mcp,
-        list: () => Promise.reject(new Error("boom"))
-      } as unknown as NonNullable<typeof broken.mcp>
+      mcp: { ...broken.mcp, list: () => Promise.reject(new Error("boom")) }
     }
     await expect(
       runBackgroundSyncReconcile(throwing, config, fanout, "mcps")
@@ -144,7 +156,7 @@ describe("runBackgroundSyncReconcile", () => {
     const reconciled = Promise.withResolvers<ReadonlyArray<string>>()
     const unsubscribe = fanout.subscribe((event) => {
       if (event.kind === "sync.changed" && event.subjectId === "mcps") {
-        const { entries } = event.payload as { entries: ReadonlyArray<{ key: string }> }
+        const entries = decode(EntryKeys)(field(event.payload, "entries"))
         reconciled.resolve(entries.map((entry) => entry.key).toSorted())
       }
     })
@@ -183,10 +195,10 @@ describe("refreshMcpReadiness", () => {
     await refreshMcpReadiness(withoutMcp, config, fanout)
     expect(await run(services.db.getSyncEntries("mcp-readiness"))).toEqual([])
 
-    const poisoned = {
+    const poisoned: CodevisorServerServices = {
       ...services,
-      mcp: { list: () => Promise.reject(new Error("boom")) }
-    } as unknown as typeof services
+      mcp: { ...services.mcp, list: () => Promise.reject(new Error("boom")) }
+    }
     await expect(refreshMcpReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
   })
 })
@@ -195,14 +207,15 @@ describe("auth-derived sync refresh", () => {
   it("derives readiness from stored auth state without starting a passive probe", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-auth-readiness")
-    const decorateHarnesses = vi.fn(async (harnesses) => harnesses)
-    const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => harnesses)
-    const withAuth = {
+    const decorateHarnesses = vi.fn<HarnessAuthManager["decorateHarnesses"]>(
+      async (harnesses) => harnesses
+    )
+    const decorateHarnessesFromStoredState = vi.fn<
+      HarnessAuthManager["decorateHarnessesFromStoredState"]
+    >(async (harnesses) => harnesses)
+    const withAuth: CodevisorServerServices = {
       ...services,
-      auth: {
-        decorateHarnesses,
-        decorateHarnessesFromStoredState
-      } as unknown as NonNullable<CodevisorServerServices["auth"]>
+      auth: fakeHarnessAuth({ decorateHarnesses, decorateHarnessesFromStoredState })
     }
 
     await refreshHarnessReadiness(withAuth, config, fanout)
@@ -217,19 +230,21 @@ describe("auth-derived sync refresh", () => {
     const firstRefreshGate = Promise.withResolvers<void>()
     const firstStarted = Promise.withResolvers<void>()
     const trailingStarted = Promise.withResolvers<void>()
-    const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => {
+    const decorateHarnessesFromStoredState = vi.fn<
+      HarnessAuthManager["decorateHarnessesFromStoredState"]
+    >(async (harnesses) => {
       if (decorateHarnessesFromStoredState.mock.calls.length === 1) {
         firstStarted.resolve()
         await firstRefreshGate.promise
       } else trailingStarted.resolve()
       return harnesses
     })
-    const withAuth = {
+    const withAuth: CodevisorServerServices = {
       ...services,
-      auth: {
+      auth: fakeHarnessAuth({
         decorateHarnesses: vi.fn(async (harnesses) => harnesses),
         decorateHarnessesFromStoredState
-      } as unknown as NonNullable<CodevisorServerServices["auth"]>
+      })
     }
     const scheduler = makeAuthSyncRefreshScheduler(withAuth, config, fanout)
 
@@ -263,15 +278,33 @@ describe("refreshPluginReadiness", () => {
       source: { kind: "github", repo: "owner/example", tracking: "registry", url: "owner/example" },
       updatedAt: "2026-01-01T00:00:00.000Z"
     })
-    const manager = {
+    const manager = fakePlugins({
       list: async () => ({
         plugins: [
-          { enabled: true, id: "owner.example", path: managedPath, source: "managed" },
-          { enabled: false, id: "owner.paused", path: managedPath, source: "managed" },
-          { enabled: true, id: "dev-linked", path: "/tmp/nowhere", source: "linked" }
+          {
+            ...pluginSummary,
+            enabled: true,
+            id: "owner.example",
+            path: managedPath,
+            source: "managed"
+          },
+          {
+            ...pluginSummary,
+            enabled: false,
+            id: "owner.paused",
+            path: managedPath,
+            source: "managed"
+          },
+          {
+            ...pluginSummary,
+            enabled: true,
+            id: "dev-linked",
+            path: "/tmp/nowhere",
+            source: "linked"
+          }
         ]
       })
-    } as unknown as Parameters<typeof refreshPluginReadiness>[3]
+    })
 
     await run(
       services.db.mergeSyncEntries("plugins", [
@@ -297,9 +330,17 @@ describe("refreshPluginReadiness", () => {
       { id: "fleet.ffmpeg", reason: "needs ffmpeg" }
     ])
     const entries = await run(services.db.getSyncEntries("plugin-readiness"))
-    const value = entries[0]?.value as {
-      plugins: Array<{ id: string; state: string; reason?: string }>
-    }
+    const value = decode(
+      Schema.Struct({
+        plugins: Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            state: Schema.String,
+            reason: Schema.optional(Schema.String)
+          })
+        )
+      })
+    )(entries[0]?.value)
     const byId = Object.fromEntries(value.plugins.map((row) => [row.id, row]))
     expect(byId["owner.example"]?.state).toBe("ready")
     expect(byId["owner.paused"]?.state).toBe("disabled")
@@ -312,9 +353,7 @@ describe("refreshPluginReadiness", () => {
     })
     expect(byId["fleet.gone"]).toBeUndefined()
 
-    const poisoned = {
-      list: () => Promise.reject(new Error("boom"))
-    } as unknown as typeof manager
+    const poisoned = fakePlugins({ list: () => Promise.reject(new Error("boom")) })
     await expect(
       refreshPluginReadiness(services, config, fanout, poisoned, [])
     ).resolves.toBeUndefined()
@@ -338,12 +377,14 @@ describe("republishAccountsRoster", () => {
     await republishAccountsRoster(services, config, fanout)
     const entries = await run(services.db.getSyncEntries("harness-accounts"))
     expect(entries).toHaveLength(1)
-    const value = entries[0]?.value as { accounts: Array<{ authState: string }> }
+    const value = decode(
+      Schema.Struct({ accounts: Schema.Array(Schema.Struct({ authState: Schema.String })) })
+    )(entries[0]?.value)
     expect(value.accounts[0]?.authState).toBe("authenticated")
 
     await republishAccountsRoster(services, config, fanout)
     expect(await run(services.db.getSyncEntries("harness-accounts"))).toHaveLength(1)
-    const poisoned = {
+    const poisoned: CodevisorServerServices = {
       ...services,
       db: {
         ...services.db,
@@ -351,7 +392,7 @@ describe("republishAccountsRoster", () => {
           throw new Error("boom")
         }
       }
-    } as unknown as typeof services
+    }
     await expect(republishAccountsRoster(poisoned, config, fanout)).resolves.toBeUndefined()
   })
 })
@@ -375,17 +416,17 @@ describe("credentials plane", () => {
     })
     const refreshed: Array<string | undefined> = []
     const ferrySources = [makeSource("pi-auth"), makeSource("mystery-source")]
-    const withFerry = {
+    const withFerry: CodevisorServerServices = {
       ...services,
       credentialFerry: ferrySources,
-      auth: {
+      auth: fakeHarnessAuth({
         sharedOpenCodeProfiles: async () => [makeSource("opencode-profile:work")],
         refresh: (harnessId?: string) => {
           refreshed.push(harnessId)
           return Promise.resolve()
         }
-      }
-    } as unknown as typeof services
+      })
+    }
 
     await run(
       withFerry.db.mergeSyncEntries("harness-credentials", [
@@ -413,7 +454,8 @@ describe("credentials plane", () => {
     )
     const result = await reconcileForNamespace(withFerry, config, "credentials")
     expect(result).toBeDefined()
-    expect((result!.status as { applied: string[] }).applied.toSorted()).toEqual([
+    const status = decode(Schema.Struct({ applied: Schema.Array(Schema.String) }))(result?.status)
+    expect(status.applied.toSorted()).toEqual([
       "mystery-source",
       "opencode-profile:work",
       "pi-auth"
@@ -424,10 +466,7 @@ describe("credentials plane", () => {
     ])
     expect(contents.get("pi-auth")).toContain("fleet")
 
-    const withFerryNoAuth = {
-      ...services,
-      credentialFerry: ferrySources
-    } as unknown as typeof services
+    const withFerryNoAuth: CodevisorServerServices = { ...services, credentialFerry: ferrySources }
     contents.set("pi-auth", '{"openai":{"key":"sk-2","type":"api_key"}}')
     await runBackgroundSyncReconcile(withFerryNoAuth, config, fanout, "harnesses")
     const entries = await run(withFerry.db.getSyncEntries("harness-credentials"))

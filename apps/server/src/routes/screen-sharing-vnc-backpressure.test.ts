@@ -3,7 +3,7 @@ import { IncomingMessage } from "node:http"
 import { Socket } from "node:net"
 
 import { expect, it, vi } from "vitest"
-import { type WebSocket, WebSocketServer } from "ws"
+import { WebSocket } from "ws"
 
 import { spliceVNCSocket, vncDisplayId } from "./screen-sharing-vnc.js"
 import { VNCControlArbiter } from "./vnc-control.js"
@@ -14,6 +14,8 @@ it.each([4, 5])(
     const completions: Array<() => void> = []
     const webSocket = Object.assign(new EventEmitter(), {
       bufferedAmount: 0,
+      readyState: WebSocket.OPEN,
+      close: () => undefined,
       send: vi.fn((chunk: Buffer, _options: { binary: boolean }, complete: () => void) => {
         webSocket.bufferedAmount += chunk.length
         completions.push(complete)
@@ -21,12 +23,14 @@ it.each([4, 5])(
     })
     const upstream = new Socket()
     const client = new Socket()
-    const server = new WebSocketServer({ noServer: true })
-    const upgrade = vi
-      .spyOn(server, "handleUpgrade")
-      .mockImplementation((request, _socket, _head, done) => {
-        done(webSocket as unknown as WebSocket, request)
-      })
+    const server = {
+      handleUpgrade: (
+        _request: IncomingMessage,
+        _socket: Socket,
+        _head: Buffer,
+        done: (accepted: typeof webSocket) => void
+      ) => done(webSocket)
+    }
     const pause = vi.spyOn(upstream, "pause")
     const resume = vi.spyOn(upstream, "resume")
     try {
@@ -77,12 +81,10 @@ it.each([4, 5])(
       expect(resume).toHaveBeenCalledOnce()
       expect(completions).toHaveLength(0)
     } finally {
-      upgrade.mockRestore()
       pause.mockRestore()
       resume.mockRestore()
       upstream.destroy()
       client.destroy()
-      server.close()
     }
   }
 )

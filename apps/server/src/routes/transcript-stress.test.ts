@@ -1,8 +1,12 @@
-import type { TranscriptBodyPage } from "@codevisor/api"
+import { decode, type TranscriptBodyPage } from "@codevisor/api"
+import { Schema } from "effect"
 import { afterEach, expect, it, vi } from "vitest"
 
 import { jsonRequest, run, listEvents, listSubjectEvents } from "../test-support.js"
+import { field } from "./response-test-support.js"
 import { createFirstSession, setUpWorkspace } from "./session-test-support.js"
+
+const SeededSession = Schema.Struct({ sessionId: Schema.String })
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -25,16 +29,13 @@ it("keeps the transcript driver opt-in and limits mutations to its own fixtures"
     text: "Fixture **text**"
   })
   expect(seeded.status).toBe(201)
-  const { sessionId } = seeded.body as { sessionId: string }
+  const { sessionId } = decode(SeededSession)(seeded.body)
   expect((await post({ action: "compaction", sessionId })).status).toBe(400)
   for (const status of ["started", "completed", "started", "failed"]) {
     expect((await post({ action: "compaction", sessionId, status })).status).toBe(200)
   }
   const compactions = listSubjectEvents(services, sessionId)
-    .filter(
-      (event) =>
-        (event.payload as { sessionUpdate?: string }).sessionUpdate === "context_compaction"
-    )
+    .filter((event) => field(event.payload, "sessionUpdate") === "context_compaction")
     .map((event) => event.payload)
   expect(compactions).toMatchObject(
     ["started", "completed", "started", "failed"].map((status) => ({
@@ -87,7 +88,7 @@ it("defaults to 500 completed turns followed by one controllable live turn", asy
   })
   expect(seeded.status).toBe(201)
   expect(seeded.body).toMatchObject({ turns: 500 })
-  const { sessionId } = seeded.body as { sessionId: string }
+  const { sessionId } = decode(SeededSession)(seeded.body)
   const detail = await run(services.db.getSessionDetail(sessionId))
   expect(detail.session.title).toBe("Default-count fixture")
   const all = []
@@ -127,13 +128,14 @@ it("seeds mixed Markdown and preserves provider text-part identities and phases"
     })
   const seeded = await post({ action: "seed", folderPath: workspaceFolder, turns: 1 })
   expect(seeded.status).toBe(201)
-  const { sessionId } = seeded.body as { sessionId: string }
+  const { sessionId } = decode(SeededSession)(seeded.body)
   const detail = await run(services.db.getSessionDetail(sessionId))
   expect(detail.session.title).toBe("Transcript stress")
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 64))
   const assistant = page.items.find((item) => item.role === "assistant")!
   expect(assistant.text.length).toBeLessThanOrEqual(24_000)
-  const resource = assistant.textResource as { itemId: string; entryKey: string }
+  const resource = assistant.textResource
+  if (resource === undefined) throw new Error("Expected a text resource")
   let markdown = ""
   let position: number | undefined = 0
   do {

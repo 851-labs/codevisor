@@ -18,6 +18,7 @@ import type {
   CodevisorServerServices,
   EventFanout
 } from "../server-context.js"
+import { field } from "../unknown-values.js"
 import { routeHarnessAuth } from "./harness-auth-routes.js"
 import { discoverHarnesses } from "./harness-discovery.js"
 import { conflictFrom } from "./harness-errors.js"
@@ -120,9 +121,9 @@ const checkHarnessUpdates = async (
 ): Promise<boolean> => {
   if (services.lifecycle === undefined)
     throw new HttpFailure(501, "Harness update checks unavailable")
-  const body = (await readJson(request)) as { readonly harnessIds?: unknown }
-  const harnessIds = Array.isArray(body.harnessIds)
-    ? body.harnessIds.filter((id): id is string => typeof id === "string")
+  const requested = field(await readJson(request), "harnessIds")
+  const harnessIds = Array.isArray(requested)
+    ? requested.filter((id): id is string => typeof id === "string")
     : undefined
   await services.lifecycle.checkForUpdates(true, harnessIds)
   writeJson(response, 200, await discoverHarnesses(services, false, undefined, true))
@@ -138,8 +139,8 @@ const installHarness = async (
   installHarnessId: string
 ): Promise<boolean> => {
   if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness install unavailable")
-  const body = (await readJson(request)) as { readonly methodId?: string }
-  const methodId = typeof body.methodId === "string" ? body.methodId : undefined
+  const requestedMethodId = field(await readJson(request), "methodId")
+  const methodId = typeof requestedMethodId === "string" ? requestedMethodId : undefined
   try {
     const { terminalId } = await services.lifecycle.beginInstall(installHarnessId, methodId)
     await writeHarnessCatalog(services, config, fanout, installHarnessId, {
@@ -259,7 +260,7 @@ const updateHarnessPreference = async (
     payload.enabled ||
     (typeof current?.value === "object" &&
       current.value !== null &&
-      (current.value as Record<string, unknown>).installed !== false)
+      field(current.value, "installed") !== false)
   await writeHarnessCatalog(services, config, fanout, harnessId, {
     enabled: payload.enabled,
     installed

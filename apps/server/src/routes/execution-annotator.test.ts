@@ -11,10 +11,10 @@ import {
 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
+import { field } from "./response-test-support.js"
 import { sessionEventSink } from "./session-events.js"
 
 const args = { description: "List open Linear issues", code: "async () => tools.linear.list()" }
@@ -385,12 +385,7 @@ describe("session event sink execution annotation", () => {
     const fanout = await run(makeEventFanout)
     const published: Array<EventEnvelope> = []
     fanout.subscribe((event) => published.push(event))
-    const sink = sessionEventSink(
-      services as unknown as CodevisorServerServices,
-      fanout,
-      "execution-annotator",
-      session.id
-    )
+    const sink = sessionEventSink(services, fanout, "execution-annotator", session.id)
     const emit = (payload: Record<string, unknown>) =>
       sink({ kind: "session.output", subjectId: session.id, payload })
     await sink({
@@ -410,9 +405,9 @@ describe("session event sink execution annotation", () => {
     await emit({ sessionUpdate: "tool_call_update", toolCallId: "call-1", status: "completed" })
 
     const rows = published
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.toolCallId === "call-1")
-    expect(rows.map((row) => row._meta)).toEqual([
+      .map((event) => event.payload)
+      .filter((payload) => field(payload, "toolCallId") === "call-1")
+    expect(rows.map((row) => field(row, "_meta"))).toEqual([
       undefined,
       { codevisorExecution: running },
       { codevisorExecution: completed },

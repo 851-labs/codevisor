@@ -1,6 +1,25 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { HttpFailure, readJson, writeJson, type CodevisorServerConfig } from "../server-context.js"
+import { field } from "../unknown-values.js"
+
+const isManagedBy = (value: unknown): value is "app" | "external" =>
+  value === "app" || value === "external"
+
+const cloudCredentials = (
+  body: unknown
+):
+  | { readonly inviteCode: string }
+  | { readonly serverUrl: string; readonly sessionToken: string }
+  | undefined => {
+  const inviteCode = field(body, "inviteCode")
+  if (typeof inviteCode === "string") return { inviteCode }
+  const serverUrl = field(body, "serverUrl")
+  const sessionToken = field(body, "sessionToken")
+  return typeof serverUrl === "string" && typeof sessionToken === "string"
+    ? { serverUrl, sessionToken }
+    : undefined
+}
 
 export const liveCloudDeviceId = (config: CodevisorServerConfig): string | undefined =>
   config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()
@@ -33,24 +52,19 @@ export const routeCloud = async (
     if (control === undefined) {
       throw new HttpFailure(501, "This server cannot manage its cloud connection")
     }
-    const body = (await readJson(request)) as {
-      readonly serverUrl?: unknown
-      readonly sessionToken?: unknown
-      readonly inviteCode?: unknown
-      readonly managedBy?: unknown
-      readonly machineName?: unknown
+    const raw = await readJson(request)
+    const body = {
+      managedBy: field(raw, "managedBy"),
+      machineName: field(raw, "machineName")
     }
-    const withInvite = typeof body.inviteCode === "string"
-    if (
-      !withInvite &&
-      (typeof body.serverUrl !== "string" || typeof body.sessionToken !== "string")
-    ) {
+    const credentials = cloudCredentials(raw)
+    if (credentials === undefined) {
       throw new HttpFailure(400, "serverUrl and sessionToken (or inviteCode) are required")
     }
-    if (withInvite && control.connectWithInvite === undefined) {
+    if ("inviteCode" in credentials && control.connectWithInvite === undefined) {
       throw new HttpFailure(501, "This server cannot join an account with an invite")
     }
-    if (body.managedBy !== undefined && body.managedBy !== "app" && body.managedBy !== "external") {
+    if (body.managedBy !== undefined && !isManagedBy(body.managedBy)) {
       throw new HttpFailure(400, "managedBy must be app or external")
     }
     if (
@@ -62,16 +76,15 @@ export const routeCloud = async (
       throw new HttpFailure(400, "machineName must contain 1 to 120 characters")
     }
     const registration = {
-      ...(body.managedBy === undefined ? {} : { managedBy: body.managedBy as "app" | "external" }),
-      ...(body.machineName === undefined
-        ? {}
-        : { machineName: (body.machineName as string).trim() })
+      ...(body.managedBy === undefined ? {} : { managedBy: body.managedBy }),
+      ...(body.machineName === undefined ? {} : { machineName: body.machineName.trim() })
     }
     let deviceId: string
     try {
-      deviceId = withInvite
-        ? await control.connectWithInvite!(body.inviteCode as string, registration)
-        : await control.connect(body.serverUrl as string, body.sessionToken as string, registration)
+      deviceId =
+        "inviteCode" in credentials
+          ? await control.connectWithInvite!(credentials.inviteCode, registration)
+          : await control.connect(credentials.serverUrl, credentials.sessionToken, registration)
     } catch (cause) {
       throw new HttpFailure(
         502,

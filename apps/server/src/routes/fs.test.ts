@@ -4,9 +4,16 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { field, idOf } from "./response-test-support.js"
+
+const decodeListing = decode(
+  Schema.Struct({ entries: Schema.Array(Schema.Struct({ name: Schema.String })) })
+)
 
 describe("fs routes", () => {
   it("lists directories for the remote project picker", async () => {
@@ -33,16 +40,14 @@ describe("fs routes", () => {
       server,
       `/v1/fs/list?path=${encodeURIComponent(root)}&showHidden=true`
     )
-    expect((withHidden.body as { entries: Array<{ name: string }> }).entries[0]?.name).toBe(
-      ".hidden"
-    )
+    expect(decodeListing(withHidden.body).entries[0]?.name).toBe(".hidden")
 
     const home = await jsonRequest(server, "/v1/fs/list")
     expect(home.status).toBe(200)
-    expect((home.body as { path: string }).path.startsWith("/")).toBe(true)
+    expect(decode(Schema.String)(field(home.body, "path")).startsWith("/")).toBe(true)
 
     const rootListing = await jsonRequest(server, "/v1/fs/list?path=/")
-    expect((rootListing.body as { parent: string | null }).parent).toBeNull()
+    expect(field(rootListing.body, "parent")).toBeNull()
 
     const homeChild = await jsonRequest(server, "/v1/fs/list?path=%7E%2F")
     expect(homeChild.status).toBe(200)
@@ -146,12 +151,12 @@ describe("fs routes", () => {
     })
     const session = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
-        projectId: (project.body as { readonly id: string }).id,
+        projectId: idOf(project.body),
         harnessId: "codex"
       }),
       method: "POST"
     })
-    const sessionId = (session.body as { readonly id: string }).id
+    const sessionId = idOf(session.body)
     const relative = await fetch(
       `${server.url}/v1/fs/file?path=${encodeURIComponent("report 2026.pdf")}&sessionId=${encodeURIComponent(sessionId.toUpperCase())}`
     )
@@ -229,7 +234,7 @@ describe("fs routes", () => {
       server,
       `/v1/fs/list?path=${encodeURIComponent(join(root, "projects"))}`
     )
-    expect((listing.body as { entries: Array<{ name: string }> }).entries[0]?.name).toBe("fresh")
+    expect(decodeListing(listing.body).entries[0]?.name).toBe("fresh")
 
     expect((await mkdirRequest("~")).status).toBe(201)
 

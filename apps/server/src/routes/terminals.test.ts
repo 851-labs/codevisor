@@ -1,14 +1,17 @@
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
 
 import { jsonRequest, start } from "../test-support.js"
+import { field } from "./response-test-support.js"
 
 const recordMessages = (socket: WebSocket) => {
   const messages: unknown[] = []
   const waiters = new Map<number, () => void>()
   socket.on("message", (data: Buffer) => {
-    const message = JSON.parse(data.toString()) as { type?: string }
-    if (message.type === "size") return
+    const message: unknown = JSON.parse(data.toString())
+    if (field(message, "type") === "size") return
     messages.push(message)
     waiters.get(messages.length)?.()
     waiters.delete(messages.length)
@@ -57,10 +60,9 @@ describe("terminal routes", () => {
       method: "POST"
     })
     expect((await jsonRequest(server, "/v1/terminals", { method: "POST" })).status).toBe(400)
-    const terminal = terminalResponse.body as {
-      readonly terminalId: string
-      readonly websocketPath: string
-    }
+    const terminal = decode(
+      Schema.Struct({ terminalId: Schema.String, websocketPath: Schema.String })
+    )(terminalResponse.body)
     const webSocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=0`
     )
@@ -166,13 +168,13 @@ describe("terminal routes", () => {
       body: JSON.stringify({ sessionId: "session-screen", cwd: "/tmp", cols: 80, rows: 24 }),
       method: "POST"
     })
-    const { terminalId } = created.body as { readonly terminalId: string }
+    const { terminalId } = decode(Schema.Struct({ terminalId: Schema.String }))(created.body)
     spawner.handlers[0]?.onOutput("$ make\r\n\u001b[32mok\u001b[0m")
 
     const text = await jsonRequest(server, `/v1/terminals/${terminalId}/screen`)
     expect(text.body).toEqual({ format: "text", screen: "$ make\nok" })
     const vt = await jsonRequest(server, `/v1/terminals/${terminalId}/screen?format=vt`)
-    expect((vt.body as { screen: string }).screen).toContain("\u001b[")
+    expect(field(vt.body, "screen")).toContain("\u001b[")
 
     expect(
       (await jsonRequest(server, `/v1/terminals/${terminalId}/screen?format=html`)).status

@@ -3,9 +3,12 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { jsonRequest, makeServices, run, startWithApp, tempDirs, waitFor } from "../test-support.js"
+import { field } from "./response-test-support.js"
 
 const tempFolder = (prefix: string): string => {
   const folder = mkdtempSync(join(tmpdir(), prefix))
@@ -54,7 +57,7 @@ describe("git review routes", () => {
         revision: expect.any(String)
       }
     })
-    const revision = encodeURIComponent((first.body as { revision: string }).revision)
+    const revision = encodeURIComponent(decode(Schema.String)(field(first.body, "revision")))
     expect(await review(`diff?path=${path}&mode=uncommitted&revision=${revision}`)).toMatchObject({
       status: 200,
       body: { unchanged: true, files: [] }

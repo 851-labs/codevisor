@@ -1,9 +1,8 @@
-import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
-import type { IncomingMessage, ServerResponse } from "node:http"
+import { IncomingMessage, ServerResponse } from "node:http"
+import { Socket } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { Readable } from "node:stream"
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -39,23 +38,32 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
-const response = () =>
-  Object.assign(new EventEmitter(), {
-    setHeader: vi.fn(),
-    writeHead: vi.fn(),
-    end: vi.fn()
-  })
+const makeRequest = (method: string, body?: unknown) => {
+  const request = new IncomingMessage(new Socket())
+  request.method = method
+  if (body !== undefined) request.push(Buffer.from(JSON.stringify(body)))
+  request.push(null)
+  return request
+}
+
+const response = () => {
+  const output = new ServerResponse(makeRequest("GET"))
+  vi.spyOn(output, "writeHead").mockReturnValue(output)
+  return {
+    output,
+    setHeader: vi.spyOn(output, "setHeader").mockReturnValue(output),
+    end: vi.spyOn(output, "end").mockReturnValue(output)
+  }
+}
 
 const invoke = async (endpoint: string, method = "GET", body?: unknown) => {
-  const request = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
-  Object.assign(request, { method })
-  const output = response()
+  const { output, setHeader, end } = response()
   const handled = await routeFileDocuments(
-    request as IncomingMessage,
-    output as unknown as ServerResponse,
+    makeRequest(method, body),
+    output,
     new URL(endpoint, "http://localhost")
   )
-  return { handled, output, body: JSON.parse(output.end.mock.calls[0]![0]) }
+  return { handled, output, setHeader, body: JSON.parse(end.mock.calls[0]![0]) }
 }
 const endpoint = (route: string, path: string) => `/v1/fs/${route}?path=${encodeURIComponent(path)}`
 const document = (path: string) => endpoint("document", path)
@@ -66,15 +74,11 @@ const create = (content: string | Buffer = "original") => {
 }
 
 it("leaves unrelated routes for the next handler", async () => {
-  const output = response()
+  const { output, end } = response()
   expect(
-    await routeFileDocuments(
-      { method: "GET" } as IncomingMessage,
-      output as unknown as ServerResponse,
-      new URL("http://localhost/v1/sessions")
-    )
+    await routeFileDocuments(makeRequest("GET"), output, new URL("http://localhost/v1/sessions"))
   ).toBe(false)
-  expect(output.end).not.toHaveBeenCalled()
+  expect(end).not.toHaveBeenCalled()
 })
 
 it("expands the machine home and responds to unchanged document revisions", async () => {
@@ -82,7 +86,7 @@ it("expands the machine home and responds to unchanged document revisions", asyn
   await expect(invoke(document("~"))).rejects.toMatchObject({ code: "not_a_file" })
   const loaded = await invoke(document("~/file.txt"))
   expect(loaded.body).toMatchObject({ path, content: "original", reason: null })
-  expect(loaded.output.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store")
+  expect(loaded.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store")
   expect((await invoke(`${document(path)}&version=${loaded.body.version}`)).body).toEqual({
     unchanged: true
   })
@@ -193,10 +197,9 @@ it("lists hidden entries and directories while skipping dangling and nonregular 
   fs.rmSync(join(root, "folder"), { recursive: true })
   fs.rmSync(join(root, ".hidden"))
   fs.rmSync(join(root, "broken"))
-  vi.mocked(fs.statSync).mockReturnValueOnce({
-    isDirectory: () => false,
-    isFile: () => false
-  } as fs.Stats)
+  vi.mocked(fs.statSync).mockReturnValueOnce(
+    Object.assign(fs.statSync(root), { isDirectory: () => false, isFile: () => false })
+  )
   expect((await invoke(endpoint("entries", root))).body.entries).toEqual([])
 })
 
@@ -212,7 +215,7 @@ it("serves recursive searches and removes its disconnect listener after completi
   fs.writeFileSync(join(root, "nested", "settings.json"), "{}")
   const result = await invoke(`${endpoint("search", root)}&query=settings`)
   expect(result.body.entries).toMatchObject([{ path: join(root, "nested", "settings.json") }])
-  expect(result.output.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store")
+  expect(result.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store")
   expect(result.output.listenerCount("close")).toBe(0)
   expect((await invoke(endpoint("search", root))).body.entries).toEqual([])
 })
@@ -226,15 +229,15 @@ it("cancels a search when its response disconnects and releases the listener", a
         })
       })
   )
-  const output = response()
+  const { output, end } = response()
   const pending = routeFileDocuments(
-    { method: "GET" } as IncomingMessage,
-    output as unknown as ServerResponse,
+    makeRequest("GET"),
+    output,
     new URL(endpoint("search", root), "http://localhost")
   )
   const cancelled = expect(pending).rejects.toMatchObject({ name: "AbortError" })
   output.emit("close")
   await cancelled
   expect(output.listenerCount("close")).toBe(0)
-  expect(output.end).not.toHaveBeenCalled()
+  expect(end).not.toHaveBeenCalled()
 })

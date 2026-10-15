@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
 import { TerminalError } from "@codevisor/terminal"
 import { describe, expect, it } from "vitest"
 
@@ -15,7 +16,12 @@ import {
   listEvents,
   listSubjectEvents
 } from "../test-support.js"
-import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
+import {
+  Identified,
+  QueuedPrompt,
+  setUpWorkspace,
+  createFirstSession
+} from "./session-test-support.js"
 
 describe("session action routes", () => {
   it("queues prompts and routes actions, goals, questions, archive, deletion, and replay", async () => {
@@ -56,12 +62,14 @@ describe("session action routes", () => {
     const queueEventsBeforeSlow = listSubjectEvents(services, session.id).filter(
       (event) => event.kind === "session.queue.updated"
     ).length
-    const slowResponse = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
-        body: JSON.stringify({ text: "slow prompt" }),
-        method: "POST"
-      })
-    ).body as { readonly queueItemId: string }
+    const slowResponse = decode(QueuedPrompt)(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "slow prompt" }),
+          method: "POST"
+        })
+      ).body
+    )
     expect(slowResponse.queueItemId).toBeTypeOf("string")
     await waitFor(() => agents.prompts.length === promptCountBeforeSlow + 1)
     const immediatePromptQueueEvents = listSubjectEvents(services, session.id)
@@ -78,18 +86,22 @@ describe("session action routes", () => {
         })
       ])
     )
-    const queuedResponse = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
-        body: JSON.stringify({ text: "queued original" }),
-        method: "POST"
-      })
-    ).body as { readonly queueItemId: string }
-    const removedResponse = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
-        body: JSON.stringify({ text: "queued remove" }),
-        method: "POST"
-      })
-    ).body as { readonly queueItemId: string }
+    const queuedResponse = decode(QueuedPrompt)(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "queued original" }),
+          method: "POST"
+        })
+      ).body
+    )
+    const removedResponse = decode(QueuedPrompt)(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "queued remove" }),
+          method: "POST"
+        })
+      ).body
+    )
     expect((await jsonRequest(server, `/v1/sessions/${session.id}/queue`)).body).toMatchObject([
       { id: queuedResponse.queueItemId, text: "queued original" },
       { id: removedResponse.queueItemId, text: "queued remove" }
@@ -351,17 +363,19 @@ describe("session action routes", () => {
     await expect(attach(backgroundTerminal.terminalId)).rejects.toBeInstanceOf(TerminalError)
     await expect(attach(unrelatedTerminal.terminalId)).resolves.toBeTypeOf("function")
 
-    const runtimelessSession = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          agentSessionId: "",
-          harnessId: "codex",
-          projectId: workspace.id,
-          title: "Imported"
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const runtimelessSession = decode(Identified)(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            agentSessionId: "",
+            harnessId: "codex",
+            projectId: workspace.id,
+            title: "Imported"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/workspaces/runtimeless", {
       body: JSON.stringify({ projectId: workspace.id, name: "Runtimeless", hasCustomName: false }),
       method: "PUT"
