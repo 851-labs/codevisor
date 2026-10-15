@@ -1,5 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
+import { record, type JsonRecord } from "./internal.js"
+
 export const CURSOR_SUBAGENTS_CAPABILITY = "subagents"
 export const CURSOR_SUBAGENT_METHOD = "codevisor/cursor_subagent"
 const SUBAGENT_ANNOUNCEMENTS = new Set(["subagent_spawned", "subagent_state_update"])
@@ -10,13 +12,6 @@ const CHILD_THREAD_UPDATES = new Set([
   "tool_call",
   "tool_call_update"
 ])
-
-type JsonRecord = Record<string, unknown>
-
-const record = (value: unknown): JsonRecord | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
 
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
@@ -66,6 +61,17 @@ export class CursorSubagents {
       delete mapped.status
     }
     return mapped
+  }
+
+  mapToolEvents(
+    sessionId: string,
+    events: ReadonlyArray<RuntimeEvent>
+  ): ReadonlyArray<RuntimeEvent> {
+    return events.map((event) => {
+      const payload = record(event.payload) ?? {}
+      const mapped = this.mapToolUpdate(sessionId, payload)
+      return mapped === payload ? event : { ...event, payload: mapped }
+    })
   }
 
   taskEvent(params: unknown, sessionId: string): RuntimeEvent | undefined {
@@ -156,7 +162,7 @@ export class CursorSubagents {
     const child = this.children.get(childSessionId)
     if (child === undefined) return []
     return events.map((event) => {
-      const payload = { ...(event.payload as JsonRecord) }
+      const payload = { ...record(event.payload) }
       const toolCallId = string(payload.toolCallId)
       if (toolCallId !== undefined) payload.toolCallId = `${childSessionId}:${toolCallId}`
       return {

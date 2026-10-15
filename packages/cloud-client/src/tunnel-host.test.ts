@@ -7,7 +7,7 @@ import type {
   TunnelMessage,
   TunnelMessageStream
 } from "@codevisor/net"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi, type Mock } from "vitest"
 
 import { makePeerKeyPinStore } from "./peer-pins.js"
 import {
@@ -52,24 +52,39 @@ class FakeStream implements TunnelMessageStream {
   finish = async (): Promise<void> => undefined
 }
 
+const unused = (): never => {
+  throw new Error("the tunnel host does not use this")
+}
+
 const connection = (
   alpn: string,
   remoteId = "e".repeat(64),
   stream: Promise<TunnelMessageStream> = Promise.resolve(new FakeStream()),
   ends?: FakeStream
-): TunnelConnection & { close: ReturnType<typeof vi.fn> } =>
-  ({
-    remoteId: () => remoteId,
-    alpn: () => alpn,
-    acceptMessageStream: () => stream,
-    close: vi.fn(() => ends?.incoming.push({ error: new Error("connection closed") }))
-  }) as unknown as TunnelConnection & { close: ReturnType<typeof vi.fn> }
+): TunnelConnection & { close: Mock<TunnelConnection["close"]> } => ({
+  remoteId: () => remoteId,
+  alpn: () => alpn,
+  openMessageStream: unused,
+  acceptMessageStream: () => stream,
+  paths: () => [],
+  maxMediaPayload: () => null,
+  forwardMedia: unused,
+  bindMedia: unused,
+  close: vi.fn<TunnelConnection["close"]>(() => {
+    ends?.incoming.push({ error: new Error("connection closed") })
+  }),
+  closed: unused
+})
 
-class FakeEndpoint {
+class FakeEndpoint implements TunnelEndpoint {
   incoming = new Pending<Outcome<TunnelConnection | null>>()
   addrs = new Pending<Outcome<TunnelAddr>>()
   closed = false
   endpointId = (): string => "a".repeat(64)
+  addr = unused
+  boundSockets = (): string[] => []
+  online = unused
+  connect = unused
   accept = (): Promise<TunnelConnection | null> => settle(this.incoming)
   nextAddr = (): Promise<TunnelAddr> => settle(this.addrs)
   async close(): Promise<void> {
@@ -221,7 +236,7 @@ const tunnelSetup = () => {
       bindOptions.push(options)
       const endpoint = new FakeEndpoint()
       endpoints.push(endpoint)
-      return endpoint as unknown as TunnelEndpoint
+      return endpoint
     },
     secretKeyHex: "11".repeat(32),
     host: { accept: (_socket, peer) => accepted.push(peer ?? {}) },
@@ -313,7 +328,7 @@ describe("MachineTunnel", () => {
         const endpoint = new FakeEndpoint()
         if (endpoints.length < 2) endpoint.close = async () => undefined
         endpoints.push(endpoint)
-        return endpoint as unknown as TunnelEndpoint
+        return endpoint
       },
       secretKeyHex: "33".repeat(32),
       host: { accept: (_socket, peer) => accepted.push(peer ?? {}) },
@@ -344,10 +359,10 @@ describe("MachineTunnel", () => {
       bind: () =>
         binds++ === 0
           ? new Promise((resolve) => {
-              release = () => resolve(endpoint as unknown as TunnelEndpoint)
+              release = () => resolve(endpoint)
               bindStarted()
             })
-          : Promise.resolve(new FakeEndpoint() as unknown as TunnelEndpoint),
+          : Promise.resolve(new FakeEndpoint()),
       secretKeyHex: "22".repeat(32),
       host: { accept: vi.fn() },
       onAddr: vi.fn()

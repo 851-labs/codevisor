@@ -29,7 +29,7 @@ describe("ACP mapping", () => {
           }
         ]
       }
-    } as never)
+    })
 
     expect(event.kind).toBe("session.output")
     expect(event.payload).toMatchObject({
@@ -44,7 +44,7 @@ describe("ACP mapping", () => {
         toolCallId: "tool-2",
         title: "Read file"
       }
-    } as never)
+    })
     expect(plain.payload).not.toHaveProperty("diffStats")
   })
 
@@ -77,7 +77,7 @@ describe("ACP mapping", () => {
           }
         ]
       }
-    } as never)
+    })
 
     expect(event).toEqual({
       kind: "session.output",
@@ -134,7 +134,7 @@ describe("ACP mapping", () => {
         options: [{ name: "Thinking: model", value: "thinking-model" }],
         type: "select"
       }
-    ] as never)
+    ])
 
     expect(options[0]?.name).toBe("Reasoning")
     expect(options[0]?.options.map((option) => option.name)).toEqual([
@@ -146,6 +146,63 @@ describe("ACP mapping", () => {
       "Effort"
     ])
     expect(options[1]?.options.map((option) => option.name)).toEqual(["Thinking: model"])
+  })
+
+  it("drops malformed ACP config options and choices instead of trusting their shape", () => {
+    const options = normalizeAcpConfigOptions([
+      null,
+      { currentValue: "on", id: "toggle", name: "Toggle", type: "boolean" },
+      { currentValue: "a", id: 7, name: "Bad id", options: [], type: "select" },
+      { currentValue: "a", id: "nameless", options: [], type: "select" },
+      { id: "valueless", name: "No value", options: [], type: "select" },
+      { currentValue: "a", id: "loose", name: "Loose", options: "a", type: "select" },
+      {
+        currentValue: "a",
+        description: "Pick one",
+        id: "flat",
+        name: "Flat",
+        options: [
+          { description: "First", name: "A", value: "a" },
+          { name: "B", value: 2 },
+          { value: "c" },
+          "d"
+        ],
+        type: "select"
+      },
+      {
+        currentValue: "a",
+        id: "grouped",
+        name: "Grouped",
+        options: [
+          { group: "one", name: "One", options: [{ name: "A", value: "a" }] },
+          { group: "two", name: "Two", options: "a" },
+          { group: 3, name: "Three", options: [] },
+          { group: "four", options: [] },
+          null
+        ],
+        type: "select"
+      }
+    ])
+
+    expect(options).toEqual([
+      { currentValue: "a", id: "loose", name: "Loose", options: [] },
+      {
+        currentValue: "a",
+        description: "Pick one",
+        id: "flat",
+        name: "Flat",
+        options: [{ description: "First", name: "A", value: "a" }]
+      },
+      {
+        currentValue: "a",
+        id: "grouped",
+        name: "Grouped",
+        options: [
+          { group: "one", name: "One", options: [{ name: "A", value: "a" }] },
+          { group: "two", name: "Two", options: [] }
+        ]
+      }
+    ])
   })
 
   it("maps ACP permission requests onto questions and answers back onto option ids", () => {

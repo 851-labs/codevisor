@@ -1,3 +1,5 @@
+import { isRecord } from "@codevisor/api"
+
 export const BYTE_STREAM_CHANNEL_TYPE = "byte-stream"
 export const CODEVISOR_LOOPBACK_SERVICE = "codevisor-loopback"
 export const BYTE_STREAM_PROTOCOL_VERSION = 1
@@ -26,11 +28,10 @@ export const codevisorLoopbackParams = (): ByteStreamChannelParams => ({
 export const parseByteStreamChannelParams = (
   value: unknown
 ): ByteStreamChannelParams | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const record = value as Record<string, unknown>
   if (
-    record.service !== CODEVISOR_LOOPBACK_SERVICE ||
-    record.version !== BYTE_STREAM_PROTOCOL_VERSION
+    !isRecord(value) ||
+    value.service !== CODEVISOR_LOOPBACK_SERVICE ||
+    value.version !== BYTE_STREAM_PROTOCOL_VERSION
   ) {
     return undefined
   }

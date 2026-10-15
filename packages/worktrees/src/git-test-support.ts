@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
+import { afterEach, beforeEach, expect, onTestFinished, vi } from "vitest"
 
 beforeEach(() => {
   vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -35,4 +35,13 @@ export const makeGitRepo = (tracked = false): { root: string; repo: string } => 
   }
   git("commit", "--allow-empty", "-m", "init")
   return { root, repo }
+}
+
+export const expectInstanceOf = <T>(
+  value: unknown,
+  type: abstract new (...args: never) => T
+): T => {
+  expect(value).toBeInstanceOf(type)
+  if (!(value instanceof type)) throw new Error(`Expected an instance of ${type.name}`)
+  return value
 }

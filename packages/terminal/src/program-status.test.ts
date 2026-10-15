@@ -11,14 +11,16 @@ import {
 
 const b64 = (text: string): string => Buffer.from(text).toString("base64")
 
-const report = (state: string, id?: string): ProgramStatusEvent => ({
+type ReportState = Extract<ProgramStatusEvent, { type: "report" }>["state"]
+
+const report = (state: ReportState, id?: string): ProgramStatusEvent => ({
   type: "report",
-  state: state as "idle",
+  state,
   id
 })
 
-const set = (records: ProgramStatusRecords, state: string, id?: string) =>
-  records.apply({ type: "report", state: state as "idle", id })
+const set = (records: ProgramStatusRecords, state: ReportState, id?: string) =>
+  records.apply({ type: "report", state, id })
 
 describe("parseProgramStatus", () => {
   it.each([

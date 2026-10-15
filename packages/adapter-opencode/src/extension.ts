@@ -1,6 +1,6 @@
 import type { AcpStdioExtensionFactory } from "@codevisor/adapter-acp"
 
-import { withSkillRead } from "./skill-tool.js"
+import { skillReadUpdate, withSkillRead } from "./skill-tool.js"
 import {
   CHILD_SESSION_UPDATES_CAPABILITY,
   CHILD_UPDATE_METHOD,
@@ -25,6 +25,7 @@ export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
       )
       return app
     },
-    mapSessionNotification: (notification) => subagents.mapNotification(withSkillRead(notification))
+    mapSessionNotification: (notification) =>
+      subagents.mapNotification({ ...notification, update: skillReadUpdate(notification.update) })
   }
 }

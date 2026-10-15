@@ -1,7 +1,7 @@
-import { runtimeEventFromNotification } from "@codevisor/adapter-acp"
+import { runtimeEventFromNotification, type AcpUpdateNotification } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
-type SessionNotification = Parameters<typeof runtimeEventFromNotification>[0]
+import { record, type JsonRecord } from "./internal.js"
 
 export const CHILD_UPDATE_METHOD = "opencode/session/child_update"
 export const CHILD_SESSION_UPDATES_CAPABILITY = "opencode/child-session-updates"
@@ -24,13 +24,6 @@ interface AgentCall {
   continues: boolean
 }
 
-type JsonRecord = Record<string, unknown>
-
-const record = (value: unknown): JsonRecord | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
-
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
@@ -38,8 +31,8 @@ export class OpenCodeSubagents {
   private readonly calls = new Map<string, AgentCall>()
   private readonly children = new Map<string, string>()
 
-  mapNotification(notification: SessionNotification): ReadonlyArray<RuntimeEvent> {
-    const update = notification.update as unknown as JsonRecord
+  mapNotification(notification: AcpUpdateNotification): ReadonlyArray<RuntimeEvent> {
+    const { update } = notification
     const child = record(record(update._meta)?.[CHILD_SESSION_META])
     const childId = string(child?.id)
     if (child !== undefined && childId !== undefined) {
@@ -210,10 +203,7 @@ export class OpenCodeSubagents {
   }
 
   private event(sessionId: string, update: JsonRecord): RuntimeEvent {
-    return runtimeEventFromNotification({
-      sessionId,
-      update: update as unknown as SessionNotification["update"]
-    })
+    return runtimeEventFromNotification({ sessionId, update })
   }
 }
 

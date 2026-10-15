@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 
 import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import {
   processIdentity,
   stopProcessTree,
@@ -10,7 +11,7 @@ import {
 } from "@codevisor/processes"
 
 export interface PiClient {
-  command: <T = unknown>(type: string, fields?: Record<string, unknown>) => Promise<T>
+  command: (type: string, fields?: Record<string, unknown>) => Promise<unknown>
   onEvent: (handler: (event: Record<string, unknown>) => void) => void
   respond: (response: Record<string, unknown>) => void
   onClose: (handler: (error: Error) => void) => void
@@ -81,16 +82,19 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
   transport.onFailure((error) => settle(new PiExitedError(error.message), true))
 
   transport.onLine((line) => {
-    let record: Record<string, unknown>
+    let record: unknown
     try {
-      record = JSON.parse(line) as Record<string, unknown>
+      record = JSON.parse(line)
     } catch {
       return
     }
+    if (!isRecord(record)) return
     if (record.type === "response") {
-      const entry = typeof record.id === "string" ? pending.get(record.id) : undefined
+      const id = record.id
+      if (typeof id !== "string") return
+      const entry = pending.get(id)
       if (entry === undefined) return
-      pending.delete(record.id as string)
+      pending.delete(id)
       if (record.success === true) entry.resolve(record.data)
       else entry.reject(new Error(typeof record.error === "string" ? record.error : "Pi failed."))
       return
@@ -103,15 +107,15 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
   })
 
   return {
-    command: <T>(type: string, fields: Record<string, unknown> = {}) => {
+    command: (type: string, fields: Record<string, unknown> = {}) => {
       next += 1
       const id = `codevisor-${next}`
-      return new Promise<T>((resolve, reject) => {
+      return new Promise<unknown>((resolve, reject) => {
         if (stopped !== undefined) {
           reject(stopped)
           return
         }
-        pending.set(id, { reject, resolve: resolve as (value: unknown) => void })
+        pending.set(id, { reject, resolve })
         transport.send({ ...fields, id, type })
       })
     },

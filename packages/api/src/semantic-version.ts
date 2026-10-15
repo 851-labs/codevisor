@@ -10,16 +10,10 @@ const IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/
 
 export const parseSemanticVersion = (value: string): SemanticVersion | undefined => {
   if (value !== value.trim()) return undefined
-  const parts = value.split("+")
-  const withoutBuild = parts.shift() as string
-  const buildParts = parts
-  if (buildParts.length > 1) return undefined
-  if (
-    buildParts.length === 1 &&
-    (buildParts[0] === "" || !(buildParts[0] as string).split(".").every(validIdentifier))
-  ) {
-    return undefined
-  }
+  const plus = value.indexOf("+")
+  const withoutBuild = plus === -1 ? value : value.slice(0, plus)
+  const build = plus === -1 ? undefined : value.slice(plus + 1)
+  if (build !== undefined && !build.split(".").every(validIdentifier)) return undefined
   const dash = withoutBuild.indexOf("-")
   const coreText = dash === -1 ? withoutBuild : withoutBuild.slice(0, dash)
   const prereleaseText = dash === -1 ? undefined : withoutBuild.slice(dash + 1)
@@ -53,13 +47,14 @@ export const compareSemanticVersions = (left: string, right: string): number => 
   if (parsedLeft === undefined || parsedRight === undefined) {
     throw new Error(`Cannot compare invalid semantic versions: ${left}, ${right}`)
   }
-  const leftCore = coreIdentifiers(left)
-  const rightCore = coreIdentifiers(right)
-  for (let index = 0; index < 3; index += 1) {
-    const order = compareNumericIdentifier(leftCore[index] as string, rightCore[index] as string)
-    if (order !== 0) return order
-  }
-  return comparePrerelease(parsedLeft.prerelease, parsedRight.prerelease)
+  const [leftMajor, leftMinor, leftPatch] = coreIdentifiers(left)
+  const [rightMajor, rightMinor, rightPatch] = coreIdentifiers(right)
+  return (
+    compareNumericIdentifier(leftMajor, rightMajor) ||
+    compareNumericIdentifier(leftMinor, rightMinor) ||
+    compareNumericIdentifier(leftPatch, rightPatch) ||
+    comparePrerelease(parsedLeft.prerelease, parsedRight.prerelease)
+  )
 }
 
 const validIdentifier = (identifier: string): boolean =>
@@ -87,8 +82,10 @@ const comparePrerelease = (left: ReadonlyArray<string>, right: ReadonlyArray<str
   return 0
 }
 
-const coreIdentifiers = (version: string): ReadonlyArray<string> =>
-  (version.split(/[+-]/)[0] as string).split(".")
+const coreIdentifiers = (version: string): readonly [string, string, string] => {
+  const [major = "", minor = "", patch = ""] = version.split(/[+-]/, 1).join("").split(".")
+  return [major, minor, patch]
+}
 
 const compareNumericIdentifier = (left: string, right: string): number =>
   left.length === right.length

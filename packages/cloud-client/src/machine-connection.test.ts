@@ -1,5 +1,4 @@
-import { CLOUD_PROTOCOL_VERSION, MACHINE_PEERS_FEATURE } from "@codevisor/api"
-import type { MachineToHub } from "@codevisor/api"
+import { CLOUD_PROTOCOL_VERSION, MACHINE_PEERS_FEATURE, isRecord } from "@codevisor/api"
 import { sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it, vi } from "vitest"
 
@@ -42,7 +41,7 @@ describe("connection lifecycle", () => {
   it("omits optional device fields", () => {
     const h = harness({ device: { name: "bare" } })
     connect(h)
-    const hello = h.sockets[0]!.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    const hello = h.sockets[0]!.hello()
     expect(hello.device.os).toBeUndefined()
     expect(hello.device.appVersion).toBeUndefined()
   })
@@ -120,7 +119,7 @@ describe("connection lifecycle", () => {
     const h = harness({
       handlers: {
         echo: (channel) => {
-          const { fail } = channel.params as { fail?: string }
+          const fail = isRecord(channel.params) ? channel.params.fail : undefined
           if (fail === "after-close") channel.close("unsupported")
           if (fail !== undefined) throw new Error("bad params")
           h.channels.push(channel)

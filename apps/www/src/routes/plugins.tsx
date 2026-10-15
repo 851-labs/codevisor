@@ -1,4 +1,4 @@
-import type { PluginRegistryEntry } from "@codevisor/api"
+import { decode, PluginRegistryIndex, type PluginRegistryEntry } from "@codevisor/api"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 
@@ -32,8 +32,8 @@ const fetchDirectory = createServerFn({ method: "GET" }).handler(
         signal: AbortSignal.timeout(10_000)
       })
       if (!response.ok) return { entries: null }
-      const index = (await response.json()) as { entries?: ReadonlyArray<PluginRegistryEntry> }
-      return { entries: (index.entries ?? []).map(toDirectoryEntry) }
+      const index = decode(PluginRegistryIndex)(await response.json())
+      return { entries: index.entries.map(toDirectoryEntry) }
     } catch {
       return { entries: null }
     }

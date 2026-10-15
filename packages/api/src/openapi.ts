@@ -224,12 +224,17 @@ const setWebSocketMessages = (endpoint: Endpoint, operation: JsonObject): void =
   }
 }
 
+const splitEndpoint = (endpoint: Endpoint): { method: string; rawPath: string } => {
+  const space = endpoint.indexOf(" ")
+  return { method: endpoint.slice(0, space), rawPath: endpoint.slice(space + 1) }
+}
+
 const makeOperation = (
   endpoint: Endpoint,
   requests: Partial<Record<Endpoint, Schema.Constraint>>,
   responses: Partial<Record<Endpoint, Schema.Constraint>>
 ): JsonObject => {
-  const [method, rawPath] = endpoint.split(" ") as [string, string]
+  const { method, rawPath } = splitEndpoint(endpoint)
   const requestSchema = requests[endpoint]
   const responseSchema = responses[endpoint]
   const parameters = [...pathParameters(rawPath), ...queryParameters(endpoint)]
@@ -276,10 +281,10 @@ export const makeOpenApiDocument = (version: string): CodevisorOpenApi => {
   const paths: Record<string, Record<string, unknown>> = {}
 
   for (const endpoint of endpoints) {
-    const [method, rawPath] = endpoint.split(" ") as [string, string]
+    const { method, rawPath } = splitEndpoint(endpoint)
     const path = rawPath.replace(/:([A-Za-z][A-Za-z0-9]*)/g, "{$1}")
     paths[path] ??= {}
-    paths[path]![method.toLowerCase()] = makeOperation(endpoint, requests, responses)
+    paths[path][method.toLowerCase()] = makeOperation(endpoint, requests, responses)
   }
 
   const errorSchema = {

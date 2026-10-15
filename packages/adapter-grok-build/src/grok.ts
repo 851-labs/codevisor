@@ -1,6 +1,9 @@
 import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
+
+import { record } from "./record.js"
 
 export type GrokMappedQuestion<Response> = AcpMappedQuestion<Response>
 
@@ -31,11 +34,8 @@ const GROK_KEEP_PLANNING_LABEL = "Keep planning"
 const GROK_ABANDON_PLAN_LABEL = "Abandon plan"
 
 const unwrapGrokExtensionParams = (params: unknown): unknown => {
-  if (typeof params !== "object" || params === null) return params
-  const wrapper = params as Record<string, unknown>
-  return typeof wrapper.method === "string" && wrapper.params !== undefined
-    ? wrapper.params
-    : params
+  if (!isRecord(params)) return params
+  return typeof params.method === "string" && params.params !== undefined ? params.params : params
 }
 
 const grokGoalStatus = (status: string): GoalStatus | undefined => {
@@ -64,12 +64,10 @@ export const grokGoalNotification = (
   currentGoal: (sessionId: string) => SessionGoal | undefined = () => undefined,
   now = new Date().toISOString()
 ): GrokGoalNotification | undefined => {
-  params = unwrapGrokExtensionParams(params)
-  if (typeof params !== "object" || params === null) return undefined
-  const notification = params as Record<string, unknown>
-  if (typeof notification.sessionId !== "string") return undefined
-  if (typeof notification.update !== "object" || notification.update === null) return undefined
-  const update = notification.update as Record<string, unknown>
+  const notification = record(unwrapGrokExtensionParams(params))
+  if (notification === undefined || typeof notification.sessionId !== "string") return undefined
+  const update = record(notification.update)
+  if (update === undefined) return undefined
   if (update.sessionUpdate !== "goal_updated" || typeof update.status !== "string") {
     return undefined
   }
@@ -127,10 +125,8 @@ export const grokGoalNotification = (
 export const grokPlanApprovalQuestion = (
   params: unknown
 ): GrokMappedQuestion<GrokPlanApprovalResponse> | undefined => {
-  params = unwrapGrokExtensionParams(params)
-  if (typeof params !== "object" || params === null) return undefined
-  const request = params as Record<string, unknown>
-  if (typeof request.sessionId !== "string") return undefined
+  const request = record(unwrapGrokExtensionParams(params))
+  if (request === undefined || typeof request.sessionId !== "string") return undefined
   const planDocument = typeof request.planContent === "string" ? request.planContent : undefined
   const questions: ReadonlyArray<QuestionSpec> = [
     {
@@ -184,13 +180,12 @@ interface GrokQuestion {
 
 const parseGrokQuestions = (value: unknown): ReadonlyArray<GrokQuestion> => {
   if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) return []
-    const question = entry as Record<string, unknown>
-    if (typeof question.question !== "string" || !Array.isArray(question.options)) return []
-    const options = question.options.flatMap((raw) => {
-      if (typeof raw !== "object" || raw === null) return []
-      const option = raw as Record<string, unknown>
+  const entries: ReadonlyArray<unknown> = value
+  return entries.filter(isRecord).flatMap((question) => {
+    const rawOptions: unknown = question.options
+    if (typeof question.question !== "string" || !Array.isArray(rawOptions)) return []
+    const optionEntries: ReadonlyArray<unknown> = rawOptions
+    const options = optionEntries.filter(isRecord).flatMap((option) => {
       if (typeof option.label !== "string") return []
       return [
         {
@@ -213,10 +208,8 @@ const parseGrokQuestions = (value: unknown): ReadonlyArray<GrokQuestion> => {
 export const grokAskUserQuestion = (
   params: unknown
 ): GrokMappedQuestion<GrokAskUserQuestionResponse> | undefined => {
-  params = unwrapGrokExtensionParams(params)
-  if (typeof params !== "object" || params === null) return undefined
-  const request = params as Record<string, unknown>
-  if (typeof request.sessionId !== "string") return undefined
+  const request = record(unwrapGrokExtensionParams(params))
+  if (request === undefined || typeof request.sessionId !== "string") return undefined
   const grokQuestions = parseGrokQuestions(request.questions)
   if (grokQuestions.length === 0) return undefined
   const questions: ReadonlyArray<QuestionSpec> = grokQuestions.map((question) => ({

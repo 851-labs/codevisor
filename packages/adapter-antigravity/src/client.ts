@@ -112,11 +112,15 @@ export const runAgy: AgyRunner = (request) =>
         maxBuffer: 4 * 1024 * 1024
       },
       (error, stdout, stderr) => {
-        if (error !== null && typeof error.code !== "number") {
+        if (error === null) {
+          resolve({ code: 0, stdout, stderr })
+          return
+        }
+        if (typeof error.code !== "number") {
           reject(error.killed ? new Error("Antigravity didn't respond in time.") : error)
           return
         }
-        resolve({ code: error === null ? 0 : (error.code as number), stdout, stderr })
+        resolve({ code: error.code, stdout, stderr })
       }
     )
   })

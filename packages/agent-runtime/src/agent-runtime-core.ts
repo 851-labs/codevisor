@@ -1,3 +1,4 @@
+import { isRecord } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AgentRuntimeConfig } from "./agent-runtime-types.js"
@@ -108,8 +109,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     if (session === undefined || session.eventSource !== eventSource) {
       return Promise.resolve()
     }
-    if (typeof event.payload === "object" && event.payload !== null) {
-      const payload = event.payload as Record<string, unknown>
+    if (isRecord(event.payload)) {
+      const payload = event.payload
       if (event.kind === "session.updated" && Array.isArray(payload.configOptions)) {
         session.metadata = {
           ...session.metadata,

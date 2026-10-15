@@ -1,4 +1,3 @@
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -7,9 +6,7 @@ import {
   cursorCreatePlanQuestion,
   cursorGenerateImageEvent
 } from "./cursor.js"
-
-const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | undefined =>
-  event?.payload as Record<string, unknown> | undefined
+import { payloadOf as payload } from "./test-support.js"
 
 describe("Cursor ACP extensions", () => {
   it("round-trips multi-question answers by Cursor option id", () => {

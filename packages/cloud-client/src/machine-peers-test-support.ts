@@ -4,7 +4,6 @@ import {
   type CloudMachinePresence
 } from "@codevisor/api"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
-import { expect } from "vitest"
 
 import {
   GatewayChannelError,
@@ -94,10 +93,9 @@ export const pair = (
   for (const sender of peers) {
     sender.socket.onRelay = (envelopes: SentEnvelope[]) => {
       for (const { header, payload } of envelopes) {
-        const addressed = header as unknown as Record<string, unknown>
         const deliver = (): void => {
-          if (typeof addressed.machineId === "string") {
-            const target = peers.find((peer) => peer.deviceId === addressed.machineId)!
+          if (header.direction === "open") {
+            const target = peers.find((peer) => peer.deviceId === header.machineId)!
             target.socket.receiveRelay(
               {
                 peerId: sender.connectionId,
@@ -158,6 +156,8 @@ export const failure = async (promise: Promise<unknown>): Promise<GatewayChannel
     () => undefined,
     (cause: unknown) => cause
   )
-  expect(error).toBeInstanceOf(GatewayChannelError)
-  return error as GatewayChannelError
+  if (!(error instanceof GatewayChannelError)) {
+    throw new Error(`expected a GatewayChannelError, got ${String(error)}`)
+  }
+  return error
 }

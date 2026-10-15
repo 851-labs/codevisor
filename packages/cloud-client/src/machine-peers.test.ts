@@ -77,7 +77,8 @@ describe("machine peers", () => {
       try {
         a.h.connection.openChannel(deviceId, GATEWAY_CHANNEL_TYPE)
       } catch (cause) {
-        return (cause as ChannelOpenError).reason
+        if (!(cause instanceof ChannelOpenError)) throw cause
+        return cause.reason
       }
       return "opened"
     }

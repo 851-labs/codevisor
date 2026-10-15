@@ -1,3 +1,5 @@
+import { isRecord } from "./records.js"
+
 export type CodevisorExecutionIcon =
   | { readonly kind: "site"; readonly origin: string }
   | {
@@ -53,12 +55,10 @@ export const CODEVISOR_EXECUTION_MAX_FILES = 12
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize)
-  if (value !== null && typeof value === "object") {
+  if (isRecord(value)) {
     // oxlint-disable-next-line unicorn/no-array-sort
     const keys = Object.keys(value).sort()
-    return Object.fromEntries(
-      keys.map((key) => [key, canonicalize((value as Record<string, unknown>)[key])])
-    )
+    return Object.fromEntries(keys.map((key) => [key, canonicalize(value[key])]))
   }
   return value
 }

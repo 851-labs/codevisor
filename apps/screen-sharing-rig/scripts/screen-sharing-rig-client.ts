@@ -1,3 +1,12 @@
+import {
+  expectShape,
+  isBoolean,
+  isNumber,
+  isString,
+  nullable,
+  optional,
+  shape
+} from "./json-shape.ts"
 import type { RigConfiguration } from "./screen-sharing-rig-lib.ts"
 
 export interface RigStatus {
@@ -37,10 +46,52 @@ export interface HudResult {
   enabled: boolean
 }
 
+export const isRigStatus = shape<RigStatus>({
+  role: isString,
+  name: isString,
+  build: optional(
+    shape<NonNullable<RigStatus["build"]>>({
+      commit: isString,
+      dirty: isBoolean,
+      configuration: isString
+    })
+  ),
+  connection: isString,
+  sessionID: optional(nullable(isString)),
+  reconnects: isNumber,
+  uptimeSeconds: isNumber,
+  capture: optional(isString)
+})
+
+export const isSampleResult = shape<SampleResult>({
+  samples: isNumber,
+  meanPresentedFramesPerSecond: optional(isNumber),
+  report: isString
+})
+
+export const isControlCheckResult = shape<ControlCheckResult>({
+  granted: isBoolean,
+  clicksSent: optional(isNumber),
+  keysSent: optional(isNumber),
+  responsesBefore: optional(isNumber),
+  responsesAfter: optional(isNumber),
+  revokedReason: optional(isString),
+  deniedReason: optional(isString)
+})
+
+export const isSourceResult = shape<SourceResult>({
+  previous: isString,
+  capture: isString,
+  live: isBoolean
+})
+
+export const isHudResult = shape<HudResult>({ enabled: isBoolean })
+
 export async function http<T>(
   method: string,
   url: string,
   token: string,
+  matches: (value: unknown) => value is T,
   body?: { seconds?: number; [key: string]: unknown }
 ): Promise<T> {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
@@ -68,7 +119,7 @@ export async function http<T>(
       `${method} ${url} → ${response.status}: ${typeof error === "string" ? error : text}`
     )
   }
-  return parsed as T
+  return expectShape(parsed, matches, `${method} ${url} response`)
 }
 
 export function endpointsFor(config: RigConfiguration): {

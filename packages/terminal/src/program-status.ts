@@ -11,6 +11,8 @@ const STATES: ReadonlySet<string> = new Set<ReportState>([
   "clear"
 ])
 
+const isReportState = (value: string): value is ReportState => STATES.has(value)
+
 export const PROGRAM_STATUS_QUERY_REPLY =
   "?:states=idle,working,done,blocked,error:kinds=permission,question,auth"
 
@@ -102,8 +104,8 @@ export const parseProgramStatus = (body: string): ProgramStatusReport | undefine
   if (!validProgramStatusValues(all, last)) return undefined
 
   const state = last("state")
-  if (state === undefined || !STATES.has(state)) return undefined
-  return { type: "report", state: state as ReportState, id: last("id") }
+  if (state === undefined || !isReportState(state)) return undefined
+  return { type: "report", state, id: last("id") }
 }
 
 export type ProgramStatusEvent =
@@ -203,7 +205,7 @@ export const makeProgramStatusRecords = (): ProgramStatusRecords => {
           records.delete(id)
           records.set(id, event.state)
           if (records.size > MAX_PROGRAM_STATUS_RECORDS) {
-            records.delete(records.keys().next().value as string)
+            records.delete(records.keys().next().value!)
           }
         }
       }

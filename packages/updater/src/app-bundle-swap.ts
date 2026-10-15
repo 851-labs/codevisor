@@ -32,10 +32,7 @@ export const defaultAppBundleSwapOps: AppBundleSwapOps = {
     if (!response.ok || response.body === null) {
       throw new Error(`Download failed: HTTP ${response.status}`)
     }
-    await pipeline(
-      Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
-      createWriteStream(destination)
-    )
+    await pipeline(Readable.from(response.body), createWriteStream(destination))
   },
   execFile: async (command, args) => {
     const { stdout, stderr } = await execFileAsync(command, [...args], {

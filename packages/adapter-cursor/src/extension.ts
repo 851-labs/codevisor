@@ -7,6 +7,7 @@ import {
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { isPlainRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
 
@@ -24,6 +25,7 @@ import {
   type CursorAskQuestionResponse,
   type CursorCreatePlanResponse
 } from "./cursor.js"
+import { record } from "./internal.js"
 import { CursorStreamNormalizer } from "./stream.js"
 import {
   CURSOR_SUBAGENT_METHOD,
@@ -198,8 +200,8 @@ const extendCursorConnection = (
 const rerouteSubagentLine = (line: string): string => {
   try {
     const message: unknown = JSON.parse(line)
-    if (typeof message !== "object" || message === null || Array.isArray(message)) return line
-    const rerouted = rerouteCursorSubagentAnnouncement(message as Record<string, unknown>)
+    if (!isPlainRecord(message)) return line
+    const rerouted = rerouteCursorSubagentAnnouncement(message)
     return rerouted === message ? line : JSON.stringify(rerouted)
   } catch {
     return line
@@ -282,29 +284,21 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
       return app
     },
     rewriteAgentLine: (line) => (line.includes('"subagent_') ? rerouteSubagentLine(line) : line),
-    mapSessionNotification: (rawNotification) => {
-      const notification = {
-        ...rawNotification,
-        update: subagents.mapToolUpdate(
-          rawNotification.sessionId,
-          rawNotification.update as unknown as Record<string, unknown>
-        ) as unknown as acp.SessionNotification["update"]
-      }
-      const update = notification.update as unknown as Record<string, unknown>
-      if (subagents.isChildSession(notification.sessionId)) {
+    mapSessionNotification: (notification) => {
+      const { sessionId, update } = notification
+      const normalized = (): ReadonlyArray<RuntimeEvent> =>
+        subagents.mapToolEvents(sessionId, normalizer.mapSessionNotification(notification))
+      if (subagents.isChildSession(sessionId)) {
         return subagents.isThreadUpdate(update)
-          ? subagents.childEvents(
-              notification.sessionId,
-              normalizer.mapSessionNotification(notification)
-            )
+          ? subagents.childEvents(sessionId, normalized())
           : []
       }
       if (update.sessionUpdate !== "config_option_update" || !Array.isArray(update.configOptions)) {
-        return normalizer.mapSessionNotification(notification)
+        return normalized()
       }
       const event = runtimeEventFromNotification(notification)
-      const payload = event.payload as Record<string, unknown>
-      if (!Array.isArray(payload.configOptions)) return [event]
+      const payload = record(event.payload)
+      if (payload === undefined || !Array.isArray(payload.configOptions)) return [event]
       return [
         {
           ...event,

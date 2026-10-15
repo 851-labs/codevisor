@@ -1,6 +1,7 @@
 import { chmod, cp, mkdir, readdir, readFile, stat } from "node:fs/promises"
 import { basename, dirname, join, normalize, resolve, sep } from "node:path"
 
+import { isPlainRecord } from "@codevisor/api"
 import { parse as parseYaml } from "yaml"
 
 export class SkillsError extends Error {
@@ -67,11 +68,11 @@ export const parseFrontmatter = (
 ): { readonly data: Record<string, unknown>; readonly content: string } => {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
   if (match === null) return { content: raw, data: {} }
-  const data = (parseYaml(match[1] as string) ?? {}) as Record<string, unknown>
-  if (typeof data !== "object" || Array.isArray(data)) {
+  const data: unknown = parseYaml(match[1]!) ?? {}
+  if (!isPlainRecord(data)) {
     throw new Error("frontmatter is not a mapping")
   }
-  return { content: match[2] as string, data }
+  return { content: match[2]!, data }
 }
 
 export const EXCLUDE_FILES: ReadonlySet<string> = new Set(["metadata.json"])

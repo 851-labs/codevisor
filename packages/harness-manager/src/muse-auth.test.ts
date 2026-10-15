@@ -15,7 +15,7 @@ const host = (replies: Record<string, unknown> = {}) => {
   let notification: ((method: string, params: unknown) => void) | undefined
   const state = { closed: false }
   const client: MuseClient = {
-    request: async <T>(method: string, params?: unknown) => {
+    request: async (method: string, params?: unknown) => {
       requests.push({ method, params })
       const reply =
         {
@@ -24,8 +24,7 @@ const host = (replies: Record<string, unknown> = {}) => {
           ...replies
         }[method] ?? {}
       if (reply instanceof Error) throw reply
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return reply as T
+      return reply
     },
     notify: () => undefined,
     onNotification: (handler) => {

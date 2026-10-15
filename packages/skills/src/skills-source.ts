@@ -115,7 +115,7 @@ const gitLabRepositoryPath = (repoSegments: Array<string>, input: string): strin
   if (repoSegments.length < 2) {
     throw new SkillsError(`Not a repository URL: ${input}`, "invalid")
   }
-  const last = repoSegments[repoSegments.length - 1] as string
+  const last = repoSegments[repoSegments.length - 1]!
   return [...repoSegments.slice(0, -1), last.endsWith(".git") ? last.slice(0, -4) : last].join("/")
 }
 

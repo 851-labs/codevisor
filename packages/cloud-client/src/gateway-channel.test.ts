@@ -188,12 +188,24 @@ describe("gateway responder over a scripted channel", () => {
     const sent: unknown[] = []
     const closes: string[] = []
     const handle = vi.fn(async () => ({ status: 200, body: "" }))
-    const channel = {
-      send: (value: unknown) => sent.push(value),
-      close: (reason: string) => closes.push(reason),
+    const channel: IncomingChannel = {
+      channelId: "ch",
+      peerId: "peer",
+      channelType: GATEWAY_CHANNEL_TYPE,
+      params: undefined,
+      flowControlRequested: false,
+      send: (value) => sent.push(value),
+      sendBytes: () => undefined,
+      deferInboundCredit: () => undefined,
+      grantCredit: () => undefined,
+      queuedOutboundBytes: () => 0,
+      close: (reason) => closes.push(reason),
       onData: null,
+      onBytes: null,
+      onCredit: null,
+      onOutboundDrain: null,
       onClosed: null
-    } as unknown as IncomingChannel
+    }
     gatewayChannelHandler(handle, () => undefined)(channel)
     channel.onData?.({ kind: "chunk", data: "x".repeat(MAX_GATEWAY_BODY_CHARS) }, 0)
     expect(closes).toEqual([])
@@ -280,7 +292,7 @@ describe("gateway exchange over a scripted channel", () => {
 
   it("maps non-Error open failures", async () => {
     const pending = requestOverGatewayChannel(() => {
-      throw "nope" as unknown as Error
+      throw "nope"
     }, "{}")
     expect(await failure(pending)).toMatchObject({ phase: "before-send", reason: "nope" })
   })

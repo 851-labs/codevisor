@@ -1,34 +1,43 @@
 import type { OpenCodeAuthMethod, OpenCodeAuthPrompt, OpenCodeAuthProvider } from "@codevisor/api"
+import { Schema } from "effect"
 
-interface FormField {
-  readonly key?: string
-  readonly title?: string
-  readonly type?: string
-  readonly placeholder?: string
-  readonly hidden?: boolean
-  readonly options?: ReadonlyArray<{
-    readonly value?: string
-    readonly label?: string
-    readonly description?: string
-  }>
-  readonly when?: ReadonlyArray<{
-    readonly key?: string
-    readonly op?: string
-    readonly value?: string
-  }>
-}
+const optionalString = Schema.optionalKey(Schema.String)
 
-export interface OpenCodeIntegration {
-  readonly id: string
-  readonly name?: string
-  readonly methods?: ReadonlyArray<{
-    readonly type?: string
-    readonly id?: string
-    readonly label?: string
-    readonly form?: ReadonlyArray<FormField>
-  }>
-  readonly connections?: ReadonlyArray<{ readonly type?: string; readonly method?: string }>
-}
+const FormField = Schema.Struct({
+  key: optionalString,
+  title: optionalString,
+  type: optionalString,
+  placeholder: optionalString,
+  hidden: Schema.optionalKey(Schema.Boolean),
+  options: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({ value: optionalString, label: optionalString, description: optionalString })
+    )
+  ),
+  when: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ key: optionalString, op: optionalString, value: optionalString }))
+  )
+})
+type FormField = typeof FormField.Type
+
+export const OpenCodeIntegration = Schema.Struct({
+  id: Schema.String,
+  name: optionalString,
+  methods: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        type: optionalString,
+        id: optionalString,
+        label: optionalString,
+        form: Schema.optionalKey(Schema.Array(FormField))
+      })
+    )
+  ),
+  connections: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ type: optionalString, method: optionalString }))
+  )
+})
+export type OpenCodeIntegration = typeof OpenCodeIntegration.Type
 
 export const OPENCODE_KEY_METHOD = "key"
 

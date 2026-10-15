@@ -61,54 +61,5 @@
       }
     ]
   },
-  "jsPlugins": ["./scripts/lint/no-comments.mjs"],
-  "overrides": [
-    {
-      "files": [
-        "packages/adapter-acp/src/notifications.ts",
-        "packages/adapter-acp/src/runtime-account-handoff.test.ts",
-        "packages/adapter-acp/src/runtime-acp-inspection-config.test.ts",
-        "packages/adapter-acp/src/runtime-acp-sessions.test.ts",
-        "packages/adapter-antigravity/src/auth.ts",
-        "packages/adapter-cursor/src/extension.test.ts",
-        "packages/adapter-cursor/src/extension.ts",
-        "packages/adapter-grok-build/src/extension.ts",
-        "packages/adapter-muse/src/updates.test.ts",
-        "packages/adapter-opencode/src/skill-tool.ts",
-        "packages/api/src/openapi.ts",
-        "packages/cloud-crypto/src/index.ts",
-        "packages/skills/src/skills-remote-source.ts",
-        "packages/terminal/src/vt/ghostty-vt.ts"
-      ],
-      "rules": {
-        "typescript/no-unnecessary-type-assertion": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/screen-sharing-rig/**",
-        "apps/www/**",
-        "packages/adapter-acp/**",
-        "packages/adapter-antigravity/**",
-        "packages/adapter-cursor/**",
-        "packages/adapter-grok-build/**",
-        "packages/adapter-muse/**",
-        "packages/adapter-opencode/**",
-        "packages/adapter-pi/**",
-        "packages/agent-runtime/**",
-        "packages/api/**",
-        "packages/cloud-client/**",
-        "packages/cloud-crypto/**",
-        "packages/net/**",
-        "packages/processes/**",
-        "packages/skills/**",
-        "packages/terminal/**",
-        "packages/updater/**",
-        "packages/worktrees/**"
-      ],
-      "rules": {
-        "typescript/no-unsafe-type-assertion": "off"
-      }
-    }
-  ]
+  "jsPlugins": ["./scripts/lint/no-comments.mjs"]
 }
