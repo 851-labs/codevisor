@@ -1,39 +1,37 @@
 import CodevisorClient
 import Foundation
 
-enum SidebarGitLookupSource: Equatable, Sendable {
-  case checkout(path: String)
-  case archived
-}
-
 @MainActor
 @Observable
-final class SidebarGitLookup<Value: Equatable & Sendable> {
+final class SidebarGitLookup<Request: Equatable & Sendable, Value: Equatable & Sendable> {
   struct Target: Sendable {
     let workspaceId: UUID
-    let source: SidebarGitLookupSource
+    let request: Request
     let client: any CodevisorServerClienting
   }
 
   typealias Fetch = @Sendable (Target) async throws -> Value?
+  typealias Answers = (_ asked: Request, _ wanted: Request) -> Bool
 
-  let refreshInterval: Duration
+  let refreshInterval: Duration?
   private(set) var byWorkspace: [UUID: Value] = [:]
+  @ObservationIgnored private let answers: Answers
   @ObservationIgnored private let fetch: Fetch
-  @ObservationIgnored private var lastAsked: [UUID: (source: SidebarGitLookupSource, at: ContinuousClock.Instant)] = [:]
+  @ObservationIgnored private var lastAsked: [UUID: (request: Request, at: ContinuousClock.Instant)] = [:]
   @ObservationIgnored private var inFlight: Set<UUID> = []
   @ObservationIgnored private let clock = ContinuousClock()
 
-  init(refreshInterval: Duration, fetch: @escaping Fetch) {
+  init(refreshInterval: Duration?, answers: @escaping Answers = { $0 == $1 }, fetch: @escaping Fetch) {
     self.refreshInterval = refreshInterval
+    self.answers = answers
     self.fetch = fetch
   }
 
   func refresh(_ targets: [Target]) {
     let now = clock.now
     for target in targets where !inFlight.contains(target.workspaceId) {
-      if let last = lastAsked[target.workspaceId], last.source == target.source,
-        target.source == .archived || now - last.at < refreshInterval
+      if let last = lastAsked[target.workspaceId], answers(last.request, target.request),
+        refreshInterval.map({ now - last.at < $0 }) ?? true
       {
         continue
       }
@@ -46,33 +44,42 @@ final class SidebarGitLookup<Value: Equatable & Sendable> {
     }
   }
 
+  func forget(_ workspaceIds: [UUID]) {
+    for id in workspaceIds where lastAsked[id] != nil {
+      lastAsked[id] = nil
+      byWorkspace[id] = nil
+    }
+  }
+
   private func record(_ value: Value?, for target: Target) {
     inFlight.remove(target.workspaceId)
-    lastAsked[target.workspaceId] = (target.source, clock.now)
+    lastAsked[target.workspaceId] = (target.request, clock.now)
     if byWorkspace[target.workspaceId] != value {
       byWorkspace[target.workspaceId] = value
     }
   }
 }
 
-extension SidebarGitLookup where Value == ServerGitPullRequest {
+extension SidebarGitLookup where Request == String, Value == ServerGitPullRequest {
   static func pullRequests() -> SidebarGitLookup {
     SidebarGitLookup(refreshInterval: .seconds(180)) { target in
-      switch target.source {
-      case let .checkout(path): try await target.client.gitPullRequest(path: path)
-      case .archived: try await target.client.workspaceGitPullRequest(workspaceId: target.workspaceId)
-      }
+      try await target.client.gitPullRequest(path: target.request)
     }
   }
 }
 
-extension SidebarGitLookup where Value == String {
+extension SidebarGitLookup where Request == String, Value == String {
   static func branches() -> SidebarGitLookup {
     SidebarGitLookup(refreshInterval: .seconds(60)) { target in
-      switch target.source {
-      case let .checkout(path): try await target.client.gitRefs(path: path).currentBranch
-      case .archived: try await target.client.workspaceGitBranch(workspaceId: target.workspaceId)
-      }
+      try await target.client.gitRefs(path: target.request).currentBranch
+    }
+  }
+}
+
+extension SidebarGitLookup where Request == Bool, Value == ServerWorkspaceGit {
+  static func archived() -> SidebarGitLookup {
+    SidebarGitLookup(refreshInterval: nil, answers: { asked, wanted in asked || !wanted }) { target in
+      try await target.client.workspaceGit(workspaceId: target.workspaceId, includePullRequest: target.request)
     }
   }
 }

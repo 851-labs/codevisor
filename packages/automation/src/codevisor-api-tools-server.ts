@@ -294,16 +294,11 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     { body: ReorderWorkspacePanesRequest }
   ),
   apiTool(
-    "workspaces.git_branch",
-    "Get the branch a workspace is on. An archived worktree, whose folder is gone, reports the branch it was archived on.",
+    "workspaces.git",
+    "Get the branch a workspace is on and, when asked, its GitHub pull request. An archived worktree, whose folder is gone, reports the branch it was archived on.",
     "GET",
-    "/v1/workspaces/:workspaceId/git/branch"
-  ),
-  apiTool(
-    "workspaces.git_pull_request",
-    "Get the GitHub pull request for a workspace's branch, including archived worktrees, or null when there is none.",
-    "GET",
-    "/v1/workspaces/:workspaceId/git/pull-request"
+    "/v1/workspaces/:workspaceId/git",
+    { query: [booleanQuery("pullRequest", "Also look up the branch's pull request.")] }
   ),
   apiTool(
     "workspaces.delete",

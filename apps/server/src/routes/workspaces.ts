@@ -7,7 +7,8 @@ import {
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema,
   UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
-  type Workspace
+  type Workspace,
+  type WorkspaceGit
 } from "@codevisor/api"
 import { gitCurrentBranch } from "@codevisor/worktrees"
 
@@ -33,6 +34,28 @@ import { matchesLabelFilters } from "./label-filters.js"
 import { routeParam } from "./route-params.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
+
+const workspaceGit = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace,
+  includePullRequest: boolean
+): Promise<WorkspaceGit> => {
+  const checkout = await workspaceGitCheckout(services, serverId, workspace)
+  if (checkout === undefined) {
+    return includePullRequest ? { branch: null, pullRequest: null } : { branch: null }
+  }
+  const env = await (services.resolveGitEnvironment?.(checkout.directory) ??
+    Promise.resolve(process.env))
+  const branch = await (checkout.branch === undefined
+    ? gitCurrentBranch(checkout.directory, env)
+    : Promise.resolve(checkout.branch))
+  if (!includePullRequest) return { branch }
+  return {
+    branch,
+    pullRequest: branch === null ? null : await cachedPullRequest(checkout.directory, env, branch)
+  }
+}
 
 const findWorkspace = async (
   services: CodevisorServerServices,
@@ -66,30 +89,13 @@ export const routeWorkspaces = async (
     return true
   }
 
-  const gitRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/git/:lookup")
-  const gitLookup = gitRoute === undefined ? undefined : routeParam(gitRoute, "lookup")
-  if (
-    gitRoute !== undefined &&
-    request.method === "GET" &&
-    (gitLookup === "branch" || gitLookup === "pull-request")
-  ) {
+  const gitRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/git")
+  if (gitRoute !== undefined && request.method === "GET") {
     const workspaceId = routeParam(gitRoute, "workspaceId")
     const workspace = await findWorkspace(services, workspaceId)
     if (workspace === undefined) throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
-    const checkout = await workspaceGitCheckout(services, config.id, workspace)
-    if (checkout === undefined) {
-      writeJson(response, 200, gitLookup === "branch" ? { branch: null } : { pullRequest: null })
-      return true
-    }
-    const env = await (services.resolveGitEnvironment?.(checkout.directory) ??
-      Promise.resolve(process.env))
-    writeJson(
-      response,
-      200,
-      gitLookup === "branch"
-        ? { branch: checkout.branch ?? (await gitCurrentBranch(checkout.directory, env)) }
-        : { pullRequest: await cachedPullRequest(checkout.directory, env, checkout.branch) }
-    )
+    const includePullRequest = url.searchParams.get("pullRequest") === "true"
+    writeJson(response, 200, await workspaceGit(services, config.id, workspace, includePullRequest))
     return true
   }
 

@@ -49,6 +49,7 @@ final class SessionStore {
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
   @ObservationIgnored let pullRequests = SidebarGitLookup.pullRequests()
   @ObservationIgnored let branches = SidebarGitLookup.branches()
+  @ObservationIgnored let archivedGit = SidebarGitLookup.archived()
   @ObservationIgnored var draftsByServer: [String: SessionController] = [:]
   @ObservationIgnored var paneDrafts: [UUID: SessionController] = [:]
   var activityRevision = 0
