@@ -4,6 +4,7 @@ import { MCPS_SYNC_NAMESPACE } from "./infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE, readMcpOverlays } from "./infra/mcp-fleet.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import { makeServices, run, runningServers, waitFor, listEvents } from "./test-support.js"
+import { field } from "./unknown-values.js"
 
 describe("server boot identity", () => {
   it("adopts legacy 'local' overlays at boot and announces the change", async () => {
@@ -43,13 +44,13 @@ describe("server boot identity", () => {
       ])
     })
     await waitFor(async () =>
-      (await services.mcp!.resolved()).every((candidate) => candidate.name !== "GitHub")
+      (await services.mcp.resolved()).every((candidate) => candidate.name !== "GitHub")
     )
   })
 
   it("takes over refreshing tokens it authorized under the former 'local' identity", async () => {
     const { services } = await makeServices("machine-abc")
-    const mcp = services.mcp!
+    const mcp = services.mcp
     const server = await mcp.create({
       authType: "oauth",
       name: "Sentry",
@@ -75,8 +76,7 @@ describe("server boot identity", () => {
     await waitFor(async () =>
       (await run(services.db.getSyncEntries(MCPS_SYNC_NAMESPACE))).some(
         (entry) =>
-          entry.key === "Sentry" &&
-          (entry.value as { oauth?: { owner?: string } }).oauth?.owner === "machine-abc"
+          entry.key === "Sentry" && field(field(entry.value, "oauth"), "owner") === "machine-abc"
       )
     )
   })

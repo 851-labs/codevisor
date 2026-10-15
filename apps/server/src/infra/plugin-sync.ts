@@ -8,6 +8,8 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { appliedValuesByKey } from "./applied-values.js"
+
 export const PLUGINS_SYNC_NAMESPACE = "plugins"
 const APPLIED_NAMESPACE = "local.plugins-applied"
 
@@ -72,11 +74,7 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
   const replica = await run(deps.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
   const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
-  const appliedByKey = new Map(
-    appliedEntries
-      .filter((entry) => entry.deleted !== true && typeof entry.value === "string")
-      .map((entry) => [entry.key, entry.value as string])
-  )
+  const appliedByKey = appliedValuesByKey(appliedEntries)
 
   const published: Array<string> = []
   const applied: Array<string> = []

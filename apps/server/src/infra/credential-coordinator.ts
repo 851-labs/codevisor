@@ -5,17 +5,46 @@ import { join } from "node:path"
 import {
   coordinateCredential,
   type CredentialCommand,
-  type CredentialCoordinationResult,
-  type CredentialRecord
+  type CredentialCoordinationResult
 } from "@codevisor/api"
 import { atomicWriteJson, withFileLock, SharedCredentialError } from "@codevisor/harness-manager"
+import { Schema } from "effect"
 
-interface SavedCredential {
-  cloud?: string
-  account?: string
-  binding?: string
-  record?: CredentialRecord
-}
+import { errorCode } from "../unknown-values.js"
+
+const CoordinatedCredential = Schema.Struct({
+  generation: Schema.Number,
+  sealed: Schema.String,
+  revoked: Schema.Boolean
+})
+
+const CoordinationResult = Schema.Struct({
+  status: Schema.Literals(["ready", "acquired", "busy", "uncertain", "missing", "revoked"]),
+  credential: Schema.optionalKey(CoordinatedCredential)
+})
+
+const SavedCredential = Schema.Struct({
+  cloud: Schema.optionalKey(Schema.String),
+  account: Schema.optionalKey(Schema.String),
+  binding: Schema.optionalKey(Schema.String),
+  record: Schema.optionalKey(
+    Schema.Struct({
+      ...CoordinatedCredential.fields,
+      operation: Schema.optionalKey(
+        Schema.Struct({
+          id: Schema.String,
+          owner: Schema.String,
+          deadline: Schema.Number,
+          started: Schema.Boolean
+        })
+      ),
+      committedOperation: Schema.optionalKey(Schema.String)
+    })
+  )
+})
+
+const readSaved = async (path: string) =>
+  Schema.decodeUnknownSync(SavedCredential)(JSON.parse(await readFile(path, "utf8")))
 interface CloudCredential {
   serverUrl?: string
   apiKey?: string
@@ -39,7 +68,7 @@ export const makeCredentialCoordinator = (options: {
     try {
       return JSON.parse(await readFile(join(options.dataDir, "cloud.json"), "utf8"))
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+      if (errorCode(cause) !== "ENOENT") throw cause
       return {}
     }
   }
@@ -50,7 +79,7 @@ export const makeCredentialCoordinator = (options: {
     const path = pathFor(id)
     let result!: CredentialCoordinationResult
     await withFileLock(path, async () => {
-      const stored = JSON.parse(await readFile(path, "utf8")) as SavedCredential
+      const stored = await readSaved(path)
       const cloud = await readCloud()
       if (cloud.serverUrl && cloud.apiKey && cloud.deviceId) {
         const origin = cloud.serverUrl.replace(/\/+$/, "")
@@ -78,7 +107,7 @@ export const makeCredentialCoordinator = (options: {
           if (!scope || (account !== undefined && account !== scope))
             throw new SharedCredentialError("reauthenticate")
           account = scope
-          return (await response.json()) as CredentialCoordinationResult
+          return Schema.decodeUnknownSync(CoordinationResult)(await response.json())
         }
         if (account === undefined) await send({ action: "read" })
         if (stored.cloud === undefined && stored.record !== undefined) {
@@ -116,7 +145,7 @@ export const makeCredentialCoordinator = (options: {
   }
   return Object.assign(command, {
     cached: async (id: string) => {
-      const stored = JSON.parse(await readFile(pathFor(id), "utf8")) as SavedCredential
+      const stored = await readSaved(pathFor(id))
       if (stored.cloud !== undefined && stored.binding !== binding(await readCloud()))
         return undefined
       return stored.record

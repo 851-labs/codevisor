@@ -48,10 +48,14 @@ describe("releaseChannelReader", () => {
   })
 })
 
-const syncEntriesDb = (entries: { key: string; value: unknown; deleted: boolean }[]) =>
-  ({ getSyncEntries: () => Effect.succeed(entries) }) as unknown as Parameters<
-    typeof syncedUpdateChannel
-  >[0]
+const syncEntriesDb = (
+  entries: ReadonlyArray<{ key: string; value: unknown; deleted: boolean }>
+): Parameters<typeof syncedUpdateChannel>[0] => ({
+  getSyncEntries: () =>
+    Effect.succeed(
+      entries.map((entry) => ({ ...entry, timestamp: { wallMs: 0, counter: 0, deviceId: "test" } }))
+    )
+})
 
 describe("machineReleaseChannel", () => {
   it("reads the synced updateChannel setting, ignoring other and deleted entries", async () => {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
-import type { ScreenSharingRequest } from "@codevisor/api"
+import { ServerInfo, type ScreenSharingRequest } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { parseDisplays, parseSimulatorList } from "./simulator-parsing.js"
@@ -251,7 +252,9 @@ describe("simulator routes", () => {
       const { services } = await makeServices()
       const server = await startWithApp(services, undefined, config)
       const info = await jsonRequest(server, "/v1/info")
-      expect((info.body as { features: string[] }).features.includes("simulator-v1")).toBe(expected)
+      expect(
+        Schema.decodeUnknownSync(ServerInfo)(info.body).features?.includes("simulator-v1")
+      ).toBe(expected)
       const devices = await jsonRequest(server, "/v1/simulators")
       expect(devices.status).toBe(expected ? 200 : 501)
     }

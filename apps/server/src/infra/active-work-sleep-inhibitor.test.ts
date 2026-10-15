@@ -1,5 +1,4 @@
-import type { ChildProcess } from "node:child_process"
-import { EventEmitter } from "node:events"
+import { ChildProcess } from "node:child_process"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -9,13 +8,19 @@ import {
 } from "./active-work-sleep-inhibitor.js"
 
 const spawnMock = vi.hoisted(() => vi.fn())
-vi.mock("node:child_process", () => ({ spawn: spawnMock }))
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock
+}))
 
-class FakeCaffeinateProcess extends EventEmitter {
-  readonly kill = vi.fn(() => {
+class FakeCaffeinateProcess extends ChildProcess {
+  kills = 0
+
+  override kill(): boolean {
+    this.kills += 1
     this.emit("exit", 0, null)
     return true
-  })
+  }
 }
 
 afterEach(() => {
@@ -28,7 +33,7 @@ describe("ActiveWorkSleepInhibitor", () => {
     const inhibitor = new ActiveWorkSleepInhibitor(() => {
       const child = new FakeCaffeinateProcess()
       children.push(child)
-      return child as unknown as ChildProcess
+      return child
     }, vi.fn())
 
     inhibitor.update("session-a", true)
@@ -37,14 +42,14 @@ describe("ActiveWorkSleepInhibitor", () => {
     expect(children).toHaveLength(1)
 
     inhibitor.update("session-a", false)
-    expect(children[0]?.kill).not.toHaveBeenCalled()
+    expect(children[0]?.kills).toBe(0)
     inhibitor.update("session-b", false)
-    expect(children[0]?.kill).toHaveBeenCalledOnce()
+    expect(children[0]?.kills).toBe(1)
 
     inhibitor.update("session-c", true)
     expect(children).toHaveLength(2)
     inhibitor.stop()
-    expect(children[1]?.kill).toHaveBeenCalledOnce()
+    expect(children[1]?.kills).toBe(1)
   })
 
   it("is disabled away from macOS", () => {
@@ -70,7 +75,7 @@ describe("ActiveWorkSleepInhibitor", () => {
     const inhibitor = new ActiveWorkSleepInhibitor(() => {
       const child = new FakeCaffeinateProcess()
       children.push(child)
-      return child as unknown as ChildProcess
+      return child
     }, log)
 
     inhibitor.update("session-a", true)
@@ -94,11 +99,11 @@ describe("ActiveWorkSleepInhibitor", () => {
   it("logs cleanup failures without disrupting session events", () => {
     for (const cause of [new Error("cleanup failed"), "cleanup failed"] as const) {
       const log = vi.fn()
-      const child = new EventEmitter() as EventEmitter & { kill: () => boolean }
-      child.kill = vi.fn(() => {
+      const child = new ChildProcess()
+      vi.spyOn(child, "kill").mockImplementation(() => {
         throw cause
       })
-      const inhibitor = new ActiveWorkSleepInhibitor(() => child as unknown as ChildProcess, log)
+      const inhibitor = new ActiveWorkSleepInhibitor(() => child, log)
 
       inhibitor.update("session-a", true)
       inhibitor.update("session-a", false)
@@ -108,7 +113,7 @@ describe("ActiveWorkSleepInhibitor", () => {
 
   it("holds caffeinate on this process and logs to the console on macOS", () => {
     const child = new FakeCaffeinateProcess()
-    spawnMock.mockReturnValue(child as unknown as ChildProcess)
+    spawnMock.mockReturnValue(child)
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     const inhibitor = makeActiveWorkSleepInhibitor("darwin")
     try {

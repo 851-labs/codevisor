@@ -10,6 +10,8 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { appliedValuesByKey } from "./applied-values.js"
+
 export const CREDENTIALS_SYNC_NAMESPACE = "harness-credentials"
 const APPLIED_NAMESPACE = "local.credentials-applied"
 const OVERRIDES_NAMESPACE = "local.credential-overrides"
@@ -53,11 +55,7 @@ export const reconcileCredentials = async (
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
   const overrideEntries = await run(deps.db.getSyncEntries(OVERRIDES_NAMESPACE))
   const previousOverrides = new Map(overrideEntries.map((entry) => [entry.key, entry.value]))
-  const appliedByKey = new Map(
-    appliedEntries
-      .filter((entry) => entry.deleted !== true && typeof entry.value === "string")
-      .map((entry) => [entry.key, entry.value as string])
-  )
+  const appliedByKey = appliedValuesByKey(appliedEntries)
   let clock: SyncTimestampValue | undefined = latestSyncTimestamp([
     ...replica,
     ...appliedEntries,

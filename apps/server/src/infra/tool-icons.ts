@@ -2,6 +2,8 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
+import { Schema } from "effect"
+
 import type { AppIconLoader } from "./tool-icon-apps.js"
 import {
   isPublicHost,
@@ -112,13 +114,14 @@ const decodeDataUri = (src: string): Uint8Array | undefined => {
   }
 }
 
-interface CacheRecord {
-  readonly key: string
-  readonly fetchedAt: number
-  readonly contentType?: ToolIconAsset["contentType"]
-  readonly source?: "serverInfo" | "favicon"
-  readonly triedServerInfo?: boolean
-}
+const CacheRecord = Schema.Struct({
+  key: Schema.String,
+  fetchedAt: Schema.Number,
+  contentType: Schema.optionalKey(Schema.Literals(["image/png", "image/x-icon"])),
+  source: Schema.optionalKey(Schema.Literals(["serverInfo", "favicon"])),
+  triedServerInfo: Schema.optionalKey(Schema.Boolean)
+})
+type CacheRecord = typeof CacheRecord.Type
 
 interface Resolved {
   readonly asset: ToolIconAsset | undefined
@@ -247,7 +250,9 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
   ): Promise<{ readonly record: CacheRecord; readonly asset?: ToolIconAsset } | undefined> => {
     const files = paths(key)
     try {
-      const record = JSON.parse(await readFile(files.record, "utf8")) as CacheRecord
+      const record = Schema.decodeUnknownSync(CacheRecord)(
+        JSON.parse(await readFile(files.record, "utf8"))
+      )
       if (record.contentType === undefined) return { record }
       const data = new Uint8Array(await readFile(files.image))
       return { record, asset: { contentType: record.contentType, data } }

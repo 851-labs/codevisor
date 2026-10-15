@@ -1,9 +1,10 @@
-import { EventEmitter, once } from "node:events"
-import { createServer, request, type Server, type IncomingMessage } from "node:http"
-import { createServer as createTCPServer, type AddressInfo, type Socket } from "node:net"
+import { once } from "node:events"
+import { createServer, IncomingMessage, request, type Server } from "node:http"
+import { createServer as createTCPServer, type Socket } from "node:net"
 
 import { afterEach, describe, expect, it } from "vitest"
 
+import { FakeSocket, listeningPort, tcpSocket } from "../test-support-net.js"
 import { BrowserProxy, browserProxyTarget } from "./browser-proxy.js"
 
 describe("browser connection proxy", () => {
@@ -27,13 +28,13 @@ describe("browser connection proxy", () => {
           server.close((error) => (error ? reject(error) : resolve()))
         )
     )
-    return (server.address() as AddressInfo).port
+    return listeningPort(server)
   }
 
   async function fixture(maximumConnections?: number) {
     const proxy = new BrowserProxy(maximumConnections)
     const server = createServer()
-    server.on("connect", (req, socket, head) => proxy.handleConnect(req, socket as Socket, head))
+    server.on("connect", (req, socket, head) => proxy.handleConnect(req, tcpSocket(socket), head))
     const port = await listen(server)
     cleanups.push(() => proxy.close())
     const authorization = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
@@ -197,86 +198,52 @@ describe("browser connection proxy", () => {
   })
 })
 
+function lifecycleFixture() {
+  const upstream = new FakeSocket()
+  const downstream = new FakeSocket()
+  const proxy = new BrowserProxy(1, () => upstream)
+  const auth = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
+  const req = new IncomingMessage(downstream)
+  req.url = "localhost:3000"
+  req.headers = { "proxy-authorization": auth }
+  return { proxy, upstream, downstream, req }
+}
+
 describe("browser proxy connection lifecycle", () => {
-  class FakeSocket extends EventEmitter {
-    destroyed = false
-    writes: string[] = []
-    timeout: (() => void) | undefined
-    localPort = 49000
-    setTimeout(_ms: number, callback?: () => void) {
-      if (callback) this.timeout = callback
-      return this
-    }
-    setNoDelay() {
-      return this
-    }
-    write(data: string | Buffer) {
-      this.writes.push(String(data))
-      return true
-    }
-    end(data: string) {
-      this.write(data)
-      return this
-    }
-    pipe() {
-      return this
-    }
-    destroy() {
-      if (!this.destroyed) {
-        this.destroyed = true
-        this.emit("close")
-      }
-      return this
-    }
-  }
-
-  function fixture() {
-    const upstream = new FakeSocket()
-    const downstream = new FakeSocket()
-    const proxy = new BrowserProxy(1, () => upstream as unknown as Socket)
-    const auth = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
-    const req = {
-      url: "localhost:3000",
-      socket: downstream,
-      headers: { "proxy-authorization": auth }
-    } as unknown as IncomingMessage
-    return { proxy, upstream, downstream, req }
-  }
-
   it("rejects missing credentials", () => {
-    const { proxy, downstream, req } = fixture()
+    const { proxy, downstream, req } = lifecycleFixture()
     req.headers = {}
-    proxy.handleConnect(req, downstream as unknown as Socket, Buffer.alloc(0))
-    expect(downstream.writes[0]).toContain("407")
-    downstream.timeout!()
+    proxy.handleConnect(req, downstream, Buffer.alloc(0))
+    expect(downstream.endings).toEqual([expect.stringContaining("407")])
+    downstream.onTimeout!()
     downstream.emit("error", new Error("closed"))
     expect(downstream.destroyed).toBe(true)
   })
 
   it.each(["timeout", "error"])("reports a connection %s without opening a tunnel", (event) => {
-    const { proxy, upstream, downstream, req } = fixture()
-    proxy.handleConnect(req, downstream as unknown as Socket, Buffer.alloc(0))
-    if (event === "timeout") upstream.timeout!()
+    const { proxy, upstream, downstream, req } = lifecycleFixture()
+    proxy.handleConnect(req, downstream, Buffer.alloc(0))
+    if (event === "timeout") upstream.onTimeout!()
     else upstream.emit("error", new Error("refused"))
-    expect(downstream.writes[0]).toContain("502")
+    expect(downstream.endings).toEqual([expect.stringContaining("502")])
     expect(upstream.destroyed).toBe(true)
     proxy.close()
   })
 
   it("forwards early tunnel bytes and tears down both ends on an upstream failure", () => {
-    const { proxy, upstream, downstream, req } = fixture()
-    proxy.handleConnect(req, downstream as unknown as Socket, Buffer.from("early data"))
+    const { proxy, upstream, downstream, req } = lifecycleFixture()
+    proxy.handleConnect(req, downstream, Buffer.from("early data"))
     upstream.emit("connect")
-    expect(upstream.writes).toEqual(["early data"])
-    expect(downstream.writes[0]).toContain("200 Connection Established")
+    expect(upstream.writes).toEqual([Buffer.from("early data")])
+    expect(downstream.writes).toEqual([expect.stringContaining("200 Connection Established")])
     upstream.emit("error", new Error("reset"))
     expect(downstream.destroyed).toBe(true)
     proxy.close()
   })
 
   it("closes the upstream when the browser disconnects", () => {
-    const { proxy, upstream, downstream, req } = fixture()
-    proxy.handleConnect(req, downstream as unknown as Socket, Buffer.alloc(0))
+    const { proxy, upstream, downstream, req } = lifecycleFixture()
+    proxy.handleConnect(req, downstream, Buffer.alloc(0))
     downstream.emit("error", new Error("client reset"))
     expect(upstream.destroyed).toBe(true)
     proxy.close()

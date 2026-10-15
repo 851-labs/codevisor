@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url"
 import { workerData } from "node:worker_threads"
 
 import { createCanvas } from "@napi-rs/canvas"
+import { Schema } from "effect"
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs"
 
-const { path, output } = workerData as { path: string; output: string }
+const { path, output } = Schema.decodeUnknownSync(
+  Schema.Struct({ path: Schema.String, output: Schema.String })
+)(workerData)
 const packageRoot = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")))
 const task = getDocument({
   url: path,
@@ -29,6 +32,7 @@ try {
     Math.max(1, Math.ceil(viewport.width)),
     Math.max(1, Math.ceil(viewport.height))
   )
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport }).promise
   await writeFile(output, await canvas.encode("png"))
 } finally {

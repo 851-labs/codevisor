@@ -3,6 +3,8 @@ import { dirname } from "node:path"
 
 import lockfile from "proper-lockfile"
 
+import { field, stringField } from "../unknown-values.js"
+
 export interface ServerLeaseOwner {
   readonly bootId: string
   readonly pid: number
@@ -20,12 +22,12 @@ const ownerPath = (databasePath: string): string => `${databasePath}.server-owne
 
 const ownerDescription = (databasePath: string): string | undefined => {
   try {
-    const owner = JSON.parse(
-      readFileSync(ownerPath(databasePath), "utf8")
-    ) as Partial<ServerLeaseOwner>
-    const pid = typeof owner.pid === "number" ? `pid ${owner.pid}` : "an unknown process"
-    const boot = typeof owner.bootId === "string" ? `, boot ${owner.bootId}` : ""
-    return `${pid}${boot}`
+    const owner: unknown = JSON.parse(readFileSync(ownerPath(databasePath), "utf8"))
+    const pid = field(owner, "pid")
+    const bootId = stringField(owner, "bootId")
+    const holder = typeof pid === "number" ? `pid ${pid}` : "an unknown process"
+    const boot = bootId === undefined ? "" : `, boot ${bootId}`
+    return `${holder}${boot}`
   } catch {
     return undefined
   }
@@ -75,10 +77,10 @@ export const acquireServerLease = async (
       if (released) return
       released = true
       try {
-        const current = JSON.parse(
-          readFileSync(ownerPath(databasePath), "utf8")
-        ) as Partial<ServerLeaseOwner>
-        if (current.bootId === owner.bootId) rmSync(ownerPath(databasePath), { force: true })
+        const current: unknown = JSON.parse(readFileSync(ownerPath(databasePath), "utf8"))
+        if (field(current, "bootId") === owner.bootId) {
+          rmSync(ownerPath(databasePath), { force: true })
+        }
       } catch {}
       await unlock()
     }

@@ -11,6 +11,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "./server-context.js"
+import { field } from "./unknown-values.js"
 
 export const DEFAULT_RESTART_DRAIN_TIMEOUT_MS = 10 * 60_000
 export const DRAINED_WITHOUT_RESTART_GRACE_MS = 15 * 60_000
@@ -31,9 +32,9 @@ export const makeFileRestartSnapshotStore = (path: string): RestartSnapshotStore
   read: () => {
     try {
       if (!existsSync(path)) return undefined
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as { sessions?: unknown }
-      return Array.isArray(parsed.sessions)
-        ? parsed.sessions.filter((id): id is string => typeof id === "string")
+      const sessions = field(JSON.parse(readFileSync(path, "utf8")), "sessions")
+      return Array.isArray(sessions)
+        ? sessions.filter((id): id is string => typeof id === "string")
         : undefined
     } catch {
       return undefined

@@ -24,6 +24,9 @@ export const native = (subject: string): SharedTokenBundle => ({
   expiresAt: 10_000_000,
   ownership: "external"
 })
+const notFaked = (name: string) => (): Promise<never> =>
+  Promise.reject(new Error(`The shared accounts fixture does not fake auth.${name}`))
+
 export const fleet = () => {
   const records = new Map<string, CredentialRecord>()
   const rotate = vi.fn(async (bundle: SharedTokenBundle) => ({
@@ -61,10 +64,11 @@ export const fleet = () => {
         }
       }
     })
-    const auth = {
+    const auth: HarnessAuthManager = {
       subscribe: () => () => {},
       refresh: async () => {},
-      decorateHarnessesFromStoredState: async (harnesses: ReadonlyArray<unknown>) => harnesses,
+      decorateHarnesses: async (harnesses) => harnesses,
+      decorateHarnessesFromStoredState: async (harnesses) => harnesses,
       beginLogin: vi.fn(async (accountId: string) => ({
         id: "flow",
         accountId,
@@ -76,19 +80,28 @@ export const fleet = () => {
         kind: "complete" as const
       })),
       cancelLogin: vi.fn(async () => {}),
-      createAccount: async (harnessId: string, label: string) =>
+      createAccount: async (harnessId: string, label?: string) =>
         run(
           services.db.saveHarnessAccount({
             id: randomUUID(),
             harnessId,
-            label,
+            label: label ?? "Account",
             profileKind: "managed",
             authState: "unauthenticated",
             canLogin: true,
             canLogout: false
           })
-        )
-    } as unknown as HarnessAuthManager
+        ),
+      accounts: notFaked("accounts"),
+      renameAccount: notFaked("renameAccount"),
+      removeAccount: notFaked("removeAccount"),
+      activateAccount: notFaked("activateAccount"),
+      probeAccount: notFaked("probeAccount"),
+      logout: notFaked("logout"),
+      accountContext: notFaked("accountContext"),
+      activeAccountContext: notFaked("activeAccountContext"),
+      markAccountExpired: notFaked("markAccountExpired")
+    }
     const options = {
       db: services.db,
       auth,

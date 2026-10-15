@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 
+import { Worktree } from "@codevisor/api"
 import { listSnapshotRefWorktreeIds, snapshotRefFor } from "@codevisor/worktrees"
 import Database from "better-sqlite3"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { defaultServerConfig } from "./server-config.js"
@@ -30,7 +32,7 @@ const withWorktreesRoot = async <A>(body: () => Promise<A>): Promise<A> => {
 
 const setUpProject = async () => {
   const { server, services } = await start()
-  const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
+  const serverDatabasePath = join(dirname(services.attachments.root), "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-reconcile-repo-"))
   tempDirs.push(repoRoot)
   const repoFolder = join(repoRoot, "repo")
@@ -45,12 +47,14 @@ const setUpProject = async () => {
     method: "POST"
   })
   const makeWorktree = async (name: string) =>
-    (
-      await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ name }),
-        method: "POST"
-      })
-    ).body as { readonly id: string; readonly name: string; readonly path: string }
+    Schema.decodeUnknownSync(Worktree)(
+      (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name }),
+          method: "POST"
+        })
+      ).body
+    )
   const config = defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
   const fanout = await run(makeEventFanout)
   return { server, services, repoFolder, makeWorktree, config, fanout, serverDatabasePath }

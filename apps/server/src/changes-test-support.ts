@@ -26,9 +26,13 @@ export const observeDatabase = (db: CodevisorDatabaseService): void => {
       )
     )
       continue
-    const mutate = operation as (...args: unknown[]) => Effect.Effect<unknown, unknown>
     Object.assign(db, {
-      [name]: (...args: unknown[]) => Effect.tap(mutate(...args), () => Effect.sync(fixtureChanged))
+      [name]: (...args: unknown[]) => {
+        const result: unknown = Reflect.apply(operation, db, args)
+        return Effect.isEffect(result)
+          ? Effect.tap(result, () => Effect.sync(fixtureChanged))
+          : result
+      }
     })
   }
 }

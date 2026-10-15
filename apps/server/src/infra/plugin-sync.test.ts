@@ -38,7 +38,7 @@ const makeWorld = async (serverId: string): Promise<World> => {
     serverId,
     listPlugins: () => Promise.resolve([...state.plugins]),
     installFromSource: (source) => {
-      if (state.installFailure !== undefined) return Promise.reject(state.installFailure as Error)
+      if (state.installFailure !== undefined) return Promise.reject(state.installFailure)
       calls.installs.push(source)
       return Promise.resolve()
     },
@@ -50,7 +50,7 @@ const makeWorld = async (serverId: string): Promise<World> => {
       return Promise.resolve()
     },
     removePlugin: (pluginId) => {
-      if (state.removeFailure !== undefined) return Promise.reject(state.removeFailure as Error)
+      if (state.removeFailure !== undefined) return Promise.reject(state.removeFailure)
       calls.removals.push(pluginId)
       state.plugins = state.plugins.filter((plugin) => plugin.id !== pluginId)
       return Promise.resolve()

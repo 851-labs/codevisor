@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 import { observableFixture } from "./changes-test-support.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import {
+  bodyId,
   jsonRequest,
   makeServices,
   readWebSocketEvents,
@@ -15,6 +16,7 @@ import {
   tempDirs,
   waitFor
 } from "./test-support.js"
+import { field } from "./unknown-values.js"
 
 describe("@codevisor/server self-updates", () => {
   it("reports and applies updates through the configured updater", async () => {
@@ -152,13 +154,19 @@ describe("@codevisor/server self-updates", () => {
     state.available = false
     await jsonRequest(server, "/v1/update?refresh=1")
 
-    const events = (await readWebSocketEvents(server, 2, 0)) as Array<{
-      readonly kind: string
-      readonly payload: { readonly latestVersion?: string; readonly updateAvailable?: boolean }
-    }>
-    expect(events.map((event) => event.kind)).toEqual(["update.changed", "update.changed"])
-    expect(events[0]?.payload).toMatchObject({ latestVersion: "0.2.0", updateAvailable: true })
-    expect(events[1]?.payload).toMatchObject({ latestVersion: "0.1.0", updateAvailable: false })
+    const events = await readWebSocketEvents(server, 2, 0)
+    expect(events.map((event) => field(event, "kind"))).toEqual([
+      "update.changed",
+      "update.changed"
+    ])
+    expect(field(events[0], "payload")).toMatchObject({
+      latestVersion: "0.2.0",
+      updateAvailable: true
+    })
+    expect(field(events[1], "payload")).toMatchObject({
+      latestVersion: "0.1.0",
+      updateAvailable: false
+    })
   })
 
   it("refuses to apply an update while a chat is mid-turn when asked not to wait", async () => {
@@ -190,20 +198,20 @@ describe("@codevisor/server self-updates", () => {
     tempDirs.push(workspaceRoot)
     const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
-    const workspace = (
+    const workspaceId = bodyId(
       await jsonRequest(server, "/v1/projects", {
         body: JSON.stringify({ folderPath: workspaceFolder }),
         method: "POST"
       })
-    ).body as { readonly id: string }
-    const session = (
+    )
+    const sessionId = bodyId(
       await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Busy" }),
+        body: JSON.stringify({ projectId: workspaceId, harnessId: "codex", title: "Busy" }),
         method: "POST"
       })
-    ).body as { readonly id: string }
+    )
 
-    await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+    await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
     })

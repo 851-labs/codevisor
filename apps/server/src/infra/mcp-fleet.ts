@@ -3,6 +3,7 @@ import type { McpManager } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { field } from "../unknown-values.js"
 import { publishMachineReadiness } from "./config-sync.js"
 
 export const MCP_READINESS_NAMESPACE = "mcp-readiness"
@@ -29,8 +30,11 @@ export const readMcpOverlays = async (
     const split = rest.indexOf("|")
     if (split <= 0) continue
     const name = rest.slice(split + 1)
-    const value = entry.value as { readonly enabled?: unknown } | null
-    if (rest.slice(0, split) === serverId && value?.enabled === false && name.length > 0) {
+    if (
+      rest.slice(0, split) === serverId &&
+      field(entry.value, "enabled") === false &&
+      name.length > 0
+    ) {
       disabledHere.add(name)
     }
   }

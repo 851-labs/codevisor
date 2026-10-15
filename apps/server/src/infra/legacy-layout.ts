@@ -20,6 +20,8 @@ import { promisify } from "node:util"
 
 import type { DataUpgradeProgress } from "@codevisor/api"
 
+import { errorCode } from "../unknown-values.js"
+
 const execFileAsync = promisify(execFile)
 
 export interface LegacyLayoutMigrationOptions {
@@ -40,7 +42,7 @@ const pathExists = async (path: string): Promise<boolean> => {
     return true
   } catch (error) {
     /* v8 ignore next */
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+    if (errorCode(error) === "ENOENT") return false
     /* v8 ignore next */
     throw error
   }
@@ -68,7 +70,7 @@ const moveWithoutOverwrite = async (source: string, destination: string): Promis
       return
       /* v8 ignore start */
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error
+      if (errorCode(error) !== "EXDEV") throw error
       await cp(source, destination, {
         recursive: sourceStat.isDirectory(),
         preserveTimestamps: true
@@ -178,7 +180,7 @@ const configuredSubmoduleWorktree = async (configPath: string): Promise<string |
     ])
     return stdout.trim()
   } catch (error) {
-    if ((error as { readonly code?: unknown }).code === 1) return undefined
+    if (errorCode(error) === 1) return undefined
     throw error
   }
 }

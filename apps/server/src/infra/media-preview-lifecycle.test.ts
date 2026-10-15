@@ -1,17 +1,20 @@
 import { EventEmitter } from "node:events"
 
 import { beforeEach, expect, it, vi } from "vitest"
-const mocks = vi.hoisted(() => ({
-  readFile: vi.fn(),
-  stat: vi.fn(),
-  mkdir: vi.fn(),
-  rename: vi.fn(),
-  rm: vi.fn(),
-  render: vi.fn(),
-  spawn: vi.fn(),
-  worker: vi.fn(),
-  encoder: { value: "/ffmpeg" as string | null }
-}))
+const mocks = vi.hoisted(() => {
+  const encoder: { value: string | null } = { value: "/ffmpeg" }
+  return {
+    readFile: vi.fn(),
+    stat: vi.fn(),
+    mkdir: vi.fn(),
+    rename: vi.fn(),
+    rm: vi.fn(),
+    render: vi.fn(),
+    spawn: vi.fn(),
+    worker: vi.fn(),
+    encoder
+  }
+})
 vi.mock("node:fs/promises", () => mocks)
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }))
 vi.mock("node:worker_threads", () => ({

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import type { AddressInfo } from "node:net"
 
 import type { ChannelCloseReason } from "@codevisor/api"
 import {
@@ -11,6 +10,8 @@ import {
 } from "@codevisor/cloud-client"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { listeningPort } from "../test-support-net.js"
+import { field, stringField } from "../unknown-values.js"
 import {
   httpChannelHandler,
   streamedRequestBody,
@@ -63,11 +64,12 @@ class FakeChannel implements IncomingChannel {
   }
   responseBody(): string {
     return Buffer.concat(
-      this.sent
-        .filter((frame): frame is { kind: "chunk"; data: string } => {
-          return (frame as { kind?: string }).kind === "chunk"
-        })
-        .map((frame) => Buffer.from(frame.data, "base64url"))
+      this.sent.flatMap((frame) => {
+        const data = stringField(frame, "data")
+        return field(frame, "kind") === "chunk" && data !== undefined
+          ? [Buffer.from(data, "base64url")]
+          : []
+      })
     ).toString()
   }
 }
@@ -84,7 +86,7 @@ const localServer = async (
   servers.push(server)
   server.listen(0, "127.0.0.1")
   await once(server, "listening")
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  return `http://127.0.0.1:${listeningPort(server)}`
 }
 
 const digestingServer = (): Promise<string> =>

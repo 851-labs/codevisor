@@ -1,5 +1,4 @@
 import { request, Server } from "node:http"
-import type { AddressInfo } from "node:net"
 
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
@@ -13,6 +12,7 @@ import {
   startCodevisorServer
 } from "./server.js"
 import type { CodevisorServerServices } from "./server.js"
+import { listeningPort } from "./test-support-net.js"
 import {
   jsonRequest,
   makeServices,
@@ -21,6 +21,7 @@ import {
   start,
   startWithApp
 } from "./test-support.js"
+import { field, stringField } from "./unknown-values.js"
 
 const attentionEvent = (subjectId: string, sidebarState: "inProgress" | "idle") => ({
   id: 1,
@@ -151,7 +152,7 @@ describe("@codevisor/server", () => {
       log: () => undefined
     })
     expect(listener).toBeDefined()
-    const port = (listener!.server.address() as AddressInfo).port
+    const port = listeningPort(listener!.server)
     listener!.report({
       state: "running",
       id: "canonical-session-chat-v1",
@@ -193,7 +194,7 @@ describe("@codevisor/server", () => {
       serviceManaged: false,
       log: () => undefined
     })
-    const port = (listener!.server.address() as AddressInfo).port
+    const port = listeningPort(listener!.server)
     const server = await run(
       startCodevisorServer(
         services,
@@ -214,14 +215,15 @@ describe("@codevisor/server", () => {
 
   it("fails startup cleanly when wiring the app throws", async () => {
     const { services } = await makeServices("server-a")
-    const failingServices = {
+    const failingServices: CodevisorServerServices = {
       ...services,
       mcp: {
+        ...services.mcp,
         setBaseUrl: () => {
           throw new Error("MCP base URL rejected")
         }
       }
-    } as unknown as CodevisorServerServices
+    }
 
     await expect(
       run(
@@ -316,7 +318,7 @@ describe("@codevisor/server", () => {
       cloudLinked: false
     })
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({
-      machineId: (discovery.body as { machineId: string }).machineId
+      machineId: field(discovery.body, "machineId")
     })
     expect((await jsonRequest(server, "/v1/openapi.json")).body).toMatchObject({
       openapi: "3.1.0"
@@ -343,16 +345,16 @@ describe("@codevisor/server", () => {
 
     const firstConnection = await jsonRequest(server, "/v1/auth/connection-token")
     expect(firstConnection.status).toBe(200)
-    const connectionToken = (firstConnection.body as { token: string }).token
+    const connectionToken = stringField(firstConnection.body, "token")
     expect(connectionToken).toMatch(/^hm_/)
     expect(
-      ((await jsonRequest(server, "/v1/auth/connection-token")).body as { token: string }).token
+      stringField((await jsonRequest(server, "/v1/auth/connection-token")).body, "token")
     ).toBe(connectionToken)
     const rotation = await jsonRequest(server, "/v1/auth/connection-token/rotate", {
       method: "POST"
     })
     expect(rotation.status).toBe(201)
-    expect((rotation.body as { token: string }).token).not.toBe(connectionToken)
+    expect(stringField(rotation.body, "token")).not.toBe(connectionToken)
 
     expect(defaultDatabasePath()).toContain("codevisor-server.sqlite")
 

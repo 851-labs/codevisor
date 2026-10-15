@@ -3,10 +3,11 @@ import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { setTimeout as sleep } from "node:timers/promises"
 
-import type {
-  TerminalClientFrame,
+import {
+  decode,
   TerminalCreateResponse,
-  TerminalServerFrame
+  TerminalServerFrame,
+  type TerminalClientFrame
 } from "@codevisor/api"
 import { WebSocket } from "ws"
 
@@ -98,7 +99,7 @@ const createTerminal = async (options: ProxyOptions): Promise<TerminalCreateResp
   if (!response.ok) {
     throw new Error(`Terminal create failed: HTTP ${response.status}`)
   }
-  return (await response.json()) as TerminalCreateResponse
+  return decode(TerminalCreateResponse)(await response.json())
 }
 
 const disableOutputPostProcessing = (): void => {
@@ -179,7 +180,7 @@ const main = async (): Promise<void> => {
           enqueue({ type: "resize", cols: size.cols, rows: size.rows })
         })
         nextSocket.on("message", (data: Buffer) => {
-          const frame = JSON.parse(data.toString()) as TerminalServerFrame
+          const frame = decode(TerminalServerFrame)(JSON.parse(data.toString()))
           if (frame.seq > lastOutputSeq) {
             lastOutputSeq = frame.seq
           }

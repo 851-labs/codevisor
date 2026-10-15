@@ -8,6 +8,7 @@ import {
   type FetchLike
 } from "@codevisor/cloud-client"
 
+import { field, stringField } from "../unknown-values.js"
 import {
   cloudUrl,
   ensureCloudServer,
@@ -59,13 +60,15 @@ const joinWithInvite = async (
       ...(machineName === undefined ? {} : { machineName })
     }
   })
-  const body = response?.body as { deviceId?: string; error?: string } | undefined
-  if (response?.status !== 200 || typeof body?.deviceId !== "string") {
-    deps.error(`Couldn't join with the invite: ${body?.error ?? "the server did not answer"}`)
+  const deviceId = stringField(response?.body, "deviceId")
+  if (response?.status !== 200 || deviceId === undefined) {
+    deps.error(
+      `Couldn't join with the invite: ${stringField(response?.body, "error") ?? "the server did not answer"}`
+    )
     deps.error("Invites work once and expire after 10 minutes; create a new one and retry.")
     return 1
   }
-  await waitForCloudConnection(deps, port, body.deviceId)
+  await waitForCloudConnection(deps, port, deviceId)
   deps.log(`✓ Connected${machineName === undefined ? "" : ` as ${machineName}`}.`)
   deps.log("This machine is online in your Codevisor apps.")
   return 0
@@ -133,11 +136,13 @@ export const authLoginCommand = async (
         timeoutMs: 30_000,
         body: { serverUrl, sessionToken: poll.sessionToken, machineName, managedBy: "external" }
       })
-      const body = response?.body as { deviceId?: string; error?: string } | undefined
-      if (response?.status !== 200 || typeof body?.deviceId !== "string") {
-        throw new Error(body?.error ?? "The server could not save the Cloud registration")
+      const deviceId = stringField(response?.body, "deviceId")
+      if (response?.status !== 200 || deviceId === undefined) {
+        throw new Error(
+          stringField(response?.body, "error") ?? "The server could not save the Cloud registration"
+        )
       }
-      await waitForCloudConnection(deps, port, body.deviceId)
+      await waitForCloudConnection(deps, port, deviceId)
       deps.log("")
       deps.log(`✓ Connected as ${machineName}.`)
       deps.log("This machine is online in your Codevisor apps.")
@@ -202,8 +207,7 @@ export const authLogoutCommand = async (
     if (response?.status !== 200)
       throw new Error("The server could not remove the Cloud registration")
     const cloud = registration.serverUrl ?? "Codevisor Cloud"
-    const body = response.body as { readonly removedFromAccount?: unknown } | undefined
-    if (body?.removedFromAccount === true) {
+    if (field(response.body, "removedFromAccount") === true) {
       deps.log(`Disconnected this machine from ${cloud} and removed it from your account.`)
       return 0
     }

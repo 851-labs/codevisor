@@ -13,6 +13,7 @@ import {
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { SharedCredentialVault, SharedTokenBundle } from "@codevisor/harness-manager"
 
+import { asRecord, field } from "../unknown-values.js"
 import type { SharedProviderStore } from "./shared-provider-store.js"
 
 export interface OpenCode2Deps {
@@ -44,7 +45,6 @@ export const seededOAuthCredential = (
   token: SharedTokenBundle,
   capability: string | undefined
 ): SeededOpenCodeCredential | undefined => {
-  const native = token.credential as Record<string, unknown>
   const oauth = (methodID: string, refresh: string, metadata: Record<string, string>) => ({
     id: `${SEEDED_CREDENTIAL_PREFIX}${token.providerId}`,
     integrationID: token.providerId?.startsWith("github-copilot")
@@ -60,14 +60,14 @@ export const seededOAuthCredential = (
     }
   })
   if (token.providerId?.startsWith("github-copilot")) {
-    const enterpriseUrl = text(native.enterpriseUrl)
+    const enterpriseUrl = text(field(token.credential, "enterpriseUrl"))
     return oauth("device", token.accessToken, enterpriseUrl ? { enterpriseUrl } : {})
   }
   if (capability === undefined || !refreshedThroughCodevisor(String(token.providerId)))
     return undefined
   const refresh = `codevisor:${capability}`
   if (token.providerId === "openai") {
-    const accountID = text(native.accountId) ?? token.organizationId
+    const accountID = text(field(token.credential, "accountId")) ?? token.organizationId
     return oauth("chatgpt-browser", refresh, accountID ? { accountID } : {})
   }
   return oauth("device", refresh, {})
@@ -112,7 +112,7 @@ export const makeOpenCode2Materializer =
     for (const [name, content] of Object.entries(openCodeCredentialPluginFiles))
       await deps.writePrivate(join(plugin, name), content)
     const config = env.OPENCODE_CONFIG_CONTENT
-      ? (JSON.parse(env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>)
+      ? asRecord(JSON.parse(env.OPENCODE_CONFIG_CONTENT))
       : {}
     const runtimeEnv: Record<string, string> = {
       ...base.env,

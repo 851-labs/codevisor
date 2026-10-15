@@ -17,6 +17,8 @@ import {
 } from "@codevisor/cloud-client"
 import { loadNet, type NetModule, type PathPolicy } from "@codevisor/net"
 
+import { stringField } from "../unknown-values.js"
+
 export interface MachineTunnelBridge {
   readonly endpointId: string
   readonly onTunnelConfig: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
@@ -49,10 +51,8 @@ export const tunnelPinsPath = (credentialsPath: string): string =>
 
 const loadOrCreateSecretKey = async (net: NetModule, path: string): Promise<string> => {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as { secretKeyHex?: unknown }
-    if (typeof parsed.secretKeyHex === "string" && /^[0-9a-f]{64}$/.test(parsed.secretKeyHex)) {
-      return parsed.secretKeyHex
-    }
+    const stored = stringField(JSON.parse(await readFile(path, "utf8")), "secretKeyHex")
+    if (stored !== undefined && /^[0-9a-f]{64}$/.test(stored)) return stored
   } catch {}
   const secretKeyHex = net.generateSecretKeyHex()
   await writeFile(path, JSON.stringify({ secretKeyHex }, null, 2), { mode: 0o600 })

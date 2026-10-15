@@ -1,4 +1,3 @@
-import type { AddressInfo } from "node:net"
 import { createServer } from "node:net"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -11,6 +10,7 @@ import {
   type BootListener
 } from "./boot-listener.js"
 import { hasExistingListener } from "./infra/listener-probe.js"
+import { listeningPort } from "./test-support-net.js"
 
 const options = {
   host: "127.0.0.1",
@@ -24,7 +24,7 @@ const options = {
   log: () => undefined
 }
 
-const portOf = (listener: BootListener): number => (listener.server.address() as AddressInfo).port
+const portOf = (listener: BootListener): number => listeningPort(listener.server)
 
 describe("boot listener", () => {
   const open: Array<BootListener> = []
@@ -140,7 +140,7 @@ describe("boot listener", () => {
     const freePort = await new Promise<number>((resolve) => {
       const probe = createServer()
       probe.listen(0, "127.0.0.1", () => {
-        const port = (probe.address() as AddressInfo).port
+        const port = listeningPort(probe)
         probe.close(() => resolve(port))
       })
     })

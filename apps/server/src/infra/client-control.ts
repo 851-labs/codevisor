@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  ClientContext,
   ClientControlFrame,
   decode,
-  type ClientContext,
   type ClientControlCommand,
   type ClientSummary,
   type ConnectedClient
@@ -113,7 +113,8 @@ export class ClientControlBroker {
         connection.pending.delete(frame.requestId)
         if (frame.context?.isActive === true) connection.lastActiveAt = new Date().toISOString()
         if (frame.error !== undefined) pending.reject(new HttpFailure(409, frame.error))
-        else if (frame.context !== undefined) pending.resolve(lowercaseIds(frame.context))
+        else if (frame.context !== undefined)
+          pending.resolve(decode(ClientContext)(lowercaseIds(frame.context)))
         else pending.reject(new HttpFailure(502, "Client returned no context"))
       } catch {
         this.disconnect(clientId)
@@ -183,17 +184,15 @@ export class ClientControlBroker {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const lowercaseIds = <T>(value: T, key = ""): T => {
-  if (Array.isArray(value)) return value.map((item) => lowercaseIds(item, key)) as T
+const lowercaseIds = (value: unknown, key = ""): unknown => {
+  if (Array.isArray(value)) return value.map((item) => lowercaseIds(item, key))
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([field, item]) => [field, lowercaseIds(item, field)])
-    ) as T
+    )
   }
   const isIdField = key === "id" || key.endsWith("Id")
-  return (
-    isIdField && typeof value === "string" && UUID.test(value) ? value.toLowerCase() : value
-  ) as T
+  return isIdField && typeof value === "string" && UUID.test(value) ? value.toLowerCase() : value
 }
 
 const viewingOf = (context: ClientContext): NonNullable<ClientSummary["viewing"]> => {

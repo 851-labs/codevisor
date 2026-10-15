@@ -44,7 +44,7 @@ const makeWorld = async (serverId: string): Promise<World> => {
     },
     beginInstall: (harnessId) => {
       const failure = state.installFailures[harnessId]
-      if (failure !== undefined) return Promise.reject(failure as Error)
+      if (failure !== undefined) return Promise.reject(failure)
       calls.installs.push(harnessId)
       return Promise.resolve()
     }

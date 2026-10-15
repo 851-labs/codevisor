@@ -2,13 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { UpdateApplyState } from "@codevisor/api"
+import { RestartDrainState, UpdateInfo, type UpdateApplyState } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
 import type { CodevisorServerUpdater, RunningCodevisorServer } from "./server.js"
 import {
   archiveSessionViaWorkspace,
+  bodyId,
   jsonRequest,
   makeServices,
   run,
@@ -17,6 +19,10 @@ import {
   waitFor,
   listSubjectEvents
 } from "./test-support.js"
+import { field } from "./unknown-values.js"
+
+const decodeDrain = (response: { readonly body: unknown }) =>
+  Schema.decodeUnknownSync(RestartDrainState)(response.body)
 
 const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
   const state = observableFixture({
@@ -47,19 +53,18 @@ const openSession = async (server: RunningCodevisorServer, title: string) => {
   const folder = join(mkdtempSync(join(tmpdir(), "codevisor-drain-")), "repo")
   mkdirSync(folder, { recursive: true })
   tempDirs.push(folder)
-  const project = (
+  const projectId = bodyId(
     await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: folder }),
       method: "POST"
     })
-  ).body as { readonly id: string }
-  const session = (
+  )
+  return bodyId(
     await jsonRequest(server, "/v1/sessions", {
-      body: JSON.stringify({ harnessId: "codex", projectId: project.id, title }),
+      body: JSON.stringify({ harnessId: "codex", projectId, title }),
       method: "POST"
     })
-  ).body as { readonly id: string }
-  return session.id
+  )
 }
 
 const prompt = (server: RunningCodevisorServer, sessionId: string, text: string) =>
@@ -74,7 +79,7 @@ const gateEvents = async (
 ) =>
   listSubjectEvents(services, sessionId)
     .filter((event) => event.kind === "session.updateGate.updated")
-    .map((event) => event.payload as { harnessId: string; state: string })
+    .map((event) => event.payload)
 
 describe("restart drain", () => {
   it("preserves fresh host progress after draining and rejects stale progress", async () => {
@@ -83,7 +88,7 @@ describe("restart drain", () => {
     const server = await startWithApp(services, undefined, { updater })
     await jsonRequest(server, "/v1/update/apply", { method: "POST" })
     await waitFor(() => state.applyCalls === 1)
-    const drain = (await jsonRequest(server, "/v1/restart/drain")).body as { startedAt: string }
+    const drain = decodeDrain(await jsonRequest(server, "/v1/restart/drain"))
     state.lastApply = {
       state: "installing",
       message: "Downloading…",
@@ -98,9 +103,11 @@ describe("restart drain", () => {
       lastApply: state.lastApply
     })
     state.lastApply = { ...state.lastApply, at: "2000-01-01T00:00:00.000Z" }
-    const stale = (await jsonRequest(server, "/v1/update")).body as { lastApply: UpdateApplyState }
-    expect(stale.lastApply.message).toBe("Restarting to install the update")
-    expect(stale.lastApply.progress).toBeUndefined()
+    const stale = Schema.decodeUnknownSync(UpdateInfo)(
+      (await jsonRequest(server, "/v1/update")).body
+    )
+    expect(stale.lastApply?.message).toBe("Restarting to install the update")
+    expect(stale.lastApply?.progress).toBeUndefined()
   })
 
   it("waits for live turns, holds new prompts, snapshots, and resumes after the restart", async () => {
@@ -129,7 +136,7 @@ describe("restart drain", () => {
 
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
     await waitFor(async () =>
-      (await gateEvents(services, sessionId)).some((event) => event.state === "waiting")
+      (await gateEvents(services, sessionId)).some((event) => field(event, "state") === "waiting")
     )
     expect(agents.prompts).toHaveLength(1)
     expect(await gateEvents(services, sessionId)).toEqual([
@@ -234,9 +241,7 @@ describe("restart drain", () => {
     expect(begun.status).toBe(202)
     await waitFor(() => agents.cancellations.length === 1)
     await waitFor(
-      async () =>
-        ((await jsonRequest(server, "/v1/restart/drain")).body as { state: string }).state ===
-        "drained"
+      async () => decodeDrain(await jsonRequest(server, "/v1/restart/drain")).state === "drained"
     )
   })
 
@@ -265,14 +270,14 @@ describe("restart drain", () => {
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "POST" })).status).toBe(202)
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
     await waitFor(async () =>
-      (await gateEvents(services, sessionId)).some((event) => event.state === "waiting")
+      (await gateEvents(services, sessionId)).some((event) => field(event, "state") === "waiting")
     )
     expect(agents.prompts).toHaveLength(1)
 
     const cancelled = await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
     expect(cancelled.body).toMatchObject({ state: "idle" })
     await waitFor(async () =>
-      (await gateEvents(services, sessionId)).some((event) => event.state === "released")
+      (await gateEvents(services, sessionId)).some((event) => field(event, "state") === "released")
     )
     await run(services.agents.cancel("agent-codex-repo"))
     await waitFor(() => agents.prompts.length === 2)
@@ -309,7 +314,7 @@ describe("restart drain", () => {
     await run(services.agents.cancel("agent-codex-repo"))
     await waitFor(async () => {
       const drain = await jsonRequest(server, "/v1/restart/drain")
-      return (drain.body as { remaining: number }).remaining === 0
+      return decodeDrain(drain).remaining === 0
     })
     expect(state.applyCalls).toBe(0)
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({ state: "idle" })

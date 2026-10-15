@@ -1,6 +1,8 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
+import { field } from "../unknown-values.js"
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
@@ -144,12 +146,8 @@ describe("config sync", () => {
       expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-a")
       const oauthA = await reconcileMcps(a)
       expect(oauthA.status.published).toEqual(["Scoped"])
-      const envelope = (
-        oauthA.changedEntries.find((entry) => entry.key === "Scoped")!.value as {
-          oauth?: { owner: string }
-        }
-      ).oauth
-      expect(envelope?.owner).toBe("server-a")
+      const scoped = oauthA.changedEntries.find((entry) => entry.key === "Scoped")
+      expect(field(field(scoped?.value, "oauth"), "owner")).toBe("server-a")
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, oauthA.changedEntries))
       await reconcileMcps(b)
       const scopedIdB = (await mcpB.list()).find((server) => server.name === "Scoped")?.id ?? ""
@@ -221,9 +219,13 @@ describe("config sync", () => {
 
     const document = await run(services.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
     expect(document[0]?.key).toBe("server-p")
-    const value = document[0]?.value as {
-      readonly plugins: ReadonlyArray<{ readonly id: string; readonly reason?: string }>
-    }
+    const value = Schema.decodeUnknownSync(
+      Schema.Struct({
+        plugins: Schema.Array(
+          Schema.Struct({ id: Schema.String, reason: Schema.optional(Schema.String) })
+        )
+      })
+    )(document[0]?.value)
     expect(value.plugins.map((row) => row.id)).toEqual(["dev-linked", "ffmpeg-tools", "scratchpad"])
     expect(value.plugins[1]?.reason).toBe("needs ffmpeg")
 
@@ -275,9 +277,13 @@ describe("config sync", () => {
 
     const document = await run(services.db.getSyncEntries(ACCOUNTS_SYNC_NAMESPACE))
     expect(document[0]?.key).toBe("server-d")
-    const roster = document[0]?.value as {
-      readonly accounts: ReadonlyArray<{ readonly label: string; readonly email?: string }>
-    }
+    const roster = Schema.decodeUnknownSync(
+      Schema.Struct({
+        accounts: Schema.Array(
+          Schema.Struct({ label: Schema.String, email: Schema.optional(Schema.String) })
+        )
+      })
+    )(document[0]?.value)
     expect(roster.accounts).toHaveLength(2)
     expect(roster.accounts.some((account) => account.label === "Personal")).toBe(true)
     expect(roster.accounts.find((account) => account.label === "Work")?.email).toBeUndefined()

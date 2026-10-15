@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import {
   APP_UPDATE_CHANNEL_FILE,
   APP_UPDATE_FEED_FILE,
@@ -49,18 +49,15 @@ const customFeedURL = "https://feeds.example.test/appcast-dev.xml"
 const requestURL = (input: Parameters<typeof fetch>[0]): string =>
   input instanceof Request ? input.url : input.toString()
 
-const db = {
-  getSyncEntries: () => Effect.succeed([]),
-  setUpdateInfo: (info: unknown) => Effect.succeed(info)
-} as unknown as CodevisorDatabaseService
-
 describe("makeSelfUpdater release resolution", () => {
   let dataDir: string
+  let db: CodevisorDatabaseService
   let feedStatus: number
   let fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), "codevisor-self-updater-"))
+    db = await Effect.runPromise(makeDatabase({ filename: ":memory:", serverId: "self-updater" }))
     feedStatus = 200
     fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const url = requestURL(input)
@@ -74,7 +71,8 @@ describe("makeSelfUpdater release resolution", () => {
     })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Effect.runPromise(db.close)
     vi.unstubAllEnvs()
     rmSync(dataDir, { recursive: true, force: true })
   })

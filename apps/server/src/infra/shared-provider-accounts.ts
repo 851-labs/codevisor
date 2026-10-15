@@ -10,16 +10,29 @@ import {
   piAuthPath,
   openCodeAuthPath,
   type ProviderOAuthHarness,
-  type SharedCredentialVault,
-  type SharedCredentialReference
+  type SharedCredentialVault
 } from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 
+import { isRecord } from "../unknown-values.js"
 import type { SharedAccountStore } from "./shared-account-store.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
-import { makeSharedProviderStore, providerDigest, providerSlot } from "./shared-provider-store.js"
+import {
+  isProviderHarness,
+  makeSharedProviderStore,
+  providerDigest,
+  providerSlot
+} from "./shared-provider-store.js"
+
+const ProviderSource = Schema.Struct({
+  fingerprint: Schema.String,
+  subject: Schema.String,
+  organizationId: Schema.optionalKey(Schema.String),
+  credential: Schema.optionalKey(Schema.Struct({ id: Schema.String, key: Schema.String }))
+})
+const isProviderSource = Schema.is(ProviderSource)
 
 export const makeSharedProviderAccounts = (options: {
   db: CodevisorDatabaseService
@@ -66,14 +79,8 @@ export const makeSharedProviderAccounts = (options: {
       const slot = providerSlot(harness, profile, provider)
       const sourceKey = `source:${slot}`
       const fingerprint = providerDigest(JSON.stringify(credential))
-      const previous = (await store.local(sourceKey)) as
-        | {
-            fingerprint: string
-            subject: string
-            organizationId?: string
-            credential?: SharedCredentialReference
-          }
-        | undefined
+      const stored = await store.local(sourceKey)
+      const previous = isProviderSource(stored) ? stored : undefined
       if (previous?.fingerprint === fingerprint) continue
       const sameSource =
         previous &&
@@ -211,14 +218,14 @@ export const makeSharedProviderAccounts = (options: {
               : `opencode-profile:${profile}`
         const saved = entries.find((entry) => entry.key === key && !entry.deleted)
         if (typeof saved?.value === "string") {
-          const document = JSON.parse(saved.value) as Record<string, unknown>
-          if (document[provider] !== undefined) {
-            delete document[provider]
+          const document: unknown = JSON.parse(saved.value)
+          if (isRecord(document) && document[provider] !== undefined) {
+            const { [provider]: _removed, ...remaining } = document
             await Effect.runPromise(
               db.mergeSyncEntries(namespace, [
                 {
                   key,
-                  value: JSON.stringify(document),
+                  value: JSON.stringify(remaining),
                   timestamp: nextSyncTimestamp(
                     options.serverId,
                     latestSyncTimestamp(entries),
@@ -253,9 +260,9 @@ export const makeSharedProviderAccounts = (options: {
       account: HarnessAccount,
       base: HarnessAccountContext
     ): Promise<HarnessAccountContext> => {
-      if (!["pi", "opencode", "grok-build"].includes(account.harnessId)) return base
+      const harness = account.harnessId
+      if (!isProviderHarness(harness)) return base
       await reconcile()
-      const harness = account.harnessId as ProviderOAuthHarness
       const profile = await profileId(harness, account.id)
       const env = await environment()
       return runtime.materialize(harness, profile, nativePath(harness, env, profile), base, {
