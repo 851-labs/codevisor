@@ -39,6 +39,31 @@ const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {
 const equal = (a: BrowserCookie | undefined | null, b: BrowserCookie | undefined | null) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
+const collectCookieMutations = (
+  current: ReadonlyMap<string, BrowserCookie>,
+  baseline: ReadonlyMap<string, BrowserCookie>,
+  revisions: ReadonlyMap<string, number>
+): BrowserCookieMutation[] =>
+  [...new Set([...current.keys(), ...baseline.keys()])]
+    .filter((key) => !equal(current.get(key), baseline.get(key)))
+    .map((key) => ({
+      key,
+      expectedRevision: revisions.get(key) ?? 0,
+      cookie: current.get(key) ?? null
+    }))
+
+const adoptNormalizedImports = (
+  baseline: Map<string, BrowserCookie>,
+  normalized: ReadonlyMap<string, BrowserCookie>,
+  applied: ReadonlySet<string>
+): void => {
+  for (const key of applied) {
+    const cookie = normalized.get(key)
+    if (cookie) baseline.set(key, cookie)
+    else baseline.delete(key)
+  }
+}
+
 export const synchronizeManagedCookies = async (
   connection: CdpConnection,
   db: Pick<CodevisorDatabaseService, "exchangeBrowserCookies">
@@ -108,20 +133,10 @@ export const synchronizeManagedCookies = async (
         if (entry.cookie) baseline.set(entry.key, entry.cookie)
       }
       const normalized = await read()
-      for (const key of applied) {
-        const cookie = normalized.get(key)
-        if (cookie) baseline.set(key, cookie)
-        else baseline.delete(key)
-      }
+      adoptNormalizedImports(baseline, normalized, applied)
     }
     const current = await read()
-    const mutations: BrowserCookieMutation[] = [...new Set([...current.keys(), ...baseline.keys()])]
-      .filter((key) => !equal(current.get(key), baseline!.get(key)))
-      .map((key) => ({
-        key,
-        expectedRevision: revisions.get(key) ?? 0,
-        cookie: current.get(key) ?? null
-      }))
+    const mutations = collectCookieMutations(current, baseline, revisions)
     const snapshot = await Effect.runPromise(db.exchangeBrowserCookies(mutations))
     const now = await read()
     const next = new Map(current)
@@ -138,11 +153,7 @@ export const synchronizeManagedCookies = async (
       else next.delete(entry.key)
     }
     const normalized = await read()
-    for (const key of applied) {
-      const cookie = normalized.get(key)
-      if (cookie) next.set(key, cookie)
-      else next.delete(key)
-    }
+    adoptNormalizedImports(next, normalized, applied)
     baseline = next
   }
   const sync = (): Promise<void> => {
