@@ -8,6 +8,8 @@ import UIKit
 
 @MainActor
 final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate {
+  static let runwayTopClearance: CGFloat = 56
+
   static let rowSpacing: CGFloat = 20
   static let topPadding: CGFloat = 12
   static let horizontalPadding: CGFloat = 16
@@ -84,6 +86,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   let sendTransitions = TranscriptSendTransitions<VirtualizedTranscriptScrollView>()
   var sendAnimationSourceFrame: CGRect?
   var isSendTransitionCleanupScheduled = false
+  var pinnedViewportAnimations: Set<String> = []
   var presentationRole: TranscriptPresentationRole = .foreground
   var reduceMotion = false
 
@@ -245,6 +248,22 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     } else {
       applyPendingInitialPositionIfPossible()
       updateMountedRows()
+    }
+    if heightChanged, initialPositionApplied {
+      let presentedTop = layer.presentation()?.bounds.minY ?? contentOffset.y
+      let settledTop = contentOffset.y
+      rebuildDocumentGeometry()
+      let runwayTop = contentOffset.y
+      if sendTransitions.isPushing {
+        sendTransitionPinRowsToViewport()
+        sendTransitions.absorbViewportMove(presentedTop - runwayTop)
+      } else {
+        pinnedViewportAnimations.removeAll()
+        if abs(runwayTop - settledTop) > 0.25 {
+          applyPositionTransaction { contentOffset.y = settledTop }
+          setViewportTop(runwayTop, synchronizesWithActiveLayoutAnimation: true)
+        }
+      }
     }
     if resizeAdjustment == .pinToBottom {
       setDistanceFromBottom(0, synchronizesWithActiveLayoutAnimation: true)

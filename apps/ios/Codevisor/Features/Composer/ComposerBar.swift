@@ -15,6 +15,7 @@ struct ComposerBar: View {
   var preservesFocusAfterSend = false
   var textEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var textEditorHandoffID: UUID? = nil
+  var sendAnimationsStarted = 0
   var glassNamespace: Namespace.ID? = nil
   var onSendSourceFrameChange: ((CGRect) -> Void)? = nil
   var onWillSend: ((String) -> Void)? = nil
@@ -47,6 +48,7 @@ struct ComposerBar: View {
   @State var pasteFailureNotice: ComposerPasteFailureNotice?
   @State var pasteFailureNoticeHeight: CGFloat = 0
   @State var isEditorFocused: Bool?
+  @State var holdsFoldUntilFlight = false
   @State var previewFocusRequest: UUID?
   @Namespace var composerMorph
   @State private var isTouchingCardInSheet = false
@@ -162,6 +164,13 @@ struct ComposerBar: View {
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
     .onDrop(of: Self.droppableTypes, isTargeted: nil) { acceptDrop($0) }
+    .onAppear(perform: adoptHandedOffEditorFocus)
+    .onChange(of: sendAnimationsStarted) { releaseFoldHold() }
+    .task(id: holdsFoldUntilFlight) {
+      guard holdsFoldUntilFlight else { return }
+      try? await Task.sleep(for: .seconds(1))
+      releaseFoldHold()
+    }
     .preference(
       key: ComposerBlocksSheetDismissPreferenceKey.self,
       value: isTouchingCardInSheet || isExpanded

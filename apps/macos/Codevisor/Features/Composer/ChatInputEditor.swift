@@ -230,6 +230,31 @@ extension NSTextView {
 
 final class SubmittingTextView: NSTextView {
   var onWindowChanged: (() -> Void)?
+  private var sentTextReveal: DispatchWorkItem?
+
+  func hideSentText() {
+    guard !string.isEmpty, sentTextReveal == nil else { return }
+    alphaValue = 0
+    let reveal = DispatchWorkItem { [weak self] in self?.revealSentText() }
+    sentTextReveal = reveal
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: reveal)
+  }
+
+  private func revealSentText() {
+    guard let reveal = sentTextReveal else { return }
+    reveal.cancel()
+    sentTextReveal = nil
+    alphaValue = 1
+  }
+
+  override var string: String {
+    didSet { revealSentText() }
+  }
+
+  override func didChangeText() {
+    super.didChangeText()
+    revealSentText()
+  }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()

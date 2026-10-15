@@ -15,6 +15,15 @@ public protocol TranscriptSendTransitionAdapter: AnyObject {
   func sendTransitionRowContent(for key: String) -> AnyView?
   func sendTransitionLiftOffset(for host: Host) -> CGFloat
   func sendTransitionWillPresent()
+  var sendTransitionLanding: TranscriptSendLanding? { get }
+  var sendTransitionPushDistance: CGFloat? { get }
+  func sendTransitionPinRowsToViewport()
+}
+
+extension TranscriptSendTransitionAdapter {
+  public var sendTransitionLanding: TranscriptSendLanding? { nil }
+  public var sendTransitionPushDistance: CGFloat? { nil }
+  public func sendTransitionPinRowsToViewport() {}
 }
 
 @MainActor
@@ -52,8 +61,21 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   }
 
   public weak var adapter: Adapter?
-  public var session: ObjectIdentifier?
+  public var session: ObjectIdentifier? {
+    didSet {
+      #if canImport(UIKit)
+        guard let session, session != oldValue else { return }
+        TranscriptSendStaging.shared.setLandingProvider(
+          for: session,
+          owner: self,
+          landing: { [weak self] in self?.adapter?.sendTransitionLanding },
+          anticipate: { [weak self] beginTime in self?.anticipatePush(beginTime: beginTime) }
+        )
+      #endif
+    }
+  }
   public var reduceMotion = false
+  public var largestAnimatedShift: CGFloat = 1.5
   public var claim: (@MainActor (UserSendAnimationRequest) -> Bool)?
   public var onStarted: (@MainActor (UserSendAnimationRequest) -> Void)?
   public var onCompleted: (@MainActor (UserSendAnimationRequest) -> Void)?
@@ -63,6 +85,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   private var shifts: [(shift: TranscriptSendShift, members: Int)] = []
   private var shiftSerial: UInt64 = 0
   private var shiftDepth = 0
+  private var push: (beginTime: CFTimeInterval, distance: CGFloat, base: CGFloat)?
   private var advanceScheduled = false
   private var isStartingFlights = false
 
@@ -97,11 +120,12 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   }
 
   public var isAnimatingRows: Bool {
-    let now = CACurrentMediaTime()
-    return shifts.contains { $0.shift.isRunning(at: now) } || entries.contains { !$0.isLanded }
+    let now = layerTime
+    return push != nil || shifts.contains { $0.shift.isRunning(at: now) } || entries.contains { !$0.isLanded }
   }
 
   public func hostDidMount(_ host: Host, key: String) {
+    addPush(to: host)
     guard !entries.isEmpty else { return }
     if let index = entries.lastIndex(where: { $0.rowKey == key }) {
       destinationDidMount(host, entryIndex: index)
@@ -109,17 +133,20 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
     guard isLive, let layer = host.transcriptSendLayer else { return }
     let now = CACurrentMediaTime()
+    let clock = layer.convertTime(now, from: nil)
     if let latest = entries.last(where: { !$0.isLanded || now - $0.startedAt < TranscriptSendMotion.transitionWindow }),
       let rowIndex = adapter?.sendTransitionRowIndex(for: key),
       let sendIndex = adapter?.sendTransitionRowIndex(for: latest.rowKey),
       rowIndex > sendIndex
     {
-      if let reveal = TranscriptSendLayerAnimations.followerReveal(sendStartedAt: latest.startedAt, now: now) {
+      if let reveal = TranscriptSendLayerAnimations.followerReveal(
+        sendStartedAt: latest.startedAt + clock - now, now: clock)
+      {
         layer.add(reveal, forKey: TranscriptSendAnimationKeys.follower)
       }
       return
     }
-    if let running = shifts.filter({ $0.shift.isRunning(at: now) }).max(by: { $0.members < $1.members }) {
+    if let running = shifts.filter({ $0.shift.isRunning(at: clock) }).max(by: { $0.members < $1.members }) {
       TranscriptSendLayerAnimations.replay(running.shift, on: layer)
     }
   }
@@ -129,6 +156,12 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       "destination mounted: layer=\(host.transcriptSendLayer != nil) staged=\(self.session.map { TranscriptSendStaging.shared.hasStage(for: $0) } ?? false)"
     )
     guard let layer = host.transcriptSendLayer else { return }
+    if TranscriptSendFlight.ridesTranscript,
+      let running = shifts.filter({ $0.shift.isRunning(at: layer.convertTime(CACurrentMediaTime(), from: nil)) })
+        .max(by: { $0.members < $1.members })
+    {
+      TranscriptSendLayerAnimations.replay(running.shift, on: layer)
+    }
     switch entries[index].phase {
     case .awaitingRow:
       if let session, TranscriptSendStaging.shared.hasStage(for: session) {
@@ -171,6 +204,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       return nil
     }
     shiftDepth += 1
+    if push != nil { adapter.sendTransitionPinRowsToViewport() }
     return ContentShiftCapture(
       screenYByKey: adapter.sendTransitionMountedHosts.mapValues { adapter.sendTransitionScreenY(of: $0) })
   }
@@ -179,29 +213,59 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     shiftDepth = max(0, shiftDepth - 1)
     guard let capture, let adapter else { return }
     let before = capture.screenYByKey
+    let mounted = adapter.sendTransitionMountedHosts
+    let now = layerTime
+    let pushed = push.flatMap { push in
+      entries.contains { mounted[$0.rowKey] != nil } ? push : nil
+    }
+    var lag: CGFloat = 0
+    var spring = TranscriptSendMotion.content
+    var beginTime = now
+    var scale: CGFloat = 1
+    if let pushed {
+      push = nil
+      spring = TranscriptSendMotion.bubble
+      let remaining = CGFloat(spring.displacementFraction(at: now - pushed.beginTime))
+      lag = pushed.base - pushed.distance * (1 - remaining)
+      if remaining > 0.2 {
+        beginTime = pushed.beginTime
+        scale = 1 / remaining
+      }
+    }
 
     var groups: [Int: (offset: CGFloat, hosts: [Host])] = [:]
-    let limit = adapter.sendTransitionViewportHeight * 1.5
-    for (key, host) in adapter.sendTransitionMountedHosts {
-      guard let previous = before[key],
-        !entries.contains(where: { $0.rowKey == key && $0.hidesRow })
-      else { continue }
-      let offset = previous - adapter.sendTransitionScreenY(of: host)
+    var hiddenRows: [Host] = []
+    let limit = pushed == nil ? adapter.sendTransitionViewportHeight * largestAnimatedShift : .infinity
+    for (key, host) in mounted {
+      if pushed != nil {
+        host.transcriptSendLayer?.removeAnimation(forKey: TranscriptSendAnimationKeys.push)
+      }
+      if entries.contains(where: { $0.rowKey == key && $0.hidesRow }) {
+        hiddenRows.append(host)
+        continue
+      }
+      guard let previous = before[key] else { continue }
+      let offset = (previous + lag - adapter.sendTransitionScreenY(of: host)) * scale
       guard abs(offset) > 0.5, abs(offset) < limit else { continue }
       let bucket = Int((offset * 2).rounded())
       groups[bucket, default: (offset, [])].hosts.append(host)
+    }
+    if TranscriptSendFlight.ridesTranscript,
+      let lead = groups.max(by: { $0.value.hosts.count < $1.value.hosts.count })?.key
+    {
+      groups[lead]?.hosts.append(contentsOf: hiddenRows)
     }
     guard !groups.isEmpty else {
       advance()
       return
     }
-    let now = CACurrentMediaTime()
     shifts.removeAll { !$0.shift.isRunning(at: now) }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     for group in groups.values {
       shiftSerial &+= 1
-      let shift = TranscriptSendShift(offset: group.offset, beginTime: now, serial: shiftSerial)
+      let shift = TranscriptSendShift(
+        offset: group.offset, beginTime: beginTime, serial: shiftSerial, spring: spring)
       shifts.append((shift, group.hosts.count))
       for host in group.hosts {
         guard let layer = host.transcriptSendLayer else { continue }
@@ -213,6 +277,10 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   }
 
   public func advance() {
+    syncCarriers()
+    if let push, layerTime - push.beginTime > TranscriptSendMotion.stagingTimeout {
+      cancelPush()
+    }
     guard !entries.isEmpty, let adapter else { return }
     let now = CACurrentMediaTime()
     for index in entries.indices {
@@ -242,6 +310,14 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
     entries.removeAll { entry in
       entry.isLanded && now - entry.startedAt >= TranscriptSendMotion.transitionWindow
+    }
+  }
+
+  private func syncCarriers() {
+    guard TranscriptSendFlight.ridesTranscript else { return }
+    if let session { TranscriptSendStaging.shared.syncCarrier(session: session) }
+    for entry in entries {
+      if case let .flying(flight) = entry.phase { flight.syncCarrier() }
     }
   }
 
@@ -334,12 +410,69 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
     entries.removeAll()
     shifts.removeAll()
+    cancelPush()
     receivedToken = nil
   }
 
   public func landFlights() {
     for entry in entries {
       if case let .flying(flight) = entry.phase { flight.land() }
+    }
+  }
+
+  public func startReadyFlights() {
+    isStartingFlights = true
+    defer { isStartingFlights = false }
+    advance()
+  }
+}
+
+extension TranscriptSendTransitions {
+  private var layerTime: CFTimeInterval {
+    let now = CACurrentMediaTime()
+    guard let layer = adapter?.sendTransitionMountedHosts.values.first?.transcriptSendLayer else { return now }
+    return layer.convertTime(now, from: nil)
+  }
+
+  func anticipatePush(beginTime: CFTimeInterval) {
+    cancelPush()
+    guard !reduceMotion, let adapter, let distance = adapter.sendTransitionPushDistance,
+      distance > 0.5, distance < adapter.sendTransitionViewportHeight * largestAnimatedShift
+    else { return }
+    push = (beginTime, distance, 0)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for host in adapter.sendTransitionMountedHosts.values {
+      addPush(to: host)
+    }
+    CATransaction.commit()
+  }
+
+  private func addPush(to host: Host) {
+    guard let push, let layer = host.transcriptSendLayer else { return }
+    layer.add(
+      TranscriptSendLayerAnimations.push(push.distance, from: push.base, beginTime: push.beginTime),
+      forKey: TranscriptSendAnimationKeys.push)
+  }
+
+  public var isPushing: Bool { push != nil }
+
+  public func absorbViewportMove(_ distance: CGFloat) {
+    guard push != nil, abs(distance) > 0.25, let adapter else { return }
+    push?.base -= distance
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for host in adapter.sendTransitionMountedHosts.values {
+      addPush(to: host)
+    }
+    CATransaction.commit()
+  }
+
+  private func cancelPush() {
+    guard push != nil else { return }
+    push = nil
+    for host in adapter?.sendTransitionMountedHosts.values.map({ $0 }) ?? [] {
+      host.transcriptSendLayer?.removeAnimation(forKey: TranscriptSendAnimationKeys.push)
     }
   }
 
@@ -384,11 +517,5 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       advanceScheduled = false
       startReadyFlights()
     }
-  }
-
-  public func startReadyFlights() {
-    isStartingFlights = true
-    defer { isStartingFlights = false }
-    advance()
   }
 }

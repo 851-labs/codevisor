@@ -49,6 +49,11 @@ enum ComposerTextViewHandoffRegistry {
     return editor
   }
 
+  static func isEditorFocused(id: UUID) -> Bool? {
+    if let entry = entries[id] { return entry.editor.isFirstResponder }
+    return ports[id]?.source?.localEditor?.isFirstResponder
+  }
+
   static func attachDestination(
     id: UUID,
     to container: ComposerTextViewContainer

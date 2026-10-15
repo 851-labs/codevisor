@@ -8,13 +8,32 @@ enum ComposerMorphID: Hashable {
 
 extension ComposerBar {
   var isCompact: Bool {
-    isCompact(editorFocused: isEditorFocused)
+    isCompact(editorFocused: isEditorFocused ?? handedOffEditorFocus)
+  }
+
+  private var handedOffEditorFocus: Bool? {
+    guard textEditorHandoffRole == .promotionDestination, let textEditorHandoffID else { return nil }
+    return ComposerTextViewHandoffRegistry.isEditorFocused(id: textEditorHandoffID)
+  }
+
+  func releaseFoldHold() {
+    guard holdsFoldUntilFlight else { return }
+    withAnimation(compactMorphAnimation(unfolding: false)) {
+      holdsFoldUntilFlight = false
+    }
+  }
+
+  func adoptHandedOffEditorFocus() {
+    guard isEditorFocused == nil, let focused = handedOffEditorFocus else { return }
+    var settle = Transaction()
+    settle.disablesAnimations = true
+    withTransaction(settle) { isEditorFocused = focused }
   }
 
   func isCompact(editorFocused: Bool?) -> Bool {
     editorFocused == false
+      && !holdsFoldUntilFlight
       && !isExpanded
-      && textEditorHandoffRole == .none
       && initialFocusRequest == nil
       && goalEditFocusRequest == nil
       && previewFocusRequest == nil

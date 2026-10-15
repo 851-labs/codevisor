@@ -15,7 +15,6 @@ public struct UserBubbleBackground: View {
 
   private let color: Color
   @Environment(\.isTranscriptSendProxy) private var isProxy
-  @Environment(\.theme) private var theme
 
   public init(color: Color) {
     self.color = color
@@ -24,8 +23,7 @@ public struct UserBubbleBackground: View {
   public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
     shape
-      .fill(color)
-      .background { if isProxy { shape.fill(Self.transcriptBackdrop(for: theme)) } }
+      .fill(isProxy ? Color.clear : color)
       .background { UserBubbleAnchor() }
   }
 

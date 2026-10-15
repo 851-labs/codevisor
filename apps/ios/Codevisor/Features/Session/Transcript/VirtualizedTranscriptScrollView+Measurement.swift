@@ -140,6 +140,7 @@ extension VirtualizedTranscriptScrollView {
           measurements: measurements,
           spacing: Self.rowSpacing
         )
+      virtualLayout = runwayAdjustedLayout(virtualLayout)
       initialRestoreRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
         virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
       }
@@ -176,6 +177,23 @@ extension VirtualizedTranscriptScrollView {
     }
     updateMountedRows(rangeOverride: initialRestoreRange)
     updateInitialPresentationReadiness()
+  }
+
+  func runwayAdjustedLayout(_ layout: VirtualTranscriptLayout) -> VirtualTranscriptLayout {
+    let spacerKey = TranscriptVirtualRow.ID.bottomSpacer.layoutKey
+    guard let spacerIndex = layout.indexByKey[spacerKey],
+      case let .bottomSpacer(clearance)? = rowByKey[spacerKey]?.content,
+      let turnIndex = rows.lastIndex(where: \.isUserMessage),
+      let turnTop = layout.indexByKey[rows[turnIndex].layoutKey].map({ layout.frame(at: $0).minY })
+    else { return layout }
+    let spacer = layout.frame(at: spacerIndex)
+    let screen = viewportHeight - appliedTopContentInset - Self.runwayTopClearance
+    let height = max(clearance, screen - (spacer.minY - turnTop))
+    guard abs(spacer.height - height) > 0.5,
+      let adjusted = layout.updatingHeights([spacerKey: height])
+    else { return layout }
+    measurements.setExact(height, for: spacerKey)
+    return adjusted
   }
 
   func measuredRootView(for row: TranscriptVirtualRow) -> AnyView {

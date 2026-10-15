@@ -275,6 +275,9 @@ extension ComposerBar {
     }
     controller.composerText = outgoing
     if !preservesFocusAfterSend {
+      if textEditorHandoffRole == .promotionSource, !reduceMotion {
+        holdsFoldUntilFlight = true
+      }
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
       )

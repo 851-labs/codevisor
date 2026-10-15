@@ -173,7 +173,7 @@ private extension ComposerCard {
               || isAppUpdateInProgress
           )
 
-          if controller.composerText.isEmpty {
+          if controller.composerText.isEmpty, !isAcceptingSubmission {
             Text("Do something")
               .foregroundStyle(.tertiary)
               .padding(.top, 6)
