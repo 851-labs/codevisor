@@ -150,8 +150,11 @@ struct SidebarRowMachine: Equatable {
   let name: String
   let systemImage: String
 
-  static func systemImage(isLocal: Bool) -> String {
-    isLocal ? "display" : "cloud"
+  static func systemImage(for machine: CodevisorMachine) -> String {
+    guard let chosen = MachineIcon.choice(machine.icon)?.systemImage else {
+      return machine.isLocal ? "display" : "cloud"
+    }
+    return chosen == "cloud.fill" ? "cloud" : chosen
   }
 }
 

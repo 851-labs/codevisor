@@ -60,7 +60,7 @@ extension SidebarView {
         let machine = environment.machines.machine(for: item.serverId)
         return SidebarWorkspaceGroup.Heading(
           title: machineName(forServer: item.serverId) ?? "Unknown Machine",
-          systemImage: machine.map { SidebarRowMachine.systemImage(isLocal: $0.isLocal) } ?? "questionmark.circle",
+          systemImage: machine.map(SidebarRowMachine.systemImage(for:)) ?? "questionmark.circle",
           newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
         )
       }
