@@ -8,6 +8,8 @@ extension LocalCodevisorServerTests {
   @Test("Starts and adopts the platform-managed server")
   func startsManagedServer() async throws {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+    let directory = entrypoint.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: directory) }
     var managed = ServerHealth.running(version: "0.2.0")
     managed.serviceManaged = true
     managed.appOwned = true
@@ -44,6 +46,8 @@ extension LocalCodevisorServerTests {
   @Test("A managed server that never becomes healthy is reported, never replaced by a child")
   func reportsDeadManagedServer() async throws {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+    let directory = entrypoint.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [
       .failure(TestError()),
       .success(.ready),
@@ -89,6 +93,8 @@ extension LocalCodevisorServerTests {
   @Test("A live process without startup progress exhausts its budget and retries once")
   func liveJobDoesNotExtendBudget() async throws {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+    let directory = entrypoint.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: Array(repeating: .failure(TestError()), count: 100))
     var starts = 0
     var stops = 0
@@ -115,6 +121,8 @@ extension LocalCodevisorServerTests {
   @Test("A managed job with no live process fails fast instead of waiting out the budget")
   func failsFastForDeadManagedJob() async throws {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+    let directory = entrypoint.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(
       healthResults: Array(repeating: .failure(TestError()), count: 400)
     )
@@ -186,6 +194,8 @@ extension LocalCodevisorServerTests {
   @Test("A registration failure is reported, not worked around")
   func reportsRegistrationFailure() async throws {
     let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+    let directory = entrypoint.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [.failure(TestError())])
     var directLaunches = 0
     let server = LocalCodevisorServer(
@@ -226,6 +236,8 @@ extension LocalCodevisorServerTests {
         launched = true; return Process()
       }
     )
+    let directory = server.entrypoint?.deletingLastPathComponent()
+    defer { if let directory { try? FileManager.default.removeItem(at: directory) } }
     guard case .unavailable = await server.ensureRunning() else {
       Issue.record("Expected missing service to fail")
       return
