@@ -37,6 +37,26 @@ afterEach(() => {
 })
 
 describe("resolveShellEnv", () => {
+  it("starts the login shell in the requested directory", async () => {
+    const runShell = vi.fn(() => Promise.resolve(envOutput("/repo/node/bin")))
+    const resolved = await resolveShellEnv({
+      base: { HOME: "/home/test", PATH: "/usr/bin", SHELL: "/bin/zsh" },
+      cwd: "/repo",
+      platform: "darwin",
+      executableExists: () => true,
+      listDirectory: () => [],
+      runShell
+    })
+    expect(runShell).toHaveBeenCalledWith(
+      "/bin/zsh",
+      ["-ilc", "/usr/bin/env"],
+      5000,
+      expect.anything(),
+      "/repo"
+    )
+    expect(resolved.PATH?.split(":")[0]).toBe("/repo/node/bin")
+  })
+
   it.each([undefined, ""])("restores HOME when the inherited value is %s", async (home) => {
     const base = Object.freeze({ HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/sh" })
     const runShell = vi.fn(() => Promise.resolve(envOutput("/probed")))
@@ -359,56 +379,5 @@ describe("makeShellEnvCache", () => {
     expect((await cache.refresh()).PATH).toBe("/probe-2")
     expect((await cache.current()).PATH).toBe("/probe-2")
     expect(probes).toBe(2)
-  })
-
-  it("probes each directory in that directory, sharing one in-flight probe per directory", async () => {
-    const probed: Array<string | undefined> = []
-    const cache = makeShellEnvCache(async (directory) => {
-      probed.push(directory)
-      return { PATH: `${directory ?? "~"}/bin` }
-    })
-    const [first, second, other] = await Promise.all([
-      cache.forDirectory("/repo-a"),
-      cache.forDirectory("/repo-a"),
-      cache.forDirectory("/repo-b")
-    ])
-    expect([first.PATH, second.PATH, other.PATH]).toEqual([
-      "/repo-a/bin",
-      "/repo-a/bin",
-      "/repo-b/bin"
-    ])
-    expect(probed).toEqual(["/repo-a", "/repo-b"])
-  })
-
-  it("serves a known directory without waiting and gives the next reader a re-probed version", async () => {
-    const probes: Array<{
-      settled: Promise<NodeJS.ProcessEnv>
-      finish: (version: string) => void
-    }> = []
-    const cache = makeShellEnvCache(() => {
-      const { promise, resolve } = Promise.withResolvers<NodeJS.ProcessEnv>()
-      probes.push({
-        settled: promise,
-        finish: (version) => resolve({ PATH: `/node/${version}/bin` })
-      })
-      return promise
-    })
-    const firstRead = cache.forDirectory("/repo")
-    probes[0]!.finish("v22")
-    expect((await firstRead).PATH).toBe("/node/v22/bin")
-
-    expect((await cache.forDirectory("/repo")).PATH).toBe("/node/v22/bin")
-    expect(probes).toHaveLength(2)
-    probes[1]!.finish("v24")
-    await probes[1]!.settled
-    expect((await cache.forDirectory("/repo")).PATH).toBe("/node/v24/bin")
-  })
-
-  it("re-probes directories after a refresh", async () => {
-    let probes = 0
-    const cache = makeShellEnvCache(async (directory) => ({ PATH: `${directory}-${++probes}` }))
-    expect((await cache.forDirectory("/repo")).PATH).toBe("/repo-1")
-    await cache.refresh()
-    expect((await cache.forDirectory("/repo")).PATH).toBe("/repo-3")
   })
 })

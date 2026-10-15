@@ -179,33 +179,8 @@ export const resolveShellEnv = async (
   }
 }
 
-export const makeShellEnvCache = (resolve: (directory?: string) => Promise<NodeJS.ProcessEnv>) => {
+export const makeShellEnvCache = (resolve: () => Promise<NodeJS.ProcessEnv>) => {
   let latest: Promise<NodeJS.ProcessEnv> | undefined
-  const directories = new Map<string, NodeJS.ProcessEnv>()
-  const probing = new Map<string, Promise<NodeJS.ProcessEnv>>()
-  const probe = (directory: string): Promise<NodeJS.ProcessEnv> => {
-    const pending = probing.get(directory)
-    if (pending !== undefined) return pending
-    const next = resolve(directory)
-      .then((env) => {
-        directories.set(directory, env)
-        return env
-      })
-      .finally(() => probing.delete(directory))
-    probing.set(directory, next)
-    return next
-  }
-  const refresh = () => {
-    directories.clear()
-    return (latest = resolve())
-  }
-  return {
-    refresh,
-    current: () => latest ?? refresh(),
-    forDirectory: (directory: string): Promise<NodeJS.ProcessEnv> => {
-      const known = directories.get(directory)
-      const next = probe(directory)
-      return known === undefined ? next : Promise.resolve(known)
-    }
-  }
+  const refresh = () => (latest = resolve())
+  return { refresh, current: () => latest ?? refresh() }
 }
