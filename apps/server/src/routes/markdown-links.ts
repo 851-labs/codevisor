@@ -11,7 +11,8 @@ interface FoundLink extends MarkdownLink {
 }
 
 const inlineLinks =
-  /(!?)\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g
+  /(!?)\[((?:!\[[^\]\n]*\]\([^\s)]*\)|[^\]\n])*)\]\(\s*(?:<([^>\n]+)>|((?:[^\s()]|\([^\s()]*\))+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g
+const embeddedImages = /!\[([^\]\n]*)\]\([^\s)]*\)/g
 const autolinks = /<(https?:\/\/[^>\s]+)>/gi
 const bareLinks = /\bhttps?:\/\/[^\s<>`"'[\]{}|\\^]+/gi
 const wholeURL = /^\s*(https?:\/\/\S+)\s*$/i
@@ -61,7 +62,8 @@ export const markdownLinks = (source: string): ReadonlyArray<MarkdownLink> => {
     const end = match.index + match[0].length
     if (escaped(source, match.index) || inCode(match.index, end)) continue
     claimed.fill(1, match.index, end)
-    if (match[1] === "") add(match.index, match[3] ?? match[4]!, match[2])
+    if (match[1] === "")
+      add(match.index, match[3] ?? match[4]!, match[2]!.replace(embeddedImages, "$1"))
   }
   for (const match of source.matchAll(autolinks)) {
     const end = match.index + match[0].length

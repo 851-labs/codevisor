@@ -47,11 +47,8 @@ struct WorkspaceInspectorLinksView: View {
           }
         }
         Section("From Chats") {
-          if chatLinks.isEmpty {
-            Text(model.linksPhase == .loading ? "Loading…" : "No links in chats yet")
-              .foregroundStyle(.secondary)
-          }
-          ForEach(chatLinks) { link in
+          let links = chatLinks
+          ForEach(links) { link in
             row(
               title: link.title ?? Self.host(link.url),
               subtitle: link.title == nil ? Self.location(link.url) : Self.host(link.url),
@@ -59,10 +56,25 @@ struct WorkspaceInspectorLinksView: View {
             ) {
               WorkspaceInspectorSiteIcon(url: link.url, client: client)
             }
-            .onAppear {
-              guard link.id == chatLinks.last?.id else { return }
-              Task { await model.loadMoreLinks() }
+          }
+          if case let .failed(message) = model.linksPhase {
+            HStack {
+              Text("Couldn't load links: \(message)")
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+              Spacer()
+              Button("Try Again", action: onRetry)
             }
+          } else if model.hasMoreLinks {
+            ProgressView()
+              .controlSize(.small)
+              .frame(maxWidth: .infinity)
+              .task(id: "\(model.linksNextBefore ?? ""):\(model.linksPhase == .loaded)") {
+                await model.loadMoreLinks()
+              }
+          } else if links.isEmpty {
+            Text(model.linksPhase == .loading ? "Loading…" : "No links in chats yet")
+              .foregroundStyle(.secondary)
           }
         }
       }

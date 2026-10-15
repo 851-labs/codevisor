@@ -65,7 +65,11 @@ const replaceImages = (value: unknown, saved: ReadonlyMap<object, AttachmentRef>
   if (Array.isArray(value)) return value.map((element) => replaceImages(element, saved))
   if (!isRecord(value)) return value
   const attachment = saved.get(value)
-  if (attachment !== undefined) return { type: "image", attachment }
+  if (attachment !== undefined) {
+    return isRecord(value.source)
+      ? { ...value, source: { ...value.source, data: "" }, attachment }
+      : { ...value, data: "", attachment }
+  }
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => [key, replaceImages(child, saved)])
   )
