@@ -9,24 +9,32 @@ import SwiftUI
 
 final class TranscriptSendPillView: TranscriptSendPlatformView {
   let backgroundLayer = CALayer()
+  let tintLayer = CALayer()
   let shapeMask = CALayer()
 
-  var shapeLayers: [CALayer] { [backgroundLayer, shapeMask] }
+  var shapeLayers: [CALayer] { [backgroundLayer, tintLayer, shapeMask] }
 
-  var fill: CGColor? {
-    didSet { backgroundLayer.backgroundColor = fill }
+  private var fillLayers: [CALayer] { [backgroundLayer, tintLayer] }
+
+  func setFill(backdrop: CGColor, tint: CGColor) {
+    backgroundLayer.backgroundColor = backdrop
+    tintLayer.backgroundColor = tint
   }
 
   var hidesFill = false {
-    didSet { backgroundLayer.opacity = hidesFill ? 0 : 1 }
+    didSet {
+      for layer in fillLayers { layer.opacity = hidesFill ? 0 : 1 }
+    }
   }
 
   func revealFill() {
     guard hidesFill else { return }
     hidesFill = false
-    backgroundLayer.add(
-      TranscriptSendLayerAnimations.fade(from: 0, to: 1, duration: TranscriptSendMotion.crossfadeDuration),
-      forKey: "codevisor.send-fill")
+    for layer in fillLayers {
+      layer.add(
+        TranscriptSendLayerAnimations.fade(from: 0, to: 1, duration: TranscriptSendMotion.crossfadeDuration),
+        forKey: "codevisor.send-fill")
+    }
   }
 
   init(frame: CGRect, cornerRadius: CGFloat) {
@@ -44,6 +52,7 @@ final class TranscriptSendPillView: TranscriptSendPlatformView {
     }
     shapeMask.backgroundColor = CGColor(gray: 0, alpha: 1)
     transcriptSendLayer?.insertSublayer(backgroundLayer, at: 0)
+    transcriptSendLayer?.insertSublayer(tintLayer, above: backgroundLayer)
     transcriptSendLayer?.mask = shapeMask
   }
 

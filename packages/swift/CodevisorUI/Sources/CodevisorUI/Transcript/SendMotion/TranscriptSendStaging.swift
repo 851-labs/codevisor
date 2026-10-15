@@ -110,8 +110,9 @@ public final class TranscriptSendStaging {
     let pill = TranscriptSendPillView(
       frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect),
       cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: textView)))
-    pill.fill = Self.compositedColor(
-      bubble, over: UserBubbleBackground.transcriptBackdrop(for: theme), in: textView)
+    pill.setFill(
+      backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(for: theme), in: textView),
+      tint: Self.resolved(bubble, in: textView))
     glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
     pill.addSubview(glyphs)
     overlay.addSubview(pill)
@@ -208,30 +209,16 @@ public final class TranscriptSendStaging {
     #endif
   }
 
-  private static func compositedColor(
-    _ top: Color, over bottom: Color, in view: TranscriptSendPlatformView
-  ) -> CGColor {
-    func components(_ color: Color) -> [CGFloat] {
-      #if canImport(UIKit)
-        let resolved = UIColor(color).resolvedColor(with: view.traitCollection)
-        var (r, g, b, a) = (CGFloat(0), CGFloat(0), CGFloat(0), CGFloat(0))
-        resolved.getRed(&r, green: &g, blue: &b, alpha: &a)
-        return [r, g, b, a]
-      #else
-        var result: [CGFloat] = [0, 0, 0, 0]
-        view.effectiveAppearance.performAsCurrentDrawingAppearance {
-          let resolved = NSColor(color).usingColorSpace(.sRGB) ?? .clear
-          result = [resolved.redComponent, resolved.greenComponent, resolved.blueComponent, resolved.alphaComponent]
-        }
-        return result
-      #endif
-    }
-    let t = components(top)
-    let u = components(bottom)
-    let alpha = t[3] + u[3] * (1 - t[3])
-    guard alpha > 0 else { return CGColor(red: 0, green: 0, blue: 0, alpha: 0) }
-    func blend(_ index: Int) -> CGFloat { (t[index] * t[3] + u[index] * u[3] * (1 - t[3])) / alpha }
-    return CGColor(red: blend(0), green: blend(1), blue: blend(2), alpha: alpha)
+  private static func resolved(_ color: Color, in view: TranscriptSendPlatformView) -> CGColor {
+    #if canImport(UIKit)
+      return UIColor(color).resolvedColor(with: view.traitCollection).cgColor
+    #else
+      var resolved = CGColor(gray: 0, alpha: 0)
+      view.effectiveAppearance.performAsCurrentDrawingAppearance {
+        resolved = NSColor(color).cgColor
+      }
+      return resolved
+    #endif
   }
 
   public func hasStage(for session: ObjectIdentifier) -> Bool {
