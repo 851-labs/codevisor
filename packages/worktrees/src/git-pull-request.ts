@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 
+import { isRecord } from "@codevisor/api"
 import type { GitPullRequest, GitPullRequestChecks, GitPullRequestState } from "@codevisor/api"
 
 import { runGit } from "./git.js"
@@ -61,8 +62,8 @@ export const parseGitPullRequest = (json: string): GitPullRequest | null => {
   } catch {
     return null
   }
-  if (typeof value !== "object" || value === null) return null
-  const { number, title, state, isDraft, url, statusCheckRollup } = value as Record<string, unknown>
+  if (!isRecord(value)) return null
+  const { number, title, state, isDraft, url, statusCheckRollup } = value
   const normalizedState = typeof state === "string" ? states[state] : undefined
   if (
     typeof number !== "number" ||

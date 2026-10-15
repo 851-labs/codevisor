@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 
 import { isNewerVersion } from "./harness-update-sources.js"
+import { jsonField, jsonString } from "./json-fields.js"
 
 export const DEFAULT_GITHUB_REPOSITORY = "851-labs/codevisor"
 export const DEFAULT_STABLE_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/server/stable.json"
@@ -27,49 +28,29 @@ export const isNewerRelease = (
     ? candidate.buildNumber > current.buildNumber
     : isNewerVersion(candidate.version, current.version)
 
-type GitHubReleaseResponse = {
-  readonly tag_name?: unknown
-  readonly html_url?: unknown
-  readonly draft?: unknown
-  readonly prerelease?: unknown
-  readonly assets?: ReadonlyArray<{
-    readonly name?: unknown
-    readonly browser_download_url?: unknown
-  }>
-}
-
-type ServerManifest = {
-  readonly version?: unknown
-  readonly buildNumber?: unknown
-  readonly releasePageURL?: unknown
-  readonly targets?: Record<
-    string,
-    {
-      readonly archiveURL?: unknown
-      readonly checksumURL?: unknown
-    }
-  >
-}
+const isArray = (value: unknown): value is ReadonlyArray<unknown> => Array.isArray(value)
 
 const normalizedVersion = (value: unknown): string =>
   typeof value === "string" ? value.replace(/^v/, "").trim() : ""
 
 export const serverReleaseFromGitHub = (
-  body: GitHubReleaseResponse,
+  body: unknown,
   target: string
 ): ServerRelease | undefined => {
-  if (body.draft === true || body.prerelease === true) {
+  if (jsonField(body, "draft") === true || jsonField(body, "prerelease") === true) {
     return undefined
   }
-  const version = normalizedVersion(body.tag_name)
-  if (version.length === 0 || !Array.isArray(body.assets)) {
+  const version = normalizedVersion(jsonField(body, "tag_name"))
+  const assets = jsonField(body, "assets")
+  if (version.length === 0 || !isArray(assets)) {
     return undefined
   }
   const archiveName = `codevisor-server-${target}.tar.gz`
-  const assetURL = (name: string): string | undefined => {
-    const asset = body.assets?.find((candidate) => candidate.name === name)
-    return typeof asset?.browser_download_url === "string" ? asset.browser_download_url : undefined
-  }
+  const assetURL = (name: string): string | undefined =>
+    jsonString(
+      assets.find((candidate) => jsonField(candidate, "name") === name),
+      "browser_download_url"
+    )
   const archiveURL = assetURL(archiveName)
   if (archiveURL === undefined) {
     return undefined
@@ -78,7 +59,7 @@ export const serverReleaseFromGitHub = (
     version,
     archiveURL,
     checksumURL: assetURL(`${archiveName}.sha256`),
-    releasePageURL: typeof body.html_url === "string" ? body.html_url : undefined
+    releasePageURL: jsonString(body, "html_url")
   }
 }
 
@@ -102,27 +83,29 @@ export const fetchLatestGitHubServerRelease = async (options: {
   if (!response.ok) {
     throw new Error(`GitHub release lookup failed: HTTP ${response.status}`)
   }
-  return serverReleaseFromGitHub((await response.json()) as GitHubReleaseResponse, options.target)
+  return serverReleaseFromGitHub(await response.json(), options.target)
 }
 
 export const serverReleaseFromManifest = (
-  body: ServerManifest,
+  body: unknown,
   target: string
 ): ServerRelease | undefined => {
-  const version = normalizedVersion(body.version)
-  const candidate = body.targets?.[target]
-  if (version.length === 0 || typeof candidate?.archiveURL !== "string") {
+  const version = normalizedVersion(jsonField(body, "version"))
+  const candidate = jsonField(jsonField(body, "targets"), target)
+  const archiveURL = jsonString(candidate, "archiveURL")
+  if (version.length === 0 || archiveURL === undefined) {
     return undefined
   }
+  const buildNumber = jsonField(body, "buildNumber")
   return {
     version,
     buildNumber:
-      typeof body.buildNumber === "number" && Number.isSafeInteger(body.buildNumber)
-        ? body.buildNumber
+      typeof buildNumber === "number" && Number.isSafeInteger(buildNumber)
+        ? buildNumber
         : undefined,
-    archiveURL: candidate.archiveURL,
-    checksumURL: typeof candidate.checksumURL === "string" ? candidate.checksumURL : undefined,
-    releasePageURL: typeof body.releasePageURL === "string" ? body.releasePageURL : undefined
+    archiveURL,
+    checksumURL: jsonString(candidate, "checksumURL"),
+    releasePageURL: jsonString(body, "releasePageURL")
   }
 }
 
@@ -138,7 +121,7 @@ export const fetchStableServerRelease = async (options: {
   if (!response.ok) {
     throw new Error(`Stable server manifest lookup failed: HTTP ${response.status}`)
   }
-  return serverReleaseFromManifest((await response.json()) as ServerManifest, options.target)
+  return serverReleaseFromManifest(await response.json(), options.target)
 }
 
 export const fetchAlphaServerRelease = async (options: {
@@ -153,7 +136,7 @@ export const fetchAlphaServerRelease = async (options: {
   if (!response.ok) {
     throw new Error(`Alpha server manifest lookup failed: HTTP ${response.status}`)
   }
-  return serverReleaseFromManifest((await response.json()) as ServerManifest, options.target)
+  return serverReleaseFromManifest(await response.json(), options.target)
 }
 
 export const fetchLegacyServerRelease = async (options: {
@@ -169,9 +152,7 @@ export const fetchLegacyServerRelease = async (options: {
   if (!response.ok) {
     return undefined
   }
-  const version = normalizedVersion(
-    ((await response.json()) as { readonly version?: unknown }).version
-  )
+  const version = normalizedVersion(jsonField(await response.json(), "version"))
   if (version.length === 0) {
     return undefined
   }

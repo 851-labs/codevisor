@@ -2,6 +2,8 @@ import { realpathSync } from "node:fs"
 
 import type { InstallOrigin } from "@codevisor/agent-runtime"
 
+import { jsonField, jsonString } from "./json-fields.js"
+
 export interface LatestVersionResult {
   readonly latestVersion?: string
   readonly channel?: string
@@ -48,10 +50,7 @@ export const checkNpmLatest = async (
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)
     })
     if (!response.ok) return none
-    const document = (await response.json()) as {
-      readonly "dist-tags"?: Record<string, string>
-    }
-    const version = document["dist-tags"]?.[distTag]
+    const version = jsonField(jsonField(await response.json(), "dist-tags"), distTag)
     return typeof version === "string" && version.length > 0
       ? { channel: distTag, latestVersion: version }
       : none
@@ -65,11 +64,11 @@ export const checkPypiLatest = async (
   fetchImpl: FetchLike = fetch
 ): Promise<LatestVersionResult> => {
   try {
-    const document = (await fetchJson(
+    const document = await fetchJson(
       fetchImpl,
       `https://pypi.org/pypi/${encodeURIComponent(packageName)}/json`
-    )) as { readonly info?: { readonly version?: string } }
-    const version = document.info?.version
+    )
+    const version = jsonField(jsonField(document, "info"), "version")
     return typeof version === "string" && version.length > 0
       ? { channel: "stable", latestVersion: version }
       : none
@@ -83,22 +82,23 @@ export const checkBrewLatest = async (
   fetchImpl: FetchLike = fetch
 ): Promise<LatestVersionResult> => {
   try {
-    const document = (await fetchJson(
+    const document = await fetchJson(
       fetchImpl,
       `https://formulae.brew.sh/api/formula/${encodeURIComponent(formula)}.json`
-    )) as { readonly versions?: { readonly stable?: string } }
-    const stable = document.versions?.stable
+    )
+    const stable = jsonField(jsonField(document, "versions"), "stable")
     if (typeof stable === "string" && stable.length > 0) {
       return { channel: "stable", latestVersion: stable }
     }
   } catch {}
   try {
-    const document = (await fetchJson(
+    const document = await fetchJson(
       fetchImpl,
       `https://formulae.brew.sh/api/cask/${encodeURIComponent(formula)}.json`
-    )) as { readonly version?: string }
-    return typeof document.version === "string" && document.version.length > 0
-      ? { channel: "stable", latestVersion: document.version }
+    )
+    const version = jsonField(document, "version")
+    return typeof version === "string" && version.length > 0
+      ? { channel: "stable", latestVersion: version }
       : none
   } catch {
     return none
@@ -110,11 +110,11 @@ export const checkGithubLatest = async (
   fetchImpl: FetchLike = fetch
 ): Promise<LatestVersionResult> => {
   try {
-    const document = (await fetchJson(
+    const document = await fetchJson(
       fetchImpl,
       `https://api.github.com/repos/${repo}/releases/latest`
-    )) as { readonly tag_name?: string }
-    const version = (document.tag_name ?? "").replace(/^[^0-9]*/, "")
+    )
+    const version = (jsonString(document, "tag_name") ?? "").replace(/^[^0-9]*/, "")
     return version.length > 0 ? { channel: "stable", latestVersion: version } : none
   } catch {
     return none

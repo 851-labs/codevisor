@@ -1,6 +1,11 @@
+import { isBoolean, isNumber, isString, optional, recordOf, shape } from "./json-shape.ts"
+
 export const defaultFrameClockApps = ["com.codevisor.ScreenSharingRig", "com.apple.ScreenSharing"]
 export const frameClockModes = ["video", "scroll", "type", "still"] as const
 export type FrameClockMode = (typeof frameClockModes)[number]
+
+const isFrameClockMode = (value: string): value is FrameClockMode =>
+  frameClockModes.some((mode) => mode === value)
 
 export type FrameClockOptions = {
   hostSsh?: string
@@ -51,6 +56,35 @@ export type FrameClockSummary = {
   lags: Record<string, { p50Ms: number; p95Ms: number }>
 }
 
+const isClock = shape<NonNullable<FrameClockSummary["clock"]>>({
+  offsetMs: isNumber,
+  roundTripMs: isNumber
+})
+
+const isFrameClockApp = shape<FrameClockApp>({
+  window: optional(isString),
+  captures: optional(isNumber),
+  calibrated: optional(isBoolean),
+  updatesPerSecond: optional(isNumber),
+  hostFramesShown: optional(isNumber),
+  gapP50Ms: optional(isNumber),
+  gapP95Ms: optional(isNumber),
+  gapMaxMs: optional(isNumber),
+  tornFraction: optional(isNumber),
+  unreadableFraction: optional(isNumber),
+  failure: optional(isString),
+  receiveMbitPerSecond: optional(isNumber),
+  imageAgeP50Ms: optional(isNumber),
+  imageAgeP95Ms: optional(isNumber)
+})
+
+export const isFrameClockSummary = shape<FrameClockSummary>({
+  seconds: isNumber,
+  clock: optional(isClock),
+  apps: recordOf(isFrameClockApp),
+  lags: recordOf(shape<{ p50Ms: number; p95Ms: number }>({ p50Ms: isNumber, p95Ms: isNumber }))
+})
+
 export function parseFrameClockArguments(argv: string[]): FrameClockOptions | "help" {
   if (argv.includes("--help")) return "help"
   const options: FrameClockOptions = { apps: [], seconds: 60, mode: "video", port: 8765 }
@@ -69,10 +103,10 @@ export function parseFrameClockArguments(argv: string[]): FrameClockOptions | "h
         options.port = positive(key, value)
         break
       case "--mode":
-        if (!(frameClockModes as readonly string[]).includes(value)) {
+        if (!isFrameClockMode(value)) {
           throw new Error(`--mode is one of ${frameClockModes.join(", ")}`)
         }
-        options.mode = value as FrameClockMode
+        options.mode = value
         break
       case "--out":
         options.out = value
