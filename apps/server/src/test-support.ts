@@ -357,35 +357,38 @@ export const readSseEventsOfKind = async (
   count: number
 ): Promise<ReadonlyArray<unknown>> => {
   const controller = new AbortController()
-  const response = await fetch(`${server.url}/v1/events`, { signal: controller.signal })
-  const reader = response.body?.getReader()
-  if (reader === undefined) {
-    throw new Error("Missing response body")
-  }
-  let buffer = ""
-  const events: Array<unknown> = []
-  while (events.length < count) {
-    const next = await reader.read()
-    if (next.done) break
-    buffer += new TextDecoder().decode(next.value)
-    let index = buffer.indexOf("\n\n")
-    while (index !== -1) {
-      const chunk = buffer.slice(0, index)
-      buffer = buffer.slice(index + 2)
-      const data = chunk
-        .split("\n")
-        .filter((line) => line.startsWith("data: "))
-        .map((line) => line.slice("data: ".length))
-        .join("\n")
-      if (data.length > 0) {
-        const parsed: unknown = JSON.parse(data)
-        if (field(parsed, "kind") === kind) events.push(parsed)
-      }
-      index = buffer.indexOf("\n\n")
+  try {
+    const response = await fetch(`${server.url}/v1/events`, { signal: controller.signal })
+    const reader = response.body?.getReader()
+    if (reader === undefined) {
+      throw new Error("Missing response body")
     }
+    let buffer = ""
+    const events: Array<unknown> = []
+    while (events.length < count) {
+      const next = await reader.read()
+      if (next.done) break
+      buffer += new TextDecoder().decode(next.value)
+      let index = buffer.indexOf("\n\n")
+      while (index !== -1) {
+        const chunk = buffer.slice(0, index)
+        buffer = buffer.slice(index + 2)
+        const data = chunk
+          .split("\n")
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice("data: ".length))
+          .join("\n")
+        if (data.length > 0) {
+          const parsed: unknown = JSON.parse(data)
+          if (field(parsed, "kind") === kind) events.push(parsed)
+        }
+        index = buffer.indexOf("\n\n")
+      }
+    }
+    return events
+  } finally {
+    controller.abort()
   }
-  controller.abort()
-  return events
 }
 
 const quietKinds: ReadonlySet<unknown> = new Set(["keepalive", "navigation.changed"])
@@ -396,33 +399,36 @@ export const readSseEvents = async (
   since?: number | string
 ): Promise<ReadonlyArray<unknown>> => {
   const controller = new AbortController()
-  const eventsUrl =
-    since === undefined ? `${server.url}/v1/events` : `${server.url}/v1/events?since=${since}`
-  const response = await fetch(eventsUrl, { signal: controller.signal })
-  const reader = response.body?.getReader()
-  if (reader === undefined) {
-    throw new Error("Missing response body")
-  }
-  let buffer = ""
-  const events: Array<unknown> = []
-  while (events.length < expectedCount) {
-    const next = await reader.read()
-    if (next.done) {
-      break
+  try {
+    const eventsUrl =
+      since === undefined ? `${server.url}/v1/events` : `${server.url}/v1/events?since=${since}`
+    const response = await fetch(eventsUrl, { signal: controller.signal })
+    const reader = response.body?.getReader()
+    if (reader === undefined) {
+      throw new Error("Missing response body")
     }
-    buffer += new TextDecoder().decode(next.value)
-    const chunks = buffer.split("\n\n")
-    buffer = chunks.pop() ?? ""
-    for (const chunk of chunks) {
-      const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "))
-      if (dataLine !== undefined) {
-        const event: unknown = JSON.parse(dataLine.slice("data: ".length))
-        if (!quietKinds.has(field(event, "kind"))) events.push(event)
+    let buffer = ""
+    const events: Array<unknown> = []
+    while (events.length < expectedCount) {
+      const next = await reader.read()
+      if (next.done) {
+        break
+      }
+      buffer += new TextDecoder().decode(next.value)
+      const chunks = buffer.split("\n\n")
+      buffer = chunks.pop() ?? ""
+      for (const chunk of chunks) {
+        const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "))
+        if (dataLine !== undefined) {
+          const event: unknown = JSON.parse(dataLine.slice("data: ".length))
+          if (!quietKinds.has(field(event, "kind"))) events.push(event)
+        }
       }
     }
+    return events
+  } finally {
+    controller.abort()
   }
-  controller.abort()
-  return events
 }
 
 export const readWebSocketEvents = async (
