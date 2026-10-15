@@ -19,7 +19,7 @@ export async function getPageMarkdown(slugs: string[], pageUrl: string) {
   }
 
   const props = page.data.getOpenAPIPageProps()
-  const document = props.payload.bundled
+  const document = asRecord(props.payload.bundled) ?? {}
   const sections = [heading]
 
   if (page.data.description) sections.push(page.data.description)
