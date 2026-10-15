@@ -9,7 +9,7 @@ import type {
   SetGoalUpdate,
   ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-import type { SessionGoal } from "@codevisor/api"
+import type { SessionConfigOption, SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
 
 export const acpClientCapabilities = (): acp.ClientCapabilities => ({
@@ -55,7 +55,7 @@ export interface AcpAgentConnection {
     sessionId: string,
     configId: string,
     value: string
-  ) => Effect.Effect<unknown, AgentRuntimeError>
+  ) => Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError>
   readonly setGoal?: (
     sessionId: string,
     update: SetGoalUpdate

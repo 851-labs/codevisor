@@ -10,6 +10,7 @@ import {
   type QuestionAnswer,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 
 import {
@@ -78,20 +79,18 @@ export interface AcpSdkConnectionOptions {
 }
 
 /* v8 ignore start */
-const isAuthenticationRequired = (cause: unknown): boolean => {
-  const error = cause as { code?: number; message?: string } | undefined
-  return (
-    error?.code === -32000 ||
-    error?.message?.toLowerCase().includes("authentication required") === true
-  )
-}
+const isAuthenticationRequired = (cause: unknown): boolean =>
+  isRecord(cause) &&
+  (cause.code === -32000 ||
+    (typeof cause.message === "string" &&
+      cause.message.toLowerCase().includes("authentication required")))
 
-const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
+const mcpServers = (toolGateway: ToolGatewayConfig | undefined): Array<acp.McpServer> =>
   toolGateway === undefined
     ? []
     : [
         {
-          type: "http" as const,
+          type: "http",
           name: toolGateway.name,
           url: toolGateway.url,
           headers: [{ name: "Authorization", value: `Bearer ${toolGateway.bearerToken}` }]
@@ -192,18 +191,12 @@ export const sdkConnection = (
         const params = { cwd, mcpServers: mcpServers(toolGateway) }
         let response: NewSessionResponse
         try {
-          response = (await connection.agent.request(
-            acp.methods.agent.session.new,
-            params
-          )) as NewSessionResponse
+          response = await connection.agent.request(acp.methods.agent.session.new, params)
         } catch (cause) {
           const external = auth.methods.find((method) => method.external === true)
           if (external === undefined || !isAuthenticationRequired(cause)) throw cause
           await connection.agent.request(acp.methods.agent.authenticate, { methodId: external.id })
-          response = (await connection.agent.request(
-            acp.methods.agent.session.new,
-            params
-          )) as NewSessionResponse
+          response = await connection.agent.request(acp.methods.agent.session.new, params)
         }
         const metadata = await withSkills(
           response.sessionId,
@@ -220,11 +213,11 @@ export const sdkConnection = (
       }),
     loadSession: (sessionId, cwd, toolGateway, skillListTimeoutMs) =>
       adapterPromise("loadSession", async () => {
-        const response = (await connection.agent.request(acp.methods.agent.session.load, {
+        const response = await connection.agent.request(acp.methods.agent.session.load, {
           cwd,
           mcpServers: mcpServers(toolGateway),
           sessionId
-        })) as AcpSessionMetadataResponse
+        })
         const metadata = await withSkills(
           sessionId,
           sessionMetadata(sessionId, response),

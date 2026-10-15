@@ -8,7 +8,7 @@ describe("@codevisor/agent-runtime skills", () => {
   it("keeps a session's metadata on its latest skills update", async () => {
     let emit: RuntimeEmit | undefined
     const handle = {
-      cancel: Effect.void,
+      cancel: Effect.succeed({ runtimeState: "reusable" as const }),
       close: Effect.void,
       prompt: () => Effect.succeed({ stopReason: "end_turn" }),
       setConfigOption: () => Effect.succeed([]),
@@ -29,7 +29,7 @@ describe("@codevisor/agent-runtime skills", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: provider as never }
+      providers: { claude: provider }
     })
     await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
     const skills = { invocationPrefix: "/", skills: [{ invocation: "/review", name: "review" }] }

@@ -61,7 +61,7 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
 
     const inspected = await run(
@@ -107,7 +107,7 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
 
     const inspected = await run(
@@ -144,7 +144,7 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
 
     expect(runtime.reconcileConfigValue("claude-code", option, "pro-legacy")).toBe("pro")

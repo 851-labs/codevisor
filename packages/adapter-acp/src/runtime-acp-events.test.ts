@@ -14,6 +14,7 @@ import {
   FakeConnection,
   makeAcpAgentRuntime,
   makeConnector,
+  payloadString,
   run
 } from "./test-support.js"
 
@@ -47,9 +48,9 @@ describe("@codevisor/agent-runtime", () => {
       kind: "session.updated",
       payload: { turnState: "ended", initiatedBy: "user", stopReason: "end_turn" }
     })
-    const startedTurnId = (events[0]!.payload as { turnId?: string }).turnId
+    const startedTurnId = payloadString(events[0]!, "turnId")
     expect(startedTurnId).toBeTruthy()
-    expect((events[3]!.payload as { turnId?: string }).turnId).toBe(startedTurnId)
+    expect(payloadString(events[3]!, "turnId")).toBe(startedTurnId)
 
     expect(connector.connections[0]?.prompts).toEqual([[sessionId, "hello"]])
 
@@ -145,9 +146,10 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.prompt(sessionId, "flights"))
 
     const phases = events.flatMap((event) => {
-      const payload = event.payload as { messageId?: string; phase?: string; toolCallId?: string }
-      if (payload.phase !== undefined) return [`${payload.messageId}:${payload.phase}`]
-      return payload.toolCallId === undefined ? [] : [payload.toolCallId]
+      const phase = payloadString(event, "phase")
+      if (phase !== undefined) return [`${payloadString(event, "messageId")}:${phase}`]
+      const toolCallId = payloadString(event, "toolCallId")
+      return toolCallId === undefined ? [] : [toolCallId]
     })
     expect(phases).toEqual(["m1:commentary", "t1", "t2", "m2:commentary", "t3"])
   })
@@ -193,7 +195,7 @@ describe("@codevisor/agent-runtime", () => {
       runtime.createAgentSession("gemini", "/tmp/project", async (event) => {
         entered.resolve()
         await release.promise
-        seen.push((event.payload as { text?: string }).text ?? "lifecycle")
+        seen.push(payloadString(event, "text") ?? "lifecycle")
       })
     )
     const connection = connector.connections[0]
@@ -247,7 +249,9 @@ describe("@codevisor/agent-runtime", () => {
       kind: "session.updated",
       payload: { configId: "model", value: "gpt-5" }
     })
-    expect(configOptions).toEqual([{ currentValue: "gpt-5", id: "model" }])
+    expect(configOptions).toEqual([
+      { currentValue: "gpt-5", id: "model", name: "model", options: [] }
+    ])
   })
 
   it("fails goal calls on harnesses without goal support", async () => {
@@ -334,7 +338,7 @@ describe("@codevisor/agent-runtime", () => {
     const events: Array<RuntimeEvent> = []
     let capturedEmit: RuntimeEmit | undefined
     const handle = {
-      cancel: Effect.void,
+      cancel: Effect.succeed({ runtimeState: "reusable" as const }),
       close: Effect.void,
       prompt: () => Effect.succeed({ stopReason: "end_turn" }),
       setConfigOption: () => Effect.succeed([]),
@@ -368,7 +372,7 @@ describe("@codevisor/agent-runtime", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
     const sessionId = await run(
       runtime.createAgentSession("claude-code", "/tmp/project", (event) => {

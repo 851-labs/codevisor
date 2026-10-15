@@ -1,4 +1,4 @@
-import type { RuntimeEmit, RuntimeEvent } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, type RuntimeEmit, type RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
@@ -68,7 +68,7 @@ describe("agent runtime account handoff", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
     await run(
       runtime.createAgentSession(
@@ -135,7 +135,9 @@ describe("agent runtime account handoff", () => {
     })
     const initialHandle = {
       cancel: Effect.succeed({ runtimeState: "reusable" as const }),
-      close: Effect.fail(new Error("expected retired close failure")),
+      close: Effect.fail(
+        new AgentRuntimeError({ message: "expected retired close failure", operation: "close" })
+      ),
       prompt: () => Effect.succeed({ stopReason: "initial" }),
       setConfigOption: () => Effect.succeed([]),
       setMode: () => Effect.void
@@ -170,7 +172,7 @@ describe("agent runtime account handoff", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
     await run(
       runtime.createAgentSession(

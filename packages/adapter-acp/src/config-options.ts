@@ -1,17 +1,16 @@
 import type {
   SessionConfigOption as AcpSessionConfigOption,
-  SessionConfigSelectGroup as AcpSessionConfigSelectGroup,
-  SessionConfigSelectOption as AcpSessionConfigSelectOption,
   SessionMode as AcpSessionMode,
   SessionModeState as AcpSessionModeState
 } from "@agentclientprotocol/sdk"
 import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
-import type {
-  CanonicalModeId,
-  SessionConfigOption,
-  SessionConfigSelectGroup,
-  SessionConfigSelectOption,
-  SessionModeState
+import {
+  isPlainRecord,
+  type CanonicalModeId,
+  type SessionConfigOption,
+  type SessionConfigSelectGroup,
+  type SessionConfigSelectOption,
+  type SessionModeState
 } from "@codevisor/api"
 
 export interface AcpSessionMetadataResponse {
@@ -66,60 +65,79 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
   })
 })
 
-const conciseThoughtLevelName = (name: string, category: string | null | undefined): string => {
+const conciseThoughtLevelName = (name: string, category: string | undefined): string => {
   if (category !== "thought_level") return name
   const withoutPrefix = name.replace(/^(?:Thinking|Reasoning):\s*/i, "").trim()
   const withoutEffort = withoutPrefix.replace(/\s+effort$/i, "").trim()
   return withoutEffort === "" ? name : withoutEffort
 }
 
+const optionalText = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
+
+const list = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : [])
+
 export const normalizeAcpConfigOptions = (
-  options: ReadonlyArray<AcpSessionConfigOption>
+  options: ReadonlyArray<unknown>
 ): ReadonlyArray<SessionConfigOption> =>
   options.flatMap((option) => {
-    if (option.type !== "select" || typeof option.currentValue !== "string") {
+    if (
+      !isPlainRecord(option) ||
+      option.type !== "select" ||
+      typeof option.id !== "string" ||
+      typeof option.name !== "string" ||
+      typeof option.currentValue !== "string"
+    ) {
       return []
     }
+    const category = optionalText(option.category)
+    const description = optionalText(option.description)
     return [
       {
         id: option.id,
-        name: conciseThoughtLevelName(option.name, option.category),
-        ...(option.description === undefined || option.description === null
-          ? {}
-          : { description: option.description }),
-        ...(option.category === undefined || option.category === null
-          ? {}
-          : { category: option.category }),
+        name: conciseThoughtLevelName(option.name, category),
+        ...(description === undefined ? {} : { description }),
+        ...(category === undefined ? {} : { category }),
         currentValue: option.currentValue,
-        options: normalizeSelectOptions(option.options, option.category)
+        options: normalizeSelectOptions(list(option.options), category)
       }
     ]
   })
 
 const normalizeSelectOptions = (
-  options: ReadonlyArray<AcpSessionConfigSelectOption> | ReadonlyArray<AcpSessionConfigSelectGroup>,
-  category: string | null | undefined
+  options: ReadonlyArray<unknown>,
+  category: string | undefined
 ): ReadonlyArray<SessionConfigSelectOption> | ReadonlyArray<SessionConfigSelectGroup> => {
   const first = options[0]
-  if (first !== undefined && "group" in first) {
-    return (options as ReadonlyArray<AcpSessionConfigSelectGroup>).map((group) => ({
-      group: group.group,
-      name: group.name,
-      options: group.options.map((option) => normalizeSelectOption(option, category))
-    }))
+  if (isPlainRecord(first) && "group" in first) {
+    return options.flatMap((group) =>
+      isPlainRecord(group) && typeof group.group === "string" && typeof group.name === "string"
+        ? [
+            {
+              group: group.group,
+              name: group.name,
+              options: normalizeSelectOptionList(list(group.options), category)
+            }
+          ]
+        : []
+    )
   }
-  return (options as ReadonlyArray<AcpSessionConfigSelectOption>).map((option) =>
-    normalizeSelectOption(option, category)
-  )
+  return normalizeSelectOptionList(options, category)
 }
 
-const normalizeSelectOption = (
-  option: AcpSessionConfigSelectOption,
-  category: string | null | undefined
-): SessionConfigSelectOption => ({
-  value: option.value,
-  name: conciseThoughtLevelName(option.name, category),
-  ...(option.description === undefined || option.description === null
-    ? {}
-    : { description: option.description })
-})
+const normalizeSelectOptionList = (
+  options: ReadonlyArray<unknown>,
+  category: string | undefined
+): ReadonlyArray<SessionConfigSelectOption> =>
+  options.flatMap((option) => {
+    if (!isPlainRecord(option) || typeof option.value !== "string") return []
+    if (typeof option.name !== "string") return []
+    const description = optionalText(option.description)
+    return [
+      {
+        value: option.value,
+        name: conciseThoughtLevelName(option.name, category),
+        ...(description === undefined ? {} : { description })
+      }
+    ]
+  })

@@ -126,10 +126,9 @@ export const makeStdioAcpConnectorWithOptions = (
         })
         return new Promise<Response>((resolve) => {
           pendingQuestions.set(questionId, {
-            cancelledResponse: question.cancelledResponse,
+            answer: (answer) => resolve(question.responseFor(answer)),
+            cancel: () => resolve(question.cancelledResponse),
             questions: question.questions,
-            resolve: (response) => resolve(response as Response),
-            responseFor: question.responseFor,
             sessionId: question.sessionId
           })
         })
@@ -173,13 +172,10 @@ export const makeStdioAcpConnectorWithOptions = (
         extension?.configureClientApp
       ).connect(
         acp.ndJsonStream(
-          Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+          Writable.toWeb(child.stdin),
           extension?.rewriteAgentLine === undefined
-            ? (Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>)
-            : rewriteAgentLines(
-                Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-                extension.rewriteAgentLine
-              )
+            ? byteStream(child.stdout)
+            : rewriteAgentLines(byteStream(child.stdout), extension.rewriteAgentLine)
         )
       )
       const answerQuestion = async (
@@ -192,7 +188,7 @@ export const makeStdioAcpConnectorWithOptions = (
           throw new Error(`No pending question: ${questionId}`)
         }
         pendingQuestions.delete(questionId)
-        pending.resolve(pending.responseFor(answer))
+        pending.answer(answer)
         emitQuestionResolved(
           questionId,
           pending,
@@ -204,7 +200,7 @@ export const makeStdioAcpConnectorWithOptions = (
         for (const [questionId, pending] of pendingQuestions) {
           if (sessionId !== undefined && pending.sessionId !== sessionId) continue
           pendingQuestions.delete(questionId)
-          pending.resolve(pending.cancelledResponse)
+          pending.cancel()
           emitQuestionResolved(questionId, pending, "cancelled", undefined)
         }
       }
@@ -262,9 +258,7 @@ export const makeStdioAcpConnectorWithOptions = (
             id: method.id,
             name: method.name,
             ...(method.description == null ? {} : { description: method.description }),
-            ...((method as { _meta?: Record<string, unknown> })._meta?.external_provider === true
-              ? { external: true }
-              : {})
+            ...(method._meta?.external_provider === true ? { external: true } : {})
           })),
           canLogout: initialized?.agentCapabilities?.auth?.logout != null
         },
@@ -272,9 +266,7 @@ export const makeStdioAcpConnectorWithOptions = (
           ? {}
           : { customization: extension.sdkConnectionCustomization })
       })
-      const reportedInfo = (
-        initialized as { agentInfo?: { name?: string; version?: string } } | undefined
-      )?.agentInfo
+      const reportedInfo = initialized?.agentInfo
       const withModes = Effect.map((metadata: AgentSessionMetadata) => {
         permissions.sessionModes(metadata.sessionId, metadata.modes)
         return metadata
@@ -299,6 +291,19 @@ export const makeStdioAcpConnectorWithOptions = (
       }
     })
 })
+
+const byteStream = (source: Readable): ReadableStream<Uint8Array> => {
+  const reader = Readable.toWeb(source).getReader()
+  return new ReadableStream<Uint8Array>({
+    pull: async (controller) => {
+      const { done, value } = await reader.read()
+      if (done) controller.close()
+      else if (value instanceof Uint8Array) controller.enqueue(value)
+      else controller.error(new TypeError("ACP agent stdout produced a non-byte chunk"))
+    },
+    cancel: (reason) => reader.cancel(reason)
+  })
+}
 
 const promiseWithTimeout = <A>(
   promise: Promise<A>,
