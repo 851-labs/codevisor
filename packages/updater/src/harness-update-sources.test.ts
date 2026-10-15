@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it, vi } from "vitest"
@@ -229,6 +229,11 @@ describe("detectInstallOrigin", () => {
       expect(detectInstallOrigin("/srv/.tool/bin/tool", { realpath: (path) => path })).toBe(
         "unknown"
       )
+      expect(
+        detectInstallOrigin(join(homedir(), ".opencode", "bin", "opencode"), {
+          realpath: (path) => path
+        })
+      ).toBe("curl")
     } finally {
       vi.unstubAllEnvs()
       rmSync(realHome, { force: true, recursive: true })

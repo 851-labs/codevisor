@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs"
+import { homedir } from "node:os"
 
 import type { InstallOrigin } from "@codevisor/agent-runtime"
 
@@ -141,7 +142,8 @@ export const detectInstallOrigin = (
     return "brew"
   }
   if (/\.app\//.test(real)) return "appBundle"
-  const home = options.home ?? process.env.HOME ?? ""
+  const envHome = process.env.HOME
+  const home = options.home ?? (envHome === undefined || envHome === "" ? homedir() : envHome)
   if (home.length > 0 && real.startsWith(`${home}/`)) {
     return /\/\.[^/]+\//.test(real.slice(home.length)) ? "curl" : "standalone"
   }

@@ -118,7 +118,7 @@ describe("harness lifecycle install/update execution", () => {
     })
 
     await lifecycle.beginInstall("fake-cli", "npm")
-    processes[0]?.emitOutput("npm ERR! registry unreachable\n")
+    processes[0]?.emitOutput("\u001b[31mnpm ERR! registry unreachable\u001b[0m\n")
     const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(1)
     await settled
@@ -127,7 +127,7 @@ describe("harness lifecycle install/update execution", () => {
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli")
     ])
     expect(decorated[0]?.lifecycle).toMatchObject({
-      error: expect.stringContaining("registry unreachable"),
+      error: "Exited with status 1\nnpm ERR! registry unreachable",
       phase: "failed",
       terminalId: "terminal-1"
     })

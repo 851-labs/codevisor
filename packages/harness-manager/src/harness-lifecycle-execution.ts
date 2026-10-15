@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util"
+
 import { locateExecutableOnPath, type HarnessDefinition } from "@codevisor/agent-runtime"
 import type { HarnessInstallMethod, HarnessLifecycleState } from "@codevisor/api"
 import { applyAppBundleSwap, isNewerVersion } from "@codevisor/updater"
@@ -137,7 +139,7 @@ export const makeHarnessOperationRunner = (
           } catch (cause) {
             setOperation(options.harnessId, {
               error:
-                `${cause instanceof Error ? cause.message : String(cause)}\n${outputTail.trim()}`.trim(),
+                `${cause instanceof Error ? cause.message : String(cause)}\n${stripVTControlCharacters(outputTail).trim()}`.trim(),
               phase: "failed",
               terminalId: handle.terminalId,
               ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
@@ -153,7 +155,7 @@ export const makeHarnessOperationRunner = (
           ? `Timed out after ${Math.round(operationTimeoutMs / 60_000)} minutes`
           : `Exited with status ${exitCode ?? "unknown"}`
         setOperation(options.harnessId, {
-          error: `${reason}\n${outputTail.trim()}`.trim(),
+          error: `${reason}\n${stripVTControlCharacters(outputTail).trim()}`.trim(),
           phase: "failed",
           terminalId: handle.terminalId,
           ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
