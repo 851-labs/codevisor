@@ -37,7 +37,14 @@ export const handleAssistantMessage = (
     if (prose !== undefined) session.subagentLastTexts.set(parentId, prose)
   }
   emitAssistantContent(session, content, parentId, messageId, alreadyStreamed, readFile)
-  emitUnannouncedAssistantReply(session, content, parentId, messageId, isErrorReply)
+  emitUnannouncedAssistantReply(
+    session,
+    content,
+    parentId,
+    messageId,
+    isErrorReply,
+    inner.stop_reason
+  )
 }
 
 const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessage): boolean => {
@@ -156,11 +163,16 @@ const emitAssistantTool = (
   })
 }
 
+const replyPhase = (stopReason: unknown): "commentary" | "final" | undefined =>
+  stopReason === "end_turn" ? "final" : stopReason === "tool_use" ? "commentary" : undefined
+
 const emitAssistantReply = (
   session: ClaudeSession,
   content: ReadonlyArray<unknown>,
-  messageId: string
+  messageId: string,
+  stopReason: unknown
 ): void => {
+  const phase = replyPhase(stopReason)
   const prose = messageProse(content)
   if (settleForkedCommands(session, prose)) {
     session.forkedCommandReplyPending = true
@@ -170,6 +182,7 @@ const emitAssistantReply = (
       payload: {
         content: { text: prose, type: "text" },
         messageId,
+        ...(phase === undefined ? {} : { phase }),
         sessionUpdate: "agent_message_chunk"
       },
       subjectId: session.key
@@ -209,7 +222,8 @@ const emitUnannouncedAssistantReply = (
   content: ReadonlyArray<unknown>,
   parentId: string | undefined,
   messageId: string | undefined,
-  isErrorReply: boolean
+  isErrorReply: boolean,
+  stopReason: unknown
 ): void => {
   if (
     parentId === undefined &&
@@ -217,6 +231,6 @@ const emitUnannouncedAssistantReply = (
     messageId !== session.currentMessageId &&
     !isErrorReply
   ) {
-    emitAssistantReply(session, content, messageId)
+    emitAssistantReply(session, content, messageId, stopReason)
   }
 }

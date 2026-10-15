@@ -44,8 +44,8 @@ struct TranscriptWorkedRowsVisibilityTests {
     #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
   }
 
-  @Test("A collapsed live section reports the text streams it hides, and none once opened")
-  func hiddenLiveStreams() {
+  @Test("A live section stays open until its turn ends, even when its disclosure was collapsed")
+  func liveSectionStaysOpen() {
     let messageID = UUID()
     let message = AssistantMessage(
       id: messageID,
@@ -70,8 +70,8 @@ struct TranscriptWorkedRowsVisibilityTests {
         rows, disclosure: store, activeItem: .assistant(message), runningSubagentRunToolCallIDs: [])
     }
 
-    #expect(present().hiddenStreamIDs == liveStreams)
-    store.setExpanded(.turn(messageID), true)
+    store.setExpanded(.turn(messageID), false)
+    #expect(present().rows.contains(where: isWorkedContent))
     #expect(present().hiddenStreamIDs.isEmpty)
   }
 

@@ -186,6 +186,12 @@ public struct AssistantTurn: Sendable, Equatable {
   }
 
   public var finalTextIndex: Int? {
+    guard let index = responseCandidateIndex else { return nil }
+    guard isGenerating, case let .text(id, _) = entries[index], textPhases[id] != .final else { return index }
+    return entries[(index + 1)...].contains { !$0.isBlankText } ? nil : index
+  }
+
+  var responseCandidateIndex: Int? {
     entries.indices.reversed().first { index in
       let entry = entries[index]
       guard case let .text(id, _) = entry, !entry.isBlankText else { return false }
