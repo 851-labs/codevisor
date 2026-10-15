@@ -4,10 +4,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest"
 
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
-import { expectArray, expectRecord, expectString } from "./unknown-values.js"
+import { expectArray, expectRecord, expectString, recordOrUndefined } from "./unknown-values.js"
 
 const value = (result: CallToolResult): unknown => {
   const message = result.content
@@ -143,15 +144,25 @@ describe("Browser live preview across tabs", () => {
 describe("Browser tab cleanup", () => {
   it("starts with no page and leaves no agent tab or popup after the turn", async () => {
     const context = { sessionId: "cleanup", projectId: "cleanup" }
+    const cdp = observeCdp()
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+    })
     const tabs = async () => tabsIn(await provider.invoke(context, "tabs", { action: "list" }))
     value(await provider.invoke(context, "use_backend", { backend: "managed" }))
     expect(await tabs()).toEqual([])
 
-    value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` }))
+    const opened = tabsIn(
+      await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` })
+    )
+    const openerId = expectString(opened.find((tab) => tab.selected === true)?.id, "Selected tab")
+    const popup = cdp.event("Target.targetCreated", (params) => {
+      const info = recordOrUndefined(params.targetInfo)
+      return info?.type === "page" && info.openerId === openerId
+    })
     value(await provider.invoke(context, "playwright.click", { locator: { css: "#open" } }))
-    let opened = await tabs()
-    for (let attempt = 0; opened.length < 2 && attempt < 40; attempt += 1) opened = await tabs()
-    expect(opened).toHaveLength(2)
+    await popup
+    expect(await tabs()).toHaveLength(2)
 
     await provider.finishTurn?.("cleanup")
     expect(await tabs()).toEqual([])

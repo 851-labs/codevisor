@@ -167,19 +167,26 @@ export class CdpConnection {
       return
     }
     const message = recordOrEmpty(parsed)
-    if (typeof message.id === "number") {
-      const pending = this.#pending.get(message.id)
-      if (pending === undefined) return
-      this.#pending.delete(message.id)
-      clearTimeout(pending.timer)
-      if (message.error !== undefined) {
-        const error = recordOrEmpty(message.error)
-        const summary = typeof error.message === "string" ? error.message : "Browser command failed"
-        const detail = typeof error.data === "string" ? `: ${error.data}` : ""
-        pending.reject(new Error(`${summary}${detail}`))
-      } else pending.resolve(message.result ?? {})
-      return
-    }
+    if (this.#settleResponse(message)) return
+    this.#dispatchEvent(message)
+  }
+
+  #settleResponse(message: Record<string, unknown>): boolean {
+    if (typeof message.id !== "number") return false
+    const pending = this.#pending.get(message.id)
+    if (pending === undefined) return true
+    this.#pending.delete(message.id)
+    clearTimeout(pending.timer)
+    if (message.error !== undefined) {
+      const error = recordOrEmpty(message.error)
+      const summary = typeof error.message === "string" ? error.message : "Browser command failed"
+      const detail = typeof error.data === "string" ? `: ${error.data}` : ""
+      pending.reject(new Error(`${summary}${detail}`))
+    } else pending.resolve(message.result ?? {})
+    return true
+  }
+
+  #dispatchEvent(message: Record<string, unknown>): void {
     if (typeof message.method !== "string") return
     const params = recordOrEmpty(message.params)
     const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined
