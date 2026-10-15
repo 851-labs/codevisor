@@ -9,7 +9,10 @@ extension SessionContainerView {
     case .browser: openCenterTab { $0.convertNewTabPane(id: $1, to: .browser) }
     case .terminal: openCenterTab { $0.convertNewTabPane(id: $1, to: .terminal) }
     case .files: openCenterTab { $0.openFiles(id: $1) }
-    case let .pullRequest(url):
+    case let .browserPane(paneId):
+      store.selectDestination(.pane(paneId), in: selectedWorkspace.id)
+      focusSelectedCenterPane()
+    case let .pullRequest(url), let .link(url):
       let id = UUID()
       openCenterTab(
         with: PaneDescriptorState(

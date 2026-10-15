@@ -17,6 +17,7 @@ import {
 import {
   stringQuery,
   booleanQuery,
+  integerQuery,
   cloudConnectBody,
   apiTool,
   type CodevisorApiToolSpec
@@ -299,6 +300,30 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "GET",
     "/v1/workspaces/:workspaceId/git",
     { query: [booleanQuery("pullRequest", "Also look up the branch's pull request.")] }
+  ),
+  apiTool(
+    "workspaces.photos",
+    "List images from a workspace's chats, newest first: attached images, generated images and tool screenshots, each once. Pass nextBefore back as before for the next page.",
+    "GET",
+    "/v1/workspaces/:workspaceId/photos",
+    {
+      query: [
+        stringQuery("before", "nextBefore from the previous page."),
+        integerQuery("limit", "Photos per page, 1-200 (default 60).")
+      ]
+    }
+  ),
+  apiTool(
+    "workspaces.links",
+    "List web links mentioned in a workspace's chats, newest first, each URL once. Pass nextBefore back as before for the next page.",
+    "GET",
+    "/v1/workspaces/:workspaceId/links",
+    {
+      query: [
+        stringQuery("before", "nextBefore from the previous page."),
+        integerQuery("limit", "Links per page, 1-200 (default 100).")
+      ]
+    }
   ),
   apiTool(
     "workspaces.delete",

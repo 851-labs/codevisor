@@ -6,6 +6,7 @@ import SwiftUI
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
     case changes, pullRequest(URL), desktop, browser, terminal, files
+    case link(URL), browserPane(UUID)
   }
 
   let workspace: Workspace
@@ -14,11 +15,40 @@ struct WorkspaceInspectorView: View {
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
   let supportsDesktop: Bool
+  @Binding var tab: WorkspaceInspectorTab
+  let media: WorkspaceInspectorMediaModel
+  let openTabs: [WorkspaceInspectorOpenTab]
+  let client: any CodevisorServerClienting
+  let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
   @Environment(\.theme) private var theme
 
   var body: some View {
+    Group {
+      switch tab {
+      case .info: info
+      case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
+      case .links:
+        WorkspaceInspectorLinksView(
+          openTabs: openTabs, model: media, client: client, onOpen: onOpen, onRetry: onReload)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .safeAreaInset(edge: .top, spacing: 0) {
+      Picker("Inspector Section", selection: $tab) {
+        ForEach(WorkspaceInspectorTab.allCases) { tab in
+          Text(tab.title).tag(tab)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+    }
+  }
+
+  private var info: some View {
     Form {
       Section {
         row(.changes) { Label("Changes", systemImage: "plus.forwardslash.minus") }

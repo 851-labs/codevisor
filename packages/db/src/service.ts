@@ -32,6 +32,7 @@ import type {
   UpsertWorkspaceRequest,
   Workspace,
   WorkspacePane,
+  WorkspacePhoto,
   WorkspaceSnapshot,
   Worktree
 } from "@codevisor/api"
@@ -58,6 +59,7 @@ import type {
 import type { SessionStateService } from "./session-state-types.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
+import type { WorkspaceMediaCursor, WorkspaceMessageText } from "./workspace-media.js"
 import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
 
 export interface CodevisorDatabaseConfig {
@@ -243,6 +245,16 @@ export interface CodevisorDatabaseService extends SessionStateService {
   ) => Effect.Effect<FileMetadata, DatabaseError>
   readonly createDiskFile: (metadata: FileMetadata) => Effect.Effect<FileMetadata, DatabaseError>
   readonly getFileMetadata: (id: string) => Effect.Effect<FileMetadata | undefined, DatabaseError>
+  readonly listWorkspacePhotos: (
+    workspaceId: string,
+    before: WorkspaceMediaCursor | undefined,
+    limit: number
+  ) => Effect.Effect<ReadonlyArray<WorkspacePhoto>, DatabaseError>
+  readonly listWorkspaceMessageTexts: (
+    workspaceId: string,
+    before: WorkspaceMediaCursor | undefined,
+    limit: number
+  ) => Effect.Effect<ReadonlyArray<WorkspaceMessageText>, DatabaseError>
   readonly getFileStorage: (
     id: string
   ) => Effect.Effect<FileStorageRecord | undefined, DatabaseError>

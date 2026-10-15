@@ -113,7 +113,9 @@ import {
   WaitForSessionsResponse,
   Workspace,
   WorkspaceGit,
+  WorkspaceLinkPage,
   WorkspacePane,
+  WorkspacePhotoPage,
   WorkspaceSnapshot,
   Worktree
 } from "./index.js"
@@ -238,6 +240,8 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/workspace-panes": arrayOf(WorkspacePane),
   "PUT /v1/workspaces/:id": Workspace,
   "GET /v1/workspaces/:workspaceId/git": WorkspaceGit,
+  "GET /v1/workspaces/:workspaceId/photos": WorkspacePhotoPage,
+  "GET /v1/workspaces/:workspaceId/links": WorkspaceLinkPage,
   "PUT /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
   "PATCH /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
   "POST /v1/workspaces/:workspaceId/panes/reorder": arrayOf(WorkspacePane),

@@ -9,14 +9,26 @@ export interface MarkdownFileReference {
   readonly embedded: boolean
 }
 
-const escaped = (source: string, index: number): boolean => {
+export interface MarkdownInlineCode {
+  readonly start: number
+  readonly end: number
+  readonly content: string
+}
+
+export interface MarkdownCode {
+  readonly mask: Uint8Array
+  readonly inline: ReadonlyArray<MarkdownInlineCode>
+}
+
+export const escaped = (source: string, index: number): boolean => {
   let count = 0
   while (index > 0 && source[--index] === "\\") count++
   return count % 2 === 1
 }
 
-export const markdownFileReferences = (source: string): ReadonlyArray<MarkdownFileReference> => {
+export const markdownCode = (source: string): MarkdownCode => {
   const code = new Uint8Array(source.length)
+  const inline: Array<MarkdownInlineCode> = []
   let offset = 0
   let fence: { character: string; length: number } | undefined
   for (const line of source.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
@@ -48,9 +60,19 @@ export const markdownFileReferences = (source: string): ReadonlyArray<MarkdownFi
     }
     if (closing !== -1) {
       code.fill(1, index, closing + marker.length)
+      inline.push({
+        start: index,
+        end: closing + marker.length,
+        content: source.slice(end, closing)
+      })
       index = closing + marker.length - 1
     } else index = end - 1
   }
+  return { mask: code, inline }
+}
+
+export const markdownFileReferences = (source: string): ReadonlyArray<MarkdownFileReference> => {
+  const code = markdownCode(source).mask
   const references: Array<MarkdownFileReference> = []
   const links = /!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g
   for (const match of source.matchAll(links)) {
