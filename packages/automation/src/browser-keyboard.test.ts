@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import type { PageHandle } from "./browser-cdp-engine.js"
 import {
   browserKeyDescription,
   dispatchKeyEvent,
@@ -8,6 +8,7 @@ import {
   modifierKeyMask,
   pressKey
 } from "./browser-keyboard.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
 const page: PageHandle = {
   target: { targetId: "tab", type: "page", title: "", url: "about:blank" },
@@ -16,15 +17,13 @@ const page: PageHandle = {
 
 const fakeRuntime = () => {
   const sent: Array<Readonly<Record<string, unknown>>> = []
-  const runtime = {
-    connection: {
-      send: async (_method: string, params: Readonly<Record<string, unknown>>) => {
-        sent.push(params)
-        return {}
-      }
+  const { connection } = fakeCdpConnection({
+    send: async (_method, params) => {
+      sent.push(params)
+      return {}
     }
-  } as unknown as BrowserRuntime
-  return { runtime, sent }
+  })
+  return { runtime: fakeBrowserRuntime({ connection }), sent }
 }
 
 describe("browser keyboard", () => {

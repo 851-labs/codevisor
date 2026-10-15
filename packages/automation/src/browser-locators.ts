@@ -3,6 +3,7 @@ import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 import { normalizeRef } from "./browser-snapshot.js"
+import { expectBoolean, expectRecord } from "./unknown-values.js"
 export { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 
 const resolveBackendElement = async (
@@ -31,27 +32,25 @@ const resolveBackendElement = async (
       page.sessionId
     )
     await delay(50)
-    const state = evaluatedValue(
-      await runtime.connection.send(
-        "Runtime.callFunctionOn",
-        {
-          objectId,
-          functionDeclaration:
-            "function(){const r=this.getBoundingClientRect();const s=getComputedStyle(this);const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {connected:this.isConnected,visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none',disabled:!!this.disabled||this.getAttribute('aria-disabled')==='true',hit:h===this||this.contains(h)};}",
-          returnByValue: true
-        },
-        page.sessionId
-      )
-    ) as {
-      connected: boolean
-      visible: boolean
-      disabled: boolean
-      hit: boolean
-    }
-    if (!state.connected) throw new Error(`${targetLabel} detached`)
-    if (!state.visible) throw new Error(`${targetLabel} is not visible after scrolling`)
-    if (requireActionable && state.disabled) throw new Error(`${targetLabel} is disabled`)
-    if (requireActionable && !state.hit)
+    const state = expectRecord(
+      evaluatedValue(
+        await runtime.connection.send(
+          "Runtime.callFunctionOn",
+          {
+            objectId,
+            functionDeclaration:
+              "function(){const r=this.getBoundingClientRect();const s=getComputedStyle(this);const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {connected:this.isConnected,visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none',disabled:!!this.disabled||this.getAttribute('aria-disabled')==='true',hit:h===this||this.contains(h)};}",
+            returnByValue: true
+          },
+          page.sessionId
+        )
+      ),
+      "Element state"
+    )
+    if (state.connected !== true) throw new Error(`${targetLabel} detached`)
+    if (state.visible !== true) throw new Error(`${targetLabel} is not visible after scrolling`)
+    if (requireActionable && state.disabled === true) throw new Error(`${targetLabel} is disabled`)
+    if (requireActionable && state.hit !== true)
       throw new Error(`${targetLabel} is obscured at its action point`)
     const model = await runtime.connection.send<{
       model: { content: number[]; border: number[]; width: number; height: number }
@@ -137,13 +136,13 @@ export const releaseElement = async (
     .catch(() => undefined)
 }
 
-export const evaluateLocatorReadOnly = async <T>(
+export const evaluateLocatorReadOnly = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   locator: unknown,
   source: string,
   arg: unknown
-): Promise<T> => {
+): Promise<unknown> => {
   assertReadOnlyFunction(source)
   const ids = await locatorBackendNodeIds(runtime, page, locator)
   if (ids.length !== 1) {
@@ -182,7 +181,7 @@ export const evaluateLocatorReadOnly = async <T>(
           "Locator evaluation failed"
       )
     }
-    return response.result.value as T
+    return response.result.value
   } finally {
     await runtime.connection
       .send("Runtime.releaseObject", { objectId }, page.sessionId)
@@ -190,14 +189,14 @@ export const evaluateLocatorReadOnly = async <T>(
   }
 }
 
-export const callLocatorFunction = async <T>(
+export const callLocatorFunction = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   locator: unknown,
   functionDeclaration: string,
   args: ReadonlyArray<unknown> = [],
   timeoutMs = 30_000
-): Promise<T> => {
+): Promise<unknown> => {
   const deadline = Date.now() + Math.max(0, Math.min(30_000, timeoutMs))
   let ids: number[] = []
   while (true) {
@@ -230,7 +229,7 @@ export const callLocatorFunction = async <T>(
         },
         page.sessionId
       )
-    ) as T
+    )
   } finally {
     await runtime.connection
       .send("Runtime.releaseObject", { objectId }, page.sessionId)
@@ -248,21 +247,24 @@ export const locatorIsVisible = async (
   if (ids.length > 1) {
     throw new Error(`Playwright strict mode violation: locator resolved to ${ids.length} elements`)
   }
-  return callLocatorFunction<boolean>(
-    runtime,
-    page,
-    locator,
-    "function(){const r=this.getBoundingClientRect(),s=getComputedStyle(this);return this.isConnected&&r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';}"
+  return expectBoolean(
+    await callLocatorFunction(
+      runtime,
+      page,
+      locator,
+      "function(){const r=this.getBoundingClientRect(),s=getComputedStyle(this);return this.isConnected&&r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';}"
+    ),
+    "Locator visibility"
   )
 }
 
-export const evaluateAllLocators = async <T>(
+export const evaluateAllLocators = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   locator: unknown,
   source: string,
   arg: unknown
-): Promise<T> => {
+): Promise<unknown> => {
   assertReadOnlyFunction(source)
   const ids = await locatorBackendNodeIds(runtime, page, locator)
   const objectIds: string[] = []
@@ -295,7 +297,7 @@ export const evaluateAllLocators = async <T>(
         },
         page.sessionId
       )
-    ) as T
+    )
   } finally {
     await Promise.all(
       objectIds.map((objectId) =>

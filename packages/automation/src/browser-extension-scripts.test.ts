@@ -8,6 +8,11 @@ import { browserExtensionPath } from "./browser-extension-relay.js"
 
 const script = (name: string): string => readFileSync(join(browserExtensionPath()!, name), "utf8")
 
+const isTabGroupHandler = (
+  value: unknown
+): value is (allowed: Set<number>, message: unknown) => Promise<unknown> =>
+  typeof value === "function"
+
 it("creates a tab group using only tabs shared with Codevisor", async () => {
   const group = vi.fn(async () => 7)
   const update = vi.fn(async () => undefined)
@@ -18,10 +23,8 @@ it("creates a tab group using only tabs shared with Codevisor", async () => {
     }
   })
   runInContext(script("tab-groups.js"), context)
-  const handle = context.handleTabGroupCommand as (
-    allowed: Set<number>,
-    message: unknown
-  ) => Promise<unknown>
+  const handle: unknown = context.handleTabGroupCommand
+  if (!isTabGroupHandler(handle)) throw new Error("tab-groups.js did not define its handler")
   const request = {
     method: "Codevisor.tabGroups.create",
     params: { tabIds: ["11"], color: "blue" }

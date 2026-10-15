@@ -4,6 +4,13 @@ import { parseExpression } from "@babel/parser"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import { delay, evaluatedValue, type CdpConnection } from "./browser-cdp.js"
+import {
+  expectRecord,
+  expectString,
+  isRecord,
+  recordOrEmpty,
+  recordOrUndefined
+} from "./unknown-values.js"
 
 export interface TargetInfo {
   readonly targetId: string
@@ -229,18 +236,18 @@ export const currentPage = async (
   }
 }
 
-export const evaluate = async <T>(
+export const evaluate = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   expression: string
-): Promise<T> =>
+): Promise<unknown> =>
   evaluatedValue(
     await runtime.connection.send(
       "Runtime.evaluate",
       { expression, returnByValue: true, awaitPromise: true },
       page.sessionId
     )
-  ) as T
+  )
 
 const parseEvaluationExpression = (source: string): unknown => {
   let expression: unknown
@@ -270,11 +277,9 @@ const assertReadOnlyNode = (
     throw new Error("evaluate is read-only and rejects delete")
   }
   if (type === "CallExpression") {
-    const callee = candidate.callee as Readonly<Record<string, unknown>> | undefined
+    const callee = recordOrUndefined(candidate.callee)
     const property =
-      callee?.type === "MemberExpression"
-        ? (callee.property as Readonly<Record<string, unknown>> | undefined)
-        : undefined
+      callee?.type === "MemberExpression" ? recordOrUndefined(callee.property) : undefined
     const name =
       property?.type === "Identifier"
         ? property.name
@@ -318,11 +323,10 @@ export const assertReadOnlyFunction = (source: string): void => {
   ])
   const seen = new WeakSet<object>()
   const visit = (node: unknown): void => {
-    if (node === null || typeof node !== "object" || seen.has(node)) return
+    if (!isRecord(node) || seen.has(node)) return
     seen.add(node)
-    const candidate = node as Readonly<Record<string, unknown>>
-    assertReadOnlyNode(candidate, mutatingMethods)
-    for (const [key, value] of Object.entries(candidate)) {
+    assertReadOnlyNode(node, mutatingMethods)
+    for (const [key, value] of Object.entries(node)) {
       if (key === "loc" || key === "start" || key === "end") continue
       if (Array.isArray(value)) {
         for (const item of value) visit(item)
@@ -330,18 +334,18 @@ export const assertReadOnlyFunction = (source: string): void => {
     }
   }
   visit(expression)
-  const root = expression as { readonly type?: string }
-  if (root.type !== "FunctionExpression" && root.type !== "ArrowFunctionExpression") {
+  const type = recordOrEmpty(expression).type
+  if (type !== "FunctionExpression" && type !== "ArrowFunctionExpression") {
     throw new Error("evaluate expects a function")
   }
 }
 
-export const evaluateReadOnly = async <T>(
+export const evaluateReadOnly = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   source: string,
   arg: unknown
-): Promise<T> => {
+): Promise<unknown> => {
   assertReadOnlyFunction(source)
   const response = await runtime.connection.send<{
     result: { value?: unknown; description?: string }
@@ -362,7 +366,7 @@ export const evaluateReadOnly = async <T>(
         "Page evaluation failed"
     )
   }
-  return response.result.value as T
+  return response.result.value
 }
 
 export const waitForCdpEvent = (
@@ -396,15 +400,21 @@ export const waitForCdpEvent = (
 export const pageInformation = async (
   runtime: BrowserRuntime,
   page: PageHandle
-): Promise<{ url: string; title: string }> =>
-  evaluate(runtime, page, "({ url: location.href, title: document.title })")
+): Promise<{ url: string; title: string }> => {
+  const info = expectRecord(
+    await evaluate(runtime, page, "({ url: location.href, title: document.title })"),
+    "Page information"
+  )
+  return {
+    url: expectString(info.url, "Page URL"),
+    title: expectString(info.title, "Page title")
+  }
+}
 
 export const waitForReady = async (runtime: BrowserRuntime, page: PageHandle): Promise<void> => {
   const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
-    const state = await evaluate<string>(runtime, page, "document.readyState").catch(
-      () => "loading"
-    )
+    const state = await evaluate(runtime, page, "document.readyState").catch(() => "loading")
     if (state === "interactive" || state === "complete") return
     await delay(100)
   }

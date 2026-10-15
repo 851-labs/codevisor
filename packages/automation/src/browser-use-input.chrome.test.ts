@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { expectRecord } from "./unknown-values.js"
 
 const directories: string[] = []
 
@@ -55,7 +56,7 @@ describe("Browser Use pointer input", () => {
         function: "() => window.events"
       })
       if (events.content[0]?.type !== "text") throw new Error("Missing events")
-      expect((JSON.parse(events.content[0].text) as { value: string[] }).value).toEqual([
+      expect(expectRecord(JSON.parse(events.content[0].text), "Events").value).toEqual([
         "mousemove:0:100,100",
         "mousedown:1:100,100",
         "mousemove:1:125,112",

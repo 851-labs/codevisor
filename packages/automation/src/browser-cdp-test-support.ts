@@ -9,11 +9,12 @@ export const emulateBrowserFocus = () => {
     this: CdpConnection,
     ...args: Parameters<CdpConnection["sendOnce"]>
   ): Promise<T> {
-    const result = await send.apply(this, args)
+    const typedSend = send<T>
+    const result = await typedSend.apply(this, args)
     if (args[0] === "Runtime.enable") {
       await send.call(this, "Emulation.setFocusEmulationEnabled", { enabled: true }, args[2])
     }
-    return result as T
+    return result
   })
 }
 

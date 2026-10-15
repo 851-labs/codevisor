@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
 import { makeCodevisorProvider } from "./codevisor-provider.js"
+import { expectRecord, expectString } from "./unknown-values.js"
 
 const callingContext: AutomationProviderContext = {
   sessionId: "calling session/id",
@@ -20,6 +21,19 @@ const jsonResponse = (body: unknown): Response =>
   new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" }
   })
+
+const requestJson = (init: RequestInit): unknown =>
+  JSON.parse(expectString(init.body, "request body"))
+
+const requestBytes = (init: RequestInit): Buffer => {
+  if (!(init.body instanceof Uint8Array)) throw new Error("Expected a binary request body")
+  return Buffer.from(init.body)
+}
+
+const requestHeaders = (init: RequestInit): Headers => {
+  if (!(init.headers instanceof Headers)) throw new Error("Expected request Headers")
+  return init.headers
+}
 
 const stubFetch = (
   responder: (url: URL, init: RequestInit) => Response | Promise<Response>
@@ -145,7 +159,7 @@ describe("Codevisor MCP provider", () => {
     expect(requests[6]!.url.search).toBe("")
     expect(requests[7]!.url.searchParams.get("showHidden")).toBe("true")
     expect(requests[0]!.init.headers).toBeInstanceOf(Headers)
-    expect((requests[0]!.init.headers as Headers).get("authorization")).toBe("Bearer stable-token")
+    expect(requestHeaders(requests[0]!.init).get("authorization")).toBe("Bearer stable-token")
     await expect(provider.invoke(callingContext, "workspaces.delete", {})).rejects.toThrow(
       "workspaces.delete requires workspaceId"
     )
@@ -195,36 +209,34 @@ describe("Codevisor MCP provider", () => {
       dataBase64: Buffer.from("bytes").toString("base64")
     })
 
-    expect(JSON.parse(requests[0]!.init.body as string)).toEqual({
+    expect(requestJson(requests[0]!.init)).toEqual({
       serverUrl: "https://cloud.example",
       sessionToken: "cloud-token"
     })
-    expect(JSON.parse(requests[1]!.init.body as string)).toEqual({ page: "home" })
-    expect(JSON.parse(requests[2]!.init.body as string)).toMatchObject({
+    expect(requestJson(requests[1]!.init)).toEqual({ page: "home" })
+    expect(requestJson(requests[2]!.init)).toMatchObject({
       id: "new-session",
       projectId: "calling project/id",
       harnessId: "codex"
     })
-    const created = JSON.parse(requests[2]!.init.body as string) as { workspaceId: string }
-    const unscoped = JSON.parse(requests[4]!.init.body as string) as { workspaceId: string }
+    const created = expectRecord(requestJson(requests[2]!.init), "session body")
+    const unscoped = expectRecord(requestJson(requests[4]!.init), "session body")
     expect(created.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
     expect(unscoped.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
     expect(unscoped.workspaceId).not.toBe(created.workspaceId)
-    expect(JSON.parse(requests[3]!.init.body as string)).toMatchObject({
+    expect(requestJson(requests[3]!.init)).toMatchObject({
       projectId: "explicit-project",
       workspaceId: "existing-workspace",
       parentSessionId: "explicit-parent"
     })
     expect(unscoped).not.toHaveProperty("projectId")
     expect(unscoped).toMatchObject({ parentSessionId: "caller" })
-    expect(JSON.parse(requests[5]!.init.body as string)).toEqual({})
-    expect(Buffer.from(requests[6]!.init.body as ArrayBuffer).toString()).toBe("hello")
+    expect(requestJson(requests[5]!.init)).toEqual({})
+    expect(requestBytes(requests[6]!.init).toString()).toBe("hello")
     expect(requests[6]!.url.searchParams.get("name")).toBe("hello.txt")
     expect(requests[6]!.url.searchParams.has("mimeType")).toBe(false)
-    expect((requests[6]!.init.headers as Headers).get("content-type")).toBe("text/plain")
-    expect((requests[7]!.init.headers as Headers).get("content-type")).toBe(
-      "application/octet-stream"
-    )
+    expect(requestHeaders(requests[6]!.init).get("content-type")).toBe("text/plain")
+    expect(requestHeaders(requests[7]!.init).get("content-type")).toBe("application/octet-stream")
     await expect(provider.invoke(callingContext, "files.upload", {})).rejects.toThrow(
       "files.upload requires dataBase64"
     )
@@ -259,7 +271,7 @@ describe("Codevisor MCP provider", () => {
       confirm: true
     })
     expect(requests[0]!.url.pathname).toBe("/v1/plugins/import-remote")
-    expect(JSON.parse(requests[0]!.init.body as string)).toEqual({ source: "owner/repo" })
+    expect(requestJson(requests[0]!.init)).toEqual({ source: "owner/repo" })
   })
 
   it("returns binary, empty, JSON, and plain-text API responses", async () => {
@@ -368,7 +380,8 @@ describe("Codevisor MCP provider", () => {
       .catch((error: unknown) => error)
     expect(limited).toBeInstanceOf(CodeExecutionToolError)
     expect(limited).toMatchObject({ message: "Slow down", code: "rate_limited" })
-    expect((limited as CodeExecutionToolError).details).toBeUndefined()
+    if (!(limited instanceof CodeExecutionToolError)) throw new Error("Expected a tool error")
+    expect(limited.details).toBeUndefined()
   })
 
   it("reports the calling workspace, machine, parent session, and origin client from context.current", async () => {

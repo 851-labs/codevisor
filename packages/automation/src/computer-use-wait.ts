@@ -1,6 +1,8 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
-export const computerUseState = (result: CallToolResult): Record<string, unknown> => {
+import { isPlainRecord, type UnknownRecord } from "./unknown-values.js"
+
+export const computerUseState = (result: CallToolResult): UnknownRecord => {
   if (result.isError)
     throw new Error(
       result.content
@@ -11,9 +13,8 @@ export const computerUseState = (result: CallToolResult): Record<string, unknown
   const text = result.content.find((c) => c.type === "text")?.text
   if (typeof text !== "string") throw new Error("Computer Use returned no state")
   const value: unknown = JSON.parse(text)
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Computer Use returned an invalid state")
-  return value as Record<string, unknown>
+  if (!isPlainRecord(value)) throw new Error("Computer Use returned an invalid state")
+  return value
 }
 
 export const waitForComputerState = async (

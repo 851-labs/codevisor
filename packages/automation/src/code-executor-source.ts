@@ -4,6 +4,7 @@ import { transform } from "sucrase"
 import { browserDocumentation } from "./browser-documentation.js"
 import { machinesAndClientsSource, sandboxErrorSource } from "./code-executor-globals.js"
 import { computerUseCellBody } from "./computer-use-repl-source.js"
+import { isRecord } from "./unknown-values.js"
 
 const FENCED_CODE_BLOCK = /```(?:[^\n`]*)?\s*\n([\s\S]*?)```/i
 const FUNCTION_DECLARATION = /^(?:async\s+)?function(?:\s+([a-zA-Z_$][a-zA-Z0-9_$]*))?\s*\(/
@@ -37,10 +38,13 @@ interface SourceNode {
   readonly expression?: unknown
 }
 
+const isSourceNode = (value: unknown): value is SourceNode =>
+  isRecord(value) && typeof value.type === "string"
+
 const sliceNode = (source: string, node: SourceNode): string =>
   source.slice(node.start ?? 0, node.end ?? source.length)
 
-const unwrapExpression = (expression: SourceNode): unknown => {
+const unwrapExpression = (expression: SourceNode): SourceNode => {
   switch (expression.type) {
     case "ParenthesizedExpression":
     case "TSAsExpression":
@@ -48,9 +52,9 @@ const unwrapExpression = (expression: SourceNode): unknown => {
     case "TSTypeAssertion":
     case "TSNonNullExpression":
     case "TSInstantiationExpression":
-      return expression.expression === undefined
-        ? expression
-        : unwrapExpression(expression.expression as SourceNode)
+      return isSourceNode(expression.expression)
+        ? unwrapExpression(expression.expression)
+        : expression
     default:
       return expression
   }
@@ -64,7 +68,7 @@ const renderExportDefaultBody = (source: string, declaration: SourceNode): strin
       ? wrapAnonymousFunctionBody(functionSource)
       : wrapNamedFunctionBody(functionSource, name)
   }
-  const expression = unwrapExpression(declaration) as { readonly type?: string }
+  const expression = unwrapExpression(declaration)
   const expressionSource = sliceNode(source, declaration)
   return expression.type === "ArrowFunctionExpression" || expression.type === "FunctionExpression"
     ? wrapCallableBody(expressionSource)
@@ -85,12 +89,10 @@ const renderParsedBody = (source: string): string => {
   if (statement === undefined) return source
   switch (statement.type) {
     case "ExpressionStatement": {
-      const expression = unwrapExpression(statement.expression as SourceNode) as {
-        readonly type?: string
-      }
+      const expression = unwrapExpression(statement.expression)
       return expression.type === "ArrowFunctionExpression" ||
         expression.type === "FunctionExpression"
-        ? wrapCallableBody(sliceNode(source, statement.expression as SourceNode))
+        ? wrapCallableBody(sliceNode(source, statement.expression))
         : source
     }
     case "FunctionDeclaration":
@@ -98,7 +100,7 @@ const renderParsedBody = (source: string): string => {
         ? source
         : wrapNamedFunctionBody(source, statement.id.name)
     case "ExportDefaultDeclaration":
-      return renderExportDefaultBody(source, statement.declaration as SourceNode)
+      return renderExportDefaultBody(source, statement.declaration)
     default:
       return source
   }

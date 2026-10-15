@@ -1,3 +1,5 @@
+import { isPlainRecord, isStringArray } from "./unknown-values.js"
+
 interface BrowserLocator {
   readonly ref?: string
   readonly css?: string
@@ -24,12 +26,9 @@ interface BrowserLocator {
 
 type BrowserTextMatcher = string | { readonly regex: string; readonly flags?: string }
 
-const parseTextMatcher = (value: unknown, label: string): BrowserTextMatcher => {
-  if (typeof value === "string") return value
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be a string or regular expression`)
-  }
-  const input = value as Readonly<Record<string, unknown>>
+const parseTextMatcher = (input: unknown, label: string): BrowserTextMatcher => {
+  if (typeof input === "string") return input
+  if (!isPlainRecord(input)) throw new Error(`${label} must be a string or regular expression`)
   if (
     typeof input.regex !== "string" ||
     (input.flags !== undefined && typeof input.flags !== "string")
@@ -68,20 +67,22 @@ const validateLocatorDescriptor = (locator: Readonly<Record<string, unknown>>): 
   if (locator.role === undefined && locator.name !== undefined) {
     throw new Error("locator.name is only valid with locator.role")
   }
-  if (
-    locator.frame !== undefined &&
-    (!Array.isArray(locator.frame) ||
-      !locator.frame.every((selector) => typeof selector === "string" && selector.length > 0))
-  ) {
+}
+
+const parseLocatorFrame = (value: unknown): ReadonlyArray<string> | undefined => {
+  if (value === undefined) return undefined
+  if (!isStringArray(value) || !value.every((selector) => selector.length > 0)) {
     throw new Error("locator.frame must be an array of frame selectors")
   }
-  if (
-    locator.index !== undefined &&
-    locator.index !== "last" &&
-    (typeof locator.index !== "number" || !Number.isInteger(locator.index) || locator.index < 0)
-  ) {
+  return value
+}
+
+const parseLocatorIndex = (value: unknown): number | "last" | undefined => {
+  if (value === undefined || value === "last") return value
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw new Error("locator.index must be a non-negative integer or last")
   }
+  return value
 }
 
 const parseLocatorFilters = (
@@ -90,14 +91,8 @@ const parseLocatorFilters = (
 ): BrowserLocator["filters"] => {
   let filters: BrowserLocator["filters"]
   if (locator.filters !== undefined) {
-    if (
-      locator.filters === null ||
-      typeof locator.filters !== "object" ||
-      Array.isArray(locator.filters)
-    ) {
-      throw new Error("locator.filters must be an object")
-    }
-    const input = locator.filters as Readonly<Record<string, unknown>>
+    if (!isPlainRecord(locator.filters)) throw new Error("locator.filters must be an object")
+    const input = locator.filters
     if (input.visible !== undefined && typeof input.visible !== "boolean") {
       throw new Error("locator.filters.visible must be a boolean")
     }
@@ -116,13 +111,12 @@ const parseLocatorFilters = (
   return filters
 }
 
-export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
+export const parseLocator = (locator: unknown, depth = 0): BrowserLocator => {
   if (depth > 12) throw new Error("locator composition is too deeply nested")
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("locator must be a Playwright-style locator object")
-  }
-  const locator = value as Readonly<Record<string, unknown>>
+  if (!isPlainRecord(locator)) throw new Error("locator must be a Playwright-style locator object")
   validateLocatorDescriptor(locator)
+  const frame = parseLocatorFrame(locator.frame)
+  const index = parseLocatorIndex(locator.index)
   const scope = locator.scope === undefined ? undefined : parseLocator(locator.scope, depth + 1)
   const and = locator.and === undefined ? undefined : parseLocator(locator.and, depth + 1)
   const or = locator.or === undefined ? undefined : parseLocator(locator.or, depth + 1)
@@ -142,9 +136,9 @@ export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
     ...(typeof locator.testId === "string" ? { testId: locator.testId } : {}),
     ...(locator.exact === true ? { exact: true } : {}),
     ...(scope === undefined ? {} : { scope }),
-    ...(locator.frame === undefined ? {} : { frame: locator.frame as string[] }),
+    ...(frame === undefined ? {} : { frame }),
     ...(filters === undefined ? {} : { filters }),
-    ...(locator.index === undefined ? {} : { index: locator.index as number | "last" }),
+    ...(index === undefined ? {} : { index }),
     ...(and === undefined ? {} : { and }),
     ...(or === undefined ? {} : { or })
   }

@@ -23,6 +23,7 @@ import { invokePageTools } from "./browser-use-invoke-page.js"
 import { invokePlaywrightTools } from "./browser-use-invoke-playwright.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import type { BrowserBackend } from "./browser-use-provider.js"
+import { isStringArray } from "./unknown-values.js"
 
 export type {
   BrowserAssetInventory,
@@ -122,15 +123,10 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
     }
     if (toolName === "finalizeTabs") {
       if (args.native === true) {
-        if (
-          args.keepIds !== undefined &&
-          (!Array.isArray(args.keepIds) ||
-            !args.keepIds.every((value) => typeof value === "string"))
-        ) {
-          throw new Error("keepIds must be an array of tab ids")
-        }
+        const requestedKeepIds = args.keepIds === undefined ? [] : args.keepIds
+        if (!isStringArray(requestedKeepIds)) throw new Error("keepIds must be an array of tab ids")
         const keepIds = new Set([
-          ...((args.keepIds as string[] | undefined) ?? []),
+          ...requestedKeepIds,
           ...(sessionDispositions.get(sessionKey)?.keys() ?? [])
         ])
         const controlled = sessionTargets.get(sessionKey) ?? new Map()

@@ -1,5 +1,7 @@
 import { WebSocket } from "ws"
 
+import { isRecord, recordOrEmpty, recordOrUndefined } from "./unknown-values.js"
+
 interface PendingCommand {
   readonly resolve: (value: unknown) => void
   readonly reject: (cause: Error) => void
@@ -113,6 +115,7 @@ export class CdpConnection {
       )
       timer.unref?.()
       this.#pending.set(id, {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         resolve: resolve as (value: unknown) => void,
         reject,
         timer
@@ -157,39 +160,28 @@ export class CdpConnection {
   }
 
   #receive(data: Buffer): void {
-    let message: {
-      id?: unknown
-      result?: unknown
-      error?: { message?: unknown; data?: unknown }
-      method?: unknown
-      params?: unknown
-      sessionId?: unknown
-    }
+    let parsed: unknown
     try {
-      message = JSON.parse(data.toString()) as typeof message
+      parsed = JSON.parse(data.toString())
     } catch {
       return
     }
+    const message = recordOrEmpty(parsed)
     if (typeof message.id === "number") {
       const pending = this.#pending.get(message.id)
       if (pending === undefined) return
       this.#pending.delete(message.id)
       clearTimeout(pending.timer)
       if (message.error !== undefined) {
-        const summary =
-          typeof message.error.message === "string"
-            ? message.error.message
-            : "Browser command failed"
-        const detail = typeof message.error.data === "string" ? `: ${message.error.data}` : ""
+        const error = recordOrEmpty(message.error)
+        const summary = typeof error.message === "string" ? error.message : "Browser command failed"
+        const detail = typeof error.data === "string" ? `: ${error.data}` : ""
         pending.reject(new Error(`${summary}${detail}`))
       } else pending.resolve(message.result ?? {})
       return
     }
     if (typeof message.method !== "string") return
-    const params =
-      message.params !== null && typeof message.params === "object"
-        ? (message.params as Readonly<Record<string, unknown>>)
-        : {}
+    const params = recordOrEmpty(message.params)
     const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined
     const eventKeys = new Set([
       this.#eventKey(message.method, sessionId),
@@ -226,7 +218,7 @@ export const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 export const evaluatedValue = (response: unknown): unknown => {
-  const result = (response as { result?: { value?: unknown; description?: unknown } }).result
+  const result = isRecord(response) ? recordOrUndefined(response.result) : undefined
   if (result === undefined) throw new Error("Browser evaluation returned no result")
   if (!("value" in result)) {
     throw new Error(

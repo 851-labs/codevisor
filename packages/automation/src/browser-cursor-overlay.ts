@@ -89,7 +89,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     tick: () => void
   }
 
-  type Host = HTMLDivElement & { codevisorPointer?: Layer }
+  type Host = HTMLElement & { codevisorPointer?: Layer }
 
   const idle: PointerReply = { duration: 0, visible: false }
   if (typeof document === "undefined" || document.documentElement === null) return idle
@@ -121,7 +121,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches)
 
   const existingHost = (): Host | undefined => {
-    const host = document.getElementById(LAYER_ID) as Host | null
+    const host: Host | null = document.getElementById(LAYER_ID)
     if (host === null) return undefined
     if (host.codevisorPointer?.version === VERSION) return host
     host.remove()
@@ -223,7 +223,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   const ensureLayer = (): Layer => {
     const host = existingHost()
     if (host?.codevisorPointer !== undefined) return host.codevisorPointer
-    const created = document.createElement("div") as Host
+    const created: Host = document.createElement("div")
     created.id = LAYER_ID
     created.setAttribute("aria-hidden", "true")
     created.setAttribute("data-codevisor", "pointer-overlay")
@@ -265,10 +265,11 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     const existing = layer.cursors.get(session)
     if (existing !== undefined) return existing
     const tint = PALETTE[((color % PALETTE.length) + PALETTE.length) % PALETTE.length]!
-    const fog = tint.map((channel) => channel * 0.45 + 0.42 * 0.55) as unknown as readonly [
-      number,
-      number,
-      number
+    const fogged = (channel: number): number => channel * 0.45 + 0.42 * 0.55
+    const fog: readonly [number, number, number] = [
+      fogged(tint[0]),
+      fogged(tint[1]),
+      fogged(tint[2])
     ]
     const element = document.createElement("div")
     style(element, {

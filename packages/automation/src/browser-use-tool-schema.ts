@@ -1,12 +1,21 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
+type SchemaProperties = Readonly<Record<string, object>>
+
+interface ObjectSchema {
+  readonly type: "object"
+  readonly properties: SchemaProperties
+  readonly required?: string[]
+  readonly additionalProperties: false
+}
+
 export const objectSchema = (
-  properties: Readonly<Record<string, unknown>> = {},
+  properties: SchemaProperties = {},
   required: ReadonlyArray<string> = []
-) => ({
+): ObjectSchema => ({
   type: "object",
   properties,
-  ...(required.length === 0 ? {} : { required }),
+  ...(required.length === 0 ? {} : { required: [...required] }),
   additionalProperties: false
 })
 
@@ -61,7 +70,7 @@ export const locatorProperty = {
 }
 
 export const locatorSchema = (
-  properties: Readonly<Record<string, unknown>> = {},
+  properties: SchemaProperties = {},
   required: ReadonlyArray<string> = []
 ) =>
   objectSchema(
@@ -76,16 +85,15 @@ export const locatorSchema = (
 export const tool = (
   name: string,
   description: string,
-  inputSchema: Readonly<Record<string, unknown>> = objectSchema()
+  inputSchema: ObjectSchema = objectSchema()
 ): Tool => ({
   name,
   description,
   inputSchema: {
     ...inputSchema,
-    type: "object",
     properties: {
-      ...(inputSchema.properties as object),
+      ...inputSchema.properties,
       tabId: { type: "string", description: "Explicit tab ID; never falls back to another tab." }
     }
-  } as Tool["inputSchema"]
+  }
 })

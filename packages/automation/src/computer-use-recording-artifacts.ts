@@ -1,17 +1,21 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
+import { recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 
 export const makeRecordingArtifacts = () => {
-  const published = new Map<string, Promise<unknown>>()
+  const published = new Map<
+    string,
+    ReturnType<NonNullable<AutomationProviderContext["publishRecording"]>>
+  >()
   const enrichResult = async (
     result: CallToolResult,
     context: AutomationProviderContext
   ): Promise<CallToolResult> => {
     if (result.isError || !context.publishRecording) return result
     const publish = context.publishRecording
-    const enrich = async (value: Record<string, unknown>): Promise<Record<string, unknown>> => {
-      const file = value.file as { path?: unknown; name?: unknown } | undefined
+    const enrich = async (value: UnknownRecord): Promise<UnknownRecord> => {
+      const file = recordOrUndefined(value.file)
       if (
         value.status !== "stopped" ||
         typeof file?.path !== "string" ||
@@ -25,7 +29,7 @@ export const makeRecordingArtifacts = () => {
           pending = publish({ path: file.path, name: file.name })
           published.set(key, pending)
         }
-        const attachment = (await pending) as Awaited<ReturnType<typeof publish>>
+        const attachment = await pending
         return {
           ...value,
           file: { ...file, ...attachment, mimeType: "video/mp4" },
@@ -47,9 +51,14 @@ export const makeRecordingArtifacts = () => {
       content: await Promise.all(
         result.content.map(async (block) => {
           if (block.type !== "text") return block
-          const value = JSON.parse(block.text) as Record<string, unknown>
+          const value = recordOrEmpty(JSON.parse(block.text))
           const enriched = Array.isArray(value.recordings)
-            ? { ...value, recordings: await Promise.all(value.recordings.map(enrich)) }
+            ? {
+                ...value,
+                recordings: await Promise.all(
+                  value.recordings.map((entry) => enrich(recordOrEmpty(entry)))
+                )
+              }
             : await enrich(value)
           return { ...block, text: JSON.stringify(enriched) }
         })

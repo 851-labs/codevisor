@@ -12,6 +12,7 @@ import type { ResolvedElement } from "./browser-cdp-engine.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { isPlainRecord } from "./unknown-values.js"
 
 export const invokeNavigationTools = async (
   invocation: BrowserToolInvocation,
@@ -62,10 +63,8 @@ export const invokeNavigationTools = async (
       let clip: { x: number; y: number; width: number; height: number; scale: number } | undefined
       let element: ResolvedElement | undefined
       if (args.clip !== undefined) {
-        if (args.clip === null || typeof args.clip !== "object" || Array.isArray(args.clip)) {
-          throw new Error("clip must be an object")
-        }
-        const requested = args.clip as Readonly<Record<string, unknown>>
+        const requested = args.clip
+        if (!isPlainRecord(requested)) throw new Error("clip must be an object")
         clip = {
           x: numberArgument(requested, "x"),
           y: numberArgument(requested, "y"),

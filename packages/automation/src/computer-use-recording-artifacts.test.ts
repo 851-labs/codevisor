@@ -2,11 +2,16 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect, it, vi } from "vitest"
 
 import { makeRecordingArtifacts } from "./computer-use-recording-artifacts.js"
+import { expectArray, expectRecord } from "./unknown-values.js"
 
 const reply = (value: unknown): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(value) }]
 })
-const value = (result: CallToolResult) => JSON.parse((result.content[0] as { text: string }).text)
+const value = (result: CallToolResult) => {
+  const content = result.content[0]
+  if (content?.type !== "text") throw new Error("Expected text tool content")
+  return expectRecord(JSON.parse(content.text), "recording result")
+}
 const stopped = {
   recordingId: "r",
   status: "stopped",
@@ -32,7 +37,7 @@ describe("recording artifacts", () => {
     expect(first.markdown).toBe("![Recording of the fix](</attachments/fix (demo).mp4>)")
     expect(publishRecording).toHaveBeenCalledWith({ path: stopped.file.path, name: "fix.mp4" })
     const list = value(await publisher.enrich(reply({ recordings: [stopped] }), context))
-    expect(list.recordings[0]).toEqual(first)
+    expect(expectArray(list.recordings, "recordings")[0]).toEqual(first)
     expect(publishRecording).toHaveBeenCalledTimes(1)
     await publisher.enrich(reply(stopped), { ...context, sessionId: "b" })
     publisher.closeSession("a")
@@ -53,7 +58,8 @@ describe("recording artifacts", () => {
     const failed = value(await publisher.enrich(reply(stopped), context))
     expect(failed.file).toEqual(stopped.file)
     expect(failed.attachmentError).toContain("disk full")
-    expect(value(await publisher.enrich(reply(stopped), context)).file.path).toBe(attachment.path)
+    const retried = value(await publisher.enrich(reply(stopped), context))
+    expect(expectRecord(retried.file, "recording file").path).toBe(attachment.path)
   })
 
   it("keeps native errors, standalone files and nontext content intact", async () => {

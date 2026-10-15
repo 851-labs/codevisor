@@ -1,5 +1,7 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 
+import { recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
+
 export interface ComputerUseApp {
   readonly bundleId: string
   readonly name?: string
@@ -47,9 +49,9 @@ export const computerResultApp = (result: CallToolResult): ComputerUseApp | unde
   const first = result.content[0]
   if (result.isError === true || first?.type !== "text" || !first.text.includes('"resolvedApp"'))
     return undefined
-  let app: Readonly<Record<string, unknown>> | undefined
+  let app: UnknownRecord | undefined
   try {
-    app = (JSON.parse(first.text) as { readonly resolvedApp?: Record<string, unknown> }).resolvedApp
+    app = recordOrUndefined(recordOrEmpty(JSON.parse(first.text)).resolvedApp)
   } catch {
     return undefined
   }

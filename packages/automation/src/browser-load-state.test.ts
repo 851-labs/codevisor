@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import type { PageHandle } from "./browser-cdp-engine.js"
 import {
   browserNavigationBaseline,
   observeBrowserLoadEvent,
   waitForBrowserState
 } from "./browser-load-state.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
 const fixture = () => {
   let readyState = "complete"
@@ -14,13 +15,10 @@ const fixture = () => {
     if (method === "Runtime.evaluate") return { result: { value: readyState } }
     throw new Error(`Unexpected CDP request: ${method}`)
   })
-  const runtime = {
-    connection: { send },
-    sessions: new Map([["tab", "session"]]),
-    snapshots: new Map(),
-    eventSequence: 0,
-    eventLog: []
-  } as unknown as BrowserRuntime
+  const runtime = fakeBrowserRuntime({
+    connection: fakeCdpConnection({ send }).connection,
+    sessions: new Map([["tab", "session"]])
+  })
   const page: PageHandle = {
     target: { targetId: "tab", type: "page", title: "Fixture", url: "about:blank" },
     sessionId: "session"

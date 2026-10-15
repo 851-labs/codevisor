@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import type { CdpConnection } from "./browser-cdp.js"
 import { browserResultValue } from "./browser-repl.js"
-import { makeBrowserToolInvoker, type BrowserToolSessionState } from "./browser-use-invoke.js"
+import {
+  browserToolSessionState,
+  fakeBrowserRuntime,
+  fakeCdpConnection
+} from "./browser-runtime-test-support.js"
+import { makeBrowserToolInvoker } from "./browser-use-invoke.js"
+import { expectArray, expectBoolean, expectRecord, expectString } from "./unknown-values.js"
 
 const harness = () => {
   const context = { projectId: "project", sessionId: "session" }
@@ -43,40 +47,24 @@ const harness = () => {
         return {}
     }
   }
-  const state: BrowserToolSessionState = {
-    assetInventories: new Map(),
-    assetsDir: "",
-    downloadsDir: "",
-    selectedTargets: new Map(),
-    sessionBackends: new Map([[context.sessionId, "managed"]]),
-    sessionDispositions: new Map(),
-    sessionTargets: new Map()
-  }
-  const runtime: BrowserRuntime = {
-    connection: { send, sendOnce: send } as unknown as CdpConnection,
-    owned: false,
-    processHandle: undefined,
-    sessions: new Map(),
-    staleSessions: new Map(),
-    snapshots: new Map(),
-    eventLog: [],
-    logs: new Map(),
-    dialogs: new Map(),
-    fileChoosers: new Map(),
-    downloads: new Map(),
-    eventDisposers: [],
-    eventSequence: 0,
-    tabOrder: [],
-    queue: Promise.resolve()
-  }
+  const state = browserToolSessionState({
+    sessionBackends: new Map([[context.sessionId, "managed"]])
+  })
+  const runtime = fakeBrowserRuntime({
+    connection: fakeCdpConnection({ send, sendOnce: send }).connection
+  })
   const invoke = makeBrowserToolInvoker(state)
   const call = async (name: string, args: Readonly<Record<string, unknown>>) =>
     browserResultValue(await invoke(context, runtime, name, args))
   const newTab = async () => {
-    const { tabs } = (await call("tabs", { action: "new" })) as {
-      tabs: Array<{ id: string; selected: boolean }>
-    }
-    return tabs.find((tab) => tab.selected)!.id
+    const tabs = expectArray(
+      expectRecord(await call("tabs", { action: "new" }), "tabs").tabs,
+      "tabs"
+    )
+    const selected = tabs
+      .map((tab) => expectRecord(tab, "tab"))
+      .find((tab) => expectBoolean(tab.selected, "tab selected"))
+    return expectString(selected?.id, "selected tab id")
   }
   const closed = () =>
     sent

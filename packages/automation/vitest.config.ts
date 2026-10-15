@@ -12,6 +12,7 @@ export default defineConfig({
         "**/dist/**",
         "**/*.test.ts",
         "src/browser-cdp-test-support.ts",
+        "src/browser-runtime-test-support.ts",
         "src/browser-runtime-lifecycle.ts",
         "src/browser-runtime-factory.ts",
         "src/browser-content.ts",

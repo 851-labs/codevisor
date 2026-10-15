@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import {
   BROWSER_PREVIEW_SWITCH_HOLD_MS,
   makeBrowserPreviews,
   type BrowserPreviewStatus,
   type BrowserPreviewViewer
 } from "./browser-preview.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
 const browser = (
   options: {
@@ -27,50 +27,52 @@ const browser = (
     ["tab-2", { url: "https://other.test/" }],
     ["tab-blank", {}]
   ])
-  const connection = {
-    closed: false,
-    send: async (
-      method: string,
-      params: Readonly<Record<string, unknown>> = {},
-      session?: string
-    ) => {
-      sent.push({ method, params, ...(session === undefined ? {} : { session }) })
-      if (method === "Page.startScreencast" && options.failStart) throw new Error("Target closed")
-      if (
-        options.failPage &&
-        (method === "Page.stopScreencast" || method === "Page.screencastFrameAck")
-      )
-        throw new Error("Target closed")
-      if (method === "Target.getTargets") {
-        if (options.failTargets) throw new Error("disconnected")
-        return {
-          targetInfos: [...titles].map(([targetId, info]) => ({ targetId, ...info }))
-        }
+  const send = async (
+    method: string,
+    params: Readonly<Record<string, unknown>> = {},
+    session?: string
+  ) => {
+    sent.push({ method, params, ...(session === undefined ? {} : { session }) })
+    if (method === "Page.startScreencast" && options.failStart) throw new Error("Target closed")
+    if (
+      options.failPage &&
+      (method === "Page.stopScreencast" || method === "Page.screencastFrameAck")
+    )
+      throw new Error("Target closed")
+    if (method === "Target.getTargets") {
+      if (options.failTargets) throw new Error("disconnected")
+      return {
+        targetInfos: [...titles].map(([targetId, info]) => ({ targetId, ...info }))
       }
-      return {}
-    },
-    sendOnce: async (method: string, params: Readonly<Record<string, unknown>> = {}) => {
+    }
+    return {}
+  }
+  const { connection, disconnect } = fakeCdpConnection({
+    send,
+    sendOnce: async (method, params) => {
       sent.push({ method, params })
       if (method === "Target.attachToTarget" && options.failAttach) throw new Error("No target")
       return method === "Target.attachToTarget"
         ? { sessionId: `cdp:${String(params.targetId)}` }
         : {}
     },
-    on: (
-      method: string,
-      handler: (params: Readonly<Record<string, unknown>>) => void,
-      session?: string
-    ) => {
-      handlers.set(`${session}:${method}`, handler)
+    on: (method, handler, session) => {
+      handlers.set(`${session}:${method}`, (params) =>
+        handler(params, {
+          method,
+          params,
+          ...(session === undefined ? {} : { sessionId: session })
+        })
+      )
       return () => handlers.delete(`${session}:${method}`)
     }
-  }
-  const runtime = { connection, sessions: new Map<string, string>() } as unknown as BrowserRuntime
+  })
+  const runtime = fakeBrowserRuntime({ connection })
   const frame = (session: string, data: unknown, frameId = 1) =>
     handlers.get(`${session}:Page.screencastFrame`)?.({ data, sessionId: frameId })
   const methods = () =>
     sent.map(({ method, session }) => `${method}${session ? `@${session}` : ""}`)
-  return { runtime, connection, sent, methods, frame, handlers }
+  return { runtime, connection, disconnect, send, sent, methods, frame, handlers }
 }
 
 const viewer = () => {
@@ -98,8 +100,8 @@ const timers = () => {
         pending.set(callback, time + ms)
         return callback
       },
-      clearTimer: (timer: unknown) => {
-        pending.delete(timer as () => void)
+      clearTimer: (timer: () => void) => {
+        pending.delete(timer)
       },
       now: () => time
     },
@@ -185,14 +187,13 @@ describe("Browser live preview", () => {
     const chrome = browser()
     const castRequested = Promise.withResolvers<void>()
     const titlePublished = Promise.withResolvers<void>()
-    const send = chrome.connection.send
-    chrome.connection.send = (method, params, session) => {
-      const pending = send(method, params, session)
+    vi.spyOn(chrome.connection, "send").mockImplementation(async (method, params, session) => {
+      const pending = chrome.send(method, params, session)
       if (method === "Page.startScreencast" && session === "cdp:tab-2") {
         castRequested.resolve()
       }
       return pending
-    }
+    })
     const previews = makeBrowserPreviews(clock.options)
     const watcher = viewer()
     previews
@@ -304,7 +305,7 @@ describe("Browser live preview", () => {
     expect(watcher.statuses.at(-1)).toMatchObject({ state: "active", title: "" })
 
     const closed = browser()
-    ;(closed.connection as { closed: boolean }).closed = true
+    closed.disconnect()
     await previews.activity("chat", closed.runtime, "tab-1")
     expect(closed.methods()).not.toContain("Page.startScreencast@cdp:tab-1")
   })
@@ -314,7 +315,7 @@ describe("Browser live preview", () => {
     const previews = makeBrowserPreviews(timers().options)
     previews.subscribe("chat", viewer().value).watch(800)
     await previews.activity("chat", chrome.runtime, "tab-1")
-    ;(chrome.connection as { closed: boolean }).closed = true
+    chrome.disconnect()
     const replacement = browser()
     replacement.runtime.sessions.set("tab-1", "existing")
     await previews.activity("chat", replacement.runtime, "tab-1")

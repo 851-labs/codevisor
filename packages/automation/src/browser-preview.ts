@@ -1,4 +1,5 @@
 import { attachTarget, type BrowserRuntime } from "./browser-cdp-engine.js"
+import { recordOrUndefined } from "./unknown-values.js"
 
 export type BrowserPreviewState = "inactive" | "active" | "idle" | "stopped"
 
@@ -19,10 +20,19 @@ export interface BrowserPreviewSubscription {
   readonly close: () => void
 }
 
-export interface BrowserPreviewsOptions {
-  readonly setTimer?: (callback: () => void, ms: number) => unknown
-  readonly clearTimer?: (timer: unknown) => void
-  readonly now?: () => number
+interface BrowserPreviewTimers<Timer> {
+  readonly setTimer: (callback: () => void, ms: number) => Timer
+  readonly clearTimer: (timer: Timer) => void
+}
+
+export type BrowserPreviewsOptions<Timer> = { readonly now?: () => number } & (
+  | BrowserPreviewTimers<Timer>
+  | { readonly setTimer?: undefined; readonly clearTimer?: undefined }
+)
+
+const nodeTimers: BrowserPreviewTimers<NodeJS.Timeout> = {
+  setTimer: (callback, ms) => setTimeout(callback, ms).unref(),
+  clearTimer: (timer) => clearTimeout(timer)
 }
 
 const IDLE_MS = 60_000
@@ -40,19 +50,19 @@ interface Stream {
   readonly dispose: () => void
 }
 
-interface Session {
+interface Session<Timer = unknown> {
   status: BrowserPreviewStatus
   runtime: BrowserRuntime | undefined
   targetId: string | undefined
   readonly viewers: Map<BrowserPreviewViewer, { watching: boolean; dimension: number }>
   stream: Stream | undefined
   pending: Promise<void>
-  idleTimer: unknown
+  idleTimer: Timer | undefined
   infoRefreshedAt: number
-  infoTimer: unknown
+  infoTimer: Timer | undefined
   infoWatch: { readonly runtime: BrowserRuntime; readonly dispose: () => void } | undefined
   shownAt: number
-  switchTimer: unknown
+  switchTimer: Timer | undefined
 }
 
 const clampDimension = (value: number): number =>
@@ -88,16 +98,16 @@ const stopStream = async (entry: Session): Promise<void> => {
     .catch(() => undefined)
 }
 
-export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
-  const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms).unref())
-  const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer as NodeJS.Timeout))
-  const now = options.now ?? Date.now
-  const sessions = new Map<string, Session>()
+const createBrowserPreviews = <Timer>(
+  { setTimer, clearTimer }: BrowserPreviewTimers<Timer>,
+  now: () => number
+) => {
+  const sessions = new Map<string, Session<Timer>>()
 
-  const session = (sessionId: string): Session => {
+  const session = (sessionId: string): Session<Timer> => {
     const existing = sessions.get(sessionId)
     if (existing !== undefined) return existing
-    const created: Session = {
+    const created: Session<Timer> = {
       status: { state: "inactive", title: "", url: "" },
       runtime: undefined,
       targetId: undefined,
@@ -115,7 +125,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     return created
   }
 
-  const watchInfo = (entry: Session, runtime: BrowserRuntime | undefined): void => {
+  const watchInfo = (entry: Session<Timer>, runtime: BrowserRuntime | undefined): void => {
     if (entry.infoWatch?.runtime === runtime) return
     entry.infoWatch?.dispose()
     entry.infoWatch =
@@ -124,9 +134,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
         : {
             runtime,
             dispose: runtime.connection.on("Target.targetInfoChanged", (params) => {
-              const info = params.targetInfo as
-                | { readonly targetId?: unknown; readonly title?: unknown; readonly url?: unknown }
-                | undefined
+              const info = recordOrUndefined(params.targetInfo)
               if (info === undefined || info.targetId !== entry.targetId) return
               publish(entry, {
                 title: typeof info.title === "string" ? info.title : "",
@@ -136,7 +144,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
           }
   }
 
-  const refreshInfo = (entry: Session): void => {
+  const refreshInfo = (entry: Session<Timer>): void => {
     if (entry.infoTimer !== undefined) return
     const wait = entry.infoRefreshedAt + INFO_REFRESH_MS - now()
     if (wait > 0) {
@@ -161,18 +169,18 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       .catch(() => undefined)
   }
 
-  const stopInfo = (entry: Session): void => {
+  const stopInfo = (entry: Session<Timer>): void => {
     if (entry.infoTimer !== undefined) clearTimer(entry.infoTimer)
     entry.infoTimer = undefined
     watchInfo(entry, undefined)
   }
 
-  const cancelSwitch = (entry: Session): void => {
+  const cancelSwitch = (entry: Session<Timer>): void => {
     if (entry.switchTimer !== undefined) clearTimer(entry.switchTimer)
     entry.switchTimer = undefined
   }
 
-  const follow = (entry: Session, runtime: BrowserRuntime, targetId: string): void => {
+  const follow = (entry: Session<Timer>, runtime: BrowserRuntime, targetId: string): void => {
     cancelSwitch(entry)
     if (entry.runtime === runtime && entry.targetId === targetId) return
     const wait = entry.shownAt + BROWSER_PREVIEW_SWITCH_HOLD_MS - now()
@@ -194,7 +202,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     entry.infoRefreshedAt = Number.NEGATIVE_INFINITY
   }
 
-  const startStream = async (entry: Session, dimension: number): Promise<void> => {
+  const startStream = async (entry: Session<Timer>, dimension: number): Promise<void> => {
     const { runtime, targetId } = entry
     if (runtime === undefined || targetId === undefined || runtime.connection.closed) return
     const cdpSession = runtime.sessions.get(targetId) ?? (await attachTarget(runtime, targetId))
@@ -220,7 +228,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     )
   }
 
-  const reconcile = (entry: Session): Promise<void> => {
+  const reconcile = (entry: Session<Timer>): Promise<void> => {
     entry.pending = entry.pending.then(async () => {
       const dimension = desiredDimension(entry)
       const stream = entry.stream
@@ -315,6 +323,13 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       }
     }
   }
+}
+
+export const makeBrowserPreviews = <Timer>(options: BrowserPreviewsOptions<Timer> = {}) => {
+  const now = options.now ?? Date.now
+  return options.setTimer === undefined
+    ? createBrowserPreviews(nodeTimers, now)
+    : createBrowserPreviews(options, now)
 }
 
 export type BrowserPreviews = ReturnType<typeof makeBrowserPreviews>

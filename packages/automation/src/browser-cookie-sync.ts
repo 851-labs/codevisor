@@ -1,13 +1,20 @@
 import {
+  BrowserCookie,
   browserCookieKey,
-  type BrowserCookie,
   type BrowserCookieEntry,
   type BrowserCookieMutation
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 
 import type { CdpConnection } from "./browser-cdp.js"
+
+const isSameSite = Schema.is(BrowserCookie.fields.sameSite)
+
+const cookieSameSite = (value: unknown): BrowserCookie["sameSite"] => {
+  const normalized = typeof value === "string" ? value.toLowerCase() : "unspecified"
+  return isSameSite(normalized) ? normalized : "unspecified"
+}
 
 const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {
   if (
@@ -25,10 +32,7 @@ const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {
     path: typeof raw.path === "string" ? raw.path : "/",
     secure: raw.secure === true,
     httpOnly: raw.httpOnly === true,
-    sameSite:
-      typeof raw.sameSite === "string"
-        ? (raw.sameSite.toLowerCase() as BrowserCookie["sameSite"])
-        : "unspecified",
+    sameSite: cookieSameSite(raw.sameSite),
     ...(typeof raw.expires === "number" && raw.expires > 0 ? { expires: raw.expires } : {})
   }
 }
@@ -37,7 +41,7 @@ const equal = (a: BrowserCookie | undefined | null, b: BrowserCookie | undefined
 
 export const synchronizeManagedCookies = async (
   connection: CdpConnection,
-  db: CodevisorDatabaseService
+  db: Pick<CodevisorDatabaseService, "exchangeBrowserCookies">
 ): Promise<{ synchronize: () => Promise<void>; stop: () => void }> => {
   let baseline: Map<string, BrowserCookie> | undefined
   const revisions = new Map<string, number>()
