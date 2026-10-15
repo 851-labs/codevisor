@@ -36,6 +36,7 @@ import {
 } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { expectString } from "./unknown-values.js"
 
 export const invokePlaywrightTools = async (
   invocation: BrowserToolInvocation,
@@ -69,17 +70,20 @@ export const invokePlaywrightTools = async (
         if (objectId === undefined) continue
         try {
           values.push(
-            evaluatedValue(
-              await active.connection.send(
-                "Runtime.callFunctionOn",
-                {
-                  objectId,
-                  functionDeclaration: "function(){return String(this.textContent??'');}",
-                  returnByValue: true
-                },
-                page.sessionId
-              )
-            ) as string
+            expectString(
+              evaluatedValue(
+                await active.connection.send(
+                  "Runtime.callFunctionOn",
+                  {
+                    objectId,
+                    functionDeclaration: "function(){return String(this.textContent??'');}",
+                    returnByValue: true
+                  },
+                  page.sessionId
+                )
+              ),
+              "Locator text"
+            )
           )
         } finally {
           await active.connection
@@ -373,7 +377,7 @@ export const invokePlaywrightTools = async (
       return jsonResult({ visible: await locatorIsVisible(active, page, args.locator) })
     case "playwright.isEnabled":
       return jsonResult({
-        enabled: await callLocatorFunction<boolean>(
+        enabled: await callLocatorFunction(
           active,
           page,
           args.locator,
@@ -384,7 +388,7 @@ export const invokePlaywrightTools = async (
       })
     case "playwright.getAttribute":
       return jsonResult({
-        value: await callLocatorFunction<string | null>(
+        value: await callLocatorFunction(
           active,
           page,
           args.locator,
@@ -395,7 +399,7 @@ export const invokePlaywrightTools = async (
       })
     case "playwright.innerText":
       return jsonResult({
-        value: await callLocatorFunction<string>(
+        value: await callLocatorFunction(
           active,
           page,
           args.locator,
@@ -406,7 +410,7 @@ export const invokePlaywrightTools = async (
       })
     case "playwright.textContent":
       return jsonResult({
-        value: await callLocatorFunction<string | null>(
+        value: await callLocatorFunction(
           active,
           page,
           args.locator,

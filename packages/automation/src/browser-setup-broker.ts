@@ -59,7 +59,7 @@ const rejection = (answer: QuestionAnswer): Error => {
 }
 
 export const makeBrowserSetupBroker = (
-  db: CodevisorDatabaseService,
+  db: Pick<CodevisorDatabaseService, "getBrowserPreference" | "setBrowserPreference">,
   provider: BrowserUseProvider
 ): BrowserSetupBroker => {
   const sinks = new Map<string, RuntimeEventSink>()

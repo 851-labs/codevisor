@@ -17,6 +17,7 @@ import type { WebSocket } from "ws"
 import { CdpConnection } from "./browser-cdp.js"
 import { createBrowserExtensionArchive } from "./browser-extension-archive.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
+import { expectRecord, recordOrEmpty } from "./unknown-values.js"
 
 export {
   browserExtensionArchivePath,
@@ -62,11 +63,9 @@ const profileHasExtension = (profile: string): boolean | undefined => {
     const path = join(profile, file)
     if (!existsSync(path)) continue
     try {
-      const preferences = JSON.parse(readFileSync(path, "utf8")) as {
-        extensions?: { settings?: Record<string, unknown> }
-      }
-      if (preferences.extensions?.settings?.[CODEVISOR_BROWSER_EXTENSION_ID] !== undefined)
-        return true
+      const preferences: unknown = JSON.parse(readFileSync(path, "utf8"))
+      const settings = recordOrEmpty(recordOrEmpty(recordOrEmpty(preferences).extensions).settings)
+      if (settings[CODEVISOR_BROWSER_EXTENSION_ID] !== undefined) return true
     } catch {
       inaccessible = true
     }
@@ -131,11 +130,8 @@ const extensionIconFiles = {
 
 const applyExtensionBranding = (extension: string, branding: BrowserExtensionBranding): void => {
   const manifestPath = join(extension, "manifest.json")
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-    name: string
-    description: string
-    icons?: Record<string, string>
-    action?: { default_title?: string; default_icon?: Record<string, string> }
+  const manifest: Record<string, unknown> = {
+    ...expectRecord(JSON.parse(readFileSync(manifestPath, "utf8")), "Extension manifest")
   }
   const worktreeName = branding.worktreeName?.trim()
   const name =
@@ -144,7 +140,7 @@ const applyExtensionBranding = (extension: string, branding: BrowserExtensionBra
   manifest.description = "Control Chrome with Codevisor."
   manifest.icons = { ...extensionIconFiles }
   manifest.action = {
-    ...manifest.action,
+    ...recordOrEmpty(manifest.action),
     default_title: name,
     default_icon: { ...extensionIconFiles }
   }

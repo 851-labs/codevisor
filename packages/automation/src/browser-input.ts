@@ -2,6 +2,12 @@ import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserCursor } from "./browser-cursor.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
+import {
+  expectRecord,
+  isStringArray,
+  optionalString,
+  type UnknownRecord
+} from "./unknown-values.js"
 
 export {
   dispatchKeyEvent,
@@ -133,25 +139,33 @@ export const dispatchClick = async (
   await cursor?.pulse(x, y)
 }
 
+const throwEvaluationError = (result: UnknownRecord): void => {
+  if (result.error !== undefined)
+    throw new Error(optionalString(result.error) ?? "Browser evaluation failed")
+}
+
 export const triggerMediaDownload = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   objectId: string
 ): Promise<void> => {
-  const result = evaluatedValue(
-    await runtime.connection.send(
-      "Runtime.callFunctionOn",
-      {
-        objectId,
-        functionDeclaration:
-          "function(){const url=this.currentSrc||this.src||this.href;if(!url)return{error:'The target has no media URL'};const link=document.createElement('a');link.href=url;link.download='';link.style.display='none';document.body.append(link);link.click();link.remove();return{};}",
-        returnByValue: true,
-        userGesture: true
-      },
-      page.sessionId
-    )
-  ) as { error?: string }
-  if (result.error !== undefined) throw new Error(result.error)
+  const result = expectRecord(
+    evaluatedValue(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId,
+          functionDeclaration:
+            "function(){const url=this.currentSrc||this.src||this.href;if(!url)return{error:'The target has no media URL'};const link=document.createElement('a');link.href=url;link.download='';link.style.display='none';document.body.append(link);link.click();link.remove();return{};}",
+          returnByValue: true,
+          userGesture: true
+        },
+        page.sessionId
+      )
+    ),
+    "Media download"
+  )
+  throwEvaluationError(result)
 }
 
 export const mediaElementAtPoint = async (
@@ -181,25 +195,23 @@ export const fillResolvedElement = async (
   slowly: boolean,
   replace: boolean
 ): Promise<string | undefined> => {
-  const preparation = evaluatedValue(
-    await runtime.connection.send(
-      "Runtime.callFunctionOn",
-      {
-        objectId: element.objectId,
-        functionDeclaration:
-          "function(value,replace){const tag=this.tagName?.toLowerCase();const type=tag==='input'?String(this.type||'text').toLowerCase():tag;const setValueTypes=new Set(['color','date','time','datetime-local','month','range','week']);const typeableTypes=new Set(['text','email','number','password','search','tel','url']);if(tag==='input'){if(!typeableTypes.has(type)&&!setValueTypes.has(type))return {error:`Input type ${type} cannot be filled`,type};if(type==='number'&&Number.isNaN(Number(String(value).trim())))return {error:'Cannot type text into input[type=number]',type};if(setValueTypes.has(type)){const normalized=String(value).trim();this.focus();this.value=type==='color'?normalized.toLowerCase():normalized;if(this.value!==normalized.toLowerCase())return {error:`Malformed value for input[type=${type}]`,actual:this.value,type};this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {actual:this.value,type};}}else if(tag!=='textarea'&&!this.isContentEditable)return {error:'Element is not an <input>, <textarea> or [contenteditable] element',type};this.focus();if(replace){if(typeof this.select==='function')this.select();else{const selection=getSelection(),range=document.createRange();range.selectNodeContents(this);selection.removeAllRanges();selection.addRange(range);}}return {needsInput:true,type};}",
-        arguments: [{ value: text }, { value: replace }],
-        returnByValue: true
-      },
-      page.sessionId
-    )
-  ) as {
-    actual?: string
-    error?: string
-    needsInput?: boolean
-    type?: string
-  }
-  if (preparation.error !== undefined) throw new Error(preparation.error)
+  const preparation = expectRecord(
+    evaluatedValue(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId: element.objectId,
+          functionDeclaration:
+            "function(value,replace){const tag=this.tagName?.toLowerCase();const type=tag==='input'?String(this.type||'text').toLowerCase():tag;const setValueTypes=new Set(['color','date','time','datetime-local','month','range','week']);const typeableTypes=new Set(['text','email','number','password','search','tel','url']);if(tag==='input'){if(!typeableTypes.has(type)&&!setValueTypes.has(type))return {error:`Input type ${type} cannot be filled`,type};if(type==='number'&&Number.isNaN(Number(String(value).trim())))return {error:'Cannot type text into input[type=number]',type};if(setValueTypes.has(type)){const normalized=String(value).trim();this.focus();this.value=type==='color'?normalized.toLowerCase():normalized;if(this.value!==normalized.toLowerCase())return {error:`Malformed value for input[type=${type}]`,actual:this.value,type};this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {actual:this.value,type};}}else if(tag!=='textarea'&&!this.isContentEditable)return {error:'Element is not an <input>, <textarea> or [contenteditable] element',type};this.focus();if(replace){if(typeof this.select==='function')this.select();else{const selection=getSelection(),range=document.createRange();range.selectNodeContents(this);selection.removeAllRanges();selection.addRange(range);}}return {needsInput:true,type};}",
+          arguments: [{ value: text }, { value: replace }],
+          returnByValue: true
+        },
+        page.sessionId
+      )
+    ),
+    "Fill preparation"
+  )
+  throwEvaluationError(preparation)
   if (preparation.needsInput === true) {
     if (slowly) {
       for (const character of text) {
@@ -208,18 +220,20 @@ export const fillResolvedElement = async (
       }
     } else await runtime.connection.send("Input.insertText", { text }, page.sessionId)
   }
-  const actual = evaluatedValue(
-    await runtime.connection.send(
-      "Runtime.callFunctionOn",
-      {
-        objectId: element.objectId,
-        functionDeclaration:
-          "function(){if(this.tagName?.toLowerCase()==='input'||this.tagName?.toLowerCase()==='textarea')return String(this.value);if(this.isContentEditable)return String(this.textContent||'');return undefined;}",
-        returnByValue: true
-      },
-      page.sessionId
+  const actual = optionalString(
+    evaluatedValue(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId: element.objectId,
+          functionDeclaration:
+            "function(){if(this.tagName?.toLowerCase()==='input'||this.tagName?.toLowerCase()==='textarea')return String(this.value);if(this.isContentEditable)return String(this.textContent||'');return undefined;}",
+          returnByValue: true
+        },
+        page.sessionId
+      )
     )
-  ) as string | undefined
+  )
   if (replace && actual !== text && preparation.actual === undefined) {
     throw new Error(
       `Browser fill verification failed: expected ${JSON.stringify(text)}, received ${JSON.stringify(actual)}`
@@ -249,19 +263,22 @@ const checkedState = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   element: ResolvedElement
-): Promise<{ checked?: boolean; error?: string; radio?: boolean }> =>
-  evaluatedValue(
-    await runtime.connection.send(
-      "Runtime.callFunctionOn",
-      {
-        objectId: element.objectId,
-        functionDeclaration:
-          "function(){const tag=this.tagName?.toLowerCase(),type=String(this.type||'').toLowerCase();if(tag!=='input'||(type!=='checkbox'&&type!=='radio'))return {error:'Element is not a checkbox or radio button'};return {checked:!!this.checked,radio:type==='radio'};}",
-        returnByValue: true
-      },
-      page.sessionId
-    )
-  ) as { checked?: boolean; error?: string; radio?: boolean }
+): Promise<UnknownRecord> =>
+  expectRecord(
+    evaluatedValue(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId: element.objectId,
+          functionDeclaration:
+            "function(){const tag=this.tagName?.toLowerCase(),type=String(this.type||'').toLowerCase();if(tag!=='input'||(type!=='checkbox'&&type!=='radio'))return {error:'Element is not a checkbox or radio button'};return {checked:!!this.checked,radio:type==='radio'};}",
+          returnByValue: true
+        },
+        page.sessionId
+      )
+    ),
+    "Checked state"
+  )
 
 export const setCheckedElement = async (
   runtime: BrowserRuntime,
@@ -271,7 +288,7 @@ export const setCheckedElement = async (
   cursor?: BrowserCursor
 ): Promise<void> => {
   const before = await checkedState(runtime, page, element)
-  if (before.error !== undefined) throw new Error(before.error)
+  throwEvaluationError(before)
   if (before.checked === desired) return
   if (before.radio === true && !desired) {
     throw new Error("Radio buttons can only be unchecked by selecting another radio button")
@@ -289,21 +306,24 @@ export const selectOptionsElement = async (
   element: ResolvedElement,
   values: ReadonlyArray<unknown>
 ): Promise<string[]> => {
-  const result = evaluatedValue(
-    await runtime.connection.send(
-      "Runtime.callFunctionOn",
-      {
-        objectId: element.objectId,
-        functionDeclaration:
-          "function(values){if(this.tagName?.toLowerCase()!=='select')return {error:'Element is not a <select> element'};const options=[...this.options],selected=[];for(const requested of values){const spec=typeof requested==='string'?{valueOrLabel:requested}:requested||{};const option=options.find((candidate,index)=>(spec.valueOrLabel===undefined||(candidate.value===spec.valueOrLabel||candidate.label===spec.valueOrLabel))&&(spec.value===undefined||candidate.value===spec.value)&&(spec.label===undefined||candidate.label===spec.label)&&(spec.index===undefined||index===spec.index));if(!option)return {error:`Option not found: ${JSON.stringify(requested)}`};if(option.disabled)return {error:`Option is disabled: ${option.label}`};if(!selected.includes(option))selected.push(option);}if(!this.multiple&&selected.length>1)return {error:'A single-select control cannot select multiple options'};for(const option of options)option.selected=selected.includes(option);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {selected:[...this.selectedOptions].map(option=>option.value)};}",
-        arguments: [{ value: values }],
-        returnByValue: true
-      },
-      page.sessionId
-    )
-  ) as { error?: string; selected?: string[] }
-  if (result.error !== undefined) throw new Error(result.error)
-  return result.selected ?? []
+  const result = expectRecord(
+    evaluatedValue(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId: element.objectId,
+          functionDeclaration:
+            "function(values){if(this.tagName?.toLowerCase()!=='select')return {error:'Element is not a <select> element'};const options=[...this.options],selected=[];for(const requested of values){const spec=typeof requested==='string'?{valueOrLabel:requested}:requested||{};const option=options.find((candidate,index)=>(spec.valueOrLabel===undefined||(candidate.value===spec.valueOrLabel||candidate.label===spec.valueOrLabel))&&(spec.value===undefined||candidate.value===spec.value)&&(spec.label===undefined||candidate.label===spec.label)&&(spec.index===undefined||index===spec.index));if(!option)return {error:`Option not found: ${JSON.stringify(requested)}`};if(option.disabled)return {error:`Option is disabled: ${option.label}`};if(!selected.includes(option))selected.push(option);}if(!this.multiple&&selected.length>1)return {error:'A single-select control cannot select multiple options'};for(const option of options)option.selected=selected.includes(option);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {selected:[...this.selectedOptions].map(option=>option.value)};}",
+          arguments: [{ value: values }],
+          returnByValue: true
+        },
+        page.sessionId
+      )
+    ),
+    "Option selection"
+  )
+  throwEvaluationError(result)
+  return isStringArray(result.selected) ? result.selected : []
 }
 
 export const mouseModifierMask = (value: unknown): number => {

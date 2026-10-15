@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it as baseIt, vi } from "vitest"
 
 import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { expectRecord, expectString, recordOrEmpty } from "./unknown-values.js"
 
 const value = (result: CallToolResult): unknown => {
   const message = result.content
@@ -141,7 +142,7 @@ describe("Browser session reliability", () => {
   }) => {
     let requestId: unknown
     const requested = cdp.event("Network.requestWillBeSent", (params) => {
-      if ((params.request as { url: string }).url.endsWith("/slow")) {
+      if (String(recordOrEmpty(params.request).url).endsWith("/slow")) {
         requestId = params.requestId
         return true
       }
@@ -189,8 +190,10 @@ describe("Browser session reliability", () => {
       format: "markdown",
       tabId: await cell("first.id")
     })
-    const exported = value(result) as { file: { path: string } }
-    expect(readFileSync(exported.file.path, "utf8")).toContain("Source: " + origin)
+    const file = expectRecord(expectRecord(value(result), "Export").file, "Exported file")
+    expect(readFileSync(expectString(file.path, "Exported path"), "utf8")).toContain(
+      "Source: " + origin
+    )
     expect(result.content.some((c) => c.type === "resource")).toBe(true)
   })
 

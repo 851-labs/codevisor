@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { observeCdp } from "./browser-cdp-test-support.js"
 import { pointerOverlayExpression } from "./browser-cursor-overlay.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { expectNumber, expectRecord, expectString } from "./unknown-values.js"
 
 const directories: string[] = []
 
@@ -110,8 +111,11 @@ describe("Browser Use direct CDP engine", () => {
           "(element) => { const r = element.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }"
       })
       if (buttonBox.content[0]?.type !== "text") throw new Error("Missing button box")
-      const centre = (JSON.parse(buttonBox.content[0].text) as { value: { x: number; y: number } })
-        .value
+      const box = expectRecord(
+        expectRecord(JSON.parse(buttonBox.content[0].text), "Button box").value,
+        "Button box value"
+      )
+      const centre = { x: expectNumber(box.x, "Centre x"), y: expectNumber(box.y, "Centre y") }
       expect(JSON.parse(pointer.content[0].text)).toMatchObject({
         result: {
           result: {
@@ -241,10 +245,7 @@ describe("Browser Use direct CDP engine", () => {
       expect(fileClick.isError).not.toBe(true)
       const chooser = await chooserPromise
       if (chooser.content[0]?.type !== "text") throw new Error("Missing file chooser")
-      const chooserValue = JSON.parse(chooser.content[0].text) as {
-        chooserId: string
-        multiple: boolean
-      }
+      const chooserValue = expectRecord(JSON.parse(chooser.content[0].text), "File chooser")
       expect(chooserValue.multiple).toBe(true)
       const setFiles = await provider.invoke(context, "playwright.fileChooserSetFiles", {
         chooserId: chooserValue.chooserId,
@@ -315,14 +316,14 @@ describe("Browser Use direct CDP engine", () => {
       expect(downloadClick.isError).not.toBe(true)
       const download = await downloadPromise
       if (download.content[0]?.type !== "text") throw new Error("Missing download")
-      const downloadValue = JSON.parse(download.content[0].text) as { downloadId: string }
+      const downloadValue = expectRecord(JSON.parse(download.content[0].text), "Download")
       const downloadPath = await provider.invoke(context, "playwright.downloadPath", {
         downloadId: downloadValue.downloadId,
         timeoutMs: 5_000
       })
       if (downloadPath.content[0]?.type !== "text") throw new Error("Missing download path")
-      const downloadPathValue = JSON.parse(downloadPath.content[0].text) as { path: string }
-      expect(existsSync(downloadPathValue.path)).toBe(true)
+      const downloadPathValue = expectRecord(JSON.parse(downloadPath.content[0].text), "Path")
+      expect(existsSync(expectString(downloadPathValue.path, "Download path"))).toBe(true)
     } finally {
       await provider.close()
       await new Promise<void>((resolve) => server.close(() => resolve()))

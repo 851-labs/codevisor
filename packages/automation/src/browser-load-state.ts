@@ -5,6 +5,7 @@ import {
   type PageHandle
 } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
+import { recordOrUndefined } from "./unknown-values.js"
 
 const loads = new WeakMap<
   BrowserRuntime,
@@ -83,16 +84,16 @@ export const waitForBrowserState = async (
           return false
         if (event.method === "Page.navigatedWithinDocument")
           return event.params.frameId === options.frameId
-        const frame = event.params.frame as { id?: string } | undefined
-        return event.method === "Page.frameNavigated" && frame?.id === options.frameId
+        return (
+          event.method === "Page.frameNavigated" &&
+          recordOrUndefined(event.params.frame)?.id === options.frameId
+        )
       })
     const matchesUrl =
       options.url === undefined || (await pageInformation(runtime, page)).url === options.url
     if (navigated && matchesUrl) {
       const ready =
-        state === "commit"
-          ? "complete"
-          : await evaluate<string>(runtime, page, "document.readyState")
+        state === "commit" ? "complete" : await evaluate(runtime, page, "document.readyState")
       const documentReady =
         ready === "complete" || (state === "domcontentloaded" && ready === "interactive")
       const network = loadFor(runtime, page.sessionId)

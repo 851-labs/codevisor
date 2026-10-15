@@ -5,6 +5,16 @@ import { join } from "node:path"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import { evaluate, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
+import { expectString } from "./unknown-values.js"
+
+const contentTypes = {
+  markdown: ["md", "text/markdown"],
+  html: ["html", "text/html"],
+  pdf: ["pdf", "application/pdf"]
+} as const
+
+const isContentFormat = (format: string): format is keyof typeof contentTypes =>
+  Object.hasOwn(contentTypes, format)
 
 export const exportBrowserContent = async (
   runtime: BrowserRuntime,
@@ -12,13 +22,9 @@ export const exportBrowserContent = async (
   directory: string,
   format = "markdown"
 ): Promise<CallToolResult> => {
-  const types = {
-    markdown: ["md", "text/markdown"],
-    html: ["html", "text/html"],
-    pdf: ["pdf", "application/pdf"]
-  } as const
-  if (!(format in types)) throw new Error("Content export format must be markdown, html, or pdf")
-  const [extension, mimeType] = types[format as keyof typeof types]
+  if (!isContentFormat(format))
+    throw new Error("Content export format must be markdown, html, or pdf")
+  const [extension, mimeType] = contentTypes[format]
   const bytes =
     format === "pdf"
       ? Buffer.from(
@@ -32,12 +38,15 @@ export const exportBrowserContent = async (
           "base64"
         )
       : Buffer.from(
-          await evaluate<string>(
-            runtime,
-            page,
-            format === "html"
-              ? "document.documentElement.outerHTML"
-              : "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
+          expectString(
+            await evaluate(
+              runtime,
+              page,
+              format === "html"
+                ? "document.documentElement.outerHTML"
+                : "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
+            ),
+            "Page export"
           )
         )
   if (bytes.length > 20 * 1024 * 1024)

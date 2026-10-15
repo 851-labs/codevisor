@@ -1,18 +1,14 @@
-import type { ChildProcess } from "node:child_process"
-import { EventEmitter } from "node:events"
+import { ChildProcess } from "node:child_process"
 
 import { afterEach, expect, it, vi } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { closeBrowserRuntime, waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 
 function fixture(owned = true) {
   const requested = Promise.withResolvers<void>()
-  const processHandle = Object.assign(new EventEmitter(), {
-    exitCode: null as number | null,
-    signalCode: null as NodeJS.Signals | null,
-    kill: vi.fn(() => true)
-  })
+  const processHandle = new ChildProcess()
+  const kill = vi.spyOn(processHandle, "kill").mockReturnValue(true)
   const connection = {
     send: vi.fn(async () => {
       requested.resolve()
@@ -20,38 +16,36 @@ function fixture(owned = true) {
     }),
     close: vi.fn(async () => undefined)
   }
-  const active = {
-    queue: Promise.resolve(),
-    eventDisposers: [],
+  const active = fakeBrowserRuntime({
     owned,
-    processHandle: processHandle as unknown as ChildProcess,
-    connection
-  } as unknown as BrowserRuntime
+    processHandle,
+    connection: fakeCdpConnection(connection).connection
+  })
   const exit = (signal: NodeJS.Signals | null = null) => {
-    processHandle.signalCode = signal
-    processHandle.exitCode = signal === null ? 0 : null
-    processHandle.emit("exit", processHandle.exitCode, signal)
+    const exitCode = signal === null ? 0 : null
+    Object.assign(processHandle, { signalCode: signal, exitCode })
+    processHandle.emit("exit", exitCode, signal)
   }
-  return { active, connection, processHandle, requested: requested.promise, exit }
+  return { active, connection, processHandle, kill, requested: requested.promise, exit }
 }
 
 afterEach(() => vi.useRealTimers())
 
 it("waits for confirmed process exit even after the termination grace periods expire", async () => {
   vi.useFakeTimers()
-  const { active, connection, processHandle, requested, exit } = fixture()
+  const { active, connection, processHandle, kill, requested, exit } = fixture()
   const closing = closeBrowserRuntime(active)
   await requested
   await vi.advanceTimersByTimeAsync(499)
-  expect(processHandle.kill).not.toHaveBeenCalled()
+  expect(kill).not.toHaveBeenCalled()
   expect(connection.close).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(1)
-  expect(processHandle.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM")
+  expect(kill).toHaveBeenCalledExactlyOnceWith("SIGTERM")
   expect(connection.close).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(1_499)
-  expect(processHandle.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM")
+  expect(kill).toHaveBeenCalledExactlyOnceWith("SIGTERM")
   await vi.advanceTimersByTimeAsync(1)
-  expect(processHandle.kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]])
+  expect(kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]])
   expect(connection.close).not.toHaveBeenCalled()
   exit("SIGKILL")
   await closing
@@ -62,7 +56,7 @@ it("waits for confirmed process exit even after the termination grace periods ex
 
 it("observes an exit that arrives before Browser.close replies and cancels escalation", async () => {
   vi.useFakeTimers()
-  const { active, connection, processHandle, exit } = fixture()
+  const { active, connection, kill, exit } = fixture()
   const reply = Promise.withResolvers<Record<string, unknown>>()
   connection.send.mockImplementation(() => {
     exit()
@@ -73,26 +67,26 @@ it("observes an exit that arrives before Browser.close replies and cancels escal
   })
   await closeBrowserRuntime(active)
   expect(connection.close).toHaveBeenCalledOnce()
-  expect(processHandle.kill).not.toHaveBeenCalled()
+  expect(kill).not.toHaveBeenCalled()
   expect(vi.getTimerCount()).toBe(0)
 })
 
 it("recognizes a process that already exited from a signal", async () => {
   vi.useFakeTimers()
-  const { active, connection, processHandle, exit } = fixture()
+  const { active, connection, processHandle, kill, exit } = fixture()
   exit("SIGTERM")
   await closeBrowserRuntime(active)
   expect(connection.close).toHaveBeenCalledOnce()
-  expect(processHandle.kill).not.toHaveBeenCalled()
+  expect(kill).not.toHaveBeenCalled()
   expect(processHandle.listenerCount("exit")).toBe(0)
   expect(vi.getTimerCount()).toBe(0)
 })
 
 it("only disconnects from a browser it does not own", async () => {
-  const { active, connection, processHandle } = fixture(false)
+  const { active, connection, kill } = fixture(false)
   await closeBrowserRuntime(active)
   expect(connection.send).not.toHaveBeenCalled()
-  expect(processHandle.kill).not.toHaveBeenCalled()
+  expect(kill).not.toHaveBeenCalled()
   expect(connection.close).toHaveBeenCalledOnce()
 })
 
@@ -102,7 +96,7 @@ it("waits until closed tabs stop being listed, and no longer than the deadline",
     { targetInfos: [{ targetId: "other" }] }
   ]
   const send = vi.fn(async () => replies.shift())
-  const active = { connection: { send } } as unknown as BrowserRuntime
+  const active = fakeBrowserRuntime({ connection: fakeCdpConnection({ send }).connection })
 
   await waitForTargetsClosed(active, [])
   expect(send).not.toHaveBeenCalled()

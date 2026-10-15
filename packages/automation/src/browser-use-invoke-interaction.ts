@@ -20,6 +20,7 @@ import {
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { expectString, isRecord } from "./unknown-values.js"
 
 export const invokeInteractionTools = async (
   invocation: BrowserToolInvocation,
@@ -131,11 +132,9 @@ export const invokeInteractionTools = async (
     case "fill_form": {
       if (!Array.isArray(args.fields)) throw new Error("fields must be an array")
       for (const field of args.fields) {
-        if (field === null || typeof field !== "object")
-          throw new Error("Each field must be an object")
-        const entry = field as Readonly<Record<string, unknown>>
-        const target = entry.target ?? entry.ref
-        const value = entry.value
+        if (!isRecord(field)) throw new Error("Each field must be an object")
+        const target = field.target ?? field.ref
+        const value = field.value
         if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
           throw new Error("Each field value must be a string, number, or boolean")
         }
@@ -208,7 +207,10 @@ export const invokeInteractionTools = async (
       if (expected !== undefined || gone !== undefined) {
         const deadline = Date.now() + 30_000
         while (true) {
-          const body = await evaluate<string>(active, page, "document.body?.innerText ?? ''")
+          const body = expectString(
+            await evaluate(active, page, "document.body?.innerText ?? ''"),
+            "Page text"
+          )
           if (
             (expected === undefined || body.includes(expected)) &&
             (gone === undefined || !body.includes(gone))

@@ -7,6 +7,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { expectArray, expectRecord, expectString } from "./unknown-values.js"
 
 const value = (result: CallToolResult): unknown => {
   const message = result.content
@@ -20,6 +21,11 @@ const value = (result: CallToolResult): unknown => {
     return message
   }
 }
+
+const tabsIn = (result: CallToolResult) =>
+  expectArray(expectRecord(value(result), "Tabs").tabs, "Tabs").map((tab) =>
+    expectRecord(tab, "Tab")
+  )
 
 const server = createServer((request, response) => {
   response.writeHead(200, { "content-type": "text/html" })
@@ -116,10 +122,10 @@ describe("Browser live preview across tabs", () => {
     try {
       subscription.watch(800)
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
-      const opened = value(
+      const opened = tabsIn(
         await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` })
-      ) as { tabs: ReadonlyArray<{ id: string; selected: boolean }> }
-      const first = opened.tabs.find((tab) => tab.selected)!.id
+      )
+      const first = expectString(opened.find((tab) => tab.selected === true)?.id, "Selected tab")
       const second = shows("active:Second")
       value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/second` }))
       await second
@@ -137,12 +143,7 @@ describe("Browser live preview across tabs", () => {
 describe("Browser tab cleanup", () => {
   it("starts with no page and leaves no agent tab or popup after the turn", async () => {
     const context = { sessionId: "cleanup", projectId: "cleanup" }
-    const tabs = async () =>
-      (
-        value(await provider.invoke(context, "tabs", { action: "list" })) as {
-          tabs: ReadonlyArray<{ url: string }>
-        }
-      ).tabs
+    const tabs = async () => tabsIn(await provider.invoke(context, "tabs", { action: "list" }))
     value(await provider.invoke(context, "use_backend", { backend: "managed" }))
     expect(await tabs()).toEqual([])
 

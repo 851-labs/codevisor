@@ -1,25 +1,23 @@
 import { describe, expect, it } from "vitest"
 
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
+import type { CdpConnection } from "./browser-cdp.js"
+import { fakeBrowserRuntime, fakeCdpConnection } from "./browser-runtime-test-support.js"
 import { finishSessionTabs, trackPopups, type SessionTargets } from "./browser-tab-cleanup.js"
 
 const context = { projectId: "project", sessionId: "session" }
 
 const runtime = (closed = false) => {
-  const handlers = new Map<string, (params: Readonly<Record<string, unknown>>) => void>()
-  const active = {
-    connection: {
-      closed,
-      on: (method: string, handler: (params: Readonly<Record<string, unknown>>) => void) => {
-        handlers.set(method, handler)
-        return () => handlers.delete(method)
-      }
-    },
-    eventDisposers: [] as Array<() => void>,
-    queue: Promise.resolve()
-  } as unknown as BrowserRuntime
+  const handlers = new Map<string, Parameters<CdpConnection["on"]>[1]>()
+  const { connection, disconnect } = fakeCdpConnection({
+    on: (method, handler) => {
+      handlers.set(method, handler)
+      return () => handlers.delete(method)
+    }
+  })
+  if (closed) disconnect()
+  const active = fakeBrowserRuntime({ connection })
   const emit = (method: string, params: Readonly<Record<string, unknown>>) =>
-    handlers.get(method)?.(params)
+    handlers.get(method)?.(params, { method, params })
   return { active, emit }
 }
 

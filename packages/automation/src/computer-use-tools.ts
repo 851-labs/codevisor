@@ -1,6 +1,9 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
-const objectSchema = (properties: Record<string, unknown> = {}, required: string[] = []) => ({
+const objectSchema = (
+  properties: Record<string, object> = {},
+  required: string[] = []
+): Tool["inputSchema"] => ({
   type: "object",
   properties,
   ...(required.length === 0 ? {} : { required }),
@@ -9,12 +12,12 @@ const objectSchema = (properties: Record<string, unknown> = {}, required: string
 const tool = (
   name: string,
   description: string,
-  properties = {},
+  properties: Record<string, object> = {},
   required: string[] = []
 ): Tool => ({
   name,
   description,
-  inputSchema: objectSchema(properties, required) as Tool["inputSchema"]
+  inputSchema: objectSchema(properties, required)
 })
 const app = { type: "string", description: "App name, path, or bundle identifier" }
 const element = {

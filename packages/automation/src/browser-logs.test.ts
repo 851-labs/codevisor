@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
+import {
+  browserToolSessionState,
+  fakeBrowserRuntime,
+  fakeBrowserToolInvocation
+} from "./browser-runtime-test-support.js"
 import { invokePageTools } from "./browser-use-invoke-page.js"
-import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
 function fixture(entries: Array<Readonly<Record<string, unknown>>>) {
   const logs = new Map([
@@ -10,14 +14,13 @@ function fixture(entries: Array<Readonly<Record<string, unknown>>>) {
   ])
   const read = async (args: Readonly<Record<string, unknown>> = {}) => {
     const result = await invokePageTools(
-      {
-        active: { logs },
-        page: { sessionId: "page" },
+      fakeBrowserToolInvocation({
+        active: fakeBrowserRuntime({ logs }),
         backend: "managed",
         args,
         toolName: "dev.logs"
-      } as BrowserToolInvocation,
-      {} as BrowserToolSessionState
+      }),
+      browserToolSessionState()
     )
     const content = result!.content[0]!
     if (content.type !== "text") throw new Error("Expected JSON text")

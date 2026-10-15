@@ -17,6 +17,44 @@ import { delay } from "./browser-cdp.js"
 import { exportBrowserContent } from "./browser-content.js"
 import { readBrowserLogs } from "./browser-logs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import {
+  expectArray,
+  expectRecord,
+  expectString,
+  isPlainRecord,
+  isRecord,
+  isStringArray,
+  optionalString,
+  recordOrEmpty
+} from "./unknown-values.js"
+
+const clipboardEntries = (value: unknown) => {
+  const item = expectRecord(value, "Clipboard item")
+  const data = recordOrEmpty(item.data)
+  return (isStringArray(item.types) ? item.types : []).map((mimeType) => {
+    const base64 = optionalString(data[mimeType]) ?? ""
+    return mimeType.startsWith("text/")
+      ? { mimeType, text: Buffer.from(base64, "base64").toString("utf8") }
+      : { mimeType, base64 }
+  })
+}
+
+const pageAssetInventory = (value: unknown) => {
+  const inventory = expectRecord(value, "Page asset inventory")
+  return {
+    pageUrl: expectString(inventory.pageUrl, "Page asset URL"),
+    assets: expectArray(inventory.assets, "Page assets").map((raw) => {
+      const asset = expectRecord(raw, "Page asset")
+      return {
+        url: expectString(asset.url, "Page asset URL"),
+        kind: expectString(asset.kind, "Page asset kind")
+      }
+    }),
+    inlineSvgs: expectArray(inventory.inlineSvgs, "Inline SVGs").map((raw) => ({
+      markup: expectString(expectRecord(raw, "Inline SVG").markup, "Inline SVG markup")
+    }))
+  }
+}
 
 export const invokePageTools = async (
   invocation: BrowserToolInvocation,
@@ -40,7 +78,7 @@ export const invokePageTools = async (
         return jsonResult({ text: value.text ?? "" })
       }
       await grantClipboardPermissions(active, page)
-      const value = await evaluateReadOnly<string>(
+      const value = await evaluateReadOnly(
         active,
         page,
         "async () => await navigator.clipboard.readText()",
@@ -75,22 +113,15 @@ export const invokePageTools = async (
         return jsonResult({ items: value.items ?? [] })
       }
       await grantClipboardPermissions(active, page)
-      const rawItems = await evaluateReadOnly<
-        Array<{ readonly types: string[]; readonly data: Readonly<Record<string, string>> }>
-      >(
+      const rawItems = await evaluateReadOnly(
         active,
         page,
         "async () => Promise.all((await navigator.clipboard.read()).map(async item => ({types:[...item.types],data:Object.fromEntries(await Promise.all(item.types.map(async type=>{const bytes=new Uint8Array(await (await item.getType(type)).arrayBuffer());let binary='';for(let index=0;index<bytes.length;index+=0x8000)binary+=String.fromCharCode(...bytes.subarray(index,index+0x8000));return [type,btoa(binary)];})))})))",
         undefined
       )
       return jsonResult({
-        items: rawItems.map((item) => ({
-          entries: item.types.map((mimeType) => {
-            const base64 = item.data[mimeType] ?? ""
-            return mimeType.startsWith("text/")
-              ? { mimeType, text: Buffer.from(base64, "base64").toString("utf8") }
-              : { mimeType, base64 }
-          })
+        items: expectArray(rawItems, "Clipboard read").map((item) => ({
+          entries: clipboardEntries(item)
         }))
       })
     }
@@ -152,19 +183,13 @@ export const invokePageTools = async (
       return jsonResult({ reset: true })
     case "cdp.send": {
       const method = stringArgument(args, "method")
-      const target =
-        args.target !== null && typeof args.target === "object"
-          ? (args.target as Readonly<Record<string, unknown>>)
-          : undefined
+      const target = isRecord(args.target) ? args.target : undefined
       let sessionId = page.sessionId
       if (typeof target?.sessionId === "string") sessionId = target.sessionId
       if (typeof target?.targetId === "string") {
         sessionId = await attachTarget(active, target.targetId)
       }
-      const params =
-        args.params !== null && typeof args.params === "object" && !Array.isArray(args.params)
-          ? (args.params as Readonly<Record<string, unknown>>)
-          : {}
+      const params = isPlainRecord(args.params) ? args.params : {}
       const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
       return jsonResult({
         result: await active.connection.send(method, params, sessionId, timeoutMs)
@@ -180,10 +205,7 @@ export const invokePageTools = async (
         Array.isArray(args.methods) && args.methods.every((method) => typeof method === "string")
           ? new Set(args.methods)
           : undefined
-      const target =
-        args.target !== null && typeof args.target === "object"
-          ? (args.target as Readonly<Record<string, unknown>>)
-          : undefined
+      const target = isRecord(args.target) ? args.target : undefined
       const targetSession =
         typeof target?.sessionId === "string"
           ? target.sessionId
@@ -240,14 +262,12 @@ export const invokePageTools = async (
       })
     }
     case "pageAssets.list": {
-      const inventory = await evaluate<{
-        pageUrl: string
-        assets: Array<{ url: string; kind: string }>
-        inlineSvgs: Array<{ markup: string }>
-      }>(
-        active,
-        page,
-        `(()=>{const urls=new Map();const classify=kind=>kind==='img'?'image':kind==='css'||kind==='link'?'stylesheet':kind==='video'||kind==='media'||kind==='audio'||kind==='source'?'video':kind==='script'?'script':kind==='font'?'font':'other';const add=(url,kind)=>{try{const absolute=new URL(url,location.href).href;if(!urls.has(absolute))urls.set(absolute,{url:absolute,kind:classify(kind)});}catch{}};for(const entry of performance.getEntriesByType('resource'))add(entry.name,entry.initiatorType||'other');for(const element of document.querySelectorAll('img[src],video[src],audio[src],source[src],script[src],link[href]'))add(element.src||element.href,element.tagName.toLowerCase());return{pageUrl:location.href,assets:[...urls.values()],inlineSvgs:[...document.querySelectorAll('svg')].map(svg=>({markup:svg.outerHTML}))};})()`
+      const inventory = pageAssetInventory(
+        await evaluate(
+          active,
+          page,
+          `(()=>{const urls=new Map();const classify=kind=>kind==='img'?'image':kind==='css'||kind==='link'?'stylesheet':kind==='video'||kind==='media'||kind==='audio'||kind==='source'?'video':kind==='script'?'script':kind==='font'?'font':'other';const add=(url,kind)=>{try{const absolute=new URL(url,location.href).href;if(!urls.has(absolute))urls.set(absolute,{url:absolute,kind:classify(kind)});}catch{}};for(const entry of performance.getEntriesByType('resource'))add(entry.name,entry.initiatorType||'other');for(const element of document.querySelectorAll('img[src],video[src],audio[src],source[src],script[src],link[href]'))add(element.src||element.href,element.tagName.toLowerCase());return{pageUrl:location.href,assets:[...urls.values()],inlineSvgs:[...document.querySelectorAll('svg')].map(svg=>({markup:svg.outerHTML}))};})()`
+        )
       )
       const id = randomUUID()
       const normalized = {
@@ -326,17 +346,21 @@ export const invokePageTools = async (
       for (const asset of inventory.assets) {
         if (selectedIds !== undefined && !selectedIds.has(asset.id)) continue
         if (kinds !== undefined && !kinds.has(asset.kind)) continue
-        const fetched = await evaluate<{ base64?: string; mimeType?: string; error?: string }>(
-          active,
-          page,
-          `(async()=>{try{const response=await fetch(${JSON.stringify(asset.url)});if(!response.ok)return{error:String(response.status)};const bytes=new Uint8Array(await response.arrayBuffer());let binary='';for(let index=0;index<bytes.length;index+=0x8000)binary+=String.fromCharCode(...bytes.subarray(index,index+0x8000));return{base64:btoa(binary),mimeType:response.headers.get('content-type')||undefined};}catch(error){return{error:String(error)}}})()`
+        const fetched = recordOrEmpty(
+          await evaluate(
+            active,
+            page,
+            `(async()=>{try{const response=await fetch(${JSON.stringify(asset.url)});if(!response.ok)return{error:String(response.status)};const bytes=new Uint8Array(await response.arrayBuffer());let binary='';for(let index=0;index<bytes.length;index+=0x8000)binary+=String.fromCharCode(...bytes.subarray(index,index+0x8000));return{base64:btoa(binary),mimeType:response.headers.get('content-type')||undefined};}catch(error){return{error:String(error)}}})()`
+          )
         )
-        if (fetched.base64 === undefined) {
+        const base64 = optionalString(fetched.base64)
+        const contentType = optionalString(fetched.mimeType) ?? null
+        if (base64 === undefined) {
           failures.push({
-            contentType: fetched.mimeType ?? null,
+            contentType,
             id: asset.id,
             name: asset.name,
-            reason: fetched.error ?? "Download failed",
+            reason: optionalString(fetched.error) ?? "Download failed",
             url: asset.url
           })
           continue
@@ -345,9 +369,9 @@ export const invokePageTools = async (
           bundleDir,
           `${asset.id}-${asset.name.replaceAll(/[^a-zA-Z0-9._-]/g, "_")}`
         )
-        writeFileSync(path, Buffer.from(fetched.base64, "base64"), { mode: 0o600 })
+        writeFileSync(path, Buffer.from(base64, "base64"), { mode: 0o600 })
         saved.push({
-          contentType: fetched.mimeType ?? null,
+          contentType,
           id: asset.id,
           kind: asset.kind,
           name: asset.name,

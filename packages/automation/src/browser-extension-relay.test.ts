@@ -73,17 +73,7 @@ describe("browser extension development installer", () => {
       worktreeName: "mirrlees",
       iconDirectory: generatedIcons
     })
-    const manifest = JSON.parse(await readFile(join(extension, "manifest.json"), "utf8")) as {
-      name: string
-      description: string
-      icons: Record<string, string>
-      permissions: ReadonlyArray<string>
-      action: {
-        default_title: string
-        default_popup: string
-        default_icon: Record<string, string>
-      }
-    }
+    const manifest: unknown = JSON.parse(await readFile(join(extension, "manifest.json"), "utf8"))
 
     expect(manifest).toMatchObject({
       name: "Codevisor (mirrlees)",

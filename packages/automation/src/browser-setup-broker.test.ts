@@ -1,16 +1,17 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { BrowserPreference } from "@codevisor/api"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
 import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
+import { recordOrEmpty, recordsIn } from "./unknown-values.js"
 
 const fixture = (
   options: {
     chrome?: boolean
     connected?: boolean
-    preference?: string
+    preference?: BrowserPreference
     setupMode?: "development" | "webStore"
   } = {}
 ) => {
@@ -18,17 +19,28 @@ const fixture = (
   let connected = options.connected ?? false
   const listeners = new Set<(connected: boolean) => void>()
   const backends = new Map<string, BrowserBackend>()
-  const showFolder = vi.fn()
-  const openExtensions = vi.fn()
-  const openWebStore = vi.fn()
+  const showFolder = vi.fn(async () => {})
+  const openExtensions = vi.fn(async () => {})
+  const openWebStore = vi.fn(async () => {})
   const db = {
     getBrowserPreference: Effect.sync(() => preference),
-    setBrowserPreference: (value: "chrome" | "managed" | "builtin" | undefined) =>
+    setBrowserPreference: (value: BrowserPreference | undefined) =>
       Effect.sync(() => {
         preference = value
       })
-  } as unknown as CodevisorDatabaseService
-  const provider = {
+  }
+  const provider: BrowserUseProvider = {
+    id: "browser",
+    tools: [],
+    invoke: async () => ({ content: [] }),
+    closeSession: async () => {},
+    close: async () => {},
+    ensureSetup: async () => {},
+    acceptExtensionConnection: () => {},
+    openDevelopmentExtensionInstaller: async () => {},
+    extensionArchivePath: () => "",
+    extensionIconPath: () => "",
+    configureExtensionRelay: () => {},
     status: () => ({
       backend: "systemChrome",
       chromeAvailable: options.chrome ?? true,
@@ -49,7 +61,7 @@ const fixture = (
     openDevelopmentExtensionFolder: showFolder,
     openDevelopmentExtensionPage: openExtensions,
     openExtensionWebStore: openWebStore
-  } as unknown as BrowserUseProvider
+  }
   const events: RuntimeEvent[] = []
   let questionCount = 0
   let consumedQuestions = 0
@@ -57,7 +69,7 @@ const fixture = (
   const broker = makeBrowserSetupBroker(db, provider)
   broker.setSink("session", async (event) => {
     events.push(event)
-    if ((event.payload as { sessionUpdate?: string }).sessionUpdate === "question") {
+    if (recordOrEmpty(event.payload).sessionUpdate === "question") {
       questionCount += 1
       waiters.get(questionCount)?.()
       waiters.delete(questionCount)
@@ -76,7 +88,7 @@ const fixture = (
     openExtensions,
     openWebStore,
     preference: () => preference,
-    setPreference: (value: string) => {
+    setPreference: (value: BrowserPreference) => {
       preference = value
     },
     connect: () => {
@@ -90,10 +102,20 @@ const fixture = (
   }
 }
 
+const latestPayload = (events: RuntimeEvent[]) => recordOrEmpty(events.at(-1)?.payload)
+
+const latestQuestions = (events: RuntimeEvent[]) => recordsIn(latestPayload(events).questions)
+
+const autoResolved = (events: RuntimeEvent[]) =>
+  events.some((event) => {
+    const payload = recordOrEmpty(event.payload)
+    return payload.sessionUpdate === "question_resolved" && payload.outcome === "autoResolved"
+  })
+
 const latestQuestionId = (events: RuntimeEvent[]): string => {
-  const payload = events.at(-1)?.payload as { questionId?: string }
-  if (payload.questionId === undefined) throw new Error("Missing browser question")
-  return payload.questionId
+  const { questionId } = latestPayload(events)
+  if (typeof questionId !== "string") throw new Error("Missing browser question")
+  return questionId
 }
 
 const answer = (
@@ -133,10 +155,8 @@ describe("browser setup broker", () => {
     const resolving = current.broker.resolveBackend("session")
     await current.nextQuestion()
 
-    const setup = current.events.at(-1)!.payload as {
-      questions: Array<{ backOptionLabel?: string; presentation?: string }>
-    }
-    expect(setup.questions[0]).toMatchObject({
+    const questions = latestQuestions(current.events)
+    expect(questions[0]).toMatchObject({
       backOptionLabel: "Back",
       presentation: "browserExtensionSetup"
     })
@@ -145,14 +165,7 @@ describe("browser setup broker", () => {
     await expect(resolving).resolves.toBe("extension")
     expect(current.preference()).toBe("chrome")
     expect(current.openExtensions).not.toHaveBeenCalled()
-    expect(
-      current.events.some(
-        (event) =>
-          (event.payload as { sessionUpdate?: string; outcome?: string }).sessionUpdate ===
-            "question_resolved" &&
-          (event.payload as { outcome?: string }).outcome === "autoResolved"
-      )
-    ).toBe(true)
+    expect(autoResolved(current.events)).toBe(true)
   })
 
   it("treats an explicit Chrome request as a session override", async () => {
@@ -175,17 +188,9 @@ describe("browser setup broker", () => {
     const current = fixture({ preference: "chrome" })
     const resolving = current.broker.resolveBackend("session")
     await current.nextQuestion()
-    const setup = current.events.at(-1)!.payload as {
-      message?: string
-      questions: Array<{
-        allowsOther: boolean
-        backOptionLabel?: string
-        presentation?: string
-        options: Array<{ label: string }>
-      }>
-    }
-    expect(setup.message).toBeUndefined()
-    expect(setup.questions[0]).toMatchObject({
+    const questions = latestQuestions(current.events)
+    expect(latestPayload(current.events).message).toBeUndefined()
+    expect(questions[0]).toMatchObject({
       allowsOther: false,
       backOptionLabel: "Back",
       presentation: "browserExtensionSetup",
@@ -193,8 +198,7 @@ describe("browser setup broker", () => {
     })
     await answer(current.broker, current.events, "Back")
     await current.nextQuestion()
-    const question = (current.events.at(-1)!.payload as { questions: Array<{ question: string }> })
-      .questions[0]?.question
+    const question = latestQuestions(current.events)[0]?.question
     expect(question).toBe("Which browser should I use?")
     await answer(current.broker, current.events, "Use Chromium")
     await expect(resolving).resolves.toBe("managed")
@@ -208,17 +212,9 @@ describe("browser setup broker", () => {
     await current.nextQuestion()
     expect(current.openExtensions).toHaveBeenCalledOnce()
     expect(current.showFolder).not.toHaveBeenCalled()
-    const waiting = current.events.at(-1)!.payload as {
-      message?: string
-      questions: Array<{
-        allowsOther: boolean
-        backOptionLabel?: string
-        presentation?: string
-        options: Array<{ label: string }>
-      }>
-    }
-    expect(waiting.message).toBeUndefined()
-    expect(waiting.questions[0]).toMatchObject({
+    const questions = latestQuestions(current.events)
+    expect(latestPayload(current.events).message).toBeUndefined()
+    expect(questions[0]).toMatchObject({
       allowsOther: false,
       backOptionLabel: "Back",
       presentation: "browserExtensionWaiting",
@@ -227,24 +223,15 @@ describe("browser setup broker", () => {
     current.connect()
     await expect(resolving).resolves.toBe("extension")
     expect(current.preference()).toBe("chrome")
-    expect(
-      current.events.some(
-        (event) =>
-          (event.payload as { sessionUpdate?: string; outcome?: string }).sessionUpdate ===
-            "question_resolved" &&
-          (event.payload as { outcome?: string }).outcome === "autoResolved"
-      )
-    ).toBe(true)
+    expect(autoResolved(current.events)).toBe(true)
   })
 
   it("uses the packaged extension guide in production", async () => {
     const current = fixture({ setupMode: "webStore" })
     const resolving = current.broker.resolveBackend("session", "extension")
     await current.nextQuestion()
-    const setup = current.events.at(-1)!.payload as {
-      questions: Array<{ options: Array<{ label: string }> }>
-    }
-    expect(setup.questions[0]?.options).toEqual([
+    const questions = latestQuestions(current.events)
+    expect(questions[0]?.options).toEqual([
       {
         label: "Open Extensions",
         description: "Open the Extensions page in Chrome."
@@ -267,10 +254,8 @@ describe("browser setup broker", () => {
     current.disconnect()
     const reconnecting = current.broker.resolveBackend("session")
     await current.nextQuestion()
-    const setup = current.events.at(-1)!.payload as {
-      questions: Array<{ presentation?: string; question: string }>
-    }
-    expect(setup.questions[0]).toMatchObject({
+    const questions = latestQuestions(current.events)
+    expect(questions[0]).toMatchObject({
       presentation: "browserExtensionSetup",
       question: "Drag the Codevisor extension into the Extensions page in Chrome."
     })
