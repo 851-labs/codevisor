@@ -127,6 +127,46 @@ const cloudFailure = (cause: unknown, action: string): HttpFailure => {
   )
 }
 
+const validateEnrollmentRequest = (
+  request: AddMachineRequest,
+  destination: string
+): string | undefined => {
+  if (!validDestination(destination)) {
+    throw new HttpFailure(400, "ssh must be a destination like root@203.0.113.7 or a Host alias")
+  }
+  const name = request.name?.trim()
+  if (name !== undefined && (name.length === 0 || name.length > 120)) {
+    throw new HttpFailure(400, "name must contain 1 to 120 characters")
+  }
+  if (
+    request.sshPort !== undefined &&
+    (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65_535)
+  ) {
+    throw new HttpFailure(400, "sshPort must be a port number")
+  }
+  return name
+}
+
+const successfulInstallOutput = (run: SshRun, destination: string, inviteCode: string): string => {
+  const output = tail(run.output, inviteCode)
+  if (run.exitCode !== 0) {
+    const why =
+      run.exitCode === null
+        ? "timed out or was cancelled"
+        : run.exitCode === 255
+          ? "could not connect over SSH (check the destination, your SSH key, and the host's firewall)"
+          : `failed (exit ${run.exitCode})`
+    throw new HttpFailure(502, `Setting up ${destination} ${why}:\n${output}`)
+  }
+  if (/already connected to/i.test(run.output)) {
+    throw new HttpFailure(
+      409,
+      `${destination} is already connected to a Codevisor account. Check machines.list(), or run \`codevisor auth logout\` on it first to move it here.`
+    )
+  }
+  return output
+}
+
 export const makeMachineEnrollment = (options: MachineEnrollmentOptions): MachineEnrollment => {
   const { cloud, link } = options
   /* v8 ignore next */
@@ -178,19 +218,7 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
 
   const add = async (request: AddMachineRequest, signal?: AbortSignal): Promise<MachineSummary> => {
     const destination = request.ssh.trim()
-    if (!validDestination(destination)) {
-      throw new HttpFailure(400, "ssh must be a destination like root@203.0.113.7 or a Host alias")
-    }
-    const name = request.name?.trim()
-    if (name !== undefined && (name.length === 0 || name.length > 120)) {
-      throw new HttpFailure(400, "name must contain 1 to 120 characters")
-    }
-    if (
-      request.sshPort !== undefined &&
-      (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65_535)
-    ) {
-      throw new HttpFailure(400, "sshPort must be a port number")
-    }
+    const name = validateEnrollmentRequest(request, destination)
     const { code } = await invite()
     const before = new Set((cloud.machines() ?? []).map((presence) => presence.deviceId))
     const timeout = AbortSignal.timeout(SSH_TIMEOUT_MS)
@@ -203,22 +231,7 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
       }),
       signal === undefined ? timeout : AbortSignal.any([signal, timeout])
     )
-    const output = tail(run.output, code)
-    if (run.exitCode !== 0) {
-      const why =
-        run.exitCode === null
-          ? "timed out or was cancelled"
-          : run.exitCode === 255
-            ? "could not connect over SSH (check the destination, your SSH key, and the host's firewall)"
-            : `failed (exit ${run.exitCode})`
-      throw new HttpFailure(502, `Setting up ${destination} ${why}:\n${output}`)
-    }
-    if (/already connected to/i.test(run.output)) {
-      throw new HttpFailure(
-        409,
-        `${destination} is already connected to a Codevisor account. Check machines.list(), or run \`codevisor auth logout\` on it first to move it here.`
-      )
-    }
+    const output = successfulInstallOutput(run, destination, code)
     const joined = await waitForJoined(before, signal)
     if (joined === undefined) {
       throw new HttpFailure(
