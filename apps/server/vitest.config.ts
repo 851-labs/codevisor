@@ -15,6 +15,7 @@ export default defineConfig({
         "src/changes-test-support.ts",
         "src/test-support-agents.ts",
         "src/test-support-stubs.ts",
+        "src/test-support-net.ts",
         "src/cli/support-test-support.ts",
         "src/routes/harness-auth-test-support.ts",
         "src/infra/shared-accounts-test-support.ts",

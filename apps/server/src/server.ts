@@ -1,6 +1,6 @@
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
-import type { AddressInfo, Socket } from "node:net"
+import { Socket, type AddressInfo } from "node:net"
 
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
@@ -315,18 +315,18 @@ export const startCodevisorServer = (
             server.on("request", onRequest)
           }
           server.on("connect", (request, socket, head) => {
-            if (app === undefined) {
+            if (app === undefined || !(socket instanceof Socket)) {
               socket.destroy()
               return
             }
-            app.handleConnect(request, socket as Socket, head)
+            app.handleConnect(request, socket, head)
           })
           server.on("upgrade", (request, socket, head) => {
-            if (app === undefined) {
+            if (app === undefined || !(socket instanceof Socket)) {
               socket.destroy()
               return
             }
-            app.handleUpgrade(request, socket as Socket, head)
+            app.handleUpgrade(request, socket, head)
           })
           const onListening = async (): Promise<void> => {
             server.off("error", reject)

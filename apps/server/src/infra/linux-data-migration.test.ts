@@ -33,7 +33,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       return original.lstat(...args)
     },
     writeFile: async (...args: Parameters<typeof original.writeFile>) => {
-      faults.write?.(args[0] as string)
+      const [target] = args
+      if (typeof target === "string") faults.write?.(target)
       return original.writeFile(...args)
     }
   }

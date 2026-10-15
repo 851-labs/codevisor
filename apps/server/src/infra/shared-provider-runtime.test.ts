@@ -5,9 +5,13 @@ import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import type { HarnessAccount } from "@codevisor/api"
 import {
   atomicWriteJson,
+  makeSharedCredentialVault,
   SharedCredentialError,
+  type ProviderOAuthHarness,
+  type SharedCredentialVault,
   type SharedTokenBundle
 } from "@codevisor/harness-manager"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
@@ -15,6 +19,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { run } from "../test-support.js"
 import { fleet } from "./shared-accounts-test-support.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
+import type { SharedProviderStore } from "./shared-provider-store.js"
 
 vi.mock("node:fs/promises", { spy: true })
 vi.mock("@codevisor/harness-manager", async (importOriginal) => {
@@ -33,22 +38,64 @@ const token: SharedTokenBundle = {
   ownership: "managed",
   credential: { type: "oauth", refresh: "never-return-this", projectId: "project" }
 }
+const notFaked = async (): Promise<never> => {
+  throw new Error("The provider token broker fixture does not fake this call")
+}
+class CapturedResponse extends ServerResponse {
+  body = ""
+  override end(chunk?: unknown): this {
+    this.body = typeof chunk === "string" ? chunk : ""
+    return this
+  }
+}
 const fixture = () => {
-  const row = { harnessId: "pi", credential: { id: "reference", key: "key" } }
-  const get = vi.fn(async () => row as typeof row | undefined)
-  const read = vi.fn(async () => token)
+  const row: {
+    harnessId: ProviderOAuthHarness
+    profileId: string
+    providerId: string
+    subject: string
+    credential: { id: string; key: string }
+  } = {
+    harnessId: "pi",
+    profileId: "default",
+    providerId: "anthropic",
+    subject: "user",
+    credential: { id: "reference", key: "key" }
+  }
+  const get = vi.fn<SharedProviderStore["get"]>(async () => row)
+  const read = vi.fn<SharedCredentialVault["token"]>(async () => token)
+  const at = { wallMs: 0, counter: 0, deviceId: "test" }
+  const store: SharedProviderStore = {
+    local: notFaked,
+    setLocal: notFaked,
+    records: notFaked,
+    save: notFaked,
+    knownProviders: notFaked,
+    remove: notFaked,
+    localEntries: async () => [
+      { key: "cap:malformed", value: null, timestamp: at },
+      { key: "cap:string", value: "invalid", timestamp: at },
+      {
+        key: "cap:key",
+        value: { capability, slot: "provider:slot", credentialId: "reference" },
+        timestamp: at
+      }
+    ],
+    get
+  }
+  const vault: SharedCredentialVault = {
+    ...makeSharedCredentialVault({
+      coordinate: notFaked,
+      rotate: notFaked,
+      receipt: { read: notFaked, write: notFaked, remove: notFaked }
+    }),
+    token: read
+  }
   const runtime = makeSharedProviderRuntime({
     dataDir: "unused",
     baseUrl: "http://127.0.0.1:1",
-    store: {
-      localEntries: async () => [
-        { key: "cap:malformed", value: null },
-        { key: "cap:string", value: "invalid" },
-        { key: "cap:key", value: { capability, slot: "provider:slot", credentialId: "reference" } }
-      ],
-      get
-    } as unknown as Parameters<typeof makeSharedProviderRuntime>[0]["store"],
-    vault: { token: read } as unknown as Parameters<typeof makeSharedProviderRuntime>[0]["vault"]
+    store,
+    vault
   })
   const send = async (
     options: {
@@ -70,14 +117,13 @@ const fixture = () => {
     }
     request.push(Buffer.from(options.body ?? "{}"))
     request.push(null)
-    const response = new ServerResponse(request)
-    let body = ""
-    response.end = ((value?: string) => {
-      body = value ?? ""
-      return response
-    }) as typeof response.end
+    const response = new CapturedResponse(request)
     await runtime.handle(request, response)
-    return { status: response.statusCode, body, cache: response.getHeader("Cache-Control") }
+    return {
+      status: response.statusCode,
+      body: response.body,
+      cache: response.getHeader("Cache-Control")
+    }
   }
   return { get, read, send, row }
 }
@@ -262,6 +308,17 @@ describe("OpenCode credentials kept current", () => {
   })
 })
 
+const piAccount = {
+  id: "pi-default",
+  harnessId: "pi",
+  profileKind: "default",
+  label: "Default",
+  authState: "authenticated",
+  canLogin: true,
+  canLogout: true,
+  isActive: true
+} satisfies HarnessAccount
+
 it("fails safely when a required native resource cannot be linked", async () => {
   const host = await fleet().machine("link-failure")
   await host.shared.providers.capture("pi", "default", "anthropic", {
@@ -276,7 +333,7 @@ it("fails safely when a required native resource cannot be linked", async () => 
   try {
     const contexts = await Promise.allSettled(
       Array.from({ length: 3 }, () =>
-        host.shared.providers.context({ id: "pi-default", harnessId: "pi" } as never, {
+        host.shared.providers.context(piAccount, {
           id: "pi-default",
           profileKind: "default"
         })

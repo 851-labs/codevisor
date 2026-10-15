@@ -5,6 +5,7 @@ import { gzipSync } from "node:zlib"
 
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
+import { Schema } from "effect"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeServices, run, tempDirs } from "../test-support.js"
@@ -37,6 +38,9 @@ const tarHeader = (name: string, size: number): Buffer => {
   return block
 }
 
+const hashOf = (value: unknown): string =>
+  Schema.decodeUnknownSync(Schema.Struct({ hash: Schema.String }))(value).hash
+
 const elsewhereAt = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
 const skillsSyncClock = (wallMs: number) => {
@@ -60,7 +64,7 @@ describe("skills sync", () => {
     await skillsA.create({ name: "Deploy", description: "ship it" })
     const firstA = await reconcileSkills(a)
     expect(firstA.status.published).toEqual(["deploy"])
-    const hash = (firstA.changedEntries[0]!.value as { hash: string }).hash
+    const hash = hashOf(firstA.changedEntries[0]?.value)
     expect(blobsA.has(hash)).toBe(true)
 
     expect((await reconcileSkills(a)).status).toEqual({
@@ -86,7 +90,7 @@ describe("skills sync", () => {
     writeFileSync(join(skillPathA, "extra.md"), "more\n")
     const editedA = await reconcileSkills(a)
     expect(editedA.status.published).toEqual(["deploy"])
-    const editedHash = (editedA.changedEntries[0]!.value as { hash: string }).hash
+    const editedHash = hashOf(editedA.changedEntries[0]?.value)
     expect(editedHash).not.toBe(hash)
 
     now.mockReturnValue(1_700_000_001_000)
@@ -312,8 +316,6 @@ describe("skills sync", () => {
     const names = (await skills.list()).skills.map((s) => s.directoryName).toSorted()
     expect(names).toEqual(["deploy-2", "deploy-4", "ghost"])
     const republished = result.changedEntries.find((e) => e.key === "deploy-4")
-    expect(await skillTreeHash(join(scan.dir, "deploy-4"))).toBe(
-      (republished!.value as { hash: string }).hash
-    )
+    expect(await skillTreeHash(join(scan.dir, "deploy-4"))).toBe(hashOf(republished?.value))
   })
 })

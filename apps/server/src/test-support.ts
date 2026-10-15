@@ -1,13 +1,14 @@
 import { fixtureChanged, observeDatabase } from "./changes-test-support.js"
+import { field } from "./unknown-values.js"
 export { waitFor, observableFixture } from "./changes-test-support.js"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-import type { EventEnvelope } from "@codevisor/api"
+import { EventKind, type EventEnvelope } from "@codevisor/api"
 import { canonicalUuid, makeAttachmentStore, makeDatabase } from "@codevisor/db"
-import type { CodevisorDatabaseService, EventRow, SessionEventRow } from "@codevisor/db"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import { makeMcpManager, type McpManagerConfig } from "@codevisor/mcp"
 import type {
   TerminalHandlers,
@@ -17,7 +18,7 @@ import type {
 } from "@codevisor/terminal"
 import { makeTerminalManager } from "@codevisor/terminal"
 import Database from "better-sqlite3"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
 
@@ -176,17 +177,41 @@ const readDatabase = <A>(
   }
 }
 
-const globalEvent = (row: EventRow): EventEnvelope => ({
-  id: row.id,
-  globalEventId: row.id,
-  serverId: row.server_id,
-  kind: row.kind,
-  subjectId: row.subject_id,
-  createdAt: row.created_at,
-  payload: JSON.parse(row.payload) as unknown
+const EventRow = Schema.Struct({
+  id: Schema.Number,
+  server_id: Schema.String,
+  kind: EventKind,
+  subject_id: Schema.String,
+  created_at: Schema.String,
+  payload: Schema.String
 })
 
-const sessionEvent = (row: SessionEventRow): EventEnvelope => {
+const SessionEventRow = Schema.Struct({
+  session_id: Schema.String,
+  revision: Schema.Number,
+  global_event_id: Schema.NullOr(Schema.Number),
+  server_id: Schema.String,
+  kind: EventKind,
+  created_at: Schema.String,
+  payload: Schema.String,
+  chat_item_id: Schema.NullOr(Schema.String)
+})
+
+const globalEvent = (raw: unknown): EventEnvelope => {
+  const row = Schema.decodeUnknownSync(EventRow)(raw)
+  return {
+    id: row.id,
+    globalEventId: row.id,
+    serverId: row.server_id,
+    kind: row.kind,
+    subjectId: row.subject_id,
+    createdAt: row.created_at,
+    payload: JSON.parse(row.payload) as unknown
+  }
+}
+
+const sessionEvent = (raw: unknown): EventEnvelope => {
+  const row = Schema.decodeUnknownSync(SessionEventRow)(raw)
   const payload = JSON.parse(row.payload) as unknown
   return {
     id: row.revision,
@@ -211,10 +236,7 @@ export const listEvents = (
   since = 0
 ): ReadonlyArray<EventEnvelope> =>
   readDatabase(services, (sqlite) =>
-    sqlite
-      .prepare("select * from events where id > ? order by id asc")
-      .all(since)
-      .map((row) => globalEvent(row as EventRow))
+    sqlite.prepare("select * from events where id > ? order by id asc").all(since).map(globalEvent)
   )
 
 export const listSubjectEvents = (
@@ -232,11 +254,11 @@ export const listSubjectEvents = (
             "select * from session_events where session_id = ? and revision > ? order by revision asc"
           )
           .all(subjectId, since)
-          .map((row) => sessionEvent(row as SessionEventRow))
+          .map(sessionEvent)
       : sqlite
           .prepare("select * from events where subject_id = ? and id > ? order by id asc")
           .all(subjectId, since)
-          .map((row) => globalEvent(row as EventRow))
+          .map(globalEvent)
   })
 
 export const archiveSessionViaWorkspace = async (
@@ -324,6 +346,11 @@ export const jsonRequest = async (
   }
 }
 
+const Identified = Schema.Struct({ id: Schema.String })
+
+export const bodyId = (response: { readonly body: unknown }): string =>
+  Schema.decodeUnknownSync(Identified)(response.body).id
+
 export const readSseEventsOfKind = async (
   server: RunningCodevisorServer,
   kind: string,
@@ -351,8 +378,8 @@ export const readSseEventsOfKind = async (
         .map((line) => line.slice("data: ".length))
         .join("\n")
       if (data.length > 0) {
-        const parsed = JSON.parse(data) as { kind?: string }
-        if (parsed.kind === kind) events.push(parsed)
+        const parsed: unknown = JSON.parse(data)
+        if (field(parsed, "kind") === kind) events.push(parsed)
       }
       index = buffer.indexOf("\n\n")
     }
@@ -360,6 +387,8 @@ export const readSseEventsOfKind = async (
   controller.abort()
   return events
 }
+
+const quietKinds: ReadonlySet<unknown> = new Set(["keepalive", "navigation.changed"])
 
 export const readSseEvents = async (
   server: RunningCodevisorServer,
@@ -387,8 +416,8 @@ export const readSseEvents = async (
     for (const chunk of chunks) {
       const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "))
       if (dataLine !== undefined) {
-        const event = JSON.parse(dataLine.slice("data: ".length)) as { kind: string }
-        if (!["keepalive", "navigation.changed"].includes(event.kind)) events.push(event)
+        const event: unknown = JSON.parse(dataLine.slice("data: ".length))
+        if (!quietKinds.has(field(event, "kind"))) events.push(event)
       }
     }
   }
@@ -416,8 +445,8 @@ export const readWebSocketEvents = async (
       if (isDone) {
         return
       }
-      const event = JSON.parse(data.toString()) as { kind: string }
-      if (!includeControls && ["keepalive", "navigation.changed"].includes(event.kind)) return
+      const event: unknown = JSON.parse(data.toString())
+      if (!includeControls && quietKinds.has(field(event, "kind"))) return
       events.push(event)
       if (events.length >= expectedCount) {
         isDone = true

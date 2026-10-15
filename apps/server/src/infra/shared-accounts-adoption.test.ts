@@ -1,6 +1,4 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { makeHarnessAuthManager, sharedOAuthIdentity } from "@codevisor/harness-manager"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -36,8 +34,8 @@ describe("adopting an existing terminal login", () => {
     const manager = makeHarnessAuthManager({
       db: a.db,
       dataDir: a.dataDir,
-      agents: {} as AgentRuntimeService,
-      terminal: {} as TerminalManagerService,
+      agents: a.services.agents,
+      terminal: a.services.terminal,
       sharedAccounts: () => a.shared,
       resolveEnv: async () => ({ HOME: a.dataDir })
     })
@@ -79,8 +77,8 @@ describe("signing out on one machine", () => {
     const manager = makeHarnessAuthManager({
       db: a.db,
       dataDir: a.dataDir,
-      agents: {} as AgentRuntimeService,
-      terminal: {} as TerminalManagerService,
+      agents: a.services.agents,
+      terminal: a.services.terminal,
       sharedAccounts: () => a.shared,
       resolveEnv: async () => ({ HOME: a.dataDir })
     })

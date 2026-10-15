@@ -49,8 +49,10 @@ const failure = async (promise: Promise<unknown>): Promise<CodeExecutionToolErro
     () => undefined,
     (cause: unknown) => cause
   )
-  expect(error).toBeInstanceOf(CodeExecutionToolError)
-  return error as CodeExecutionToolError
+  if (!(error instanceof CodeExecutionToolError)) {
+    throw new Error(`Expected a CodeExecutionToolError, got ${String(error)}`)
+  }
+  return error
 }
 
 describe("machine list", () => {

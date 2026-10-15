@@ -9,6 +9,8 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { appliedValuesByKey } from "./applied-values.js"
+
 export const MCPS_SYNC_NAMESPACE = "mcps"
 const MCPS_APPLIED_NAMESPACE = "local.mcps-applied"
 export const ACCOUNTS_SYNC_NAMESPACE = "harness-accounts"
@@ -170,11 +172,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   const replica = await run(deps.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
   const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
   const appliedEntries = await run(deps.db.getSyncEntries(MCPS_APPLIED_NAMESPACE))
-  const appliedByKey = new Map(
-    appliedEntries
-      .filter((entry) => entry.deleted !== true && typeof entry.value === "string")
-      .map((entry) => [entry.key, entry.value as string])
-  )
+  const appliedByKey = appliedValuesByKey(appliedEntries)
 
   const published: Array<string> = []
   const applied: Array<string> = []

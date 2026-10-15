@@ -1,5 +1,12 @@
-import type { MachineInviteResponse, MachineSummary } from "@codevisor/api"
+import {
+  AddMachineResponse,
+  MachineInviteResponse,
+  MachinesResponse,
+  type MachineSummary
+} from "@codevisor/api"
+import { Schema } from "effect"
 
+import { field } from "../unknown-values.js"
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
 const machinesUrl = (port: number, path = ""): string =>
@@ -12,10 +19,8 @@ const failure = (
   if (response === undefined) {
     return `Codevisor server is not running on port ${port}; start it with: codevisor start`
   }
-  const body = response.body as { error?: unknown } | null
-  return typeof body?.error === "string"
-    ? body.error
-    : `the server answered HTTP ${response.status}`
+  const error = field(response.body, "error")
+  return typeof error === "string" ? error : `the server answered HTTP ${response.status}`
 }
 
 const describeMachine = (machine: MachineSummary): string =>
@@ -37,7 +42,7 @@ export const machinesListCommand = async (
     deps.error(`Couldn't list machines: ${failure(response, port)}`)
     return 1
   }
-  for (const machine of (response.body as { machines: MachineSummary[] }).machines) {
+  for (const machine of Schema.decodeUnknownSync(MachinesResponse)(response.body).machines) {
     deps.log(describeMachine(machine))
   }
   return 0
@@ -56,7 +61,7 @@ export const machinesInviteCommand = async (
     deps.error(`Couldn't create an invite: ${failure(response, port)}`)
     return 1
   }
-  const invite = response.body as MachineInviteResponse
+  const invite = Schema.decodeUnknownSync(MachineInviteResponse)(response.body)
   deps.log(invite.code)
   deps.error(`One-time invite, valid until ${invite.expiresAt}. On the new machine run:`)
   deps.error("  codevisor auth login --invite <code>   (or pass - and pipe the code on stdin)")
@@ -88,7 +93,7 @@ export const machinesAddCommand = async (
     deps.error(`Couldn't add ${options.ssh}: ${failure(response, port)}`)
     return 1
   }
-  const { machine } = response.body as { machine: MachineSummary }
+  const { machine } = Schema.decodeUnknownSync(AddMachineResponse)(response.body)
   deps.log(`✓ ${machine.name} is on your account (${machine.online ? "online" : "offline"}).`)
   return 0
 }

@@ -1,21 +1,32 @@
-import { EventEmitter } from "node:events"
-
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { WebSocket } from "ws"
+import { WebSocket } from "ws"
 
+import { FakeSocket } from "../test-support-net.js"
 import { ClientControlBroker } from "./client-control.js"
 
-class ClientSocket extends EventEmitter {
+class ClientSocket extends WebSocket {
   sent: Array<{ requestId: string; method: string; navigation?: unknown }> = []
   sendError = false
   throwOnSend = false
   closed = false
-  send(raw: string, callback: (error?: Error) => void) {
-    if (this.throwOnSend) throw new Error("send failed")
-    this.sent.push(JSON.parse(raw))
-    callback(this.sendError ? new Error("disconnected") : undefined)
+  constructor() {
+    super("ws://127.0.0.1/control", {
+      createConnection: () => new FakeSocket(),
+      finishRequest: () => undefined
+    })
   }
-  close() {
+  override send(
+    raw: Parameters<WebSocket["send"]>[0],
+    callback?: Parameters<WebSocket["send"]>[1] | ((error?: Error) => void)
+  ) {
+    if (this.throwOnSend) throw new Error("send failed")
+    if (typeof raw !== "string") throw new Error("Expected a text frame")
+    this.sent.push(JSON.parse(raw))
+    if (typeof callback === "function") {
+      callback(this.sendError ? new Error("disconnected") : undefined)
+    }
+  }
+  override close() {
     this.closed = true
     this.emit("close")
   }
@@ -26,7 +37,7 @@ class ClientSocket extends EventEmitter {
 const context = { isActive: true, workspaces: [] }
 const attach = (broker: ClientControlBroker, id: string) => {
   const socket = new ClientSocket()
-  broker.attach(id, socket as unknown as WebSocket)
+  broker.attach(id, socket)
   socket.frame({ type: "hello", name: id, platform: "macos" })
   return socket
 }
@@ -141,7 +152,7 @@ describe("native client control", () => {
     await failed
     expect(broker.list()).toEqual([])
     const incomplete = new ClientSocket()
-    broker.attach("incomplete", incomplete as unknown as WebSocket)
+    broker.attach("incomplete", incomplete)
     expect(broker.list()).toEqual([])
     await vi.advanceTimersByTimeAsync(1000)
     expect(incomplete.closed).toBe(true)

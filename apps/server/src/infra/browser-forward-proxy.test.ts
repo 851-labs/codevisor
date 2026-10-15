@@ -1,10 +1,10 @@
 import { once } from "node:events"
-import { createServer, request, type Server, type ClientRequest } from "node:http"
-import { type AddressInfo, type Socket } from "node:net"
+import { ClientRequest, createServer, request, type Server } from "node:http"
 
 import { afterEach, expect, it } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
 
+import { listeningPort, tcpSocket } from "../test-support-net.js"
 import { isBrowserProxyRequest } from "./browser-forward-proxy.js"
 import { BrowserProxy } from "./browser-proxy.js"
 
@@ -21,7 +21,7 @@ async function listen(server: Server) {
         server.close((error) => (error ? reject(error) : resolve()))
       )
   )
-  return (server.address() as AddressInfo).port
+  return listeningPort(server)
 }
 async function fixture(maximumConnections?: number) {
   const proxy = new BrowserProxy(maximumConnections)
@@ -29,7 +29,7 @@ async function fixture(maximumConnections?: number) {
     if (isBrowserProxyRequest(req)) proxy.handleHTTP(req, res)
     else res.writeHead(200).end("control API")
   })
-  server.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, socket as Socket, head))
+  server.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, tcpSocket(socket), head))
   const port = await listen(server)
   cleanups.push(() => proxy.close())
   const auth = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
@@ -155,9 +155,9 @@ it("forwards Chromium's absolute-form WebSocket upgrade with the original host a
   const { port, auth } = await fixture()
   const client = new WebSocket(`ws://127.0.0.1:${port}`, {
     finishRequest: (req) => {
-      const outgoing = req as unknown as ClientRequest
-      outgoing.path = `http://localhost:${target}/hmr`
-      outgoing.end()
+      if (!(req instanceof ClientRequest)) throw new Error("Expected an outgoing request")
+      req.path = `http://localhost:${target}/hmr`
+      req.end()
     },
     origin: "http://localhost:3000",
     headers: { "Proxy-Authorization": auth }

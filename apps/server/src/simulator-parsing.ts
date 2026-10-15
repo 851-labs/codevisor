@@ -5,39 +5,48 @@ import type {
   SimulatorList,
   SimulatorRuntime
 } from "@codevisor/api"
+import { Schema } from "effect"
+
+import { field, recordField } from "./unknown-values.js"
 
 const udidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export interface RawList {
-  readonly devices?: Record<string, ReadonlyArray<RawDevice>>
-  readonly devicetypes?: ReadonlyArray<RawDeviceType>
-  readonly runtimes?: ReadonlyArray<RawRuntime>
-}
+const RawDevice = Schema.Struct({
+  udid: Schema.optionalKey(Schema.String),
+  name: Schema.optionalKey(Schema.String),
+  state: Schema.optionalKey(Schema.String),
+  isAvailable: Schema.optionalKey(Schema.Boolean),
+  deviceTypeIdentifier: Schema.optionalKey(Schema.String),
+  lastBootedAt: Schema.optionalKey(Schema.String)
+})
+type RawDevice = typeof RawDevice.Type
 
-export interface RawDevice {
-  readonly udid?: string
-  readonly name?: string
-  readonly state?: string
-  readonly isAvailable?: boolean
-  readonly deviceTypeIdentifier?: string
-  readonly lastBootedAt?: string
-}
+const RawDeviceType = Schema.Struct({
+  identifier: Schema.optionalKey(Schema.String),
+  name: Schema.optionalKey(Schema.String),
+  productFamily: Schema.optionalKey(Schema.String),
+  bundlePath: Schema.optionalKey(Schema.String)
+})
 
-export interface RawDeviceType {
-  readonly identifier?: string
-  readonly name?: string
-  readonly productFamily?: string
-  readonly bundlePath?: string
-}
+const RawRuntime = Schema.Struct({
+  identifier: Schema.optionalKey(Schema.String),
+  name: Schema.optionalKey(Schema.String),
+  platform: Schema.optionalKey(Schema.String),
+  version: Schema.optionalKey(Schema.String),
+  isAvailable: Schema.optionalKey(Schema.Boolean),
+  supportedDeviceTypes: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ identifier: Schema.optionalKey(Schema.String) }))
+  )
+})
 
-export interface RawRuntime {
-  readonly identifier?: string
-  readonly name?: string
-  readonly platform?: string
-  readonly version?: string
-  readonly isAvailable?: boolean
-  readonly supportedDeviceTypes?: ReadonlyArray<{ readonly identifier?: string }>
-}
+const RawList = Schema.Struct({
+  devices: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(RawDevice))),
+  devicetypes: Schema.optionalKey(Schema.Array(RawDeviceType)),
+  runtimes: Schema.optionalKey(Schema.Array(RawRuntime))
+})
+export type RawList = typeof RawList.Type
+
+export const decodeRawList = Schema.decodeUnknownSync(RawList)
 
 const simulatorDeviceTypes = (raw: RawList): SimulatorDeviceType[] =>
   (raw.devicetypes ?? []).flatMap((type) =>
@@ -188,17 +197,13 @@ export const parseFeatures = (profile: Record<string, unknown>): string[] => {
 
 export const chromeImageNames = (definition: unknown): string[] => {
   const names = new Set<string>()
-  const record = definition as {
-    images?: Record<string, unknown>
-    inputs?: ReadonlyArray<Record<string, unknown>>
-    postures?: unknown
-  }
-  for (const value of Object.values(record.images ?? {})) {
+  for (const value of Object.values(recordField(definition, "images"))) {
     if (typeof value === "string") names.add(value)
   }
-  for (const input of record.inputs ?? []) {
+  const inputs = field(definition, "inputs")
+  for (const input of Array.isArray(inputs) ? inputs : []) {
     for (const key of ["image", "imageDown"]) {
-      const value = input[key]
+      const value = field(input, key)
       if (typeof value === "string") names.add(value)
     }
   }

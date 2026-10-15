@@ -20,7 +20,11 @@ export const socketFactory = (url: string, headers: Record<string, string>): Clo
   })
   socket.on("message", (data, isBinary) => {
     try {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+      const bytes = Array.isArray(data)
+        ? Buffer.concat(data)
+        : data instanceof ArrayBuffer
+          ? Buffer.from(data)
+          : data
       adapted.onmessage?.(isBinary ? new Uint8Array(bytes) : bytes.toString())
     } catch {
       socket.close(1011, "message handler failed")

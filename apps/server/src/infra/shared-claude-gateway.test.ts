@@ -1,9 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http"
 import { Socket } from "node:net"
-import type { AddressInfo } from "node:net"
 
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
+import { listeningPort } from "../test-support-net.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 
 const bundle = {
@@ -25,7 +25,7 @@ const fixture = async (options: Parameters<typeof makeSharedClaudeGateway>[0]) =
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/harness/claude`
+  const base = `http://127.0.0.1:${listeningPort(server)}/harness/claude`
   const send = (path = "/v1/messages", headers: Record<string, string> = {}) =>
     fetch(`${base}${path}`, {
       method: "POST",
@@ -53,7 +53,7 @@ describe("Claude shared account gateway", () => {
     }> = []
     const f = await fixture({
       token,
-      fetch: (async (url, options) => {
+      fetch: async (url, options) => {
         const headers = new Headers(options?.headers)
         requests.push({
           url: url instanceof Request ? url.url : url.toString(),
@@ -64,7 +64,7 @@ describe("Claude shared account gateway", () => {
         return requests.length === 1
           ? new Response("expired", { status: 401 })
           : new Response("data: done\n\n", { headers: { "content-type": "text/event-stream" } })
-      }) as typeof fetch
+      }
     })
     const response = await f.send("/v1/messages?beta=true")
     expect(response.status).toBe(200)
@@ -76,7 +76,7 @@ describe("Claude shared account gateway", () => {
     expect(token).toHaveBeenLastCalledWith("account", "current")
   })
   it("rejects unregistered credentials, browser origins and paths outside the provider API", async () => {
-    const upstream = vi.fn(async () => new Response("unexpected")) as unknown as typeof fetch
+    const upstream = vi.fn<typeof fetch>(async () => new Response("unexpected"))
     const f = await fixture({ token: async () => bundle, fetch: upstream })
     expect((await f.send("/v1/messages", { authorization: "Bearer stranger" })).status).toBe(401)
     expect((await f.send("/v1/messages", { origin: "https://example.test" })).status).toBe(403)
@@ -94,9 +94,7 @@ describe("Claude shared account gateway", () => {
     const failed = await f.send()
     expect(failed.status).toBe(503)
     expect(await failed.text()).not.toContain("SECRET")
-    const upstream = vi.fn(
-      async () => new Response("limited", { status: 429 })
-    ) as unknown as typeof fetch
+    const upstream = vi.fn<typeof fetch>(async () => new Response("limited", { status: 429 }))
     const g = await fixture({ token: async () => bundle, fetch: upstream })
     expect((await g.send()).status).toBe(429)
     expect(upstream).toHaveBeenCalledOnce()
@@ -137,7 +135,7 @@ it("ends a failed stream without appending a second HTTP response", async () => 
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const f = await fixture({
     token: async () => bundle,
-    fetch: (async () =>
+    fetch: async () =>
       new Response(
         new ReadableStream<Uint8Array>({
           start(value) {
@@ -145,7 +143,7 @@ it("ends a failed stream without appending a second HTTP response", async () => 
             value.enqueue(new TextEncoder().encode("first"))
           }
         })
-      )) as typeof fetch
+      )
   })
   const response = await f.send()
   const body = response.text()
@@ -161,7 +159,7 @@ it("refreshes an empty unauthorized response and aborts upstream when a client l
   })
   const f = await fixture({
     token: async () => bundle,
-    fetch: (async (_url, options) => {
+    fetch: async (_url, options) => {
       if (++count === 1) return new Response(null, { status: 401 })
       options?.signal?.addEventListener("abort", aborted, { once: true })
       return new Response(
@@ -171,7 +169,7 @@ it("refreshes an empty unauthorized response and aborts upstream when a client l
           }
         })
       )
-    }) as typeof fetch
+    }
   })
   const response = await f.send()
   await response.body?.cancel()

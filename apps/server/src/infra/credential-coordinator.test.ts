@@ -2,7 +2,12 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
+import {
+  coordinateCredential,
+  CredentialCommand,
+  decode,
+  type CredentialRecord
+} from "@codevisor/api"
 import { afterEach, expect, it, vi } from "vitest"
 
 import { makeCredentialCoordinator } from "./credential-coordinator.js"
@@ -20,7 +25,9 @@ const fixture = async () => {
   let status = 200
   const requests: Array<{ action: string; expected?: string }> = []
   const request = vi.fn<typeof fetch>(async (url, init) => {
-    const body = JSON.parse(init?.body as string)
+    const raw = init?.body
+    if (typeof raw !== "string") throw new Error("Expected a JSON request body")
+    const body = decode(CredentialCommand)(JSON.parse(raw))
     const expected = new Headers(init?.headers).get("x-codevisor-account") ?? undefined
     requests.push({ action: body.action, ...(expected ? { expected } : {}) })
     if (status !== 200) return new Response(null, { status })
@@ -131,11 +138,8 @@ it("retains cloud authority when a deleted account returns an empty tombstone", 
   await f.cloud()
   const deleted = makeCredentialCoordinator({
     dataDir: f.dataDir,
-    fetch: (async () =>
-      Response.json(
-        { status: "revoked" },
-        { headers: { "x-codevisor-account": "user-one" } }
-      )) as typeof fetch
+    fetch: async () =>
+      Response.json({ status: "revoked" }, { headers: { "x-codevisor-account": "user-one" } })
   })
   expect((await deleted(id, { action: "read" })).status).toBe("revoked")
   expect(await deleted.cached(id)).toBeUndefined()

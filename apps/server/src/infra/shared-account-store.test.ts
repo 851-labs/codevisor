@@ -25,6 +25,7 @@ describe("shared account metadata", () => {
         { key: row.id, value: row },
         { key: "provider:{", value: {} },
         { key: "provider:[1]", value: {} },
+        { key: 'provider:{"harness":"pi"}', value: {} },
         { key: "shared-removed", value: null },
         { key: "alias:x", value: "y" }
       ])

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { Worktree } from "@codevisor/api"
 import { listSnapshotRefWorktreeIds } from "@codevisor/worktrees"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "./archive-jobs.js"
@@ -30,12 +32,14 @@ const setUp = async () => {
     body: JSON.stringify({ folderPath: repoFolder, id: "git-project" }),
     method: "POST"
   })
-  const worktree = (
-    await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-      body: JSON.stringify({ name: "sushi" }),
-      method: "POST"
-    })
-  ).body as { readonly id: string; readonly path: string }
+  const worktree = Schema.decodeUnknownSync(Worktree)(
+    (
+      await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "sushi" }),
+        method: "POST"
+      })
+    ).body
+  )
   await jsonRequest(server, "/v1/workspaces/work", {
     body: JSON.stringify({
       projectId: "git-project",

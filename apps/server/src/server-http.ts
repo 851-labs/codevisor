@@ -230,10 +230,9 @@ export const matchRoute = (pathname: string, pattern: string): string | undefine
     return undefined
   }
   let captured: string | undefined
-  for (let index = 0; index < patternParts.length; index += 1) {
-    const patternPart = patternParts[index] as string
-    const pathPart = pathParts[index] as string
-    if (patternPart.startsWith(":")) {
+  for (const [index, pathPart] of pathParts.entries()) {
+    const patternPart = patternParts[index]
+    if (patternPart?.startsWith(":")) {
       captured = canonicalRouteCapture(patternParts[index - 1], decodeURIComponent(pathPart))
     } else if (patternPart !== pathPart) {
       return undefined
@@ -252,10 +251,9 @@ export const matchRouteParams = (
     return undefined
   }
   const params: Record<string, string> = {}
-  for (let index = 0; index < patternParts.length; index += 1) {
-    const patternPart = patternParts[index] as string
-    const pathPart = pathParts[index] as string
-    if (patternPart.startsWith(":")) {
+  for (const [index, pathPart] of pathParts.entries()) {
+    const patternPart = patternParts[index]
+    if (patternPart?.startsWith(":")) {
       params[patternPart.slice(1)] = canonicalRouteCapture(
         patternParts[index - 1],
         decodeURIComponent(pathPart)

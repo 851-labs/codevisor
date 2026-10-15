@@ -20,7 +20,7 @@ export const readCloudRegistration = async (
       `Cannot read Cloud state from the server on port ${port} (status ${response.status}). Update the server and retry.`
     )
   }
-  return response.body as CloudRegistration
+  return response.body
 }
 
 export const ensureCloudServer = async (

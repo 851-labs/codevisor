@@ -122,7 +122,15 @@ describe("terminal persistence", () => {
     const snapshotPath = join(dataDir, "terminal-buffers.json")
 
     const lines: Array<string> = []
-    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [{}] }))
+    writeFileSync(
+      snapshotPath,
+      JSON.stringify({
+        version: 1,
+        terminals: [
+          { terminalId: "t", sessionId: "s", nextOutputSeq: 1, closed: true, external: false }
+        ]
+      })
+    )
     makeTerminalPersistence({
       dataDir,
       terminal: {
@@ -156,8 +164,7 @@ describe("terminal persistence", () => {
 
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     expect(existsSync(`${snapshotPath}.tmp`)).toBe(false)
-    const parsed = JSON.parse(readFileSync(snapshotPath, "utf8")) as { version: number }
-    expect(parsed.version).toBe(3)
+    expect(JSON.parse(readFileSync(snapshotPath, "utf8"))).toMatchObject({ version: 3 })
     expect(statSync(snapshotPath).mode & 0o777).toBe(0o600)
   })
 

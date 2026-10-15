@@ -1,5 +1,5 @@
-import { EventEmitter, once } from "node:events"
-import { createServer, type AddressInfo, type Socket } from "node:net"
+import { once } from "node:events"
+import { createServer, Socket } from "node:net"
 
 import type { ChannelCloseReason } from "@codevisor/api"
 import {
@@ -11,6 +11,7 @@ import {
 } from "@codevisor/cloud-client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { listeningPort } from "../test-support-net.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 
 class FakeChannel implements IncomingChannel {
@@ -48,38 +49,44 @@ class FakeChannel implements IncomingChannel {
   }
 }
 
-class FakeLoopbackSocket extends EventEmitter {
-  destroyed = false
+class FakeLoopbackSocket extends Socket {
   ended = false
   pauses = 0
   resumes = 0
   writes: Uint8Array[] = []
   writeError: Error | undefined
 
-  pause(): this {
-    this.pauses += 1
-    return this
+  constructor() {
+    super({ allowHalfOpen: true })
   }
 
-  resume(): this {
+  override pause(): this {
+    this.pauses += 1
+    return super.pause()
+  }
+
+  override resume(): this {
     this.resumes += 1
     return this
   }
 
-  destroy(): this {
-    this.destroyed = true
+  override destroy(): this {
+    Object.defineProperty(this, "destroyed", { value: true })
     return this
   }
 
-  end(callback?: () => void): this {
+  override end(callback?: Uint8Array | string | (() => void)): this {
     this.ended = true
-    callback?.()
+    if (typeof callback === "function") callback()
     return this
   }
 
-  write(value: Uint8Array, callback?: (error?: Error) => void): boolean {
-    this.writes.push(new Uint8Array(value))
-    callback?.(this.writeError)
+  override write(
+    value: Uint8Array | string,
+    callback?: BufferEncoding | ((error?: Error | null) => void)
+  ): boolean {
+    this.writes.push(typeof value === "string" ? Buffer.from(value) : new Uint8Array(value))
+    if (typeof callback === "function") callback(this.writeError)
     return true
   }
 }
@@ -90,7 +97,7 @@ const fakeConnection = (
   log: (line: string) => void = () => undefined
 ): { channel: FakeChannel; socket: FakeLoopbackSocket } => {
   const socket = new FakeLoopbackSocket()
-  byteStreamChannelHandler(url, log, () => socket as unknown as Socket)(channel)
+  byteStreamChannelHandler(url, log, () => socket)(channel)
   return { channel, socket }
 }
 
@@ -118,14 +125,14 @@ describe("cloud byte stream loopback connector", () => {
     const server = createServer((accepted) => accept(accepted))
     server.listen(0, "127.0.0.1")
     await once(server, "listening")
-    const address = server.address() as AddressInfo
+    const port = listeningPort(server)
     cleanup.push(
       () =>
         new Promise((resolve) => {
           server.close(() => resolve())
         })
     )
-    return { url: `http://127.0.0.1:${address.port}`, socket }
+    return { url: `http://127.0.0.1:${port}`, socket }
   }
 
   it("rejects arbitrary services and non-loopback targets before dialing", () => {
@@ -150,14 +157,14 @@ describe("cloud byte stream loopback connector", () => {
     ] as const
     for (const [url, expected] of accepted) {
       const socket = new FakeLoopbackSocket()
-      const dial = vi.fn(() => socket as unknown as Socket)
+      const dial = vi.fn(() => socket)
       byteStreamChannelHandler(url, () => undefined, dial)(new FakeChannel())
       expect(dial).toHaveBeenCalledWith(expected)
     }
 
     for (const url of ["not a URL", "http://example.com", "http://localhost:0"]) {
       const channel = new FakeChannel()
-      const dial = vi.fn(() => new FakeLoopbackSocket() as unknown as Socket)
+      const dial = vi.fn(() => new FakeLoopbackSocket())
       byteStreamChannelHandler(url, () => undefined, dial)(channel)
       expect(channel.closes).toEqual(["rejected"])
       expect(dial).not.toHaveBeenCalled()
@@ -170,7 +177,7 @@ describe("cloud byte stream loopback connector", () => {
     byteStreamChannelHandler(
       "http://127.0.0.1:4321",
       () => undefined,
-      () => socket as unknown as Socket
+      () => socket
     )(channel)
     socket.emit("connect")
     expect(channel.grants).toEqual([BYTE_STREAM_INITIAL_CREDIT_BYTES])

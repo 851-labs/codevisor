@@ -28,6 +28,7 @@ import {
 } from "@codevisor/cloud-client"
 
 import type { CloudServerControl } from "../server-context-types.js"
+import { field, stringField } from "../unknown-values.js"
 import { removeMachineFromCloudAccount } from "./cloud-account-removal.js"
 import { socketFactory } from "./cloud-bridge-socket.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
@@ -76,21 +77,24 @@ const readCredentials = async (
   | undefined
 > => {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<MachineCredentials> & {
-      managedBy?: unknown
-      machineName?: unknown
-    }
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
+    const serverUrl = stringField(parsed, "serverUrl")
+    const deviceId = stringField(parsed, "deviceId")
+    const publicKey = stringField(parsed, "publicKey")
+    const secretKey = stringField(parsed, "secretKey")
+    const apiKey = stringField(parsed, "apiKey")
+    const machineName = stringField(parsed, "machineName")
     if (
-      typeof parsed.serverUrl === "string" &&
-      typeof parsed.deviceId === "string" &&
-      typeof parsed.publicKey === "string" &&
-      typeof parsed.secretKey === "string" &&
-      typeof parsed.apiKey === "string"
+      serverUrl !== undefined &&
+      deviceId !== undefined &&
+      publicKey !== undefined &&
+      secretKey !== undefined &&
+      apiKey !== undefined
     ) {
       return {
-        credentials: parsed as MachineCredentials,
-        managedBy: parsed.managedBy === "app" ? "app" : "external",
-        ...(typeof parsed.machineName === "string" ? { machineName: parsed.machineName } : {})
+        credentials: { serverUrl, deviceId, publicKey, secretKey, apiKey },
+        managedBy: field(parsed, "managedBy") === "app" ? "app" : "external",
+        ...(machineName === undefined ? {} : { machineName })
       }
     }
     return undefined

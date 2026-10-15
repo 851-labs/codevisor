@@ -10,6 +10,7 @@ import type {
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { field, isRecord } from "../unknown-values.js"
 import type { SharedAccountStore } from "./shared-account-store.js"
 
 export const PROVIDER_LOCAL = "local.shared-provider-accounts"
@@ -26,21 +27,28 @@ export interface SharedProviderRecord {
   readonly credential: SharedCredentialReference
 }
 
-export const providerRecord = (value: unknown): SharedProviderRecord | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const row = value as SharedProviderRecord
-  return ["pi", "opencode", "grok-build"].includes(row.harnessId) &&
-    typeof row.profileId === "string" &&
-    typeof row.providerId === "string" &&
-    typeof row.subject === "string" &&
-    (row.organizationId === undefined || typeof row.organizationId === "string") &&
-    typeof row.credential?.id === "string" &&
-    /^[\w-]{16,100}$/.test(row.credential.id) &&
-    typeof row.credential.key === "string" &&
-    /^[\w-]{43}$/.test(row.credential.key)
-    ? row
-    : undefined
+export const isProviderHarness = (id: unknown): id is ProviderOAuthHarness =>
+  id === "pi" || id === "opencode" || id === "grok-build"
+
+const isProviderRecord = (value: unknown): value is SharedProviderRecord => {
+  if (!isRecord(value)) return false
+  const credentialId = field(value.credential, "id")
+  const credentialKey = field(value.credential, "key")
+  return (
+    isProviderHarness(value.harnessId) &&
+    typeof value.profileId === "string" &&
+    typeof value.providerId === "string" &&
+    typeof value.subject === "string" &&
+    (value.organizationId === undefined || typeof value.organizationId === "string") &&
+    typeof credentialId === "string" &&
+    /^[\w-]{16,100}$/.test(credentialId) &&
+    typeof credentialKey === "string" &&
+    /^[\w-]{43}$/.test(credentialKey)
+  )
 }
+
+export const providerRecord = (value: unknown): SharedProviderRecord | undefined =>
+  isProviderRecord(value) ? value : undefined
 
 export const makeSharedProviderStore = (options: {
   db: CodevisorDatabaseService

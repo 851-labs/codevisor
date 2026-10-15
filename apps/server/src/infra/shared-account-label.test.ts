@@ -1,15 +1,17 @@
+import type { SharedOAuthHarness, SharedTokenBundle } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 
 import { sharedAccountLabel } from "./shared-account-store.js"
 
-const bundle = (fields: Record<string, unknown>) =>
-  ({
-    subject: "s",
-    accessToken: "token-1234",
-    expiresAt: 1,
-    ownership: "managed",
-    ...fields
-  }) as never
+const bundle = (
+  fields: Pick<SharedTokenBundle, "harnessId"> & Partial<SharedTokenBundle>
+): SharedTokenBundle => ({
+  subject: "s",
+  accessToken: "token-1234",
+  expiresAt: 1,
+  ownership: "managed",
+  ...fields
+})
 
 describe("shared account names", () => {
   it("keeps a name the user chose, but not one Codevisor made up", () => {
@@ -25,12 +27,14 @@ describe("shared account names", () => {
       "Gemini API key ••••1234"
     )
     expect(
-      [
-        ["antigravity", undefined],
-        ["codex", "apiKey"],
-        ["muse-code", undefined],
-        ["claude-code", "apiKey"]
-      ].map(([harnessId, authMethod]) =>
+      (
+        [
+          ["antigravity", undefined],
+          ["codex", "apiKey"],
+          ["muse-code", undefined],
+          ["claude-code", "apiKey"]
+        ] satisfies ReadonlyArray<readonly [SharedOAuthHarness, "apiKey" | undefined]>
+      ).map(([harnessId, authMethod]) =>
         sharedAccountLabel(bundle({ harnessId, ...(authMethod ? { authMethod } : {}) }))
       )
     ).toEqual(["Google", "ChatGPT", "Meta", "Claude"])

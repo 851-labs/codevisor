@@ -10,8 +10,12 @@ import {
   refreshSharedOAuth
 } from "@codevisor/harness-manager"
 import type { CredentialCoordinator, SharedOAuthHarness } from "@codevisor/harness-manager"
+import { Schema } from "effect"
 
+import { errorCode } from "../unknown-values.js"
 import { makeCredentialCoordinator } from "./credential-coordinator.js"
+
+const Receipt = Schema.Struct({ operationId: Schema.String, sealed: Schema.String })
 
 export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordinator) => {
   const coordinator = makeCredentialCoordinator({ dataDir })
@@ -23,12 +27,9 @@ export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordin
     receipt: {
       read: async (id) => {
         try {
-          return JSON.parse(await readFile(path(id), "utf8")) as {
-            operationId: string
-            sealed: string
-          }
+          return Schema.decodeUnknownSync(Receipt)(JSON.parse(await readFile(path(id), "utf8")))
         } catch (cause) {
-          if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+          if (errorCode(cause) === "ENOENT") return undefined
           throw cause
         }
       },

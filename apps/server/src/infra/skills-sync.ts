@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 
+import type { Skill } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { SkillStore } from "@codevisor/skills"
 import {
@@ -15,6 +16,9 @@ import {
   type SyncEntryRecord
 } from "@codevisor/sync"
 import { Effect } from "effect"
+
+import { stringField } from "../unknown-values.js"
+import { appliedValuesByKey } from "./applied-values.js"
 
 export const SKILLS_SYNC_NAMESPACE = "codevisor-skills"
 const APPLIED_NAMESPACE = "local.codevisor-skills-applied"
@@ -85,33 +89,28 @@ export const unpackSkillArchive = async (
 export const skillTreeHash = (path: string): Promise<string> =>
   treeHash(path, { exclude: EXCLUDED })
 
-interface SkillEntryValue {
-  readonly hash?: unknown
-  readonly name?: unknown
-}
-
-const entryHash = (entry: SyncEntryRecord): string | undefined => {
-  if (entry.deleted === true) return undefined
-  const value = entry.value as SkillEntryValue | null | undefined
-  return typeof value?.hash === "string" ? value.hash : undefined
-}
+const entryHash = (entry: SyncEntryRecord): string | undefined =>
+  entry.deleted === true ? undefined : stringField(entry.value, "hash")
 
 export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncResult> => {
   const localSkills = new Map(
     (await deps.store.list()).skills.map((skill) => [skill.directoryName, skill])
   )
   const localHashes = new Map<string, string>()
+  const hashedSkills: Array<{
+    readonly directoryName: string
+    readonly skill: Skill
+    readonly localHash: string
+  }> = []
   for (const [directoryName, skill] of localSkills) {
-    localHashes.set(directoryName, await skillTreeHash(skill.path))
+    const localHash = await skillTreeHash(skill.path)
+    localHashes.set(directoryName, localHash)
+    hashedSkills.push({ directoryName, skill, localHash })
   }
   const replica = await run(deps.db.getSyncEntries(SKILLS_SYNC_NAMESPACE))
   const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
-  const appliedByKey = new Map(
-    appliedEntries
-      .filter((entry) => entry.deleted !== true && typeof entry.value === "string")
-      .map((entry) => [entry.key, entry.value as string])
-  )
+  const appliedByKey = appliedValuesByKey(appliedEntries)
 
   const published: Array<string> = []
   const applied: Array<string> = []
@@ -126,8 +125,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     return clock
   }
 
-  for (const [directoryName, skill] of Array.from(localSkills)) {
-    const localHash = localHashes.get(directoryName) as string
+  for (const { directoryName, skill, localHash } of hashedSkills) {
     if (!verifiedBlobIds.has(localHash) || !deps.blobs.has(localHash)) {
       if (
         !deps.blobs.has(localHash) ||

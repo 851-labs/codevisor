@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import type { HarnessAccount } from "@codevisor/api"
 import { atomicWriteJson } from "@codevisor/harness-manager"
+import { Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi, onTestFinished } from "vitest"
 
 import { run } from "../test-support.js"
@@ -30,7 +31,11 @@ const account = (harnessId: string) =>
     isActive: true
   }) satisfies HarnessAccount
 const json = async (path: string) =>
-  JSON.parse(await readFile(path, "utf8")) as Record<string, Record<string, unknown>>
+  Schema.decodeUnknownSync(
+    Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Unknown))
+  )(JSON.parse(await readFile(path, "utf8")))
+const storedJson = (value: unknown): unknown =>
+  JSON.parse(Schema.decodeUnknownSync(Schema.String)(value))
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(1000)
@@ -126,7 +131,7 @@ describe("provider accounts across machines", () => {
       type: "api_key",
       key: "local-key"
     })
-    expect(await json(join(root, "settings.json"))).toMatchObject({
+    expect(JSON.parse(await readFile(join(root, "settings.json"), "utf8"))).toMatchObject({
       extensions: [
         join(source, "custom.ts"),
         "/absolute.ts",
@@ -272,12 +277,12 @@ describe("provider accounts across machines", () => {
     )
     await host.shared.providers.capture("pi", "default", "anthropic", credential(), true)
     const entries = await run(host.db.getSyncEntries("harness-credentials"))
-    expect(JSON.parse(entries[0]!.value as string)).toEqual({
+    expect(storedJson(entries[0]?.value)).toEqual({
       openai: { type: "api_key", key: "keep" }
     })
     await host.shared.providers.capture("pi", "default", "anthropic", credential(), true)
     expect(
-      JSON.parse((await run(host.db.getSyncEntries("harness-credentials")))[0]!.value as string)
+      storedJson((await run(host.db.getSyncEntries("harness-credentials")))[0]?.value)
     ).toEqual({ openai: { type: "api_key", key: "keep" } })
   })
 

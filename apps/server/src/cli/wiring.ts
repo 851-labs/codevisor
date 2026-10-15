@@ -1,4 +1,5 @@
 import { hostname } from "node:os"
+import { text } from "node:stream/consumers"
 
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
@@ -32,11 +33,7 @@ export const runPrompt = async <A>(prompt: Prompt.Prompt<A>): Promise<A> => {
 
 type RunCli = (command: (deps: CliDeps) => Promise<number>) => Effect.Effect<void>
 
-const readStdin = async (): Promise<string> => {
-  const chunks: Buffer[] = []
-  for await (const chunk of process.stdin) chunks.push(chunk as Buffer)
-  return Buffer.concat(chunks).toString("utf8").trim()
-}
+const readStdin = async (): Promise<string> => (await text(process.stdin)).trim()
 
 export const makeAuthCommand = (runCli: RunCli) => {
   const login = Command.make(

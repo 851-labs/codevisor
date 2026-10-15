@@ -7,6 +7,8 @@ import type {
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { field, isRecord, stringField } from "../unknown-values.js"
+
 export const SHARED_ACCOUNTS_NAMESPACE = "harness-shared-accounts"
 export const SHARED_ACCOUNT_OVERRIDES = "local.harness-account-overrides"
 
@@ -37,33 +39,35 @@ export const sharedAccountLabel = (bundle: SharedTokenBundle, chosen?: string): 
 
 export const sharedHarness = (id: string): id is SharedOAuthHarness =>
   id === "claude-code" || id === "codex" || id === "muse-code" || id === "antigravity"
-export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undefined => {
-  if (value === null || typeof value !== "object") return undefined
-  const row = value as SharedHarnessAccount
+const isSharedAccount = (value: unknown): value is SharedHarnessAccount => {
+  if (!isRecord(value)) return false
+  const { id, harnessId, label, createdAt, credential } = value
   if (
-    typeof row.id !== "string" ||
-    !/^shared-[a-zA-Z0-9-]+$/.test(row.id) ||
-    !sharedHarness(row.harnessId) ||
-    typeof row.label !== "string" ||
-    !Number.isFinite(row.createdAt)
+    typeof id !== "string" ||
+    !/^shared-[a-zA-Z0-9-]+$/.test(id) ||
+    typeof harnessId !== "string" ||
+    !sharedHarness(harnessId) ||
+    typeof label !== "string" ||
+    !Number.isFinite(createdAt)
   )
-    return undefined
+    return false
+  const credentialId = field(credential, "id")
+  const credentialKey = field(credential, "key")
   if (
-    row.credential !== undefined &&
-    (typeof row.credential?.id !== "string" ||
-      !/^[a-zA-Z0-9_-]{16,100}$/.test(row.credential.id) ||
-      typeof row.credential.key !== "string" ||
-      !/^[a-zA-Z0-9_-]{43}$/.test(row.credential.key))
+    credential !== undefined &&
+    (typeof credentialId !== "string" ||
+      !/^[a-zA-Z0-9_-]{16,100}$/.test(credentialId) ||
+      typeof credentialKey !== "string" ||
+      !/^[a-zA-Z0-9_-]{43}$/.test(credentialKey))
   )
-    return undefined
-  if (
-    [row.subject, row.email, row.organizationId, row.sourceMachineId].some(
-      (field) => field !== undefined && typeof field !== "string"
-    )
+    return false
+  return [value.subject, value.email, value.organizationId, value.sourceMachineId].every(
+    (optional) => optional === undefined || typeof optional === "string"
   )
-    return undefined
-  return row
 }
+
+export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undefined =>
+  isSharedAccount(value) ? value : undefined
 
 export const harnessesSignedInBy = (
   entries: ReadonlyArray<Pick<SyncEntryRecord, "key" | "value">>
@@ -72,7 +76,8 @@ export const harnessesSignedInBy = (
   for (const { key, value } of entries) {
     if (key.startsWith("provider:")) {
       try {
-        const [harness] = JSON.parse(key.slice("provider:".length)) as Array<unknown>
+        const parsed: unknown = JSON.parse(key.slice("provider:".length))
+        const harness: unknown = Array.isArray(parsed) ? parsed[0] : undefined
         if (typeof harness === "string") harnesses.add(harness)
       } catch {}
     } else if (key.startsWith("selected:")) {
@@ -144,13 +149,13 @@ export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: s
           return override.value
       }
       const selected = (await entries()).find((entry) => entry.key === `selected:${harnessId}`)
-      const value = selected?.value as { id?: string; automatic?: boolean } | undefined
+      const selectedId = stringField(selected?.value, "id")
       if (
         selected?.deleted !== true &&
-        value?.automatic !== true &&
-        available.some((account) => account.id === value?.id)
+        field(selected?.value, "automatic") !== true &&
+        available.some((account) => account.id === selectedId)
       )
-        return value?.id
+        return selectedId
       return available[0]?.id
     },
     select: (harnessId: string, id: string, machine: boolean) =>
