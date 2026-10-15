@@ -6,6 +6,7 @@ import {
   HubPeerDevices,
   MachineTunnelAddr
 } from "./cloud-tunnel-protocol.js"
+import { isRecord } from "./records.js"
 
 export * from "./cloud-channel-types.js"
 export * from "./cloud-tunnel-protocol.js"
@@ -22,6 +23,7 @@ export const CloudDeviceInfo = Schema.Struct({
   kind: CloudDeviceKind,
   name: Schema.String,
   os: Schema.optional(Schema.String),
+  icon: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
   serverId: Schema.optional(Schema.String),
@@ -34,6 +36,7 @@ export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
 export const CloudMachinePresence = Schema.Struct({
   deviceId: Schema.String,
   name: Schema.String,
+  icon: Schema.optional(Schema.String),
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
@@ -157,67 +160,57 @@ const CLOSE_REASONS: ReadonlySet<string> = new Set([
   "crypto-error"
 ])
 
-export const parseRelayFrameHeader = (value: unknown): RelayFrameHeader | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const frame = value as Record<string, unknown>
+const isRelayFrameHeader = (value: unknown): value is RelayFrameHeader => {
   if (
-    typeof frame.channelId !== "string" ||
-    typeof frame.seq !== "number" ||
-    !Number.isSafeInteger(frame.seq) ||
-    frame.seq < 0
+    !isRecord(value) ||
+    typeof value.channelId !== "string" ||
+    typeof value.seq !== "number" ||
+    !Number.isSafeInteger(value.seq) ||
+    value.seq < 0
   ) {
-    return undefined
+    return false
   }
-  switch (frame.t) {
+  switch (value.t) {
     case "open":
-      return typeof frame.ephemeralKey === "string" ? (value as RelayFrameHeader) : undefined
+      return typeof value.ephemeralKey === "string"
     case "data":
-      return value as RelayFrameHeader
+      return true
     case "credit":
-      return typeof frame.bytes === "number" && Number.isSafeInteger(frame.bytes) && frame.bytes > 0
-        ? (value as RelayFrameHeader)
-        : undefined
+      return typeof value.bytes === "number" && Number.isSafeInteger(value.bytes) && value.bytes > 0
     case "close":
-      return typeof frame.reason === "string" && CLOSE_REASONS.has(frame.reason)
-        ? (value as RelayFrameHeader)
-        : undefined
+      return typeof value.reason === "string" && CLOSE_REASONS.has(value.reason)
     default:
-      return undefined
+      return false
   }
 }
 
-const parseAddressedHeader = <Header>(
+export const parseRelayFrameHeader = (value: unknown): RelayFrameHeader | undefined =>
+  isRelayFrameHeader(value) ? value : undefined
+
+const isAddressedHeader = <Field extends string>(
   value: unknown,
-  addressField: keyof Header & string
-): Header | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const header = value as Record<string, unknown>
-  if (typeof header[addressField] !== "string") return undefined
-  return parseRelayFrameHeader(header.frame) === undefined ? undefined : (value as Header)
-}
+  addressField: Field
+): value is Record<string, unknown> & Record<Field, string> & { frame: RelayFrameHeader } =>
+  isRecord(value) && typeof value[addressField] === "string" && isRelayFrameHeader(value.frame)
+
+const isOptionalString = (value: unknown): value is string | undefined =>
+  value === undefined || typeof value === "string"
+
+const isHubToMachineRelayHeader = (value: unknown): value is HubToMachineRelayHeader =>
+  isAddressedHeader(value, "peerId") &&
+  isOptionalString(value.peerPublicKey) &&
+  isOptionalString(value.peerDeviceId) &&
+  (value.peerKind === undefined || value.peerKind === "app" || value.peerKind === "machine")
 
 export const parseAppRelayHeader = (value: unknown): AppRelayHeader | undefined =>
-  parseAddressedHeader<AppRelayHeader>(value, "machineId")
+  isAddressedHeader(value, "machineId") ? value : undefined
 
 export const parseHubToMachineRelayHeader = (
   value: unknown
-): HubToMachineRelayHeader | undefined => {
-  const header = parseAddressedHeader<HubToMachineRelayHeader>(value, "peerId")
-  if (header === undefined) return undefined
-  if (header.peerPublicKey !== undefined && typeof header.peerPublicKey !== "string") {
-    return undefined
-  }
-  if (header.peerDeviceId !== undefined && typeof header.peerDeviceId !== "string") {
-    return undefined
-  }
-  if (header.peerKind !== undefined && header.peerKind !== "app" && header.peerKind !== "machine") {
-    return undefined
-  }
-  return header
-}
+): HubToMachineRelayHeader | undefined => (isHubToMachineRelayHeader(value) ? value : undefined)
 
 export const parseHubToAppRelayHeader = (value: unknown): HubToAppRelayHeader | undefined =>
-  parseAddressedHeader<HubToAppRelayHeader>(value, "machineId")
+  isAddressedHeader(value, "machineId") ? value : undefined
 
 export type MachineOutboundRelayHeader =
   | ({ direction: "answer" } & MachineRelayHeader)
@@ -226,8 +219,7 @@ export type MachineOutboundRelayHeader =
 export const parseMachineOutboundRelayHeader = (
   value: unknown
 ): MachineOutboundRelayHeader | undefined => {
-  const answer = parseAddressedHeader<MachineRelayHeader>(value, "peerId")
-  if (answer !== undefined) return { ...answer, direction: "answer" }
+  if (isAddressedHeader(value, "peerId")) return { ...value, direction: "answer" }
   const opened = parseAppRelayHeader(value)
   return opened === undefined ? undefined : { ...opened, direction: "open" }
 }

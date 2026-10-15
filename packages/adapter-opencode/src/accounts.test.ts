@@ -10,7 +10,7 @@ it("lists a profile's providers from its own OpenCode 2 server, started once per
     location: init?.location
   }))
   const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
-  const start = vi.fn(async () => server as unknown as OpenCodeServer)
+  const start = vi.fn(async (): Promise<OpenCodeServer> => server)
   const pool = makeOpenCodeServerPool()
   try {
     const accounts = makeOpenCode2Accounts({ pool, start })
@@ -55,7 +55,7 @@ it("replaces only Codevisor's own credentials when syncing a profile", async () 
   try {
     const accounts = makeOpenCode2Accounts({
       pool,
-      start: async () => server as unknown as OpenCodeServer
+      start: async () => server
     })
     const openai = {
       id: "codevisor-openai",
@@ -98,7 +98,7 @@ it("signs a profile out of one provider, whichever credentials it holds", async 
   try {
     const accounts = makeOpenCode2Accounts({
       pool,
-      start: async () => server as unknown as OpenCodeServer
+      start: async () => server
     })
     await accounts.removeIntegration({ command: "/bin/opencode", cwd: "/home", env: {} }, "openai")
     expect(calls.slice(1)).toEqual([

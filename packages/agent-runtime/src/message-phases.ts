@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto"
 
+import { isRecord } from "@codevisor/api"
+
 import type { RuntimeEvent } from "./types.js"
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined
+  isRecord(value) ? value : undefined
 
 const chunkText = (payload: Record<string, unknown>): string => {
   const content = record(payload.content)
@@ -42,8 +44,8 @@ export const makeMessagePhases = (newId: () => string = randomUUID): MessagePhas
     if (given === undefined && content === "") return event
     run = given === undefined ? (run ?? newId()) : undefined
     const id = given ?? run!
-    const withId =
-      given === undefined ? { ...event, payload: { ...payload, messageId: id } } : event
+    const idPayload = given === undefined ? { ...payload, messageId: id } : payload
+    const withId = idPayload === payload ? event : { ...event, payload: idPayload }
     if (payload.phase !== undefined) {
       labeled.add(id)
       if (latest?.id === id) latest = undefined
@@ -52,7 +54,7 @@ export const makeMessagePhases = (newId: () => string = randomUUID): MessagePhas
     if (labeled.has(id) || content === "") return withId
     if (latest?.id === id && latest.commentary) {
       latest.commentary = false
-      return { ...withId, payload: { ...(withId.payload as object), phase: "final" } }
+      return { ...withId, payload: { ...idPayload, phase: "final" } }
     }
     latest = { id, commentary: false }
     return withId

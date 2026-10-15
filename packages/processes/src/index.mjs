@@ -190,7 +190,7 @@ export async function stopProcesses(initial, options = {}) {
         try {
           system.signal(entry.pid, signal)
         } catch (error) {
-          if (/** @type {NodeJS.ErrnoException} */ (error).code !== "ESRCH") throw error
+          if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error
         }
         signalled.add(`${entry.pid}:${entry.startedAt}:${signal}`)
       }

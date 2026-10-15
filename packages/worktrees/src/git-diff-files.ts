@@ -68,13 +68,12 @@ const parseRawDiff = (output: Buffer): ReadonlyArray<RawChange> => {
   const changes: Array<RawChange> = []
   let index = 0
   while (index < fields.length - 1) {
-    const [oldMode, newMode, oldSha, newSha, status] = fields[index]!.slice(1).split(" ") as [
-      string,
-      string,
-      string,
-      string,
-      string
-    ]
+    const header = fields[index]!.slice(1).split(" ")
+    const oldMode = header[0]!
+    const newMode = header[1]!
+    const oldSha = header[2]!
+    const newSha = header[3]!
+    const status = header[4]!
     const renamed = status.startsWith("R")
     const oldPath = fields[index + 1]!
     const path = renamed ? fields[index + 2]! : oldPath

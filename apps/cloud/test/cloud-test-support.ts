@@ -213,6 +213,7 @@ export const connectMachine = async (
     serverId?: string
     tunnelEndpointId?: string
     releaseChannel?: "stable" | "alpha"
+    icon?: string
   } = {}
 ): Promise<MachineSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -241,6 +242,7 @@ export const connectMachine = async (
         kind: "machine",
         name,
         os: "linux",
+        ...(options.icon === undefined ? {} : { icon: options.icon }),
         publicKey: keys.publicKey,
         ...(options.serverId === undefined ? {} : { serverId: options.serverId }),
         ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel }),

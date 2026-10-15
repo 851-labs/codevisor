@@ -35,11 +35,16 @@ extension MachineController {
         )
       }
     } catch {
+      let knownCloudDeviceId = connection.status?.cloudDeviceId
       if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
-        connection.status = MachineStatus(isReachable: false, label: message)
+        connection.status = MachineStatus(isReachable: false, label: message, cloudDeviceId: knownCloudDeviceId)
       } else if await probeDataUpgrade(for: id, client: client) != nil {
       } else {
-        connection.status = MachineStatus(isReachable: false, label: "Unreachable")
+        connection.status = MachineStatus(
+          isReachable: false,
+          label: "Unreachable",
+          cloudDeviceId: knownCloudDeviceId
+        )
         Log.machines.debug(
           "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
       }

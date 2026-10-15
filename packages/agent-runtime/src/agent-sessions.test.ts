@@ -53,7 +53,7 @@ const makeFakeFs = (
       const prefix = `${path}/`
       for (const candidate of [...Object.keys(files), ...directories]) {
         if (candidate.startsWith(prefix)) {
-          const name = candidate.slice(prefix.length).split("/", 1)[0] as string
+          const name = candidate.slice(prefix.length).split("/", 1).join("")
           if (name.length > 0) names.add(name)
         }
       }
@@ -159,6 +159,7 @@ describe("listClaudeAgentSessions", () => {
         [`${projects}/-a/one.jsonl`]: [
           claudeLine({ type: "user", cwd: "/a", message: { content: [{ type: "tool_result" }] } }),
           claudeLine({ type: "user", message: {} }),
+          claudeLine({ type: "user", message: "not an object" }),
           claudeLine({
             type: "user",
             message: { content: [{ type: "text", text: `  ${longLine}` }] }

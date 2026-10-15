@@ -1,8 +1,8 @@
-import { makeAgentRuntime, type RuntimeEmit } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, makeAgentRuntime, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
+import { makeAcpAgentRuntime, makeConnector, payloadString, run } from "./test-support.js"
 
 const sink = (): void => undefined
 
@@ -167,7 +167,7 @@ describe("@codevisor/agent-runtime", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
 
     const inspected = await run(
@@ -363,12 +363,11 @@ describe("@codevisor/agent-runtime", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
     await run(
       runtime.createAgentSession("claude-code", "/tmp/project", async (event) => {
-        const payload = event.payload as Record<string, unknown>
-        if (payload.turnState === "ended") {
+        if (payloadString(event, "turnState") === "ended") {
           terminalEntered.resolve()
           await terminalGate
         }
@@ -399,7 +398,9 @@ describe("@codevisor/agent-runtime", () => {
     const sessionId = "retire-close-failure"
     const handle = {
       cancel: Effect.succeed({ runtimeState: "retire" as const }),
-      close: Effect.fail(new Error("retired close failed")),
+      close: Effect.fail(
+        new AgentRuntimeError({ message: "retired close failed", operation: "close" })
+      ),
       prompt: () => Effect.succeed({ stopReason: "end_turn" }),
       setConfigOption: () => Effect.succeed([]),
       setMode: () => Effect.void
@@ -418,7 +419,7 @@ describe("@codevisor/agent-runtime", () => {
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
-      providers: { claude: custom as never }
+      providers: { claude: custom }
     })
     await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
 
@@ -471,7 +472,7 @@ describe("@codevisor/agent-runtime", () => {
         env: { PATH: "/bin" },
         executableExists: () => true,
         locateExecutable: (name) => `/bin/${name}`,
-        providers: { claude: custom as never }
+        providers: { claude: custom }
       })
       await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
 

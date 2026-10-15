@@ -1,3 +1,5 @@
+import { isRecord } from "@codevisor/api"
+
 export interface PeerKeyPinStore {
   get(deviceId: string): string | undefined
   set(deviceId: string, publicKey: string): void
@@ -10,8 +12,8 @@ export interface PeerKeyPinFile {
 
 export const parsePeerKeyPins = (raw: string): Record<string, string> => {
   try {
-    const parsed = JSON.parse(raw) as Partial<PeerKeyPinFile>
-    if (parsed.version !== 1 || typeof parsed.peers !== "object" || parsed.peers === null) {
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.peers)) {
       return {}
     }
     const peers: Record<string, string> = {}

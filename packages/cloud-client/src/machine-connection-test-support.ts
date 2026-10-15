@@ -3,11 +3,12 @@ import {
   decodeMachineToHub,
   decodeRelayEnvelopes,
   encodeCloudFrame,
-  encodeRelayEnvelopes
+  encodeRelayEnvelopes,
+  parseMachineOutboundRelayHeader
 } from "@codevisor/api"
 import type {
   HubToMachine,
-  MachineRelayHeader,
+  MachineOutboundRelayHeader,
   MachineToHub,
   RelayFrameHeader
 } from "@codevisor/api"
@@ -23,7 +24,7 @@ import type {
 } from "./index.js"
 
 export interface SentEnvelope {
-  header: MachineRelayHeader
+  header: MachineOutboundRelayHeader
   payload: Uint8Array
 }
 
@@ -48,10 +49,11 @@ export class FakeSocket implements CloudSocket {
       this.onSend?.(frame)
       return
     }
-    const envelopes = decodeRelayEnvelopes(data).map((envelope) => ({
-      header: envelope.header as MachineRelayHeader,
-      payload: new Uint8Array(envelope.payload)
-    }))
+    const envelopes = decodeRelayEnvelopes(data).map((envelope) => {
+      const header = parseMachineOutboundRelayHeader(envelope.header)
+      if (header === undefined) throw new Error("machine sent a malformed relay header")
+      return { header, payload: new Uint8Array(envelope.payload) }
+    })
     this.relayMessages.push(envelopes)
     this.onRelay?.(envelopes)
   }
@@ -70,6 +72,12 @@ export class FakeSocket implements CloudSocket {
 
   receiveRelay(header: Record<string, unknown>, payload: Uint8Array = new Uint8Array(0)): void {
     this.onmessage?.(encodeRelayEnvelopes([{ header, payload }]))
+  }
+
+  hello(): Extract<MachineToHub, { t: "hello" }> {
+    const frame = this.sent[0]
+    if (frame?.t !== "hello") throw new Error("the first frame sent was not a hello")
+    return frame
   }
 
   get sentRelay(): SentEnvelope[] {
@@ -128,7 +136,7 @@ export const harness = (
   overrides: {
     handlers?: Record<string, (channel: IncomingChannel) => void>
     credentials?: typeof credentials
-    device?: { name: string; os?: string; appVersion?: string; serverId?: string }
+    device?: { name: string; os?: string; icon?: string; appVersion?: string; serverId?: string }
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
     relayCoalesceMs?: number

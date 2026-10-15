@@ -2,6 +2,8 @@ import type * as acp from "@agentclientprotocol/sdk"
 import { runtimeEventFromNotification } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
+import { record, type JsonRecord } from "./record.js"
+
 interface GrokResponseState {
   readonly messageId: string
   hasText: boolean
@@ -16,9 +18,6 @@ interface GrokSessionStreamState {
   last: GrokResponseState | undefined
 }
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined
-
 const extensionNotification = (
   params: unknown
 ): { readonly sessionId: string; readonly update: Record<string, unknown> } | undefined => {
@@ -31,12 +30,12 @@ const extensionNotification = (
 }
 
 const notificationPromptId = (notification: acp.SessionNotification): string | undefined => {
-  const raw = notification as unknown as Record<string, unknown>
-  const meta = record(raw._meta) ?? record(raw.meta)
+  const meta =
+    record(notification._meta) ?? ("meta" in notification ? record(notification.meta) : undefined)
   return typeof meta?.promptId === "string" ? meta.promptId : undefined
 }
 
-const contentText = (update: Record<string, unknown>): string => {
+const contentText = (update: Readonly<JsonRecord>): string => {
   const content = record(update.content)
   return content?.type === "text" && typeof content.text === "string" ? content.text : ""
 }
@@ -62,7 +61,8 @@ export class GrokStreamNormalizer {
 
   mapSessionNotification(notification: acp.SessionNotification): ReadonlyArray<RuntimeEvent> {
     const sessionId = notification.sessionId
-    const update = notification.update as unknown as Record<string, unknown>
+    const update = notification.update
+    const fields: Readonly<JsonRecord> = update
     const promptId = notificationPromptId(notification)
     if (update.sessionUpdate === "user_message_chunk") {
       const completed = this.completeTurn(sessionId)
@@ -76,15 +76,15 @@ export class GrokStreamNormalizer {
       case "agent_thought_chunk": {
         const suppliedId = typeof update.messageId === "string" ? update.messageId : undefined
         const response = this.ensureResponse(sessionId, state, suppliedId)
-        if (update.sessionUpdate === "agent_message_chunk" && contentText(update).length > 0) {
+        if (update.sessionUpdate === "agent_message_chunk" && contentText(fields).length > 0) {
           response.hasText = true
         }
-        if (update.phase === "commentary") response.commentary = true
-        if (update.phase === "final") response.final = true
-        const normalized = {
+        if (fields.phase === "commentary") response.commentary = true
+        if (fields.phase === "final") response.final = true
+        const normalized: acp.SessionNotification = {
           ...notification,
           update: { ...update, messageId: response.messageId }
-        } as unknown as acp.SessionNotification
+        }
         return [runtimeEventFromNotification(normalized)]
       }
       case "tool_call": {

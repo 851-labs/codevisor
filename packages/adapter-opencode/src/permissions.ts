@@ -1,16 +1,13 @@
 import type { AcpLaunchContext } from "@codevisor/adapter-acp"
 import { SUPERSEDED_NATIVE_SKILLS } from "@codevisor/agent-runtime"
 
+import { record } from "./internal.js"
+
 export const OPENCODE_FULL_ACCESS_PERMISSIONS = {
   external_directory: "allow",
   doom_loop: "allow",
   read: { "*.env": "allow", "*.env.*": "allow" }
 } as const
-
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
 
 const parsed = (content: string | undefined): Record<string, unknown> => {
   if (content === undefined || content === "") return {}

@@ -11,9 +11,15 @@ extension SidebarView {
     }
   }
 
+  var visibleArchivedItems: [WorkspaceSidebarItem] {
+    let items = archivedSidebarItems
+    if archivedExpanded { return Array(items.prefix(archivedVisibleCount)) }
+    guard let selectedWorkspaceID else { return [] }
+    return items.filter { $0.id == selectedWorkspaceID }
+  }
+
   var listedArchivedWorkspaces: [Workspace] {
-    guard archivedExpanded else { return [] }
-    return archivedSidebarItems.prefix(archivedVisibleCount).compactMap {
+    visibleArchivedItems.compactMap {
       environment.navigationStore.workspaceEntries.entry($0.id).workspace
     }
   }
@@ -28,14 +34,14 @@ extension SidebarView {
           archivedVisibleCount = archivedPageSize
         }
       }
-      if archivedExpanded {
-        ForEach(items.prefix(archivedVisibleCount)) { item in
-          if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
-            archivedRow(workspace, item: item)
-              .id(workspace.id)
-              .transition(Motion.unfold(reduceMotion: reduceMotion))
-          }
+      ForEach(visibleArchivedItems) { item in
+        if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
+          archivedRow(workspace, item: item)
+            .id(workspace.id)
+            .transition(Motion.unfold(reduceMotion: reduceMotion))
         }
+      }
+      if archivedExpanded {
         if items.count > archivedVisibleCount {
           SidebarActionRow(
             title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,

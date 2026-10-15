@@ -2,6 +2,8 @@ import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import type { EventEmitter } from "node:events"
 
+import { isPlainRecord } from "@codevisor/api"
+
 export interface OpenCodeChild extends EventEmitter {
   readonly stdout: EventEmitter
   readonly stderr: EventEmitter
@@ -22,16 +24,16 @@ export interface OpenCodeServerOptions {
       readonly env: NodeJS.ProcessEnv
     }
   ) => OpenCodeChild
-  readonly fetch?: typeof fetch
+  readonly fetch?: (input: URL, init: RequestInit) => Promise<Response>
   readonly wait?: (ms: number) => Promise<void>
 }
 
 export interface OpenCodeServer {
   readonly url: string
-  readonly request: <A>(
+  readonly request: (
     path: string,
     init?: { readonly method?: string; readonly body?: unknown; readonly location?: string }
-  ) => Promise<A>
+  ) => Promise<unknown>
   readonly stop: () => Promise<void>
 }
 
@@ -107,8 +109,8 @@ export const startOpenCodeServer = async (
         return
       }
       try {
-        const parsed = JSON.parse(output.slice(0, newline)) as { url?: unknown }
-        if (typeof parsed.url !== "string") throw new Error("missing url")
+        const parsed: unknown = JSON.parse(output.slice(0, newline))
+        if (!isPlainRecord(parsed) || typeof parsed.url !== "string") throw new Error("missing url")
         settle()
         resolve(parsed.url.replace(/\/$/, ""))
       } catch {
@@ -137,10 +139,7 @@ export const startOpenCodeServer = async (
   })
 
   const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
-  const call = async <A>(
-    path: string,
-    init: { readonly method?: string; readonly body?: unknown; readonly location?: string } = {}
-  ): Promise<A> => {
+  const call: OpenCodeServer["request"] = async (path, init = {}) => {
     const target = new URL(`${url}${path}`)
     if (init.location !== undefined) target.searchParams.set("location[directory]", init.location)
     const response = await request(target, {
@@ -155,14 +154,16 @@ export const startOpenCodeServer = async (
     if (!response.ok) {
       let message = text
       try {
-        message = (JSON.parse(text) as { message?: string }).message ?? text
+        const body: unknown = JSON.parse(text)
+        if (isPlainRecord(body) && typeof body.message === "string") message = body.message
       } catch {}
       throw new OpenCodeServerError(
         message.trim() || `OpenCode request failed (${response.status})`,
         response.status
       )
     }
-    return (text.length === 0 ? undefined : JSON.parse(text)) as A
+    const body: unknown = text.length === 0 ? undefined : JSON.parse(text)
+    return body
   }
 
   for (let waited = 0; ; waited += READY_POLL_MS) {

@@ -23,7 +23,7 @@ export const parseModels = (output: string): Array<AgyModel> => {
   for (const line of output.split("\n")) {
     const listed = LINE.exec(line.trim())
     if (listed === null) continue
-    const [, slug, display] = listed as unknown as [string, string, string]
+    const [, slug = "", display = ""] = listed
     const tiered = TIERED.exec(display)
     const label = tiered?.[2]
     const tier = label?.toLowerCase().replace(/\s+/g, "-")

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { clockOffset, frameClockReport, parseFrameClockArguments } from "./vnc-frame-clock-lib.ts"
+import {
+  clockOffset,
+  frameClockReport,
+  isFrameClockSummary,
+  parseFrameClockArguments
+} from "./vnc-frame-clock-lib.ts"
 
 test("vnc:frame-clock defaults to the rig and Apple Screen Sharing and validates options (851-2358)", () => {
   assert.deepEqual(parseFrameClockArguments([]), {
@@ -96,4 +101,20 @@ test("vnc:frame-clock takes the host clock offset from the shortest round trip (
   assert.ok(
     remote !== "help" && remote.hostKeyAlias === "h.local" && remote.pageHost === "100.4.5.6"
   )
+})
+
+test("vnc:frame-clock checks the capture summary before reporting it", () => {
+  assert.equal(
+    isFrameClockSummary({
+      seconds: 60,
+      clock: { offsetMs: 1.5, roundTripMs: 2 },
+      apps: { "com.apple.ScreenSharing": { window: "1x1", calibrated: true, gapP50Ms: 3 } },
+      lags: { "a behind b": { p50Ms: 1, p95Ms: 2 } }
+    }),
+    true
+  )
+  assert.equal(isFrameClockSummary({ seconds: 60, apps: {}, lags: {} }), true)
+  assert.equal(isFrameClockSummary({ seconds: 60, apps: { a: { window: 1 } }, lags: {} }), false)
+  assert.equal(isFrameClockSummary({ seconds: 60, apps: {}, lags: { l: { p50Ms: 1 } } }), false)
+  assert.equal(isFrameClockSummary({ seconds: 60, apps: {} }), false)
 })

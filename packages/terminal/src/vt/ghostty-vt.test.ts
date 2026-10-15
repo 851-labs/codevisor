@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { createVtTerminal, loadGhosttyVt } from "./ghostty-vt.js"
+import { createVtTerminal, isGhosttyExports, loadGhosttyVt } from "./ghostty-vt.js"
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
@@ -101,7 +101,7 @@ describe("libghostty-vt terminal state", () => {
         Instance: {
           value: function (module: WebAssembly.Module, imports: WebAssembly.Imports) {
             const instance = new Instance(module, imports)
-            if ("ghostty_wasm_alloc" in instance.exports) heap ??= instance.exports as never
+            if (isGhosttyExports(instance.exports)) heap ??= instance.exports
             return instance
           }
         }
@@ -135,6 +135,24 @@ describe("libghostty-vt terminal state", () => {
     } finally {
       vi.unstubAllGlobals()
       loadGhosttyVt()
+    }
+  })
+
+  it("refuses a wasm build whose exports do not match the bindings", () => {
+    vi.stubGlobal(
+      "WebAssembly",
+      Object.create(WebAssembly, {
+        Instance: {
+          value: function () {
+            return { exports: { memory: new WebAssembly.Memory({ initial: 1 }) } }
+          }
+        }
+      })
+    )
+    try {
+      expect(() => loadGhosttyVt()).toThrow(/exports are incompatible/)
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 })

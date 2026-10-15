@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
 
 import type { OpenCodeAuthFlow } from "@codevisor/api"
+import { Schema } from "effect"
 
+import { record, responseData, responseList } from "./internal.js"
 import type { OpenCodeServer } from "./server.js"
 
 export interface OpenCodeServerHold {
@@ -18,12 +20,26 @@ export interface OpenCode2LoginRequest {
   readonly capture?: (credential: Record<string, unknown>) => Promise<void>
 }
 
-interface Attempt {
-  readonly attemptID: string
-  readonly url: string
-  readonly instructions: string
-  readonly mode: "auto" | "code"
-}
+const attemptStart = responseData(
+  Schema.Struct({
+    attemptID: Schema.String,
+    url: Schema.String,
+    instructions: Schema.String,
+    mode: Schema.Literals(["auto", "code"])
+  })
+)
+
+const attemptStatus = responseData(
+  Schema.Struct({ status: Schema.String, message: Schema.optionalKey(Schema.String) })
+)
+
+const storedCredentials = responseList(
+  Schema.Struct({
+    integrationID: Schema.String,
+    active: Schema.Boolean,
+    value: Schema.Record(Schema.String, Schema.Unknown)
+  })
+)
 
 interface Flow {
   value: OpenCodeAuthFlow
@@ -35,7 +51,7 @@ interface Flow {
 }
 
 export const authFileCredential = (value: Record<string, unknown>): Record<string, unknown> => {
-  const metadata = (value.metadata ?? {}) as Record<string, unknown>
+  const metadata = record(value.metadata) ?? {}
   return {
     type: "oauth",
     refresh: value.refresh,
@@ -69,14 +85,8 @@ export const makeOpenCode2Logins = (
   const complete = async (flow: Flow) => {
     const { providerId } = flow.request
     if (flow.request.capture !== undefined) {
-      const stored = await flow.hold.server.request<{
-        readonly data: ReadonlyArray<{
-          readonly integrationID: string
-          readonly active: boolean
-          readonly value: Record<string, unknown>
-        }>
-      }>("/api/credential")
-      const credential = stored.data.find(
+      const stored = storedCredentials(await flow.hold.server.request("/api/credential"))
+      const credential = stored.find(
         (entry) =>
           entry.integrationID === providerId && entry.active && entry.value.type === "oauth"
       )
@@ -92,9 +102,9 @@ export const makeOpenCode2Logins = (
       while (!flow.ended) {
         await wait(pollMs)
         if (flow.ended) return
-        const { data } = await flow.hold.server.request<{
-          readonly data: { readonly status: string; readonly message?: string }
-        }>(flow.attemptPath, { location: flow.location })
+        const data = attemptStatus(
+          await flow.hold.server.request(flow.attemptPath, { location: flow.location })
+        )
         if (flow.ended) return
         if (data.status === "complete") return await complete(flow)
         if (data.status !== "pending")
@@ -130,15 +140,14 @@ export const makeOpenCode2Logins = (
           await hold.release()
           return { ...base, state: "complete" }
         }
-        const { data: attempt } = await hold.server.request<{ readonly data: Attempt }>(
-          `${integration}/connect/oauth`,
-          {
+        const attempt = attemptStart(
+          await hold.server.request(`${integration}/connect/oauth`, {
             location,
             body: {
               methodID: request.methodId,
               ...(request.inputs ? { answer: request.inputs } : {})
             }
-          }
+          })
         )
         const flow: Flow = {
           value: {

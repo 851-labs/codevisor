@@ -5,7 +5,13 @@ import { afterEach, expect, it, vi } from "vitest"
 
 import { makeNdjsonTransport, type StdioEndpoint } from "./stdio-transport.js"
 
-const workers = vi.hoisted(() => ({ instances: [] as WorkerDouble[] }))
+const workers = await vi.hoisted(async () => {
+  const { EventEmitter } = await import("node:events")
+  return {
+    instances: [] as WorkerDouble[],
+    port: Object.assign(new EventEmitter(), { postMessage: vi.fn() })
+  }
+})
 interface WorkerDouble extends EventEmitter {
   postMessage: ReturnType<typeof vi.fn>
   terminate: ReturnType<typeof vi.fn>
@@ -13,7 +19,7 @@ interface WorkerDouble extends EventEmitter {
 vi.mock("node:worker_threads", async () => {
   const { EventEmitter } = await import("node:events")
   return {
-    parentPort: Object.assign(new EventEmitter(), { postMessage: vi.fn() }),
+    parentPort: workers.port,
     Worker: class extends EventEmitter {
       postMessage = vi.fn()
       terminate = vi.fn().mockResolvedValue(0)
@@ -152,8 +158,7 @@ it("captures stderr, fails on stdin pipe errors, and ignores send after close", 
   expect(write).not.toHaveBeenCalled()
 })
 it("parses worker frames across chunks, skips diagnostics, and acknowledges every chunk", async () => {
-  const { parentPort } = await import("node:worker_threads")
-  const port = parentPort! as unknown as WorkerDouble
+  const port = workers.port
   await import("./ndjson-worker.js")
   try {
     const chunks = [

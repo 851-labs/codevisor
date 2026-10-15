@@ -215,8 +215,9 @@ export const gitRefs = async (dir: string, env?: NodeJS.ProcessEnv): Promise<Git
     .split("\n")
     .filter((line) => line.length > 0)
     .flatMap((line): ReadonlyArray<GitRefBranch> => {
-      const [ref, symbolicTarget] = line.split("\0") as [string, string]
-      if (symbolicTarget.length > 0) return []
+      const fields = line.split("\0")
+      if (fields[1] !== "") return []
+      const ref = fields[0]!
       const remote = ref.startsWith("refs/remotes/")
       return [{ name: ref.slice(remote ? "refs/remotes/".length : "refs/heads/".length), remote }]
     })

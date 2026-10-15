@@ -159,6 +159,7 @@ export class CloudMachineConnection {
         name: this.options.device.name,
         publicKey: credentials.publicKey,
         ...(this.options.device.os !== undefined ? { os: this.options.device.os } : {}),
+        ...(this.options.device.icon !== undefined ? { icon: this.options.device.icon } : {}),
         ...(this.options.device.appVersion !== undefined
           ? { appVersion: this.options.device.appVersion }
           : {}),

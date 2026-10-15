@@ -6,6 +6,10 @@ public enum EntitySystemSymbol {
   public static let workspace = "square.grid.2x2.fill"
 
   public static func machine(_ machine: CodevisorMachine) -> String {
-    machine.isLocal ? "desktopcomputer" : "cloud.fill"
+    MachineIcon.choice(machine.icon)?.systemImage ?? defaultMachine(isLocal: machine.isLocal)
+  }
+
+  public static func defaultMachine(isLocal: Bool) -> String {
+    isLocal ? "desktopcomputer" : "cloud.fill"
   }
 }

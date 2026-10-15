@@ -7,7 +7,16 @@ import { describe, expect, it, onTestFinished } from "vitest"
 import { PiExitedError } from "./client.js"
 import { makePiProvider } from "./provider.js"
 import { piPrompt } from "./session.js"
-import { claude, codex, definition, environment, payloads, run, setup } from "./test-support.js"
+import {
+  claude,
+  codex,
+  definition,
+  environment,
+  payloads,
+  recordPayload,
+  run,
+  setup
+} from "./test-support.js"
 
 const settled = [
   { type: "agent_start" },
@@ -22,7 +31,7 @@ const settled = [
 ]
 
 const turnStates = (events: ReadonlyArray<{ payload: unknown }>) =>
-  payloads(events as never).flatMap((payload) =>
+  payloads(events).flatMap((payload) =>
     payload.turnState === undefined
       ? []
       : [
@@ -307,9 +316,7 @@ describe("Pi provider", () => {
     )
     const updates = payloads(events).filter((payload) => payload.configOptions !== undefined)
     expect(updates).toHaveLength(1)
-    expect((updates[0]!.configOptions as Array<{ currentValue: string }>)[1]?.currentValue).toBe(
-      "high"
-    )
+    expect(updates[0]?.configOptions).toMatchObject([{ id: "model" }, { currentValue: "high" }])
   })
 
   it("reports Pi exiting, ending the running turn", async () => {
@@ -318,7 +325,7 @@ describe("Pi provider", () => {
     const { handle } = await run(
       provider.createSession(definition, "/p", (event) => {
         const emitted = emit(event)
-        const payload = event.payload as Record<string, unknown>
+        const payload = recordPayload(event)
         if (
           event.kind === "session.updated" &&
           payload.turnState === "started" &&
@@ -340,6 +347,17 @@ describe("Pi provider", () => {
       "end_turn",
       "pi exited: out of memory"
     ])
+  })
+
+  it("ignores model fields Pi reports with the wrong type", async () => {
+    const { provider, client } = setup()
+    client.replies.get_available_models = {
+      models: [{ id: "plain", provider: "local", name: 7, contextWindow: "big", reasoning: true }]
+    }
+    const { metadata } = await run(provider.createSession(definition, "/p", async () => undefined))
+    expect(metadata.configOptions?.[0]).toMatchObject({
+      options: [{ value: "local/plain", name: "plain" }]
+    })
   })
 
   it("asks for a newer Pi when its RPC mode lacks what chats need", async () => {

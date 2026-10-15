@@ -106,3 +106,15 @@ export const closeFrame = (clientSeq: number): TerminalClientFrame => ({
   clientId: "test-client",
   clientSeq
 })
+
+export type ClientFrameBody = TerminalClientFrame extends infer Frame
+  ? Frame extends TerminalClientFrame
+    ? Omit<Frame, "clientId" | "clientSeq">
+    : never
+  : never
+
+export const clientFrame = (
+  clientId: string,
+  clientSeq: number,
+  body: ClientFrameBody
+): TerminalClientFrame => ({ ...body, clientId, clientSeq })

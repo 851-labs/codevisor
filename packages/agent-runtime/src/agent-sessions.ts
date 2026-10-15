@@ -1,6 +1,8 @@
 import { promises as fsPromises } from "node:fs"
 import { homedir as osHomedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
+
+import { isRecord } from "@codevisor/api"
 
 export interface AgentSessionSummary {
   readonly sessionId: string
@@ -96,8 +98,10 @@ const resolved = (options: AgentSessionScanOptions) => ({
   fs: options.fs ?? defaultAgentSessionFileSystem
 })
 
+const firstLineOf = (text: string): string => text.split("\n", 1).join("")
+
 const truncatedTitle = (text: string): string | undefined => {
-  const firstLine = (text.trim().split("\n", 1)[0] as string).trim()
+  const firstLine = firstLineOf(text.trim()).trim()
   if (firstLine.length === 0) {
     return undefined
   }
@@ -107,9 +111,7 @@ const truncatedTitle = (text: string): string | undefined => {
 const parseJsonLine = (line: string): Record<string, unknown> | undefined => {
   try {
     const parsed: unknown = JSON.parse(line)
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : undefined
+    return isRecord(parsed) ? parsed : undefined
   } catch {
     return undefined
   }
@@ -212,27 +214,20 @@ export const listClaudeAgentSessions = async (
 }
 
 const claudeUserText = (entry: Record<string, unknown>): string => {
-  const message = entry.message as { content?: unknown } | undefined
-  const content = message?.content
+  const message = entry.message
+  const content = isRecord(message) ? message.content : undefined
   if (typeof content === "string") return content
   if (!Array.isArray(content)) return ""
   return content
     .filter(
       (block): block is { type: string; text: string } =>
-        typeof block === "object" &&
-        block !== null &&
-        (block as { type?: unknown }).type === "text" &&
-        typeof (block as { text?: unknown }).text === "string"
+        isRecord(block) && block.type === "text" && typeof block.text === "string"
     )
     .map((block) => block.text)
     .join("\n")
 }
 
-const fileStem = (path: string): string => {
-  const parts = path.split("/")
-  const name = parts[parts.length - 1] as string
-  return name.slice(0, -".jsonl".length)
-}
+const fileStem = (path: string): string => basename(path, ".jsonl")
 
 const walkCodexSessionFiles = async (
   directory: string,
@@ -268,23 +263,27 @@ export const listCodexAgentSessions = async (
   for (const [index, candidate] of newest.entries()) {
     const head = heads[index]
     if (head === undefined) continue
-    let meta: { id?: unknown; cwd?: unknown } | undefined
+    let meta: unknown
     let title: string | undefined
     for (const line of head.split("\n")) {
       const entry = parseJsonLine(line)
       if (entry === undefined) continue
       if (meta === undefined && entry.type === "session_meta") {
-        meta = entry.payload as { id?: unknown; cwd?: unknown } | undefined
+        meta = entry.payload
       }
       if (title === undefined) {
-        const payload = entry.payload as { type?: unknown; message?: unknown } | undefined
-        if (payload?.type === "user_message" && typeof payload.message === "string") {
+        const payload = entry.payload
+        if (
+          isRecord(payload) &&
+          payload.type === "user_message" &&
+          typeof payload.message === "string"
+        ) {
           title = truncatedTitle(payload.message)
         }
       }
       if (meta !== undefined && title !== undefined) break
     }
-    if (typeof meta?.id !== "string" || typeof meta.cwd !== "string") continue
+    if (!isRecord(meta) || typeof meta.id !== "string" || typeof meta.cwd !== "string") continue
     if (!(await fs.directoryExists(meta.cwd))) continue
     sessions.push({
       sessionId: meta.id,
@@ -314,7 +313,7 @@ const piSessionTitle = (lines: ReadonlyArray<string>): string | undefined => {
     const entry = parseJsonLine(line)
     if (entry?.type === "session_info" && typeof entry.name === "string") name ??= entry.name
     if (entry?.type === "message" && prompt === undefined) {
-      const text = piUserText((entry.message ?? {}) as Record<string, unknown>)
+      const text = isRecord(entry.message) ? piUserText(entry.message) : undefined
       if (text !== undefined) prompt = truncatedTitle(text)
     }
   }
@@ -344,11 +343,11 @@ export const listPiAgentSessions = async (
     newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
   )
   for (const [index, candidate] of newest.entries()) {
-    const lines = (heads[index] ?? "").split("\n")
-    const header = parseJsonLine(lines[0] as string)
+    const head = heads[index] ?? ""
+    const header = parseJsonLine(firstLineOf(head))
     if (header?.type !== "session" || typeof header.id !== "string") continue
     if (typeof header.cwd !== "string" || !(await fs.directoryExists(header.cwd))) continue
-    const title = piSessionTitle(lines)
+    const title = piSessionTitle(head.split("\n"))
     sessions.push({
       sessionId: header.id,
       cwd: header.cwd,

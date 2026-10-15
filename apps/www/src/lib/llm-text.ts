@@ -1,3 +1,4 @@
+import { isPlainRecord } from "@codevisor/api"
 import { llms } from "fumadocs-core/source/llms"
 
 import { source } from "./source"
@@ -18,7 +19,7 @@ export async function getPageMarkdown(slugs: string[], pageUrl: string) {
   }
 
   const props = page.data.getOpenAPIPageProps()
-  const document = props.payload.bundled as Record<string, unknown>
+  const document = props.payload.bundled
   const sections = [heading]
 
   if (page.data.description) sections.push(page.data.description)
@@ -72,8 +73,7 @@ export function markdownResponse(markdown: string | undefined) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
-  return value as Record<string, unknown>
+  return isPlainRecord(value) ? value : undefined
 }
 
 function operationSummary(operation: Record<string, unknown>) {

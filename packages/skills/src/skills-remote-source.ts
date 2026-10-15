@@ -3,9 +3,13 @@ import { createHash } from "node:crypto"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
+import { isPlainRecord } from "@codevisor/api"
+
 import { isPathSafe, sanitizeName, SkillsError } from "./skills-store.js"
 
 export { parseSkillSource, type ParsedSkillSource } from "./skills-source.js"
+
+const isArray = (value: unknown): value is ReadonlyArray<unknown> => Array.isArray(value)
 
 export const materializeWellKnownSkills = async (
   sourceUrl: string,
@@ -23,11 +27,9 @@ const readWellKnownIndex = async (
   try {
     const response = await fetch(indexUrl)
     if (!response.ok) return undefined
-    const parsed = (await response.json()) as { skills?: unknown }
-    if (!Array.isArray(parsed.skills)) return undefined
-    return parsed.skills.filter(
-      (entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object"
-    )
+    const parsed: unknown = await response.json()
+    if (!isPlainRecord(parsed) || !isArray(parsed.skills)) return undefined
+    return parsed.skills.filter(isPlainRecord)
   } catch {
     return undefined
   }
@@ -71,8 +73,9 @@ const materializeWellKnownEntry = async (
   if (name === undefined || name === "") return
   const directory = join(staging, sanitizeName(name))
   try {
-    if (Array.isArray(entry["files"])) {
-      await materializeLegacyFiles(entry, name, indexDir, directory)
+    const files = entry["files"]
+    if (isArray(files)) {
+      await materializeLegacyFiles(files, name, indexDir, directory)
       return
     }
     const artifactUrl = typeof entry["url"] === "string" ? entry["url"] : undefined
@@ -84,13 +87,13 @@ const materializeWellKnownEntry = async (
 }
 
 const materializeLegacyFiles = async (
-  entry: Record<string, unknown>,
+  files: ReadonlyArray<unknown>,
   name: string,
   indexDir: string,
   directory: string
 ): Promise<void> => {
   await mkdir(directory, { recursive: true })
-  for (const file of entry["files"] as ReadonlyArray<unknown>) {
+  for (const file of files) {
     if (typeof file !== "string") continue
     await downloadLegacyFile(file, name, indexDir, directory)
   }
@@ -152,7 +155,7 @@ const extractArchive = async (bytes: Buffer, directory: string): Promise<void> =
       ? ["unzip", ["-q", "-o", artifact, "-d", directory]]
       : ["tar", ["-xzf", artifact, "-C", directory]]
     await new Promise<void>((resolvePromise, rejectPromise) => {
-      const child = spawn(command as string, args as Array<string>)
+      const child = spawn(command, args)
       const stderr: Array<string> = []
       child.stderr.setEncoding("utf8")
       child.stderr.on("data", (chunk: string) => stderr.push(chunk))

@@ -9,6 +9,8 @@ import {
   type RuntimeEmit,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
+import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
 
 import {
@@ -140,10 +142,10 @@ export class FakeConnection implements AcpAgentConnection {
     sessionId: string,
     configId: string,
     value: string
-  ): Effect.Effect<unknown, AgentRuntimeError> {
+  ): Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError> {
     return Effect.sync(() => {
       this.configs.push([sessionId, configId, value])
-      return [{ currentValue: value, id: configId }]
+      return [{ currentValue: value, id: configId, name: configId, options: [] }]
     })
   }
 
@@ -172,6 +174,11 @@ export const makeConnector = (): AcpConnector & {
         return connection
       })
   }
+}
+
+export const payloadString = (event: RuntimeEvent, key: string): string | undefined => {
+  const value = isRecord(event.payload) ? event.payload[key] : undefined
+  return typeof value === "string" ? value : undefined
 }
 
 export const conversationEvent = (

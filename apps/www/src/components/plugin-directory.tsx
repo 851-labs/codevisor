@@ -1,15 +1,15 @@
 import { useState } from "react"
 
 export const registryBaseUrl = (): string =>
-  (
-    (import.meta.env["VITE_CODEVISOR_DEV_CLOUD_URL"] as string | undefined) ??
-    "https://cloud.codevisor.dev"
-  ).replace(/\/+$/, "")
+  (import.meta.env.VITE_CODEVISOR_DEV_CLOUD_URL ?? "https://cloud.codevisor.dev").replace(
+    /\/+$/,
+    ""
+  )
 
 export const installCliCommand = (repo: string): string => `codevisor plugin install ${repo}`
 
 const deeplinkScheme = (): string =>
-  (import.meta.env["VITE_CODEVISOR_DEV_URL_SCHEME"] as string | undefined) ??
+  import.meta.env.VITE_CODEVISOR_DEV_URL_SCHEME ??
   (import.meta.env.DEV ? "codevisor-dev" : "codevisor")
 
 export const installDeeplink = (repo: string): string =>

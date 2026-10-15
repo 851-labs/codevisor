@@ -27,6 +27,7 @@ import {
   isoTimestamp,
   makeOpenApiDocument
 } from "./index.js"
+import { isRecord } from "./records.js"
 
 describe("@codevisor/api", () => {
   it("carries the session key needed to attach to an authentication terminal", () => {
@@ -435,9 +436,10 @@ describe("@codevisor/api", () => {
       )
     )
     expect(documented.toSorted()).toEqual([...endpoints].toSorted())
-    const operations = Object.values(doc.paths).flatMap((path) => Object.values(path)) as Array<
-      Record<string, unknown>
-    >
+    const operations = Object.values(doc.paths)
+      .flatMap((path) => Object.values(path))
+      .filter(isRecord)
+    expect(operations).toHaveLength(endpoints.length)
     const operationIds = operations.map((operation) => operation.operationId)
     expect(new Set(operationIds).size).toBe(operationIds.length)
     expect(operations.every((operation) => operation.responses !== undefined)).toBe(true)

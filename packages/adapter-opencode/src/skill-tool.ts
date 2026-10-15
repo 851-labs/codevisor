@@ -1,11 +1,8 @@
 import type { CodevisorSkillRead } from "@codevisor/api"
 
-type JsonRecord = Readonly<Record<string, unknown>>
+import { record } from "./internal.js"
 
-const record = (value: unknown): JsonRecord | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
+type JsonRecord = Readonly<Record<string, unknown>>
 
 const SKILL_CONTENT = "<skill_content"
 const BASE_DIRECTORY = "\nBase directory for this skill:"
@@ -38,7 +35,8 @@ export const skillReadUpdate = (update: JsonRecord): JsonRecord => {
   }
 }
 
-export const withSkillRead = <T>(value: T): T => {
-  const update = record(record(value)?.update)
-  return update === undefined ? value : ({ ...value, update: skillReadUpdate(update) } as T)
+export const withSkillRead = (value: unknown): unknown => {
+  const message = record(value)
+  const update = record(message?.update)
+  return update === undefined ? value : { ...message, update: skillReadUpdate(update) }
 }

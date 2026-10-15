@@ -10,7 +10,7 @@ struct CloudMachineRowView: View {
   let presence: CloudMachine
   let keyChanged: Bool
   let connection: MachineConnectionPresentation
-  let onRename: () -> Void
+  let onEdit: () -> Void
   let onRemove: () -> Void
   let onTrustKey: () -> Void
 
@@ -49,7 +49,7 @@ struct CloudMachineRowView: View {
           Button("Trust New Key…", action: onTrustKey)
           Divider()
         }
-        Button("Rename…", action: onRename)
+        Button("Edit…", action: onEdit)
         Divider()
         Button("Disconnect…", role: .destructive, action: onRemove)
       } label: {
@@ -68,7 +68,7 @@ struct CloudMachineRowView: View {
       if keyChanged {
         Button("Trust New Key…", action: onTrustKey)
       }
-      Button("Rename…", action: onRename)
+      Button("Edit…", action: onEdit)
       Button("Disconnect…", role: .destructive, action: onRemove)
     }
     .accessibilityElement(children: .combine)

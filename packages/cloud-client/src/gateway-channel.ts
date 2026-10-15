@@ -1,3 +1,4 @@
+import { isRecord } from "@codevisor/api"
 import type { ChannelCloseReason } from "@codevisor/api"
 
 import type { OutgoingChannel, OutgoingChannelEnd } from "./channel-opener.js"
@@ -34,9 +35,6 @@ const chunks = (text: string): string[] => {
   }
   return parts
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null
 
 const REFUSALS: ReadonlySet<string> = new Set(["unsupported", "rejected", "crypto-error"])
 

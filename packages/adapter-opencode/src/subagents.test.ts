@@ -1,14 +1,17 @@
+import { isPlainRecord } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { OpenCodeSubagents } from "./subagents.js"
 
 const ROOT = "ses_root"
 
-const notification = (update: Record<string, unknown>) =>
-  ({ sessionId: ROOT, update }) as unknown as Parameters<OpenCodeSubagents["mapNotification"]>[0]
+const notification = (update: Record<string, unknown>) => ({ sessionId: ROOT, update })
 
 const payloads = (events: ReadonlyArray<{ payload: unknown }>) =>
-  events.map((event) => event.payload as Record<string, unknown>)
+  events.map((event) => {
+    if (!isPlainRecord(event.payload)) throw new Error("Expected an object payload")
+    return event.payload
+  })
 
 const subagentCall = (status: string, extra: Record<string, unknown> = {}) =>
   notification({

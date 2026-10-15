@@ -20,6 +20,7 @@ import {
   type PiModel
 } from "./models.js"
 import { dialogQuestion, type PiDialogQuestion } from "./questions.js"
+import { errorMessage, record } from "./values.js"
 
 export const MINIMUM_PI_VERSION = "0.81.0"
 
@@ -46,14 +47,16 @@ export interface PiSession {
   readonly close: () => void
 }
 
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
-
 const piModel = (value: unknown): PiModel | undefined => {
   const model = record(value)
-  return typeof model.id === "string" && typeof model.provider === "string"
-    ? (model as unknown as PiModel)
-    : undefined
+  if (typeof model.id !== "string" || typeof model.provider !== "string") return undefined
+  return {
+    id: model.id,
+    provider: model.provider,
+    ...(typeof model.name === "string" ? { name: model.name } : {}),
+    ...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
+    ...(typeof model.reasoning === "boolean" ? { reasoning: model.reasoning } : {})
+  }
 }
 
 const SKILL_PREFIX = "skill:"
@@ -243,7 +246,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         )
         if (accepted.disposition === "handled") await endTurn()
       } catch (cause) {
-        await endTurn((cause as Error).message)
+        await endTurn(errorMessage(cause))
       }
       return finished
     },

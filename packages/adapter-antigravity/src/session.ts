@@ -18,13 +18,15 @@ import {
   type AgyModel
 } from "./models.js"
 import {
+  agyResult,
+  agyStep,
   finite,
+  messageOf,
   record,
   signedOut,
   SIGN_IN_DETAIL,
   text,
-  type AgyResult,
-  type AgyStep
+  type AgyResult
 } from "./protocol.js"
 
 interface Turn {
@@ -130,7 +132,7 @@ export const startAgyChat = async (
     const totals = totalsUpdate(result)
     if (totals !== undefined) void send("session.updated", totals)
     if (result.status === "SUCCESS") {
-      const denied = (result.denied_actions ?? []).flatMap((action) => {
+      const denied = result.denied_actions.flatMap((action) => {
         const name = text(action.display_name) ?? text(action.action)
         return name === undefined ? [] : [name]
       })
@@ -150,11 +152,11 @@ export const startAgyChat = async (
 
   const handle = (event: Record<string, unknown>) => {
     if (event.event === "step_update") {
-      const step = record(event.step_update) as unknown as AgyStep
-      if (typeof step.step_index !== "number") return
+      const step = agyStep(event.step_update)
+      if (step === undefined) return
       for (const mapped of mapper.step(step)) void send(mapped.kind, mapped.payload)
     } else if (event.event === "result") {
-      finished(record(event.result) as unknown as AgyResult)
+      finished(agyResult(event.result))
     }
   }
 
@@ -226,7 +228,7 @@ export const startAgyChat = async (
     try {
       if (agyProcess === undefined || stale) await relaunch()
     } catch (cause) {
-      endTurn({ detail: (cause as Error).message })
+      endTurn({ detail: messageOf(cause) })
       return done
     }
     const prompt = normalizePromptInput(input)

@@ -343,9 +343,9 @@ describe("runShellCommand", () => {
   it("passes its timeout to execFile", async () => {
     const error = Object.assign(new Error("command timed out"), { killed: true })
     const exec = vi.spyOn(childProcess, "execFile").mockImplementation((...args: unknown[]) => {
-      const callback = args.at(-1) as (error: Error, stdout: string, stderr: string) => void
-      callback(error, "", "")
-      return {} as childProcess.ChildProcess
+      const callback = args.at(-1)
+      if (typeof callback === "function") callback(error, "", "")
+      return new childProcess.ChildProcess()
     })
     await expect(runShellCommand("/bin/sh", ["-c", "command"], 5000)).rejects.toBe(error)
     expect(exec).toHaveBeenCalledWith(

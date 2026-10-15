@@ -14,6 +14,7 @@ import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { expectShape, isRecord } from "./json-shape.ts"
 import {
   designatedRequirement,
   diagnosticInfoPlist,
@@ -25,18 +26,20 @@ import {
 import {
   endpointsFor,
   http,
-  summarize,
-  type ControlCheckResult,
-  type HudResult,
-  type RigStatus,
-  type SampleResult,
-  type SourceResult
+  isControlCheckResult,
+  isHudResult,
+  isRigStatus,
+  isSampleResult,
+  isSourceResult,
+  summarize
 } from "./screen-sharing-rig-client.ts"
 import {
   bootstrapPlan,
   buildInfoExtras,
   deployPlan,
   errorMessage,
+  isDeployRecord,
+  isRigConfiguration,
   launchAgentPlist,
   parseRigArguments,
   quote,
@@ -110,18 +113,18 @@ function runPlan(plan: Plan): void {
   for (const [commandName, ...args] of plan) run(commandName, args)
 }
 
-function readJSON(path: string): unknown {
-  return JSON.parse(readFileSync(path, "utf8"))
+function readJSON<T>(path: string, matches: (value: unknown) => value is T): T {
+  return expectShape(JSON.parse(readFileSync(path, "utf8")), matches, path)
 }
 function readLocalConfig(): RigConfiguration {
   if (!existsSync(localConfigPath))
     throw new Error(`No rig on this Mac yet: ${localConfigPath}. Run install first.`)
-  return readJSON(localConfigPath) as RigConfiguration
+  return readJSON(localConfigPath, isRigConfiguration)
 }
 function readDeployRecord(): DeployRecord {
   if (!existsSync(deployRecordPath))
     throw new Error(`No deploy record: ${deployRecordPath}. Run install first.`)
-  return readJSON(deployRecordPath) as DeployRecord
+  return readJSON(deployRecordPath, isDeployRecord)
 }
 
 async function build({ debug = false, install: installAfterBuild = true } = {}): Promise<string> {
@@ -330,7 +333,9 @@ async function status(): Promise<void> {
     ["host", host]
   ] as const) {
     try {
-      process.stdout.write(`${summarize(await http<RigStatus>("GET", `${base}/status`, token))}\n`)
+      process.stdout.write(
+        `${summarize(await http("GET", `${base}/status`, token, isRigStatus))}\n`
+      )
     } catch (error) {
       process.stdout.write(`${label.padEnd(6)} unreachable at ${base}: ${errorMessage(error)}\n`)
     }
@@ -349,7 +354,10 @@ async function sample(): Promise<void> {
         `${new Date().toISOString().replace(/[:.]/g, "-")}.json`
       )
   const { token, viewer } = endpoints()
-  const result = await http<SampleResult>("POST", `${viewer}/sample`, token, { seconds, report })
+  const result = await http("POST", `${viewer}/sample`, token, isSampleResult, {
+    seconds,
+    report
+  })
   process.stdout.write(
     `${result.samples} samples, mean presented ${result.meanPresentedFramesPerSecond?.toFixed(1) ?? "-"} fps → ${result.report}\n`
   )
@@ -361,14 +369,14 @@ function tune(): void {
   const local = withTuning(readLocalConfig(), tuning)
   writeFileSync(localConfigPath, JSON.stringify(local, null, 2) + "\n", { mode: 0o600 })
   const remoteConfig = `${record.remoteHome}/${rigInstallDirectory}/rig.json`
-  const remote = withTuning(
-    JSON.parse(
-      run("ssh", ["-o", "BatchMode=yes", record.hostSSH, `cat ${quote(remoteConfig)}`], {
-        capture: true
-      })
-    ) as RigConfiguration,
-    tuning
+  const remoteText = run(
+    "ssh",
+    ["-o", "BatchMode=yes", record.hostSSH, `cat ${quote(remoteConfig)}`],
+    {
+      capture: true
+    }
   )
+  const remote = withTuning(expectShape(JSON.parse(remoteText), isRecord, remoteConfig), tuning)
   writeRemoteFile(record.hostSSH, remoteConfig, JSON.stringify(remote, null, 2) + "\n")
   run("ssh", [
     "-o",
@@ -395,7 +403,7 @@ async function controlCheck(): Promise<void> {
       throw new Error(`control-check needs --${name} 0...100`)
   }
   const { token, viewer } = endpoints()
-  const result = await http<ControlCheckResult>("POST", `${viewer}/control-check`, token, {
+  const result = await http("POST", `${viewer}/control-check`, token, isControlCheckResult, {
     clicks,
     keys,
     x: 0.5,
@@ -418,7 +426,9 @@ async function source(): Promise<void> {
   const spec = positional[0]
   if (!spec) throw new Error("source needs a capture spec, e.g. source app:com.apple.dt.Xcode")
   const { token, host } = endpoints()
-  const result = await http<SourceResult>("POST", `${host}/source`, token, { capture: spec })
+  const result = await http("POST", `${host}/source`, token, isSourceResult, {
+    capture: spec
+  })
   process.stdout.write(
     `host source ${result.previous} → ${result.capture}${result.live ? " (live)" : " (next session)"}\n`
   )
@@ -428,7 +438,7 @@ async function hud(): Promise<void> {
   const enabled = positional[0] === "on" ? true : positional[0] === "off" ? false : null
   if (enabled === null) throw new Error("hud needs on|off")
   const { token, viewer, host } = endpoints()
-  const result = await http<HudResult>("POST", `${options.host ? host : viewer}/hud`, token, {
+  const result = await http("POST", `${options.host ? host : viewer}/hud`, token, isHudResult, {
     enabled
   })
   process.stdout.write(`${options.host ? "host" : "viewer"} HUD ${result.enabled ? "on" : "off"}\n`)

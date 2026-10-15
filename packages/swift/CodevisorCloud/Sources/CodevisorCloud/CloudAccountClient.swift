@@ -28,6 +28,7 @@ public struct CloudInstanceInfo: Codable, Equatable, Sendable {
 public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public var deviceId: String
   public var name: String
+  public var icon: String?
   public var os: String?
   public var appVersion: String?
   public var publicKey: String
@@ -40,6 +41,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public init(
     deviceId: String,
     name: String,
+    icon: String? = nil,
     os: String? = nil,
     appVersion: String? = nil,
     publicKey: String,
@@ -49,6 +51,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   ) {
     self.deviceId = deviceId
     self.name = name
+    self.icon = icon
     self.os = os
     self.appVersion = appVersion
     self.publicKey = publicKey
@@ -120,7 +123,7 @@ public protocol CloudAccountClienting: Sendable {
   func developmentLogin() async throws -> String
   func session(token: String) async throws -> CloudSessionUser?
   func machines(token: String) async throws -> [CloudMachine]
-  func rename(deviceId: String, name: String, token: String) async throws
+  func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws
   func removeMachine(deviceId: String, token: String) async throws
   func approveDevice(userCode: String, token: String) async throws
   func denyDevice(userCode: String, token: String) async throws
@@ -237,11 +240,11 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     }
   }
 
-  public func rename(deviceId: String, name: String, token: String) async throws {
-    let body = try JSONEncoder().encode(["name": name])
+  public func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws {
+    let body = try JSONEncoder().encode(["name": name, "icon": icon])
     _ = try await perform(
-      "/api/machines/\(escaped(deviceId))/rename",
-      method: "POST",
+      "/api/machines/\(escaped(deviceId))",
+      method: "PATCH",
       body: body,
       token: token
     )

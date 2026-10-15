@@ -1,5 +1,4 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
-import type { MachineToHub } from "@codevisor/api"
 import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it } from "vitest"
 
@@ -45,7 +44,7 @@ describe("session resume", () => {
     h.reconnects[0]!.callback()
     const revived = h.sockets.at(-1)!
     revived.onopen?.()
-    const hello = revived.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    const hello = revived.hello()
     expect(hello.resume).toBe("tok-1")
 
     revived.receive({
@@ -149,7 +148,7 @@ describe("session resume", () => {
     h.reconnects[0]!.callback()
     const revived = h.sockets.at(-1)!
     revived.onopen?.()
-    const hello = revived.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    const hello = revived.hello()
     expect(hello.resume).toBeUndefined()
   })
 

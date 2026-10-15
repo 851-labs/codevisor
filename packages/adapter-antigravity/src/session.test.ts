@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { parseModels } from "./models.js"
-import { SIGN_IN_DETAIL } from "./protocol.js"
+import { record, SIGN_IN_DETAIL } from "./protocol.js"
 import { startAgyChat, type AgyChatOptions } from "./session.js"
 import {
   CONVERSATION,
@@ -161,10 +161,7 @@ describe("Antigravity chat", () => {
     first.result()
     await one
     await first.sends(2)
-    expect(first.sent.map((line) => (line.message as { content: string }).content)).toEqual([
-      "first",
-      "second"
-    ])
+    expect(first.sent.map((line) => record(line.message).content)).toEqual(["first", "second"])
     first.result()
     await expect(two).resolves.toEqual({ stopReason: "end_turn" })
   })

@@ -139,29 +139,28 @@ struct SidebarView: View {
         SidebarSectionHeader(title: "Pinned", isExpanded: pinnedExpanded) {
           withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { pinnedExpanded.toggle() }
         }
-        if pinnedExpanded {
-          workspaceList(pinned.items)
-        }
+        workspaceList(visibleItems(of: pinned))
       }
       workspacesHeader
-      ForEach(listExpanded ? rest : []) { group in
-        let isExpanded = isExpanded(group)
-        if let heading = group.heading {
-          SidebarGroupRow(
-            title: heading.title,
-            systemImage: heading.systemImage,
-            isExpanded: isExpanded,
-            isReordering: isReordering,
-            onToggle: {
-              withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { toggleGroup(group) }
-            },
-            onNewChat: heading.newChatTarget.map { target in { selection = .newChat(target) } }
-          )
-        }
-        if isExpanded {
-          workspaceList(group.items)
+      if listExpanded {
+        ForEach(rest) { group in
+          if let heading = group.heading {
+            SidebarGroupRow(
+              title: heading.title,
+              systemImage: heading.systemImage,
+              isExpanded: isExpanded(group),
+              isReordering: isReordering,
+              onToggle: {
+                withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { toggleGroup(group) }
+              },
+              onNewChat: heading.newChatTarget.map { target in { selection = .newChat(target) } }
+            )
+          }
+          workspaceList(visibleItems(of: group))
             .padding(.leading, group.heading == nil ? 0 : Self.groupIndent)
         }
+      } else {
+        workspaceList(rest.flatMap(visibleItems(of:)))
       }
       archivedSection
     }

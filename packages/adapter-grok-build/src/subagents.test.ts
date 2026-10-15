@@ -1,64 +1,66 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { makeGrokBuildExtension } from "./extension.js"
+import { objectRecord, type JsonRecord } from "./record.js"
 
 const SESSION = "parent"
 const CHILD = "0199c1-child"
 
-const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | undefined =>
-  event?.payload as Record<string, unknown> | undefined
+const payload = (event: RuntimeEvent | undefined): JsonRecord | undefined =>
+  objectRecord(event?.payload)
 
 const taskTool = { "x.ai/tool": { kind: "task", label: "Subagent", name: "task" } }
 
-const taskCall = (id: string, description: string, extra: Record<string, unknown> = {}) => ({
+const taskCall = (id: string, description: string): acp.SessionUpdate => ({
   _meta: taskTool,
   kind: "other",
   rawInput: { description, prompt: `${description}, read-only.`, subagent_type: "explore" },
   sessionUpdate: "tool_call",
   status: "pending",
   title: "task",
-  toolCallId: id,
-  ...extra
+  toolCallId: id
 })
 
-const subagentUpdate = (update: Record<string, unknown>) => ({
+const subagentUpdate = (update: JsonRecord) => ({
   sessionId: SESSION,
   update: { child_session_id: CHILD, parent_session_id: SESSION, subagent_id: CHILD, ...update }
 })
 
+const FLUSH_METHOD = "_codevisor/test_flush"
+const connections: Array<acp.AgentConnection> = []
+
+afterEach(() => {
+  for (const connection of connections.splice(0)) connection.close()
+})
+
 const grokExtension = () => {
   const emitted: Array<RuntimeEvent> = []
-  const handlers = new Map<string, (params: unknown) => void>()
   const extension = makeGrokBuildExtension({
     emit: (event) => emitted.push(event),
     enqueueQuestion: () => new Promise(() => undefined)
   })
-  const app = {
-    onNotification: (
-      method: string,
-      _parse: unknown,
-      handler: (message: { params: unknown }) => void
-    ) => handlers.set(method, (params) => handler({ params })),
-    onRequest: () => app
-  }
-  extension.configureClientApp?.(app as never)
-  const notify = (sessionId: string, update: Record<string, unknown>) =>
-    extension.mapSessionNotification?.({
-      sessionId,
-      update: update as unknown as acp.SessionNotification["update"]
-    }) ?? []
-  const xai = (params: unknown, method = "_x.ai/session_notification") => {
+  const app = new acp.ClientApp().onRequest<unknown, JsonRecord>(
+    FLUSH_METHOD,
+    (params) => params,
+    () => ({})
+  )
+  const agent = new acp.AgentApp().connect(extension.configureClientApp?.(app) ?? app)
+  connections.push(agent)
+  const notify = (sessionId: string, update: acp.SessionUpdate) =>
+    extension.mapSessionNotification?.({ sessionId, update }) ?? []
+  const xai = async (params: unknown, method = "_x.ai/session_notification") => {
     const before = emitted.length
-    handlers.get(method)?.(params)
+    await agent.client.notify(method, params)
+    await agent.client.request(FLUSH_METHOD, {})
     return emitted.slice(before)
   }
   return { notify, xai }
 }
 
 describe("Grok Build subagents", () => {
-  it("shows a background subagent as an agent with its own session nested, until it finishes", () => {
+  it("shows a background subagent as an agent with its own session nested, until it finishes", async () => {
     const { notify, xai } = grokExtension()
     const [pending] = notify(SESSION, taskCall("call_A", "Find auth code"))
     expect(payload(pending)).toMatchObject({
@@ -87,9 +89,11 @@ describe("Grok Build subagents", () => {
     expect(payload(returned)).not.toHaveProperty("status")
 
     expect(
-      xai(subagentUpdate({ description: "Find auth code", sessionUpdate: "subagent_spawned" })).map(
-        payload
-      )
+      (
+        await xai(
+          subagentUpdate({ description: "Find auth code", sessionUpdate: "subagent_spawned" })
+        )
+      ).map(payload)
     ).toEqual([
       {
         _meta: { codevisorSubagent: { taskId: CHILD } },
@@ -121,19 +125,21 @@ describe("Grok Build subagents", () => {
     expect(payload(work[1])).toMatchObject({ sessionUpdate: "agent_message_chunk" })
 
     expect(
-      xai({ sessionId: CHILD, update: { prompt_id: "p1", sessionUpdate: "turn_completed" } })
+      await xai({ sessionId: CHILD, update: { prompt_id: "p1", sessionUpdate: "turn_completed" } })
     ).toEqual([])
 
     expect(
-      xai(subagentUpdate({ sessionUpdate: "subagent_finished", status: "completed" })).map(payload)
+      (await xai(subagentUpdate({ sessionUpdate: "subagent_finished", status: "completed" }))).map(
+        payload
+      )
     ).toEqual([{ sessionUpdate: "tool_call_update", status: "completed", toolCallId: "call_A" }])
   })
 
-  it("matches parallel subagents to their calls by description", () => {
+  it("matches parallel subagents to their calls by description", async () => {
     const { notify, xai } = grokExtension()
     notify(SESSION, taskCall("call_A", "Map storage"))
     notify(SESSION, taskCall("call_B", "Map paging"))
-    const [linked] = xai(
+    const [linked] = await xai(
       subagentUpdate({
         description: "Map paging",
         sessionUpdate: "subagent_spawned",
@@ -143,20 +149,20 @@ describe("Grok Build subagents", () => {
     expect(payload(linked)?.toolCallId).toBe("call_B")
   })
 
-  it("replays a loaded session's subagents from their lifecycle updates", () => {
+  it("replays a loaded session's subagents from their lifecycle updates", async () => {
     const { notify, xai } = grokExtension()
     notify(SESSION, taskCall("call_A", "Find auth code"))
-    const [linked] = xai(
+    const [linked] = await xai(
       subagentUpdate({ description: "Find auth code", sessionUpdate: "subagent_spawned" }),
       "_x.ai/session/update"
     )
     expect(payload(linked)?.toolCallId).toBe("call_A")
   })
 
-  it("ties a resumed subagent, and messages sent to one, to the subagent's history", () => {
+  it("ties a resumed subagent, and messages sent to one, to the subagent's history", async () => {
     const { notify, xai } = grokExtension()
     notify(SESSION, taskCall("call_A", "Find auth code"))
-    xai(subagentUpdate({ description: "Find auth code", sessionUpdate: "subagent_spawned" }))
+    await xai(subagentUpdate({ description: "Find auth code", sessionUpdate: "subagent_spawned" }))
 
     const [message] = notify(SESSION, {
       _meta: { "x.ai/tool": { kind: "active_agent_message", name: "send_subagent_message" } },
@@ -174,7 +180,7 @@ describe("Grok Build subagents", () => {
     })
 
     notify(SESSION, taskCall("call_R", "Find auth code again"))
-    const [resumed] = xai({
+    const [resumed] = await xai({
       sessionId: SESSION,
       update: {
         child_session_id: "0199c2-resumed",

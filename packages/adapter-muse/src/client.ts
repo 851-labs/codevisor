@@ -18,7 +18,7 @@ import {
 } from "./protocol.js"
 
 export interface MuseClient {
-  request: <T = unknown>(method: string, params?: unknown) => Promise<T>
+  request: (method: string, params?: unknown) => Promise<unknown>
   notify: (method: string, params?: unknown) => void
   onNotification: (handler: (method: string, params: unknown) => void) => void
   onRequest: (handler: (method: string, params: unknown) => unknown) => void
@@ -135,9 +135,10 @@ export const wireMuseClient = (transport: NdjsonTransport): MuseClient => {
     const id = message.id
     const method = message.method
     if (typeof method !== "string") {
-      const entry = typeof id === "number" ? pending.get(id) : undefined
+      if (typeof id !== "number") return
+      const entry = pending.get(id)
       if (entry === undefined) return
-      pending.delete(id as number)
+      pending.delete(id)
       if (message.error === undefined || message.error === null) {
         entry.resolve(message.result)
         return
@@ -173,15 +174,15 @@ export const wireMuseClient = (transport: NdjsonTransport): MuseClient => {
   })
 
   return {
-    request: <T>(method: string, params?: unknown): Promise<T> =>
-      new Promise<T>((resolve, reject) => {
+    request: (method, params) =>
+      new Promise((resolve, reject) => {
         if (closed) {
           reject(new MuseExitedError("muse is no longer running"))
           return
         }
         const id = nextId
         nextId += 1
-        pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
+        pending.set(id, { resolve, reject })
         transport.send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) })
       }),
     notify: (method, params) =>

@@ -7,6 +7,8 @@ import {
   withTuning,
   buildInfoExtras,
   deployPlan,
+  isDeployRecord,
+  isRigConfiguration,
   launchAgentPlist,
   parseRigArguments,
   quote,
@@ -227,4 +229,29 @@ test("tune accepts a JSON object, the product profile, or default", () => {
     tuning: { drawables: 2 }
   })
   assert.deepEqual(base.tuning, { profile: "paced15-worker" }, "input is not mutated")
+})
+
+test("rig.json and the deploy record are checked when read back", () => {
+  const token = "0123456789abcdef0123"
+  assert.equal(isRigConfiguration(rigConfiguration({ role: "host", token })), true)
+  assert.equal(
+    isRigConfiguration({
+      ...rigConfiguration({ role: "viewer", token, peer: "h", fps: 30 }),
+      tuning: { profile: "paced15-worker" }
+    }),
+    true
+  )
+  assert.equal(
+    isRigConfiguration({ role: "guest", token, port: 1, controlPort: 2, hud: true }),
+    false
+  )
+  assert.equal(
+    isRigConfiguration({ role: "host", token, port: "1", controlPort: 2, hud: true }),
+    false
+  )
+  assert.equal(
+    isDeployRecord({ hostSSH: "u@h", hostAddress: "h", remoteHome: "/Users/u", remoteUid: 501 }),
+    true
+  )
+  assert.equal(isDeployRecord({ hostSSH: "u@h", hostAddress: "h", remoteHome: "/Users/u" }), false)
 })

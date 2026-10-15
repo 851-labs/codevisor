@@ -20,7 +20,7 @@ import {
   type SetGoalUpdate,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-import type { Harness, SessionConfigOption } from "@codevisor/api"
+import type { Harness } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AcpAgentConnection, AcpConnector } from "./connection.js"
@@ -179,7 +179,7 @@ const acpSessionHandle = (
           payload: { configId, configOptions, value }
         })
       )
-      return configOptions as ReadonlyArray<SessionConfigOption>
+      return configOptions
     }),
   ...(connection.answerQuestion === undefined
     ? {}

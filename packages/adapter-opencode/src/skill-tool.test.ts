@@ -103,8 +103,9 @@ describe("OpenCode's skill tool", () => {
   it("rewrites the chat's own updates and its subagents'", () => {
     const events: Array<unknown> = []
     const extension = makeOpenCodeExtension({
-      emit: (event: unknown) => events.push(event)
-    } as never)
+      emit: (event) => events.push(event),
+      enqueueQuestion: () => new Promise(() => undefined)
+    })
     const mapped = extension.mapSessionNotification?.({
       sessionId: "s1",
       update: {
@@ -113,7 +114,7 @@ describe("OpenCode's skill tool", () => {
         title: "skill",
         rawInput: { name: "tophat" }
       }
-    } as never)
+    })
     expect(JSON.stringify(mapped)).toContain('"codevisorSkill":{"name":"tophat","ok":true}')
   })
 })

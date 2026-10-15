@@ -80,7 +80,7 @@ export class ChannelCipher {
       this.#key,
       nonceFor(direction, seq),
       aad(channelId, direction, seq)
-    ).encrypt(plaintext as Uint8Array<ArrayBuffer>)
+    ).encrypt(plaintext)
   }
 
   open(channelId: string, direction: ChannelDirection, seq: number, box: Uint8Array): Uint8Array {
@@ -88,7 +88,7 @@ export class ChannelCipher {
       this.#key,
       nonceFor(direction, seq),
       aad(channelId, direction, seq)
-    ).decrypt(box as Uint8Array<ArrayBuffer>)
+    ).decrypt(box)
   }
 }
 

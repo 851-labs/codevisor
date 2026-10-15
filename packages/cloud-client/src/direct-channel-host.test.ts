@@ -4,6 +4,8 @@ import {
   decodeRelayEnvelopes,
   encodeCloudFrame,
   encodeRelayEnvelopes,
+  parseHubToAppRelayHeader,
+  type HubToAppRelayHeader,
   type HubToMachine,
   type RelayFrameHeader
 } from "@codevisor/api"
@@ -22,7 +24,7 @@ import {
 
 class FakeDirectSocket implements CloudSocket {
   controls: unknown[] = []
-  envelopes: { header: { machineId: string; frame: RelayFrameHeader }; payload: Uint8Array }[] = []
+  envelopes: { header: HubToAppRelayHeader; payload: Uint8Array }[] = []
   closed: { code?: number; reason?: string } | undefined
   onopen: (() => void) | null = null
   onmessage: ((data: string | Uint8Array) => void) | null = null
@@ -34,10 +36,9 @@ class FakeDirectSocket implements CloudSocket {
       return
     }
     for (const envelope of decodeRelayEnvelopes(data)) {
-      this.envelopes.push({
-        header: envelope.header as { machineId: string; frame: RelayFrameHeader },
-        payload: new Uint8Array(envelope.payload)
-      })
+      const header = parseHubToAppRelayHeader(envelope.header)
+      if (header === undefined) throw new Error("host sent a malformed relay header")
+      this.envelopes.push({ header, payload: new Uint8Array(envelope.payload) })
     }
   }
 
@@ -99,8 +100,9 @@ const makeHost = (
 }
 
 const welcomeOf = (socket: FakeDirectSocket): Extract<HubToMachine, { t: "welcome" }> => {
-  const raw = socket.controls.at(-1)
-  return decodeHubToMachine(JSON.stringify(raw)) as Extract<HubToMachine, { t: "welcome" }>
+  const frame = decodeHubToMachine(JSON.stringify(socket.controls.at(-1)))
+  if (frame.t !== "welcome") throw new Error(`expected a welcome, got ${frame.t}`)
+  return frame
 }
 
 describe("DirectChannelHost", () => {

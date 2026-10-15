@@ -1,12 +1,12 @@
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import { isRecord } from "@codevisor/api"
 import type { QuestionSpec } from "@codevisor/api"
 
 export interface PendingAcpQuestion {
   readonly sessionId: string
   readonly questions: ReadonlyArray<QuestionSpec>
-  readonly cancelledResponse: unknown
-  readonly responseFor: (answer: QuestionAnswer) => unknown
-  readonly resolve: (response: unknown) => void
+  readonly answer: (answer: QuestionAnswer) => void
+  readonly cancel: () => void
 }
 
 export interface AcpMappedQuestion<Response> {
@@ -32,22 +32,17 @@ export const acpPermissionQuestion = (
       readonly planDocument: string | undefined
     }
   | undefined => {
-  if (typeof params !== "object" || params === null) return undefined
-  const request = params as Record<string, unknown>
-  const sessionId = typeof request.sessionId === "string" ? request.sessionId : undefined
-  const rawOptions = Array.isArray(request.options) ? request.options : []
+  if (!isRecord(params)) return undefined
+  const sessionId = typeof params.sessionId === "string" ? params.sessionId : undefined
+  const rawOptions = Array.isArray(params.options) ? params.options : []
   const options = rawOptions.flatMap((option) => {
-    if (typeof option !== "object" || option === null) return []
-    const entry = option as Record<string, unknown>
-    return typeof entry.optionId === "string" && typeof entry.name === "string"
-      ? [{ name: entry.name, optionId: entry.optionId }]
+    if (!isRecord(option)) return []
+    return typeof option.optionId === "string" && typeof option.name === "string"
+      ? [{ name: option.name, optionId: option.optionId }]
       : []
   })
   if (sessionId === undefined || options.length === 0) return undefined
-  const toolCall =
-    typeof request.toolCall === "object" && request.toolCall !== null
-      ? (request.toolCall as Record<string, unknown>)
-      : {}
+  const toolCall = isRecord(params.toolCall) ? params.toolCall : {}
   const title = typeof toolCall.title === "string" ? toolCall.title : undefined
   const planDocument =
     toolCall.kind === "switch_mode" ? textFromToolCallContent(toolCall.content) : undefined
@@ -68,12 +63,9 @@ const textFromToolCallContent = (content: unknown): string | undefined => {
   if (!Array.isArray(content)) return undefined
   const text = content
     .flatMap((block) => {
-      if (typeof block !== "object" || block === null) return []
-      const entry = block as { type?: unknown; content?: { type?: unknown; text?: unknown } }
-      return entry.type === "content" &&
-        entry.content?.type === "text" &&
-        typeof entry.content.text === "string"
-        ? [entry.content.text]
+      if (!isRecord(block) || block.type !== "content" || !isRecord(block.content)) return []
+      return block.content.type === "text" && typeof block.content.text === "string"
+        ? [block.content.text]
         : []
     })
     .join("\n")
