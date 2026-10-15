@@ -3,6 +3,33 @@ import UIKit
 final class HeightReportingTextView: UITextView {
   private(set) var holdsFirstResponderForPromotion = false
   private var promotionHoldRelease: DispatchWorkItem?
+  private var sentTextColor: UIColor??
+  private var sentTextReveal: DispatchWorkItem?
+
+  func hideSentText() {
+    guard !text.isEmpty, sentTextColor == nil else { return }
+    sentTextColor = .some(textColor)
+    textColor = .clear
+    let reveal = DispatchWorkItem { [weak self] in self?.revealSentText() }
+    sentTextReveal = reveal
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: reveal)
+  }
+
+  private func revealSentText() {
+    sentTextReveal?.cancel()
+    sentTextReveal = nil
+    guard let color = sentTextColor else { return }
+    sentTextColor = nil
+    textColor = color
+  }
+
+  override var text: String! {
+    didSet { revealSentText() }
+  }
+
+  func textDidChangeByUser() {
+    revealSentText()
+  }
 
   func setPromotionResponderHold(_ holds: Bool, releaseAfter delay: TimeInterval? = nil) {
     promotionHoldRelease?.cancel()

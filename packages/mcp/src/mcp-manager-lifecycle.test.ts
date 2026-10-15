@@ -34,9 +34,9 @@ describe("MCP manager lifecycle", () => {
       transport: "http",
       url: oldServer.url
     })
-    await entered.promise
-    const created = (await run(db.listMcpServers)).find((server) => server.name === "Replace")!
     try {
+      await entered.promise
+      const created = (await run(db.listMcpServers)).find((server) => server.name === "Replace")!
       await manager.update(created.id, { url: newServer.url })
       await connectionStateSettles(manager, created.id, "connected")
       release.resolve()

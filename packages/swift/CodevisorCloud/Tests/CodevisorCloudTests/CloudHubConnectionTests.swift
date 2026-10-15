@@ -32,25 +32,21 @@ struct CloudHubConnectionTests {
     await hub.setMachinesChangedHandler { recorder.record($0) }
 
     try await hub.waitUntilReady()
-    #expect(
-      await waitUntil {
-        recorder.snapshots.contains { $0.map(\.deviceId) == [machine.deviceId] }
-      }
-    )
+    #expect(recorder.snapshots.contains { $0.map(\.deviceId) == [machine.deviceId] })
 
     scripted.presenceToApp(testMachine("just-signed-in"))
+    await scripted.socket.drain()
     #expect(
-      await waitUntil {
-        recorder.snapshots.contains { list in
-          list.contains { $0.deviceId == "just-signed-in" }
-        }
+      recorder.snapshots.contains { list in
+        list.contains { $0.deviceId == "just-signed-in" }
       }
     )
 
     var offline = machine.presence
     offline.online = false
     scripted.presenceToApp(offline)
-    #expect(await waitUntil { recorder.snapshots.last?.first?.online == false })
+    await scripted.socket.drain()
+    #expect(recorder.snapshots.last?.first?.online == false)
     #expect(recorder.snapshots.last?.map(\.deviceId) == [machine.deviceId, "just-signed-in"])
     await hub.shutdown()
   }
