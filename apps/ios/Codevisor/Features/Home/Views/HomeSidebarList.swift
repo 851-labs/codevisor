@@ -56,12 +56,7 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) private var archivedExpanded
   @ClientPreference(Self.expandedWorkspacesKey, default: []) private var expandedWorkspaceIDs: [String]
   @State private var archivedLimit = sidebarArchivedPageSize
-  @State private var pendingSelection: PendingSelection?
-
-  private struct PendingSelection {
-    let id: UUID
-    let expected: HomeSidebarSelection
-  }
+  @State private var pendingSelection: UUID?
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(
@@ -73,9 +68,8 @@ struct HomeSidebarList: View {
     list(content)
       .listStyle(.sidebar)
       .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
-      .onChange(of: selected) { _, selected in
-        guard let expected = pendingSelection?.expected else { return }
-        if selected == expected || selected?.workspaceId != expected.workspaceId { pendingSelection = nil }
+      .onChange(of: selected) { _, _ in
+        pendingSelection = nil
       }
       .refreshable {
         await actions.actions.refresh()
@@ -247,27 +241,16 @@ struct HomeSidebarList: View {
     return selected.workspaceId
   }
 
-  private func holdSelection(_ id: UUID, until expected: HomeSidebarSelection) {
-    pendingSelection = expected == selected ? nil : PendingSelection(id: id, expected: expected)
-  }
-
-  private func shownSelection(_ content: HomeSidebarContent) -> UUID? {
-    if let pending = pendingSelection, content.row(pending.id) != nil || content.workspace(pending.id) != nil {
-      return pending.id
-    }
-    return selectedRowID(content)
-  }
-
   private func selection(_ content: HomeSidebarContent) -> Binding<UUID?> {
     Binding(
-      get: { shownSelection(content) },
+      get: { pendingSelection ?? selectedRowID(content) },
       set: { id in
         guard let id else { return }
         if let (row, workspace) = content.row(id) {
-          holdSelection(id, until: HomeSidebarSelection(workspaceId: workspace.id, paneId: row.id))
+          pendingSelection = id
           actions.actions.open(row, workspace.workspace)
         } else if let workspace = content.workspace(id) {
-          holdSelection(id, until: HomeSidebarSelection(workspaceId: workspace.id, paneId: workspace.primaryRow?.id))
+          pendingSelection = id
           actions.actions.openWorkspace(workspace)
         } else {
           return
