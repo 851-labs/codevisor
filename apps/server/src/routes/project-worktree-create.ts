@@ -57,7 +57,8 @@ export const createProjectWorktree = async (
     existing.add(name)
   }
   const requested = slugifyWorktreeName(payload.name)
-  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const environment = await (services.resolveGitEnvironment?.(location.folderPath) ??
+    Promise.resolve(process.env))
   const startPoint = await worktreeStartPoint(
     location.folderPath,
     project.worktreeBase,

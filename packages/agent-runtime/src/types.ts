@@ -92,6 +92,7 @@ export type {
 
 export interface ProviderEnvironment {
   readonly env: NodeJS.ProcessEnv
+  readonly envFor: (cwd: string) => Promise<NodeJS.ProcessEnv>
   readonly executableExists: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable: (name: string, env: NodeJS.ProcessEnv) => string | undefined
 }

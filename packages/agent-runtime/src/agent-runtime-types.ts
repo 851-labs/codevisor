@@ -28,6 +28,7 @@ export interface AgentRuntimeConfig {
   readonly providerFactories?: ReadonlyArray<ProviderFactory>
   readonly providers?: Partial<Record<ProviderId, AgentProvider>>
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
+  readonly resolveDirectoryEnv?: (directory: string) => Promise<NodeJS.ProcessEnv>
   readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
 }
 

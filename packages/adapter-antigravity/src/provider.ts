@@ -87,8 +87,10 @@ export const makeAntigravityProvider = (
     if (located === undefined) throw new Error("agy not found on PATH")
     return located
   }
-  const launchFor = (account: HarnessAccountContext | undefined) =>
-    agyAccountLaunch({ ...withoutEnv(environment.env, account?.unsetEnv), ...account?.env })
+  const launchFor = (
+    account: HarnessAccountContext | undefined,
+    env: NodeJS.ProcessEnv = environment.env
+  ) => agyAccountLaunch({ ...withoutEnv(env, account?.unsetEnv), ...account?.env })
   const home = () => environment.env.HOME ?? process.cwd()
 
   const run = (
@@ -151,7 +153,7 @@ export const makeAntigravityProvider = (
     resume?: string
   ): Promise<AgyChat> => {
     await checkVersion(definition)
-    const launch = launchFor(account)
+    const launch = launchFor(account, await environment.envFor(cwd))
     const gateway =
       toolGateway === undefined
         ? { args: [], env: {} }

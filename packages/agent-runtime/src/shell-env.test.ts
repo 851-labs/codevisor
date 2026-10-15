@@ -1,5 +1,5 @@
 import * as childProcess from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import * as os from "node:os"
 import { join } from "node:path"
 
@@ -37,6 +37,26 @@ afterEach(() => {
 })
 
 describe("resolveShellEnv", () => {
+  it("starts the login shell in the requested directory", async () => {
+    const runShell = vi.fn(() => Promise.resolve(envOutput("/repo/node/bin")))
+    const resolved = await resolveShellEnv({
+      base: { HOME: "/home/test", PATH: "/usr/bin", SHELL: "/bin/zsh" },
+      cwd: "/repo",
+      platform: "darwin",
+      executableExists: () => true,
+      listDirectory: () => [],
+      runShell
+    })
+    expect(runShell).toHaveBeenCalledWith(
+      "/bin/zsh",
+      ["-ilc", "/usr/bin/env"],
+      5000,
+      expect.anything(),
+      "/repo"
+    )
+    expect(resolved.PATH?.split(":")[0]).toBe("/repo/node/bin")
+  })
+
   it.each([undefined, ""])("restores HOME when the inherited value is %s", async (home) => {
     const base = Object.freeze({ HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/sh" })
     const runShell = vi.fn(() => Promise.resolve(envOutput("/probed")))
@@ -51,10 +71,13 @@ describe("resolveShellEnv", () => {
     })
 
     expect(resolved.HOME).toBe("/home/test user")
-    expect(runShell).toHaveBeenCalledWith("/bin/sh", ["-ilc", "/usr/bin/env"], 5000, {
-      ...base,
-      HOME: "/home/test user"
-    })
+    expect(runShell).toHaveBeenCalledWith(
+      "/bin/sh",
+      ["-ilc", "/usr/bin/env"],
+      5000,
+      { ...base, HOME: "/home/test user" },
+      undefined
+    )
     expect(resolved.PATH).toContain("/home/test user/.local/bin")
     expect(base.HOME).toBe(home)
   })
@@ -297,6 +320,13 @@ describe("resolveShellEnv", () => {
 })
 
 describe("runShellCommand", () => {
+  it("starts the shell in the requested directory", async () => {
+    const directory = mkdtempSync(join(os.tmpdir(), "shell-env-cwd-"))
+    onTestFinished(() => rmSync(directory, { recursive: true }))
+    const printed = await runShellCommand("/bin/sh", ["-c", "pwd -P"], 5000, process.env, directory)
+    expect(printed.trim()).toBe(realpathSync(directory))
+  })
+
   it("exports the supplied HOME to child scripts", async () => {
     await expect(
       runShellCommand("/bin/sh", ["-uc", 'printf "%s" "$HOME"'], 5000, {

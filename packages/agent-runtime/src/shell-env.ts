@@ -10,9 +10,11 @@ export interface ShellEnvOptions {
     shell: string,
     args: ReadonlyArray<string>,
     timeoutMs: number,
-    env: NodeJS.ProcessEnv
+    env: NodeJS.ProcessEnv,
+    cwd?: string
   ) => Promise<string>
   readonly timeoutMs?: number
+  readonly cwd?: string
   readonly userShell?: () => string | undefined
   readonly executableExists?: (path: string) => boolean
   readonly listDirectory?: (path: string) => ReadonlyArray<string>
@@ -87,10 +89,11 @@ export const runShellCommand = (
   shell: string,
   args: ReadonlyArray<string>,
   timeoutMs: number,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  cwd?: string
 ): Promise<string> =>
   new Promise<string>((resolve, reject) => {
-    execFile(shell, [...args], { env, timeout: timeoutMs }, (error, stdout) => {
+    execFile(shell, [...args], { cwd, env, timeout: timeoutMs }, (error, stdout) => {
       if (error === null) {
         resolve(stdout)
       } else {
@@ -161,7 +164,7 @@ export const resolveShellEnv = async (
   let probed: ReadonlyArray<string> = []
   if (shell !== undefined) {
     try {
-      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env)
+      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env, options.cwd)
       probed = splitPath(pathFromEnvOutput(output))
     } catch {}
   }

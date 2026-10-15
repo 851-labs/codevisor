@@ -19,6 +19,7 @@ describe("Grok Build provider", () => {
     onTestFinished(() => rmSync(grokHome, { force: true, recursive: true }))
     const environment: ProviderEnvironment = {
       env: { GROK_HOME: grokHome, PATH: "/bin" },
+      envFor: () => Promise.resolve(environment.env),
       executableExists: (name) => name === "grok",
       locateExecutable: (name) => (name === "grok" ? "/bin/grok" : undefined)
     }

@@ -129,7 +129,10 @@ export const makeMuseProvider = (
       command: command(definition),
       args: CHAT_HOST_ARGS,
       cwd: root,
-      env: { ...withoutEnv(environment.env, account?.unsetEnv), ...account?.env }
+      env: {
+        ...withoutEnv(await environment.envFor(root), account?.unsetEnv),
+        ...account?.env
+      }
     })
     try {
       await handshake(client)
