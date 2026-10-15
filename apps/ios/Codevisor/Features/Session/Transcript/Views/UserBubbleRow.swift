@@ -9,6 +9,8 @@ struct UserBubbleRow: View {
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
   let text: String
   let attachments: [Attachment]
+  @State private var isSelecting = false
+  private let bubbleShape = RoundedRectangle(cornerRadius: UserBubbleBackground.cornerRadius, style: .continuous)
 
   var body: some View {
     HStack {
@@ -34,7 +36,8 @@ struct UserBubbleRow: View {
                 .foregroundColor: UIColor(theme.textPrimary),
               ]
             ),
-            fillsWidth: false
+            fillsWidth: false,
+            isSelecting: $isSelecting
           )
           .environment(
             \.streamMarkdownTextLayoutWidth,
@@ -42,8 +45,21 @@ struct UserBubbleRow: View {
           )
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
-          .background { UserBubbleBackground(color: theme.bubbleBackground) }
-          MessageCopyButton(text: text, help: "Copy message")
+          .background {
+            UserBubbleBackground(color: theme.bubbleBackground)
+              .background(UserBubbleBackground.transcriptBackdrop(for: theme), in: bubbleShape)
+          }
+          .contentShape(.contextMenuPreview, bubbleShape)
+          .contextMenu {
+            if !isSelecting {
+              Button("Copy", systemImage: "doc.on.doc") {
+                PlatformPasteboard.copy(text)
+              }
+              Button("Select Text", systemImage: "selection.pin.in.out") {
+                isSelecting = true
+              }
+            }
+          }
         }
       }
     }

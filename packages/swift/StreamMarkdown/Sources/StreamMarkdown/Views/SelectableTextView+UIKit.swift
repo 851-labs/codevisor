@@ -7,6 +7,7 @@
     private let attributedText: NSAttributedString
     private let fillsWidth: Bool
     private let streamingAnimation: StreamingTextAnimationContext?
+    private let isSelecting: Binding<Bool>?
     @Environment(\.markdownLinkAction) private var linkAction
     @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
     @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
@@ -15,6 +16,14 @@
       self.attributedText = attributedText
       self.fillsWidth = fillsWidth
       streamingAnimation = nil
+      isSelecting = nil
+    }
+
+    public init(attributedText: NSAttributedString, fillsWidth: Bool = true, isSelecting: Binding<Bool>) {
+      self.attributedText = attributedText
+      self.fillsWidth = fillsWidth
+      streamingAnimation = nil
+      self.isSelecting = isSelecting
     }
 
     init(
@@ -25,6 +34,7 @@
       self.attributedText = attributedText
       self.fillsWidth = fillsWidth
       self.streamingAnimation = streamingAnimation
+      isSelecting = nil
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -35,7 +45,9 @@
       let view = SelectableTextKitView()
       view.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
+      context.coordinator.isSelecting = isSelecting
       view.delegate = context.coordinator
+      view.selectionEnded = { [weak coordinator = context.coordinator] in coordinator?.endSelection() }
       let prepared = context.coordinator.preparedText(
         for: attributedText,
         animation: streamingAnimation
@@ -48,12 +60,16 @@
       _ = view.contentHeight(
         forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
       )
+      if let isSelecting {
+        view.setSelecting(isSelecting.wrappedValue)
+      }
       return view
     }
 
     public func updateUIView(_ textView: SelectableTextKitView, context: Context) {
       textView.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
+      context.coordinator.isSelecting = isSelecting
       let prepared = context.coordinator.preparedText(
         for: attributedText,
         animation: streamingAnimation
@@ -66,6 +82,9 @@
       _ = textView.contentHeight(
         forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
       )
+      if let isSelecting {
+        textView.setSelecting(isSelecting.wrappedValue)
+      }
     }
 
     public func sizeThatFits(
@@ -111,6 +130,7 @@
     public final class Coordinator: NSObject, UITextViewDelegate {
       fileprivate lazy var measurer = UIKitTextKitTextMeasurer()
       var linkAction: MarkdownLinkAction?
+      var isSelecting: Binding<Bool>?
       private let animationState = StreamingTextAnimationState()
       private var attributedInput: NSAttributedString?
       private var stableAttributedText: NSAttributedString?
@@ -163,6 +183,18 @@
         return value
       }
 
+      func endSelection() {
+        guard let isSelecting, isSelecting.wrappedValue else { return }
+        isSelecting.wrappedValue = false
+      }
+
+      public func textViewDidChangeSelection(_ textView: UITextView) {
+        guard let view = textView as? SelectableTextKitView, view.isSelectingOnDemand,
+          view.isFirstResponder, view.selectedRange.length == 0
+        else { return }
+        endSelection()
+      }
+
       public func textView(
         _ textView: UITextView,
         primaryActionFor textItem: UITextItem,
@@ -185,121 +217,10 @@
     }
   }
 
-  final class UIKitTextKitRoundedBackground: NSObject, NSCopying {
-    let color: UIColor
-    let cornerRadius: CGFloat
-
-    init(color: UIColor, cornerRadius: CGFloat) {
-      self.color = color
-      self.cornerRadius = cornerRadius
-    }
-
-    func copy(with _: NSZone? = nil) -> Any {
-      self
-    }
-  }
-
-  extension NSAttributedString.Key {
-    static let streamMarkdownQuoteDecoration = NSAttributedString.Key(
-      "com.851labs.codevisor.streamMarkdownQuoteDecoration")
-    static let streamMarkdownRoundedBackground = NSAttributedString.Key(
-      "com.851labs.codevisor.streamMarkdownRoundedBackground"
-    )
-  }
-
-  final class UIKitStreamingTextLayoutManager: NSLayoutManager {
-    var animationTime = CACurrentMediaTime()
-
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
-      drawMarkdownQuoteBars(forGlyphRange: glyphsToShow, at: origin)
-      drawRoundedBackgrounds(forGlyphRange: glyphsToShow, at: origin)
-      super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-    }
-
-    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
-      guard let textStorage, glyphsToShow.length > 0 else {
-        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
-        return
-      }
-
-      let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-      var drewRange = false
-      textStorage.enumerateAttribute(
-        .streamMarkdownFade,
-        in: characters,
-        options: [.longestEffectiveRangeNotRequired]
-      ) { value, characterRange, _ in
-        let glyphRange = self.glyphRange(
-          forCharacterRange: characterRange,
-          actualCharacterRange: nil
-        )
-        let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
-        guard visibleGlyphs.length > 0 else { return }
-        drewRange = true
-
-        let opacity =
-          (value as? StreamingTextFadeMetadata)?
-          .opacity(at: self.animationTime) ?? 1
-        let graphics = UIGraphicsGetCurrentContext()
-        graphics?.saveGState()
-        graphics?.setAlpha(opacity)
-        super.drawGlyphs(forGlyphRange: visibleGlyphs, at: origin)
-        graphics?.restoreGState()
-      }
-
-      if !drewRange {
-        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
-      }
-    }
-
-    private func drawRoundedBackgrounds(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
-      guard let textStorage, glyphsToShow.length > 0 else { return }
-      let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-      textStorage.enumerateAttribute(
-        .streamMarkdownRoundedBackground,
-        in: characters
-      ) { value, characterRange, _ in
-        guard let background = value as? UIKitTextKitRoundedBackground else { return }
-        let glyphRange = self.glyphRange(
-          forCharacterRange: characterRange,
-          actualCharacterRange: nil
-        )
-        let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
-        guard visibleGlyphs.length > 0 else { return }
-
-        self.enumerateLineFragments(forGlyphRange: visibleGlyphs) {
-          _, _, textContainer, lineGlyphRange, _ in
-          let fragmentGlyphs = NSIntersectionRange(visibleGlyphs, lineGlyphRange)
-          guard fragmentGlyphs.length > 0 else { return }
-          var rect = self.boundingRect(
-            forGlyphRange: fragmentGlyphs,
-            in: textContainer
-          )
-          rect.origin.x += origin.x
-          rect.origin.y += origin.y
-          rect = rect.insetBy(dx: 0, dy: 0.5)
-          let opacity =
-            (textStorage.attribute(
-              .streamMarkdownFade,
-              at: characterRange.location,
-              effectiveRange: nil
-            ) as? StreamingTextFadeMetadata)?.opacity(at: self.animationTime) ?? 1
-          let graphics = UIGraphicsGetCurrentContext()
-          graphics?.saveGState()
-          graphics?.setAlpha(opacity)
-          background.color.setFill()
-          UIBezierPath(
-            roundedRect: rect,
-            cornerRadius: min(background.cornerRadius, rect.height / 2)
-          ).fill()
-          graphics?.restoreGState()
-        }
-      }
-    }
-  }
-
   @MainActor
-  public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient {
+  public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient,
+    @MainActor UIEditMenuInteractionDelegate
+  {
     public convenience init(attributedText: NSAttributedString) {
       self.init(preparedLayout: nil)
       setContent(attributedText)
@@ -311,6 +232,9 @@
     private var latestAnimationEnd: TimeInterval?
     private var activeAnimationRanges: [NSRange] = []
     private var animationDisplayLink: CADisplayLink?
+    fileprivate var isSelectingOnDemand = false
+    fileprivate var selectionEnded: (() -> Void)?
+    private var selectionMenuInteraction: UIEditMenuInteraction?
     public var animationFrameClock: StreamingTextAnimationFrameClock? {
       didSet {
         guard animationFrameClock !== oldValue else { return }
@@ -403,6 +327,51 @@
       let length = min(selection.length, text.length - location)
       selectedRange = NSRange(location: location, length: length)
       setNeedsDisplay()
+    }
+
+    fileprivate func setSelecting(_ selecting: Bool) {
+      guard selecting != isSelectingOnDemand || selecting != isSelectable else { return }
+      isSelectingOnDemand = selecting
+      isSelectable = selecting
+      guard selecting, textStorage.length > 0 else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.isSelectingOnDemand, self.window != nil else { return }
+        self.becomeFirstResponder()
+        self.selectAll(nil)
+        self.presentSelectionMenu()
+      }
+    }
+
+    private func presentSelectionMenu() {
+      guard let bounds = selectionBounds else { return }
+      let interaction = selectionMenuInteraction ?? UIEditMenuInteraction(delegate: self)
+      if selectionMenuInteraction == nil {
+        addInteraction(interaction)
+        selectionMenuInteraction = interaction
+      }
+      interaction.presentEditMenu(
+        with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: bounds.midX, y: bounds.minY)))
+    }
+
+    private var selectionBounds: CGRect? {
+      guard let range = selectedTextRange else { return nil }
+      let bounds = selectionRects(for: range).map(\.rect).reduce(CGRect.null) { $0.union($1) }
+      return bounds.isNull ? nil : bounds
+    }
+
+    public func editMenuInteraction(
+      _ interaction: UIEditMenuInteraction,
+      targetRectFor configuration: UIEditMenuConfiguration
+    ) -> CGRect {
+      selectionBounds ?? .null
+    }
+
+    public override func resignFirstResponder() -> Bool {
+      let resigned = super.resignFirstResponder()
+      if resigned, isSelectingOnDemand {
+        selectionEnded?()
+      }
+      return resigned
     }
 
     public override func didMoveToWindow() {
