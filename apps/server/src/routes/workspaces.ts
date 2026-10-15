@@ -27,6 +27,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { matchesLabelFilters } from "./label-filters.js"
+import { routeParam } from "./route-params.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 
@@ -78,8 +79,8 @@ export const routeWorkspaces = async (
   )
   if (promoteRoute !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PromoteWorkspacePaneToChatRequestSchema)
-    const workspaceId = promoteRoute.workspaceId as string
-    const paneId = promoteRoute.paneId as string
+    const workspaceId = routeParam(promoteRoute, "workspaceId")
+    const paneId = routeParam(promoteRoute, "paneId")
     const workspace = (await run(services.db.listWorkspaces)).find(
       (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
     )
@@ -125,7 +126,7 @@ export const routeWorkspaces = async (
   const reorderRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/panes/reorder")
   if (reorderRoute !== undefined && request.method === "POST") {
     const payload = await readSchema(request, ReorderWorkspacePanesRequestSchema)
-    const workspaceId = reorderRoute.workspaceId as string
+    const workspaceId = routeParam(reorderRoute, "workspaceId")
     if ((await findWorkspace(services, workspaceId)) === undefined) {
       throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
     }
@@ -147,14 +148,16 @@ export const routeWorkspaces = async (
     (paneRoute !== undefined && request.method === "DELETE")
   ) {
     const route = (closeRoute ?? paneRoute)!
-    if ((await findWorkspace(services, route.workspaceId as string)) === undefined) {
+    const workspaceId = routeParam(route, "workspaceId")
+    const paneId = routeParam(route, "paneId")
+    if ((await findWorkspace(services, workspaceId)) === undefined) {
       writeJson(response, 200, {})
       return true
     }
-    await run(services.db.deleteWorkspacePane(route.workspaceId as string, route.paneId as string))
-    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", route.paneId as string, {
-      id: route.paneId,
-      workspaceId: route.workspaceId
+    await run(services.db.deleteWorkspacePane(workspaceId, paneId))
+    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", paneId, {
+      id: paneId,
+      workspaceId
     })
     writeJson(response, 200, {})
     return true
@@ -162,21 +165,18 @@ export const routeWorkspaces = async (
 
   if (paneRoute !== undefined && request.method === "PUT") {
     const payload = await readSchema(request, UpsertWorkspacePaneRequestSchema)
-    if (payload.id !== undefined && payload.id.toLowerCase() !== paneRoute.paneId?.toLowerCase()) {
+    const workspaceId = routeParam(paneRoute, "workspaceId")
+    const paneId = routeParam(paneRoute, "paneId")
+    if (payload.id !== undefined && payload.id.toLowerCase() !== paneId.toLowerCase()) {
       throw new HttpFailure(
         400,
-        `Pane id in the body (${payload.id}) does not match the path (${paneRoute.paneId})`
+        `Pane id in the body (${payload.id}) does not match the path (${paneId})`
       )
     }
-    if ((await findWorkspace(services, paneRoute.workspaceId as string)) === undefined) {
-      throw new HttpFailure(404, `Workspace not found: ${paneRoute.workspaceId}`)
+    if ((await findWorkspace(services, workspaceId)) === undefined) {
+      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
     }
-    const pane = await run(
-      services.db.upsertWorkspacePane(paneRoute.workspaceId as string, {
-        ...payload,
-        id: paneRoute.paneId as string
-      })
-    )
+    const pane = await run(services.db.upsertWorkspacePane(workspaceId, { ...payload, id: paneId }))
     await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
     writeJson(response, 200, pane)
     return true
@@ -184,23 +184,19 @@ export const routeWorkspaces = async (
 
   if (paneRoute !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateWorkspacePaneRequestSchema)
+    const workspaceId = routeParam(paneRoute, "workspaceId")
+    const paneId = routeParam(paneRoute, "paneId")
     const panes = await run(services.db.listWorkspacePanes)
     if (
       !panes.some(
         (candidate) =>
-          candidate.id.toLowerCase() === (paneRoute.paneId as string).toLowerCase() &&
-          candidate.workspaceId.toLowerCase() === (paneRoute.workspaceId as string).toLowerCase()
+          candidate.id.toLowerCase() === paneId.toLowerCase() &&
+          candidate.workspaceId.toLowerCase() === workspaceId.toLowerCase()
       )
     ) {
-      throw new HttpFailure(404, `Workspace pane not found: ${paneRoute.paneId}`)
+      throw new HttpFailure(404, `Workspace pane not found: ${paneId}`)
     }
-    const pane = await run(
-      services.db.updateWorkspacePane(
-        paneRoute.workspaceId as string,
-        paneRoute.paneId as string,
-        payload
-      )
-    )
+    const pane = await run(services.db.updateWorkspacePane(workspaceId, paneId, payload))
     await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
     writeJson(response, 200, pane)
     return true

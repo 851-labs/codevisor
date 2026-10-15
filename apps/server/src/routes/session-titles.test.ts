@@ -1,7 +1,9 @@
+import { decode } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, listEvents } from "../test-support.js"
-import { setUpWorkspace } from "./session-test-support.js"
+import { field } from "./response-test-support.js"
+import { CreatedSession, setUpWorkspace } from "./session-test-support.js"
 
 describe("session titles", () => {
   it("replaces the first-send fallback and protects an explicit rename from later harness updates", async () => {
@@ -11,7 +13,7 @@ describe("session titles", () => {
       body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "New Chat" })
     })
     expect(created.status).toBe(201)
-    const session = created.body as { id: string; agentSessionId: string }
+    const session = decode(CreatedSession)(created.body)
     const patch = async (title: string, titleIntent: string) =>
       jsonRequest(server, `/v1/sessions/${session.id}`, {
         method: "PATCH",
@@ -42,7 +44,7 @@ describe("session titles", () => {
       published.some(
         (event) =>
           event.kind === "session.updated" &&
-          (event.payload as { title?: string }).title === "Fix login validation"
+          field(event.payload, "title") === "Fix login validation"
       )
     ).toBe(true)
   })

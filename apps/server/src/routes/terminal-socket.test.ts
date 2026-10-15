@@ -5,6 +5,8 @@ import { Effect } from "effect"
 import { describe, expect, it, onTestFinished } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
 
+import { listeningPort } from "../test-support-net.js"
+import { field } from "./response-test-support.js"
 import {
   attachTerminalSocket,
   BINARY_OUTPUT,
@@ -38,6 +40,16 @@ const manualTimers = () => {
   }
 }
 
+const textFrame = (data: string | Uint8Array | undefined): unknown => {
+  if (typeof data !== "string") throw new Error("Expected a text frame")
+  return JSON.parse(data)
+}
+
+const binaryFrame = (data: string | Uint8Array | undefined): Uint8Array => {
+  if (!(data instanceof Uint8Array)) throw new Error("Expected a binary frame")
+  return data
+}
+
 const decodeBinary = (frame: Uint8Array) => {
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
   return {
@@ -64,7 +76,7 @@ describe("terminal socket sender", () => {
     sender.sink({ type: "output", seq: 3, data: "c" })
     sender.sink({ type: "exit", seq: 4, exitCode: 0 })
     immediates[1]!()
-    expect(socket.sent.map((data) => JSON.parse(data as string))).toEqual([
+    expect(socket.sent.map(textFrame)).toEqual([
       { type: "output", seq: 2, data: "ab" },
       { type: "output", seq: 3, data: "c" },
       { type: "exit", seq: 4, exitCode: 0 }
@@ -82,12 +94,12 @@ describe("terminal socket sender", () => {
     })
     sender.sink({ type: "output", seq: 9, data: "\u001bcscreen é", reset: true })
     sender.sink({ type: "error", seq: 0, message: "nope" })
-    expect(decodeBinary(socket.sent[0] as Uint8Array)).toEqual({
+    expect(decodeBinary(binaryFrame(socket.sent[0]))).toEqual({
       kind: BINARY_OUTPUT_RESET,
       seq: 9,
       data: "\u001bcscreen é"
     })
-    expect(JSON.parse(socket.sent[1] as string)).toEqual({ type: "error", seq: 0, message: "nope" })
+    expect(textFrame(socket.sent[1])).toEqual({ type: "error", seq: 0, message: "nope" })
     expect(decodeBinary(encodeBinaryOutput(2 ** 40, "x", false))).toEqual({
       kind: BINARY_OUTPUT,
       seq: 2 ** 40,
@@ -134,7 +146,7 @@ describe("terminal socket sender", () => {
     sender.sink({ type: "size", seq: 0, cols: 80, rows: 24 })
     sender.sink({ type: "size", seq: 0, cols: 80, rows: 24 })
     sender.sink({ type: "size", seq: 0, cols: 100, rows: 24 })
-    expect(socket.sent.map((data) => JSON.parse(data as string))).toEqual([
+    expect(socket.sent.map(textFrame)).toEqual([
       { type: "size", seq: 0, cols: 80, rows: 24 },
       { type: "size", seq: 0, cols: 100, rows: 24 }
     ])
@@ -232,7 +244,7 @@ const connect = async (
     }
   })
   await once(server, "listening")
-  const { port } = server.address() as { port: number }
+  const port = listeningPort(server)
   client = new WebSocket(`ws://127.0.0.1:${port}`)
   clientClosed = observeClientClosure(client)
   const messages: Array<unknown> = []
@@ -242,7 +254,7 @@ const connect = async (
     const message: unknown = isBinary
       ? decodeBinary(new Uint8Array(data))
       : JSON.parse(data.toString())
-    if ((message as { type?: string }).type === "size") {
+    if (field(message, "type") === "size") {
       sizes.push(message)
       return
     }
@@ -299,7 +311,7 @@ describe("terminal socket", () => {
       { type: "pong", seq: 0, t: 42 },
       { kind: BINARY_OUTPUT, seq: 2, data: "live" }
     ])
-    expect(messages.slice(4).map((message) => (message as { type: string }).type)).toEqual([
+    expect(messages.slice(4).map((message) => field(message, "type"))).toEqual([
       "error",
       "error",
       "error",

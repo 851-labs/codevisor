@@ -1,9 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Socket } from "node:net"
 
-import type { EventEnvelope } from "@codevisor/api"
+import { decode } from "@codevisor/api"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import { Schema } from "effect"
 import { WebSocket, type WebSocketServer } from "ws"
 
 import type { ClientControlBroker } from "../infra/client-control.js"
@@ -43,7 +44,7 @@ export const handleEvents = async (
         return response.writableLength
       },
       send(data) {
-        writeSse(response, JSON.parse(data) as EventEnvelope)
+        writeSse(response, data)
       },
       close() {
         response.end()
@@ -219,8 +220,11 @@ const numberSearchParam = (url: URL, name: string): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-const writeSse = (response: ServerResponse, event: EventEnvelope): void => {
+const SseFrame = Schema.Struct({ id: Schema.Number, kind: Schema.String })
+
+const writeSse = (response: ServerResponse, data: string): void => {
+  const event = decode(SseFrame)(JSON.parse(data))
   response.write(`id: ${event.id}\n`)
   response.write(`event: ${event.kind}\n`)
-  response.write(`data: ${JSON.stringify(event)}\n\n`)
+  response.write(`data: ${data}\n\n`)
 }

@@ -2,10 +2,18 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest } from "../test-support.js"
 import { setUpWorkspace } from "./session-test-support.js"
+
+const HarnessOptionIds = Schema.Struct({
+  harnesses: Schema.Array(
+    Schema.Struct({ configOptions: Schema.Array(Schema.Struct({ id: Schema.String })) })
+  )
+})
 
 describe("session catalog routes", () => {
   it("lists harnesses, rescans, and discovers capabilities", async () => {
@@ -122,13 +130,9 @@ describe("session catalog routes", () => {
       harnesses: [{ harness: { id: "codex" } }]
     })
     expect(
-      (
-        missingCwdCapabilities.body as {
-          readonly harnesses: ReadonlyArray<{
-            readonly configOptions: ReadonlyArray<{ readonly id: string }>
-          }>
-        }
-      ).harnesses[0]?.configOptions.map((option) => option.id)
+      decode(HarnessOptionIds)(missingCwdCapabilities.body).harnesses[0]?.configOptions.map(
+        (option) => option.id
+      )
     ).toContain("model")
     expect(agents.inspections.at(-1)).toEqual(["codex", tmpdir()])
     expect(

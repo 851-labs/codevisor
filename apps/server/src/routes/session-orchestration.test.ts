@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import { appendAndPublish } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import { jsonRequest, makeServices, run, startWithApp, tempDirs, waitFor } from "../test-support.js"
+import { idOf, itemsOf } from "./response-test-support.js"
 import { waitForSessions } from "./session-wait.js"
 
 const fixture = async () => {
@@ -156,20 +157,22 @@ describe("finding an orchestrator's work", () => {
     const { server, session } = await fixture()
     const parent = await session()
     const create = async (body: Record<string, unknown>) =>
-      (
-        (await jsonRequest(server, "/v1/sessions", {
-          method: "POST",
-          body: JSON.stringify({ projectId: parent.projectId, harnessId: "codex", ...body })
-        })) as { readonly body: { readonly id: string } }
-      ).body.id
+      idOf(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            method: "POST",
+            body: JSON.stringify({ projectId: parent.projectId, harnessId: "codex", ...body })
+          })
+        ).body
+      )
     const worker = await create({
       parentSessionId: parent.id,
       labels: { role: "worker", issue: "851-1" }
     })
     const reviewer = await create({ parentSessionId: parent.id, labels: { role: "reviewer" } })
     const ids = async (query: string) =>
-      ((await jsonRequest(server, `/v1/sessions${query}`)).body as ReadonlyArray<{ id: string }>)
-        .map((candidate) => candidate.id)
+      itemsOf((await jsonRequest(server, `/v1/sessions${query}`)).body)
+        .map(idOf)
         .toSorted()
 
     expect(await ids(`?parentSessionId=${parent.id.toUpperCase()}`)).toEqual(
@@ -203,11 +206,7 @@ describe("finding an orchestrator's work", () => {
     await put(labeled, { batch: "a" })
     await put("0b2d6a47-5d0f-4c77-9bfa-4f3b1f7f0a02")
     expect(
-      (
-        (await jsonRequest(server, "/v1/workspaces?label=batch=a")).body as ReadonlyArray<{
-          id: string
-        }>
-      ).map((workspace) => workspace.id)
+      itemsOf((await jsonRequest(server, "/v1/workspaces?label=batch=a")).body).map(idOf)
     ).toEqual([labeled])
   })
 })

@@ -6,6 +6,7 @@ import sharp from "sharp"
 import { expect, it, onTestFinished } from "vitest"
 
 import { start } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
 
 it("serves bounded file and filesystem previews without changing original download bytes", async () => {
   const { server } = await start()
@@ -23,8 +24,8 @@ it("serves bounded file and filesystem previews without changing original downlo
     headers: { "Content-Type": "image/png" },
     body: new Uint8Array(bytes)
   })
-  const file = (await uploaded.json()) as { id: string }
-  for (const route of [`/v1/files/${file.id}`, `/v1/fs/file?path=${encodeURIComponent(path)}`]) {
+  const fileId = idOf(await uploaded.json())
+  for (const route of [`/v1/files/${fileId}`, `/v1/fs/file?path=${encodeURIComponent(path)}`]) {
     const preview = await fetch(`${server.url}${route}${route.includes("?") ? "&" : "?"}preview=1`)
     expect(preview.status).toBe(200)
     expect(preview.headers.get("content-type")).toBe("image/png")

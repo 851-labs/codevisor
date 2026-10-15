@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import {
-  canonicalExecutionArgs,
-  type CodevisorExecutionState,
-  type CodevisorSkillRead
-} from "@codevisor/api"
+import { canonicalExecutionArgs } from "@codevisor/api"
+
+type ForwardedRecord = Readonly<Record<string, unknown>>
 
 const executeToolTitles = new Set([
   "mcp__codevisor__execute",
@@ -24,13 +22,13 @@ interface TrackedCall {
   hostRunning?: boolean
   parentToolCallId?: string
   meta?: Record<string, unknown>
-  execution?: CodevisorExecutionState
-  skill?: CodevisorSkillRead
+  execution?: ForwardedRecord
+  skill?: ForwardedRecord
   argsHash?: string
 }
 
 interface PendingExecution {
-  readonly execution: CodevisorExecutionState
+  readonly execution: ForwardedRecord
   readonly receivedAt: number
 }
 
@@ -77,7 +75,7 @@ export class ExecutionAnnotator {
       this.prunePending(state)
       state.pending.delete(argsHash)
       state.pending.set(argsHash, {
-        execution: execution as unknown as CodevisorExecutionState,
+        execution,
         receivedAt: this.now()
       })
       if (state.pending.size > maxPendingPerSession) {
@@ -85,14 +83,7 @@ export class ExecutionAnnotator {
       }
       return []
     }
-    return [
-      annotation(
-        event,
-        toolCallId,
-        state.calls.get(toolCallId)!,
-        execution as unknown as CodevisorExecutionState
-      )
-    ]
+    return [annotation(event, toolCallId, state.calls.get(toolCallId)!, execution)]
   }
 
   private receiveToolCall(
@@ -190,7 +181,7 @@ export class ExecutionAnnotator {
     const running = state === undefined ? undefined : runningHost(state)
     if (running === undefined || !isRecord(payload.skill)) return []
     const [toolCallId, tracked] = running
-    tracked.skill = payload.skill as unknown as CodevisorSkillRead
+    tracked.skill = payload.skill
     return [annotationEvent(event, toolCallId, tracked)]
   }
 
@@ -248,7 +239,7 @@ const annotation = (
   source: RuntimeEvent,
   toolCallId: string,
   tracked: TrackedCall,
-  execution: CodevisorExecutionState
+  execution: ForwardedRecord
 ): RuntimeEvent => {
   tracked.execution = execution
   return annotationEvent(source, toolCallId, tracked)

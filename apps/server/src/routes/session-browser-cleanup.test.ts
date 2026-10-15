@@ -4,7 +4,6 @@ import { join } from "node:path"
 
 import { describe, expect, it, vi } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import {
   makeServices,
@@ -26,12 +25,7 @@ const fixture = async () => {
     services.db.createSession({ projectId: project.id, harnessId: "codex" })
   )
   const fanout = await run(makeEventFanout)
-  const sink = sessionEventSink(
-    services as unknown as CodevisorServerServices,
-    fanout,
-    "browser-cleanup",
-    session.id
-  )
+  const sink = sessionEventSink(services, fanout, "browser-cleanup", session.id)
   const ended = () =>
     sink({
       kind: "session.updated",

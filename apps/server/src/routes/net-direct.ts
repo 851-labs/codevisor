@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { networkInterfaces } from "node:os"
 
 import type { CloudSocket } from "@codevisor/cloud-client"
-import type { WebSocket } from "ws"
+import type { RawData } from "ws"
 
 import { writeJson, type CodevisorServerConfig } from "../server-context.js"
 import { liveCloudDeviceId } from "./cloud.js"
@@ -15,12 +15,14 @@ export interface DirectPathInfo {
 
 export const directHosts = (
   bindHost: string,
-  interfaces: () => Record<string, { address: string; family: string; internal: boolean }[]>
+  interfaces: () => NodeJS.Dict<
+    ReadonlyArray<{ readonly address: string; readonly family: string; readonly internal: boolean }>
+  >
 ): string[] => {
   if (bindHost === "127.0.0.1" || bindHost === "localhost") return []
   const hosts: string[] = []
   for (const entries of Object.values(interfaces())) {
-    for (const entry of entries) {
+    for (const entry of entries ?? []) {
       if (entry.internal || entry.family !== "IPv4") continue
       if (entry.address.startsWith("169.254.")) continue
       hosts.push(entry.address)
@@ -31,7 +33,7 @@ export const directHosts = (
 
 export const routeNetDirect = (
   config: CodevisorServerConfig,
-  request: IncomingMessage,
+  request: Pick<IncomingMessage, "method">,
   response: ServerResponse,
   url: URL
 ): boolean => {
@@ -43,19 +45,24 @@ export const routeNetDirect = (
     hosts:
       deviceId === null || !config.directPathEnabled
         ? []
-        : directHosts(
-            config.host,
-            networkInterfaces as unknown as () => Record<
-              string,
-              { address: string; family: string; internal: boolean }[]
-            >
-          )
+        : directHosts(config.host, networkInterfaces)
   }
   writeJson(response, 200, info)
   return true
 }
 
-export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
+export interface DirectSocket {
+  readonly send: (data: string | Uint8Array) => void
+  readonly close: (code?: number, reason?: string) => void
+  readonly terminate: () => void
+  readonly on: {
+    (event: "message", listener: (data: RawData, isBinary: boolean) => void): unknown
+    (event: "close", listener: (code: number) => void): unknown
+    (event: "error", listener: () => void): unknown
+  }
+}
+
+export const adaptDirectSocket = (socket: DirectSocket): CloudSocket => {
   const adapted: CloudSocket = {
     send: (data) => socket.send(data),
     close: (code, reason) => socket.close(code, reason),
@@ -66,7 +73,7 @@ export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
   }
   socket.on("message", (data, isBinary) => {
     try {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+      const bytes = Buffer.concat(Array.isArray(data) ? data : [new Uint8Array(data)])
       adapted.onmessage?.(isBinary ? new Uint8Array(bytes) : bytes.toString())
     } catch {
       socket.close(1011, "message handler failed")

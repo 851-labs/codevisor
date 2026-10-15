@@ -2,8 +2,8 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Harness } from "@codevisor/api"
-import type { HarnessAuthManager } from "@codevisor/harness-manager"
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -15,6 +15,17 @@ import {
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
+import { authStatus, fakeHarnessAuth } from "./harness-auth-test-support.js"
+import { idOf } from "./response-test-support.js"
+
+const Capabilities = Schema.Struct({
+  harnesses: Schema.Array(
+    Schema.Struct({
+      harness: Schema.Struct({ id: Schema.String, enabled: Schema.Boolean }),
+      configOptions: Schema.Array(Schema.Unknown)
+    })
+  )
+})
 
 describe("harness account routes", () => {
   it("rebinds a session pinned to a dead account when a working account is active", async () => {
@@ -44,7 +55,7 @@ describe("harness account routes", () => {
       id: "active-account",
       profileKind: "default"
     }
-    const auth = {
+    const auth = fakeHarnessAuth({
       accountContext: vi.fn(async (id: string) => {
         if (id === "active-account") return { id, profileKind: "default" as const }
         throw new Error("Harness account requires sign-in")
@@ -52,21 +63,23 @@ describe("harness account routes", () => {
       activeAccountContext: vi.fn(async () => activeContext),
       markAccountExpired: vi.fn(async () => undefined),
       subscribe: () => () => undefined
-    } as unknown as HarnessAuthManager
+    })
     const server = await startWithApp({ ...services, auth })
 
     const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-rebind-project-"))
     tempDirs.push(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        method: "POST",
-        body: JSON.stringify({ folderPath: projectFolder })
-      })
-    ).body as { id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          method: "POST",
+          body: JSON.stringify({ folderPath: projectFolder })
+        })
+      ).body
+    )
 
     const pinned = await run(
       services.db.createSession({
-        projectId: project.id,
+        projectId,
         harnessId: "codex",
         harnessAccountId: "dead-account",
         agentSessionId: ""
@@ -94,7 +107,7 @@ describe("harness account routes", () => {
     activeContext = { id: "flaky-account", profileKind: "default" }
     const samePin = await run(
       services.db.createSession({
-        projectId: project.id,
+        projectId,
         harnessId: "codex",
         harnessAccountId: "flaky-account",
         agentSessionId: ""
@@ -112,7 +125,7 @@ describe("harness account routes", () => {
     activeContext = undefined
     const stranded = await run(
       services.db.createSession({
-        projectId: project.id,
+        projectId,
         harnessId: "codex",
         harnessAccountId: "dead-account",
         agentSessionId: ""
@@ -132,12 +145,14 @@ describe("harness account routes", () => {
 
   it("answers a pasteCode login flow through the accounts route", async () => {
     const { services } = await makeServices("server-answer")
-    const auth = {
-      answerLogin: (flowId: string, code: string) =>
-        Promise.resolve({ id: flowId, accountId: "a1", kind: "complete", echoed: code }),
+    const auth = fakeHarnessAuth({
+      answerLogin: (flowId, code) => {
+        const flow = { id: flowId, accountId: "a1", kind: "complete" as const, echoed: code }
+        return Promise.resolve(flow)
+      },
       activeAccountContext: () => Promise.resolve(undefined),
       subscribe: () => () => undefined
-    } as unknown as HarnessAuthManager
+    })
     const server = await startWithApp({ ...services, auth })
 
     const answered = await jsonRequest(
@@ -151,15 +166,15 @@ describe("harness account routes", () => {
 
   it("capabilities lists sign-in-pending harnesses without inspecting them", async () => {
     const { services, agents } = await makeServices("server-a")
-    const auth = {
-      decorateHarnesses: (list: ReadonlyArray<Harness>) =>
+    const auth = fakeHarnessAuth({
+      decorateHarnesses: (list) =>
         Promise.resolve([
           ...list.map((harness) => ({
             ...harness,
             desiredEnabled: true,
             enabled: true,
-            readiness: { state: "ready" },
-            auth: { state: "authenticated" }
+            readiness: { state: "ready" as const },
+            auth: authStatus("authenticated")
           })),
           ...list.map((harness) => ({
             ...harness,
@@ -167,24 +182,21 @@ describe("harness account routes", () => {
             name: "Claude Code",
             desiredEnabled: true,
             enabled: false,
-            readiness: { state: "ready" },
-            auth: { state: "unauthenticated" }
+            readiness: { state: "ready" as const },
+            auth: authStatus("unauthenticated")
           }))
         ]),
       activeAccountContext: () => Promise.resolve(undefined),
       subscribe: () => () => undefined
-    } as unknown as HarnessAuthManager
+    })
     const server = await startWithApp({ ...services, auth })
 
     const cwd = mkdtempSync(join(tmpdir(), "codevisor-cap-"))
     tempDirs.push(cwd)
-    const body = (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(cwd)}`))
-      .body as {
-      harnesses: Array<{
-        harness: { id: string; enabled: boolean }
-        configOptions: ReadonlyArray<unknown>
-      }>
-    }
+    const body = decode(Capabilities)(
+      (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(cwd)}`)).body
+    )
+
     expect(body.harnesses.some((entry) => entry.harness.id === "codex")).toBe(true)
     const pending = body.harnesses.filter((entry) => !entry.harness.enabled)
     expect(pending.length).toBeGreaterThan(0)

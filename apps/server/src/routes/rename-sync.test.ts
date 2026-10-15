@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, readSseEvents, listEvents } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
 import { setUpWorkspace } from "./session-test-support.js"
 
 describe("shared names", () => {
@@ -25,7 +26,7 @@ describe("shared names", () => {
       })
     })
     expect(created.status).toBe(201)
-    const chat = created.body as { id: string }
+    const chatId = idOf(created.body)
     const cursor = listEvents(services).at(-1)?.id ?? 0
     const readers = [readSseEvents(server, 2, cursor), readSseEvents(server, 2, cursor)]
     expect(
@@ -38,7 +39,7 @@ describe("shared names", () => {
     ).toMatchObject({ name: "Shared workspace", hasCustomName: true, isArchived: false })
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${chat.id}`, {
+        await jsonRequest(server, `/v1/sessions/${chatId}`, {
           method: "PATCH",
           body: JSON.stringify({ title: "Shared chat", titleIntent: "rename" })
         })
@@ -52,7 +53,7 @@ describe("shared names", () => {
       }),
       expect.objectContaining({
         kind: "session.updated",
-        subjectId: chat.id,
+        subjectId: chatId,
         payload: expect.objectContaining({ title: "Shared chat" })
       })
     ]
@@ -63,7 +64,7 @@ describe("shared names", () => {
       ])
     )
     expect((await jsonRequest(server, "/v1/sessions")).body).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: chat.id, title: "Shared chat" })])
+      expect.arrayContaining([expect.objectContaining({ id: chatId, title: "Shared chat" })])
     )
   })
 })

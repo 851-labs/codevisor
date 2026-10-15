@@ -2,21 +2,30 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode, type HarnessAuthState, type PluginSummary } from "@codevisor/api"
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
 import {
   harnesses,
   jsonRequest,
   makeServices,
+  pluginSummary,
   readWebSocketEvents,
   run,
   startWithApp,
   tempDirs
 } from "../test-support.js"
+import {
+  authStatus,
+  fakeHarnessAuth,
+  fakeHarnessLifecycle,
+  fakePlugins,
+  syncRows
+} from "./harness-auth-test-support.js"
+import { field, itemsOf } from "./response-test-support.js"
 
 const entry = (key: string, value: unknown, wallMs: number, deviceId = "device-a") => ({
   key,
@@ -24,7 +33,7 @@ const entry = (key: string, value: unknown, wallMs: number, deviceId = "device-a
   timestamp: { wallMs, counter: 0, deviceId }
 })
 
-const reconcileWithAuth = async (state: string, serverId: string) => {
+const reconcileWithAuth = async (state: HarnessAuthState, serverId: string) => {
   const { services: base } = await makeServices(serverId)
   await run(base.db.setHarnessEnabled("codex", false))
   await run(
@@ -36,16 +45,11 @@ const reconcileWithAuth = async (state: string, serverId: string) => {
       }
     ])
   )
-  const auth = {
+  const auth = fakeHarnessAuth({
     subscribe: () => () => {},
-    decorateHarnesses: (list: ReadonlyArray<unknown>) =>
-      Promise.resolve(
-        (list as Array<Record<string, unknown>>).map((harness) => ({
-          ...harness,
-          auth: { state }
-        }))
-      )
-  } as unknown as NonNullable<CodevisorServerServices["auth"]>
+    decorateHarnesses: (list) =>
+      Promise.resolve(list.map((harness) => ({ ...harness, auth: authStatus(state) })))
+  })
   const authedServer = await startWithApp({ ...base, auth })
   return jsonRequest(authedServer, "/v1/sync/harnesses/reconcile", { method: "POST" })
 }
@@ -76,12 +80,9 @@ describe("/v1/sync", () => {
     })
     expect(stale.body).toMatchObject({ entries: [entry("channel", "alpha", 10)] })
 
-    const events = (await readWebSocketEvents(server, 1, 0)) as Array<{
-      readonly kind: string
-      readonly payload: { readonly namespace?: string }
-    }>
-    expect(events[0]?.kind).toBe("sync.changed")
-    expect(events[0]?.payload).toMatchObject({ namespace: "settings" })
+    const events = await readWebSocketEvents(server, 1, 0)
+    expect(field(events[0], "kind")).toBe("sync.changed")
+    expect(field(events[0], "payload")).toMatchObject({ namespace: "settings" })
 
     expect((await jsonRequest(server, "/v1/sync/Bad%2FName")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/sync/settings", { method: "POST" })).status).toBe(405)
@@ -108,8 +109,9 @@ describe("/v1/sync", () => {
     expect(again.body).toMatchObject({ published: [], applied: [], removed: [] })
 
     const document = await jsonRequest(server, "/v1/sync/codevisor-skills")
-    const hash = (document.body as { entries: Array<{ value: { hash: string } }> }).entries[0]
-      ?.value.hash as string
+    const hash = decode(Schema.String)(
+      field(field(itemsOf(field(document.body, "entries"))[0], "value"), "hash")
+    )
 
     const blob = await fetch(`${server.url}/v1/sync/blobs/${hash}`)
     expect(blob.status).toBe(200)
@@ -177,8 +179,9 @@ describe("/v1/sync", () => {
       blocked: []
     })
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
-    const entries = (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries
-    expect(entries.find((synced) => synced.key === "codex")?.value).toMatchObject({
+    const entries = itemsOf(field(doc.body, "entries"))
+    const codex = entries.find((synced) => field(synced, "key") === "codex")
+    expect(field(codex, "value")).toMatchObject({
       enabled: true,
       installed: true,
       uninstall: false
@@ -212,12 +215,8 @@ describe("/v1/sync", () => {
     expect(blocked.body).toMatchObject({
       blocked: [{ id: "codex", reason: "Harness install unavailable on this machine" }]
     })
-    const readiness = (await jsonRequest(blockedServer, "/v1/sync/harness-readiness")).body as {
-      entries: Array<{
-        value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
-      }>
-    }
-    expect(readiness.entries.flatMap((synced) => synced.value.harnesses)).toContainEqual(
+    const readiness = (await jsonRequest(blockedServer, "/v1/sync/harness-readiness")).body
+    expect(syncRows(readiness, "harnesses")).toContainEqual(
       expect.objectContaining({
         id: "codex",
         state: "blocked",
@@ -236,15 +235,15 @@ describe("/v1/sync", () => {
       ])
     )
     const installs: Array<string> = []
-    const lifecycle = {
+    const lifecycle = fakeHarnessLifecycle({
       subscribe: () => () => {},
       onGateReleased: () => () => {},
-      decorateHarnesses: async (items: ReadonlyArray<unknown>) => items,
-      beginInstall: (harnessId: string) => {
+      decorateHarnesses: async (items) => items,
+      beginInstall: (harnessId) => {
         installs.push(harnessId)
         return Promise.resolve({ terminalId: "t1" })
       }
-    } as unknown as NonNullable<CodevisorServerServices["lifecycle"]>
+    })
     const installServer = await startWithApp({
       ...installable,
       lifecycle,
@@ -264,7 +263,7 @@ describe("/v1/sync", () => {
     expect(installing.body).toMatchObject({ installing: ["codex"] })
     expect(installs).toEqual(["codex"])
 
-    expect((await reconcileWithAuth("loggedOut", "server-h1")).body).toMatchObject({
+    expect((await reconcileWithAuth("unauthenticated", "server-h1")).body).toMatchObject({
       blocked: [{ id: "codex", reason: "Sign in required" }]
     })
     expect((await reconcileWithAuth("authenticated", "server-h2")).body).toMatchObject({
@@ -314,32 +313,32 @@ describe("/v1/sync", () => {
     const installs: Array<string> = []
     const enables: Array<readonly [string, boolean]> = []
     const removals: Array<string> = []
-    let pluginList = [
-      { id: "acme.paused", enabled: false, source: "managed", path: receiptDir },
-      { id: "acme.bare", enabled: true, source: "managed", path: bareDir },
-      { id: "dev.x", enabled: true, source: "linked", path: "/dev/x" }
+    let pluginList: Array<PluginSummary> = [
+      { ...pluginSummary, id: "acme.paused", enabled: false, source: "managed", path: receiptDir },
+      { ...pluginSummary, id: "acme.bare", enabled: true, source: "managed", path: bareDir },
+      { ...pluginSummary, id: "dev.x", enabled: true, source: "linked", path: "/dev/x" }
     ]
-    const plugins = {
+    const plugins = fakePlugins({
       subscribe: () => () => {},
       close: () => {},
       list: () => Promise.resolve({ plugins: [...pluginList] }),
-      importRemote: (request: { source: string }) => {
+      importRemote: (request) => {
         installs.push(request.source)
-        return Promise.resolve({ id: "acme.tunes" })
+        return Promise.resolve({ ...pluginSummary, id: "acme.tunes" })
       },
-      setEnabled: (pluginId: string, enabled: boolean) => {
+      setEnabled: (pluginId, enabled) => {
         enables.push([pluginId, enabled])
         pluginList = pluginList.map((plugin) =>
           plugin.id === pluginId ? { ...plugin, enabled } : plugin
         )
-        return Promise.resolve({})
+        return Promise.resolve({ ...pluginSummary, id: pluginId, enabled })
       },
-      remove: (pluginId: string) => {
+      remove: (pluginId) => {
         removals.push(pluginId)
         pluginList = pluginList.filter((plugin) => plugin.id !== pluginId)
         return Promise.resolve({ plugins: [] })
       }
-    } as unknown as NonNullable<CodevisorServerServices["plugins"]>
+    })
     const server = await startWithApp({ ...services, plugins })
 
     const result = await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
@@ -348,10 +347,11 @@ describe("/v1/sync", () => {
       published: [],
       installed: ["acme.tunes"]
     })
-    expect([...(result.body as { applied: Array<string> }).applied].toSorted()).toEqual([
-      "acme.paused",
-      "acme.tunes"
-    ])
+    expect(
+      decode(Schema.Struct({ applied: Schema.Array(Schema.String) }))(
+        result.body
+      ).applied.toSorted()
+    ).toEqual(["acme.paused", "acme.tunes"])
     expect(installs).toEqual(["acme/tunes"])
     expect(enables).toEqual([["acme.paused", true]])
 

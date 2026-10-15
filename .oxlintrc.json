@@ -65,15 +65,6 @@
   "overrides": [
     {
       "files": [
-        "apps/server/src/routes/assistant-artifacts.test.ts",
-        "apps/server/src/routes/cloud.ts",
-        "apps/server/src/routes/events.test.ts",
-        "apps/server/src/routes/execution-annotator.test.ts",
-        "apps/server/src/routes/file-delivery.test.ts",
-        "apps/server/src/routes/project-repo-identity.ts",
-        "apps/server/src/routes/session-browser-cleanup.test.ts",
-        "apps/server/src/routes/transcript-storage.test.ts",
-        "apps/server/src/routes/workspaces.ts",
         "packages/adapter-acp/src/notifications.ts",
         "packages/adapter-acp/src/runtime-account-handoff.test.ts",
         "packages/adapter-acp/src/runtime-acp-inspection-config.test.ts",
@@ -96,7 +87,6 @@
     {
       "files": [
         "apps/screen-sharing-rig/**",
-        "apps/server/src/routes/**",
         "apps/www/**",
         "packages/adapter-acp/**",
         "packages/adapter-antigravity/**",

@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { decode, Project } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
@@ -10,12 +11,14 @@ const setUp = async () => {
   const started = await start()
   const folder = mkdtempSync(join(tmpdir(), "codevisor-idempotency-"))
   tempDirs.push(folder)
-  const project = (
-    await jsonRequest(started.server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: folder }),
-      method: "POST"
-    })
-  ).body as { readonly id: string }
+  const project = decode(Project)(
+    (
+      await jsonRequest(started.server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: folder }),
+        method: "POST"
+      })
+    ).body
+  )
   await jsonRequest(started.server, "/v1/workspaces/ws-1", {
     body: JSON.stringify({ projectId: project.id, name: "One", hasCustomName: false }),
     method: "PUT"

@@ -1,5 +1,100 @@
-import type { HarnessAuthManager } from "@codevisor/harness-manager"
+import type { HarnessAuth, HarnessAuthState } from "@codevisor/api"
+import type { HarnessAuthManager, HarnessLifecycleManager } from "@codevisor/harness-manager"
+import type { PluginsManager } from "@codevisor/plugins"
 import { vi } from "vitest"
+
+import { field, itemsOf } from "./response-test-support.js"
+
+const unused = (): never => {
+  throw new Error("unused")
+}
+
+export const authStatus = (state: HarnessAuthState, detail?: string): HarnessAuth => ({
+  state,
+  accounts: [],
+  loginMethods: [],
+  supportsMultipleAccounts: false,
+  ...(detail === undefined ? {} : { detail })
+})
+
+export const syncRows = (body: unknown, key: string): ReadonlyArray<unknown> =>
+  itemsOf(field(body, "entries")).flatMap((entry) => itemsOf(field(field(entry, "value"), key)))
+
+export const rowWithId = (rows: ReadonlyArray<unknown>, id: string): unknown =>
+  rows.find((row) => field(row, "id") === id)
+
+export const fakeHarnessAuth = (
+  overrides: Partial<HarnessAuthManager> = {}
+): HarnessAuthManager => ({
+  decorateHarnesses: unused,
+  decorateHarnessesFromStoredState: unused,
+  refresh: unused,
+  accounts: unused,
+  createAccount: unused,
+  renameAccount: unused,
+  removeAccount: unused,
+  activateAccount: unused,
+  probeAccount: unused,
+  beginLogin: unused,
+  cancelLogin: unused,
+  answerLogin: unused,
+  logout: unused,
+  accountContext: unused,
+  activeAccountContext: unused,
+  markAccountExpired: unused,
+  subscribe: unused,
+  ...overrides
+})
+
+export const fakeHarnessLifecycle = (
+  overrides: Partial<HarnessLifecycleManager> = {}
+): HarnessLifecycleManager => ({
+  beginUninstall: unused,
+  decorateHarnesses: unused,
+  checkForUpdates: unused,
+  startPeriodicChecks: unused,
+  beginInstall: unused,
+  beginUpdate: unused,
+  notifyTurnStarted: unused,
+  notifyTurnEnded: unused,
+  isGated: unused,
+  bundledAppInfo: unused,
+  beginBundledAppUpdate: unused,
+  forcePendingUpdate: unused,
+  cancelPendingUpdate: unused,
+  finishPendingSetup: unused,
+  reconcileOnStartup: unused,
+  onGateReleased: unused,
+  subscribe: unused,
+  ...overrides
+})
+
+export const fakePlugins = (overrides: Partial<PluginsManager> = {}): PluginsManager => ({
+  startAll: unused,
+  list: unused,
+  get: unused,
+  issuePaneToken: unused,
+  fetchIcon: unused,
+  handleProxyRequest: unused,
+  handleUpgrade: unused,
+  restart: unused,
+  discoverRemote: unused,
+  importRemote: unused,
+  listUpdates: unused,
+  prepareUpdate: unused,
+  applyUpdate: unused,
+  restore: unused,
+  setEnabled: unused,
+  link: unused,
+  remove: unused,
+  unlink: unused,
+  subscribe: unused,
+  listTools: unused,
+  invokeTool: unused,
+  subscribeInstalled: unused,
+  close: unused,
+  ...overrides
+})
 
 export const makeAuthFixture = () => {
   const account = {

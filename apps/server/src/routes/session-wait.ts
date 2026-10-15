@@ -21,12 +21,16 @@ const wakingKinds: ReadonlySet<EventEnvelope["kind"]> = new Set([
   "session.deleted"
 ])
 
+/* v8 ignore next */
+const sidebarStateOf = (session: SessionSummary): SessionSidebarState =>
+  session.sidebarState ?? "idle"
+
 const settledIn = async (
   db: CodevisorDatabaseService,
   session: SessionSummary,
   until: ReadonlySet<SessionSidebarState>
 ): Promise<boolean> => {
-  const state = session.sidebarState as SessionSidebarState
+  const state = sidebarStateOf(session)
   if (state !== "idle" && state !== "unread") return until.has(state)
   if (!until.has(state) && !until.has("idle")) return false
   const queued = await run(db.listPromptQueue(session.id))
@@ -44,7 +48,7 @@ const waitedSession = async (
       : undefined
   return {
     id: session.id,
-    sidebarState: session.sidebarState as SessionSidebarState,
+    sidebarState: sidebarStateOf(session),
     ...(session.actionRequiredKind === undefined
       ? {}
       : { actionRequiredKind: session.actionRequiredKind }),

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, makeServices, pluginsStub, startWithApp, tempDirs } from "../test-support.js"
+import { field, idOf, itemsOf } from "./response-test-support.js"
 
 describe("plugin unlink route", () => {
   it("unlinks the plugin and closes its panes like an uninstall", async () => {
@@ -16,14 +17,16 @@ describe("plugin unlink route", () => {
     tempDirs.push(root)
     const projectFolder = join(root, "project")
     mkdirSync(projectFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: projectFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    const projectId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: projectFolder }),
+          method: "POST"
+        })
+      ).body
+    )
     await jsonRequest(server, "/v1/workspaces/ws-dev", {
-      body: JSON.stringify({ hasCustomName: false, name: "ws-dev", projectId: project.id }),
+      body: JSON.stringify({ hasCustomName: false, name: "ws-dev", projectId }),
       method: "PUT"
     })
     for (const [paneId, providerId] of [
@@ -43,10 +46,8 @@ describe("plugin unlink route", () => {
     expect(unlinked.body).toEqual({ plugins: [] })
     expect(calls).toContainEqual(["unlink", "owner.example"])
 
-    const panes = (await jsonRequest(server, "/v1/workspace-panes")).body as Array<{
-      id: string
-    }>
-    expect(panes.map((pane) => pane.id)).toEqual(["other-pane"])
+    const panes = itemsOf((await jsonRequest(server, "/v1/workspace-panes")).body)
+    expect(panes.map((pane) => field(pane, "id"))).toEqual(["other-pane"])
 
     const missing = await jsonRequest(server, "/v1/plugins/owner.ghost/link", {
       method: "DELETE"

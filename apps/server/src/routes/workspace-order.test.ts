@@ -2,10 +2,15 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { initialWorkspacePosition, type Workspace } from "@codevisor/api"
+import { decode, initialWorkspacePosition, Workspace, WorkspaceSnapshot } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
+
+const decodeWorkspace = decode(Workspace)
+const decodeWorkspaces = decode(Schema.Array(Workspace))
 
 describe("workspace ordering over HTTP", () => {
   it("publishes moves, applies the latest one even from a stale revision, and snapshots the same order", async () => {
@@ -17,20 +22,22 @@ describe("workspace ordering over HTTP", () => {
       method: "PUT",
       body: JSON.stringify({ projectId: project.id, name: "A", hasCustomName: false })
     }
-    const first = (await jsonRequest(server, "/v1/workspaces/first", put)).body as Workspace
+    const first = decodeWorkspace((await jsonRequest(server, "/v1/workspaces/first", put)).body)
     await jsonRequest(server, "/v1/workspaces/second", put)
     const frontier = initialWorkspacePosition(2_000_000_000_000, "third")
-    const third = (
-      await jsonRequest(server, "/v1/workspaces/third", {
-        method: "PUT",
-        body: JSON.stringify({
-          projectId: project.id,
-          name: "New",
-          hasCustomName: false,
-          sidebarOrderHead: frontier
+    const third = decodeWorkspace(
+      (
+        await jsonRequest(server, "/v1/workspaces/third", {
+          method: "PUT",
+          body: JSON.stringify({
+            projectId: project.id,
+            name: "New",
+            hasCustomName: false,
+            sidebarOrderHead: frontier
+          })
         })
-      })
-    ).body as Workspace
+      ).body
+    )
     expect(third.sidebarPosition! < frontier).toBe(true)
     const replay = listEvents(services)
     const live = readSseEvents(server, 1, replay.at(-1)?.id ?? 0)
@@ -54,9 +61,9 @@ describe("workspace ordering over HTTP", () => {
     })
     expect(stale.status).toBe(200)
     expect(stale.body).toMatchObject({ sidebarPosition: latest, sidebarOrderRevision: 3 })
-    const snapshot = (await jsonRequest(server, "/v1/workspace-snapshot")).body as {
-      workspaces: Workspace[]
-    }
+    const snapshot = decode(WorkspaceSnapshot)(
+      (await jsonRequest(server, "/v1/workspace-snapshot")).body
+    )
     expect(snapshot.workspaces.map((row) => row.id)).toEqual(["third", "second", "first"])
     const invalid = await jsonRequest(server, "/v1/workspaces/first", {
       method: "PATCH",
@@ -74,18 +81,16 @@ describe("workspace ordering over HTTP", () => {
       })
     })
     expect(session.status).toBe(201)
-    const rows = (await jsonRequest(server, "/v1/workspaces")).body as Workspace[]
+    const rows = decodeWorkspaces((await jsonRequest(server, "/v1/workspaces")).body)
     expect(rows[0]?.id).toBe("fourth")
     expect(rows[0]!.sidebarPosition! < third.sidebarPosition!).toBe(true)
-    const movedSession = await jsonRequest(
-      server,
-      `/v1/sessions/${(session.body as { id: string }).id}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ workspaceId: "fifth", sidebarOrderHead: rows[0]?.sidebarPosition })
-      }
-    )
+    const movedSession = await jsonRequest(server, `/v1/sessions/${idOf(session.body)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ workspaceId: "fifth", sidebarOrderHead: rows[0]?.sidebarPosition })
+    })
     expect(movedSession.status).toBe(200)
-    expect(((await jsonRequest(server, "/v1/workspaces")).body as Workspace[])[0]?.id).toBe("fifth")
+    expect(decodeWorkspaces((await jsonRequest(server, "/v1/workspaces")).body)[0]?.id).toBe(
+      "fifth"
+    )
   })
 })

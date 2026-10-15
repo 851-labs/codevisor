@@ -20,6 +20,7 @@ import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 
 import { HttpFailure, readJson, writeJson } from "../server-context.js"
+import { errorCode } from "../unknown-values.js"
 import { searchFileEntries } from "./file-search.js"
 
 const textLimit = 4 * 1024 * 1024
@@ -241,7 +242,7 @@ async function writeDocument(
 
 function documentFailure(error: unknown): unknown {
   if (error instanceof HttpFailure) return error
-  const code = (error as NodeJS.ErrnoException).code
+  const code = errorCode(error)
   if (code === "ENOENT")
     return new HttpFailure(404, "This file has been moved or deleted.", "not_found")
   if (code === "EACCES" || code === "EPERM")

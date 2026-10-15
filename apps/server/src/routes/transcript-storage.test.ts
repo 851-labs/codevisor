@@ -1,11 +1,26 @@
+import { decode } from "@codevisor/api"
 import { makeCodevisorProvider } from "@codevisor/automation"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation"
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv"
+import { Schema } from "effect"
 import { expect, it } from "vitest"
 
 import { jsonRequest, run } from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
+
+const TranscriptToolPage = Schema.StructWithRest(
+  Schema.Struct({
+    items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String }))
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)]
+)
+
+const jsonSchemaOf = ({ properties, required, ...rest }: Tool["inputSchema"]): JsonSchemaType => ({
+  ...rest,
+  ...(properties === undefined ? {} : { properties }),
+  ...(required === undefined ? {} : { required })
+})
 
 it("serves a navigation snapshot and validates bidirectional transcript and body cursors", async () => {
   const { server, services, workspace } = await setUpWorkspace()
@@ -80,24 +95,25 @@ it("pages the agent transcript tools with the cursors the route returns", async 
   const validator = new AjvJsonSchemaValidator()
   const call = async (name: string, args: Record<string, unknown>) => {
     const tool = provider.tools.find((candidate) => candidate.name === name)!
-    expect(validator.getValidator(tool.inputSchema as JsonSchemaType)(args)).toMatchObject({
+    expect(validator.getValidator(jsonSchemaOf(tool.inputSchema))(args)).toMatchObject({
       valid: true
     })
-    const result = (await provider.invoke({ sessionId: session.id }, name, args)) as CallToolResult
+    const result = await provider.invoke({ sessionId: session.id }, name, args)
     const content = result.content[0]
     if (content?.type !== "text") throw new Error("Expected text tool content")
-    return JSON.parse(content.text) as Record<string, unknown> & {
-      readonly items: ReadonlyArray<{ readonly id: string; readonly text: string }>
-    }
+    const parsed: unknown = JSON.parse(content.text)
+    return parsed
   }
+  const transcript = async (args: Record<string, unknown>) =>
+    decode(TranscriptToolPage)(await call("sessions.transcript", args))
 
-  const newest = await call("sessions.transcript", { limit: 2 })
+  const newest = await transcript({ limit: 2 })
   expect(newest.items.map((item) => item.text)).toEqual(["second", "third"])
   expect(newest).toMatchObject({ hasMore: true, nextBefore: expect.any(String) })
-  const older = await call("sessions.transcript", { before: newest.nextBefore, limit: 2 })
+  const older = await transcript({ before: newest.nextBefore, limit: 2 })
   expect(older.items.map((item) => item.text)).toEqual(["first"])
   expect(older.hasMore).toBe(false)
-  const newer = await call("sessions.transcript", { before: older.nextAfter, limit: 2 })
+  const newer = await transcript({ before: older.nextAfter, limit: 2 })
   expect(newer.items.map((item) => item.text)).toEqual(["second", "third"])
 
   const details = await call("sessions.transcript_details", {

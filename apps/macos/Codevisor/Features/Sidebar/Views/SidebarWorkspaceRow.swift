@@ -8,7 +8,6 @@ struct SidebarWorkspaceRow: View {
   var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
-  var updatedAt: Date? = nil
   var pullRequest: ServerGitPullRequest? = nil
   var machine: SidebarRowMachine? = nil
   let isSelected: Bool
@@ -72,17 +71,6 @@ struct SidebarWorkspaceRow: View {
           .help("Archive workspace")
           .accessibilityLabel("Archive \(SidebarWorkspaceRowLabel.title(for: name))")
           .accessibilityHidden(true)
-        } else if let updatedAt {
-          TimelineView(.everyMinute) { context in
-            Text(RelativeTime.short(from: updatedAt, now: context.date))
-              .font(.caption2)
-              .monospacedDigit()
-              .foregroundStyle(.tertiary)
-              .lineLimit(1)
-              .fixedSize()
-          }
-          .frame(minWidth: 24, minHeight: 14, alignment: .trailing)
-          .help(updatedAt.formatted(date: .abbreviated, time: .shortened))
         }
       }
       .padding(.horizontal, 8)

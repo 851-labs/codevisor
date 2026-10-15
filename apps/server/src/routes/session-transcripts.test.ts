@@ -1,3 +1,5 @@
+import { decode } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -7,7 +9,24 @@ import {
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
+import { field, itemsOf } from "./response-test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
+
+const ScopedReplay = Schema.Array(
+  Schema.Struct({
+    id: Schema.Number,
+    subjectId: Schema.String,
+    subjectRevision: Schema.optional(Schema.Number)
+  })
+)
+
+const TranscriptPageFields = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({ id: Schema.String, role: Schema.String, text: Schema.String })
+  ),
+  hasMore: Schema.Boolean,
+  eventCursor: Schema.Number
+})
 
 describe("session transcript routes", () => {
   it("records prompts, transcripts, history, and scoped event replay", async () => {
@@ -84,12 +103,9 @@ describe("session transcript routes", () => {
       ])
     )
     expect((await jsonRequest(server, `/v1/sessions/${session.id}/events`)).status).toBe(410)
-    const scopedReplay = (await readWebSocketEvents(
-      server,
-      2,
-      0,
-      `/v1/sessions/${session.id}/events/socket`
-    )) as Array<{ id: number; subjectId: string; subjectRevision?: number }>
+    const scopedReplay = decode(ScopedReplay)(
+      await readWebSocketEvents(server, 2, 0, `/v1/sessions/${session.id}/events/socket`)
+    )
     expect(scopedReplay.every((event) => event.subjectId === session.id)).toBe(true)
     expect(scopedReplay.map((event) => event.id)).toEqual([1, 2])
     expect(scopedReplay.map((event) => event.subjectRevision)).toEqual([1, 2])
@@ -98,11 +114,7 @@ describe("session transcript routes", () => {
       `/v1/sessions/${session.id}/transcript?limit=2`
     )
     expect(transcriptResponse.status).toBe(200)
-    const transcript = transcriptResponse.body as {
-      items: Array<{ id: string; role: string; text: string }>
-      hasMore: boolean
-      eventCursor: number
-    }
+    const transcript = decode(TranscriptPageFields)(transcriptResponse.body)
     expect(transcript.items.length).toBeLessThanOrEqual(2)
     expect(transcript.items.some((item) => item.role === "assistant")).toBe(true)
     expect(transcript.eventCursor).toBeGreaterThan(0)
@@ -114,7 +126,7 @@ describe("session transcript routes", () => {
     )
     expect(transcriptDetails.status).toBe(200)
     expect(transcriptDetails.body).toMatchObject({ itemId: assistantTranscriptItem.id })
-    expect((transcriptDetails.body as { entries: unknown[] }).entries.length).toBeGreaterThan(0)
+    expect(itemsOf(field(transcriptDetails.body, "entries")).length).toBeGreaterThan(0)
     expect(
       await jsonRequest(server, `/v1/sessions/${session.id}/transcript?before=wat`)
     ).toMatchObject({ status: 400 })

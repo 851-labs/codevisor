@@ -7,22 +7,23 @@ import { WebSocket } from "ws"
 
 import { jsonRequest, makeServices, start, startWithApp } from "../test-support.js"
 import { attachLivePreviewSocket } from "./live-preview-socket.js"
+import { field } from "./response-test-support.js"
 
-const fakeSocket = () => {
-  const socket = Object.assign(new EventEmitter(), {
-    OPEN: 1,
-    readyState: 1,
-    bufferedAmount: 0,
-    sent: [] as Array<Record<string, unknown>>,
-    send(text: string) {
-      socket.sent.push(JSON.parse(text) as Record<string, unknown>)
-    }
-  })
-  return socket
+class FakePreviewSocket extends EventEmitter {
+  readonly OPEN = WebSocket.OPEN
+  readyState: WebSocket["readyState"] = WebSocket.OPEN
+  bufferedAmount = 0
+  readonly sent: Array<unknown> = []
+  send(text: string): void {
+    const message: unknown = JSON.parse(text)
+    this.sent.push(message)
+  }
 }
 
+const fakeSocket = () => new FakePreviewSocket()
+
 const advertisedFeatures = async (server: Awaited<ReturnType<typeof startWithApp>>) => {
-  return ((await jsonRequest(server, "/v1/info")).body as { features: Array<string> }).features
+  return field((await jsonRequest(server, "/v1/info")).body, "features")
 }
 
 describe("browser preview socket", () => {
@@ -49,7 +50,7 @@ describe("browser preview socket", () => {
         }
       },
       "chat",
-      socket as unknown as WebSocket
+      socket
     )
 
     useListener!("browser")

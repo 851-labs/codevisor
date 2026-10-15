@@ -3,10 +3,12 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { McpServer } from "@codevisor/api"
+import { decode, McpServer } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { jsonRequest, run, start, startWithApp, tempDirs } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
 
 describe("mcp installation routes", () => {
   it("detects MCP authorization challenges", async () => {
@@ -103,7 +105,7 @@ describe("mcp installation routes", () => {
     expect(JSON.stringify(created.body)).not.toContain("secret-header")
     expect(JSON.stringify(created.body)).not.toContain("secretCipher")
 
-    const id = (created.body as { id: string }).id
+    const id = idOf(created.body)
     const updated = await jsonRequest(server, `/v1/mcps/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ name: "Renamed" })
@@ -161,7 +163,7 @@ describe("mcp installation routes", () => {
     expect(local.status).toBe(201)
     expect(local.body).toMatchObject({ environmentNames: ["API_KEY", "REGION"] })
     expect(JSON.stringify(local.body)).not.toContain("local-secret")
-    const localId = (local.body as { id: string }).id
+    const localId = idOf(local.body)
     const changedLocal = await jsonRequest(server, `/v1/mcps/${localId}`, {
       method: "PATCH",
       body: JSON.stringify({ env: { ACCOUNT: "new-secret" }, removeEnv: ["REGION"] })
@@ -208,7 +210,7 @@ describe("mcp installation routes", () => {
       ).status
     ).toBe(400)
 
-    const publicLocal = local.body as McpServer
+    const publicLocal = decode(McpServer)(local.body)
     vi.spyOn(services.mcp, "connect").mockResolvedValue(publicLocal)
     vi.spyOn(services.mcp, "tools").mockResolvedValue([])
     vi.spyOn(services.mcp, "beginOAuth").mockResolvedValue("https://example.test/authorize")
@@ -248,7 +250,7 @@ describe("mcp installation routes", () => {
       204
     )
     expect(
-      ((await jsonRequest(server, "/v1/mcps")).body as ReadonlyArray<McpServer>).map(
+      decode(Schema.Array(McpServer))((await jsonRequest(server, "/v1/mcps")).body).map(
         (candidate) => candidate.id
       )
     ).toEqual(["browser", "codevisor", "computer"])

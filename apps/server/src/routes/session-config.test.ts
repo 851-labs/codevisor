@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { HarnessAuthManager } from "@codevisor/harness-manager"
-import { Effect } from "effect"
+import { decode } from "@codevisor/api"
+import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -17,6 +17,8 @@ import {
   listEvents,
   listSubjectEvents
 } from "../test-support.js"
+import { fakeHarnessAuth } from "./harness-auth-test-support.js"
+import { idOf } from "./response-test-support.js"
 
 describe("session configuration routes", () => {
   it("shares session read and action-required state through the HTTP API", async () => {
@@ -136,18 +138,22 @@ describe("session configuration routes", () => {
     tempDirs.push(workspaceRoot)
     const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
-    const workspace = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: workspaceFolder }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Subagent" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string; readonly agentSessionId: string }
+    const workspaceId = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath: workspaceFolder }),
+          method: "POST"
+        })
+      ).body
+    )
+    const session = decode(Schema.Struct({ id: Schema.String, agentSessionId: Schema.String }))(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ projectId: workspaceId, harnessId: "codex", title: "Subagent" }),
+          method: "POST"
+        })
+      ).body
+    )
 
     await agents.emit(session.agentSessionId, {
       kind: "session.output",
@@ -282,7 +288,7 @@ describe("session configuration routes", () => {
         canLogout: true
       }
     ]
-    const auth = {
+    const auth = fakeHarnessAuth({
       accounts: vi.fn(async () => accounts),
       accountContext: vi.fn(async (id: string) => ({ id, profileKind: "default" as const })),
       activeAccountContext: vi.fn(async () => ({
@@ -290,7 +296,8 @@ describe("session configuration routes", () => {
         profileKind: "default" as const
       })),
       subscribe: () => () => undefined
-    } as unknown as HarnessAuthManager
+    })
+
     const authenticatedServer = await startWithApp({ ...routeServices, auth })
 
     projectedSession = { ...withoutCwd, serverId: "server-a" }

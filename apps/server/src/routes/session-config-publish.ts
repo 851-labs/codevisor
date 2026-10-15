@@ -6,6 +6,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { field } from "../unknown-values.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 
 export const publishSessionConfigOptions = async (
@@ -16,10 +17,8 @@ export const publishSessionConfigOptions = async (
   configOptions: ReadonlyArray<SessionConfigOption>
 ): Promise<void> => {
   if (configOptions.length === 0) return
-  const served = (await run(services.db.getSessionRuntimeState(sessionId))) as {
-    readonly configOptions: ReadonlyArray<SessionConfigOption>
-  }
-  if (JSON.stringify(served.configOptions) === JSON.stringify(configOptions)) return
+  const served = field(await run(services.db.getSessionRuntimeState(sessionId)), "configOptions")
+  if (JSON.stringify(served) === JSON.stringify(configOptions)) return
   await materializeRuntimeEvent(
     services.db,
     fanout,

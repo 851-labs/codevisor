@@ -11,6 +11,29 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { field } from "./response-test-support.js"
+
+const gatewayTransport = (gateway: {
+  readonly url: string
+  readonly bearerToken: string
+}): McpTransport => {
+  const inner = new StreamableHTTPClientTransport(new URL(gateway.url), {
+    requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
+  })
+  const transport: McpTransport = {
+    start: () => inner.start(),
+    send: (message, options) => inner.send(message, options),
+    close: () => inner.close(),
+    setProtocolVersion: (version) => inner.setProtocolVersion(version)
+  }
+  const forward: Pick<McpTransport, "onclose" | "onerror" | "onmessage"> = {
+    onclose: () => transport.onclose?.(),
+    onerror: (error) => transport.onerror?.(error),
+    onmessage: (message, extra) => transport.onmessage?.(message, extra)
+  }
+  Object.assign(inner, forward)
+  return transport
+}
 
 describe("mcp routes", () => {
   it("loads a large SSE tool catalog without opening the optional notification stream", async () => {
@@ -25,17 +48,15 @@ describe("mcp routes", () => {
       }
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-        id?: string | number
-        method: string
-      }
-      if (message.method === "notifications/initialized") {
+      const message: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+      const method = field(message, "method")
+      if (method === "notifications/initialized") {
         response.writeHead(202)
         response.end()
         return
       }
       const result =
-        message.method === "initialize"
+        method === "initialize"
           ? {
               protocolVersion: "2025-11-25",
               capabilities: { tools: { listChanged: true } },
@@ -52,7 +73,7 @@ describe("mcp routes", () => {
             }
       response.writeHead(200, { "content-type": "text/event-stream" })
       response.end(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n\n`
+        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: field(message, "id"), result })}\n\n`
       )
     })
     await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
@@ -92,11 +113,7 @@ describe("mcp routes", () => {
     expect(otherSessionGateway.bearerToken).toBe(gateway.bearerToken)
     expect(otherSessionGateway.url).not.toBe(gateway.url)
     const client = new McpClient({ name: "gateway-test", version: "1" })
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(gateway.url), {
-        requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
-      }) as unknown as McpTransport
-    )
+    await client.connect(gatewayTransport(gateway))
     const listed = await client.listTools()
     expect(listed.tools.map((tool) => tool.name)).toEqual(["execute", "skills"])
     expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain("PostHog")
@@ -219,11 +236,7 @@ describe("mcp routes", () => {
     })
     const gateway = await services.mcp.issueGateway("protected-session")
     const client = new McpClient({ name: "protected-gateway-test", version: "1" })
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(gateway.url), {
-        requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
-      }) as unknown as McpTransport
-    )
+    await client.connect(gatewayTransport(gateway))
     const result = await client.callTool({
       name: "execute",
       arguments: {

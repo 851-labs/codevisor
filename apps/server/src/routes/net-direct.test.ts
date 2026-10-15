@@ -1,14 +1,16 @@
 import { EventEmitter } from "node:events"
-import type { ServerResponse } from "node:http"
+import { IncomingMessage, ServerResponse } from "node:http"
+import { Socket } from "node:net"
 
 import type { CloudSocket } from "@codevisor/cloud-client"
 import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
 
-import type { CodevisorServerConfig } from "../server-context.js"
+import type { CloudServerControl, CodevisorServerConfig } from "../server-context.js"
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
 import { adaptDirectSocket, directHosts, routeNetDirect } from "./net-direct.js"
+import { field, itemsOf } from "./response-test-support.js"
 
 const interfaces = () => ({
   lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
@@ -16,22 +18,39 @@ const interfaces = () => ({
     { address: "192.168.1.20", family: "IPv4", internal: false },
     { address: "fe80::1", family: "IPv6", internal: false }
   ],
-  awdl0: [{ address: "169.254.7.7", family: "IPv4", internal: false }]
+  awdl0: [{ address: "169.254.7.7", family: "IPv4", internal: false }],
+  utun9: undefined
 })
 
 const makeConfig = (overrides: Partial<CodevisorServerConfig>): CodevisorServerConfig =>
-  ({ directPathEnabled: true, host: "0.0.0.0", port: 4931, ...overrides }) as CodevisorServerConfig
+  defaultServerConfig({
+    bootId: "test-boot",
+    directPathEnabled: true,
+    host: "0.0.0.0",
+    port: 4931,
+    ...overrides
+  })
+
+const cloudWithDevice = (deviceId: string): CloudServerControl => ({
+  deviceId: () => deviceId,
+  state: () => "connected",
+  managedBy: () => "external",
+  connect: () => Promise.resolve(deviceId),
+  disconnect: () => Promise.resolve({ removedFromAccount: true })
+})
+
+class CapturedResponse extends ServerResponse {
+  payload: unknown
+
+  override end(chunk?: unknown): this {
+    this.payload = JSON.parse(String(chunk))
+    return this
+  }
+}
 
 const captureJson = (): { response: ServerResponse; body: () => unknown } => {
-  let payload: unknown
-  const response = {
-    writeHead: () => response,
-    end: (chunk: string) => {
-      payload = JSON.parse(chunk)
-    },
-    setHeader: () => undefined
-  } as unknown as ServerResponse
-  return { response, body: () => payload }
+  const response = new CapturedResponse(new IncomingMessage(new Socket()))
+  return { response, body: () => response.payload }
 }
 
 describe("directHosts", () => {
@@ -46,33 +65,28 @@ describe("routeNetDirect", () => {
   it("reports the direct pipe's coordinates for a cloud-registered machine", () => {
     const { response, body } = captureJson()
     const handled = routeNetDirect(
-      makeConfig({ cloud: { deviceId: () => "cloud-1" } as CodevisorServerConfig["cloud"] }),
-      { method: "GET" } as never,
+      makeConfig({ cloud: cloudWithDevice("cloud-1") }),
+      { method: "GET" },
       response,
       new URL("http://x/v1/net/direct")
     )
     expect(handled).toBe(true)
     expect(body()).toMatchObject({ deviceId: "cloud-1", port: 4931 })
-    expect((body() as { hosts: string[] }).hosts.length).toBeGreaterThanOrEqual(0)
+    expect(itemsOf(field(body(), "hosts")).length).toBeGreaterThanOrEqual(0)
   })
 
   it("returns no hosts without a cloud identity, and ignores other routes", () => {
     const { response, body } = captureJson()
-    routeNetDirect(
-      makeConfig({}),
-      { method: "GET" } as never,
-      response,
-      new URL("http://x/v1/net/direct")
-    )
+    routeNetDirect(makeConfig({}), { method: "GET" }, response, new URL("http://x/v1/net/direct"))
     expect(body()).toMatchObject({ deviceId: null, hosts: [] })
 
     expect(
-      routeNetDirect(makeConfig({}), { method: "GET" } as never, response, new URL("http://x/v1/x"))
+      routeNetDirect(makeConfig({}), { method: "GET" }, response, new URL("http://x/v1/x"))
     ).toBe(false)
     expect(
       routeNetDirect(
         makeConfig({}),
-        { method: "POST" } as never,
+        { method: "POST" },
         response,
         new URL("http://x/v1/net/direct")
       )
@@ -83,10 +97,10 @@ describe("routeNetDirect", () => {
     const { response, body } = captureJson()
     routeNetDirect(
       makeConfig({
-        cloud: { deviceId: () => "cloud-relay-only" } as CodevisorServerConfig["cloud"],
+        cloud: cloudWithDevice("cloud-relay-only"),
         directPathEnabled: false
       }),
-      { method: "GET" } as never,
+      { method: "GET" },
       response,
       new URL("http://x/v1/net/direct")
     )
@@ -204,7 +218,7 @@ describe("adaptDirectSocket", () => {
       send: (data: unknown) => sent.push(data),
       close: (code?: number, reason?: string) => sent.push({ close: code, reason }),
       terminate: () => sent.push("terminated")
-    }) as unknown as WebSocket
+    })
 
     const adapted = adaptDirectSocket(socket)
     const seen: (string | Uint8Array)[] = []
@@ -221,8 +235,8 @@ describe("adaptDirectSocket", () => {
     emitter.emit("error", new Error("ignored"))
 
     expect(seen[0]).toBe("hello")
-    expect([...(seen[1] as Uint8Array)]).toEqual([1, 2])
-    expect([...(seen[2] as Uint8Array)]).toEqual([3, 4])
+    expect(seen[1]).toEqual(new Uint8Array([1, 2]))
+    expect(seen[2]).toEqual(new Uint8Array([3, 4]))
     expect(closes).toEqual([1005])
 
     adapted.send("out")
@@ -235,8 +249,10 @@ describe("adaptDirectSocket", () => {
     const emitter = new EventEmitter()
     const closes: unknown[] = []
     const socket = Object.assign(emitter, {
-      close: (code?: number, reason?: string) => closes.push({ code, reason })
-    }) as unknown as WebSocket
+      send: () => undefined,
+      close: (code?: number, reason?: string) => closes.push({ code, reason }),
+      terminate: () => undefined
+    })
     const adapted = adaptDirectSocket(socket)
     // oxlint-disable-next-line unicorn/prefer-add-event-listener
     adapted.onmessage = () => {

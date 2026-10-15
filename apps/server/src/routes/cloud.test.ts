@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
+import { field } from "./response-test-support.js"
 
 describe("cloud routes", () => {
   it("advertises the cloud device id when the machine is cloud-connected", async () => {
@@ -209,6 +210,6 @@ describe("cloud routes", () => {
     const stranded = await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })
     expect(stranded.status).toBe(200)
     expect(stranded.body).toMatchObject({ ok: true, removedFromAccount: false })
-    expect((stranded.body as { warning?: string }).warning).toContain("machine list")
+    expect(field(stranded.body, "warning")).toContain("machine list")
   })
 })
