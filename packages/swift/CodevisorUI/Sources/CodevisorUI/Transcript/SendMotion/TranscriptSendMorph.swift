@@ -53,6 +53,7 @@ final class TranscriptSendMorph {
   private(set) var end: CGRect
   private(set) var textMotion: [(key: String, animation: CAAnimation)] = []
   private var serial = 0
+  private var settleSerial = 0
   private var riseKey: String?
 
   var riseBeginTime: CFTimeInterval? {
@@ -101,8 +102,13 @@ final class TranscriptSendMorph {
       keyPath: "transform.translation.y", offset: from.minY - to.minY, zero: CGFloat(0),
       spring: rise, beginTime: now)
     if let onSettle {
-      y.delegate = TranscriptSendAnimationCompletion { _ in
-        MainActor.assumeIsolated { onSettle() }
+      settleSerial = serial
+      let settles = serial
+      y.delegate = TranscriptSendAnimationCompletion { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self, self.settleSerial == settles else { return }
+          onSettle()
+        }
       }
     }
     let xKey = "codevisor.send-morph.x.\(serial)"

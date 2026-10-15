@@ -17,12 +17,14 @@ public protocol TranscriptSendTransitionAdapter: AnyObject {
   func sendTransitionWillPresent()
   var sendTransitionLanding: TranscriptSendLanding? { get }
   var sendTransitionPushDistance: CGFloat? { get }
+  func sendTransitionCommitHeight(_ height: CGFloat, for key: String)
   func sendTransitionPinRowsToViewport()
 }
 
 extension TranscriptSendTransitionAdapter {
   public var sendTransitionLanding: TranscriptSendLanding? { nil }
   public var sendTransitionPushDistance: CGFloat? { nil }
+  public func sendTransitionCommitHeight(_: CGFloat, for _: String) {}
   public func sendTransitionPinRowsToViewport() {}
 }
 
@@ -88,6 +90,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   private var push: (beginTime: CFTimeInterval, distance: CGFloat, base: CGFloat)?
   private var advanceScheduled = false
   private var isStartingFlights = false
+  private var isSettlingFlightRow = false
 
   public init() {}
 
@@ -277,6 +280,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   }
 
   public func advance() {
+    guard !isSettlingFlightRow else { return }
     syncCarriers()
     if let push, layerTime - push.beginTime > TranscriptSendMotion.stagingTimeout {
       cancelPush()
@@ -337,6 +341,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
         session: session,
         rowContent: content,
         target: host,
+        settleRowHeight: { [weak self] height in self?.settleFlightRow(height, for: entry.rowKey) },
         completion: { [weak self] in self?.flightDidLand(token: token) }
       )
     else {
@@ -355,6 +360,15 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     entries[index].phase = .flying(flight)
     transcriptSendLog.debug("flight began")
     notifyStart(index: index)
+  }
+
+  private func settleFlightRow(_ height: CGFloat, for key: String) {
+    guard let adapter else { return }
+    isSettlingFlightRow = true
+    let capture = beginContentShift()
+    adapter.sendTransitionCommitHeight(height, for: key)
+    commitContentShift(capture)
+    isSettlingFlightRow = false
   }
 
   private func flightDidLand(token: UInt64) {

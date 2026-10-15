@@ -25,6 +25,7 @@ public final class TranscriptSendFlight {
   private var shiftSerial: UInt64 = 0
   private var completion: (@MainActor () -> Void)?
   private var hasEnded = false
+  private var morphLanding: (@MainActor () -> Void)?
 
   public static var duration: TimeInterval { TranscriptSendMotion.bubble.settlingDuration() }
 
@@ -32,6 +33,7 @@ public final class TranscriptSendFlight {
     session: ObjectIdentifier,
     rowContent: AnyView,
     target: TranscriptSendPlatformView,
+    settleRowHeight: @MainActor (CGFloat) -> Void,
     completion: @escaping @MainActor () -> Void
   ) -> TranscriptSendFlight? {
     guard let window = target.window, !target.bounds.isEmpty,
@@ -50,6 +52,7 @@ public final class TranscriptSendFlight {
       overlay: overlay,
       rowContent: rowContent,
       target: target,
+      settleRowHeight: settleRowHeight,
       completion: completion
     )
   }
@@ -59,6 +62,7 @@ public final class TranscriptSendFlight {
     overlay: TranscriptSendOverlayView,
     rowContent: AnyView,
     target: TranscriptSendPlatformView,
+    settleRowHeight: @MainActor (CGFloat) -> Void,
     completion: @escaping @MainActor () -> Void
   ) {
     self.stage = stage
@@ -73,7 +77,7 @@ public final class TranscriptSendFlight {
       let space: TranscriptSendPlatformView = overlay
     #endif
     self.space = space
-    let rowFrame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+    var rowFrame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
     targetOrigin = rowFrame.origin
     let content = AnyView(rowContent.environment(\.isTranscriptSendProxy, true))
 
@@ -106,6 +110,16 @@ public final class TranscriptSendFlight {
       container.layoutSubtreeIfNeeded()
     #endif
 
+    if abs(proxy.frame.height - rowFrame.height) > 0.5 {
+      settleRowHeight(proxy.frame.height)
+      #if canImport(UIKit)
+        stage.carrier?.sync()
+      #endif
+      rowFrame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+      proxy.frame.origin = rowFrame.origin
+      targetOrigin = rowFrame.origin
+    }
+
     let anchor = proxy.transcriptSendDescendant(ofType: UserBubbleAnchorView.self)
     let bubbleFrame =
       anchor
@@ -120,6 +134,7 @@ public final class TranscriptSendFlight {
     CATransaction.setDisableActions(true)
     let snapshot = stage.snapshot
     if let bubbleFrame {
+      morphLanding = landing
       if let morph = stage.morph {
         morph.retarget(to: bubbleFrame, onSettle: landing)
       } else {
@@ -187,6 +202,11 @@ public final class TranscriptSendFlight {
     let delta = CGSize(width: origin.x - targetOrigin.x, height: origin.y - targetOrigin.y)
     guard abs(delta.width) > 0.5 || abs(delta.height) > 0.5 else { return }
     targetOrigin = origin
+    if let morph = stage.morph, let landing = morphLanding {
+      proxy.frame = proxy.frame.offsetBy(dx: delta.width, dy: delta.height)
+      morph.retarget(to: morph.end.offsetBy(dx: delta.width, dy: delta.height), onSettle: landing)
+      return
+    }
     shiftSerial &+= 1
     let key = TranscriptSendAnimationKeys.shiftPrefix + String(shiftSerial)
     let back = CGSize(width: -delta.width, height: -delta.height)

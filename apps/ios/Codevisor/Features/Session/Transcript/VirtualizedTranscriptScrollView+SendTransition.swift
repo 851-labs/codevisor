@@ -73,6 +73,15 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
     initialPositionApplied && host.isPresentationReady
   }
 
+  func sendTransitionCommitHeight(_ rawHeight: CGFloat, for key: String) {
+    let height = max(1, rawHeight.rounded(.up))
+    pendingMeasurements.removeValue(forKey: key)
+    guard rowByKey[key] != nil, measurements.needsCommit(height, for: key),
+      storeMeasuredHeight(height, for: key)
+    else { return }
+    rebuildDocumentGeometry(changedHeights: [key: height])
+  }
+
   func sendTransitionRowContent(for key: String) -> AnyView? {
     guard let row = rowByKey[key], let rowContent else { return nil }
     return AnyView(
