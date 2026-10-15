@@ -18,6 +18,7 @@ import { createInterface } from "node:readline"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { BRIDGE_SOURCE, prepareGateway } from "./gateway.js"
+import { record } from "./protocol.js"
 
 const roots: Array<string> = []
 const cleanups: Array<() => unknown> = []
@@ -168,7 +169,7 @@ describe("Codevisor's gateway for agy", () => {
 const read = async (request: IncomingMessage) => {
   let body = ""
   for await (const chunk of request) body += chunk
-  return body === "" ? undefined : (JSON.parse(body) as Record<string, unknown>)
+  return body === "" ? undefined : record(JSON.parse(body))
 }
 
 const fakeGateway = async () => {
@@ -232,8 +233,9 @@ const fakeGateway = async () => {
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   cleanups.push(() => new Promise((resolve) => server.close(resolve)))
-  const { port } = server.address() as { port: number }
-  return { url: `http://127.0.0.1:${port}/mcp?gateway=g1`, seen }
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("gateway isn't on TCP")
+  return { url: `http://127.0.0.1:${address.port}/mcp?gateway=g1`, seen }
 }
 
 const runBridge = async (env: Record<string, string>) => {
@@ -251,7 +253,7 @@ const runBridge = async (env: Record<string, string>) => {
     resolve: (message: Record<string, unknown>) => void
   }> = []
   createInterface({ input: child.stdout }).on("line", (line) => {
-    const message = JSON.parse(line) as Record<string, unknown>
+    const message = record(JSON.parse(line))
     received.push(message)
     for (const waiter of waiting.splice(0)) {
       if (waiter.match(message)) waiter.resolve(message)

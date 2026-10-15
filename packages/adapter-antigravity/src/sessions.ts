@@ -2,6 +2,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { AgentSessionSummary } from "@codevisor/agent-runtime"
+import { isPlainRecord } from "@codevisor/api"
 
 import { finite, text } from "./protocol.js"
 
@@ -73,7 +74,8 @@ export const readSummaries: SummaryReader = async (path) => {
   try {
     return database
       .prepare("SELECT * FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 500")
-      .all() as Array<Record<string, unknown>>
+      .all()
+      .filter(isPlainRecord)
   } catch {
     return []
   } finally {

@@ -15,16 +15,16 @@ import { makeMuseItemMapper } from "./items.js"
 import { configOptions, EFFORT_OPTION_ID, MODEL_OPTION_ID, modelTiers } from "./models.js"
 import {
   commandId,
+  messageOf,
   record,
+  string,
   text,
-  type ApprovalRequest,
   type ModelCatalogEntry,
-  type MuseItem,
-  type MuseSession as MuseSessionRecord,
-  type UserInputRequest
+  type MuseSession as MuseSessionRecord
 } from "./protocol.js"
 import { approvalQuestion, userInputQuestion, type MuseQuestion } from "./questions.js"
-import { makeMuseSubagents, type ViewPage } from "./subagents.js"
+import { itemEdge } from "./rows.js"
+import { makeMuseSubagents } from "./subagents.js"
 import {
   contextUsageUpdate,
   museSkills,
@@ -32,6 +32,13 @@ import {
   tokenUsageUpdate,
   turnInput
 } from "./updates.js"
+import {
+  approvalRequest,
+  modelCatalog,
+  museItem,
+  requireSession,
+  userInputRequest
+} from "./wire.js"
 
 interface Turn {
   readonly id: string
@@ -96,14 +103,12 @@ export const startMuseChat = async (
   const questions = new Map<string, MuseQuestion>()
   const mapper = makeMuseItemMapper(() => key)
   const subagents = makeMuseSubagents({
-    page: async (sessionId, cursor) =>
-      record(
-        await client.request("view/page", {
-          sessionId,
-          limit: 1000,
-          ...(cursor === undefined ? {} : { cursor })
-        })
-      ) as unknown as ViewPage,
+    page: (sessionId, cursor) =>
+      client.request("view/page", {
+        sessionId,
+        limit: 1000,
+        ...(cursor === undefined ? {} : { cursor })
+      }),
     send: (event) => void send(event.kind, event.payload)
   })
 
@@ -170,11 +175,13 @@ export const startMuseChat = async (
     })
   }
 
-  const settledElsewhere = (id: unknown) => {
-    const question = typeof id === "string" ? questions.get(id) : undefined
+  const settledElsewhere = (value: unknown) => {
+    const id = string(value)
+    if (id === undefined) return
+    const question = questions.get(id)
     if (question === undefined) return
-    questions.delete(id as string)
-    void resolved(id as string, question, { outcome: "autoResolved" })
+    questions.delete(id)
+    void resolved(id, question, { outcome: "autoResolved" })
   }
 
   let skillListings = 0
@@ -187,19 +194,24 @@ export const startMuseChat = async (
   }
 
   client.onRequest((method, params) => {
-    if (method === "approval/request") {
-      const request = params as ApprovalRequest
-      ask(request.approvalId, approvalQuestion(request))
-    } else if (method === "userInput/request") {
-      const request = params as UserInputRequest
-      ask(request.userInputId, userInputQuestion(request))
-    }
+    const approval = method === "approval/request" ? approvalRequest(params) : undefined
+    const input = method === "userInput/request" ? userInputRequest(params) : undefined
+    if (approval !== undefined) ask(approval.approvalId, approvalQuestion(approval))
+    if (input !== undefined) ask(input.userInputId, userInputQuestion(input))
     return {}
   })
 
   client.onNotification((method, params) => {
     const event = record(params)
     if (typeof event.sessionId === "string" && key !== "" && event.sessionId !== key) return
+    const edge = itemEdge(method)
+    if (edge !== undefined) {
+      const item = museItem(event.item)
+      if (item === undefined) return
+      for (const mapped of mapper.item(item, edge)) void send(mapped.kind, mapped.payload)
+      subagents.observe(item, mapper.runRow)
+      return
+    }
     switch (method) {
       case "turn/started":
         if (turn === undefined) startTurn("agent", text(event.turnId))
@@ -226,16 +238,6 @@ export const startMuseChat = async (
         else void draining.then(finish)
         return
       }
-      case "item/started":
-      case "item/updated":
-      case "item/completed": {
-        const item = record(event.item) as unknown as MuseItem
-        if (typeof item.itemId !== "string") return
-        const edge = method.slice("item/".length) as "started" | "updated" | "completed"
-        for (const mapped of mapper.item(item, edge)) void send(mapped.kind, mapped.payload)
-        subagents.observe(item, mapper.runRow)
-        return
-      }
       case "item/delta":
         if (typeof event.itemId !== "string" || typeof event.delta !== "string") return
         for (const mapped of mapper.delta(event.itemId, text(event.field) ?? "text", event.delta))
@@ -254,17 +256,21 @@ export const startMuseChat = async (
         if (text(event.name) !== undefined)
           void send("session.updated", { sessionUpdate: "session_info_update", title: event.name })
         return
-      case "session/modelChanged":
-        if (text(event.modelId) === undefined) return
-        modelId = event.modelId as string
+      case "session/modelChanged": {
+        const changed = text(event.modelId)
+        if (changed === undefined) return
+        modelId = changed
         if (effort !== undefined && !modelTiers(current()).includes(effort)) effort = undefined
         announceOptions()
         return
-      case "session/reasoningEffortChanged":
-        if (text(event.reasoningEffort) === undefined) return
-        effort = event.reasoningEffort as string
+      }
+      case "session/reasoningEffortChanged": {
+        const changed = text(event.reasoningEffort)
+        if (changed === undefined) return
+        effort = changed
         announceOptions()
         return
+      }
       case "skill/changed":
         const listing = ++skillListings
         void listSkills().then((listed) => {
@@ -290,14 +296,14 @@ export const startMuseChat = async (
   const config = sessionConfig(options.toolGateway)
   let session: MuseSessionRecord
   if (options.resume === undefined) {
-    session = record(
+    session = requireSession(
       await client.request("session/start", {
         commandId: commandId(),
         workspaceRoot: options.cwd,
         approvalMode: "allowAll",
         ...config
       })
-    ).session as MuseSessionRecord
+    )
   } else {
     const resume = (extra: Record<string, unknown>) =>
       client.request("session/resume", {
@@ -314,7 +320,7 @@ export const startMuseChat = async (
         throw cause
       resumed = await resume({})
     }
-    session = record(resumed).session as MuseSessionRecord
+    session = requireSession(resumed)
     await client
       .request("session/setApprovalMode", {
         commandId: commandId(),
@@ -328,7 +334,7 @@ export const startMuseChat = async (
 
   try {
     const listed = record(await client.request("model/list", { sessionId: key }))
-    models = Array.isArray(listed.models) ? (listed.models as Array<ModelCatalogEntry>) : []
+    models = modelCatalog(listed.models)
   } catch {
     models = []
   }
@@ -360,7 +366,7 @@ export const startMuseChat = async (
           detail:
             cause instanceof MuseRequestError && cause.kind === "authRequired"
               ? "Sign in to Muse Code to continue."
-              : (cause as Error).message
+              : messageOf(cause)
         })
       }
       return finished

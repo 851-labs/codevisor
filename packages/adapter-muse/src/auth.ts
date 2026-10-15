@@ -25,10 +25,11 @@ export const accountInspection = (account: AccountState): HarnessAuthInspection 
 
 export const readMuseAccount = async (client: MuseClient): Promise<AccountState> => {
   const account = record(await client.request("account/read", {}))
+  const label = text(account.label)
   return {
     state: text(account.state) ?? "loggedOut",
     credentialRequired: account.credentialRequired !== false,
-    ...(text(account.label) === undefined ? {} : { label: account.label as string })
+    ...(label === undefined ? {} : { label })
   }
 }
 
@@ -46,9 +47,10 @@ export const startMuseLogin = async (
     client.onNotification((method, params) => {
       if (method !== "account/loginCompleted") return
       const event = record(params)
+      const message = text(event.message)
       resolve({
         outcome: text(event.outcome) ?? "failed",
-        ...(text(event.message) === undefined ? {} : { message: event.message as string })
+        ...(message === undefined ? {} : { message })
       })
     })
     client.onClose((error) => resolve({ outcome: "failed", message: error.message }))

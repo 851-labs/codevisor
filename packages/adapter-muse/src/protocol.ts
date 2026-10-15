@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto"
 
+import { isPlainRecord } from "@codevisor/api"
+
 export const TESTED_SCHEMA_FINGERPRINT =
   "sha256:6de32db08bbbe0deb478d2bfcaba001e9fb490986bc80db3aceb4d996abf7df9"
 
@@ -10,11 +12,11 @@ export interface MuseSession {
   readonly workspaceRoot: string | null
   readonly modelId: string | null
   readonly providerId: string | null
-  readonly name?: string
-  readonly title?: string
-  readonly firstUserPrompt?: string
+  readonly name?: string | undefined
+  readonly title?: string | undefined
+  readonly firstUserPrompt?: string | undefined
   readonly updatedAt: string
-  readonly kind?: string
+  readonly kind?: string | undefined
 }
 
 export interface PatchSummary {
@@ -28,27 +30,26 @@ export interface MuseItem {
   readonly kind: string
   readonly status: string
   readonly revision: number
-  readonly turnId?: string | null
-  readonly text?: string
-  readonly summary?: ReadonlyArray<string>
-  readonly tool?: string
-  readonly args?: string
-  readonly visibleOutput?: string
-  readonly patchSummary?: PatchSummary
-  readonly patchRef?: { readonly id: string }
-  readonly failureReason?: string
-  readonly fallbackText?: string
-  readonly childSessionId?: string
-  readonly controlStatus?: string
-  readonly objective?: string
-  readonly role?: string
-  readonly agentPath?: string
-  readonly subagentId?: string
-  readonly result?: { readonly summary?: string; readonly text?: string }
-  readonly selector?: string
-  readonly query?: string
-  readonly url?: string
-  readonly outcome?: string
+  readonly turnId?: string | null | undefined
+  readonly text?: string | undefined
+  readonly summary?: ReadonlyArray<string> | undefined
+  readonly tool?: string | undefined
+  readonly args?: string | undefined
+  readonly visibleOutput?: string | undefined
+  readonly patchSummary?: PatchSummary | undefined
+  readonly failureReason?: string | undefined
+  readonly childSessionId?: string | undefined
+  readonly controlStatus?: string | undefined
+  readonly objective?: string | undefined
+  readonly role?: string | undefined
+  readonly agentPath?: string | undefined
+  readonly subagentId?: string | undefined
+  readonly result?:
+    | { readonly summary?: string | undefined; readonly text?: string | undefined }
+    | undefined
+  readonly selector?: string | undefined
+  readonly query?: string | undefined
+  readonly url?: string | undefined
 }
 
 export interface TokenUsage {
@@ -72,15 +73,22 @@ export interface ApprovalRequest {
   readonly toolCallId: string
   readonly rawArgs: string
   readonly availableChoices: ReadonlyArray<ApprovalChoice>
-  readonly currentRequirementId: { readonly approvalId: string; readonly sourceIndex: number }
-  readonly subject: { readonly kind: string; readonly command?: string; readonly path?: string }
+  readonly currentRequirementId: Readonly<Record<string, unknown>>
+  readonly subject: {
+    readonly kind: string
+    readonly command?: string | undefined
+    readonly path?: string | undefined
+  }
 }
 
 export interface UserInputQuestion {
   readonly id: string
   readonly header: string
   readonly question: string
-  readonly options: ReadonlyArray<{ readonly label: string; readonly description?: string }>
+  readonly options: ReadonlyArray<{
+    readonly label: string
+    readonly description?: string | undefined
+  }>
   readonly selection: { readonly mode: string }
 }
 
@@ -88,7 +96,7 @@ export interface UserInputRequest {
   readonly userInputId: string
   readonly sessionId: string
   readonly questions: ReadonlyArray<UserInputQuestion>
-  readonly autoResolutionMs?: number
+  readonly autoResolutionMs?: number | undefined
 }
 
 export interface ModelCatalogEntry {
@@ -99,9 +107,9 @@ export interface ModelCatalogEntry {
   readonly contextLimit: number | null
   readonly isActive: boolean
   readonly isDefault: boolean
-  readonly defaultReasoningEffort?: string
-  readonly variants?: ReadonlyArray<string> | Record<string, unknown>
-  readonly reasoningEffortVariants?: ReadonlyArray<{ readonly tier: string }>
+  readonly defaultReasoningEffort?: string | undefined
+  readonly variants?: ReadonlyArray<unknown> | undefined
+  readonly reasoningEffortVariants?: ReadonlyArray<{ readonly tier: string }> | undefined
 }
 
 export interface AccountState {
@@ -111,9 +119,18 @@ export interface AccountState {
 }
 
 export const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+  isPlainRecord(value) ? value : {}
+
+export const list = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : [])
+
+export const string = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
+
+export const number = (value: unknown): number | undefined =>
+  typeof value === "number" ? value : undefined
+
+export const messageOf = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
 
 export const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined

@@ -18,7 +18,13 @@ import { agyAccountLaunch, agyAuthInspection } from "./auth.js"
 import { runAgy, spawnAgyProcess, type AgyConnector, type AgyRunner } from "./client.js"
 import { prepareGateway } from "./gateway.js"
 import { parseModels, type AgyModel } from "./models.js"
-import { MINIMUM_AGY_VERSION, signedOut, SIGN_IN_DETAIL, versionAtLeast } from "./protocol.js"
+import {
+  messageOf,
+  MINIMUM_AGY_VERSION,
+  signedOut,
+  SIGN_IN_DETAIL,
+  versionAtLeast
+} from "./protocol.js"
 import { startAgyChat, type AgyChat } from "./session.js"
 import {
   agySessionSummaries,
@@ -205,9 +211,7 @@ export const makeAntigravityProvider = (
             state: "error" as const,
             methods: [],
             canLogout: false,
-            detail:
-              clampFailureDetail((cause as Error).message) ??
-              "Couldn't check Antigravity's sign-in."
+            detail: clampFailureDetail(messageOf(cause)) ?? "Couldn't check Antigravity's sign-in."
           }
         }
       })

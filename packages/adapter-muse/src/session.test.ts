@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { MuseRequestError } from "./client.js"
+import { record } from "./protocol.js"
 import {
   FakeMuseClient,
   payloads,
@@ -10,6 +11,11 @@ import {
   startChat as start,
   turns
 } from "./test-support.js"
+
+const current = (model: string, effort: string) => [
+  expect.objectContaining({ currentValue: model }),
+  expect.objectContaining({ currentValue: effort })
+]
 
 describe("Muse chat", () => {
   it("starts a full-access session carrying Codevisor's tool gateway", async () => {
@@ -253,17 +259,11 @@ describe("Muse chat", () => {
     client.emit("model/listChanged", {})
     client.emit("session/nameChanged", { sessionId: "child", name: "Child" })
     const options = payloads(events.slice(at)).filter((payload) => "configOptions" in payload)
-    expect(
-      options.map((payload) =>
-        (payload.configOptions as Array<{ currentValue: string }>).map(
-          (option) => option.currentValue
-        )
-      )
-    ).toEqual([
-      ["spark", "high"],
-      ["lite", "minimal"],
-      ["lite", "low"],
-      ["lite", "low"]
+    expect(options.map((payload) => payload.configOptions)).toEqual([
+      current("spark", "high"),
+      current("lite", "minimal"),
+      current("lite", "low"),
+      current("lite", "low")
     ])
     expect(payloads(events.slice(at)).filter((payload) => !("configOptions" in payload))).toEqual([
       { sessionUpdate: "session_info_update", title: "Parser fix" },
@@ -282,10 +282,7 @@ describe("Muse chat", () => {
       events.push = (...added) => {
         const length = push(...added)
         if (
-          added.some(
-            (event) =>
-              (event.payload as Record<string, unknown>).sessionUpdate === "available_skills_update"
-          )
+          added.some((event) => record(event.payload).sessionUpdate === "available_skills_update")
         )
           resolve()
         return length
