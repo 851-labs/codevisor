@@ -125,9 +125,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   }
 
   private var label: some View {
-    HStack(spacing: 12) {
-      leadingIcon
-        .frame(width: 22, height: 22)
+    Label {
       VStack(alignment: .leading, spacing: 2) {
         HomeSidebarRowTitle(title: workspace.displayName)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
@@ -136,7 +134,9 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         }
       }
       .opacity(workspace.isArchived ? 0.8 : 1)
-      Spacer(minLength: 0)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } icon: {
+      leadingIcon
     }
     .contentShape(Rectangle())
   }
@@ -144,9 +144,9 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   @ViewBuilder
   private var leadingIcon: some View {
     if let row = workspace.leadingRow {
-      HomeSidebarTabIcon(row: row, serverId: workspace.serverId, size: 17)
+      HomeSidebarTabIcon(row: row, serverId: workspace.serverId)
     } else {
-      HomeSidebarSymbol(name: EntitySystemSymbol.workspace, size: 17)
+      HomeSidebarSymbol(name: EntitySystemSymbol.workspace)
     }
   }
 
@@ -156,9 +156,15 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       PullRequestBadge(pullRequest: pullRequest, size: 15, slot: 22)
     }
     if let machine = workspace.machine {
-      HomeSidebarSymbol(name: machine.systemImage, size: 15)
-        .frame(width: 22, height: 22)
+      HomeSidebarSymbol(name: machine.systemImage)
+        .imageScale(.small)
         .accessibilityLabel("On \(machine.name)")
+    }
+    if !workspace.listsTabs && !workspace.isArchived {
+      Image(systemName: "chevron.forward")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
     }
   }
 
@@ -183,7 +189,7 @@ struct HomeSidebarGroupLabel: View {
       HomeSidebarRowTitle(title: heading.title)
         .lineLimit(1)
     } icon: {
-      HomeSidebarSymbol(name: heading.systemImage, size: 17)
+      HomeSidebarSymbol(name: heading.systemImage)
     }
     .contextMenu {
       if let onNewChat {
@@ -221,12 +227,10 @@ private struct HomeSidebarRowSubtitle: View {
 
 struct HomeSidebarSymbol: View {
   let name: String
-  let size: CGFloat
   @Environment(\.backgroundProminence) private var backgroundProminence
 
   var body: some View {
     Image(systemName: name)
-      .font(.system(size: size, weight: .medium))
       .symbolRenderingMode(.monochrome)
       .foregroundStyle(backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
       .accessibilityHidden(true)

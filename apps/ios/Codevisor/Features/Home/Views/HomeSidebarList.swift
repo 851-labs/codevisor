@@ -166,7 +166,7 @@ struct HomeSidebarList: View {
     let row = HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
       .equatable()
       .tag(workspace.id)
-    if workspace.rows.isEmpty {
+    if !workspace.listsTabs {
       row
     } else {
       DisclosureGroup(isExpanded: workspaceExpansion(workspace.id)) {
@@ -225,8 +225,8 @@ struct HomeSidebarList: View {
 
   private func selectedRowID(_ content: HomeSidebarContent) -> UUID? {
     guard let selected else { return nil }
-    if let paneId = selected.paneId, expandedWorkspaceIDs.contains(selected.workspaceId.uuidString),
-      content.row(paneId) != nil
+    if let paneId = selected.paneId, content.workspace(selected.workspaceId)?.listsTabs == true,
+      expandedWorkspaceIDs.contains(selected.workspaceId.uuidString), content.row(paneId) != nil
     {
       return paneId
     }

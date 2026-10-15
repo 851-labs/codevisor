@@ -70,12 +70,12 @@ struct HomeSidebarTabRowView: View, Equatable {
   }
 
   private var label: some View {
-    HStack(spacing: 12) {
-      HomeSidebarTabIcon(row: row, serverId: workspace.serverId, size: 17)
-        .frame(width: 22, height: 22)
+    Label {
       HomeSidebarRowTitle(title: row.title)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-      Spacer(minLength: 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    } icon: {
+      HomeSidebarTabIcon(row: row, serverId: workspace.serverId)
     }
     .contentShape(Rectangle())
   }

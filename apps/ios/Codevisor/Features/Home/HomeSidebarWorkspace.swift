@@ -21,6 +21,8 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 
+  var listsTabs: Bool { rows.count > 1 }
+
   var primaryRow: HomeSidebarTabRow? {
     rows.first { $0.id == primaryRowId } ?? rows.first
   }
