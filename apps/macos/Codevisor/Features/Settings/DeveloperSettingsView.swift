@@ -50,6 +50,23 @@ struct DeveloperSettingsView: View {
       } header: {
         Text("App Version")
       }
+
+      Section {
+        ForEach(FeatureFlag.allCases) { flag in
+          Toggle(isOn: Binding(get: { flag.isEnabled }, set: { flag.isEnabled = $0 })) {
+            VStack(alignment: .leading, spacing: 3) {
+              Text(flag.title)
+              Text(flag.detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+          .toggleStyle(.switch)
+        }
+      } header: {
+        Text("Experimental Features")
+      }
     }
     .settingsPaneFormStyle(theme)
   }

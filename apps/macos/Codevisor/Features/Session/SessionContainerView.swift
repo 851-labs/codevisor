@@ -67,6 +67,8 @@ struct SessionContainerView: View {
   @State var openingSplit: WorkspaceSplitOpening?
   @State var focusSourceId = UUID()
   @State var isVisible = false
+  @ClientPreference(FeatureFlag.workspaceInspector.preferenceKey, default: false) var inspectorFeatureEnabled
+  @ClientPreference("workspace.inspectorPresented", default: true) var inspectorPresented
 
   var body: some View {
     mounted(in: selectedWorkspace)
@@ -74,6 +76,18 @@ struct SessionContainerView: View {
 
   private func mounted(in workspace: Workspace) -> some View {
     titledContentColumn
+      .inspector(isPresented: inspectorBinding) {
+        WorkspaceInspectorView(
+          workspace: workspace,
+          project: project,
+          branch: store.branches.byWorkspace[workspace.id],
+          pullRequest: store.pullRequests.byWorkspace[workspace.id],
+          machineName: environment.machines.fleetMachineName(for: workspace.serverId),
+          supportsDesktop: supportsScreenSharing,
+          onOpen: openInspectorDestination
+        )
+        .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+      }
       .navigationSubtitle(activePaneSubtitle)
       .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
       .toolbar {
@@ -90,6 +104,18 @@ struct SessionContainerView: View {
         } else if let model = activeSimulatorModel {
           SimulatorPaneToolbar(model: model) { data, name in
             AppleSimulatorPane.saveScreenshot(data, deviceName: name)
+          }
+        }
+      }
+      .toolbar {
+        if inspectorFeatureEnabled {
+          ToolbarItem(placement: .primaryAction) {
+            Button {
+              inspectorPresented.toggle()
+            } label: {
+              Label(inspectorPresented ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
+            }
+            .help(inspectorPresented ? "Hide Inspector" : "Show Inspector")
           }
         }
       }
@@ -197,6 +223,13 @@ struct SessionContainerView: View {
           store.markOpened(session.id, serverId: session.serverId)
         }
       }
+  }
+
+  private var inspectorBinding: Binding<Bool> {
+    Binding(
+      get: { inspectorFeatureEnabled && inspectorPresented },
+      set: { inspectorPresented = $0 }
+    )
   }
 
   var contentColumn: some View {
