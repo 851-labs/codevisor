@@ -75,8 +75,10 @@ extension SessionModelTests {
     await client.olderTranscriptPageRequests.wait()
     client.initialTranscriptPage = page(30..<38, eventCursor: 2)
     guard case .loaded = await model.loadHistoryForConnectionRecovery() else {
+      loading.cancel()
       release.finish()
       Issue.record("Expected the replacement page to load")
+      _ = await loading.value
       return
     }
     #expect(model.conversation.map(\.id) == Array(ids[30..<38]))
