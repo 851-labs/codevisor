@@ -63,6 +63,7 @@ struct LocalCodevisorServerTests {
   @Test("Publishes blocking data-upgrade progress while waiting for health")
   func publishesDataUpgradeProgress() async throws {
     let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let statusURL = directory.appendingPathComponent("data-upgrade.json")
     let client = FakeLocalServerClient(healthResults: [
       .failure(TestError()),
@@ -130,6 +131,7 @@ struct LocalCodevisorServerTests {
   @Test("Ignores migration progress written by another server boot")
   func ignoresStaleDataUpgradeProgress() async throws {
     let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
     let statusURL = directory.appendingPathComponent("data-upgrade.json")
     let stale = LocalDataUpgradeProgress(
       state: "running",
@@ -256,12 +258,17 @@ struct LocalCodevisorServerTests {
 
   func makeRuntimeEntrypoint(version: String) throws -> URL {
     let directory = try makeTemporaryDirectory()
-    try version.write(
-      to: directory.appendingPathComponent("VERSION"),
-      atomically: true,
-      encoding: .utf8
-    )
-    return directory.appendingPathComponent("main.js")
+    do {
+      try version.write(
+        to: directory.appendingPathComponent("VERSION"),
+        atomically: true,
+        encoding: .utf8
+      )
+      return directory.appendingPathComponent("main.js")
+    } catch {
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
   }
 }
 

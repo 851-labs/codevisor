@@ -64,6 +64,7 @@ extension LocalCodevisorServerTests {
   @Test("Resolves the bundled runtime directory by path, not Bundle resource lookup")
   func bundledRuntimeDirectoryByPath() throws {
     let resources = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: resources) }
     #if arch(x86_64)
       let target = "darwin-x64"
     #else
@@ -89,6 +90,7 @@ extension LocalCodevisorServerTests {
   @Test("Migrates legacy Application Support server data into ~/.codevisor")
   func migratesLegacyServerData() throws {
     let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
     let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
     let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
     let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
@@ -154,6 +156,7 @@ extension LocalCodevisorServerTests {
   @Test("Skips migration when the canonical database already exists")
   func skipsMigrationWhenDestinationExists() throws {
     let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
     let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
     let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
     let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
