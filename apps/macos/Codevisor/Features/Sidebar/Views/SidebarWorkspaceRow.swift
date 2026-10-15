@@ -49,7 +49,7 @@ struct SidebarWorkspaceRow: View {
           )
           .accessibilityElement(children: .combine)
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-          .accessibilityValue(isArchived ? "Archived" : "")
+          .accessibilityValue("Archived", isEnabled: isArchived)
           .accessibilityAction(.default, onActivate)
           .accessibilityActions {
             switch lifecycle {
