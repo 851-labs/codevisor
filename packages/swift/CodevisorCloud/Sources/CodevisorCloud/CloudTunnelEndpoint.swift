@@ -181,6 +181,21 @@ public actor CloudTunnelEndpoint {
       alpns: [Self.channelsALPN]
     )
   }
+
+  public func openMediaRoute(to address: CloudTunnelInfo, flowId: UInt32 = 1) async -> CloudTunnelMediaRoute? {
+    guard let handle = await endpoint() else { return nil }
+    let addr = NetTunnelAddr(
+      endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs)
+    do {
+      let connection = try await handle.connect(addr: addr, alpn: CloudTunnelMediaRoute.mediaALPN, cancel: nil)
+      let flow = try await connection.bindMedia(flowId: flowId)
+      return CloudTunnelMediaRoute(
+        endpointId: handle.endpointId(), flowId: flowId, connection: connection, flow: flow)
+    } catch {
+      Log.cloud.notice("Tunnel media route failed: \(String(describing: error), privacy: .public)")
+      return nil
+    }
+  }
 }
 
 public final class CloudTunnelMediaRoute: Sendable {
@@ -205,22 +220,5 @@ public final class CloudTunnelMediaRoute: Sendable {
   public func close() {
     flow.close()
     connection.close(code: 0, reason: "media route closed")
-  }
-}
-
-extension CloudTunnelEndpoint {
-  public func openMediaRoute(to address: CloudTunnelInfo, flowId: UInt32 = 1) async -> CloudTunnelMediaRoute? {
-    guard let handle = await endpoint() else { return nil }
-    let addr = NetTunnelAddr(
-      endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs)
-    do {
-      let connection = try await handle.connect(addr: addr, alpn: CloudTunnelMediaRoute.mediaALPN, cancel: nil)
-      let flow = try await connection.bindMedia(flowId: flowId)
-      return CloudTunnelMediaRoute(
-        endpointId: handle.endpointId(), flowId: flowId, connection: connection, flow: flow)
-    } catch {
-      Log.cloud.notice("Tunnel media route failed: \(String(describing: error), privacy: .public)")
-      return nil
-    }
   }
 }
