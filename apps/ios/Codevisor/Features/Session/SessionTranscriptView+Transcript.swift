@@ -135,7 +135,13 @@ extension SessionTranscriptView {
           },
           openMarkdownLink: openMarkdownLink,
           markdownImageActions: transcriptImageActions,
-          onSendAnimationStarted: { onSendAnimationStarted?($0) }
+          onSendAnimationStarted: { request in
+            onSendAnimationStarted?(request)
+            Task { @MainActor in
+              await Task.yield()
+              sendAnimationsStarted &+= 1
+            }
+          }
         )
       )
     }

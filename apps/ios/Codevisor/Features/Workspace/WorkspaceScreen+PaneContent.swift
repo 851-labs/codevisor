@@ -39,7 +39,7 @@ extension WorkspaceScreen {
       onSendAnimationCompleted: onSendAnimationCompleted,
       onSendAnimationStarted: onSendAnimationStarted,
       onComposerWillSend: onComposerWillSend,
-      preservesComposerFocusOnSend: isNewChatPresentation,
+      preservesComposerFocusOnSend: false,
       composerTextEditorHandoffRole: composerTextEditorHandoffRole,
       composerTextEditorHandoffID: composerTextEditorHandoffID,
       isNewChatPresentation: isNewChatPresentation,

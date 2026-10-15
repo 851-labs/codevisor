@@ -19,6 +19,7 @@ final class ComposerSendSource {
       bubble: theme.bubbleBackground,
       theme: theme
     )
+    (textView as? SubmittingTextView)?.hideSentText()
   }
 }
 

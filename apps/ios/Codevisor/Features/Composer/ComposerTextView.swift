@@ -193,6 +193,7 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     func textViewDidChange(_ textView: UITextView) {
+      (textView as? HeightReportingTextView)?.textDidChangeByUser()
       guard !isApplyingSwiftUIUpdate else { return }
       text.wrappedValue = textView.text
       selection.wrappedValue = textView.selectedRange

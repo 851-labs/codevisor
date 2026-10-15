@@ -16,6 +16,9 @@ enum ComposerSendStaging {
       bubble: theme.bubbleBackground,
       theme: theme
     )
+    if TranscriptSendStaging.shared.hasStage(for: session) {
+      (editor as? HeightReportingTextView)?.hideSentText()
+    }
   }
 
   private static func editor(in window: UIWindow, overlapping frame: CGRect) -> UITextView? {

@@ -41,6 +41,7 @@ struct SessionTranscriptView: View {
   var disclosure: TranscriptDisclosureStore { presentationSurface.disclosure }
   @Namespace var composerGlassNamespace
   @State var composerCardHeight: CGFloat = 96
+  @State var sendAnimationsStarted = 0
   @State var composerAccessoryHeight: CGFloat = 0
   @State var followsLatest = true
   @State var isAtBottom = true
@@ -350,6 +351,7 @@ struct SessionTranscriptView: View {
         preservesFocusAfterSend: preservesComposerFocusOnSend,
         textEditorHandoffRole: composerTextEditorHandoffRole,
         textEditorHandoffID: composerTextEditorHandoffID,
+        sendAnimationsStarted: sendAnimationsStarted,
         glassNamespace: composerGlassNamespace,
         onSendSourceFrameChange: { frame in
           sendAnimationSourceFrame = frame

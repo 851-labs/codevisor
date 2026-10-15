@@ -5,6 +5,7 @@ import QuartzCore
 public enum TranscriptSendMotion {
   public static let bubble = TranscriptSpring(response: 0.4, dampingFraction: 0.74)
   public static let content = TranscriptSpring(response: 0.25, dampingFraction: 1)
+  public static let bubbleSlide = TranscriptSpring(response: 0.15, dampingFraction: 1)
 
   public static let bubbleStartScale: CGFloat = 0.96
 
@@ -16,6 +17,7 @@ public enum TranscriptSendMotion {
   public static let transitionWindow: TimeInterval = 2.5
 
   public static let stagingTimeout: TimeInterval = 2
+  public static let heldStagingTimeout: TimeInterval = 15
 
   public static let targetHoldLimit: TimeInterval = 1.5
 }
@@ -25,8 +27,9 @@ public enum TranscriptSendAnimationKeys {
   public static let hide = "codevisor.send-hide"
   public static let follower = "codevisor.send-follower"
   public static let shiftPrefix = "codevisor.send-shift."
+  public static let push = "codevisor.send-push"
 
-  static let fixedKeys = [lift, hide, follower]
+  static let fixedKeys = [lift, hide, follower, push]
 }
 
 public enum TranscriptSendLayerAnimations {
@@ -68,15 +71,31 @@ public enum TranscriptSendLayerAnimations {
 
   public static func verticalShift(
     _ offset: CGFloat,
+    spring: TranscriptSpring = TranscriptSendMotion.content,
     beginTime: CFTimeInterval = 0
   ) -> CASpringAnimation {
     additiveSpring(
       keyPath: "transform.translation.y",
       offset: offset,
       zero: CGFloat(0),
-      spring: TranscriptSendMotion.content,
+      spring: spring,
       beginTime: beginTime
     )
+  }
+
+  public static func push(
+    _ distance: CGFloat, from base: CGFloat = 0, beginTime: CFTimeInterval
+  ) -> CASpringAnimation {
+    let push = additiveSpring(
+      keyPath: "transform.translation.y",
+      offset: base,
+      zero: base - distance,
+      spring: TranscriptSendMotion.bubble,
+      beginTime: beginTime
+    )
+    push.fillMode = .both
+    push.isRemovedOnCompletion = false
+    return push
   }
 
   public static func fade(
@@ -112,7 +131,8 @@ public enum TranscriptSendLayerAnimations {
   }
 
   public static func replay(_ shift: TranscriptSendShift, on layer: CALayer) {
-    layer.add(verticalShift(shift.offset, beginTime: shift.beginTime), forKey: shift.key)
+    layer.add(
+      verticalShift(shift.offset, spring: shift.spring, beginTime: shift.beginTime), forKey: shift.key)
   }
 
   public static func removeAll(from layer: CALayer) {
@@ -129,16 +149,23 @@ public enum TranscriptSendLayerAnimations {
 public struct TranscriptSendShift: Equatable, Sendable {
   public let offset: CGFloat
   public let beginTime: CFTimeInterval
+  public let spring: TranscriptSpring
   public let key: String
 
-  public init(offset: CGFloat, beginTime: CFTimeInterval, serial: UInt64) {
+  public init(
+    offset: CGFloat,
+    beginTime: CFTimeInterval,
+    serial: UInt64,
+    spring: TranscriptSpring = TranscriptSendMotion.content
+  ) {
     self.offset = offset
     self.beginTime = beginTime
+    self.spring = spring
     key = TranscriptSendAnimationKeys.shiftPrefix + String(serial)
   }
 
   public func isRunning(at time: CFTimeInterval) -> Bool {
-    time < beginTime + TranscriptSendMotion.content.settlingDuration()
+    time < beginTime + spring.settlingDuration()
   }
 }
 

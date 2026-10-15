@@ -26,6 +26,28 @@ struct TranscriptSendMotionTests {
     #expect(spring.displacementFraction(at: 0.15) < TranscriptSendMotion.bubble.displacementFraction(at: 0.15))
   }
 
+  @Test("The history push rides the bubble's spring and holds its end")
+  func pushRidesTheBubbleSpring() {
+    let push = TranscriptSendLayerAnimations.push(200, from: -30, beginTime: 12)
+    #expect(push.keyPath == "transform.translation.y")
+    #expect(push.isAdditive)
+    #expect(push.fromValue as? CGFloat == -30)
+    #expect(push.toValue as? CGFloat == -230)
+    #expect(push.beginTime == 12)
+    #expect(!push.isRemovedOnCompletion)
+    #expect(abs(push.stiffness - TranscriptSendMotion.bubble.stiffness) < 0.001)
+    #expect(abs(push.damping - TranscriptSendMotion.bubble.damping) < 0.001)
+  }
+
+  @Test("A shift runs for its own spring's settling time")
+  func shiftRunsForItsSpring() {
+    let bubble = TranscriptSendShift(offset: 100, beginTime: 10, serial: 1, spring: TranscriptSendMotion.bubble)
+    let content = TranscriptSendShift(offset: 100, beginTime: 10, serial: 2)
+    let between = 10 + TranscriptSendMotion.content.settlingDuration() + 0.01
+    #expect(bubble.isRunning(at: between))
+    #expect(!content.isRunning(at: between))
+  }
+
   @Test("Core Animation receives the same physical spring")
   func coreAnimationParametersMatchTheModel() {
     let spring = TranscriptSendMotion.bubble

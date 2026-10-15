@@ -55,6 +55,7 @@ struct NewChatView: View {
   var onInitialProjectResolutionCompleted: (() -> Void)? = nil
 
   @State var controller: SessionController?
+  @State private var sendLanding = NewChatSendLanding()
   @State var selectedProjectId: UUID?
   @State private var appliedInitialProjectTarget: NewChatTarget?
   @State private var focus = TerminalFocusController()
@@ -152,6 +153,25 @@ struct NewChatView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .global)
+    } action: { frame in
+      sendLanding.pageFrame = frame
+    }
+    .onChange(of: controller.map(ObjectIdentifier.init), initial: true) { _, session in
+      guard let session else { return }
+      let owner = sendLanding
+      TranscriptSendStaging.shared.setLandingProvider(
+        for: session,
+        owner: owner,
+        holds: { [weak owner] in owner?.holdsSend ?? false },
+        landing: { [weak owner] in owner?.landing }
+      )
+    }
+    .onChange(of: controller?.isSubmitting ?? false) { wasSubmitting, isSubmitting in
+      guard wasSubmitting, !isSubmitting, sendLanding.holdsSend, let controller else { return }
+      TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
+    }
     .background(theme.contentBackground)
     .overlay(alignment: .top) {
       if let controller, case let .failed(message) = controller.status {
@@ -306,7 +326,10 @@ struct NewChatView: View {
     controller.onScratchProjectCreated = { [weak projectList = environment.projectList] scratch in
       projectList?.registerServerProject(scratch)
     }
+    let heldSend = sendLanding
+    let heldSession = ObjectIdentifier(controller)
     controller.onFirstSend = { [weak controller] submittedText in
+      defer { heldSend.release(heldSession) }
       guard let controller else { return }
       let project = controller.project
       let title = Self.title(from: submittedText)
@@ -419,4 +442,27 @@ struct NewChatView: View {
   )
   .environment(environment)
   .frame(width: 900, height: 640)
+}
+
+@MainActor
+private final class NewChatSendLanding {
+  var pageFrame: CGRect = .zero
+  var holdsSend = true
+
+  func release(_ session: ObjectIdentifier) {
+    holdsSend = false
+    TranscriptSendStaging.shared.releaseHeldSend(session: session)
+  }
+
+  var landing: TranscriptSendLanding? {
+    guard pageFrame.width > 0 else { return nil }
+    let padding = VirtualizedTranscriptScrollView.horizontalPadding
+    let rowWidth = min(VirtualizedTranscriptScrollView.maxRowWidth, max(1, pageFrame.width - padding * 2))
+    let rowX = max(padding, (pageFrame.width - rowWidth) / 2)
+    return TranscriptSendLanding(
+      trailing: pageFrame.minX + rowX + rowWidth,
+      top: pageFrame.minY + VirtualizedTranscriptScrollView.topPadding,
+      maxBubbleWidth: rowWidth - 40
+    )
+  }
 }
