@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HomeSidebarWorkspaceRowView: View, Equatable {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.openURL) private var openURL
 
   let workspace: HomeSidebarWorkspace
   let actions: HomeSidebarActionHandler
@@ -90,6 +91,9 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         Button("Rename", action: onRename)
         Button("Archive", action: onArchive)
       }
+      if let pullRequest = workspace.pullRequest {
+        Button("Open Pull Request") { openURL(pullRequest.url) }
+      }
     }
   }
 
@@ -158,7 +162,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
     if let machine = workspace.machine {
       HomeSidebarSymbol(name: machine.systemImage)
         .imageScale(.small)
-        .accessibilityLabel("On \(machine.name)")
     }
     if !workspace.listsTabs && !workspace.isArchived {
       Image(systemName: "chevron.forward")
@@ -169,14 +172,19 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   }
 
   private var accessibilityLabel: String {
-    let name = workspace.displayName
-    switch workspace.status {
-    case .error: return "\(name), error"
-    case .actionRequired: return "\(name), needs attention"
-    case .unread: return "\(name), unread"
-    case .inProgress: return "\(name), working"
-    case .idle: return name
-    }
+    let status: String? =
+      switch workspace.status {
+      case .error: "error"
+      case .actionRequired: "needs attention"
+      case .unread: "unread"
+      case .inProgress: "working"
+      case .idle: nil
+      }
+    return [
+      workspace.displayName, status, workspace.subtitle,
+      workspace.pullRequest.map { "pull request \($0.number)" },
+      workspace.machine.map { "on \($0.name)" },
+    ].compactMap { $0 }.joined(separator: ", ")
   }
 }
 

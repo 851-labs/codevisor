@@ -67,7 +67,7 @@ struct HomeSidebarList: View {
     let content = makeContent(preferences)
     list(content)
       .listStyle(.sidebar)
-      .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content)
+      .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
       .onChange(of: selected) { _, _ in
         pendingSelection = nil
       }
@@ -88,8 +88,14 @@ struct HomeSidebarList: View {
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
-    let listed = content.pinned + content.groups.flatMap(\.workspaces)
-    return (listed + (archivedExpanded ? content.archived : [])).map(\.id)
+    var shown = pinnedExpanded ? content.pinned : []
+    if listExpanded {
+      for group in content.groups where group.heading == nil || !collapsedGroupIDs.contains(group.id) {
+        shown += group.workspaces
+      }
+    }
+    if archivedExpanded { shown += content.archived }
+    return shown.map(\.id)
   }
 
   @ViewBuilder
@@ -127,7 +133,7 @@ struct HomeSidebarList: View {
           workspaceRows(group.workspaces)
         }
       }
-      if content.groups.allSatisfy(\.workspaces.isEmpty) {
+      if content.pinned.isEmpty && content.groups.allSatisfy(\.workspaces.isEmpty) {
         Text("No Workspaces")
           .foregroundStyle(.tertiary)
       }

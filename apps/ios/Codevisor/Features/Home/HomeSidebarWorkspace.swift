@@ -91,7 +91,9 @@ struct HomeSidebarContent: Equatable {
   var archived: [HomeSidebarWorkspace] = []
   var archivedCount = 0
 
-  var isEmpty: Bool { pinned.isEmpty && groups.allSatisfy(\.workspaces.isEmpty) && archivedCount == 0 }
+  var layout: [UUID] {
+    (pinned + groups.flatMap(\.workspaces) + archived).map(\.id)
+  }
 
   func workspace(_ id: UUID) -> HomeSidebarWorkspace? {
     pinned.first { $0.id == id }
@@ -129,8 +131,9 @@ struct HomeSidebarContent: Equatable {
         )
       }
     }
-    content.archived = archived.prefix(preferences.archivedLimit).compactMap { workspace($0, .archived) }
-    content.archivedCount = archived.count
+    let archivedWorkspaces = archived.compactMap { workspace($0, .archived) }
+    content.archived = Array(archivedWorkspaces.prefix(preferences.archivedLimit))
+    content.archivedCount = archivedWorkspaces.count
     return content
   }
 }

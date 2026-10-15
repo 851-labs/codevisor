@@ -106,7 +106,13 @@ struct CodevisorApp: App {
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store)
     )
-    environment.syncClientPreferences(SidebarPreferenceKey.synced)
+    #if DEBUG
+      if !HomeSidebarSampleData.isEnabled {
+        environment.syncClientPreferences(SidebarPreferenceKey.synced)
+      }
+    #else
+      environment.syncClientPreferences(SidebarPreferenceKey.synced)
+    #endif
     return environment
   }
 
