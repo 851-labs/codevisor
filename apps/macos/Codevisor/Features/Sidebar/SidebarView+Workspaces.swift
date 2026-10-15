@@ -197,7 +197,7 @@ extension SidebarView {
 
   func addTab(in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
-    store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .new)
+    store?.newCenterTabRequest = NewCenterTabRequest(workspaceId: workspace.id)
     if !routesSelectedSession(workspace) {
       activateWorkspace(item)
     }

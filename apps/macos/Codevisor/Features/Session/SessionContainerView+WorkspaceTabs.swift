@@ -14,14 +14,6 @@ extension SessionContainerView {
     return configuredCenterModel(leafId: leafId)
   }
 
-  func performCenterTabRequest(_ request: CenterTabRequest) {
-    switch request.action {
-    case let .close(tabId): closeCenterTab(tabId)
-    case .new: addCenterTab()
-    case let .closeLeaf(leafId): closeLeaf(leafId)
-    }
-  }
-
   func focusSelectedCenterPane() {
     guard let leafId = activeLeafId else { return }
     let model = configuredCenterModel(leafId: leafId)
@@ -56,7 +48,7 @@ extension SessionContainerView {
   }
 
   func showsCenterTabBar(in workspace: Workspace) -> Bool {
-    FeatureFlag.sidebarRefresh.isEnabled && workspace.centerTabs.count > 1
+    workspace.centerTabs.count > 1
   }
 
   func centerTabItems(in workspace: Workspace) -> [PaneTabStripItem] {

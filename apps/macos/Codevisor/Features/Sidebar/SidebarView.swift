@@ -32,7 +32,6 @@ struct SidebarView: View {
 
   var list: ProjectListModel { environment.projectList }
   var isReordering: Bool { drag != nil }
-  var itemTitleFont: Font { .body }
 
   var isNewChatSelected: Bool {
     switch selection {

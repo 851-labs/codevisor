@@ -127,12 +127,12 @@ struct SessionContainerView: View {
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
       }
-      .onChange(of: store.centerTabRequest, initial: true) { _, request in
-        guard let request, store.centerTabRequest == request,
+      .onChange(of: store.newCenterTabRequest, initial: true) { _, request in
+        guard let request, store.newCenterTabRequest == request,
           request.workspaceId == workspace.id
         else { return }
-        store.centerTabRequest = nil
-        performCenterTabRequest(request)
+        store.newCenterTabRequest = nil
+        addCenterTab()
       }
       .onChange(of: activePaneDescriptor?.id, initial: true) { _, _ in
         focusSelectedCenterPane()
