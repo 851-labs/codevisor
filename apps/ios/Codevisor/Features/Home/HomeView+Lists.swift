@@ -23,13 +23,14 @@ extension HomeView {
     sidebarActionHandler.actions = sidebarActions
     return HomeSidebarLiveList(
       actions: sidebarActionHandler,
-      splitNavigation: layoutMode == .split ? navigation : nil
+      splitNavigation: layoutMode == .split ? navigation : nil,
+      gitLookups: sidebarGitLookups
     )
   }
 
   #if DEBUG
     var sampleSidebar: some View {
-      HomeSidebarSampleData.Sidebar()
+      HomeSidebarSampleData.Sidebar(isSelectable: layoutMode == .split)
     }
   #endif
 

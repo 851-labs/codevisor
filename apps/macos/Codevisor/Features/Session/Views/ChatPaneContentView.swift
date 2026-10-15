@@ -1,5 +1,6 @@
 import CodevisorCore
 import SwiftUI
+import CodevisorUI
 
 struct ChatPaneContentView: View {
   let descriptor: PaneDescriptorState

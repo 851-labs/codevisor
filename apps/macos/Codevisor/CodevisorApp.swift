@@ -387,24 +387,6 @@ enum SidebarSelection: Hashable {
   case newChat(NewChatTarget?)
 }
 
-struct NewChatTarget: Hashable {
-  let serverId: String
-  let projectId: UUID?
-
-  init(serverId: String, projectId: UUID?) {
-    self.serverId = serverId
-    self.projectId = projectId
-  }
-
-  init(machine serverId: String) {
-    self.init(serverId: serverId, projectId: nil)
-  }
-
-  init(_ project: Project) {
-    self.init(serverId: project.serverId, projectId: project.id)
-  }
-}
-
 #Preview("Root") {
   RootView()
     .environment(AppEnvironment.preview())

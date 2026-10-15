@@ -28,12 +28,17 @@ extension SidebarView {
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
-    let pinned = Set(pinnedWorkspaceIDs)
-    let listed = listedSidebarItems
-    let pinnedItems = listed.filter { pinned.contains($0.id.uuidString) }
-    let pinnedGroup = SidebarWorkspaceGroup(id: SidebarWorkspaceGroup.pinnedID, heading: nil, items: pinnedItems)
-    let rest = groupedWorkspaces(listed.filter { !pinned.contains($0.id.uuidString) })
-    return pinnedItems.isEmpty ? rest : [pinnedGroup] + rest
+    SidebarWorkspaceGroup.groups(
+      listedSidebarItems, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs, projects: list.projects,
+      defaultServerId: environment.defaultComposerServerId
+    ) { serverId in
+      let machine = environment.machines.machine(for: serverId)
+      return SidebarWorkspaceGroup.Heading(
+        title: machineName(forServer: serverId) ?? "Unknown Machine",
+        systemImage: machine?.icon.systemImage ?? "questionmark.circle",
+        newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
+      )
+    }
   }
 
   func isPinned(_ workspace: Workspace) -> Bool {
@@ -49,46 +54,6 @@ extension SidebarView {
         pinnedWorkspaceIDs.append(id)
       }
     }
-  }
-
-  private func groupedWorkspaces(_ items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
-    switch grouping {
-    case .flat:
-      return [SidebarWorkspaceGroup(id: "all", heading: nil, items: items)]
-    case .machine:
-      return SidebarWorkspaceGroup.grouping(items, by: { "machine:\($0.serverId)" }) { item in
-        let machine = environment.machines.machine(for: item.serverId)
-        return SidebarWorkspaceGroup.Heading(
-          title: machineName(forServer: item.serverId) ?? "Unknown Machine",
-          systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-          newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
-        )
-      }
-    case .project:
-      let records = Dictionary(
-        list.projects.map { ("\($0.serverId)/\($0.id)", $0) }, uniquingKeysWith: { first, _ in first })
-      let groups = Dictionary(
-        ProjectGroup.grouping(list.projects).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-      func groupID(_ item: WorkspaceSidebarItem) -> String {
-        records["\(item.serverId)/\(item.projectId)"].map(ProjectGroup.groupID(for:))
-          ?? "project|\(item.serverId)|\(item.projectId.uuidString)"
-      }
-      return SidebarWorkspaceGroup.grouping(items, by: { "project:\(groupID($0))" }) { item in
-        let group = groups[groupID(item)]
-        return SidebarWorkspaceGroup.Heading(
-          title: group?.name ?? "Unknown Project",
-          systemImage: EntitySystemSymbol.projectList,
-          newChatTarget: newChatTarget(in: group, fallback: item)
-        )
-      }
-    }
-  }
-
-  private func newChatTarget(in group: ProjectGroup?, fallback item: WorkspaceSidebarItem) -> NewChatTarget {
-    if let member = group?.member(on: environment.defaultComposerServerId) {
-      return NewChatTarget(member)
-    }
-    return NewChatTarget(serverId: item.serverId, projectId: item.projectId)
   }
 
   func isExpanded(_ group: SidebarWorkspaceGroup) -> Bool {

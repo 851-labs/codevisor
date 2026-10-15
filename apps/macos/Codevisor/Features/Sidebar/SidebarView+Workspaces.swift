@@ -44,7 +44,7 @@ extension SidebarView {
       subtitle: rowSubtitle(for: workspace),
       icon: icon,
       store: store,
-      pullRequest: rowDetails.contains(.pullRequest) ? rowPullRequest(for: workspace) : nil,
+      pullRequest: rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil,
       machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
       isSelected: isSelected,
       isReordering: isReordering,
@@ -71,71 +71,28 @@ extension SidebarView {
   }
 
   func rowSubtitle(for workspace: Workspace) -> String? {
-    let groupNamesProject = grouping == .project && isUnderGroupHeading(workspace)
-    let projectName = ProjectGroup.grouping(list.projects).first {
-      $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
-    }?.name
-    let parts = SidebarRowDetail.subtitleDetails.compactMap { detail -> String? in
-      guard rowDetails.contains(detail) else { return nil }
-      let part: String? =
-        switch detail {
-        case .project: groupNamesProject ? nil : projectName
-        case .branch: rowBranch(for: workspace)
-        default: nil
-        }
-      return part?.isEmpty == false ? part : nil
-    }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
-  }
-
-  func rowBranch(for workspace: Workspace) -> String? {
-    if workspace.isArchived, let archived = store?.archivedGit.byWorkspace[workspace.id] { return archived.branch }
-    return store?.branches.byWorkspace[workspace.id]
-  }
-
-  func rowPullRequest(for workspace: Workspace) -> ServerGitPullRequest? {
-    if workspace.isArchived, let archived = store?.archivedGit.byWorkspace[workspace.id] { return archived.pullRequest }
-    return store?.pullRequests.byWorkspace[workspace.id]
-  }
-
-  struct GitLookupRefreshKey: Equatable {
-    let pullRequests: Bool
-    let branches: Bool
-    let workspaceIds: [UUID]
-    let archivedWorkspaceIds: [UUID]
-  }
-
-  var gitLookupRefreshKey: GitLookupRefreshKey? {
-    let pullRequests = rowDetails.contains(.pullRequest)
-    let branches = rowDetails.contains(.branch)
-    guard store != nil, pullRequests || branches else { return nil }
-    return GitLookupRefreshKey(
-      pullRequests: pullRequests, branches: branches,
-      workspaceIds: listedSidebarItems.map(\.id), archivedWorkspaceIds: visibleArchivedItems.map(\.id)
+    SidebarRowSubtitle.make(
+      details: rowDetails,
+      projectName: ProjectGroup.grouping(list.projects).first {
+        $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
+      }?.name,
+      branch: store?.gitLookups.branch(for: workspace),
+      groupNamesProject: grouping == .project && isUnderGroupHeading(workspace)
     )
   }
 
+  var gitLookupRefreshKey: SidebarGitLookups.RefreshKey? {
+    guard store != nil else { return nil }
+    return SidebarGitLookups.refreshKey(
+      details: rowDetails, workspaceIds: listedSidebarItems.map(\.id),
+      archivedWorkspaceIds: visibleArchivedItems.map(\.id))
+  }
+
   func refreshGitLookups() {
-    guard let store else { return }
-    func targets<Request, Value>(_ requests: [(Workspace, Request)]) -> [SidebarGitLookup<Request, Value>.Target] {
-      requests.map { workspace, request in
-        .init(workspaceId: workspace.id, request: request, client: environment.machines.client(for: workspace.serverId))
-      }
-    }
-    let checkouts = listedWorkspaceItems.compactMap { item -> (Workspace, String)? in
-      guard let path = item.workspace.rootDirectory, !path.isEmpty else { return nil }
-      return (item.workspace, path)
-    }
-    let pullRequests = rowDetails.contains(.pullRequest)
-    if pullRequests {
-      store.pullRequests.refresh(targets(checkouts))
-    }
-    if rowDetails.contains(.branch) {
-      store.branches.refresh(targets(checkouts))
-    }
-    store.archivedGit.forget(listedSidebarItems.map(\.id))
-    let archived = listedArchivedWorkspaces.filter { $0.rootDirectory?.isEmpty == false }
-    store.archivedGit.refresh(targets(archived.map { ($0, pullRequests) }))
+    store?.gitLookups.refresh(
+      active: listedWorkspaceItems.map(\.workspace), archived: listedArchivedWorkspaces,
+      listedIds: listedSidebarItems.map(\.id), details: rowDetails, client: environment.machines.client(for:)
+    )
   }
 
   func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {

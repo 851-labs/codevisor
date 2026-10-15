@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorOpenRequest: Equatable {
@@ -34,8 +35,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         WorkspaceInspectorView(
           workspace: workspace,
           project: inspected.project,
-          branch: store.branches.byWorkspace[workspace.id],
-          pullRequest: store.pullRequests.byWorkspace[workspace.id],
+          branch: store.gitLookups.branch(for: workspace),
+          pullRequest: store.gitLookups.pullRequest(for: workspace),
           machineName: environment.machines.fleetMachineName(for: workspace.serverId),
           supportsDesktop: environment.machines.statusByMachineId[workspace.serverId]?.supportsScreenSharing == true,
           onOpen: { destination in
