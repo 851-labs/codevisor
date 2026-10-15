@@ -238,7 +238,7 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
 
   private func label(_ machine: CodevisorMachine) -> some View {
     HStack {
-      Label(machine.name, systemImage: EntitySystemSymbol.machine(machine))
+      Label(machine.name, systemImage: machine.icon.systemImage)
       Spacer()
       Text(status(machine)).foregroundStyle(theme.textSecondary)
     }

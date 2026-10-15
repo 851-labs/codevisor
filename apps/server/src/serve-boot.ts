@@ -303,12 +303,14 @@ export const startMachineNetwork = async (options: {
   readonly port: number
   readonly serverId: string
   readonly machineName: string
+  readonly icon: Promise<string>
   readonly version: string | undefined
   readonly db: CodevisorDatabaseService
 }) => {
   const cloudBridgeOptions = {
     credentialsPath: join(dirname(options.databasePath), "cloud.json"),
     machineName: options.machineName,
+    icon: options.icon,
     serverId: options.serverId,
     appVersion: options.version ?? "unknown",
     localBaseUrl: `http://127.0.0.1:${options.port}`,

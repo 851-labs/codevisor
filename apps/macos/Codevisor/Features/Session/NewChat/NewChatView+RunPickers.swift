@@ -71,14 +71,14 @@ extension NewChatView {
     )
     return RunPickerMenu(
       chipText: selectedMachine?.name ?? "Machine",
-      chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local)
+      chipSymbol: (selectedMachine ?? .local).icon.systemImage
     ) {
       Autocomplete.Picker("Machines", selection: selection, options: machines) { machine in
         Autocomplete.Choice(machine.name, value: machine.id) {
           if case .waiting = environment.machines.availability(for: machine.id) {
             ProgressView().controlSize(.small)
           } else {
-            Image(systemName: EntitySystemSymbol.machine(machine))
+            Image(systemName: machine.icon.systemImage)
           }
         } label: {
           Text(machine.name)

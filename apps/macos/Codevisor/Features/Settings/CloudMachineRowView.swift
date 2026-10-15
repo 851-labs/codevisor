@@ -16,7 +16,7 @@ struct CloudMachineRowView: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: EntitySystemSymbol.machine(machine))
+      Image(systemName: machine.icon.systemImage)
         .symbolRenderingMode(.monochrome)
         .foregroundStyle(theme.textPrimary)
         .frame(width: 20)

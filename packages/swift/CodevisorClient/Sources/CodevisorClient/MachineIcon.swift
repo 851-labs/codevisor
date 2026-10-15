@@ -1,14 +1,16 @@
 import Foundation
 
-public struct MachineIcon: Identifiable, Hashable, Sendable {
+public struct MachineIcon: Identifiable, Hashable, Sendable, Codable {
   public let systemImage: String
   public let title: String
 
   public var id: String { systemImage }
 
+  public static let fallback = MachineIcon(systemImage: "desktopcomputer", title: "iMac")
+
   public static let choices: [MachineIcon] = [
     MachineIcon(systemImage: "laptopcomputer", title: "MacBook"),
-    MachineIcon(systemImage: "desktopcomputer", title: "iMac"),
+    fallback,
     MachineIcon(systemImage: "macmini", title: "Mac mini"),
     MachineIcon(systemImage: "macstudio", title: "Mac Studio"),
     MachineIcon(systemImage: "macpro.gen3", title: "Mac Pro"),
@@ -24,14 +26,22 @@ public struct MachineIcon: Identifiable, Hashable, Sendable {
     MachineIcon(systemImage: "flask", title: "Lab"),
   ]
 
-  public static let fallback = "desktopcomputer"
-
-  public static func choice(_ systemImage: String?) -> MachineIcon? {
-    let outline = systemImage == "cloud.fill" ? "cloud" : systemImage
-    return choices.first { $0.systemImage == outline }
+  private init(systemImage: String, title: String) {
+    self.systemImage = systemImage
+    self.title = title
   }
 
-  public static func systemImage(for icon: String?) -> String {
-    choice(icon)?.systemImage ?? fallback
+  public init(resolving systemImage: String?) {
+    let outline = systemImage == "cloud.fill" ? "cloud" : systemImage
+    self = Self.choices.first { $0.systemImage == outline } ?? Self.fallback
+  }
+
+  public init(from decoder: any Decoder) throws {
+    self.init(resolving: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(systemImage)
   }
 }

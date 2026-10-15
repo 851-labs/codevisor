@@ -43,6 +43,7 @@ import { guessMachineIcon } from "./machine-icon.js"
 export interface CloudBridgeOptions {
   readonly credentialsPath: string
   readonly machineName: string
+  readonly icon?: Promise<string>
   readonly appVersion: string
   readonly serverId?: string
   readonly localBaseUrl: string
@@ -181,7 +182,7 @@ const makeBridge = async (
   peerKeyPins: PeerKeyPinStore
 ): Promise<CloudBridge> => {
   const machineName = options.machineName === "" ? hostname() : options.machineName
-  const iconGuess = guessMachineIcon()
+  const iconGuess = options.icon ?? guessMachineIcon()
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
@@ -226,7 +227,7 @@ const makeBridge = async (
     device: {
       name: machineName,
       os: process.platform,
-      ...(icon === undefined ? {} : { icon }),
+      icon,
       appVersion: options.appVersion,
       ...(options.serverId === undefined ? {} : { serverId: options.serverId }),
       ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel })

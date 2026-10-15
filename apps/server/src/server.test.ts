@@ -288,6 +288,23 @@ describe("@codevisor/server", () => {
     })
   })
 
+  it("reports the machine's icon in its info", async () => {
+    const { services } = await makeServices("server-icon")
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({
+          bootId: "test-boot",
+          id: "server-icon",
+          port: 0,
+          icon: Promise.resolve("macstudio")
+        })
+      )
+    )
+    runningServers.push(server)
+    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({ icon: "macstudio" })
+  })
+
   it("serves health, info, OpenAPI, update state, pairing, and auth", async () => {
     const { server, services } = await start()
 

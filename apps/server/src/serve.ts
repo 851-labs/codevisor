@@ -37,6 +37,7 @@ import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibito
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
+import { guessMachineIcon } from "./infra/machine-icon.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
@@ -208,8 +209,9 @@ export const runServe = (
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
+    const icon = guessMachineIcon()
     const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
-      startMachineNetwork({ databasePath, port, serverId, machineName, version, db })
+      startMachineNetwork({ databasePath, port, serverId, machineName, icon, version, db })
     )
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
@@ -353,6 +355,7 @@ export const runServe = (
         directPathEnabled: directPathMode === "enabled",
         worktreeNameStyle,
         cloud: cloudControl,
+        icon,
         bootId,
         processId: process.pid,
         appOwned,

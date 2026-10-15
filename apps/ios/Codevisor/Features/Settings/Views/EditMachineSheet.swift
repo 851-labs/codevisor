@@ -6,12 +6,15 @@ struct EditMachineSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var name: String
   @State private var icon: String
-  let onSave: (_ name: String, _ icon: String) -> Void
+  private let savedIcon: String
+  let onSave: (_ name: String, _ changedIcon: String?) -> Void
 
-  init(machine: CloudMachine, onSave: @escaping (_ name: String, _ icon: String) -> Void) {
+  init(machine: CloudMachine, onSave: @escaping (_ name: String, _ changedIcon: String?) -> Void) {
     self.onSave = onSave
     _name = State(initialValue: machine.name)
-    _icon = State(initialValue: MachineIcon.systemImage(for: machine.icon))
+    let savedIcon = MachineIcon(resolving: machine.icon).systemImage
+    self.savedIcon = savedIcon
+    _icon = State(initialValue: savedIcon)
   }
 
   private var trimmedName: String {
@@ -45,7 +48,7 @@ struct EditMachineSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
-            onSave(trimmedName, icon)
+            onSave(trimmedName, icon == savedIcon ? nil : icon)
             dismiss()
           }
           .disabled(trimmedName.isEmpty)

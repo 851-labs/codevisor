@@ -5,13 +5,13 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   public var name: String
   public var baseURL: URL
   public var kind: String
-  public var icon: String?
+  public var icon: MachineIcon
   public init(id: String, name: String, baseURL: URL, kind: String, icon: String? = nil) {
     self.id = id
     self.name = name
     self.baseURL = baseURL
     self.kind = kind
-    self.icon = icon
+    self.icon = MachineIcon(resolving: icon)
   }
 
   public var isLocal: Bool { id == Self.local.id }

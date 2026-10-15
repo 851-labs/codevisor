@@ -38,7 +38,8 @@ export const ServerInfo = Schema.Struct({
   machineId: Schema.optional(Schema.String),
   arch: Schema.optional(Schema.String),
   hostname: Schema.optional(Schema.String),
-  maxUploadBytes: Schema.optional(Schema.Number)
+  maxUploadBytes: Schema.optional(Schema.Number),
+  icon: Schema.optional(Schema.String)
 })
 export type ServerInfo = typeof ServerInfo.Type
 

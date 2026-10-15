@@ -70,6 +70,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
   public var features: [String]?
   public var maxUploadBytes: Int?
   public var cloudDeviceId: String?
+  public var icon: String?
 
   public init(
     id: String,
@@ -80,7 +81,8 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     bindHost: String,
     features: [String]? = nil,
     maxUploadBytes: Int? = nil,
-    cloudDeviceId: String? = nil
+    cloudDeviceId: String? = nil,
+    icon: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -91,6 +93,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     self.features = features
     self.maxUploadBytes = maxUploadBytes
     self.cloudDeviceId = cloudDeviceId
+    self.icon = icon
   }
 }
 

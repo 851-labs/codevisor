@@ -269,6 +269,25 @@ struct CloudAccountControllerTests {
     #expect(controller.machines.first?.icon == "macstudio")
   }
 
+  @Test("Renaming a machine without picking an icon leaves its icon alone")
+  func renameKeepsIcon() async throws {
+    let client = FakeCloudClient()
+    client.verifyResult = .success("t")
+    client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
+    var machine = testMachine("m1", name: "Old Name")
+    machine.icon = "laptopcomputer"
+    client.machinesResult = .success([machine])
+    let (controller, _, _) = makeController(client: client)
+    await controller.completeSignIn(ott: "ott")
+
+    client.machinesResult = .failure(OfflineError())
+    await controller.updateMachine(deviceId: "m1", name: "Studio", icon: nil)
+
+    #expect(client.machineUpdates.first?.icon == nil)
+    #expect(controller.machines.first?.name == "Studio")
+    #expect(controller.machines.first?.icon == "laptopcomputer")
+  }
+
   @Test("Remove drops the machine optimistically and on the server")
   func removeMachine() async throws {
     let client = FakeCloudClient()

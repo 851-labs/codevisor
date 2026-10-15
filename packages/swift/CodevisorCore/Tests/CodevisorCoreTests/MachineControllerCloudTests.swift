@@ -90,7 +90,7 @@ struct MachineControllerCloudTests {
     await controller.refreshStatus(for: "local")
 
     #expect(controller.machines.first?.name == "Studio Desk")
-    #expect(controller.machines.first?.icon == "macstudio")
+    #expect(controller.machines.first?.icon.systemImage == "macstudio")
     #expect(controller.allMachines.map(\.id) == ["local"])
 
     localTransport.responsesByPath["/v1/info"] = nil
@@ -99,6 +99,30 @@ struct MachineControllerCloudTests {
     #expect(controller.statusByMachineId["local"]?.isReachable == false)
     #expect(controller.machines.first?.name == "Studio Desk")
     #expect(controller.allMachines.map(\.id) == ["local"])
+  }
+
+  @Test("This Mac shows its server's icon until the cloud has one, and keeps it while unreachable")
+  func localMachineUsesServerIcon() async throws {
+    let deviceId = "dev-laptop"
+    let (controller, _, provider, localTransport) = makeRegisteredLocal(deviceId: deviceId)
+    localTransport.responsesByPath["/v1/info"] = """
+      {"id":"local","name":"Local","kind":"local","version":"1.0.0","platform":"darwin",
+       "bindHost":"127.0.0.1","cloudDeviceId":"\(deviceId)","icon":"laptopcomputer"}
+      """
+    #expect(controller.machines.first?.icon == MachineIcon.fallback)
+
+    await controller.refreshStatus(for: "local")
+    #expect(controller.machines.first?.icon.systemImage == "laptopcomputer")
+
+    var registration = makeCloudMachine(deviceId: deviceId, name: "Laptop")
+    registration.icon = "house"
+    provider.cloudMachines = [registration]
+    #expect(controller.machines.first?.icon.systemImage == "house")
+
+    provider.cloudMachines = []
+    localTransport.responsesByPath["/v1/info"] = nil
+    await controller.refreshStatus(for: "local")
+    #expect(controller.machines.first?.icon.systemImage == "laptopcomputer")
   }
 
   @Test("This Mac's probe prunes records under its cloud twin id")

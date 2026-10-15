@@ -45,7 +45,7 @@ extension SidebarView {
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }
-    return SidebarRowMachine(name: name, systemImage: EntitySystemSymbol.machine(machine))
+    return SidebarRowMachine(name: name, systemImage: machine.icon.systemImage)
   }
 
   func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {

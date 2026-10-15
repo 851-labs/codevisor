@@ -25,7 +25,7 @@ export const guessMachineIcon = async (
     readonly run?: RunCommand
     readonly listDirectory?: (path: string) => Promise<ReadonlyArray<string>>
   } = {}
-): Promise<string | undefined> => {
+): Promise<string> => {
   /* v8 ignore start */
   const platform = deps.platform ?? process.platform
   const run =
@@ -48,6 +48,6 @@ export const guessMachineIcon = async (
     case "win32":
       return "pc"
     default:
-      return undefined
+      return "server.rack"
   }
 }

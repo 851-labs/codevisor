@@ -123,7 +123,7 @@ public protocol CloudAccountClienting: Sendable {
   func developmentLogin() async throws -> String
   func session(token: String) async throws -> CloudSessionUser?
   func machines(token: String) async throws -> [CloudMachine]
-  func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws
+  func updateMachine(deviceId: String, name: String, icon: String?, token: String) async throws
   func removeMachine(deviceId: String, token: String) async throws
   func approveDevice(userCode: String, token: String) async throws
   func denyDevice(userCode: String, token: String) async throws
@@ -240,8 +240,10 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     }
   }
 
-  public func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws {
-    let body = try JSONEncoder().encode(["name": name, "icon": icon])
+  public func updateMachine(deviceId: String, name: String, icon: String?, token: String) async throws {
+    var fields = ["name": name]
+    if let icon { fields["icon"] = icon }
+    let body = try JSONEncoder().encode(fields)
     _ = try await perform(
       "/api/machines/\(escaped(deviceId))",
       method: "PATCH",

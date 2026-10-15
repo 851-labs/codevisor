@@ -205,6 +205,7 @@ export const handleRequest = async (
         arch: process.arch,
         hostname: hostname(),
         maxUploadBytes: MAX_UPLOAD_BYTES,
+        ...(config.icon === undefined ? {} : { icon: await config.icon }),
         ...(cloudDeviceId === undefined ? {} : { cloudDeviceId })
       })
       return

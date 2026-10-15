@@ -102,7 +102,7 @@ struct ProjectsSettingsScreen: View {
         Menu {
           Section("Add a Project on") {
             ForEach(readyMachines, id: \.id) { machine in
-              Button(machine.name, systemImage: EntitySystemSymbol.machine(machine)) {
+              Button(machine.name, systemImage: machine.icon.systemImage) {
                 addingOnMachine = AddTarget(id: machine.id)
               }
             }

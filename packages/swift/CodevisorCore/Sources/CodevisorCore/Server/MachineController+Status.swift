@@ -14,7 +14,8 @@ extension MachineController {
         cloudDeviceId: info.cloudDeviceId,
         serverId: info.id,
         features: Set(info.features ?? []),
-        maxUploadBytes: info.maxUploadBytes
+        maxUploadBytes: info.maxUploadBytes,
+        icon: info.icon
       )
       connection.dataUpgradeProgress = nil
       if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
@@ -36,14 +37,17 @@ extension MachineController {
       }
     } catch {
       let knownCloudDeviceId = connection.status?.cloudDeviceId
+      let knownIcon = connection.status?.icon
       if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
-        connection.status = MachineStatus(isReachable: false, label: message, cloudDeviceId: knownCloudDeviceId)
+        connection.status = MachineStatus(
+          isReachable: false, label: message, cloudDeviceId: knownCloudDeviceId, icon: knownIcon)
       } else if await probeDataUpgrade(for: id, client: client) != nil {
       } else {
         connection.status = MachineStatus(
           isReachable: false,
           label: "Unreachable",
-          cloudDeviceId: knownCloudDeviceId
+          cloudDeviceId: knownCloudDeviceId,
+          icon: knownIcon
         )
         Log.machines.debug(
           "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")

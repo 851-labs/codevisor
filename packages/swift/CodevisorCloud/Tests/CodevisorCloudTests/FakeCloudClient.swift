@@ -30,7 +30,7 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
 
   private(set) var sessionTokens: [String] = []
   private(set) var machineTokens: [String] = []
-  private(set) var machineUpdates: [(deviceId: String, name: String, icon: String)] = []
+  private(set) var machineUpdates: [(deviceId: String, name: String, icon: String?)] = []
   private(set) var removals: [String] = []
   private(set) var deviceDecisions: [(decision: String, userCode: String, token: String)] = []
 
@@ -100,7 +100,7 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
     }.get()
   }
 
-  func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws {
+  func updateMachine(deviceId: String, name: String, icon: String?, token: String) async throws {
     lock.withLock { machineUpdates.append((deviceId: deviceId, name: name, icon: icon)) }
   }
 
@@ -230,7 +230,7 @@ struct OfflineCloudClient: CloudAccountClienting {
   func developmentLogin() async throws -> String { throw OfflineError() }
   func session(token: String) async throws -> CloudSessionUser? { throw OfflineError() }
   func machines(token: String) async throws -> [CloudMachine] { throw OfflineError() }
-  func updateMachine(deviceId: String, name: String, icon: String, token: String) async throws {
+  func updateMachine(deviceId: String, name: String, icon: String?, token: String) async throws {
     throw OfflineError()
   }
   func removeMachine(deviceId: String, token: String) async throws { throw OfflineError() }

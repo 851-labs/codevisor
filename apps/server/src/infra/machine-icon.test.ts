@@ -58,8 +58,8 @@ describe("guessMachineIcon", () => {
     )
   })
 
-  it("guesses a PC on Windows and nothing elsewhere", async () => {
+  it("guesses a PC on Windows and a server elsewhere", async () => {
     expect(await guessMachineIcon({ platform: "win32" })).toBe("pc")
-    expect(await guessMachineIcon({ platform: "freebsd" })).toBeUndefined()
+    expect(await guessMachineIcon({ platform: "freebsd" })).toBe("server.rack")
   })
 })

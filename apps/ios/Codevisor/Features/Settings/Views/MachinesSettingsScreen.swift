@@ -98,7 +98,7 @@ struct MachinesSettingsScreen: View {
         connectionText(connection)
       }
     } icon: {
-      Image(systemName: EntitySystemSymbol.machine(machine))
+      Image(systemName: machine.icon.systemImage)
         .foregroundStyle(.secondary)
     }
     .accessibilityElement(children: .combine)

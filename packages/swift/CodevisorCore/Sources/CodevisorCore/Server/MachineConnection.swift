@@ -250,10 +250,9 @@ extension MachineController {
   public var machines: [CodevisorMachine] {
     guard includesLocalMachine else { return [] }
     var local = CodevisorMachine.local
-    if let presence = localCloudMachine {
-      local.name = presence.name
-      local.icon = presence.icon
-    }
+    let presence = localCloudMachine
+    if let presence { local.name = presence.name }
+    local.icon = MachineIcon(resolving: presence?.icon ?? statusByMachineId[local.id]?.icon)
     return [local]
   }
 

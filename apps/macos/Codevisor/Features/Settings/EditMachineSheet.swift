@@ -7,21 +7,24 @@ struct EditMachineSheet: View {
   @Environment(\.theme) private var theme
   @State private var name: String
   @State private var icon: String
+  private let savedIcon: String
   let isLocal: Bool
-  let onSave: (_ name: String, _ icon: String) -> Void
+  let onSave: (_ name: String, _ changedIcon: String?) -> Void
   let onDisconnect: (() -> Void)?
 
   init(
     machine: CloudMachine,
     isLocal: Bool,
-    onSave: @escaping (_ name: String, _ icon: String) -> Void,
+    onSave: @escaping (_ name: String, _ changedIcon: String?) -> Void,
     onDisconnect: (() -> Void)?
   ) {
     self.isLocal = isLocal
     self.onSave = onSave
     self.onDisconnect = onDisconnect
     _name = State(initialValue: machine.name)
-    _icon = State(initialValue: MachineIcon.systemImage(for: machine.icon))
+    let savedIcon = MachineIcon(resolving: machine.icon).systemImage
+    self.savedIcon = savedIcon
+    _icon = State(initialValue: savedIcon)
   }
 
   private var trimmedName: String {
@@ -63,7 +66,7 @@ struct EditMachineSheet: View {
       }
       ToolbarItem(placement: .confirmationAction) {
         Button("Save") {
-          onSave(trimmedName, icon)
+          onSave(trimmedName, icon == savedIcon ? nil : icon)
           dismiss()
         }
         .disabled(trimmedName.isEmpty)

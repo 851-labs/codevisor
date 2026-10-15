@@ -309,12 +309,12 @@ public final class CloudAccountController {
     }
   }
 
-  public func updateMachine(deviceId: String, name: String, icon: String) async {
+  public func updateMachine(deviceId: String, name: String, icon: String?) async {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let token = storedToken else { return }
     if let index = machines.firstIndex(where: { $0.deviceId == deviceId }) {
       machines[index].name = trimmed
-      machines[index].icon = icon
+      if let icon { machines[index].icon = icon }
     }
     do {
       try await client.updateMachine(deviceId: deviceId, name: trimmed, icon: icon, token: token)

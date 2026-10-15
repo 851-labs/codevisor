@@ -26,7 +26,7 @@ struct ComposerMachineMenu: UIViewRepresentable {
     let choices = machines.map { machine in
       UIAction(
         title: machine.name,
-        image: UIImage(systemName: EntitySystemSymbol.machine(machine)),
+        image: UIImage(systemName: machine.icon.systemImage),
         attributes: readyMachineIds.contains(machine.id) ? [] : .disabled,
         state: machine.id == selectedServerId ? .on : .off
       ) { _ in
