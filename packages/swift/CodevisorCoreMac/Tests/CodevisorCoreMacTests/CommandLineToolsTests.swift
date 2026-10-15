@@ -9,9 +9,14 @@ struct CommandLineToolsTests {
   private func makeFixture() throws -> (root: URL, runtime: URL, bin: URL) {
     let root = fileManager.temporaryDirectory
       .appendingPathComponent("cli-tools-\(UUID().uuidString)", isDirectory: true)
-    let runtime = try makeRuntime(in: root, bundleName: "Codevisor.app")
-    let bin = root.appendingPathComponent("bin", isDirectory: true)
-    return (root, runtime, bin)
+    do {
+      let runtime = try makeRuntime(in: root, bundleName: "Codevisor.app")
+      let bin = root.appendingPathComponent("bin", isDirectory: true)
+      return (root, runtime, bin)
+    } catch {
+      try? fileManager.removeItem(at: root)
+      throw error
+    }
   }
 
   private func makeRuntime(in root: URL, bundleName: String) throws -> URL {
