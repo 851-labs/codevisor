@@ -13,8 +13,8 @@ const server = (statuses: Array<unknown>) => {
       if (next instanceof Error) throw next
       return next
     })
-  }
-  return fake as typeof fake & OpenCodeServer
+  } satisfies OpenCodeServer
+  return fake
 }
 
 const immediately = async () => undefined

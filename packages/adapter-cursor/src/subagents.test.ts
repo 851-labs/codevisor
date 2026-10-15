@@ -1,30 +1,41 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { makeCursorExtension } from "./extension.js"
 import { CURSOR_SUBAGENT_METHOD, CursorSubagents } from "./subagents.js"
+import { payloadOf as payload } from "./test-support.js"
 
 const SESSION = "parent"
 const CHILD = "agent-1"
+const FLUSH_METHOD = "_codevisor/test_flush"
+const connections: Array<acp.AgentConnection> = []
 
-const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | undefined =>
-  event?.payload as Record<string, unknown> | undefined
-
-const taskCall = (status: string, extra: Record<string, unknown> = {}) => ({
-  kind: "other",
-  rawInput: {
-    _toolName: "task",
-    description: "Find SQLite chat schema",
-    prompt: "Find which file defines the chat tables.",
-    subagentType: { unspecified: {} }
-  },
-  sessionUpdate: status === "pending" ? "tool_call" : "tool_call_update",
-  status,
-  title: "Task: Find SQLite chat schema",
-  toolCallId: "task-1",
-  ...extra
+afterEach(() => {
+  for (const connection of connections.splice(0)) connection.close()
 })
+
+const taskCall = (
+  status: acp.ToolCallStatus,
+  extra: { readonly rawOutput?: unknown } = {}
+): acp.SessionUpdate => {
+  const call = {
+    kind: "other" as const,
+    rawInput: {
+      _toolName: "task",
+      description: "Find SQLite chat schema",
+      prompt: "Find which file defines the chat tables.",
+      subagentType: { unspecified: {} }
+    },
+    status,
+    title: "Task: Find SQLite chat schema",
+    toolCallId: "task-1",
+    ...extra
+  }
+  return status === "pending"
+    ? { ...call, sessionUpdate: "tool_call" }
+    : { ...call, sessionUpdate: "tool_call_update" }
+}
 
 const announcement = (update: Record<string, unknown>) => ({
   sessionId: SESSION,
@@ -37,26 +48,23 @@ const announcement = (update: Record<string, unknown>) => ({
 
 const cursorExtension = () => {
   const emitted: Array<RuntimeEvent> = []
-  const handlers = new Map<string, (params: unknown) => void>()
   const extension = makeCursorExtension({
     emit: (event) => emitted.push(event),
     enqueueQuestion: () => new Promise(() => undefined)
   })
-  const app = {
-    onNotification: (
-      method: string,
-      _parse: unknown,
-      handler: (message: { params: unknown }) => void
-    ) => handlers.set(method, (params) => handler({ params })),
-    onRequest: () => app
+  const app = new acp.ClientApp().onRequest<unknown, Record<string, never>>(
+    FLUSH_METHOD,
+    (params) => params,
+    () => ({})
+  )
+  const agent = new acp.AgentApp().connect(extension.configureClientApp?.(app) ?? app)
+  connections.push(agent)
+  const notify = (sessionId: string, update: acp.SessionUpdate) =>
+    extension.mapSessionNotification?.({ sessionId, update }) ?? []
+  const announce = async (params: unknown) => {
+    await agent.client.notify(CURSOR_SUBAGENT_METHOD, params)
+    await agent.client.request(FLUSH_METHOD, {})
   }
-  extension.configureClientApp?.(app as never)
-  const notify = (sessionId: string, update: Record<string, unknown>) =>
-    extension.mapSessionNotification?.({
-      sessionId,
-      update: update as unknown as acp.SessionNotification["update"]
-    }) ?? []
-  const announce = (params: unknown) => handlers.get(CURSOR_SUBAGENT_METHOD)?.(params)
   return { announce, emitted, extension, notify }
 }
 
@@ -147,10 +155,12 @@ describe("Cursor subagents", () => {
     expect(extension.rewriteAgentLine!(text)).toBe(text)
   })
 
-  it("nests a subagent's own session under its agent and settles it when the session ends", () => {
+  it("nests a subagent's own session under its agent and settles it when the session ends", async () => {
     const { announce, emitted, notify } = cursorExtension()
     notify(SESSION, taskCall("pending"))
-    announce(announcement({ name: "explore", sessionUpdate: "subagent_spawned", task: "Find…" }))
+    await announce(
+      announcement({ name: "explore", sessionUpdate: "subagent_spawned", task: "Find…" })
+    )
     expect(payload(emitted.at(-1))).toEqual({
       _meta: { codevisorSubagent: { taskId: CHILD } },
       sessionUpdate: "tool_call_update",
@@ -187,7 +197,7 @@ describe("Cursor subagents", () => {
       taskCall("completed", { rawOutput: { durationMs: 5, isBackground: true } })
     )
     expect(payload(returned)).not.toHaveProperty("status")
-    announce(announcement({ sessionUpdate: "subagent_state_update", state: "disconnected" }))
+    await announce(announcement({ sessionUpdate: "subagent_state_update", state: "disconnected" }))
     expect(payload(emitted.at(-1))).toEqual({
       sessionUpdate: "tool_call_update",
       status: "failed",

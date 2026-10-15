@@ -11,7 +11,7 @@ const attempt = {
 }
 
 const hold = (answers: (path: string, init?: { readonly method?: string }) => unknown) => {
-  const calls: Array<[string, unknown]> = []
+  const calls: Array<[string, { readonly method?: string } | undefined]> = []
   let release!: () => void
   const released = new Promise<void>((resolve) => {
     release = resolve
@@ -26,7 +26,7 @@ const hold = (answers: (path: string, init?: { readonly method?: string }) => un
       if (answer instanceof Error) throw answer
       return answer
     })
-  } as unknown as OpenCodeServer
+  } satisfies OpenCodeServer
   return { hold: { server, release: vi.fn(() => release()) }, calls, released }
 }
 
@@ -192,9 +192,7 @@ describe("OpenCode 2 sign-in", () => {
     })
     expect(await logins.answer(second.id, "again")).toMatchObject({ state: "error" })
     expect(await logins.cancel(second.id)).toBe(true)
-    expect(
-      rejected.calls.filter(([, init]) => (init as { method?: string })?.method === "DELETE")
-    ).toEqual([])
+    expect(rejected.calls.filter(([, init]) => init?.method === "DELETE")).toEqual([])
   })
 
   it("gives the server back when OpenCode refuses to start a sign-in", async () => {

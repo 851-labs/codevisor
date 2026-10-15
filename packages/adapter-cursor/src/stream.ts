@@ -1,12 +1,20 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import { runtimeEventFromNotification } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { isPlainRecord } from "@codevisor/api"
 
 import {
   couldBeCursorTerminalError,
   parseCursorTerminalError,
   type CursorTerminalError
 } from "./errors.js"
+
+type CursorMessageChunk = Extract<
+  acp.SessionUpdate,
+  { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }
+>
+
+type CursorAgentChunk = Extract<CursorMessageChunk, { sessionUpdate: "agent_message_chunk" }>
 
 interface CursorMessageState {
   readonly messageId: string
@@ -26,6 +34,7 @@ interface CursorTurnState {
 
 interface CursorPendingAgentText {
   notification: acp.SessionNotification
+  update: CursorAgentChunk
   text: string
 }
 
@@ -34,12 +43,10 @@ export interface CursorPromptLegResult {
   readonly terminalError?: CursorTerminalError
 }
 
-const contentText = (update: Record<string, unknown>): string => {
-  const content = update.content
-  if (typeof content !== "object" || content === null) return ""
-  const block = content as Record<string, unknown>
-  return block.type === "text" && typeof block.text === "string" ? block.text : ""
-}
+const contentText = (content: unknown): string =>
+  isPlainRecord(content) && content.type === "text" && typeof content.text === "string"
+    ? content.text
+    : ""
 
 const phaseCorrection = (
   sessionId: string,
@@ -87,8 +94,7 @@ export class CursorStreamNormalizer {
   }
 
   mapSessionNotification(notification: acp.SessionNotification): ReadonlyArray<RuntimeEvent> {
-    const sessionId = notification.sessionId
-    const update = notification.update as unknown as Record<string, unknown>
+    const { sessionId, update } = notification
     if (update.sessionUpdate === "user_message_chunk") {
       const active = this.sessions.get(sessionId)
       if (active?.suppressUserEcho === true) return []
@@ -98,10 +104,11 @@ export class CursorStreamNormalizer {
     const state = this.state(sessionId)
     state.suppressUserEcho = false
     if (update.sessionUpdate === "agent_message_chunk") {
-      const text = contentText(update)
+      const text = contentText(update.content)
       if (state.pendingAgentText !== undefined) {
         state.pendingAgentText = {
           notification,
+          update,
           text: state.pendingAgentText.text + text
         }
         return couldBeCursorTerminalError(state.pendingAgentText.text)
@@ -109,7 +116,7 @@ export class CursorStreamNormalizer {
           : this.flushPendingAgentText(sessionId, state)
       }
       if (couldBeCursorTerminalError(text)) {
-        state.pendingAgentText = { notification, text }
+        state.pendingAgentText = { notification, update, text }
         return []
       }
     }
@@ -121,7 +128,7 @@ export class CursorStreamNormalizer {
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
       case "agent_thought_chunk": {
-        return [...pending, this.mapMessageNotification(notification, state)]
+        return [...pending, this.mapMessageNotification(notification, update, state)]
       }
       case "tool_call": {
         const correction = this.demoteVisibleMessage(sessionId, state)
@@ -202,21 +209,21 @@ export class CursorStreamNormalizer {
 
   private mapMessageNotification(
     notification: acp.SessionNotification,
+    update: CursorMessageChunk,
     state: CursorTurnState
   ): RuntimeEvent {
-    const update = notification.update as unknown as Record<string, unknown>
+    const fields: Record<string, unknown> = update
     const suppliedId = typeof update.messageId === "string" ? update.messageId : undefined
     const message = this.ensureMessage(notification.sessionId, state, suppliedId)
-    if (update.sessionUpdate === "agent_message_chunk" && contentText(update).length > 0) {
+    if (update.sessionUpdate === "agent_message_chunk" && contentText(update.content).length > 0) {
       message.hasText = true
     }
-    if (update.phase === "commentary") message.commentary = true
-    if (update.phase === "final") message.final = true
-    const normalized = {
+    if (fields.phase === "commentary") message.commentary = true
+    if (fields.phase === "final") message.final = true
+    return runtimeEventFromNotification({
       ...notification,
       update: { ...update, messageId: message.messageId }
-    } as unknown as acp.SessionNotification
-    return runtimeEventFromNotification(normalized)
+    })
   }
 
   private flushPendingAgentText(
@@ -226,20 +233,14 @@ export class CursorStreamNormalizer {
     const pending = state.pendingAgentText
     if (pending === undefined) return []
     state.pendingAgentText = undefined
-    const update = pending.notification.update as unknown as Record<string, unknown>
-    const content =
-      typeof update.content === "object" && update.content !== null
-        ? (update.content as Record<string, unknown>)
-        : {}
-    const combined = {
-      ...pending.notification,
-      sessionId,
-      update: {
-        ...update,
-        content: { ...content, text: pending.text, type: "text" }
-      }
-    } as unknown as acp.SessionNotification
-    return [this.mapMessageNotification(combined, state)]
+    const content = isPlainRecord(pending.update.content) ? pending.update.content : {}
+    const update: CursorAgentChunk = {
+      ...pending.update,
+      content: { ...content, text: pending.text, type: "text" }
+    }
+    return [
+      this.mapMessageNotification({ ...pending.notification, sessionId, update }, update, state)
+    ]
   }
 
   private closeCurrent(state: CursorTurnState): void {

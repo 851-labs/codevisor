@@ -48,10 +48,10 @@ const harness = (responses: (url: URL) => Response) => {
         spawned.push({ args, env: options.env })
         return child
       },
-      fetch: (async (input: URL, init: RequestInit) => {
+      fetch: async (input, init) => {
         requests.push({ url: input, init })
         return responses(input)
-      }) as typeof fetch,
+      },
       wait: async (ms) => {
         waits.push(ms)
       }
