@@ -119,10 +119,25 @@ struct MachineControllerCloudTests {
     provider.cloudMachines = [registration]
     #expect(controller.machines.first?.icon.systemImage == "house")
 
+    registration.icon = "macbook.gen2"
+    provider.cloudMachines = [registration]
+    #expect(controller.machines.first?.icon.systemImage == "laptopcomputer")
+
     provider.cloudMachines = []
     localTransport.responsesByPath["/v1/info"] = nil
     await controller.refreshStatus(for: "local")
     #expect(controller.machines.first?.icon.systemImage == "laptopcomputer")
+  }
+
+  @Test("A cloud machine without a chosen icon shows the icon its server reports")
+  func cloudMachineUsesServerIcon() async throws {
+    let (controller, _, provider) = makeController()
+    provider.cloudMachines = [makeCloudMachine(deviceId: "dev-rack", name: "Rack")]
+    #expect(controller.machine(for: "cloud:dev-rack")?.icon == MachineIcon.fallback)
+
+    controller.connection(for: "cloud:dev-rack").reportedIcon = "server.rack"
+    #expect(controller.machine(for: "cloud:dev-rack")?.icon.systemImage == "server.rack")
+    #expect(controller.icon(for: provider.cloudMachines[0]).systemImage == "server.rack")
   }
 
   @Test("This Mac's probe prunes records under its cloud twin id")

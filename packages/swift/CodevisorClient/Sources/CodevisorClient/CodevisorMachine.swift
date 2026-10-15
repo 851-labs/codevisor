@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
+public struct CodevisorMachine: Identifiable, Sendable, Equatable {
   public var id: String
   public var name: String
   public var baseURL: URL

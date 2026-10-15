@@ -57,6 +57,7 @@ struct MachinesSettingsView: View {
         let isLocal = machine.deviceId == machines.localCloudMachine?.deviceId
         EditMachineSheet(
           machine: machine,
+          icon: machines.icon(for: machine),
           isLocal: isLocal,
           onSave: { name, icon in
             Task { await environment.cloud.updateMachine(deviceId: machine.deviceId, name: name, icon: icon) }

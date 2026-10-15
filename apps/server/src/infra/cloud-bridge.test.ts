@@ -20,6 +20,7 @@ const bridgeOptions = (
   options: Pick<CloudBridgeOptions, "credentialsPath"> & Partial<CloudBridgeOptions>
 ): CloudBridgeOptions => ({
   machineName: "test-machine",
+  icon: Promise.resolve("macmini"),
   appVersion: "0.0.0-test",
   localBaseUrl: "http://127.0.0.1:1",
   env: {},

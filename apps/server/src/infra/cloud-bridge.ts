@@ -38,12 +38,11 @@ import {
   wsChannelHandler
 } from "./cloud-proxy-handlers.js"
 import { prepareMachineTunnel, tunnelKeyPath, tunnelPinsPath } from "./cloud-tunnel.js"
-import { guessMachineIcon } from "./machine-icon.js"
 
 export interface CloudBridgeOptions {
   readonly credentialsPath: string
   readonly machineName: string
-  readonly icon?: Promise<string>
+  readonly icon: Promise<string>
   readonly appVersion: string
   readonly serverId?: string
   readonly localBaseUrl: string
@@ -182,7 +181,6 @@ const makeBridge = async (
   peerKeyPins: PeerKeyPinStore
 ): Promise<CloudBridge> => {
   const machineName = options.machineName === "" ? hostname() : options.machineName
-  const iconGuess = options.icon ?? guessMachineIcon()
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
@@ -202,7 +200,7 @@ const makeBridge = async (
     env: options.env,
     log: options.log
   })
-  const icon = await iconGuess
+  const icon = await options.icon
   connection = new CloudMachineConnection({
     credentials,
     ...(tunnel === undefined

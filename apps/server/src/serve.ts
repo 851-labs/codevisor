@@ -209,10 +209,19 @@ export const runServe = (
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
-    const icon = guessMachineIcon()
+    const iconGuess = guessMachineIcon()
     const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
-      startMachineNetwork({ databasePath, port, serverId, machineName, icon, version, db })
+      startMachineNetwork({
+        databasePath,
+        port,
+        serverId,
+        machineName,
+        icon: iconGuess,
+        version,
+        db
+      })
     )
+    const icon = yield* Effect.promise(() => iconGuess)
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({

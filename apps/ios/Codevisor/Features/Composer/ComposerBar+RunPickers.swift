@@ -7,7 +7,7 @@ extension ComposerBar {
     let machine = environment.machines.machine(for: controller.project.serverId)
     return ComposerRunTargetBar(
       machineName: environment.machines.allMachines.count > 1 ? (machine?.name ?? "Machine") : nil,
-      machineSymbol: (machine ?? .local).icon.systemImage,
+      machineSymbol: (machine?.icon ?? .fallback).systemImage,
       machines: environment.machines.allMachines,
       selectedServerId: controller.project.serverId,
       readyMachineIds: Set(

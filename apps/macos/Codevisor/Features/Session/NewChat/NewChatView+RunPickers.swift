@@ -71,7 +71,7 @@ extension NewChatView {
     )
     return RunPickerMenu(
       chipText: selectedMachine?.name ?? "Machine",
-      chipSymbol: (selectedMachine ?? .local).icon.systemImage
+      chipSymbol: (selectedMachine?.icon ?? .fallback).systemImage
     ) {
       Autocomplete.Picker("Machines", selection: selection, options: machines) { machine in
         Autocomplete.Choice(machine.name, value: machine.id) {

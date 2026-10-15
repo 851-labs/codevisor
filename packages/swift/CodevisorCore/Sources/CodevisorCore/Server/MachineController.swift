@@ -16,7 +16,6 @@ public struct MachineStatus: Sendable, Equatable {
   public var serverId: String?
   public var features: Set<String>
   public var maxUploadBytes: Int?
-  public var icon: String?
 
   public init(
     isReachable: Bool,
@@ -24,8 +23,7 @@ public struct MachineStatus: Sendable, Equatable {
     cloudDeviceId: String? = nil,
     serverId: String? = nil,
     features: Set<String> = [],
-    maxUploadBytes: Int? = nil,
-    icon: String? = nil
+    maxUploadBytes: Int? = nil
   ) {
     self.isReachable = isReachable
     self.label = label
@@ -33,7 +31,6 @@ public struct MachineStatus: Sendable, Equatable {
     self.serverId = serverId
     self.features = features
     self.maxUploadBytes = maxUploadBytes
-    self.icon = icon
   }
 
   public static let legacyUploadLimitBytes = 32 * 1024 * 1024
@@ -160,6 +157,7 @@ public final class MachineController {
     machines
       + cloudOnlyMachines.map { cloud in
         var machine = CodevisorMachine.cloud(from: cloud)
+        machine.icon = icon(chosen: cloud.icon, reportedBy: machine.id)
         if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
           machine.baseURL = loopback
         }

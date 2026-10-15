@@ -33,10 +33,11 @@ struct MachineIconTests {
     #expect(MachineIcon.choices.allSatisfy { !$0.systemImage.hasSuffix(".fill") })
   }
 
-  @Test("An icon round-trips through JSON as its symbol name")
-  func codable() throws {
-    let data = try JSONEncoder().encode(MachineIcon(resolving: "macmini"))
-    #expect(String(decoding: data, as: UTF8.self) == "\"macmini\"")
-    #expect(try JSONDecoder().decode(MachineIcon.self, from: Data("\"cloud.fill\"".utf8)).systemImage == "cloud")
+  @Test("Only icons this client knows count as chosen")
+  func knownIcons() {
+    #expect(MachineIcon(known: "macmini")?.title == "Mac mini")
+    #expect(MachineIcon(known: "cloud.fill")?.systemImage == "cloud")
+    #expect(MachineIcon(known: "macbook.gen2") == nil)
+    #expect(MachineIcon(known: nil) == nil)
   }
 }

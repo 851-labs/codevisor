@@ -67,7 +67,7 @@ export interface CodevisorServerConfig {
   readonly sessionActivity?: SessionActivityController | undefined
   readonly cloudDeviceId?: string | undefined
   readonly cloud?: CloudServerControl | undefined
-  readonly icon?: Promise<string> | undefined
+  readonly icon?: string | undefined
 }
 
 export interface ScreenSharingVNCConfig {

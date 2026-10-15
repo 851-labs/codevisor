@@ -5,17 +5,17 @@ import SwiftUI
 struct EditMachineSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var name: String
-  @State private var icon: String
-  private let savedIcon: String
-  let onSave: (_ name: String, _ changedIcon: String?) -> Void
+  @State private var pickedIcon: String?
+  private let shownIcon: String
+  let onSave: (_ name: String, _ pickedIcon: String?) -> Void
 
-  init(machine: CloudMachine, onSave: @escaping (_ name: String, _ changedIcon: String?) -> Void) {
+  init(machine: CloudMachine, icon: MachineIcon, onSave: @escaping (_ name: String, _ pickedIcon: String?) -> Void) {
     self.onSave = onSave
     _name = State(initialValue: machine.name)
-    let savedIcon = MachineIcon(resolving: machine.icon).systemImage
-    self.savedIcon = savedIcon
-    _icon = State(initialValue: savedIcon)
+    shownIcon = icon.systemImage
   }
+
+  private var icon: String { pickedIcon ?? shownIcon }
 
   private var trimmedName: String {
     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,7 +48,7 @@ struct EditMachineSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
-            onSave(trimmedName, icon == savedIcon ? nil : icon)
+            onSave(trimmedName, pickedIcon)
             dismiss()
           }
           .disabled(trimmedName.isEmpty)
@@ -60,7 +60,7 @@ struct EditMachineSheet: View {
   private func iconTile(_ choice: MachineIcon) -> some View {
     let isSelected = icon == choice.systemImage
     return Button {
-      icon = choice.systemImage
+      pickedIcon = choice.systemImage
     } label: {
       Image(systemName: choice.systemImage)
         .symbolVariant(.fill)

@@ -297,7 +297,7 @@ describe("@codevisor/server", () => {
           bootId: "test-boot",
           id: "server-icon",
           port: 0,
-          icon: Promise.resolve("macstudio")
+          icon: "macstudio"
         })
       )
     )

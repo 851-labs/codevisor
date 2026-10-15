@@ -52,7 +52,7 @@ struct MachinesSettingsScreen: View {
     .navigationTitle("Machines")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(item: $editingMachine) { machine in
-      EditMachineSheet(machine: machine) { name, icon in
+      EditMachineSheet(machine: machine, icon: machines.icon(for: machine)) { name, icon in
         Task { await cloud.updateMachine(deviceId: machine.deviceId, name: name, icon: icon) }
       }
     }

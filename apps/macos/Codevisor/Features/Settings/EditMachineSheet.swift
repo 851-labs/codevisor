@@ -6,26 +6,27 @@ struct EditMachineSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
   @State private var name: String
-  @State private var icon: String
-  private let savedIcon: String
+  @State private var pickedIcon: String?
+  private let shownIcon: String
   let isLocal: Bool
-  let onSave: (_ name: String, _ changedIcon: String?) -> Void
+  let onSave: (_ name: String, _ pickedIcon: String?) -> Void
   let onDisconnect: (() -> Void)?
 
   init(
     machine: CloudMachine,
+    icon: MachineIcon,
     isLocal: Bool,
-    onSave: @escaping (_ name: String, _ changedIcon: String?) -> Void,
+    onSave: @escaping (_ name: String, _ pickedIcon: String?) -> Void,
     onDisconnect: (() -> Void)?
   ) {
     self.isLocal = isLocal
     self.onSave = onSave
     self.onDisconnect = onDisconnect
     _name = State(initialValue: machine.name)
-    let savedIcon = MachineIcon(resolving: machine.icon).systemImage
-    self.savedIcon = savedIcon
-    _icon = State(initialValue: savedIcon)
+    shownIcon = icon.systemImage
   }
+
+  private var icon: String { pickedIcon ?? shownIcon }
 
   private var trimmedName: String {
     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,7 +40,7 @@ struct EditMachineSheet: View {
       .listRowBackground(theme.formRowBackground)
       Section {
         TextField("Name", text: $name, prompt: Text("Machine name"))
-        Picker("Icon", selection: $icon) {
+        Picker("Icon", selection: Binding(get: { icon }, set: { pickedIcon = $0 })) {
           ForEach(MachineIcon.choices) { choice in
             Label(choice.title, systemImage: choice.systemImage)
               .tag(choice.systemImage)
@@ -66,7 +67,7 @@ struct EditMachineSheet: View {
       }
       ToolbarItem(placement: .confirmationAction) {
         Button("Save") {
-          onSave(trimmedName, icon == savedIcon ? nil : icon)
+          onSave(trimmedName, pickedIcon)
           dismiss()
         }
         .disabled(trimmedName.isEmpty)

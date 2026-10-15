@@ -14,6 +14,7 @@ public final class MachineConnection {
   public internal(set) var updateStatusMessage: String?
   public internal(set) var updateProgress: Double?
   public internal(set) var dataUpgradeProgress: ServerMigrationProgress?
+  public internal(set) var reportedIcon: String?
 
   @ObservationIgnored var eventSyncTask: Task<Void, Never>?
   @ObservationIgnored var backgroundConnectInFlight = false
@@ -252,8 +253,19 @@ extension MachineController {
     var local = CodevisorMachine.local
     let presence = localCloudMachine
     if let presence { local.name = presence.name }
-    local.icon = MachineIcon(resolving: presence?.icon ?? statusByMachineId[local.id]?.icon)
+    local.icon = icon(chosen: presence?.icon, reportedBy: local.id)
     return [local]
+  }
+
+  public func icon(for cloud: CloudMachine) -> MachineIcon {
+    let machineId =
+      cloud.deviceId == localCloudMachine?.deviceId
+      ? CodevisorMachine.local.id : CodevisorMachine.cloudIdPrefix + cloud.deviceId
+    return icon(chosen: cloud.icon, reportedBy: machineId)
+  }
+
+  func icon(chosen: String?, reportedBy machineId: String) -> MachineIcon {
+    MachineIcon(known: chosen) ?? MachineIcon(resolving: connectionsById[machineId]?.reportedIcon)
   }
 
   public var localCloudMachine: CloudMachine? {

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct MachineIcon: Identifiable, Hashable, Sendable, Codable {
+public struct MachineIcon: Identifiable, Hashable, Sendable {
   public let systemImage: String
   public let title: String
 
@@ -31,17 +31,13 @@ public struct MachineIcon: Identifiable, Hashable, Sendable, Codable {
     self.title = title
   }
 
-  public init(resolving systemImage: String?) {
+  public init?(known systemImage: String?) {
     let outline = systemImage == "cloud.fill" ? "cloud" : systemImage
-    self = Self.choices.first { $0.systemImage == outline } ?? Self.fallback
+    guard let choice = Self.choices.first(where: { $0.systemImage == outline }) else { return nil }
+    self = choice
   }
 
-  public init(from decoder: any Decoder) throws {
-    self.init(resolving: try decoder.singleValueContainer().decode(String.self))
-  }
-
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.singleValueContainer()
-    try container.encode(systemImage)
+  public init(resolving systemImage: String?) {
+    self = MachineIcon(known: systemImage) ?? Self.fallback
   }
 }
