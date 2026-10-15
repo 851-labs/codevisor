@@ -1,5 +1,4 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
-import type { MachineToHub } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
 import { CloudMachineConnection } from "./index.js"
@@ -34,8 +33,7 @@ const tunnelConnection = (releaseChannel?: () => "stable" | "alpha" | undefined)
   return { connection, socket, headers, configs, peers }
 }
 
-const helloReleaseChannel = (socket: FakeSocket) =>
-  (socket.sent[0] as Extract<MachineToHub, { t: "hello" }>).device.releaseChannel
+const helloReleaseChannel = (socket: FakeSocket) => socket.hello().device.releaseChannel
 
 describe("tunnel control plane on the machine connection", () => {
   it("registers the endpoint in the connect headers and hello", () => {
@@ -44,7 +42,7 @@ describe("tunnel control plane on the machine connection", () => {
       "x-api-key": "api-key",
       "x-codevisor-tunnel-endpoint": endpointId
     })
-    const hello = socket.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    const hello = socket.hello()
     expect(hello.device.tunnelEndpointId).toBe(endpointId)
   })
 

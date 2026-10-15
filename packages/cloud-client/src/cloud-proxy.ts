@@ -1,3 +1,4 @@
+import { isPlainRecord } from "@codevisor/api"
 import { fromBase64Url, toBase64Url } from "@codevisor/cloud-crypto"
 
 export const HTTP_CHANNEL_TYPE = "http"
@@ -18,11 +19,8 @@ const HOP_BY_HOP_HEADERS = new Set([
   "keep-alive"
 ])
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const isHeaderRecord = (value: unknown): value is Record<string, string> =>
-  isRecord(value) && Object.values(value).every((entry) => typeof entry === "string")
+  isPlainRecord(value) && Object.values(value).every((entry) => typeof entry === "string")
 
 const isRelayPath = (value: unknown): value is string =>
   typeof value === "string" && value.startsWith("/")
@@ -34,7 +32,7 @@ export interface HttpChannelParams {
 }
 
 export const parseHttpChannelParams = (value: unknown): HttpChannelParams | undefined => {
-  if (!isRecord(value)) return undefined
+  if (!isPlainRecord(value)) return undefined
   const { method, path, headers } = value
   if (typeof method !== "string" || method === "") return undefined
   if (!isRelayPath(path)) return undefined
@@ -47,14 +45,14 @@ export interface WsChannelParams {
 }
 
 export const parseWsChannelParams = (value: unknown): WsChannelParams | undefined => {
-  if (!isRecord(value) || !isRelayPath(value.path)) return undefined
+  if (!isPlainRecord(value) || !isRelayPath(value.path)) return undefined
   return { path: value.path }
 }
 
 export type HttpRequestFrame = { kind: "chunk"; data: Uint8Array } | { kind: "end" }
 
 export const parseHttpRequestFrame = (value: unknown): HttpRequestFrame | undefined => {
-  if (!isRecord(value)) return undefined
+  if (!isPlainRecord(value)) return undefined
   if (value.kind === "end") return { kind: "end" }
   if (value.kind !== "chunk" || typeof value.data !== "string") return undefined
   try {
@@ -140,7 +138,7 @@ export const concatBodyBuffer = (buffer: BodyBuffer): Uint8Array<ArrayBuffer> =>
 export type WsFrame = { kind: "text"; data: string } | { kind: "binary"; data: Uint8Array }
 
 export const parseWsFrame = (value: unknown): WsFrame | undefined => {
-  if (!isRecord(value)) return undefined
+  if (!isPlainRecord(value)) return undefined
   if (value.kind === "text") {
     return typeof value.data === "string" ? { kind: "text", data: value.data } : undefined
   }
