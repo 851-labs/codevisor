@@ -88,10 +88,11 @@ struct HomeSidebarList: View {
   }
 
   private func gitRefreshKey(_ content: HomeSidebarContent) -> SidebarGitLookups.RefreshKey? {
-    let ids = Set(detailedWorkspaceIDs(content))
+    let shown = detailedWorkspaceIDs(content)
+    let archived = Set(content.archived.map(\.id))
     return SidebarGitLookups.refreshKey(
-      details: rowDetails, workspaceIds: (content.pinned + content.groups.flatMap(\.workspaces)).map(\.id),
-      archivedWorkspaceIds: content.archived.map(\.id).filter(ids.contains))
+      details: rowDetails, workspaceIds: shown.filter { !archived.contains($0) },
+      archivedWorkspaceIds: shown.filter(archived.contains))
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
