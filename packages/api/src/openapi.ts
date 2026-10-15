@@ -148,6 +148,20 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
       }
     ]
   }
+  if (
+    endpoint === "GET /v1/workspaces/:workspaceId/photos" ||
+    endpoint === "GET /v1/workspaces/:workspaceId/links"
+  ) {
+    return [
+      {
+        name: "before",
+        in: "query",
+        description: "Opaque nextBefore cursor from a previous page.",
+        schema: { type: "string" }
+      },
+      { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 } }
+    ]
+  }
   if (endpoint === "GET /v1/files/:id") {
     return [{ name: "preview", in: "query", schema: { type: "string", enum: ["1"] } }]
   }

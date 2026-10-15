@@ -53,6 +53,8 @@ export const endpoints = [
   "PUT /v1/workspaces/:id",
   "DELETE /v1/workspaces/:id",
   "GET /v1/workspaces/:workspaceId/git",
+  "GET /v1/workspaces/:workspaceId/photos",
+  "GET /v1/workspaces/:workspaceId/links",
   "PUT /v1/workspaces/:workspaceId/panes/:paneId",
   "PATCH /v1/workspaces/:workspaceId/panes/:paneId",
   "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat",
@@ -172,6 +174,9 @@ export const endpoints = [
 export type Endpoint = (typeof endpoints)[number]
 
 export const summaries: Partial<Record<Endpoint, string>> = {
+  "GET /v1/workspaces/:workspaceId/photos": "List images from a workspace's chats, newest first",
+  "GET /v1/workspaces/:workspaceId/links":
+    "List links mentioned in a workspace's chats, newest first",
   "GET /v1/health": "Check server health",
   "GET /v1/discovery": "Get the tokenless discovery manifest",
   "GET /v1/info": "Get server information",
