@@ -7,7 +7,8 @@ struct MachinesSettingsView: View {
   @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) private var controlActiveState
 
-  @State private var renamingCloud: CloudMachine?
+  @State private var editingCloud: CloudMachine?
+  @State private var disconnectingAfterEdit: CloudMachine?
   @State private var removingCloud: CloudMachine?
   @State private var trustingKeyCloud: CloudMachine?
 
@@ -52,10 +53,16 @@ struct MachinesSettingsView: View {
 
   var body: some View {
     machinesForm
-      .sheet(item: $renamingCloud) { machine in
-        RenameCloudMachineSheet(machine: machine) { name in
-          Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
-        }
+      .sheet(item: $editingCloud, onDismiss: presentDisconnectAfterEdit) { machine in
+        let isLocal = machine.deviceId == machines.localCloudMachine?.deviceId
+        EditMachineSheet(
+          machine: machine,
+          isLocal: isLocal,
+          onSave: { name, icon in
+            Task { await environment.cloud.updateMachine(deviceId: machine.deviceId, name: name, icon: icon) }
+          },
+          onDisconnect: isLocal ? nil : { disconnectingAfterEdit = machine }
+        )
       }
       .confirmationDialog(
         "Disconnect “\(removingCloud?.name ?? "")”?",
@@ -105,10 +112,15 @@ struct MachinesSettingsView: View {
       presence: presence,
       keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
       connection: connection(for: machine, presence: presence),
-      onRename: { renamingCloud = presence },
+      onEdit: { editingCloud = presence },
       onRemove: { removingCloud = presence },
       onTrustKey: { trustingKeyCloud = presence }
     )
+  }
+
+  fileprivate func presentDisconnectAfterEdit() {
+    removingCloud = disconnectingAfterEdit
+    disconnectingAfterEdit = nil
   }
 
   fileprivate func machineRow(_ machine: CodevisorMachine) -> some View {
@@ -129,6 +141,26 @@ struct MachinesSettingsView: View {
       }
       Spacer(minLength: 12)
       statusLabel(machine)
+      if machine.isLocal, let presence = machines.localCloudMachine {
+        Menu {
+          Button("Edit…") { editingCloud = presence }
+        } label: {
+          Image(systemName: "ellipsis.circle")
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .settingsActionTint(theme)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Machine actions")
+        .accessibilityLabel("Actions for \(machine.name)")
+      }
+    }
+    .contextMenu {
+      if machine.isLocal, let presence = machines.localCloudMachine {
+        Button("Edit…") { editingCloud = presence }
+      }
     }
     .accessibilityElement(children: .combine)
   }

@@ -5,6 +5,11 @@ import type { HubNoticesPort } from "./hub-notices.js"
 import { machineRow, machineRows, machinePresence } from "./hub-schema.js"
 import { isEndpointId } from "./hub-tunnel.js"
 
+const MACHINE_ICON = /^[a-z0-9]+(?:\.[a-z0-9]+)*$/
+
+export const isMachineIcon = (value: unknown): value is string =>
+  typeof value === "string" && value.length <= 64 && MACHINE_ICON.test(value)
+
 export const registerMachine = (
   sql: SqlStorage,
   deviceId: string,
@@ -15,11 +20,12 @@ export const registerMachine = (
   sql.exec(
     `INSERT INTO machines
        (device_id, name, os, app_version, public_key, last_seen_at, active_generation, server_id,
-        peer_aware, tunnel_endpoint_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        peer_aware, tunnel_endpoint_id, reported_icon)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(device_id) DO UPDATE SET
        name = excluded.name,
        os = excluded.os,
+       reported_icon = excluded.reported_icon,
        app_version = excluded.app_version,
        public_key = excluded.public_key,
        last_seen_at = excluded.last_seen_at,
@@ -38,18 +44,29 @@ export const registerMachine = (
     generation,
     device.serverId ?? null,
     peerAware ? 1 : 0,
-    isEndpointId(device.tunnelEndpointId) ? device.tunnelEndpointId : null
+    isEndpointId(device.tunnelEndpointId) ? device.tunnelEndpointId : null,
+    isMachineIcon(device.icon) ? device.icon : null
   )
   return generation
 }
 
-export const renameHubMachine = (hub: HubNoticesPort, deviceId: string, name: string): boolean => {
-  const updated = hub.sql.exec(
-    "UPDATE machines SET name = ? WHERE device_id = ?",
-    name,
-    deviceId
-  ).rowsWritten
-  if (updated === 0) return false
+export interface MachineUpdate {
+  readonly name?: string
+  readonly icon?: string
+}
+
+export const updateHubMachine = (
+  hub: HubNoticesPort,
+  deviceId: string,
+  update: MachineUpdate
+): boolean => {
+  if (machineRow(hub.sql, deviceId) === undefined) return false
+  if (update.name !== undefined) {
+    hub.sql.exec("UPDATE machines SET display_name = ? WHERE device_id = ?", update.name, deviceId)
+  }
+  if (update.icon !== undefined) {
+    hub.sql.exec("UPDATE machines SET icon = ? WHERE device_id = ?", update.icon, deviceId)
+  }
   const row = machineRow(hub.sql, deviceId)
   if (row !== undefined) {
     hub.net.broadcastMachineNotice({

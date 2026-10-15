@@ -36,7 +36,8 @@ extension CodevisorMachine {
       id: "\(cloudIdPrefix)\(machine.deviceId)",
       name: machine.name,
       baseURL: cloudPlaceholderBaseURL,
-      kind: "cloud"
+      kind: "cloud",
+      icon: machine.icon
     )
   }
 }

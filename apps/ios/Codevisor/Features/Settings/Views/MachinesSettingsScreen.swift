@@ -6,8 +6,7 @@ import SwiftUI
 struct MachinesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
-  @State private var renamingMachine: CodevisorMachine?
-  @State private var renameText = ""
+  @State private var editingMachine: CloudMachine?
   @State private var removingCloudMachine: CloudMachine?
   @State private var trustingKey: CloudMachine?
 
@@ -52,16 +51,10 @@ struct MachinesSettingsScreen: View {
     }
     .navigationTitle("Machines")
     .navigationBarTitleDisplayMode(.inline)
-    .alert("Rename Machine", isPresented: renamePresented, presenting: renamingMachine) { machine in
-      TextField("Name", text: $renameText)
-      Button("Rename") {
-        if let presence = cloudMachine(for: machine) {
-          let name = renameText
-          Task { await cloud.rename(deviceId: presence.deviceId, name: name) }
-        }
-        renamingMachine = nil
+    .sheet(item: $editingMachine) { machine in
+      EditMachineSheet(machine: machine) { name, icon in
+        Task { await cloud.updateMachine(deviceId: machine.deviceId, name: name, icon: icon) }
       }
-      Button("Cancel", role: .cancel) { renamingMachine = nil }
     }
     .task {
       while !Task.isCancelled {
@@ -69,13 +62,6 @@ struct MachinesSettingsScreen: View {
         try? await Task.sleep(for: .seconds(10))
       }
     }
-  }
-
-  private var renamePresented: Binding<Bool> {
-    Binding(
-      get: { renamingMachine != nil },
-      set: { if !$0 { renamingMachine = nil } }
-    )
   }
 
   private func cloudMachine(for machine: CodevisorMachine) -> CloudMachine? {
@@ -130,10 +116,9 @@ struct MachinesSettingsScreen: View {
         }
       }
       Button {
-        renameText = machine.name
-        renamingMachine = machine
+        editingMachine = presence
       } label: {
-        Label("Rename…", systemImage: "pencil")
+        Label("Edit…", systemImage: "pencil")
       }
       Button(role: .destructive) {
         removeMachine(machine)
@@ -149,12 +134,11 @@ struct MachinesSettingsScreen: View {
       }
       .accessibilityLabel("Disconnect")
       Button {
-        renameText = machine.name
-        renamingMachine = machine
+        editingMachine = presence
       } label: {
         Image(systemName: "pencil")
       }
-      .accessibilityLabel("Rename")
+      .accessibilityLabel("Edit")
     }
     .confirmationDialog(
       "Disconnect “\(removingCloudMachine?.name ?? "")”?",
