@@ -1,9 +1,4 @@
-import {
-  encodeCloudFrame,
-  type CloudMachinePresence,
-  type HubToApp,
-  type HubToMachineRelayHeader
-} from "@codevisor/api"
+import { encodeCloudFrame } from "@codevisor/api"
 import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
@@ -15,8 +10,10 @@ import {
   disconnect,
   sendRelay,
   connectMachine,
-  connectApp
+  connectApp,
+  machineRelayHeader
 } from "./cloud-test-support.js"
+import { MachinesBody, readJson } from "./json-test-support.js"
 
 describe("session resume", () => {
   it("an app resume keeps its peer identity and replays buffered frames", async () => {
@@ -65,7 +62,7 @@ describe("session resume", () => {
 
     await disconnect(token, machine.socket, "worker deploy")
     const listed = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
-    const machines = ((await listed.json()) as { machines: CloudMachinePresence[] }).machines
+    const machines = (await readJson(listed, MachinesBody)).machines
     expect(machines.find((m) => m.deviceId === machine.deviceId)?.online).toBe(true)
     sendRelay(
       app.socket,
@@ -82,7 +79,7 @@ describe("session resume", () => {
     expect(revived.welcome.connectionId).toBe(machine.welcome.connectionId)
     const replayed = await revived.reader.nextEnvelope()
     expect([...replayed.payload]).toEqual([9, 9])
-    expect((replayed.header as HubToMachineRelayHeader).peerId).toBe(app.welcome.connectionId)
+    expect(machineRelayHeader(replayed).peerId).toBe(app.welcome.connectionId)
 
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
@@ -164,7 +161,7 @@ describe("session resume", () => {
       chunk
     )
     expect((await app.reader.next()).t).toBe("presence")
-    const overflow = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    const overflow = await app.reader.nextFrame("error")
     expect(overflow).toMatchObject({ t: "error", machineId: machine.deviceId })
     const reborn = await connectMachine(token, "overflow-vps", machine.deviceId, {
       apiKey: machine.apiKey,

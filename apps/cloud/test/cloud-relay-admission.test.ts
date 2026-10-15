@@ -20,6 +20,7 @@ import {
   sendRelay,
   SocketReader
 } from "./cloud-test-support.js"
+import { KeyBody, readJson } from "./json-test-support.js"
 
 const ownedSocket = async (
   context: TestContext,
@@ -43,7 +44,7 @@ const machineFixture = async (context: TestContext, token: string) => {
     })
   })
   expect(created.status).toBe(200)
-  const { key } = (await created.json()) as { key: string }
+  const { key } = await readJson(created, KeyBody)
   const socket = await ownedSocket(context, token, { "x-api-key": key })
   const reader = new SocketReader<HubToMachine>(socket, decodeHubToMachine)
   socket.send(

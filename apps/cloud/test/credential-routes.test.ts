@@ -1,7 +1,9 @@
 import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import { BASE, authed, devLogin } from "./cloud-test-support.js"
+import { KeyBody, readJson } from "./json-test-support.js"
 
 const credential = "A".repeat(80)
 const keyFor = async (token: string, deviceId?: string) => {
@@ -14,7 +16,7 @@ const keyFor = async (token: string, deviceId?: string) => {
     })
   })
   expect(response.status).toBe(200)
-  return ((await response.json()) as { key: string }).key
+  return (await readJson(response, KeyBody)).key
 }
 const command = (key: string | undefined, id: string, body: object) =>
   SELF.fetch(`${BASE}/api/machine/credentials/${id}`, {
@@ -73,7 +75,7 @@ describe("encrypted credential coordinator API", () => {
       command(b, id, { action: "acquire", generation: 1, operationId })
     ])
     const states = await Promise.all(
-      both.map((value) => value.json() as Promise<{ status: string }>)
+      both.map((value) => readJson(value, z.object({ status: z.string() })))
     )
     expect(states.map((value) => value.status).toSorted()).toEqual(["acquired", "busy"])
     const owner = states[0]!.status === "acquired" ? a : b,

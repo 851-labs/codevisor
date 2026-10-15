@@ -1,16 +1,25 @@
 import { env } from "cloudflare:test"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 
 import { sendAuthEmail } from "../src/email-auth.js"
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import { authed, BASE } from "./cloud-test-support.js"
+import { AuthProvidersBody, parseJson, readJson } from "./json-test-support.js"
 
 let email: string
 let clientIP: string
 let fixtureNumber = 0
 const password = "a-correct-test-password"
-type Mail = { from: string; to: string[]; subject: string; text: string; html: string }
+const Mail = z.object({
+  from: z.string(),
+  to: z.array(z.string()),
+  subject: z.string(),
+  text: z.string(),
+  html: z.string()
+})
+type Mail = z.infer<typeof Mail>
 let messages: Mail[]
 let configured: CloudEnv
 
@@ -26,7 +35,7 @@ beforeEach(({ task }) => {
     AUTH_EMAIL_FETCH: async (url, init) => {
       expect(url).toBe("https://api.resend.com/emails")
       expect(init?.headers).toMatchObject({ Authorization: "Bearer test-resend-key" })
-      messages.push(JSON.parse(init!.body as string) as Mail)
+      messages.push(parseJson(init?.body, Mail))
       return Response.json({ id: "test-mail" })
     }
   }
@@ -64,9 +73,9 @@ describe("native email authentication", () => {
         ...configured,
         RESEND_API_KEY: key
       })
-      expect(
-        ((await response.json()) as { authProviders: string[] }).authProviders.includes("email")
-      ).toBe(Boolean(key))
+      expect((await readJson(response, AuthProvidersBody)).authProviders.includes("email")).toBe(
+        Boolean(key)
+      )
     }
   })
 

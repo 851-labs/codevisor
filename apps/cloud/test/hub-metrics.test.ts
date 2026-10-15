@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import { HubMetrics } from "../src/hub-metrics.js"
+import { jsonRecord, parseJson } from "./json-test-support.js"
 
 const capture = (): { lines: Record<string, unknown>[]; metrics: HubMetrics; tick: () => void } => {
   const lines: Record<string, unknown>[] = []
   let now = 1_000
   const metrics = new HubMetrics(
-    (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+    (line) => lines.push(parseJson(line, jsonRecord)),
     () => now
   )
   return { lines, metrics, tick: () => (now += 500) }

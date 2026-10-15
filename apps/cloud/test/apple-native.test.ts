@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+import { z } from "zod"
 
 import worker from "../src/index.js"
 import {
@@ -13,6 +14,7 @@ import {
   subject
 } from "./apple-auth-test-support.js"
 import { authed, BASE, connectMachine, devLogin } from "./cloud-test-support.js"
+import { readJson } from "./json-test-support.js"
 
 const request = (path: string, body: Record<string, unknown>, token?: string) =>
   worker.fetch(
@@ -27,7 +29,7 @@ const request = (path: string, body: Record<string, unknown>, token?: string) =>
 const start = async (token?: string) => {
   const response = await request("apple/native/start", { link: Boolean(token) }, token)
   expect(response.status).toBe(200)
-  return response.json() as Promise<{ id: string; nonce: string }>
+  return readJson(response, z.object({ id: z.string(), nonce: z.string() }))
 }
 
 const credentials = async (
@@ -51,7 +53,10 @@ const session = async (token: string) => {
     new Request(`${BASE}/api/auth/get-session`, { headers: authed(token) }),
     appleEnv
   )
-  return response.json() as Promise<{ user: { id: string; name: string } } | null>
+  return readJson(
+    response,
+    z.object({ user: z.looseObject({ id: z.string(), name: z.string() }) }).nullable()
+  )
 }
 
 describe("native Apple authentication", () => {
