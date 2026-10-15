@@ -71,6 +71,11 @@ struct HomeSidebarList: View {
       .onChange(of: selected) { _, _ in
         pendingSelection = nil
       }
+      .task(id: pendingSelection) {
+        guard pendingSelection != nil else { return }
+        try? await Task.sleep(for: .seconds(1))
+        if !Task.isCancelled { pendingSelection = nil }
+      }
       .refreshable {
         await actions.actions.refresh()
       }
