@@ -22,8 +22,7 @@ struct EditMachineSheet: View {
     self.onDisconnect = onDisconnect
     _name = State(initialValue: machine.name)
     _icon = State(
-      initialValue: MachineIcon.choice(machine.icon)?.systemImage
-        ?? EntitySystemSymbol.defaultMachine(isLocal: isLocal)
+      initialValue: MachineIcon.choice(machine.icon)?.systemImage ?? MachineIcon.fallback
     )
   }
 

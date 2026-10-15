@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 extension SidebarView {
   func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
@@ -44,7 +45,7 @@ extension SidebarView {
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }
-    return SidebarRowMachine(name: name, systemImage: SidebarRowMachine.systemImage(for: machine))
+    return SidebarRowMachine(name: name, systemImage: EntitySystemSymbol.machine(machine))
   }
 
   func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {

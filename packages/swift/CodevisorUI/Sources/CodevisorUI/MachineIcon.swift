@@ -16,7 +16,7 @@ public struct MachineIcon: Identifiable, Hashable, Sendable {
     MachineIcon(systemImage: "server.rack", title: "Server"),
     MachineIcon(systemImage: "externaldrive.connected.to.line.below", title: "Network Storage"),
     MachineIcon(systemImage: "cpu", title: "Chip"),
-    MachineIcon(systemImage: "cloud.fill", title: "Cloud"),
+    MachineIcon(systemImage: "cloud", title: "Cloud"),
     MachineIcon(systemImage: "globe", title: "Globe"),
     MachineIcon(systemImage: "terminal", title: "Terminal"),
     MachineIcon(systemImage: "house", title: "Home"),
@@ -24,7 +24,10 @@ public struct MachineIcon: Identifiable, Hashable, Sendable {
     MachineIcon(systemImage: "flask", title: "Lab"),
   ]
 
+  public static let fallback = "desktopcomputer"
+
   public static func choice(_ systemImage: String?) -> MachineIcon? {
-    choices.first { $0.systemImage == systemImage }
+    let outline = systemImage == "cloud.fill" ? "cloud" : systemImage
+    return choices.first { $0.systemImage == outline }
   }
 }

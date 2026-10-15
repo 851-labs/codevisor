@@ -12,8 +12,7 @@ struct EditMachineSheet: View {
     self.onSave = onSave
     _name = State(initialValue: machine.name)
     _icon = State(
-      initialValue: MachineIcon.choice(machine.icon)?.systemImage
-        ?? EntitySystemSymbol.defaultMachine(isLocal: false)
+      initialValue: MachineIcon.choice(machine.icon)?.systemImage ?? MachineIcon.fallback
     )
   }
 
