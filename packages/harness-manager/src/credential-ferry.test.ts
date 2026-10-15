@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { credentialFerrySources } from "./credential-ferry.js"
+import { parseJsonRecord } from "./json-values.js"
 
 const roots: string[] = []
 afterEach(() => {
@@ -71,7 +72,7 @@ describe("pi source", () => {
     )
 
     await source.apply(JSON.stringify({ groq: { type: "api_key", key: "sk-2" } }))
-    const merged = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>
+    const merged = parseJsonRecord(await readFile(path, "utf8"))
     expect(Object.keys(merged).toSorted()).toEqual(["anthropic", "groq"])
     expect(merged.anthropic).toMatchObject({ type: "oauth", refresh: "r" })
     expect((await stat(path)).mode & 0o777).toBe(0o600)
@@ -82,9 +83,7 @@ describe("pi source", () => {
     const source = byId["pi-auth"]!
     expect(await source.read()).toBeUndefined()
     await source.apply(JSON.stringify({ openai: { type: "api_key", key: "sk-9" } }))
-    const written = JSON.parse(
-      await readFile(join(home, ".pi", "agent", "auth.json"), "utf8")
-    ) as Record<string, unknown>
+    const written = parseJsonRecord(await readFile(join(home, ".pi", "agent", "auth.json"), "utf8"))
     expect(written.openai).toMatchObject({ key: "sk-9" })
   })
 })
@@ -128,7 +127,7 @@ describe("opencode source", () => {
       })
     )
     const source = byId["opencode-auth"]!
-    const published = JSON.parse((await source.read())!) as Record<string, unknown>
+    const published = parseJsonRecord((await source.read())!)
     expect(Object.keys(published).toSorted()).toEqual(["cloudflare", "openrouter"])
   })
 })

@@ -2,11 +2,11 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
+import { waitForLifecycleSettle, fakeAgentRuntime } from "./harness-lifecycle-test-support.js"
 import {
   cleanupLifecycleTests,
   directories,
@@ -57,13 +57,13 @@ describe("harness lifecycle bundled desktop apps", () => {
     }
     const swaps: Array<string> = []
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [definition],
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
         ]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       applyBundleSwap: async (options) => {
         swaps.push(options.bundlePath)
         return { installedVersion: "26.715.52143" }
@@ -109,11 +109,11 @@ describe("harness lifecycle bundled desktop apps", () => {
       }
     }
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [definition],
         discoverHarnesses: Effect.succeed([]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       db,
       platform: "darwin",
       resolveEnv: async () => ({})
@@ -126,13 +126,13 @@ describe("harness lifecycle bundled desktop apps", () => {
     const db = await makeDb()
     const { terminal } = fakeTerminal()
     const lifecycle = makeHarnessLifecycleManager({
-      agents: {
+      agents: fakeAgentRuntime({
         catalog: [appBundleDefinition],
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
         ]),
         refreshEnvironment: Effect.void
-      } as unknown as AgentRuntimeService,
+      }),
       db,
       platform: "linux",
       realpath: (path) => path,

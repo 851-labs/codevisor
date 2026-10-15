@@ -1,5 +1,5 @@
 import { harnessCatalog } from "@codevisor/agent-runtime"
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -16,7 +16,8 @@ import {
   fakeSpawner,
   installableDefinition,
   installMethodsFor,
-  waitForLifecycleSettle
+  waitForLifecycleSettle,
+  fakeAgentRuntime
 } from "./harness-lifecycle-test-support.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
@@ -57,13 +58,13 @@ describe("harness lifecycle install/update execution", () => {
     const db = await makeDb()
     const bin = makeBinDir(["brew", "npm"])
     const refreshes: Array<number> = []
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([]),
       refreshEnvironment: Effect.sync(() => {
         refreshes.push(1)
       })
-    } as unknown as AgentRuntimeService
+    })
     const { outputs, terminal } = fakeTerminal()
     const { processes, spawnShell, spawns } = fakeSpawner()
     const events: Array<{ payload: { lifecycle?: { phase?: string } } }> = []
@@ -80,7 +81,7 @@ describe("harness lifecycle install/update execution", () => {
       spawnShell,
       terminal
     })
-    lifecycle.subscribe((event) => events.push(event as never))
+    lifecycle.subscribe((event) => events.push(event))
 
     const { terminalId } = await lifecycle.beginInstall("fake-cli")
     expect(terminalId).toBe("terminal-1")
@@ -101,11 +102,11 @@ describe("harness lifecycle install/update execution", () => {
   it("marks a failed install with the output tail and allows retry", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
@@ -139,13 +140,13 @@ describe("harness lifecycle install/update execution", () => {
   it("updates via the native self-updater with the source's env opt-in", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([
         harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
       ]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell, spawns } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
@@ -171,13 +172,13 @@ describe("harness lifecycle install/update execution", () => {
     vi.useFakeTimers()
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [installableDefinition],
       discoverHarnesses: Effect.succeed([
         harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
       ]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
@@ -232,13 +233,13 @@ describe("harness lifecycle install/update execution", () => {
         ]
       }
     }
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [definition],
       discoverHarnesses: Effect.succeed([
         harness("fake-cli", "/opt/homebrew/Cellar/fake-cli/1.0.0/bin/fake-cli", "1.0.0")
       ]),
       refreshEnvironment: Effect.void
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { spawnShell, spawns } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
@@ -263,7 +264,7 @@ describe("harness lifecycle install/update execution", () => {
 
     const binary = "/opt/homebrew/Caskroom/claude-code@latest/2.1.215/claude"
     let installedVersion = "2.1.215"
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [definition],
       discoverHarnesses: Effect.sync(() => [
         harness("claude-code", "/opt/homebrew/bin/claude", installedVersion)
@@ -271,7 +272,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.sync(() => {
         installedVersion = "2.1.216"
       })
-    } as unknown as AgentRuntimeService
+    })
     const requests: string[] = []
     const fetchImpl: FetchLike = async (url) => {
       requests.push(url)
@@ -317,7 +318,7 @@ describe("harness lifecycle install/update execution", () => {
 
     const binary = "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"
     let installedVersion = "2.1.215"
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [definition],
       discoverHarnesses: Effect.sync(() => [
         harness("claude-code", "/opt/homebrew/bin/claude", installedVersion)
@@ -325,7 +326,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.sync(() => {
         installedVersion = "2.1.216"
       })
-    } as unknown as AgentRuntimeService
+    })
     const requests: string[] = []
     const fetchImpl: FetchLike = async (url) => {
       requests.push(url)
@@ -371,7 +372,7 @@ describe("harness lifecycle install/update execution", () => {
 
     const binary = "/Users/dev/.local/share/claude/versions/2.1.215"
     let installedVersion = "2.1.215"
-    const agents = {
+    const agents = fakeAgentRuntime({
       catalog: [definition],
       discoverHarnesses: Effect.sync(() => [
         harness("claude-code", "/Users/dev/.local/bin/claude", installedVersion)
@@ -379,7 +380,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.sync(() => {
         installedVersion = "2.1.216"
       })
-    } as unknown as AgentRuntimeService
+    })
     const { terminal } = fakeTerminal()
     const { processes, spawnShell, spawns } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({

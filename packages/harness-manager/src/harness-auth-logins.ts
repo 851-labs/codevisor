@@ -19,6 +19,7 @@ import {
   withTimeout
 } from "./harness-auth-support.js"
 import type { HarnessAuthManager } from "./harness-auth-types.js"
+import { recordOrEmpty } from "./json-values.js"
 import { MUSE_HARNESS_ID, type MuseAuth } from "./muse-auth.js"
 
 export type HarnessLoginOperations = Pick<
@@ -90,7 +91,7 @@ export const makeHarnessLoginOperations = (
     })
     client.onNotification((method, params) => {
       if (method !== "account/login/completed") return
-      const payload = params as { loginId?: string; success?: boolean; error?: string | null }
+      const payload = recordOrEmpty(params)
       if (payload.loginId !== undefined && payload.loginId !== response.loginId) return
       void (async () => {
         let success = payload.success === true

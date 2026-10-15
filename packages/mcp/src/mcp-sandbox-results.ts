@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
 
 import type { AttachmentRef } from "@codevisor/api"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { type CallToolResult, ContentBlockSchema } from "@modelcontextprotocol/sdk/types.js"
+
+import { isRecord } from "./mcp-guards.js"
 
 export type McpContent = CallToolResult["content"][number]
 
@@ -24,16 +26,35 @@ export interface SandboxArtifactCollector {
   readonly persistence?: SandboxArtifactPersistence
 }
 
+interface SandboxArtifactRef {
+  readonly type: "artifact_ref"
+  readonly artifactId: string
+  readonly fileId?: string
+  readonly path?: string
+  readonly name?: string
+  readonly mediaType: string
+  readonly sizeBytes: number
+  readonly emitted: boolean
+}
+
+type SandboxBlock = McpContent | SandboxArtifactRef
+
 const base64Bytes = (value: string): number => Math.floor((value.length * 3) / 4)
 
-const blockMediaType = (candidate: Record<string, unknown>): string =>
-  typeof candidate.mimeType === "string"
-    ? candidate.mimeType
-    : typeof candidate.resource === "object" &&
-        candidate.resource !== null &&
-        typeof (candidate.resource as Record<string, unknown>).mimeType === "string"
-      ? ((candidate.resource as Record<string, unknown>).mimeType as string)
-      : "application/octet-stream"
+const binaryPayload = (
+  block: McpContent
+): { readonly encoded: string; readonly mediaType: string } | undefined => {
+  if (block.type === "image" || block.type === "audio") {
+    return { encoded: block.data, mediaType: block.mimeType }
+  }
+  if (block.type === "resource" && "blob" in block.resource) {
+    return {
+      encoded: block.resource.blob,
+      mediaType: block.resource.mimeType ?? "application/octet-stream"
+    }
+  }
+  return undefined
+}
 
 const persistArtifact = async (
   collector: SandboxArtifactCollector,
@@ -53,39 +74,24 @@ const persistArtifact = async (
   }
 }
 
-const sandboxToolResult = async (
-  value: unknown,
+const sandboxContent = async (
+  content: ReadonlyArray<McpContent>,
   collector: SandboxArtifactCollector,
   toolPath: string
-): Promise<unknown> => {
-  if (typeof value !== "object" || value === null || !("content" in value)) return value
-  const result = value as { readonly content?: unknown; readonly [key: string]: unknown }
-  if (!Array.isArray(result.content)) return value
-  const content: Array<unknown> = []
-  for (const block of result.content) {
-    if (typeof block !== "object" || block === null) {
-      content.push(block)
+): Promise<Array<SandboxBlock>> => {
+  const blocks: Array<SandboxBlock> = []
+  for (const block of content) {
+    const payload = binaryPayload(block)
+    if (payload === undefined) {
+      blocks.push(block)
       continue
     }
-    const candidate = block as Record<string, unknown>
-    const encoded =
-      candidate.type === "image" || candidate.type === "audio"
-        ? candidate.data
-        : candidate.type === "resource" &&
-            typeof candidate.resource === "object" &&
-            candidate.resource !== null
-          ? (candidate.resource as Record<string, unknown>).blob
-          : undefined
-    if (typeof encoded !== "string") {
-      content.push(block)
-      continue
-    }
-    const mediaType = blockMediaType(candidate)
+    const { encoded, mediaType } = payload
     const sizeBytes = base64Bytes(encoded)
     const emitted = collector.content.length < collector.maxItems && sizeBytes <= collector.maxBytes
-    if (emitted) collector.content.push(block as McpContent)
+    if (emitted) collector.content.push(block)
     const stored = await persistArtifact(collector, encoded, mediaType, toolPath)
-    content.push(
+    blocks.push(
       stored === undefined
         ? { type: "artifact_ref", artifactId: randomUUID(), mediaType, sizeBytes, emitted }
         : {
@@ -100,7 +106,7 @@ const sandboxToolResult = async (
           }
     )
   }
-  return { ...result, content }
+  return blocks
 }
 
 const callToolErrorMessage = (result: CallToolResult): string => {
@@ -110,21 +116,13 @@ const callToolErrorMessage = (result: CallToolResult): string => {
   return messages.join("\n") || "Tool call failed"
 }
 
-const sandboxTextBlocks = (content: ReadonlyArray<unknown>): Array<string> =>
-  content.flatMap((block) => {
-    if (typeof block !== "object" || block === null) return []
-    const { type, text } = block as { type?: unknown; text?: unknown }
-    if (type !== "text") return []
-    return [typeof text === "string" ? text : ""]
-  })
+const sandboxTextBlocks = (content: ReadonlyArray<SandboxBlock>): Array<string> =>
+  content.flatMap((block) => (block.type === "text" ? [block.text] : []))
 
-const sandboxArtifactReferences = (content: ReadonlyArray<unknown>): Array<unknown> =>
-  content.filter(
-    (block) =>
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: unknown }).type === "artifact_ref"
-  )
+const sandboxArtifactReferences = (
+  content: ReadonlyArray<SandboxBlock>
+): Array<SandboxArtifactRef> =>
+  content.flatMap((block) => (block.type === "artifact_ref" ? [block] : []))
 
 const sandboxRawValue = (structuredContent: unknown, textBlocks: Array<string>): unknown =>
   structuredContent ??
@@ -139,7 +137,10 @@ const sandboxRawValue = (structuredContent: unknown, textBlocks: Array<string>):
     }
   })()
 
-const sandboxValueWithArtifacts = (rawValue: unknown, artifacts: Array<unknown>): unknown => {
+const sandboxValueWithArtifacts = (
+  rawValue: unknown,
+  artifacts: ReadonlyArray<SandboxArtifactRef>
+): unknown => {
   if (artifacts.length === 0) return rawValue
   if (typeof rawValue === "object" && rawValue !== null && !Array.isArray(rawValue)) {
     return { ...rawValue, artifacts }
@@ -153,15 +154,10 @@ export const sandboxSuccessfulToolResult = async (
   toolPath = "tool"
 ): Promise<unknown> => {
   if (result.isError === true) throw new Error(callToolErrorMessage(result))
-  const transformed = (await sandboxToolResult(result, collector, toolPath)) as {
-    readonly content?: ReadonlyArray<unknown>
-    readonly structuredContent?: unknown
-  }
-  if (!Array.isArray(transformed.content)) return transformed
-
-  const textBlocks = sandboxTextBlocks(transformed.content)
-  const artifacts = sandboxArtifactReferences(transformed.content)
-  const rawValue: unknown = sandboxRawValue(transformed.structuredContent, textBlocks)
+  const content = await sandboxContent(result.content, collector, toolPath)
+  const textBlocks = sandboxTextBlocks(content)
+  const artifacts = sandboxArtifactReferences(content)
+  const rawValue: unknown = sandboxRawValue(result.structuredContent, textBlocks)
   return sandboxValueWithArtifacts(rawValue, artifacts)
 }
 
@@ -169,14 +165,9 @@ export const sandboxOutputContent = (
   output: ReadonlyArray<unknown> | undefined
 ): Array<McpContent> =>
   (output ?? []).flatMap((item) => {
-    if (
-      typeof item === "object" &&
-      item !== null &&
-      (item as { type?: unknown }).type === "content" &&
-      typeof (item as { content?: unknown }).content === "object" &&
-      (item as { content?: unknown }).content !== null
-    ) {
-      return [(item as { content: McpContent }).content]
+    if (isRecord(item) && item.type === "content") {
+      const parsed = ContentBlockSchema.safeParse(item.content)
+      if (parsed.success) return [parsed.data]
     }
     return [{ type: "text" as const, text: JSON.stringify(item) }]
   })

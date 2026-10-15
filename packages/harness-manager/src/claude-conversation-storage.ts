@@ -15,11 +15,13 @@ import {
 import { homedir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 
+import { errnoCode } from "./json-values.js"
+
 const metadataAt = async (filePath: string) => {
   try {
     return await lstat(filePath)
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (errnoCode(cause) === "ENOENT") return undefined
     throw cause
   }
 }
@@ -45,7 +47,7 @@ const copyNewerFile = async (source: string, destination: string): Promise<void>
     try {
       await rename(temporary, destination)
     } catch (cause) {
-      const code = (cause as NodeJS.ErrnoException).code
+      const code = errnoCode(cause)
       if (process.platform !== "win32" || (code !== "EEXIST" && code !== "EPERM")) throw cause
       await rm(destination, { force: true })
       await rename(temporary, destination)
@@ -173,6 +175,6 @@ const installSharedSkillsLink = async (
     managedSkillsPath,
     process.platform === "win32" ? "junction" : "dir"
   ).catch((cause: unknown) => {
-    if ((cause as { code?: unknown }).code !== "EEXIST") throw cause
+    if (errnoCode(cause) !== "EEXIST") throw cause
   })
 }

@@ -9,10 +9,16 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { FetchLike } from "@codevisor/updater"
 
+export interface HarnessLifecycleEventPayload {
+  readonly harnessId: string
+  readonly lifecycle?: HarnessLifecycleState
+  readonly updateInfo?: HarnessUpdateInfo
+}
+
 export interface HarnessLifecycleEvent {
   readonly kind: "harness.lifecycle.updated"
   readonly subjectId: string
-  readonly payload: unknown
+  readonly payload: HarnessLifecycleEventPayload
 }
 
 export interface LifecycleProcess {

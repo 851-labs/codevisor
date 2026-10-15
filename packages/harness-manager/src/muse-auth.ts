@@ -10,16 +10,29 @@ import {
   type MuseConnector
 } from "@codevisor/adapter-muse"
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
-import type { HarnessAccountRecord } from "@codevisor/db"
+import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
 
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import { run } from "./harness-auth-support.js"
 import { MUSE_HARNESS_ID } from "./muse-credentials.js"
+import type { SharedAccountIntegration } from "./shared-account-integration.js"
 
 export { MUSE_HARNESS_ID }
 
+export type MuseAuthCore = Pick<
+  HarnessAuthCore,
+  "accountEnv" | "executable" | "profilePath" | "emit"
+> & {
+  readonly config: {
+    readonly sharedAccounts?: () =>
+      | Pick<SharedAccountIntegration, "captureLogin" | "loginFailed" | "saveApiKey">
+      | undefined
+    readonly db: Pick<CodevisorDatabaseService, "setActiveHarnessAccount">
+  }
+}
+
 export const makeMuseAuth = (
-  core: HarnessAuthCore,
+  core: MuseAuthCore,
   probeAccount: (accountId: string, force: boolean) => Promise<HarnessAccount>,
   connector: MuseConnector = spawnMuseClient,
   loginDeadlineMs = 10 * 60_000

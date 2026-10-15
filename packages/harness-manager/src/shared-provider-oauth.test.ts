@@ -1,6 +1,8 @@
-import type { Provider, OAuthCredential } from "@earendil-works/pi-ai"
+import type { OAuthCredential } from "@earendil-works/pi-ai"
 import { describe, expect, it, vi } from "vitest"
 
+import { fakeProvider } from "./harness-lifecycle-test-support.js"
+import { recordOrEmpty } from "./json-values.js"
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 import { refreshSharedOAuth } from "./shared-oauth-providers.js"
 import {
@@ -135,10 +137,8 @@ describe("shared provider OAuth contracts", () => {
     })
     expect(copilot.refreshToken).toBeUndefined()
     expect(providerCredential(copilot, "unused").refresh).toBe("github-token")
-    expect(
-      providerCredential({ ...a, providerId: undefined } as unknown as SharedTokenBundle, "handle")
-        .refresh
-    ).toBe("handle")
+    const { providerId: _providerId, ...withoutProvider } = a
+    expect(providerCredential(withoutProvider, "handle").refresh).toBe("handle")
   })
   it.each([
     null,
@@ -152,7 +152,7 @@ describe("shared provider OAuth contracts", () => {
     { ...credential, access: "a." }
   ])("rejects malformed native credentials where required fields are absent", (value) => {
     const parsed = parseProviderOAuth("opencode", "openai", value, "managed")
-    if ((value as typeof credential)?.access === "a.") expect(parsed?.subject).toMatch(/^grant:/)
+    if (recordOrEmpty(value).access === "a.") expect(parsed?.subject).toMatch(/^grant:/)
     else expect(parsed).toBeUndefined()
   })
   it("rejects uninspected plugins and enterprise issuers without sending them a fleet token", () => {
@@ -194,7 +194,24 @@ describe("shared provider OAuth contracts", () => {
       expires: 9_000_000,
       projectId: "project"
     }))
-    const providers = [{ id: "anthropic", auth: { oauth: { refresh } } }] as unknown as Provider[]
+    const providers = [
+      fakeProvider({
+        id: "anthropic",
+        name: "Anthropic",
+        auth: {
+          oauth: {
+            name: "Anthropic OAuth",
+            login: async () => {
+              throw new Error("login is not stubbed")
+            },
+            refresh,
+            toAuth: async () => {
+              throw new Error("toAuth is not stubbed")
+            }
+          }
+        }
+      })
+    ]
     const token = parseProviderOAuth("pi", "anthropic", credential, "managed")!
     const next = await refreshProviderOAuth(token, fetch, 0, providers)
     expect(next).toMatchObject({
@@ -223,22 +240,23 @@ describe("shared provider OAuth contracts", () => {
   it.each(["openai", "xai"])(
     "rotates %s through its original OAuth client and keeps a refresh token omitted by the provider",
     async (providerId) => {
-      const request = vi.fn(async () =>
+      const request = vi.fn<typeof fetch>(async () =>
         Response.json({ access_token: "fresh", expires_in: 3600, id_token: "id" })
       )
       const token = { ...bundle(), providerId }
-      const next = await refreshSharedOAuth(token, request as unknown as typeof fetch, 1000)
+      const next = await refreshSharedOAuth(token, request, 1000)
       expect(next).toMatchObject({
         accessToken: "fresh",
         expiresAt: 3_601_000,
         refreshToken: "refresh",
         idToken: "id"
       })
-      const [url, init] = request.mock.calls[0] as unknown as [string, RequestInit]
+      const [url, init] = request.mock.calls[0]!
       expect(url).toBe(providerTokenEndpoint(providerId))
-      expect(new URLSearchParams(init.body as string).get("refresh_token")).toBe("refresh")
-      expect(init.redirect).toBe("error")
-      expect(new URLSearchParams(init.body as string).get("client_id")).toBe(
+      const form = new URLSearchParams(typeof init?.body === "string" ? init.body : undefined)
+      expect(form.get("refresh_token")).toBe("refresh")
+      expect(init?.redirect).toBe("error")
+      expect(form.get("client_id")).toBe(
         providerId === "openai"
           ? "app_EMoamEEZ73f0CkXaXp7hrann"
           : "b1a00492-073a-47ea-816f-4c329264a828"
@@ -246,10 +264,10 @@ describe("shared provider OAuth contracts", () => {
     }
   )
   it("persists rotated refresh tokens and rejects failed or malformed exchanges without retries", async () => {
-    const request = vi.fn(async () =>
+    const request = vi.fn<typeof fetch>(async () =>
       Response.json({ access_token: "fresh", refresh_token: "rotated", expires_in: 3600 })
     )
-    expect(await refreshProviderOAuth(bundle(), request as unknown as typeof fetch)).toMatchObject({
+    expect(await refreshProviderOAuth(bundle(), request)).toMatchObject({
       refreshToken: "rotated"
     })
     for (const value of [
@@ -260,23 +278,20 @@ describe("shared provider OAuth contracts", () => {
       { access_token: "fresh", expires_in: "123" }
     ]) {
       request.mockResolvedValueOnce(Response.json(value))
-      await expect(
-        refreshProviderOAuth(bundle(), request as unknown as typeof fetch, 0)
-      ).rejects.toThrow("Sign in again")
+      await expect(refreshProviderOAuth(bundle(), request, 0)).rejects.toThrow("Sign in again")
     }
     request.mockResolvedValueOnce(new Response(null, { status: 401 }))
-    await expect(
-      refreshProviderOAuth(bundle(), request as unknown as typeof fetch, 0)
-    ).rejects.toThrow("Sign in again")
-    for (const token of [
-      { ...bundle(), refreshToken: undefined },
-      { ...bundle(), providerId: undefined },
+    await expect(refreshProviderOAuth(bundle(), request, 0)).rejects.toThrow("Sign in again")
+    const { refreshToken: _refreshToken, ...withoutRefresh } = bundle()
+    const { providerId: _providerId, ...withoutProvider } = bundle()
+    const tokens: ReadonlyArray<SharedTokenBundle> = [
+      withoutRefresh,
+      withoutProvider,
       { ...bundle(), ownership: "external" },
       { ...bundle(), providerId: "custom" }
-    ])
-      await expect(refreshProviderOAuth(token as unknown as SharedTokenBundle)).rejects.toThrow(
-        "Sign in again"
-      )
+    ]
+    for (const token of tokens)
+      await expect(refreshProviderOAuth(token)).rejects.toThrow("Sign in again")
     expect(request).toHaveBeenCalledTimes(7)
   })
 })

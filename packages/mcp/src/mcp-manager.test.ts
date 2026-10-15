@@ -5,20 +5,25 @@ import { join } from "node:path"
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 
 import {
   cleanupMcpManagerTests,
   run,
   directories,
+  executeResultValue,
   listen,
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
 import { automationSkillPath, NodeStreamableHttpTransport } from "./mcp-manager.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
+
+const BinaryArtifactsSchema = z.object({ artifacts: z.array(z.object({ path: z.string() })) })
 
 describe("MCP manager", () => {
   it("finds managed skills from a packaged runtime launched outside its directory", () => {
@@ -114,13 +119,13 @@ describe("MCP manager", () => {
     await transport.send({ jsonrpc: "2.0", id: 10, method: "ping" })
     expect(messages).toHaveLength(5)
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("Unable to decode MCP SSE event"))
-    const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    const firstHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
     expect(firstHeaders.get("authorization")).toBe("Bearer access-token")
     expect(firstHeaders.get("mcp-protocol-version")).toBe("2025-11-25")
     expect(firstHeaders.get("x-workspace")).toBe("emojis")
-    expect(
-      ((fetchMock.mock.calls[1]?.[1]?.headers as Headers) ?? new Headers()).get("mcp-session-id")
-    ).toBe("session-1")
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("mcp-session-id")).toBe(
+      "session-1"
+    )
     await transport.close()
     expect(closed).toBe(true)
 
@@ -212,9 +217,11 @@ describe("MCP manager", () => {
       ).toBe(401)
       const client = new Client({ name: "manager-test", version: "1" })
       await client.connect(
-        new StreamableHTTPClientTransport(new URL(issued.url), {
-          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-        }) as unknown as Transport
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(issued.url), {
+            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+          })
+        )
       )
       try {
         expect(client.getInstructions()).toBeUndefined()
@@ -248,20 +255,15 @@ describe("MCP manager", () => {
             expect.objectContaining({ type: "image", mimeType: "image/png" })
           ])
         )
-        const binaryContent = binaryCodeResult.content as Array<{ readonly type: string }>
+        const binaryContent = CallToolResultSchema.parse(binaryCodeResult).content
         expect(JSON.stringify(binaryContent)).toContain("artifact_ref")
-        const resultText = (
-          binaryCodeResult.content as Array<{ type: string; text?: string }>
-        ).find((block) => block.type === "text")?.text
-        const artifact = (
-          JSON.parse(resultText!) as { result: { artifacts: Array<{ path: string }> } }
-        ).result.artifacts[0]!
+        const artifact = BinaryArtifactsSchema.parse(executeResultValue(binaryCodeResult))
+          .artifacts[0]!
         expect(artifact.path.endsWith(".png")).toBe(true)
         expect(readFileSync(artifact.path).toString()).toBe("gateway-binary-image")
-        expect(resultText).not.toContain("showToUser")
-        expect(
-          JSON.stringify(binaryContent.filter((block) => block.type === "text"))
-        ).not.toContain(Buffer.from("gateway-binary-image").toString("base64"))
+        const textBlocks = JSON.stringify(binaryContent.filter((block) => block.type === "text"))
+        expect(textBlocks).not.toContain("showToUser")
+        expect(textBlocks).not.toContain(Buffer.from("gateway-binary-image").toString("base64"))
         for (const code of [
           `async () => tools.describe.tool({})`,
           `async () => tools.describe.tool("invalid")`,

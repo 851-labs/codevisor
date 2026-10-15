@@ -6,13 +6,14 @@ import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import {
   AUTH_CACHE_MS,
+  claudeAuthStatusFrom,
   CODEX_PROBE_TIMEOUT_MS,
   CURSOR_PROBE_TIMEOUT_MS,
+  execFailure,
   parseClaudeAuthStatus,
   parseCursorAuthStatus,
   run,
-  withTimeout,
-  type ClaudeAuthStatus
+  withTimeout
 } from "./harness-auth-support.js"
 import { MUSE_HARNESS_ID } from "./muse-auth.js"
 
@@ -96,7 +97,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         timeout: 10_000,
         maxBuffer: 1024 * 1024
       })
-      const status = JSON.parse(result.stdout) as ClaudeAuthStatus
+      const status = claudeAuthStatusFrom(JSON.parse(result.stdout))
       if (status.loggedIn !== true) {
         return persistProbe(account, {
           authState: "unauthenticated",
@@ -120,7 +121,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         detail: null
       })
     } catch (cause) {
-      const error = cause as { stdout?: string; stderr?: string; code?: number | string }
+      const error = execFailure(cause)
       const output = `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase()
       const status = parseClaudeAuthStatus(error.stdout)
       const signedOut =
@@ -175,7 +176,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         detail: null
       })
     } catch (cause) {
-      const error = cause as { stdout?: string; stderr?: string; code?: number | string }
+      const error = execFailure(cause)
       const status = parseCursorAuthStatus(error.stdout)
       const signedOut =
         status?.isAuthenticated === false ||

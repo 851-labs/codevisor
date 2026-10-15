@@ -8,13 +8,25 @@ import { computerUseTools, textToolResult } from "@codevisor/automation"
 import { makeAttachmentStore } from "@codevisor/db"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { afterEach, describe, expect, it } from "vitest"
+import { z } from "zod"
 
-import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
+import {
+  cleanupMcpManagerTests,
+  executeResultValue,
+  listen,
+  run,
+  testManager
+} from "./mcp-manager-test-support.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
+
+const RecordingSchema = z.object({
+  file: z.object({ fileId: z.string(), path: z.string() }),
+  markdown: z.string()
+})
 
 describe("recording attachment persistence", () => {
   it("provides the native provider a publisher and returns an embeddable local video through MCP execute", async () => {
@@ -47,9 +59,11 @@ describe("recording attachment persistence", () => {
     const client = new Client({ name: "recording-test", version: "1" })
     try {
       await client.connect(
-        new StreamableHTTPClientTransport(new URL(issued.url), {
-          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-        }) as unknown as Transport
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(issued.url), {
+            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+          })
+        )
       )
       const result = await client.callTool({
         name: "execute",
@@ -60,13 +74,10 @@ describe("recording attachment persistence", () => {
       })
       expect(result.isError).not.toBe(true)
       const rendered = JSON.stringify(result.content)
-      const content = result.content as Array<{ type: string; text?: string }>
-      const output = JSON.parse(content.find((block) => block.type === "text")!.text!) as {
-        result: { file: { fileId: string; path: string }; markdown: string }
-      }
-      expect(await readFile(output.result.file.path, "utf8")).toBe("native video fixture")
-      expect(output.result.markdown).toBe(`![Fix](<${output.result.file.path}>)`)
-      expect(await run(db.getFileMetadata(output.result.file.fileId))).toMatchObject({
+      const output = RecordingSchema.parse(executeResultValue(result))
+      expect(await readFile(output.file.path, "utf8")).toBe("native video fixture")
+      expect(output.markdown).toBe(`![Fix](<${output.file.path}>)`)
+      expect(await run(db.getFileMetadata(output.file.fileId))).toMatchObject({
         name: "fix.mp4",
         mimeType: "video/mp4",
         kind: "file"

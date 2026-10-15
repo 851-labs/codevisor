@@ -23,9 +23,9 @@ export type StepOutcome =
 export const makeExecutionSteps = (deps: {
   readonly recorder: ExecutionRecorder
   readonly collector: SandboxArtifactCollector
-  readonly record: (id: string) => Promise<McpServerRecord>
+  readonly record: (id: string) => Promise<Pick<McpServerRecord, "url">>
   readonly automationProviders: ReadonlyMap<string, AutomationToolProvider>
-  readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
+  readonly connectUpstream: (id: string) => Promise<Pick<UpstreamConnection, "tools">>
 }) => {
   const { recorder, collector } = deps
   let browserSite: CodevisorExecutionIcon | undefined

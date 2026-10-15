@@ -27,6 +27,7 @@ import type {
   HarnessAuthExec,
   HarnessAuthManagerConfig
 } from "./harness-auth-types.js"
+import { errnoCode } from "./json-values.js"
 import { linkMuseConfigHome, MUSE_HARNESS_ID, museProfileEnv } from "./muse-credentials.js"
 
 const accountOutcomeChanged = (previous: HarnessAccount, next: HarnessAccount) =>
@@ -102,7 +103,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     try {
       return (await readFile(apiKeyPath(account), "utf8")).trim() || undefined
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      if (errnoCode(cause) === "ENOENT") return undefined
       throw cause
     }
   }

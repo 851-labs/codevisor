@@ -14,7 +14,6 @@ import {
   type RegisteredTool
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { z } from "zod"
 
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
@@ -34,7 +33,7 @@ import { makeExecutionSteps } from "./mcp-gateway-steps.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
-import { run, type UpstreamConnection } from "./mcp-support.js"
+import { run, sdkTransport, type UpstreamConnection } from "./mcp-support.js"
 
 export interface GatewayConnection {
   readonly server: McpSdkServer
@@ -78,6 +77,18 @@ export interface BrowserSessionTab {
   readonly url?: string
   readonly origin?: string
 }
+
+const BrowserSessionTabsSchema = z.object({
+  tabs: z
+    .array(
+      z.object({
+        id: z.string(),
+        url: z.string().exactOptional(),
+        origin: z.string().exactOptional()
+      })
+    )
+    .optional()
+})
 
 export const browserSessionTabsNotice = (tabs: ReadonlyArray<BrowserSessionTab>): string => {
   const created = tabs.filter((tab) => tab.origin === "created")
@@ -225,7 +236,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     )
     const block = listed.content.find((entry) => entry.type === "text")
     if (listed.isError === true || block?.type !== "text") return ""
-    const parsed = JSON.parse(block.text) as { tabs?: ReadonlyArray<BrowserSessionTab> }
+    const parsed = BrowserSessionTabsSchema.parse(JSON.parse(block.text))
     return browserSessionTabsNotice(parsed.tabs ?? [])
   }
 
@@ -407,7 +418,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       executeTool,
       skillsTool
     }
-    await sdkServer.connect(transport as unknown as Transport)
+    await sdkServer.connect(sdkTransport(transport))
     return connection
   }
 

@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import { afterAll, describe, expect, it } from "vitest"
 
+import { isNonArrayRecord } from "./mcp-guards.js"
 import {
   appendTomlTable,
   removeJsonConfigKey,
@@ -188,7 +189,7 @@ describe("getNestedValue", () => {
   })
 
   it("returns undefined when traversing through non-objects", () => {
-    expect(getNestedValue({ mcp: null } as never, "mcp.servers")).toBeUndefined()
+    expect(getNestedValue({ mcp: null }, "mcp.servers")).toBeUndefined()
   })
 })
 
@@ -466,17 +467,10 @@ describe("surgical config editors", () => {
 
     it("round-trips nested fragments through remove and append", () => {
       const original = `[mcp_servers.docs]\ncommand = "npx"\n\n[mcp_servers.docs.env]\nTOKEN = "secret"\n`
-      const fragment = parseNativeConfig(original, "toml")["mcp_servers"] as Record<
-        string,
-        Record<string, unknown>
-      >
+      const fragment = getNestedValue(parseNativeConfig(original, "toml"), "mcp_servers.docs")
+      if (!isNonArrayRecord(fragment)) throw new Error("Expected the docs table")
       const removed = removeTomlTable(original, "mcp_servers", "docs")
-      const restored = appendTomlTable(
-        removed,
-        "mcp_servers",
-        "docs",
-        fragment["docs"] as Record<string, unknown>
-      )
+      const restored = appendTomlTable(removed, "mcp_servers", "docs", fragment)
       expect(parseNativeConfig(restored, "toml")).toEqual(parseNativeConfig(original, "toml"))
     })
   })

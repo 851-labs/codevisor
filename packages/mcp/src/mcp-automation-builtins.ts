@@ -16,6 +16,9 @@ export const BUILTIN_MCP_SERVERS = [
 
 export type BuiltinMcpId = (typeof BUILTIN_MCP_SERVERS)[number]["id"]
 
+export const isBuiltinMcpId = (id: string): id is BuiltinMcpId =>
+  BUILTIN_MCP_SERVERS.some((builtin) => builtin.id === id)
+
 const AUTOMATION_SKILLS = [
   {
     gate: "browser",

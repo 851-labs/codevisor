@@ -136,7 +136,7 @@ describe("catalog installation routes", () => {
   ])("updates %s through its installed owner (%s)", async (id, path, command) => {
     const { spawnShell, spawns, processes } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
-      agents: agentsStub([definition(id)], [harness(id, path!, "1.0.0")]),
+      agents: agentsStub([definition(id)], [harness(id, path, "1.0.0")]),
       db: await makeDb(),
       home: "/Users/dev",
       realpath: (p) => p,
@@ -145,7 +145,7 @@ describe("catalog installation routes", () => {
       spawnShell,
       terminal: fakeTerminal().terminal
     })
-    await lifecycle.beginUpdate(id!)
+    await lifecycle.beginUpdate(id)
     expect(spawns[0]?.command).toBe(command)
     const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)

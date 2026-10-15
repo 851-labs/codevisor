@@ -2,7 +2,6 @@ import { createServer } from "node:http"
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -18,6 +17,7 @@ import {
   testManager
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -79,9 +79,11 @@ describe("Codevisor built-in tools", () => {
       const client = new Client({ name: "codevisor-toggle-test", version: "1" })
       try {
         await client.connect(
-          new StreamableHTTPClientTransport(new URL(gateway.url), {
-            requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-          }) as unknown as Transport
+          sdkTransport(
+            new StreamableHTTPClientTransport(new URL(gateway.url), {
+              requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+            })
+          )
         )
         const execute = (code: string) =>
           client.callTool({ name: "execute", arguments: { description: "Run test code", code } })

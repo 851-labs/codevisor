@@ -2,6 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFile } from "node:fs/promises"
 
+import { errnoCode, optionalString, parseJsonRecord, recordOrEmpty } from "./json-values.js"
+
 export interface OpenCodeProfile {
   readonly command: string
   readonly cwd: string
@@ -21,33 +23,33 @@ export interface ProviderInfo {
   readonly name: string
 }
 
-export interface ProviderListResponse {
-  readonly all?: ReadonlyArray<ProviderInfo>
-}
-
 export interface UpstreamPrompt {
-  readonly type?: string
-  readonly key?: string
-  readonly message?: string
-  readonly placeholder?: string
-  readonly options?: ReadonlyArray<{
-    readonly value?: string
-    readonly label?: string
-    readonly hint?: string
+  readonly type?: string | undefined
+  readonly key?: string | undefined
+  readonly message?: string | undefined
+  readonly placeholder?: string | undefined
+  readonly options: ReadonlyArray<{
+    readonly value?: string | undefined
+    readonly label?: string | undefined
+    readonly hint?: string | undefined
   }>
-  readonly when?: { readonly key?: string; readonly op?: string; readonly value?: string }
+  readonly when: {
+    readonly key?: string | undefined
+    readonly op?: string | undefined
+    readonly value?: string | undefined
+  }
 }
 
 export interface UpstreamMethod {
-  readonly type?: string
-  readonly label?: string
+  readonly type?: string | undefined
+  readonly label?: string | undefined
   readonly prompts?: ReadonlyArray<UpstreamPrompt>
 }
 
 export interface AuthorizationResponse {
-  readonly url?: string
-  readonly method?: string
-  readonly instructions?: string
+  readonly url?: string | undefined
+  readonly method?: string | undefined
+  readonly instructions?: string | undefined
 }
 
 export type CredentialType = "api" | "oauth" | "wellknown"
@@ -145,11 +147,11 @@ export const startServer = async (profile: OpenCodeProfile): Promise<OpenCodeSer
   }
 }
 
-export const request = async <A>(
+export const request = async (
   server: OpenCodeServer,
   path: string,
   init: RequestInit = {}
-): Promise<A> => {
+): Promise<unknown> => {
   const headers = new Headers(init.headers)
   headers.set(
     "authorization",
@@ -161,12 +163,13 @@ export const request = async <A>(
   if (!response.ok) {
     let detail = text
     try {
-      const parsed = JSON.parse(text) as { data?: { message?: string }; message?: string }
-      detail = parsed.data?.message ?? parsed.message ?? text
+      const parsed = recordOrEmpty(JSON.parse(text))
+      detail =
+        optionalString(recordOrEmpty(parsed.data).message) ?? optionalString(parsed.message) ?? text
     } catch {}
     throw new Error(detail.trim() || `OpenCode authentication request failed (${response.status})`)
   }
-  return (text.length === 0 ? undefined : JSON.parse(text)) as A
+  return text.length === 0 ? undefined : JSON.parse(text)
 }
 
 export const workspaceQuery = (profile: OpenCodeProfile): string =>
@@ -174,16 +177,17 @@ export const workspaceQuery = (profile: OpenCodeProfile): string =>
 
 export const credentialTypes = async (path: string): Promise<Record<string, CredentialType>> => {
   try {
-    const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, { type?: string }>
+    const raw = parseJsonRecord(await readFile(path, "utf8"))
     return Object.fromEntries(
-      Object.entries(raw).flatMap(([providerId, credential]) =>
-        credential.type === "api" || credential.type === "oauth" || credential.type === "wellknown"
-          ? [[providerId.replace(/\/+$/, ""), credential.type]]
+      Object.entries(raw).flatMap(([providerId, credential]) => {
+        const type = recordOrEmpty(credential).type
+        return type === "api" || type === "oauth" || type === "wellknown"
+          ? [[providerId.replace(/\/+$/, ""), type]]
           : []
-      )
+      })
     )
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return {}
+    if (errnoCode(cause) === "ENOENT") return {}
     throw cause
   }
 }
