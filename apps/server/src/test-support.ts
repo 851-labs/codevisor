@@ -123,16 +123,34 @@ afterEach(async () => {
   const closed = await Promise.allSettled(
     runningServers.splice(0).map((server) => run(server.close))
   )
-  for (const mcp of mcpManagers.splice(0)) await mcp.close()
+  const failures = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []))
+  for (const mcp of mcpManagers.splice(0)) {
+    try {
+      await mcp.close()
+    } catch (cause) {
+      failures.push(cause)
+    }
+  }
   for (const database of databases.splice(0)) {
-    await run(database.close)
+    try {
+      await run(database.close)
+    } catch (cause) {
+      failures.push(cause)
+    }
   }
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true })
+    try {
+      rmSync(dir, { force: true, recursive: true })
+    } catch (cause) {
+      failures.push(cause)
+    }
   }
-  vi.unstubAllGlobals()
-  const failures = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []))
-  if (failures.length > 0) throw new AggregateError(failures, "Closing test servers failed")
+  try {
+    vi.unstubAllGlobals()
+  } catch (cause) {
+    failures.push(cause)
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "Cleaning up test resources failed")
 })
 
 export const makeServices = async (
