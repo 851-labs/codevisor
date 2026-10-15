@@ -101,6 +101,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
   var isDetaching = false
   var isExplicitUserScroll = false
+  var holdsForKeyboardDrag = false
+  var isKeyboardUp = false
+  var heightWithoutKeyboard: CGFloat = 0
+  var keyboardObservers: [NSObjectProtocol] = []
+  var isHoldingForKeyboardDrag = false
   var lastStableScrollState: SessionScrollState?
   var appliedTopContentInset: CGFloat = 0
 
@@ -161,6 +166,22 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     ) { [weak self] _ in
       Self.onMain { [weak self] in self?.sendTransitions.interrupt() }
     }
+    keyboardObservers = [
+      NotificationCenter.default.addObserver(
+        forName: UIResponder.keyboardWillShowNotification, object: nil, queue: nil
+      ) { [weak self] _ in
+        Self.onMain { [weak self] in self?.isKeyboardUp = true }
+      },
+      NotificationCenter.default.addObserver(
+        forName: UIResponder.keyboardDidHideNotification, object: nil, queue: nil
+      ) { [weak self] _ in
+        Self.onMain { [weak self] in
+          self?.isKeyboardUp = false
+          self?.heightWithoutKeyboard = 0
+          self?.setNeedsLayout()
+        }
+      },
+    ]
   }
 
   convenience init() {
@@ -186,6 +207,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     disclosureAnchorReleaseTask?.cancel()
     if let applicationObserver {
       NotificationCenter.default.removeObserver(applicationObserver)
+    }
+    for observer in keyboardObservers {
+      NotificationCenter.default.removeObserver(observer)
     }
   }
 
@@ -221,6 +245,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     let previousDistanceFromBottom = lastDistanceFromBottom
     let wasNativeScrollInteractionActive = isNativeScrollInteractionActive
     super.layoutSubviews()
+    if !isKeyboardUp { heightWithoutKeyboard = max(heightWithoutKeyboard, bounds.height) }
     guard !isDetaching else { return }
     updateTopContentInsetIfNeeded()
     guard bounds.width > 0, bounds.height > 0 else { return }
@@ -236,11 +261,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       ? TranscriptViewportResizeAdjustment.resolve(
         previousDistanceFromBottom: previousDistanceFromBottom,
         atBottomThreshold: Self.atBottomThreshold,
-        isUserInteracting: wasNativeScrollInteractionActive
+        isUserInteracting: wasNativeScrollInteractionActive && !holdsForKeyboardDrag
       )
       : nil
     lastViewportSize = bounds.size
     if widthChanged {
+      heightWithoutKeyboard = isKeyboardUp ? 0 : bounds.height
       parkedHosts.removeAll()
       _ = activateMeasurementCacheIfNeeded()
       refreshMountedRootViews()

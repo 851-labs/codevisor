@@ -12,6 +12,15 @@ extension VirtualizedTranscriptScrollView {
     bottomJumpGate.cancel()
     lockedRestoreDistance = nil
     isExplicitUserScroll = false
+    beginKeyboardDrag()
+  }
+
+  func scrollViewWillEndDragging(
+    _: UIScrollView,
+    withVelocity _: CGPoint,
+    targetContentOffset: UnsafeMutablePointer<CGPoint>
+  ) {
+    endKeyboardDrag(targetContentOffset: targetContentOffset)
   }
 
   func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
@@ -24,6 +33,7 @@ extension VirtualizedTranscriptScrollView {
 
   func scrollViewDidScroll(_: UIScrollView) {
     guard !isDetaching else { return }
+    holdForKeyboardDrag()
     let previousDistance = lastDistanceFromBottom
     let distance = currentDistanceFromBottom()
     lastDistanceFromBottom = distance
@@ -68,6 +78,8 @@ extension VirtualizedTranscriptScrollView {
     _: UIScrollView,
     willDecelerate decelerate: Bool,
   ) {
+    holdsForKeyboardDrag = false
+    setKeyboardDismissPadding(0)
     if !decelerate { finishNativeScrollInteraction() }
   }
 
