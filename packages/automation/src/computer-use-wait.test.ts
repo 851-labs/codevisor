@@ -52,6 +52,41 @@ describe("Computer Use waits", () => {
     )
     expect(computerUseState(timed)).toMatchObject({ matched: false, text: "Current state" })
   })
+  it("waits for accessibility changes between reads and falls back to polling when unavailable", async () => {
+    const time = clock()
+    const waits: number[] = []
+    let reads = 0
+    const changed = await waitForComputerState(
+      { app: "Music", role: "AXSheet", timeout_ms: 2000 },
+      async () => reply(++reads < 3 ? "1 AXWindow Music" : "2 AXSheet Create"),
+      time,
+      async (ms) => {
+        waits.push(ms)
+      }
+    )
+    expect(computerUseState(changed).matched).toBe(true)
+    expect(waits).toEqual([500, 500])
+    const sleeps: number[] = []
+    let attempts = 0
+    const fallback = await waitForComputerState(
+      { app: "Music", text: "Never", timeout_ms: 600 },
+      async () => reply("1 AXWindow Music"),
+      {
+        now: time.now,
+        sleep: async (ms) => {
+          sleeps.push(ms)
+          await time.sleep(ms)
+        }
+      },
+      async () => {
+        attempts += 1
+        throw new Error("Unsupported Computer Use tool: await_change")
+      }
+    )
+    expect(computerUseState(fallback).matched).toBe(false)
+    expect(attempts).toBe(1)
+    expect(sleeps).toEqual([200, 200, 200])
+  })
   it("rejects invalid conditions and propagates observation failures", async () => {
     for (const args of [
       { app: "a" },

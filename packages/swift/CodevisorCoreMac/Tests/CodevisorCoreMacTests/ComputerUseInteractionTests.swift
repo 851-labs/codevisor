@@ -105,6 +105,41 @@ struct ComputerUseInteractionTests {
     #expect(!computerUseAXOutcome(.success).verified)
   }
 
+  @Test("Scrolling toward an off-screen element pages in its direction and stops once it overlaps")
+  func scrollTowardElement() {
+    let visible = CGRect(x: 0, y: 32, width: 300, height: 300)
+    #expect(
+      computerUseScrollTowardAction(target: CGRect(x: 20, y: 1972, width: 120, height: 40), visible: visible)
+        == "AXScrollDownByPage")
+    #expect(
+      computerUseScrollTowardAction(target: CGRect(x: 20, y: -400, width: 120, height: 40), visible: visible)
+        == "AXScrollUpByPage")
+    #expect(
+      computerUseScrollTowardAction(target: CGRect(x: 900, y: 100, width: 40, height: 40), visible: visible)
+        == "AXScrollRightByPage")
+    #expect(
+      computerUseScrollTowardAction(target: CGRect(x: 20, y: 310, width: 120, height: 40), visible: visible) == nil)
+  }
+
+  @Test("Menu shortcuts are reported in pressKey syntax and skip unprintable keys")
+  func menuShortcuts() {
+    #expect(computerUseMenuShortcut(character: "N", modifiers: 0) == "super+n")
+    #expect(computerUseMenuShortcut(character: "N", modifiers: 1) == "super+shift+n")
+    #expect(computerUseMenuShortcut(character: "F", modifiers: 4 | 2 | 8) == "ctrl+alt+f")
+    #expect(computerUseMenuShortcut(character: "\u{7f}", modifiers: 0) == nil)
+    #expect(computerUseMenuShortcut(character: nil, modifiers: 0) == nil)
+  }
+
+  @Test("Numeric controls accept numeric strings while text values pass through")
+  func numericValues() throws {
+    let slider = try computerUseAccessibilityValue("0.25", matching: NSNumber(value: 0.75))
+    #expect((slider as? NSNumber)?.doubleValue == 0.25)
+    #expect(computerUseAccessibilityValuesMatch(NSNumber(value: 0.25), slider))
+    #expect(!computerUseAccessibilityValuesMatch(NSNumber(value: 0.3), slider))
+    #expect(try computerUseAccessibilityValue("query", matching: "old" as CFString) as? String == "query")
+    #expect(throws: BridgeError.self) { try computerUseAccessibilityValue("loud", matching: NSNumber(value: 1)) }
+  }
+
   @Test("Observations retain action names while omitting internal Objective-C details")
   func cleanActionNames() {
     #expect(computerUseActionLabel("Name:More\nTarget:0x0\nSelector:(null)") == "More")

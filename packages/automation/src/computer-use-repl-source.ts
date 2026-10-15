@@ -109,6 +109,8 @@ if (!globalThis.computer) {
       typeText: (text, options = {}) => invoke('type_text', { text, ...options }),
       pasteText: (text, options = {}) => invoke('paste_text', { text, delivery_mode: 'foreground', ...options }),
       setValue: (element, value, options = {}) => invoke('set_value', { element_index: element, value, ...options }),
+      setExpanded: (element, expanded, options = {}) => invoke('set_expanded', { element_index: element, expanded, ...options }),
+      windowAction: (action, options = {}) => invoke('window_action', { action, ...options }, false),
       selectText: (element, text, options = {}) => invoke('select_text', { element_index: element, text, ...options }),
       performSecondaryAction: (element, action, options = {}) => invoke('perform_secondary_action', { element_index: element, action, ...options }),
       scroll: (direction, options = {}) => invoke('scroll', { direction, ...options }),

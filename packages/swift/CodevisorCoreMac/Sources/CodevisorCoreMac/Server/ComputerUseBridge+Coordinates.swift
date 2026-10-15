@@ -72,11 +72,18 @@ extension ComputerUseBridge {
         throw BridgeError("The element has no pointer target. Observe the app again.")
       }
       let flipped = windowID.map { id in lock.withLock { flippedContentWindows[id] == true } } ?? false
-      let live =
+      let liveFrame = { (reported: CGRect) in
         flipped
-        ? correctedFrame(
-          of: target.element, reported: reported,
-          application: AXUIElementCreateApplication(pid), windowFrame: currentFrame) : reported
+          ? self.correctedFrame(
+            of: target.element, reported: reported,
+            application: AXUIElementCreateApplication(pid), windowFrame: currentFrame) : reported
+      }
+      let live = liveFrame(reported)
+      if computerUseFramesMatch(observed, live),
+        let scrolled = scrollIntoView(target.element, pid: pid, windowFrame: currentFrame, frame: liveFrame)
+      {
+        return CGPoint(x: scrolled.midX, y: scrolled.midY)
+      }
       guard computerUseFramesMatch(observed, live), currentFrame.intersects(live)
       else { throw BridgeError("The element moved or is offscreen. Observe it again before pointer input.") }
       return CGPoint(x: live.midX, y: live.midY)
@@ -88,6 +95,59 @@ extension ComputerUseBridge {
       throw BridgeError("Coordinates must be inside this snapshot's screenshot, in pixels. Capture a screenshot first.")
     }
     return computerUseScreenshotPoint(x: x, y: y, screenshotPixelSize: size, windowFrame: currentFrame)
+  }
+
+  private func scrollIntoView(
+    _ element: AXUIElement, pid: pid_t, windowFrame: CGRect, frame liveFrame: (CGRect) -> CGRect
+  ) -> CGRect? {
+    let scrollArea = enclosingScrollArea(of: element)
+    let region = { scrollArea.flatMap { frame(of: $0) }.map { $0.intersection(windowFrame) } ?? windowFrame }
+    guard var current = frame(of: element).map(liveFrame), !region().intersects(current) else { return nil }
+    if actionNames(of: element).contains("AXScrollToVisible") {
+      _ = axPerformAction(element, "AXScrollToVisible" as CFString, pid: pid)
+      var scrolled = current
+      if computerUseSettles(
+        attempts: 6, interval: 0.05,
+        {
+          scrolled = frame(of: element).map(liveFrame) ?? current
+          return region().intersects(scrolled)
+        })
+      {
+        return scrolled
+      }
+      current = scrolled
+    }
+    guard let scrollArea else { return nil }
+    let available = Set(actionNames(of: scrollArea))
+    for _ in 0..<40 {
+      guard
+        let action = computerUseScrollTowardAction(target: current, visible: region()),
+        available.contains(action)
+      else { return nil }
+      _ = axPerformAction(scrollArea, action as CFString, pid: pid)
+      var next = current
+      guard
+        computerUseSettles(
+          attempts: 6, interval: 0.05,
+          {
+            next = frame(of: element).map(liveFrame) ?? current
+            return next != current
+          })
+      else { return nil }
+      current = next
+      if region().intersects(current) { return current }
+    }
+    return nil
+  }
+
+  private func enclosingScrollArea(of element: AXUIElement) -> AXUIElement? {
+    var current = elementAttribute(element, kAXParentAttribute)
+    for _ in 0..<12 {
+      guard let ancestor = current else { return nil }
+      if stringAttribute(ancestor, kAXRoleAttribute) == "AXScrollArea" { return ancestor }
+      current = elementAttribute(ancestor, kAXParentAttribute)
+    }
+    return nil
   }
 
   func dragPoint(
@@ -163,4 +223,12 @@ func computerUseScreenshotFrame(
     width: screenFrame.width * xScale,
     height: screenFrame.height * yScale
   )
+}
+
+func computerUseScrollTowardAction(target: CGRect, visible: CGRect) -> String? {
+  if target.minY >= visible.maxY { return "AXScrollDownByPage" }
+  if target.maxY <= visible.minY { return "AXScrollUpByPage" }
+  if target.minX >= visible.maxX { return "AXScrollRightByPage" }
+  if target.maxX <= visible.minX { return "AXScrollLeftByPage" }
+  return nil
 }

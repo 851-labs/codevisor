@@ -58,8 +58,9 @@ const point = {
 }
 const view = {
   type: "string",
-  enum: ["auto", "window", "menu", "dialog"],
-  description: "auto focuses an open menu or dialog; window returns the window tree"
+  enum: ["auto", "window", "menu", "dialog", "menubar"],
+  description:
+    "auto focuses an open menu or dialog; window returns the window tree; menubar lists the app's menu bar commands (macOS), which can be pressed without focusing the app"
 }
 
 export const computerUseTools: ReadonlyArray<Tool> = [
@@ -162,13 +163,18 @@ export const computerUseTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "click",
-    "Click an observed element or screenshot point. Accessibility is preferred; uncertain delivery must be observed before retrying.",
+    "Click an observed element or screenshot point. Element clicks use accessibility first: press the element or its nearest pressable ancestor, select a list or table row, or for a right click open the menu of the element or its list. Pointer input is only the fallback. Uncertain delivery must be observed before retrying.",
     {
       ...target,
       x: point,
       y: point,
       mouse_button: { type: "string", enum: ["left", "right", "middle", "l", "r", "m"] },
-      click_count: { type: "integer", minimum: 1, maximum: 2 }
+      click_count: { type: "integer", minimum: 1, maximum: 2 },
+      extend_selection: {
+        type: "boolean",
+        description:
+          "Add a list or table row to the current selection instead of replacing it, like a Command-click"
+      }
     },
     ["app"]
   ),
@@ -236,12 +242,37 @@ export const computerUseTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "set_value",
-    "Replace an observed accessibility element's value; this does not submit a search or press Return.",
+    "Replace an observed accessibility element's value, such as a text field, slider or stepper. Numeric elements accept a numeric string. Set submit to confirm the field afterward, like pressing Return, when the element supports it.",
     {
       ...target,
-      value: { type: "string" }
+      value: { type: "string" },
+      submit: {
+        type: "boolean",
+        description: "Confirm the field after setting it, like pressing Return"
+      }
     },
     ["app", "element_index", "value"]
+  ),
+  tool(
+    "set_expanded",
+    "Expand or collapse an outline row, sidebar section or disclosure triangle through accessibility, without pointer input.",
+    {
+      ...target,
+      expanded: { type: "boolean" }
+    },
+    ["app", "element_index", "expanded"]
+  ),
+  tool(
+    "window_action",
+    "Raise, minimize, restore or close the selected window through accessibility, without activating the app or moving the pointer. Raising orders the window within its app; it does not bring the app in front of the human's work.",
+    {
+      app,
+      window_id: window,
+      delivery_mode: delivery,
+      foreground_reason: foregroundReason,
+      action: { type: "string", enum: ["raise", "minimize", "restore", "close"] }
+    },
+    ["app", "action"]
   ),
   tool(
     "type_text",

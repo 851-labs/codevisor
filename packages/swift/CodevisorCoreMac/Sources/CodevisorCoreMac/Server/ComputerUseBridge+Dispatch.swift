@@ -65,6 +65,12 @@ extension ComputerUseBridge {
         options: arguments
       )
     }
+    if tool == "await_change" {
+      try requireAccessibility(prompt: false)
+      let app = try resolveApp(appName, launchIfNeeded: false)
+      let timeout = (double(arguments["timeout_ms"]) ?? 500) / 1_000
+      return textResult(try json(awaitChange(pid: app.processIdentifier, timeout: timeout)))
+    }
     _ = try deliveryMode(arguments)
     try requireAccessibility(prompt: true)
     let app = try resolveApp(appName, launchIfNeeded: false)

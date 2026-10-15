@@ -32,7 +32,8 @@ extension ComputerUseBridge {
   func requireInputVisibility(windowID: CGWindowID?, mode: String) throws {
     if mode == "background", let windowID, !windowIsOnVisibleSpace(windowID) {
       throw BridgeError(
-        "Background input cannot reach this Space. Observe and explicitly choose delivery_mode foreground.")
+        "Background pointer input cannot reach a window that is not visible, such as one on another Space, hidden, or minimized. Use an accessibility route instead: click an element that can be pressed, selected, or has a menu on itself or its list; press a dialog's default or cancel button; press an app command from view \"menubar\"; restore the window with window_action; or use keyboard input, which still reaches the app's focused element. Choose delivery_mode foreground only when no accessibility route exists."
+      )
     }
   }
 
@@ -78,31 +79,15 @@ extension ComputerUseBridge {
     guard target == nil || (arguments["x"] == nil && arguments["y"] == nil) else {
       throw BridgeError("Choose an element or screenshot coordinates, not both.")
     }
+    guard target != nil || arguments["extend_selection"] as? Bool != true else {
+      throw BridgeError("extend_selection requires an element, not screenshot coordinates.")
+    }
     if let target {
-      if button == "left", count == 1,
-        ["AXTextField", "AXTextArea", "AXComboBox"].contains(stringAttribute(target.element, kAXRoleAttribute) ?? "")
+      if let result = try accessibleClickResult(
+        target: target.element, button: button, count: count,
+        extendingSelection: arguments["extend_selection"] as? Bool == true, app: app,
+        application: application, window: window, mode: mode)
       {
-        try focus(element: target.element, application: application, pid: app.processIdentifier)
-        return actionResultMetadata(
-          kind: "click", path: "accessibility", deliveryMode: mode,
-          verified: copyAttribute(target.element, kAXFocusedAttribute) as? Bool == true,
-          detail: ["addressing": "element", "accessibilityAction": "focus"])
-      }
-      let desired =
-        button == "right"
-        ? [kAXShowMenuAction as String]
-        : button == "left" ? [kAXPressAction as String, kAXConfirmAction as String, "AXPick", "AXOpen"] : []
-      let advertised = actionNames(of: target.element)
-      if let action = desired.first(where: { advertised.contains($0) }) {
-        var result: [String: Any] = [:]
-        for _ in 0..<count {
-          result = try accessibilityActionResult(
-            element: target.element, action: action, app: app,
-            application: application, window: window, kind: "click")
-          if result["status"] as? String == "uncertain" { break }
-        }
-        result["addressing"] = "element"
-        result["deliveryMode"] = mode
         return result
       }
     }

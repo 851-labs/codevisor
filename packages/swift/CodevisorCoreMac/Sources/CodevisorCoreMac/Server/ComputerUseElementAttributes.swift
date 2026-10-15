@@ -12,6 +12,8 @@ struct ComputerUseElementAttributes {
       Self.identityNames + [
         kAXValueAttribute, kAXChildrenAttribute, kAXPositionAttribute,
         kAXSizeAttribute, kAXSelectedAttribute, kAXSelectedTextRangeAttribute, kAXEnabledAttribute,
+        kAXPlaceholderValueAttribute, kAXHelpAttribute, kAXTitleUIElementAttribute, kAXDisclosingAttribute,
+        kAXMenuItemCmdCharAttribute, kAXMenuItemCmdModifiersAttribute,
       ]
     var raw: CFArray?
     let error = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw)

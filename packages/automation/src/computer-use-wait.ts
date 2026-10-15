@@ -23,7 +23,8 @@ export const waitForComputerState = async (
   clock = {
     now: () => performance.now(),
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-  }
+  },
+  waitForChange?: (ms: number) => Promise<void>
 ): Promise<CallToolResult> => {
   const text = typeof args.text === "string" ? args.text : undefined
   const role = typeof args.role === "string" ? args.role : undefined
@@ -82,6 +83,14 @@ export const waitForComputerState = async (
         ]
       }
     }
-    await clock.sleep(Math.min(200, Math.max(0, deadline - clock.now())))
+    const remaining = Math.max(0, deadline - clock.now())
+    if (waitForChange === undefined) {
+      await clock.sleep(Math.min(200, remaining))
+      continue
+    }
+    await waitForChange(Math.min(500, remaining)).catch(async () => {
+      waitForChange = undefined
+      await clock.sleep(Math.min(200, remaining))
+    })
   }
 }
