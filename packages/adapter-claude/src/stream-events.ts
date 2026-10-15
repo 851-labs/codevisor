@@ -46,7 +46,11 @@ const startStreamBlock = (
   }
 }
 
-const retagStreamPreamble = (session: ClaudeSession, parentId: string | undefined): void => {
+const labelStreamedText = (
+  session: ClaudeSession,
+  parentId: string | undefined,
+  phase: "commentary" | "final"
+): void => {
   if (
     parentId === undefined &&
     session.currentMessageTextStreamed &&
@@ -59,11 +63,21 @@ const retagStreamPreamble = (session: ClaudeSession, parentId: string | undefine
       payload: {
         content: { text: "", type: "text" },
         messageId: session.currentMessageId,
-        phase: "commentary",
+        phase,
         sessionUpdate: "agent_message_chunk"
       },
       subjectId: session.key
     })
+  }
+}
+
+const finishStreamMessage = (
+  session: ClaudeSession,
+  event: Record<string, unknown>,
+  parentId: string | undefined
+): void => {
+  if (recordOf(event.delta).stop_reason === "end_turn") {
+    labelStreamedText(session, parentId, "final")
   }
 }
 
@@ -72,7 +86,7 @@ const startStreamTool = (
   block: Record<string, unknown>,
   parentId: string | undefined
 ): void => {
-  retagStreamPreamble(session, parentId)
+  labelStreamedText(session, parentId, "commentary")
   const toolUseId = String(block.id)
   const toolName = String(block.name)
   session.accumulators.set(toolUseId, {
@@ -182,6 +196,10 @@ export const handleStreamEvent = (
     }
     case "content_block_delta": {
       applyStreamDelta(session, event, parentId, readFile)
+      break
+    }
+    case "message_delta": {
+      finishStreamMessage(session, event, parentId)
       break
     }
     case "content_block_stop": {

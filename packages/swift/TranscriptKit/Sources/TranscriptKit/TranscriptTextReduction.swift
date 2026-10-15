@@ -41,7 +41,7 @@ enum TranscriptTextReduction {
     turn.isThinking = false
     turn.attachments = attachments
     let identified = messageId.flatMap { textIndex("acp:\($0)", in: turn.entries) }
-    if let index = identified ?? turn.finalTextIndex,
+    if let index = identified ?? turn.responseCandidateIndex,
       case let .text(id, _) = turn.entries[index]
     {
       turn.entries[index] = .text(id: id, markdown: markdown)

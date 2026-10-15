@@ -11,6 +11,12 @@ struct TranscriptReducerTests {
     return turn
   }
 
+  func settled(_ updates: [SessionUpdate]) -> AssistantTurn {
+    var turn = reduce(updates)
+    turn.isGenerating = false
+    return turn
+  }
+
   @Test("Consecutive text chunks extend a single span")
   func mergesText() {
     let turn = reduce([
@@ -51,7 +57,7 @@ struct TranscriptReducerTests {
 
   @Test("ACP message ids merge chunks across interleaved tool calls")
   func messageIdMergesAcrossTools() {
-    let turn = reduce([
+    let turn = settled([
       .agentMessageChunk(.text("I'll check."), messageId: "msg-prelude"),
       .toolCall(ToolCall(toolCallId: "a", title: "Read README", kind: .read, status: .completed)),
       .agentMessageChunk(.text("Barnsong is "), messageId: "msg-final"),
@@ -90,15 +96,11 @@ struct TranscriptReducerTests {
     #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
   }
 
-  @Test("A zero-length phase chunk retro-tags an already streamed span")
-  func retroactiveCommentaryDemotion() {
+  @Test("Live unlabeled text is the answer only until something follows it")
+  func liveTailIsTheAnswer() {
     var turn = AssistantTurn(isGenerating: true)
     TranscriptReducer.apply(.agentMessageChunk(.text("Let me check."), messageId: "m1"), to: &turn)
     #expect(turn.finalText == .text(id: "acp:m1", markdown: "Let me check."))
-    TranscriptReducer.apply(
-      .agentMessageChunk(.text(""), messageId: "m1", parentToolCallId: nil, phase: .commentary),
-      to: &turn
-    )
     TranscriptReducer.apply(
       .toolCall(ToolCall(toolCallId: "a", title: "Run tests", kind: .execute, status: .inProgress)),
       to: &turn
@@ -106,6 +108,16 @@ struct TranscriptReducerTests {
     #expect(turn.finalText == nil)
     #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
     TranscriptReducer.apply(.agentMessageChunk(.text("Tests pass."), messageId: "m2"), to: &turn)
+    #expect(turn.finalText == .text(id: "acp:m2", markdown: "Tests pass."))
+    TranscriptReducer.apply(
+      .toolCall(ToolCall(toolCallId: "b", title: "Clean up", kind: .execute, status: .inProgress)),
+      to: &turn
+    )
+    #expect(turn.finalText == nil)
+    TranscriptReducer.apply(
+      .agentMessageChunk(.text(""), messageId: "m2", parentToolCallId: nil, phase: .final),
+      to: &turn
+    )
     #expect(turn.finalText == .text(id: "acp:m2", markdown: "Tests pass."))
   }
 
@@ -343,7 +355,7 @@ struct TranscriptReducerTests {
 
   @Test("A turn ending on a tool call still exposes the last text answer")
   func endsOnTool() {
-    let turn = reduce([
+    let turn = settled([
       .agentMessageChunk(.text("working")),
       .toolCall(ToolCall(toolCallId: "a", title: "Run")),
     ])

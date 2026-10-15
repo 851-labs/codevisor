@@ -83,20 +83,24 @@ public enum TranscriptWorkedRowsVisibility {
         continue
       }
       switch membership.role {
-      case let .header(defaultExpanded, _):
+      case let .header(defaultExpanded, isFixedExpanded):
+        let currentTurn = turn(for: row, activeItem: activeItem)
         let defaultsExpanded =
-          turn(for: row, activeItem: activeItem).map { turn in
+          currentTurn.map { turn in
             turn.workedSectionDefaultsExpanded(
               membership.identity.kind,
               runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
             )
           } ?? false
-        let expanded = disclosure.isExpanded(
-          membership.identity.kind.disclosureKey(
-            messageID: membership.identity.messageID
-          ),
-          default: defaultExpanded || defaultsExpanded
-        )
+        let isLive = currentTurn.map { $0.workedSectionTicks(membership.identity.kind) } ?? isFixedExpanded
+        let expanded =
+          isLive
+          || disclosure.isExpanded(
+            membership.identity.kind.disclosureKey(
+              messageID: membership.identity.messageID
+            ),
+            default: defaultExpanded || defaultsExpanded
+          )
         expansion[membership.identity] = expanded
         result.append(row)
       case .content:
@@ -165,7 +169,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   public var body: some View {
-    if hasContent {
+    if hasContent, !turn.workedSectionTicks(kind) {
       Button(action: toggle) {
         header(showsChevron: true)
           .contentShape(Rectangle())
@@ -191,13 +195,14 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   private var isExpanded: Bool {
-    store.isExpanded(
-      disclosureKey,
-      default: turn.workedSectionDefaultsExpanded(
-        kind,
-        runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+    turn.workedSectionTicks(kind)
+      || store.isExpanded(
+        disclosureKey,
+        default: turn.workedSectionDefaultsExpanded(
+          kind,
+          runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+        )
       )
-    )
   }
 
   @ViewBuilder

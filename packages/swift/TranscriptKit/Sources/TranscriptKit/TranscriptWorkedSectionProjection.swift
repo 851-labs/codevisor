@@ -60,7 +60,7 @@ enum TranscriptWorkedSectionProjection {
         spacingAfter: headerSpacingAfter,
         workedSection: .init(
           identity: identity,
-          role: .header(defaultExpanded: false, isFixedExpanded: false)
+          role: .header(defaultExpanded: false, isFixedExpanded: message.turn.workedSectionTicks(kind))
         )
       ))
   }

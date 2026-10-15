@@ -292,7 +292,8 @@ enum TranscriptAssistantRowProjection {
           slice: slice,
           waitingOnBackgroundTask: waitingOnBackgroundTask
         ),
-        estimatedHeight: 32,
+        estimatedHeight: chromeEstimatedHeight(
+          message, slice: slice, waitingOnBackgroundTask: waitingOnBackgroundTask),
         measurementRevision: measurementRevision(
           for: .assistant(message),
           waitingOnBackgroundTask: waitingOnBackgroundTask
@@ -462,5 +463,18 @@ enum TranscriptAssistantRowProjection {
     }
     hasher.combine(waitingOnBackgroundTask)
     return hasher.finalize()
+  }
+}
+
+extension TranscriptAssistantRowProjection {
+  fileprivate static func chromeEstimatedHeight(
+    _ message: AssistantMessage,
+    slice: TranscriptAssistantChromeSlice,
+    waitingOnBackgroundTask: String?
+  ) -> CGFloat {
+    guard slice == .epilogue else { return 32 }
+    let showsFooter =
+      waitingOnBackgroundTask != nil || (!message.turn.isGenerating && message.turn.stopDetail != nil)
+    return showsFooter ? 32 : 1
   }
 }
