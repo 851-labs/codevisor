@@ -90,14 +90,3 @@ struct HomeSidebarTabRowView: View, Equatable {
     }
   }
 }
-
-private struct HomeSidebarRowTitle: View {
-  let title: String
-  @Environment(\.backgroundProminence) private var backgroundProminence
-
-  var body: some View {
-    Text(title)
-      .font(.body)
-      .foregroundStyle(backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-  }
-}

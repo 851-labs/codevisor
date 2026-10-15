@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorUI
 import ACPKit
 
 struct ClosedPaneRecord: Equatable {
@@ -47,8 +48,7 @@ final class SessionStore {
   }
   @ObservationIgnored var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
-  @ObservationIgnored let pullRequests = SidebarGitLookup.pullRequests()
-  @ObservationIgnored let branches = SidebarGitLookup.branches()
+  @ObservationIgnored let gitLookups = SidebarGitLookups()
   @ObservationIgnored var draftsByServer: [String: SessionController] = [:]
   @ObservationIgnored var paneDrafts: [UUID: SessionController] = [:]
   var activityRevision = 0

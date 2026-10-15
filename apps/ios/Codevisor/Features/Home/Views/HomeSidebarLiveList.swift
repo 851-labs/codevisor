@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarLiveList: View {
@@ -6,47 +7,42 @@ struct HomeSidebarLiveList: View {
 
   let actions: HomeSidebarActionHandler
   let splitNavigation: HomeNavigationState?
-
-  @State private var pendingSelection: UUID?
+  let gitLookups: SidebarGitLookups
 
   var body: some View {
-    let sections = HomeSidebarSectionBuilder(environment: environment).sections()
-    let selectedRowID = splitNavigation.flatMap { selectedRowID($0, sections: sections) }
+    let builder = HomeSidebarContentBuilder(environment: environment, gitLookups: gitLookups)
     HomeSidebarList(
-      sections: sections,
+      makeContent: builder.content,
       actions: actions,
-      selection: splitNavigation == nil ? nil : selection(sections: sections, selectedRowID: selectedRowID)
-    )
-    .onChange(of: selectedRowID) { _, _ in
-      pendingSelection = nil
-    }
-  }
-
-  private func selection(sections: [HomeSidebarSection], selectedRowID: UUID?) -> Binding<UUID?> {
-    Binding(
-      get: { pendingSelection ?? selectedRowID },
-      set: { id in
-        guard let id,
-          let section = sections.first(where: { $0.rows.contains { $0.id == id } }),
-          let row = section.rows.first(where: { $0.id == id })
-        else { return }
-        pendingSelection = id
-        actions.actions.open(row, section.workspace)
-        actions.actions.didSelectInSplit()
-      }
+      isSelectable: splitNavigation != nil,
+      selected: splitNavigation.flatMap(selected),
+      refreshDetails: refreshDetails
     )
   }
 
-  private func selectedRowID(_ navigation: HomeNavigationState, sections: [HomeSidebarSection]) -> UUID? {
-    if let presented = navigation.presentedWorkspace,
-      let workspace = environment.navigationStore.workspaceEntries.entry(presented.workspaceId).workspace,
-      let tab = workspace.selectedCenterTab,
+  private func refreshDetails(_ ids: [UUID], details: [SidebarRowDetail]) {
+    let workspaces = ids.compactMap { environment.navigationStore.workspaceEntries.entry($0).workspace }
+    gitLookups.refresh(
+      active: workspaces.filter { !$0.isArchived },
+      archived: workspaces.filter(\.isArchived),
+      details: details,
+      client: environment.machines.client(for:)
+    )
+  }
+
+  private func selected(_ navigation: HomeNavigationState) -> HomeSidebarSelection? {
+    guard let presented = navigation.presentedWorkspace else { return nil }
+    let workspace = environment.navigationStore.workspaceEntries.entry(presented.workspaceId).workspace
+    if let tab = workspace?.selectedCenterTab,
       let paneId = tab.root.group(id: tab.activeLeafId)?.selectedPaneId
     {
-      return paneId
+      return HomeSidebarSelection(workspaceId: presented.workspaceId, paneId: paneId)
     }
-    return navigation.selectedPaneId { chatId in
-      sections.lazy.flatMap(\.rows).first { $0.chatSessionId == chatId }?.id
+    let paneId = navigation.selectedPaneId { chatId in
+      workspace?.centerTabs.lazy
+        .flatMap { $0.root.allGroups.flatMap(\.state.panes) }
+        .first { $0.chatSessionId == chatId }?.id
     }
+    return HomeSidebarSelection(workspaceId: presented.workspaceId, paneId: paneId)
   }
 }

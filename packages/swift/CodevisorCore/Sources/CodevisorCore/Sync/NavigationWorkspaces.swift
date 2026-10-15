@@ -25,6 +25,13 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let serverId: String
   public let projectId: UUID
   public let routingChatIds: [UUID]
+
+  public init(id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID]) {
+    self.id = id
+    self.serverId = serverId
+    self.projectId = projectId
+    self.routingChatIds = routingChatIds
+  }
 }
 
 @MainActor

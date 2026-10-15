@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-let archivedPageSize = 10
-
 extension SidebarView {
   var archivedSidebarItems: [WorkspaceSidebarItem] {
     environment.navigationStore.workspaceEntries.archived.filter {
@@ -31,7 +29,7 @@ extension SidebarView {
       SidebarSectionHeader(title: "Archived", isExpanded: archivedExpanded) {
         withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
           archivedExpanded.toggle()
-          archivedVisibleCount = archivedPageSize
+          archivedVisibleCount = sidebarArchivedPageSize
         }
       }
       ForEach(visibleArchivedItems) { item in
@@ -48,7 +46,7 @@ extension SidebarView {
             titleStyle: .secondary
           ) {
             withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-              archivedVisibleCount += archivedPageSize
+              archivedVisibleCount += sidebarArchivedPageSize
             }
           }
         }

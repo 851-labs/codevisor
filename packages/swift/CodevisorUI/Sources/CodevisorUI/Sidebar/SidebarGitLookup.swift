@@ -1,24 +1,24 @@
-import CodevisorClient
+import CodevisorCore
 import Foundation
 
-enum SidebarGitLookupSource: Equatable, Sendable {
+public enum SidebarGitLookupSource: Equatable, Sendable {
   case checkout(path: String)
   case archived
 }
 
 @MainActor
 @Observable
-final class SidebarGitLookup<Value: Equatable & Sendable> {
-  struct Target: Sendable {
+public final class SidebarGitLookup<Value: Equatable & Sendable> {
+  public struct Target: Sendable {
     let workspaceId: UUID
     let source: SidebarGitLookupSource
     let client: any CodevisorServerClienting
   }
 
-  typealias Fetch = @Sendable (Target) async throws -> Value?
+  public typealias Fetch = @Sendable (Target) async throws -> Value?
 
   let refreshInterval: Duration
-  private(set) var byWorkspace: [UUID: Value] = [:]
+  public private(set) var byWorkspace: [UUID: Value] = [:]
   @ObservationIgnored private let fetch: Fetch
   @ObservationIgnored private var lastAsked: [UUID: (source: SidebarGitLookupSource, at: ContinuousClock.Instant)] = [:]
   @ObservationIgnored private var inFlight: Set<UUID> = []
@@ -73,6 +73,54 @@ extension SidebarGitLookup where Value == String {
       case let .checkout(path): try await target.client.gitRefs(path: path).currentBranch
       case .archived: try await target.client.workspaceGitBranch(workspaceId: target.workspaceId)
       }
+    }
+  }
+}
+
+@MainActor
+public final class SidebarGitLookups {
+  public struct RefreshKey: Equatable {
+    let pullRequests: Bool
+    let branches: Bool
+    let workspaceIds: [UUID]
+  }
+
+  public let pullRequests = SidebarGitLookup.pullRequests()
+  public let branches = SidebarGitLookup.branches()
+
+  public init() {}
+
+  public static func refreshKey(details: [SidebarRowDetail], workspaceIds: [UUID]) -> RefreshKey? {
+    let pullRequests = details.contains(.pullRequest)
+    let branches = details.contains(.branch)
+    guard pullRequests || branches else { return nil }
+    return RefreshKey(pullRequests: pullRequests, branches: branches, workspaceIds: workspaceIds)
+  }
+
+  public func refresh(
+    active: [Workspace],
+    archived: [Workspace],
+    details: [SidebarRowDetail],
+    client: (String) -> any CodevisorServerClienting
+  ) {
+    let sources =
+      active.compactMap { workspace -> (Workspace, SidebarGitLookupSource)? in
+        guard let path = workspace.rootDirectory, !path.isEmpty else { return nil }
+        return (workspace, .checkout(path: path))
+      }
+      + archived.compactMap { workspace in
+        workspace.rootDirectory?.isEmpty == false ? (workspace, .archived) : nil
+      }
+    func targets<Value>() -> [SidebarGitLookup<Value>.Target] {
+      sources.map { workspace, source in
+        .init(workspaceId: workspace.id, source: source, client: client(workspace.serverId))
+      }
+    }
+    if details.contains(.pullRequest) {
+      pullRequests.refresh(targets())
+    }
+    if details.contains(.branch) {
+      branches.refresh(targets())
     }
   }
 }

@@ -21,11 +21,11 @@ struct SidebarView: View {
   @State var revealedWorkspaceID: UUID?
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
-  @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
-  @ClientPreference("sidebar.pinnedExpanded", default: true) var pinnedExpanded
-  @ClientPreference("sidebar.listExpanded", default: true) var listExpanded
-  @State var archivedVisibleCount = archivedPageSize
-  @ClientPreference(Self.pinnedWorkspacesKey, default: []) var pinnedWorkspaceIDs: [String]
+  @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
+  @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
+  @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) var listExpanded
+  @State var archivedVisibleCount = sidebarArchivedPageSize
+  @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
@@ -169,7 +169,6 @@ struct SidebarView: View {
   }
 
   static let groupIndent: CGFloat = 8
-  static let pinnedWorkspacesKey = "sidebar.pinnedWorkspaces"
 
   private func workspaceList(_ items: [WorkspaceSidebarItem]) -> some View {
     VStack(alignment: .leading, spacing: 1) {

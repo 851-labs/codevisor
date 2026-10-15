@@ -7,6 +7,7 @@ extension HomeView {
   var sidebarActions: HomeSidebarActions {
     HomeSidebarActions(
       open: { row, workspace in openSidebarRow(row, in: workspace) },
+      openWorkspace: { workspace in openSidebarWorkspace(workspace) },
       close: { row, workspace in closeSidebarRow(row, in: workspace) },
       rename: { row, workspace in
         guard let tabId = row.renamableTabId else { return }
@@ -14,6 +15,8 @@ extension HomeView {
         renamingTab = HomeTabRenameRequest(workspaceId: workspace.id, tabId: tabId, chatSessionId: row.chatSessionId)
       },
       newTab: { workspace in addSidebarTab(in: workspace) },
+      newChat: { target in presentNewChat(serverId: target.serverId) },
+      togglePin: { ref in withSidebarReflow { togglePin(ref.id) } },
       renameWorkspace: { ref in
         guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
         workspaceRenameTitle = workspace.name
@@ -21,9 +24,16 @@ extension HomeView {
       },
       archiveWorkspace: { ref in
         guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
-        withSidebarReflow { environment.archiveWorkspace(workspace) }
+        withSidebarReflow {
+          environment.archiveWorkspace(workspace)
+          pinnedWorkspaceIDs.removeAll { $0 == ref.id.uuidString }
+        }
       },
-      reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) },
+      restoreWorkspace: { ref in
+        guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
+        withSidebarReflow { environment.unarchiveWorkspace(workspace) }
+      },
+      reorder: { id, index, group in commitWorkspaceMove(id, toIndex: index, within: group) },
       moveTab: { tabId, successor, workspace in
         withSidebarReflow {
           environment.workspaceSync.moveTab(tabId, before: successor, inWorkspace: workspace.id)
@@ -35,6 +45,13 @@ extension HomeView {
             value: WorkspaceWindowRoute(
               serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: workspace.anchorSessionId,
               chatSessionId: row.chatSessionId, paneId: row.id))
+        } : nil,
+      openWorkspaceInNewWindow: UIApplication.shared.supportsMultipleScenes
+        ? { workspace in
+          openWindow(
+            value: WorkspaceWindowRoute(
+              serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: workspace.anchorSessionId,
+              chatSessionId: workspace.primaryRow?.chatSessionId, paneId: workspace.primaryRow?.id))
         } : nil,
       didSelectInSplit: { dismissOverlaySidebarAfterSelection() },
       refresh: { await refreshNavigation() }
@@ -59,6 +76,31 @@ extension HomeView {
         preferredPaneId: row.id
       )
     )
+  }
+
+  private func openSidebarWorkspace(_ workspace: HomeSidebarWorkspace) {
+    if let row = workspace.primaryRow {
+      openSidebarRow(row, in: workspace.workspace)
+      return
+    }
+    openRoute(
+      .workspace(
+        serverId: workspace.serverId,
+        workspaceId: workspace.id,
+        anchorSessionId: workspace.anchorSessionId,
+        preferredChatSessionId: nil,
+        preferredPaneId: nil
+      )
+    )
+  }
+
+  private func togglePin(_ id: UUID) {
+    let key = id.uuidString
+    if pinnedWorkspaceIDs.contains(key) {
+      pinnedWorkspaceIDs.removeAll { $0 == key }
+    } else {
+      pinnedWorkspaceIDs.append(key)
+    }
   }
 
   private func closeSidebarRow(_ row: HomeSidebarTabRow, in ref: HomeSidebarWorkspaceRef) {
@@ -139,11 +181,15 @@ extension HomeView {
     withAnimation(Motion.listReflow(reduceMotion: reduceMotion), change)
   }
 
-  func commitWorkspaceOrder(_ id: UUID, visibleIDs: [UUID]) {
-    guard let workspace = environment.workspaces.workspace(id: id) else { return }
-    environment.workspaceSync.reorderWorkspace(
-      id: id, visibleIDs: visibleIDs,
-      client: environment.machines.client(for: workspace.serverId)
-    )
+  func commitWorkspaceMove(_ id: UUID, toIndex index: Int, within group: [UUID]) {
+    let ids = HomeSidebarContentBuilder(environment: environment, gitLookups: sidebarGitLookups).listedItems.map(\.id)
+    let reordered = ListReorder.moving(id, to: index, within: group, in: ids)
+    guard reordered != ids, let workspace = environment.workspaces.workspace(id: id) else { return }
+    withSidebarReflow {
+      _ = environment.workspaceSync.reorderWorkspace(
+        id: id, visibleIDs: reordered,
+        client: environment.machines.client(for: workspace.serverId)
+      )
+    }
   }
 }

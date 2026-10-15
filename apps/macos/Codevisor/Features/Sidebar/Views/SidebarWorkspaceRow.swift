@@ -63,7 +63,8 @@ struct SidebarWorkspaceRow: View {
             }
           }
         if let pullRequest {
-          SidebarPullRequestBadge(pullRequest: pullRequest)
+          PullRequestBadge(
+            pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
         }
         if let machine {
           Image(systemName: machine.systemImage)
@@ -194,71 +195,6 @@ enum SidebarWorkspaceIcon: Equatable {
   case chat(ChatSession)
   case workingTerminal
   case workspace
-}
-
-struct SidebarPullRequestBadge: View {
-  let pullRequest: ServerGitPullRequest
-
-  var body: some View {
-    Button {
-      NSWorkspace.shared.open(pullRequest.url)
-    } label: {
-      Image(iconName)
-        .resizable()
-        .scaledToFit()
-        .frame(width: SidebarRowIcon.trailingSize, height: SidebarRowIcon.trailingSize)
-        .foregroundStyle(color)
-        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .help("#\(pullRequest.number) · \(pullRequest.title) (\(summary))")
-    .accessibilityLabel("Pull request \(pullRequest.number), \(summary)")
-  }
-
-  private var iconName: String {
-    switch pullRequest.state {
-    case .open: pullRequest.isDraft ? "octicon-git-pull-request-draft" : "octicon-git-pull-request"
-    case .merged: "octicon-git-merge"
-    case .closed: "octicon-git-pull-request-closed"
-    }
-  }
-
-  private var summary: String {
-    guard let checksTitle else { return stateTitle }
-    return "\(stateTitle), \(checksTitle)"
-  }
-
-  private var checksTitle: String? {
-    switch pullRequest.checks {
-    case .passing: "checks passing"
-    case .failing: "checks failing"
-    case .pending: "checks running"
-    case .none: nil
-    }
-  }
-
-  private var stateTitle: String {
-    switch pullRequest.state {
-    case .open: pullRequest.isDraft ? "Draft" : "Open"
-    case .merged: "Merged"
-    case .closed: "Closed"
-    }
-  }
-
-  private var color: Color {
-    switch pullRequest.state {
-    case .open where pullRequest.isDraft: .secondary
-    case .open:
-      switch pullRequest.checks {
-      case .failing: .red
-      case .pending: .orange
-      case .passing, .none: .green
-      }
-    case .merged: .purple
-    case .closed: .red
-    }
-  }
 }
 
 enum SidebarRowIcon {

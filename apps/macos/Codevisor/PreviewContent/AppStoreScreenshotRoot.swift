@@ -1,3 +1,5 @@
+import CodevisorUI
+
 #if DEBUG
   import AppKit
   import CodevisorCore
