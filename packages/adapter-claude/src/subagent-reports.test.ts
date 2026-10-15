@@ -7,12 +7,15 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordValue,
   resultMessage,
-  run
+  run,
+  sdkMessage
 } from "./test-support.js"
 
 const agentResult = (toolUseResult: Record<string, unknown>): SDKMessage =>
-  ({
+  sdkMessage({
     message: {
       content: [
         {
@@ -27,7 +30,7 @@ const agentResult = (toolUseResult: Record<string, unknown>): SDKMessage =>
     session_id: "sdk-session-1",
     tool_use_result: toolUseResult,
     type: "user"
-  }) as never
+  })
 
 const subagentProse = async (messages: Array<SDKMessage>): Promise<Array<unknown>> => {
   const fake = new FakeQuery()
@@ -45,12 +48,12 @@ const subagentProse = async (messages: Array<SDKMessage>): Promise<Array<unknown
   fake.push(resultMessage())
   await promptPromise
   return events
-    .map((event) => event.payload as Record<string, unknown>)
+    .map(payloadOf)
     .filter(
       (payload) =>
         payload.sessionUpdate === "agent_message_chunk" && payload.parentToolCallId === "agent-1"
     )
-    .map((payload) => (payload.content as { text: string }).text)
+    .map((payload) => recordValue(payload.content).text)
 }
 
 describe("a subagent's hand-back", () => {
@@ -68,7 +71,7 @@ describe("a subagent's hand-back", () => {
 
   it("is not repeated when the subagent's thread already ends with it", async () => {
     const prose = await subagentProse([
-      {
+      sdkMessage({
         message: {
           content: [{ text: "Here is the haiku.", type: "text" }],
           id: "msg-sub-final",
@@ -77,7 +80,7 @@ describe("a subagent's hand-back", () => {
         parent_tool_use_id: "agent-1",
         session_id: "sdk-session-1",
         type: "assistant"
-      } as never,
+      }),
       agentResult({
         agentId: "a1",
         content: [{ text: "Here is the haiku.", type: "text" }],

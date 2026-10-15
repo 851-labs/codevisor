@@ -1,4 +1,3 @@
-import type { Query } from "@anthropic-ai/claude-agent-sdk"
 import {
   adapterPromise,
   normalizePromptInput,
@@ -13,6 +12,7 @@ import { pauseGoalForForcedCancellation, pushGoalCommand } from "./goals.js"
 import { deferred } from "./internal.js"
 import {
   effortLevelsFor,
+  isPermissionMode,
   metadataFor,
   resolveRequestedClaudeModel,
   supportsFastMode
@@ -146,9 +146,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
           session.currentSpeed = "standard"
         }
       } else if (configId === "effort") {
-        await session.q.applyFlagSettings({
-          effortLevel: value === "default" ? null : value
-        } as Parameters<Query["applyFlagSettings"]>[0])
+        const flags: Record<string, unknown> = { effortLevel: value === "default" ? null : value }
+        await session.q.applyFlagSettings(flags)
         session.currentEffort = value
       } else if (configId === "speed") {
         await session.q.applyFlagSettings({ fastMode: value === "fast" })
@@ -170,7 +169,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     }),
   setMode: (modeId) =>
     adapterPromise("setMode", async () => {
-      await session.q.setPermissionMode(modeId as never)
+      if (!isPermissionMode(modeId)) throw new Error(`Unknown mode: ${modeId}`)
+      await session.q.setPermissionMode(modeId)
       session.currentModeId = modeId
       await session.emit({
         kind: "session.updated",

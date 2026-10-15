@@ -1,7 +1,7 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { maybeEmitStreamStats } from "./diff-stats.js"
-import { isRecord } from "./internal.js"
+import { isRecord, recordOf } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
 import { toolKind } from "./tool-presentation.js"
@@ -169,7 +169,7 @@ export const handleStreamEvent = (
   message: Extract<SDKMessage, { type: "stream_event" }>,
   readFile: (path: string) => string | undefined
 ): void => {
-  const event = message.event as unknown as Record<string, unknown>
+  const event = recordOf(message.event)
   const parentId = message.parent_tool_use_id ?? undefined
   switch (event.type) {
     case "message_start": {

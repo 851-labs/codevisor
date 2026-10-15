@@ -1,4 +1,8 @@
-import type { Options as ClaudeOptions, Settings } from "@anthropic-ai/claude-agent-sdk"
+import type {
+  Options as ClaudeOptions,
+  PermissionMode,
+  Settings
+} from "@anthropic-ai/claude-agent-sdk"
 import { findKnownModel, sanitizeModelValue } from "@codevisor/agent-runtime"
 import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 
@@ -33,6 +37,18 @@ const PERMISSION_MODES: SessionModeState = {
     }
   ]
 }
+
+const PERMISSION_MODE_IDS: ReadonlyArray<string> = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "dontAsk",
+  "auto"
+] satisfies ReadonlyArray<PermissionMode>
+
+export const isPermissionMode = (modeId: string): modeId is PermissionMode =>
+  PERMISSION_MODE_IDS.includes(modeId)
 
 export const metadataFor = (
   session: ClaudeSession
@@ -195,7 +211,7 @@ export const claudeStartOptions = (
   if (selections.skillOverrides !== undefined) settings.skillOverrides = selections.skillOverrides
   return {
     ...(model.length === 0 || model === "default" ? {} : { model }),
-    ...(Object.keys(settings).length === 0 ? {} : { settings: settings as Settings })
+    ...(Object.keys(settings).length === 0 ? {} : { settings })
   }
 }
 

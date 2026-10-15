@@ -29,7 +29,7 @@ const makeClient = (overrides: Record<string, unknown> = {}) => {
     claudePath: "/usr/local/bin/claude",
     cwd: "/tmp",
     env: {},
-    queryFn: (() => fake) as never
+    queryFn: () => fake
   })
   return { calls, client }
 }
@@ -98,6 +98,17 @@ describe("spawnClaudeAuthClient", () => {
     const { client } = makeClient({ claudeAuthenticate: async () => ({}) })
     await expect(client.start()).rejects.toThrow("did not provide a sign-in URL")
     await expect(client.submit("   ")).rejects.toThrow("Paste the code")
+  })
+
+  it("refuses a query without sign-in controls", () => {
+    expect(() => makeClient({ claudeAuthenticate: undefined })).toThrow(
+      "does not support signing in"
+    )
+  })
+
+  it("refuses a null authenticate response", async () => {
+    const { client } = makeClient({ claudeAuthenticate: async () => null })
+    await expect(client.start()).rejects.toThrow("did not provide a sign-in URL")
   })
 
   it("still closes the CLI when the interrupt request rejects", async () => {

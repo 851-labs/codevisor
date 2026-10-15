@@ -6,8 +6,10 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent
 } from "./test-support.js"
 import { webSearchSources } from "./tool-presentation.js"
@@ -47,7 +49,7 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({ kind: "agent", sessionUpdate: "tool_call", toolCallId: "task-1" })
     )
@@ -76,32 +78,34 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "ws-1",
-            input: { query: "swift concurrency actors" },
-            name: "WebSearch",
-            type: "tool_use"
-          },
-          {
-            id: "wf-1",
-            input: { url: "https://example.com/docs" },
-            name: "WebFetch",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "ws-1",
+              input: { query: "swift concurrency actors" },
+              name: "WebSearch",
+              type: "tool_use"
+            },
+            {
+              id: "wf-1",
+              input: { url: "https://example.com/docs" },
+              name: "WebFetch",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(payloads).toContainEqual(
       expect.objectContaining({
         kind: "web_search",
@@ -145,21 +149,23 @@ describe("ClaudeProvider", () => {
       'Links: [{"title":"Swift 6.2 Released | Swift.org","url":"https://www.swift.org/blog/swift-6.2-released/"},' +
       '{"title":"Releases · swiftlang/swift","url":"https://github.com/swiftlang/swift/releases"}]\n\n' +
       "Swift 6.2 was released on September 15, 2025."
-    fake.push({
-      message: {
-        content: [
-          { content: resultText, is_error: false, tool_use_id: "ws-1", type: "tool_result" }
-        ],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            { content: resultText, is_error: false, tool_use_id: "ws-1", type: "tool_result" }
+          ],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     const update = payloads.find(
       (payload) =>
         payload.sessionUpdate === "tool_call_update" &&

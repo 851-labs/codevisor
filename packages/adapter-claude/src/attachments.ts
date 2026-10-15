@@ -3,30 +3,36 @@ import { withAttachmentNotes, type PromptInput } from "@codevisor/agent-runtime"
 
 export type ClaudeContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number]
 
+type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+
+const IMAGE_MEDIA_TYPES: ReadonlyArray<string> = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp"
+] satisfies ReadonlyArray<ImageMediaType>
+
+const isImageMediaType = (mimeType: string): mimeType is ImageMediaType =>
+  IMAGE_MEDIA_TYPES.includes(mimeType)
+
+const inlineBlock = (content: {
+  readonly mimeType: string
+  readonly data: Buffer
+}): ClaudeContentBlock | undefined => {
+  const data = content.data.toString("base64")
+  if (content.mimeType === "application/pdf") {
+    return { source: { data, media_type: "application/pdf", type: "base64" }, type: "document" }
+  }
+  if (!isImageMediaType(content.mimeType)) return undefined
+  return { source: { data, media_type: content.mimeType, type: "base64" }, type: "image" }
+}
+
 export const claudeContent = (input: PromptInput): Array<ClaudeContentBlock> => {
   const attachments = input.attachments ?? []
-  const inline = attachments.flatMap((attachment) =>
-    attachment.inline === undefined ? [] : [attachment.inline]
-  )
+  const media = attachments.flatMap((attachment) => {
+    const block = attachment.inline === undefined ? undefined : inlineBlock(attachment.inline)
+    return block === undefined ? [] : [block]
+  })
   const text = withAttachmentNotes(input.text, attachments)
-  const blocks: Array<ClaudeContentBlock> = []
-  if (text !== "" || inline.length === 0) {
-    blocks.push({ text, type: "text" })
-  }
-  for (const content of inline) {
-    const data = content.data.toString("base64")
-    blocks.push(
-      content.mimeType === "application/pdf"
-        ? { source: { data, media_type: "application/pdf", type: "base64" }, type: "document" }
-        : {
-            source: {
-              data,
-              media_type: content.mimeType as "image/png",
-              type: "base64"
-            },
-            type: "image"
-          }
-    )
-  }
-  return blocks
+  return text !== "" || media.length === 0 ? [{ text, type: "text" }, ...media] : media
 }

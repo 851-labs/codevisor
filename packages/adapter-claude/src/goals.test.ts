@@ -1,3 +1,4 @@
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -6,10 +7,20 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordValue,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent
 } from "./test-support.js"
+
+const commandText = (message: SDKUserMessage): string | undefined => {
+  const content = message.message.content
+  if (typeof content === "string") return content
+  const first = content[0]
+  return first?.type === "text" ? first.text : undefined
+}
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -32,10 +43,7 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     expect(goal.objective).toBe("ship the feature")
     expect(goal.status).toBe("active")
-    const commandTexts = fake.userMessages.map((message) => {
-      const content = (message as { message: { content: unknown } }).message.content
-      return Array.isArray(content) ? (content[0] as { text?: string }).text : content
-    })
+    const commandTexts = fake.userMessages.map(commandText)
     expect(commandTexts).toEqual(["/goal ship the feature"])
     expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "ship the feature" } })
 
@@ -47,10 +55,7 @@ describe("ClaudeProvider", () => {
 
     await run(created.handle.clearGoal!)
     await fake.drain()
-    const finalTexts = fake.userMessages.map((message) => {
-      const content = (message as { message: { content: unknown } }).message.content
-      return Array.isArray(content) ? (content[0] as { text?: string }).text : content
-    })
+    const finalTexts = fake.userMessages.map(commandText)
     expect(finalTexts).toEqual([
       "/goal ship the feature",
       "/goal pause",
@@ -79,13 +84,15 @@ describe("ClaudeProvider", () => {
     fake.push(streamEvent({ message: { id: "msg-goal" }, type: "message_start" }))
     fake.push(resultMessage())
     await fake.drain()
-    const completed = events.findLast((event) => {
-      const payload = event.payload as Record<string, unknown>
-      return payload.goal !== undefined
-    })?.payload as Record<string, unknown>
+    const completed = payloadOf(
+      events.findLast((event) => {
+        const payload = payloadOf(event)
+        return payload.goal !== undefined
+      })
+    )
     expect(completed.goal).toMatchObject({ objective: "count to ten", status: "complete" })
     const goalTurn = events.findLast((event) => {
-      const payload = event.payload as Record<string, unknown>
+      const payload = payloadOf(event)
       return payload.turnState === "ended"
     })?.payload
     expect(goalTurn).toMatchObject({ initiatedBy: "user", turnState: "ended" })
@@ -96,10 +103,12 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await cancellation
     await fake.drain()
-    const paused = events.findLast((event) => {
-      const payload = event.payload as Record<string, unknown>
-      return payload.goal !== undefined
-    })?.payload as Record<string, unknown>
+    const paused = payloadOf(
+      events.findLast((event) => {
+        const payload = payloadOf(event)
+        return payload.goal !== undefined
+      })
+    )
     expect(paused.goal).toMatchObject({ objective: "count to twenty", status: "paused" })
   })
 
@@ -116,20 +125,24 @@ describe("ClaudeProvider", () => {
     const created = await createPromise
 
     await run(created.handle.setGoal!({ objective: "ship everything" }))
-    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
     await fake.drain()
-    const afterTask = events.findLast((event) => {
-      const payload = event.payload as Record<string, unknown>
-      return payload.goal !== undefined
-    })?.payload as { goal: { status: string } }
-    expect(afterTask.goal.status).toBe("active")
+    const afterTask = payloadOf(
+      events.findLast((event) => {
+        const payload = payloadOf(event)
+        return payload.goal !== undefined
+      })
+    )
+    expect(recordValue(afterTask.goal).status).toBe("active")
 
     fake.push(resultMessage())
     await fake.drain()
-    const afterGoal = events.findLast((event) => {
-      const payload = event.payload as Record<string, unknown>
-      return payload.goal !== undefined
-    })?.payload as { goal: { status: string } }
-    expect(afterGoal.goal.status).toBe("complete")
+    const afterGoal = payloadOf(
+      events.findLast((event) => {
+        const payload = payloadOf(event)
+        return payload.goal !== undefined
+      })
+    )
+    expect(recordValue(afterGoal.goal).status).toBe("complete")
   })
 })

@@ -6,17 +6,18 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
+  recordsValue,
   run,
+  sdkMessage,
   systemMessage
 } from "./test-support.js"
 
 const skillUpdates = (events: ReadonlyArray<RuntimeEvent>) =>
   events
-    .map((event) => event.payload as Record<string, unknown>)
+    .map(payloadOf)
     .filter((payload) => payload.sessionUpdate === "available_skills_update")
-    .map((payload) =>
-      (payload.skills as ReadonlyArray<{ readonly name: string }>).map((skill) => skill.name)
-    )
+    .map((payload) => recordsValue(payload.skills).map((skill) => skill.name))
 
 describe("Claude skills", () => {
   it("lists only skills, with where each one comes from", async () => {
@@ -70,11 +71,13 @@ describe("Claude skills", () => {
     await run(provider.createSession(definition, "/tmp", async (event) => void events.push(event)))
     expect(skillUpdates(events)).toEqual([["simplify", "teleport"]])
 
-    fake.push({
-      ...(initMessage() as object),
-      skills: ["simplify"],
-      slash_commands: ["simplify", "teleport"]
-    } as never)
+    fake.push(
+      sdkMessage({
+        ...initMessage(),
+        skills: ["simplify"],
+        slash_commands: ["simplify", "teleport"]
+      })
+    )
     await fake.drain()
     expect(skillUpdates(events)).toEqual([["simplify", "teleport"], ["simplify"]])
 

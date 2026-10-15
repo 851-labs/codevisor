@@ -5,7 +5,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk"
 import { isoTimestamp, type HarnessUsageLimits } from "@codevisor/api"
 
-import { isRecord } from "./internal.js"
+import { isRecord, recordOf } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 
 const API_ERROR_TEXT = /^\s*API Error:\s*(429|5\d\d)\b|^\s*overloaded\b/i
@@ -98,7 +98,7 @@ export const detectApiErrorMessage = (
 export const usageLimitTextFromResult = (
   message: SDKMessage & { type: "result" }
 ): string | undefined => {
-  const raw = message as unknown as Record<string, unknown>
+  const raw = recordOf(message)
   const resultText = usageLimitText(raw.result)
   if (resultText !== undefined) return resultText
   if (!Array.isArray(raw.errors)) return undefined

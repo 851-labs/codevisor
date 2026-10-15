@@ -6,8 +6,10 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  payloadOf,
   resultMessage,
   run,
+  sdkMessage,
   streamEvent
 } from "./test-support.js"
 
@@ -38,39 +40,43 @@ describe("ClaudeProvider", () => {
       })
     )
     await fake.drain()
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "todo-1",
-            input: {
-              todos: [
-                { activeForm: "Exploring", content: "Explore the code", status: "completed" },
-                { activeForm: "Designing", content: "Design the fix", status: "in_progress" },
-                { activeForm: "Testing", content: "Add tests", status: "someday" },
-                { content: 42, status: "pending" },
-                "not-a-todo"
-              ]
-            },
-            name: "TodoWrite",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
-    fake.push({
-      message: {
-        content: [{ content: "ok", is_error: false, tool_use_id: "todo-1", type: "tool_result" }],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "todo-1",
+              input: {
+                todos: [
+                  { activeForm: "Exploring", content: "Explore the code", status: "completed" },
+                  { activeForm: "Designing", content: "Design the fix", status: "in_progress" },
+                  { activeForm: "Testing", content: "Add tests", status: "someday" },
+                  { content: 42, status: "pending" },
+                  "not-a-todo"
+                ]
+              },
+              name: "TodoWrite",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [{ content: "ok", is_error: false, tool_use_id: "todo-1", type: "tool_result" }],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
 
     fake.push(
       streamEvent({
@@ -80,27 +86,29 @@ describe("ClaudeProvider", () => {
       })
     )
     await fake.drain()
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "exit-1",
-            input: { plan: "# The Plan\n\n1. Do the thing\n2. Verify it" },
-            name: "ExitPlanMode",
-            type: "tool_use"
-          },
-          { id: "exit-2", input: {}, name: "ExitPlanMode", type: "tool_use" }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "exit-1",
+              input: { plan: "# The Plan\n\n1. Do the thing\n2. Verify it" },
+              name: "ExitPlanMode",
+              type: "tool_use"
+            },
+            { id: "exit-2", input: {}, name: "ExitPlanMode", type: "tool_use" }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(
       payloads.filter(
         (payload) =>
@@ -139,56 +147,62 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "create-1",
-            input: {
-              activeForm: "Writing tests",
-              description: "Cover the task flow",
-              subject: "Write tests"
-            },
-            name: "TaskCreate",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "create-1",
+              input: {
+                activeForm: "Writing tests",
+                description: "Cover the task flow",
+                subject: "Write tests"
+              },
+              name: "TaskCreate",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
 
     const taskCreatedHook = fake.options?.hooks?.TaskCreated?.[0]?.hooks[0]
     expect(taskCreatedHook).toBeDefined()
     await taskCreatedHook?.(
       {
+        cwd: "/tmp",
         hook_event_name: "TaskCreated",
         session_id: "sdk-session-1",
         task_description: "Cover the task flow",
         task_id: "1",
-        task_subject: "Write tests"
-      } as never,
+        task_subject: "Write tests",
+        transcript_path: "/tmp/transcript"
+      },
       "create-1",
       { signal: new AbortController().signal }
     )
-    fake.push({
-      message: {
-        content: [
-          {
-            content: "Task #1 created successfully: Write tests",
-            is_error: false,
-            tool_use_id: "create-1",
-            type: "tool_result"
-          }
-        ],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              content: "Task #1 created successfully: Write tests",
+              is_error: false,
+              tool_use_id: "create-1",
+              type: "tool_result"
+            }
+          ],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
 
     fake.push(
       streamEvent({
@@ -197,56 +211,62 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "update-1",
-            input: { status: "in_progress", taskId: "1" },
-            name: "TaskUpdate",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
-    fake.push({
-      message: {
-        content: [
-          {
-            content: "Updated task #1 status",
-            is_error: false,
-            tool_use_id: "update-1",
-            type: "tool_result"
-          }
-        ],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "update-1",
+              input: { status: "in_progress", taskId: "1" },
+              name: "TaskUpdate",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              content: "Updated task #1 status",
+              is_error: false,
+              tool_use_id: "update-1",
+              type: "tool_result"
+            }
+          ],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
     await fake.drain()
 
     const taskCompletedHook = fake.options?.hooks?.TaskCompleted?.[0]?.hooks[0]
     expect(taskCompletedHook).toBeDefined()
     await taskCompletedHook?.(
       {
+        cwd: "/tmp",
         hook_event_name: "TaskCompleted",
         session_id: "sdk-session-1",
         task_id: "1",
-        task_subject: "Write tests"
-      } as never,
+        task_subject: "Write tests",
+        transcript_path: "/tmp/transcript"
+      },
       "update-2",
       { signal: new AbortController().signal }
     )
     fake.push(resultMessage())
     await promptPromise
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const payloads = events.map(payloadOf)
     expect(
       payloads.filter(
         (payload) =>
@@ -288,46 +308,46 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    fake.push({
-      message: {
-        content: [
-          {
-            id: "create-fallback",
-            input: { description: "Fallback coverage", subject: "Recovered task" },
-            name: "TaskCreate",
-            type: "tool_use"
-          }
-        ],
-        role: "assistant"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "assistant"
-    } as never)
-    fake.push({
-      message: {
-        content: [
-          {
-            content: "Task #42 created successfully: Recovered task",
-            is_error: false,
-            tool_use_id: "create-fallback",
-            type: "tool_result"
-          }
-        ],
-        role: "user"
-      },
-      parent_tool_use_id: null,
-      session_id: "sdk-session-1",
-      type: "user"
-    } as never)
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              id: "create-fallback",
+              input: { description: "Fallback coverage", subject: "Recovered task" },
+              name: "TaskCreate",
+              type: "tool_use"
+            }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            {
+              content: "Task #42 created successfully: Recovered task",
+              is_error: false,
+              tool_use_id: "create-fallback",
+              type: "tool_result"
+            }
+          ],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
     fake.push(resultMessage())
     await promptPromise
 
-    expect(
-      events
-        .map((event) => event.payload as Record<string, unknown>)
-        .find((payload) => payload.sessionUpdate === "plan")
-    ).toEqual({
+    expect(events.map(payloadOf).find((payload) => payload.sessionUpdate === "plan")).toEqual({
       entries: [{ content: "Recovered task", priority: "medium", status: "pending" }],
       sessionUpdate: "plan"
     })
