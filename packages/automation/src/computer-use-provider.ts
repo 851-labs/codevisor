@@ -305,8 +305,23 @@ export const makeComputerUseProvider = (
           return textToolResult(JSON.stringify({ reset: true }))
         }
         if (toolName === "wait_for") {
-          return await waitForComputerState(args, (input) =>
-            provider.invoke(context, "get_app_state", input)
+          return await waitForComputerState(
+            args,
+            (input) => provider.invoke(context, "get_app_state", input),
+            undefined,
+            process.platform === "darwin"
+              ? async (ms) => {
+                  await (
+                    await connect(context.sessionId)
+                  ).request({
+                    type: "tool",
+                    sessionId: context.sessionId,
+                    agentLabel: context.agentLabel,
+                    tool: "await_change",
+                    arguments: { app: args.app, timeout_ms: ms }
+                  })
+                }
+              : undefined
           )
         }
         if (

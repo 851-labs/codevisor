@@ -275,12 +275,51 @@ extension ComputerUseBridge {
         "isFocused": id == focusedID,
         "hasModalSheet": !sheetElements(of: candidate).isEmpty,
         "isOnActiveSpace": windowIsOnVisibleSpace(id),
+        "isMinimized": copyAttribute(candidate, kAXMinimizedAttribute) as? Bool == true,
       ]
       if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
         entry["title"] = title
       }
       if let frame = frame(of: candidate) { entry["screenBounds"] = frameObject(frame) }
       return entry
+    }
+  }
+
+  func windowAction(
+    _ action: String, window: AXUIElement, application: AXUIElement, pid: pid_t
+  ) throws -> [String: Any] {
+    switch action {
+    case "raise":
+      let error = axPerformAction(window, kAXRaiseAction as CFString, pid: pid)
+      if isSettable(window, attribute: kAXMainAttribute) {
+        _ = axSetAttribute(window, kAXMainAttribute as CFString, kCFBooleanTrue, pid: pid)
+      }
+      return try accessibilityMutationResult(
+        error: error, kind: "window_action", verified: copyAttribute(window, kAXMainAttribute) as? Bool == true,
+        detail: ["action": action])
+    case "minimize", "restore":
+      let minimized = action == "minimize"
+      let error = axSetAttribute(
+        window, kAXMinimizedAttribute as CFString, minimized ? kCFBooleanTrue : kCFBooleanFalse, pid: pid)
+      let verified = computerUseSettles { copyAttribute(window, kAXMinimizedAttribute) as? Bool == minimized }
+      return try accessibilityMutationResult(
+        error: error, kind: "window_action", verified: verified, detail: ["action": action])
+    case "close":
+      guard let button = elementAttribute(window, kAXCloseButtonAttribute),
+        actionNames(of: button).contains(kAXPressAction as String)
+      else { throw BridgeError("This window has no close button.") }
+      let error = axPerformAction(button, kAXPressAction as CFString, pid: pid)
+      let closed = computerUseSettles {
+        !elementsAttribute(application, kAXWindowsAttribute).contains { CFEqual($0, window) }
+      }
+      var result = try accessibilityMutationResult(
+        error: error, kind: "window_action", verified: closed, detail: ["action": action])
+      if !closed {
+        result["next"] = "The window is still open. Observe it; the app may be asking whether to save."
+      }
+      return result
+    default:
+      throw BridgeError("action must be raise, minimize, restore, or close")
     }
   }
 
@@ -332,4 +371,15 @@ extension ComputerUseBridge {
       ) as? [[String: Any]] ?? []
     return computerUseWindowIsOnVisibleSpace(windowID, windowInfo: info)
   }
+}
+
+func computerUseSettles(
+  attempts: Int = 10, interval: TimeInterval = 0.1,
+  sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }, _ condition: () -> Bool
+) -> Bool {
+  for attempt in 0..<attempts {
+    if condition() { return true }
+    if attempt < attempts - 1 { sleep(interval) }
+  }
+  return false
 }

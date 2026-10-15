@@ -62,12 +62,12 @@ struct HomeSidebarContentBuilder {
       subtitle: SidebarRowSubtitle.make(
         details: details,
         projectName: projectName,
-        branch: gitLookups.branches.byWorkspace[workspace.id],
+        branch: gitLookups.branch(for: workspace),
         groupNamesProject: preferences.grouping == .project && underHeading
       ),
       machine: details.contains(.machine) && !(preferences.grouping == .machine && underHeading)
         ? rowMachine(serverId: workspace.serverId) : nil,
-      pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequests.byWorkspace[workspace.id] : nil,
+      pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,
       leadingRow: leadingRow(rows, workspace: workspace),
       primaryRowId: selectedPaneId(in: workspace),
       isPinned: preferences.pinnedIDs.contains(workspace.id.uuidString),

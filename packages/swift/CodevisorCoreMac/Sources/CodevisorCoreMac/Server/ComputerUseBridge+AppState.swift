@@ -64,8 +64,8 @@ extension ComputerUseBridge {
     let previous = lock.withLock { latestSnapshotIDs[scope].flatMap { snapshots[sessionID]?[$0] } }
     var nextIndex = lock.withLock { nextElementIndices[sessionID] ?? 0 }
     let requestedView = options["view"] as? String ?? "auto"
-    guard ["auto", "window", "menu", "dialog"].contains(requestedView) else {
-      throw BridgeError("view must be auto, window, menu, or dialog")
+    guard ["auto", "window", "menu", "dialog", "menubar"].contains(requestedView) else {
+      throw BridgeError("view must be auto, window, menu, dialog, or menubar")
     }
     let accessibility = computerUsePerformAccessibilityRead(
       targetPID: app.processIdentifier
@@ -84,6 +84,8 @@ extension ComputerUseBridge {
       let roots = self.observationRoots(application: application, window: window, view: requestedView)
       let previousByHash = Dictionary(grouping: previous?.elements ?? [:]) { CFHash($0.value.element) }
       var remaining = 2_000
+      let buttons = self.dialogButtons(
+        of: roots.elements + (roots.view == "window" ? self.sheetElements(of: window) : []))
       for root in roots.elements {
         self.snapshotTree(
           root, depth: 0,
@@ -94,6 +96,7 @@ extension ComputerUseBridge {
             return self.correctedFrame(
               of: element, reported: reported, application: application, windowFrame: windowFrame)
           },
+          includeClosedMenus: roots.view == "menubar", dialogButtons: buttons,
           previous: previousByHash, nextIndex: &nextIndex, remaining: &remaining,
           records: &records, lines: &lines
         )

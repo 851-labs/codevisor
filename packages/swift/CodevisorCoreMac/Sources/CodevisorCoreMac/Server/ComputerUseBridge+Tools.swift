@@ -26,10 +26,11 @@ extension ComputerUseBridge {
     app: NSRunningApplication, application: AXUIElement, window: AXUIElement,
     windowID: CGWindowID?, mode: String
   ) throws -> [String: Any] {
+    let wasHidden = copyAttribute(application, kAXHiddenAttribute) as? Bool == true
     let target = try targetElement(
       sessionID: sessionID, pid: app.processIdentifier, windowID: windowID, arguments: arguments)
     activatePresentation(sessionID: sessionID, agentLabel: agentLabel, app: app, window: window, windowID: windowID)
-    if ["drag", "press_key", "type_text", "paste_text"].contains(tool) {
+    if tool == "drag" {
       try requireInputVisibility(windowID: windowID, mode: mode)
     }
     var result: [String: Any]
@@ -99,10 +100,27 @@ extension ComputerUseBridge {
       guard let element = target?.element, let value = arguments["value"] else {
         throw BridgeError("A current element and value are required")
       }
-      let error = axSetAttribute(element, kAXValueAttribute as CFString, value as CFTypeRef, pid: app.processIdentifier)
-      let verified =
-        copyAttribute(element, kAXValueAttribute).map { String(describing: $0) } == String(describing: value)
+      let coerced = try computerUseAccessibilityValue(value, matching: copyAttribute(element, kAXValueAttribute))
+      let error = axSetAttribute(element, kAXValueAttribute as CFString, coerced, pid: app.processIdentifier)
+      let verified = computerUseAccessibilityValuesMatch(copyAttribute(element, kAXValueAttribute), coerced)
       result = try accessibilityMutationResult(error: error, kind: tool, verified: verified)
+      if arguments["submit"] as? Bool == true {
+        if actionNames(of: element).contains(kAXConfirmAction as String) {
+          let submitted = axPerformAction(element, kAXConfirmAction as CFString, pid: app.processIdentifier)
+          result["submitted"] = computerUseAXOutcome(submitted).status != "rejected"
+        } else {
+          result["submitted"] = false
+          result["next"] = "This element has no submit action. Press Return, or press the control that submits it."
+        }
+      }
+    case "set_expanded":
+      guard let element = target?.element, let expanded = arguments["expanded"] as? Bool else {
+        throw BridgeError("A current element and expanded are required")
+      }
+      result = try setExpanded(element, expanded: expanded, pid: app.processIdentifier)
+    case "window_action":
+      guard let action = arguments["action"] as? String else { throw BridgeError("action is required") }
+      result = try windowAction(action, window: window, application: application, pid: app.processIdentifier)
     case "type_text":
       if let element = target?.element {
         try focus(element: element, application: application, pid: app.processIdentifier)
@@ -129,7 +147,25 @@ extension ComputerUseBridge {
     default: throw BridgeError("Unsupported Computer Use tool: \(tool)")
     }
     if let windowID { result["windowId"] = Int(windowID) }
+    if wasHidden, copyAttribute(application, kAXHiddenAttribute) as? Bool == false {
+      result["appBecameVisible"] = true
+    }
     result["app"] = app.bundleIdentifier ?? app.localizedName ?? ""
     return textResult(try json(result))
   }
+}
+
+func computerUseAccessibilityValue(_ value: Any, matching current: CFTypeRef?) throws -> CFTypeRef {
+  guard current is NSNumber, let text = value as? String else { return value as CFTypeRef }
+  guard let number = Double(text.trimmingCharacters(in: .whitespaces)), number.isFinite else {
+    throw BridgeError("This element holds a number. Supply a numeric value.")
+  }
+  return NSNumber(value: number)
+}
+
+func computerUseAccessibilityValuesMatch(_ actual: CFTypeRef?, _ expected: CFTypeRef) -> Bool {
+  if let actual = actual as? NSNumber, let expected = expected as? NSNumber {
+    return abs(actual.doubleValue - expected.doubleValue) < 0.000_001
+  }
+  return actual.map { String(describing: $0) } == String(describing: expected)
 }

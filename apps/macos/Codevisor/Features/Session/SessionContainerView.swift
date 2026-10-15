@@ -134,6 +134,11 @@ struct SessionContainerView: View {
         store.newCenterTabRequest = nil
         addCenterTab()
       }
+      .onChange(of: store.inspectorOpenRequest) { _, request in
+        guard let request, request.workspaceId == workspace.id else { return }
+        store.inspectorOpenRequest = nil
+        openInspectorDestination(request.destination)
+      }
       .onChange(of: activePaneDescriptor?.id, initial: true) { _, _ in
         focusSelectedCenterPane()
       }

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -29,9 +29,11 @@ describe("workspace git routes", () => {
     )
     const bin = join(tempFolder("codevisor-gh-"), "bin")
     mkdirSync(bin)
+    const ghCalls = join(bin, "calls")
+    writeFileSync(ghCalls, "")
     writeFileSync(
       join(bin, "gh"),
-      `#!/bin/sh\necho "{\\"number\\":9,\\"title\\":\\"$3\\",\\"state\\":\\"MERGED\\",\\"isDraft\\":false,\\"url\\":\\"u\\"}"\n`
+      `#!/bin/sh\necho "$3" >> "${ghCalls}"\necho "{\\"number\\":9,\\"title\\":\\"$3\\",\\"state\\":\\"MERGED\\",\\"isDraft\\":false,\\"url\\":\\"u\\"}"\n`
     )
     chmodSync(join(bin, "gh"), 0o755)
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
@@ -58,7 +60,7 @@ describe("workspace git routes", () => {
       }),
       method: "PUT"
     })
-    const lookup = (kind: string) => jsonRequest(server, `/v1/workspaces/work/git/${kind}`)
+    const lookup = (query = "") => jsonRequest(server, `/v1/workspaces/work/git${query}`)
     const pullRequest = {
       number: 9,
       title: worktree.branch,
@@ -68,7 +70,7 @@ describe("workspace git routes", () => {
       checks: "none"
     }
 
-    expect(await lookup("branch")).toEqual({ status: 200, body: { branch: worktree.branch } })
+    expect(await lookup()).toEqual({ status: 200, body: { branch: worktree.branch } })
 
     await jsonRequest(server, "/v1/workspaces/work", {
       body: JSON.stringify({ isArchived: true }),
@@ -77,16 +79,21 @@ describe("workspace git routes", () => {
     await archiveJobs(appServices).idle()
     expect(existsSync(worktree.path)).toBe(false)
 
-    expect(await lookup("branch")).toEqual({ status: 200, body: { branch: worktree.branch } })
-    expect(await lookup("pull-request")).toEqual({ status: 200, body: { pullRequest } })
+    expect(await lookup()).toEqual({ status: 200, body: { branch: worktree.branch } })
+    expect(readFileSync(ghCalls, "utf8")).toBe("")
+    expect(await lookup("?pullRequest=true")).toEqual({
+      status: 200,
+      body: { branch: worktree.branch, pullRequest }
+    })
+    expect(readFileSync(ghCalls, "utf8")).toBe(`${worktree.branch}\n`)
 
     await jsonRequest(server, "/v1/projects/git-project/worktrees", {
       body: JSON.stringify({ name: "sushi" }),
       method: "POST"
     })
     execFileSync("git", ["checkout", "--quiet", "-b", "someone-else"], { cwd: worktree.path })
-    expect(await lookup("branch")).toEqual({ status: 200, body: { branch: worktree.branch } })
-    expect((await jsonRequest(server, "/v1/workspaces/missing/git/branch")).status).toBe(404)
+    expect(await lookup()).toEqual({ status: 200, body: { branch: worktree.branch } })
+    expect((await jsonRequest(server, "/v1/workspaces/missing/git")).status).toBe(404)
   })
 
   it("answers nothing for a workspace without a folder, a git checkout, or a worktree", async () => {
@@ -122,14 +129,16 @@ describe("workspace git routes", () => {
     })
 
     for (const id of ["gone", "bare", "plain"]) {
-      expect(await jsonRequest(server, `/v1/workspaces/${id}/git/branch`)).toEqual({
+      expect(await jsonRequest(server, `/v1/workspaces/${id}/git`)).toEqual({
         status: 200,
         body: { branch: null }
       })
     }
-    expect(await jsonRequest(server, "/v1/workspaces/gone/git/pull-request")).toEqual({
-      status: 200,
-      body: { pullRequest: null }
-    })
+    for (const id of ["gone", "plain"]) {
+      expect(await jsonRequest(server, `/v1/workspaces/${id}/git?pullRequest=true`)).toEqual({
+        status: 200,
+        body: { branch: null, pullRequest: null }
+      })
+    }
   })
 })

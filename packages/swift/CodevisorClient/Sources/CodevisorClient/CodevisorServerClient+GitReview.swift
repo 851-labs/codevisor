@@ -145,8 +145,14 @@ struct ServerGitPullRequestLookup: Decodable {
   let pullRequest: ServerGitPullRequest?
 }
 
-struct ServerWorkspaceGitBranch: Decodable {
-  let branch: String?
+public struct ServerWorkspaceGit: Decodable, Equatable, Sendable {
+  public let branch: String?
+  public let pullRequest: ServerGitPullRequest?
+
+  public init(branch: String?, pullRequest: ServerGitPullRequest?) {
+    self.branch = branch
+    self.pullRequest = pullRequest
+  }
 }
 
 extension CodevisorServerClient {
@@ -174,18 +180,9 @@ extension CodevisorServerClient {
     return lookup.pullRequest
   }
 
-  public func workspaceGitBranch(workspaceId: UUID) async throws -> String? {
-    let lookup: ServerWorkspaceGitBranch = try await get(
-      "/v1/workspaces/\(workspaceId.uuidString)/git/branch"
-    )
-    return lookup.branch
-  }
-
-  public func workspaceGitPullRequest(workspaceId: UUID) async throws -> ServerGitPullRequest? {
-    let lookup: ServerGitPullRequestLookup = try await get(
-      "/v1/workspaces/\(workspaceId.uuidString)/git/pull-request"
-    )
-    return lookup.pullRequest
+  public func workspaceGit(workspaceId: UUID, includePullRequest: Bool) async throws -> ServerWorkspaceGit {
+    let path = "/v1/workspaces/\(workspaceId.uuidString)/git"
+    return try await get(includePullRequest ? "\(path)?pullRequest=true" : path)
   }
 
   private func gitRequestPath(_ endpoint: String, items: [URLQueryItem]) throws -> String {
@@ -211,10 +208,7 @@ extension CodevisorServerClienting {
   public func gitPullRequest(path: String) async throws -> ServerGitPullRequest? {
     throw CodevisorServerClientError.invalidResponse
   }
-  public func workspaceGitBranch(workspaceId: UUID) async throws -> String? {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  public func workspaceGitPullRequest(workspaceId: UUID) async throws -> ServerGitPullRequest? {
+  public func workspaceGit(workspaceId: UUID, includePullRequest: Bool) async throws -> ServerWorkspaceGit {
     throw CodevisorServerClientError.invalidResponse
   }
 }

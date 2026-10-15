@@ -18,6 +18,27 @@ func computerUseActionLabel(_ action: String) -> String {
   return String(action.dropFirst(5).split(separator: "\n").first ?? "")
 }
 
+func computerUseWindowButtonLabel(subrole: String?) -> String? {
+  switch subrole {
+  case "AXCloseButton": "Close window"
+  case "AXMinimizeButton": "Minimize window"
+  case "AXZoomButton": "Zoom window"
+  case "AXFullScreenButton": "Full screen"
+  default: nil
+  }
+}
+
+func computerUseMenuShortcut(character: String?, modifiers: Int?) -> String? {
+  guard let character, character.count == 1, let scalar = character.unicodeScalars.first,
+    scalar.isASCII, scalar.value > 32, scalar.value < 127
+  else { return nil }
+  let flags = modifiers ?? 0
+  let names =
+    (flags & 8 == 0 ? ["super"] : [])
+    + [(4, "ctrl"), (2, "alt"), (1, "shift")].filter { flags & $0.0 != 0 }.map(\.1)
+  return (names + [character.lowercased()]).joined(separator: "+")
+}
+
 func computerUseObservationValue(role: String, subrole: String?, value: Any?) -> String {
   if (role + (subrole ?? "")).localizedCaseInsensitiveContains("secure") { return "<redacted>" }
   if let value = value as? String { return value }
@@ -68,15 +89,29 @@ extension ComputerUseBridge {
       return ([menu], "menu")
     }
     if view == "menu" { return ([], "menu") }
+    if view == "menubar" {
+      let bar = elementAttribute(application, kAXMenuBarAttribute)
+      let items = bar.map { elementsAttribute($0, kAXChildrenAttribute) } ?? []
+      return (items.filter { stringAttribute($0, kAXTitleAttribute) != "Apple" }, "menubar")
+    }
     let sheets = sheetElements(of: window)
     if (view == "auto" || view == "dialog"), !sheets.isEmpty { return (sheets, "dialog") }
     if view == "dialog" { return ([], "dialog") }
     return ([window], "window")
   }
 
+  func dialogButtons(of roots: [AXUIElement]) -> [(element: AXUIElement, label: String)] {
+    roots.flatMap { root in
+      [(kAXDefaultButtonAttribute, "Default button"), (kAXCancelButtonAttribute, "Cancel button")].compactMap {
+        attribute, label in elementAttribute(root, attribute).map { (element: $0, label: label) }
+      }
+    }
+  }
+
   func snapshotTree(
     _ element: AXUIElement, depth: Int, screenshotWindowFrame: CGRect?, screenshotPixelSize: CGSize?,
-    correctFrame: (AXUIElement, CGRect) -> CGRect,
+    correctFrame: (AXUIElement, CGRect) -> CGRect, includeClosedMenus: Bool = false,
+    dialogButtons: [(element: AXUIElement, label: String)] = [],
     previous: [CFHashCode: [(key: String, value: ElementRecord)]], nextIndex: inout Int, remaining: inout Int,
     records: inout [String: ElementRecord], lines: inout [String]
   ) {
@@ -84,10 +119,18 @@ extension ComputerUseBridge {
     remaining -= 1
     let attributes = ComputerUseElementAttributes(element)
     let role = attributes.string(kAXRoleAttribute) ?? "element"
-    if role == "AXMenu", !menuIsOpen(element) { return }
+    if role == "AXMenu", !includeClosedMenus, !menuIsOpen(element) { return }
+    let linkedTitle = attributes[kAXTitleUIElementAttribute].flatMap { linked -> String? in
+      guard CFGetTypeID(linked) == AXUIElementGetTypeID() else { return nil }
+      let label = linked as! AXUIElement
+      return stringAttribute(label, kAXValueAttribute) ?? stringAttribute(label, kAXTitleAttribute)
+    }
     let title =
-      [attributes.string(kAXTitleAttribute), attributes.string(kAXDescriptionAttribute)]
-      .compactMap { $0 }.first { !$0.isEmpty } ?? ""
+      [
+        attributes.string(kAXTitleAttribute), attributes.string(kAXDescriptionAttribute), linkedTitle,
+        computerUseWindowButtonLabel(subrole: attributes.string(kAXSubroleAttribute)),
+      ]
+      .compactMap { $0 }.first { !$0.isEmpty } ?? (role == "AXRow" ? rowLabel(element) : nil) ?? ""
     let value = computerUseObservationValue(
       role: role, subrole: attributes.string(kAXSubroleAttribute),
       value: attributes[kAXValueAttribute] ?? selectionDescription(of: element, role: role))
@@ -119,7 +162,30 @@ extension ComputerUseBridge {
         let formatted = role == "AXTextArea" ? formattedTextValue(element: element, plainText: value) : nil
         line += " Value: \(String((formatted ?? value).prefix(4_000)))"
       }
+      if editor, value.isEmpty, let placeholder = attributes.string(kAXPlaceholderValueAttribute),
+        !placeholder.isEmpty
+      {
+        line += " Placeholder: \(placeholder.prefix(200))"
+      }
+      if title.isEmpty, let help = attributes.string(kAXHelpAttribute), !help.isEmpty {
+        line += " Help: \(help.prefix(200))"
+      }
       if attributes[kAXSelectedAttribute] as? Bool == true { line += " Selected" }
+      if role == "AXRow", let disclosing = attributes[kAXDisclosingAttribute] as? Bool,
+        isSettable(element, attribute: kAXDisclosingAttribute)
+      {
+        line += disclosing ? " Expanded" : " Collapsed"
+      }
+      if role == "AXButton", let button = dialogButtons.first(where: { CFEqual($0.element, element) }) {
+        line += " \(button.label)"
+      }
+      if role == "AXMenuItem",
+        let shortcut = computerUseMenuShortcut(
+          character: attributes.string(kAXMenuItemCmdCharAttribute),
+          modifiers: (attributes[kAXMenuItemCmdModifiersAttribute] as? NSNumber)?.intValue)
+      {
+        line += " Shortcut: \(shortcut)"
+      }
       if attributes[kAXEnabledAttribute] as? Bool == false { line += " Disabled" }
       if let elementFrame, elementFrame.width > 0, elementFrame.height > 0,
         let box = computerUseScreenshotFrame(
@@ -138,7 +204,8 @@ extension ComputerUseBridge {
     for child in children {
       snapshotTree(
         child, depth: depth + 1, screenshotWindowFrame: screenshotWindowFrame,
-        screenshotPixelSize: screenshotPixelSize, correctFrame: correctFrame, previous: previous,
+        screenshotPixelSize: screenshotPixelSize, correctFrame: correctFrame,
+        includeClosedMenus: includeClosedMenus, dialogButtons: dialogButtons, previous: previous,
         nextIndex: &nextIndex, remaining: &remaining, records: &records, lines: &lines)
     }
   }

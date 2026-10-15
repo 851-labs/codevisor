@@ -195,11 +195,6 @@ public func markdownLocalFilePath(_ target: String) -> String? {
     return nil
   }
   let decoded = target.removingPercentEncoding ?? target
-  if decoded.hasPrefix("/") || decoded.hasPrefix("./") || decoded.hasPrefix("../")
-    || decoded.hasPrefix("~/")
-  {
-    return decoded
-  }
   return decoded
 }
 

@@ -1,5 +1,5 @@
 import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { QuestionAnswer, RuntimeEvent } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
 import { record } from "./internal.js"
@@ -76,6 +76,24 @@ const cursorQuestions = (value: unknown): ReadonlyArray<CursorQuestion> => {
   })
 }
 
+const cursorQuestionResponse = (
+  sourceQuestions: ReadonlyArray<CursorQuestion>,
+  answer: QuestionAnswer
+): CursorAskQuestionResponse => {
+  if (answer.outcome === "cancelled") return { outcome: { outcome: "cancelled" } }
+  const answers = sourceQuestions.flatMap((question) => {
+    const selected = answer.answers?.[question.id]?.answers ?? []
+    const optionIds = selected.flatMap((label) => {
+      const option = question.options.find((candidate) => candidate.label === label)
+      return option === undefined ? [] : [option.id]
+    })
+    return optionIds.length === 0 ? [] : [{ questionId: question.id, selectedOptionIds: optionIds }]
+  })
+  return answers.length === 0
+    ? { outcome: { outcome: "skipped", reason: "No answers selected" } }
+    : { outcome: { outcome: "answered", answers } }
+}
+
 export const cursorAskQuestion = (
   params: unknown,
   sessionId: string
@@ -96,28 +114,29 @@ export const cursorAskQuestion = (
     sessionId,
     questions,
     cancelledResponse: { outcome: { outcome: "cancelled" } },
-    responseFor: (answer) => {
-      if (answer.outcome === "cancelled") return { outcome: { outcome: "cancelled" } }
-      const answers = sourceQuestions.flatMap((question) => {
-        const selected = answer.answers?.[question.id]?.answers ?? []
-        const optionIds = selected.flatMap((label) => {
-          const option = question.options.find((candidate) => candidate.label === label)
-          return option === undefined ? [] : [option.id]
-        })
-        return optionIds.length === 0
-          ? []
-          : [{ questionId: question.id, selectedOptionIds: optionIds }]
-      })
-      return answers.length === 0
-        ? { outcome: { outcome: "skipped", reason: "No answers selected" } }
-        : { outcome: { outcome: "answered", answers } }
-    }
+    responseFor: (answer) => cursorQuestionResponse(sourceQuestions, answer)
   }
 }
 
 const CURSOR_PLAN_QUESTION_ID = "cursor_create_plan"
 const ACCEPT_PLAN = "Accept plan"
 const REJECT_PLAN = "Reject plan"
+
+const cursorPlanResponse = (answer: QuestionAnswer): CursorCreatePlanResponse => {
+  if (answer.outcome === "cancelled") return { outcome: { outcome: "cancelled" } }
+  const entry = answer.answers?.[CURSOR_PLAN_QUESTION_ID]
+  const selected = entry?.answers[0]
+  if (selected === ACCEPT_PLAN) return { outcome: { outcome: "accepted" } }
+  const note = entry?.note?.trim()
+  const custom = selected === undefined || selected === REJECT_PLAN ? undefined : selected.trim()
+  const reason = note === undefined || note.length === 0 ? custom : note
+  return {
+    outcome: {
+      outcome: "rejected",
+      ...(reason === undefined || reason.length === 0 ? {} : { reason })
+    }
+  }
+}
 
 export const cursorCreatePlanQuestion = (
   params: unknown,
@@ -147,22 +166,7 @@ export const cursorCreatePlanQuestion = (
     ],
     ...(request.plan.length === 0 ? {} : { planDocument: request.plan }),
     cancelledResponse: { outcome: { outcome: "cancelled" } },
-    responseFor: (answer) => {
-      if (answer.outcome === "cancelled") return { outcome: { outcome: "cancelled" } }
-      const entry = answer.answers?.[CURSOR_PLAN_QUESTION_ID]
-      const selected = entry?.answers[0]
-      if (selected === ACCEPT_PLAN) return { outcome: { outcome: "accepted" } }
-      const note = entry?.note?.trim()
-      const custom =
-        selected === undefined || selected === REJECT_PLAN ? undefined : selected.trim()
-      const reason = note === undefined || note.length === 0 ? custom : note
-      return {
-        outcome: {
-          outcome: "rejected",
-          ...(reason === undefined || reason.length === 0 ? {} : { reason })
-        }
-      }
-    }
+    responseFor: (answer) => cursorPlanResponse(answer)
   }
 }
 

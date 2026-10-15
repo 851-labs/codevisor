@@ -243,6 +243,7 @@ struct RootView: View {
       }
       .themedToolbarBackground(theme)
     }
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: selection))
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,

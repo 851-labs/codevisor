@@ -138,6 +138,16 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
   if (endpoint === "GET /v1/fs/git/refs" || endpoint === "GET /v1/fs/git/pull-request") {
     return [{ name: "path", in: "query", required: true, schema: { type: "string" } }]
   }
+  if (endpoint === "GET /v1/workspaces/:workspaceId/git") {
+    return [
+      {
+        name: "pullRequest",
+        in: "query",
+        description: "Also look up the branch's GitHub pull request.",
+        schema: { type: "boolean" }
+      }
+    ]
+  }
   if (endpoint === "GET /v1/files/:id") {
     return [{ name: "preview", in: "query", schema: { type: "string", enum: ["1"] } }]
   }

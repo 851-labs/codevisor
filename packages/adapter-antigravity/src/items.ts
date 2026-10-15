@@ -1,7 +1,7 @@
-import { diffStatsFromTexts } from "@codevisor/agent-runtime"
 import type { EventKind } from "@codevisor/api"
 
 import { param, record, text, type AgyStep } from "./protocol.js"
+import { fileChange } from "./tool-edits.js"
 
 export interface MappedEvent {
   readonly kind: EventKind
@@ -50,39 +50,6 @@ export const agyToolTitle = (tool: string, parameters: Record<string, unknown>):
   text(param(parameters, "Url")) ??
   text(param(parameters, "toolSummary", "toolAction")) ??
   tool
-
-const EDIT_TOOLS = new Set(["write_to_file", "replace_file_content", "multi_replace_file_content"])
-
-const fileChange = (tool: string, parameters: Record<string, unknown>) => {
-  const path = text(param(parameters, "TargetFile", "AbsolutePath"))
-  if (path === undefined || !EDIT_TOOLS.has(tool)) return undefined
-  const whole = param(parameters, "CodeContent")
-  if (typeof whole === "string")
-    return {
-      content: [{ type: "diff", path, oldText: null, newText: whole }],
-      diffStats: [diffStatsFromTexts(path, undefined, whole)]
-    }
-  const listed = param(parameters, "ReplacementChunks")
-  const chunks = (Array.isArray(listed) ? listed : [parameters]).flatMap((entry) => {
-    const chunk = record(entry)
-    const newText = param(chunk, "ReplacementContent")
-    if (typeof newText !== "string") return []
-    const oldText = param(chunk, "TargetContent")
-    return [{ oldText: typeof oldText === "string" ? oldText : null, newText }]
-  })
-  if (chunks.length === 0) return undefined
-  const stats = chunks.map((chunk) => diffStatsFromTexts(path, chunk.oldText, chunk.newText))
-  return {
-    content: chunks.map((chunk) => ({ type: "diff", path, ...chunk })),
-    diffStats: [
-      {
-        path,
-        added: stats.reduce((sum, stat) => sum + stat.added, 0),
-        removed: stats.reduce((sum, stat) => sum + stat.removed, 0)
-      }
-    ]
-  }
-}
 
 const snippet = (prompt: string): string => {
   const line = prompt.trim().split("\n")[0]!.trim()

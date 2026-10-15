@@ -21,10 +21,12 @@ struct HomeSidebarLiveList: View {
   }
 
   private func refreshDetails(_ ids: [UUID], details: [SidebarRowDetail]) {
+    let builder = HomeSidebarContentBuilder(environment: environment, gitLookups: gitLookups)
     let workspaces = ids.compactMap { environment.navigationStore.workspaceEntries.entry($0).workspace }
     gitLookups.refresh(
       active: workspaces.filter { !$0.isArchived },
       archived: workspaces.filter(\.isArchived),
+      listedIds: builder.listedItems.map(\.id),
       details: details,
       client: environment.machines.client(for:)
     )

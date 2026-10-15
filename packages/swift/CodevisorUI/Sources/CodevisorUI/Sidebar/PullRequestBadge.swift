@@ -18,25 +18,17 @@ public struct PullRequestBadge: View {
     Button {
       openURL(pullRequest.url)
     } label: {
-      Image(iconName, bundle: .module)
+      pullRequest.statusImage
         .resizable()
         .scaledToFit()
         .frame(width: size, height: size)
-        .foregroundStyle(color)
+        .foregroundStyle(pullRequest.statusColor)
         .frame(width: slot, height: slot)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .help("#\(pullRequest.number) · \(pullRequest.title) (\(summary))")
     .accessibilityLabel("Pull request \(pullRequest.number), \(summary)")
-  }
-
-  private var iconName: String {
-    switch pullRequest.state {
-    case .open: pullRequest.isDraft ? "octicon-git-pull-request-draft" : "octicon-git-pull-request"
-    case .merged: "octicon-git-merge"
-    case .closed: "octicon-git-pull-request-closed"
-    }
   }
 
   private var summary: String {
@@ -60,12 +52,26 @@ public struct PullRequestBadge: View {
     case .closed: "Closed"
     }
   }
+}
 
-  private var color: Color {
-    switch pullRequest.state {
-    case .open where pullRequest.isDraft: .secondary
+extension ServerGitPullRequest {
+  public var statusIconName: String {
+    switch state {
+    case .open: isDraft ? "octicon-git-pull-request-draft" : "octicon-git-pull-request"
+    case .merged: "octicon-git-merge"
+    case .closed: "octicon-git-pull-request-closed"
+    }
+  }
+
+  public var statusImage: Image {
+    Image(statusIconName, bundle: .module)
+  }
+
+  public var statusColor: Color {
+    switch state {
+    case .open where isDraft: .secondary
     case .open:
-      switch pullRequest.checks {
+      switch checks {
       case .failing: .red
       case .pending: .orange
       case .passing, .none: .green

@@ -224,8 +224,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func gitDiff(path: String, mode: ServerGitDiffMode, base: String?, revision: String?) async throws -> ServerGitDiff
   func gitRefs(path: String) async throws -> ServerGitRefs
   func gitPullRequest(path: String) async throws -> ServerGitPullRequest?
-  func workspaceGitBranch(workspaceId: UUID) async throws -> String?
-  func workspaceGitPullRequest(workspaceId: UUID) async throws -> ServerGitPullRequest?
+  func workspaceGit(workspaceId: UUID, includePullRequest: Bool) async throws -> ServerWorkspaceGit
   func fileData(sessionId: UUID, path: String) async throws -> Data
   func fileVersion(sessionId: UUID, path: String) async throws -> String?
   func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem

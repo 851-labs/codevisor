@@ -50,9 +50,10 @@ const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
 }
 
 const openSession = async (server: RunningCodevisorServer, title: string) => {
-  const folder = join(mkdtempSync(join(tmpdir(), "codevisor-drain-")), "repo")
+  const root = mkdtempSync(join(tmpdir(), "codevisor-drain-"))
+  tempDirs.push(root)
+  const folder = join(root, "repo")
   mkdirSync(folder, { recursive: true })
-  tempDirs.push(folder)
   const projectId = bodyId(
     await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: folder }),
@@ -112,7 +113,9 @@ describe("restart drain", () => {
 
   it("waits for live turns, holds new prompts, snapshots, and resumes after the restart", async () => {
     const { agents, services } = await makeServices("server-a")
-    const snapshotPath = join(mkdtempSync(join(tmpdir(), "codevisor-drain-snap-")), "resume.json")
+    const snapshotRoot = mkdtempSync(join(tmpdir(), "codevisor-drain-snap-"))
+    tempDirs.push(snapshotRoot)
+    const snapshotPath = join(snapshotRoot, "resume.json")
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, {
       restartSnapshotPath: snapshotPath,

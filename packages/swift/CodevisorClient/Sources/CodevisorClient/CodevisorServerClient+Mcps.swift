@@ -162,16 +162,7 @@ extension CodevisorServerClient {
       body: nil,
       contentType: nil
     )
-    let port = config.baseURL.port.map(String.init) ?? "default"
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("Codevisor Browser Extension-\(port)", isDirectory: true)
-    try FileManager.default.createDirectory(
-      at: directory,
-      withIntermediateDirectories: true
-    )
-    let archive = directory.appendingPathComponent("Codevisor Chrome Extension.zip")
-    try data.write(to: archive, options: .atomic)
-    return archive
+    return try writeBrowserExtensionDownload(data, filename: "Codevisor Chrome Extension.zip")
   }
 
   public func browserExtensionIcon() async throws -> URL {
@@ -181,6 +172,10 @@ extension CodevisorServerClient {
       body: nil,
       contentType: nil
     )
+    return try writeBrowserExtensionDownload(data, filename: "Codevisor Browser Extension.png")
+  }
+
+  private func writeBrowserExtensionDownload(_ data: Data, filename: String) throws -> URL {
     let port = config.baseURL.port.map(String.init) ?? "default"
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("Codevisor Browser Extension-\(port)", isDirectory: true)
@@ -188,9 +183,9 @@ extension CodevisorServerClient {
       at: directory,
       withIntermediateDirectories: true
     )
-    let icon = directory.appendingPathComponent("Codevisor Browser Extension.png")
-    try data.write(to: icon, options: .atomic)
-    return icon
+    let fileURL = directory.appendingPathComponent(filename)
+    try data.write(to: fileURL, options: .atomic)
+    return fileURL
   }
 
   public func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {

@@ -285,9 +285,7 @@ export function findComments(path, text) {
   })
 }
 
-export function removeComments(text, ranges) {
-  if (ranges.length === 0) return text
-  const sorted = ranges.toSorted((a, b) => a[0] - b[0])
+function editCommentLines(text, sorted) {
   const hadTrailingNewline = text.endsWith("\n")
   const source = text.split("\n")
   if (hadTrailingNewline) source.pop()
@@ -312,6 +310,10 @@ export function removeComments(text, ranges) {
     kept += text.slice(cursor, end)
     edited.push(kept.trim() === "" ? { dropped: true } : { text: kept.trimEnd(), dropped: false })
   }
+  return edited
+}
+
+function joinCommentLines(edited) {
   const lines = []
   const blank = (index) =>
     index < edited.length && !edited[index].dropped && edited[index].text.trim() === ""
@@ -335,6 +337,12 @@ export function removeComments(text, ranges) {
   }
   while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop()
   return lines.length === 0 ? "" : `${lines.join("\n")}\n`
+}
+
+export function removeComments(text, ranges) {
+  if (ranges.length === 0) return text
+  const sorted = ranges.toSorted((a, b) => a[0] - b[0])
+  return joinCommentLines(editCommentLines(text, sorted))
 }
 
 function repositoryFiles(root) {

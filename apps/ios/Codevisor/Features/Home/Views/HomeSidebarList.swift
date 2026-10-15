@@ -74,9 +74,9 @@ struct HomeSidebarList: View {
       .refreshable {
         await actions.actions.refresh()
       }
-      .task(id: SidebarGitLookups.refreshKey(details: rowDetails, workspaceIds: detailedWorkspaceIDs(content))) {
+      .task(id: gitRefreshKey(content)) {
         let ids = detailedWorkspaceIDs(content)
-        guard SidebarGitLookups.refreshKey(details: rowDetails, workspaceIds: ids) != nil else { return }
+        guard gitRefreshKey(content) != nil else { return }
         while !Task.isCancelled {
           refreshDetails(ids, rowDetails)
           try? await Task.sleep(for: .seconds(60))
@@ -85,6 +85,13 @@ struct HomeSidebarList: View {
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { refreshDetails(detailedWorkspaceIDs(content), rowDetails) }
       }
+  }
+
+  private func gitRefreshKey(_ content: HomeSidebarContent) -> SidebarGitLookups.RefreshKey? {
+    let ids = Set(detailedWorkspaceIDs(content))
+    return SidebarGitLookups.refreshKey(
+      details: rowDetails, workspaceIds: (content.pinned + content.groups.flatMap(\.workspaces)).map(\.id),
+      archivedWorkspaceIds: content.archived.map(\.id).filter(ids.contains))
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {

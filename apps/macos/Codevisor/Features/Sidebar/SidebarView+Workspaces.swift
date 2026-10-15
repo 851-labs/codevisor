@@ -44,7 +44,7 @@ extension SidebarView {
       subtitle: rowSubtitle(for: workspace),
       icon: icon,
       store: store,
-      pullRequest: rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequests.byWorkspace[workspace.id] : nil,
+      pullRequest: rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil,
       machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
       isSelected: isSelected,
       isReordering: isReordering,
@@ -76,20 +76,22 @@ extension SidebarView {
       projectName: ProjectGroup.grouping(list.projects).first {
         $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
       }?.name,
-      branch: store?.gitLookups.branches.byWorkspace[workspace.id],
+      branch: store?.gitLookups.branch(for: workspace),
       groupNamesProject: grouping == .project && isUnderGroupHeading(workspace)
     )
   }
 
   var gitLookupRefreshKey: SidebarGitLookups.RefreshKey? {
-    SidebarGitLookups.refreshKey(
-      details: rowDetails, workspaceIds: listedSidebarItems.map(\.id) + visibleArchivedItems.map(\.id))
+    guard store != nil else { return nil }
+    return SidebarGitLookups.refreshKey(
+      details: rowDetails, workspaceIds: listedSidebarItems.map(\.id),
+      archivedWorkspaceIds: visibleArchivedItems.map(\.id))
   }
 
   func refreshGitLookups() {
     store?.gitLookups.refresh(
-      active: listedWorkspaceItems.map(\.workspace), archived: listedArchivedWorkspaces, details: rowDetails,
-      client: environment.machines.client(for:)
+      active: listedWorkspaceItems.map(\.workspace), archived: listedArchivedWorkspaces,
+      listedIds: listedSidebarItems.map(\.id), details: rowDetails, client: environment.machines.client(for:)
     )
   }
 
