@@ -7,6 +7,7 @@ import { dirname, join } from "node:path"
 import type { DataUpgradeProgress, FileMetadata } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { jsonRecord } from "./event-payloads.js"
 import type { CodevisorDatabaseService } from "./index.js"
 
 const sha256Pattern = /^[0-9a-f]{64}$/
@@ -207,7 +208,7 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     try {
       await copyFile(objectPath(metadata.sha256), path, constants.COPYFILE_EXCL)
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+      if (jsonRecord(cause)?.code !== "EEXIST") throw cause
     }
     return path
   }

@@ -6,7 +6,7 @@ import { isoTimestamp } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { listPromptQueueSync, promptQueueFromRow, serializeAttachments } from "./row-mappers.js"
-import type { PromptQueueRow } from "./rows.js"
+import { promptQueueRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -81,9 +81,11 @@ export const makePromptQueueService = (
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
         return promptQueueFromRow(
-          sqlite
-            .prepare("select * from prompt_queue_items where session_id = ? and id = ?")
-            .get(sessionId, queueItemId) as PromptQueueRow
+          promptQueueRows.one(
+            sqlite
+              .prepare("select * from prompt_queue_items where session_id = ? and id = ?")
+              .get(sessionId, queueItemId)
+          )
         )
       }),
     reorderPromptQueue: (rawSessionId, queueItemIds) =>
@@ -124,14 +126,16 @@ export const makePromptQueueService = (
       attempt("claimPromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         const transaction = sqlite.transaction(() => {
-          const row = sqlite
-            .prepare(
-              `select * from prompt_queue_items
+          const row = promptQueueRows.maybe(
+            sqlite
+              .prepare(
+                `select * from prompt_queue_items
                where session_id = ? and state = 'pending'
                order by position asc, created_at asc, rowid asc
                limit 1`
-            )
-            .get(sessionId) as PromptQueueRow | undefined
+              )
+              .get(sessionId)
+          )
           if (row === undefined) {
             return undefined
           }

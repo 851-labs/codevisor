@@ -1,4 +1,3 @@
-import type { AttachmentRef } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import {
@@ -8,14 +7,20 @@ import {
   setChatRoute,
   upsertChatPart
 } from "./chat-items.js"
+import { idRows } from "./common-rows.js"
 import {
   conversationEventPayload,
   hasRenderableWorkedDetail,
+  isAttachmentRef,
+  isAttachmentRefs,
   jsonRecord,
   type JsonRecord
 } from "./event-payloads.js"
 import { parseAttachments, serializeAttachments } from "./row-mappers.js"
+import { nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
+
+const attachmentsRows = rowReader({ attachments: nullable(text) })
 
 type Conversation = NonNullable<ReturnType<typeof conversationEventPayload>>
 
@@ -23,13 +28,12 @@ const finalizeAssistantMessage = (
   sqlite: Database.Database,
   event: SessionEventRow,
   payload: JsonRecord,
+  markdown: string,
   sessionId: string
 ): string => {
   const itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
-  upsertChatPart(sqlite, itemId, "text", (payload.markdown as string).slice(0, 24_000))
-  const attachments = Array.isArray(payload.attachments)
-    ? (payload.attachments as ReadonlyArray<AttachmentRef>)
-    : undefined
+  upsertChatPart(sqlite, itemId, "text", markdown.slice(0, 24_000))
+  const attachments = isAttachmentRefs(payload.attachments) ? payload.attachments : undefined
   sqlite
     .prepare(
       `update chat_items set attachments = ?, message_id = coalesce(?, message_id),
@@ -51,11 +55,13 @@ const existingRetryUser = (
 ): { readonly id: string } | undefined => {
   const existingUser =
     conversation.role === "user" && conversation.messageId !== undefined
-      ? (sqlite
-          .prepare(
-            "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
-          )
-          .get(sessionId, conversation.messageId) as { readonly id: string } | undefined)
+      ? idRows.maybe(
+          sqlite
+            .prepare(
+              "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
+            )
+            .get(sessionId, conversation.messageId)
+        )
       : undefined
   return existingUser
 }
@@ -130,13 +136,12 @@ const appendCompletedImage = (
     payload.kind === "image_generation" && payload.status === "completed"
       ? jsonRecord(jsonRecord(payload.rawOutput)?.attachment)
       : undefined
-  if (image !== undefined && typeof image.fileId === "string" && parent === undefined) {
-    const current = sqlite
-      .prepare("select attachments from chat_items where id = ?")
-      .get(itemId) as { attachments: string | null }
+  if (isAttachmentRef(image) && parent === undefined) {
+    const current = attachmentsRows.one(
+      sqlite.prepare("select attachments from chat_items where id = ?").get(itemId)
+    )
     const attachments = [...(parseAttachments(current.attachments) ?? [])]
-    if (!attachments.some((file) => file.fileId === image.fileId))
-      attachments.push(image as unknown as AttachmentRef)
+    if (!attachments.some((file) => file.fileId === image.fileId)) attachments.push(image)
     sqlite
       .prepare("update chat_items set attachments = ? where id = ?")
       .run(serializeAttachments(attachments), itemId)
@@ -183,7 +188,7 @@ export const projectChatOutput = (
 ): string | undefined => {
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   if (update === "assistant_message_finalized" && typeof payload.markdown === "string") {
-    return finalizeAssistantMessage(sqlite, event, payload, sessionId)
+    return finalizeAssistantMessage(sqlite, event, payload, payload.markdown, sessionId)
   } else {
     const conversation = conversationEventPayload(payload)
     if (conversation?.role === "user" || conversation?.role === "system") {

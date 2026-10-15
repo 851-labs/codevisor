@@ -3,8 +3,13 @@ import { isoTimestamp } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { nextPanePositionIn } from "./pane-position.js"
+import { rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const sessionTitleRows = rowReader({ title: text, created_at: text })
+
+const sessionPaneRows = rowReader({ id: text, workspace_id: text })
 
 function writeSessionMembership(
   sqlite: ServiceContext["sqlite"],
@@ -48,10 +53,9 @@ function createSessionPane(
   id: string,
   targetWorkspaceId: string
 ): void {
-  const session = sqlite.prepare("select title, created_at from sessions where id = ?").get(id) as {
-    readonly title: string
-    readonly created_at: string
-  }
+  const session = sessionTitleRows.one(
+    sqlite.prepare("select title, created_at from sessions where id = ?").get(id)
+  )
   sqlite
     .prepare(
       `insert into workspace_panes (
@@ -85,11 +89,13 @@ export const makeSessionWorkspacesService = (
             removeSessionPane(sqlite, id)
             return
           }
-          const existing = sqlite
-            .prepare(
-              "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
-            )
-            .get(id) as { readonly id: string; readonly workspace_id: string } | undefined
+          const existing = sessionPaneRows.maybe(
+            sqlite
+              .prepare(
+                "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
+              )
+              .get(id)
+          )
           if (existing?.workspace_id === targetWorkspaceId) return
           if (existing !== undefined) {
             moveSessionPane(sqlite, targetWorkspaceId, existing)

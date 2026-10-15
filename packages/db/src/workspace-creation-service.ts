@@ -5,12 +5,12 @@ import { isoTimestamp } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { nextPanePositionIn } from "./pane-position.js"
-import { workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
-import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
+import { workspaceFromRow } from "./row-mappers.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { insertSessionRow } from "./sessions-service.js"
-import { upsertWorkspaceRow } from "./workspaces-service.js"
+import { readPane } from "./workspace-pane-operations.js"
+import { readWorkspaceRow, upsertWorkspaceRow } from "./workspaces-service.js"
 
 export const makeWorkspaceCreationService = (
   context: ServiceContext
@@ -22,9 +22,7 @@ export const makeWorkspaceCreationService = (
       attempt("createWorkspaceWithSession", () =>
         sqlite.transaction(() => {
           const workspaceId = canonicalUuid(request.workspace.id ?? randomUUID())
-          const existingWorkspace = sqlite
-            .prepare("select * from workspaces where id = ?")
-            .get(workspaceId) as WorkspaceRow | undefined
+          const existingWorkspace = readWorkspaceRow(sqlite, workspaceId)
           const workspace =
             existingWorkspace === undefined
               ? upsertWorkspaceRow(context, { ...request.workspace, id: workspaceId })
@@ -83,11 +81,7 @@ export const makeWorkspaceCreationService = (
               nextPanePositionIn(sqlite, workspace.id, paneId),
               now
             )
-          const pane = workspacePaneFromRow(
-            sqlite
-              .prepare("select * from workspace_panes where id = ?")
-              .get(paneId) as WorkspacePaneRow
-          )
+          const pane = readPane(sqlite, paneId)
           return { workspace, session: getSession(sessionId), pane }
         })()
       )

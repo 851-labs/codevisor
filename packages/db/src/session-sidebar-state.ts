@@ -1,14 +1,33 @@
-import type { BackgroundTask, SessionSidebarState } from "@codevisor/api"
+import { SessionSidebarState, type BackgroundTask } from "@codevisor/api"
 import type Database from "better-sqlite3"
+import { Schema } from "effect"
 
 import { backgroundTasksFromRaw } from "./event-payloads.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
+
+const sidebarInputRows = rowReader({
+  pending_question: nullable(text),
+  background_tasks: text,
+  attention_revision: integer,
+  turn_active: integer,
+  runtime_state: text,
+  has_runtime_state: integer,
+  pending_plan_approval: integer,
+  errored: integer,
+  pending_finish: integer,
+  last_seen_sequence: integer,
+  manually_unread: integer
+})
+
+const sidebarStateRows = rowReader({ sidebar_state: Schema.is(SessionSidebarState) })
 
 export const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
 
 const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
-  return sqlite
-    .prepare(
-      `select s.pending_question, s.background_tasks,
+  return sidebarInputRows.one(
+    sqlite
+      .prepare(
+        `select s.pending_question, s.background_tasks,
          coalesce(sa.attention_revision, 0) as attention_revision,
          coalesce(sa.turn_active, 0) as turn_active,
          coalesce(sa.runtime_state, 'idle') as runtime_state,
@@ -23,20 +42,9 @@ const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
        left join session_read_state rs
          on rs.session_id = s.id and rs.reader_id = 'owner'
        where s.id = ?`
-    )
-    .get(sessionId) as {
-    readonly pending_question: string | null
-    readonly background_tasks: string
-    readonly attention_revision: number
-    readonly turn_active: number
-    readonly runtime_state: string
-    readonly has_runtime_state: number
-    readonly pending_plan_approval: number
-    readonly errored: number
-    readonly pending_finish: number
-    readonly last_seen_sequence: number
-    readonly manually_unread: number
-  }
+      )
+      .get(sessionId)
+  )
 }
 
 const sidebarStateFromRow = (state: ReturnType<typeof readSidebarState>): SessionSidebarState => {
@@ -65,9 +73,9 @@ export const projectSessionSidebarState = (
   changedAt: string
 ): boolean => {
   const next = sidebarStateFromRow(readSidebarState(sqlite, sessionId))
-  const current = sqlite
-    .prepare("select sidebar_state from sessions where id = ?")
-    .get(sessionId) as { readonly sidebar_state: SessionSidebarState }
+  const current = sidebarStateRows.one(
+    sqlite.prepare("select sidebar_state from sessions where id = ?").get(sessionId)
+  )
   if (current.sidebar_state === next) return false
   sqlite
     .prepare("update sessions set sidebar_state = ?, sidebar_state_changed_at = ? where id = ?")

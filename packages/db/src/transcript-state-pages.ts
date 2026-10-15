@@ -1,7 +1,11 @@
 import type { TranscriptItemDetails } from "@codevisor/api"
 import type Database from "better-sqlite3"
+import { Schema } from "effect"
 
+import { payloadRows } from "./common-rows.js"
 import type { JsonRecord } from "./event-payloads.js"
+import { parseJsonObject } from "./json-column.js"
+import { integer, rowReader, text as textColumn } from "./row-reader.js"
 import {
   transcriptBodyResource,
   transcriptTextResource,
@@ -11,14 +15,32 @@ import {
 import { readTranscriptText } from "./transcript-state.js"
 
 const maxPageBytes = 96 * 1024
-type Cursor = { position: number; key: string; reverse?: boolean }
-type EntryRow = {
-  entry_key: string
-  position: number
-  revision: number
-  category: string
-  text_length: number
-  bytes: number
+const Cursor = Schema.Struct({
+  position: Schema.Number,
+  key: Schema.String,
+  reverse: Schema.optional(Schema.Boolean)
+})
+type Cursor = typeof Cursor.Type
+
+const isCursor = Schema.is(Cursor)
+
+const itemCursorRows = rowReader({ revision: integer, cursor: integer })
+
+const entryRows = rowReader({
+  entry_key: textColumn,
+  position: integer,
+  revision: integer,
+  category: textColumn,
+  text_length: integer,
+  bytes: integer
+})
+
+const decodePageCursor = (after: string): Cursor => {
+  const cursor: unknown = JSON.parse(Buffer.from(after, "base64url").toString())
+  if (!isCursor(cursor) || !Number.isSafeInteger(cursor.position)) {
+    throw new Error("Invalid transcript state cursor")
+  }
+  return cursor
 }
 
 const encodePageCursor = (entry: { position: number; key: string }, reverse = false): string =>
@@ -33,44 +55,50 @@ export const readTranscriptStatePage = (
   after?: string
 ): TranscriptItemDetails | undefined =>
   db.transaction(() => {
-    const item = db
-      .prepare(
-        `select chat_items.revision, sessions.revision as cursor from chat_items
+    const item = itemCursorRows.maybe(
+      db
+        .prepare(
+          `select chat_items.revision, sessions.revision as cursor from chat_items
     join sessions on sessions.id = chat_items.session_id where chat_items.id = ? and session_id = ?`
-      )
-      .get(itemId, sessionId) as { revision: number; cursor: number } | undefined
+        )
+        .get(itemId, sessionId)
+    )
     if (item === undefined) return undefined
     const cursor: Cursor =
       after === "latest"
         ? { position: Number.MAX_SAFE_INTEGER, key: "", reverse: true }
         : after === undefined
           ? { position: -1, key: "" }
-          : (JSON.parse(Buffer.from(after, "base64url").toString()) as Cursor)
-    if (!Number.isSafeInteger(cursor.position) || typeof cursor.key !== "string") {
-      throw new Error("Invalid transcript state cursor")
-    }
-    const entries: Array<{ key: string; position: number; revision: number; payload: unknown }> = []
+          : decodePageCursor(after)
+    const entries: Array<{
+      key: string
+      position: number
+      revision: number
+      payload: JsonRecord
+    }> = []
     let bytes = 0
     const reverse = cursor.reverse === true
-    const rows = db
-      .prepare(
-        `select entry_key, position, revision, category, text_length, length(cast(payload as blob)) as bytes
+    const rows = entryRows.all(
+      db
+        .prepare(
+          `select entry_key, position, revision, category, text_length, length(cast(payload as blob)) as bytes
     from transcript_entries where item_id = ? and (position, entry_key) ${reverse ? "<" : ">"} (?, ?)
     order by position ${reverse ? "desc" : "asc"}, entry_key ${reverse ? "desc" : "asc"} limit 33`
-      )
-      .all(itemId, cursor.position, cursor.key) as EntryRow[]
+        )
+        .all(itemId, cursor.position, cursor.key)
+    )
     for (const row of rows) {
       if (entries.length >= 32 || bytes >= maxPageBytes) {
         break
       }
       let payload = inlineTranscriptFields(
-        JSON.parse(
-          (
+        parseJsonObject(
+          payloadRows.one(
             db
               .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
-              .get(itemId, row.entry_key) as { payload: string }
+              .get(itemId, row.entry_key)
           ).payload
-        ) as JsonRecord
+        )
       )
       const resource = transcriptBodyResource(db, itemId, row.entry_key)
       if (resource !== undefined) payload.detailResource = resource
@@ -134,7 +162,7 @@ export const readTranscriptStatePage = (
     const included = new Set(entries.map((entry) => entry.key))
     const parents = new Set(
       entries
-        .map((entry) => (entry.payload as JsonRecord).parentToolCallId)
+        .map((entry) => entry.payload.parentToolCallId)
         .filter((id): id is string => typeof id === "string")
     )
     const context = [...parents].flatMap((parent) => {
@@ -175,7 +203,7 @@ export const readTranscriptStatePage = (
       revision: item.revision,
       eventCursor: item.cursor,
       entries: [...context, ...entries],
-      ...(hasPrevious ? { previousBefore: encodePageCursor(first!, true) } : {}),
-      ...(hasNext ? { nextAfter: encodePageCursor(end!) } : {})
+      ...(hasPrevious ? { previousBefore: encodePageCursor(first, true) } : {}),
+      ...(hasNext ? { nextAfter: encodePageCursor(end) } : {})
     }
   })()

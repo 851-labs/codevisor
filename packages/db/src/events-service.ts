@@ -2,6 +2,7 @@ import type { EventKind } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { cursorRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import type { JsonRecord } from "./event-payloads.js"
 import {
@@ -13,6 +14,7 @@ import {
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
 import { materializeNavigationDelta } from "./navigation-delta.js"
+import { integer, rowReader } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
@@ -21,15 +23,19 @@ import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
 import { textPatchForEvent } from "./transcript-state.js"
 
+const entryPositionRows = rowReader({ position: integer })
+
 const questionResolutionDelivery = (
   sqlite: ServiceContext["sqlite"],
   chatItemId: string,
   update: JsonRecord,
   questionId: string
 ): JsonRecord => {
-  const row = sqlite
-    .prepare("select position from transcript_entries where item_id = ? and entry_key = ?")
-    .get(chatItemId, `question_resolved:${questionId}`) as { position: number }
+  const row = entryPositionRows.one(
+    sqlite
+      .prepare("select position from transcript_entries where item_id = ? and entry_key = ?")
+      .get(chatItemId, `question_resolved:${questionId}`)
+  )
   return { ...update, statePosition: row.position }
 }
 
@@ -178,13 +184,13 @@ export const makeEventsService = (
         })()
       ),
     latestEventCursor: attempt("latestEventCursor", () => {
-      const row = sqlite
-        .prepare(
-          "select max(coalesce((select max(id) from events), 0), coalesce((select floor from sync_watermarks where subject_id = 'global'), 0)) as cursor"
-        )
-        .get() as {
-        readonly cursor: number
-      }
+      const row = cursorRows.one(
+        sqlite
+          .prepare(
+            "select max(coalesce((select max(id) from events), 0), coalesce((select floor from sync_watermarks where subject_id = 'global'), 0)) as cursor"
+          )
+          .get()
+      )
       return row.cursor
     })
   }

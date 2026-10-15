@@ -44,7 +44,9 @@ describe("waiting for sessions", () => {
     const question = {
       sessionUpdate: "question",
       questionId: "q1",
-      questions: [{ id: "go", question: "Continue?", options: [{ label: "Yes" }] }]
+      questions: [
+        { id: "go", question: "Continue?", options: [{ label: "Yes" }], allowsOther: false }
+      ]
     }
     await run(services.db.appendEvent("session.output", asking.id, question))
 

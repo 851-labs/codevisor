@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto"
 
 import { isoTimestamp } from "@codevisor/api"
 
+import { idRows } from "./common-rows.js"
+import { rowReader, text } from "./row-reader.js"
 import type { SaveHarnessAccountRequest } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 
@@ -9,23 +11,29 @@ type Sqlite = ServiceContext["sqlite"]
 
 type ExistingAccount = { readonly id: string } | undefined
 
+const selectionRows = rowReader({ account_id: text })
+
 const findExistingAccount = (
   sqlite: Sqlite,
   request: SaveHarnessAccountRequest
 ): ExistingAccount => {
   if (request.profileKind === "default") {
-    return sqlite
-      .prepare(
-        "select id from harness_accounts where harness_id = ? and profile_kind = 'default' and removed_at is null"
-      )
-      .get(request.harnessId) as ExistingAccount
+    return idRows.maybe(
+      sqlite
+        .prepare(
+          "select id from harness_accounts where harness_id = ? and profile_kind = 'default' and removed_at is null"
+        )
+        .get(request.harnessId)
+    )
   }
   if (request.profileKey === undefined) return undefined
-  return sqlite
-    .prepare(
-      "select id from harness_accounts where harness_id = ? and profile_key = ? and removed_at is null"
-    )
-    .get(request.harnessId, request.profileKey) as ExistingAccount
+  return idRows.maybe(
+    sqlite
+      .prepare(
+        "select id from harness_accounts where harness_id = ? and profile_key = ? and removed_at is null"
+      )
+      .get(request.harnessId, request.profileKey)
+  )
 }
 
 const upsertAccount = (
@@ -78,9 +86,11 @@ const selectFirstAccount = (
   request: SaveHarnessAccountRequest,
   id: string
 ): void => {
-  const selected = sqlite
-    .prepare("select account_id from harness_account_selection where harness_id = ?")
-    .get(request.harnessId) as { readonly account_id: string } | undefined
+  const selected = selectionRows.maybe(
+    sqlite
+      .prepare("select account_id from harness_account_selection where harness_id = ?")
+      .get(request.harnessId)
+  )
   if (selected === undefined) {
     sqlite
       .prepare("insert into harness_account_selection (harness_id, account_id) values (?, ?)")

@@ -2,6 +2,7 @@ import type { TranscriptBodyPage } from "@codevisor/api"
 import { expect, it } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { integer, rowReader } from "./row-reader.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { memoryDatabase, run, tempDatabase } from "./test-support.js"
 
@@ -96,9 +97,7 @@ it("replays short gaps and resnapshots long gaps without deleting transcript con
       .prepare("select floor from sync_watermarks where subject_id = ?")
       .get(`session:${session.id}`)
   ).toEqual({ floor: 64 })
-  expect(
-    (sqlite.prepare("select count(*) as n from transcript_entries").get() as { n: number }).n
-  ).toBe(1)
+  expect(sqlite.prepare("select count(*) as n from transcript_entries").get()).toEqual({ n: 1 })
 })
 
 it("replays compact tool metadata and pages the complete oversized body", async () => {
@@ -165,12 +164,10 @@ it("bounds the global journal and rejects missing or out-of-range delivery curso
     const id = Number(insert.run(payload).lastInsertRowid)
     trimSyncJournal(sqlite, Buffer.byteLength(payload), id)
   }
-  expect((sqlite.prepare("select count(*) as n from events").get() as { n: number }).n).toBe(1)
+  expect(sqlite.prepare("select count(*) as n from events").get()).toEqual({ n: 1 })
   expect(readSyncBatch(sqlite, first).requiresSnapshot).toBe(true)
-  const floor = (
-    sqlite.prepare("select floor from sync_watermarks where subject_id = 'global'").get() as {
-      floor: number
-    }
+  const floor = rowReader({ floor: integer }).one(
+    sqlite.prepare("select floor from sync_watermarks where subject_id = 'global'").get()
   ).floor
   expect(readSyncBatch(sqlite, floor).requiresSnapshot).toBe(true)
 })

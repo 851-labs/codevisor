@@ -5,9 +5,19 @@ import { isoTimestamp } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { fileMetadataFromRow, fileStorageRecordFromRow } from "./row-mappers.js"
-import type { FileRow, FileStorageState } from "./rows.js"
+import { integer, rowReader } from "./row-reader.js"
+import {
+  fileMetadataRows,
+  fileStorageRows,
+  fileStorageState,
+  type FileStorageState
+} from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const storageStateRows = rowReader({ storage_state: fileStorageState })
+
+const storageCountRows = rowReader({ storage_state: fileStorageState, count: integer })
 
 export const makeFilesService = (
   context: ServiceContext
@@ -76,36 +86,39 @@ export const makeFilesService = (
       }),
     getFileMetadata: (id) =>
       attempt("getFileMetadata", () => {
-        const row = sqlite
-          .prepare(
-            "select id, name, mime_type, size_bytes, sha256, kind, created_at from files where id = ?"
-          )
-          .get(id) as FileRow | undefined
+        const row = fileMetadataRows.maybe(
+          sqlite
+            .prepare(
+              "select id, name, mime_type, size_bytes, sha256, kind, created_at from files where id = ?"
+            )
+            .get(id)
+        )
         return row === undefined ? undefined : fileMetadataFromRow(row)
       }),
     getFileStorage: (id) =>
       attempt("getFileStorage", () => {
-        const row = sqlite.prepare("select * from files where id = ?").get(id) as
-          | (FileRow & { readonly data: Buffer })
-          | undefined
+        const row = fileStorageRows.maybe(
+          sqlite.prepare("select * from files where id = ?").get(id)
+        )
         return row === undefined ? undefined : fileStorageRecordFromRow(row)
       }),
     listFileStorage: (state, limit) =>
       attempt("listFileStorage", () =>
-        (
-          sqlite
-            .prepare("select * from files where storage_state = ? order by rowid asc limit ?")
-            .all(state, Math.max(1, limit)) as ReadonlyArray<FileRow & { readonly data: Buffer }>
-        ).map(fileStorageRecordFromRow)
+        fileStorageRows
+          .all(
+            sqlite
+              .prepare("select * from files where storage_state = ? order by rowid asc limit ?")
+              .all(state, Math.max(1, limit))
+          )
+          .map(fileStorageRecordFromRow)
       ),
     fileStorageCounts: attempt("fileStorageCounts", () => {
       const counts: Record<FileStorageState, number> = { disk: 0, dual: 0, sqlite: 0 }
-      const rows = sqlite
-        .prepare("select storage_state, count(*) as count from files group by storage_state")
-        .all() as ReadonlyArray<{
-        readonly storage_state: FileStorageState
-        readonly count: number
-      }>
+      const rows = storageCountRows.all(
+        sqlite
+          .prepare("select storage_state, count(*) as count from files group by storage_state")
+          .all()
+      )
       for (const row of rows) counts[row.storage_state] = row.count
       return counts
     }),
@@ -117,9 +130,9 @@ export const makeFilesService = (
           )
           .run(id)
         if (result.changes === 0) {
-          const current = sqlite.prepare("select storage_state from files where id = ?").get(id) as
-            | { readonly storage_state: FileStorageState }
-            | undefined
+          const current = storageStateRows.maybe(
+            sqlite.prepare("select storage_state from files where id = ?").get(id)
+          )
           if (current?.storage_state !== "dual" && current?.storage_state !== "disk") {
             throw new Error(`File not found while marking dual storage: ${id}`)
           }
@@ -133,9 +146,9 @@ export const makeFilesService = (
           )
           .run(id)
         if (result.changes === 0) {
-          const current = sqlite.prepare("select storage_state from files where id = ?").get(id) as
-            | { readonly storage_state: FileStorageState }
-            | undefined
+          const current = storageStateRows.maybe(
+            sqlite.prepare("select storage_state from files where id = ?").get(id)
+          )
           if (current?.storage_state !== "disk") {
             throw new Error(`File is not ready for disk-only storage: ${id}`)
           }

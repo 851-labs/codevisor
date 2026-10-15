@@ -6,13 +6,29 @@ import type {
   SessionGoal,
   TranscriptBodyResource
 } from "@codevisor/api"
-import { SessionGoal as SessionGoalSchema } from "@codevisor/api"
+import {
+  MessagePhase as MessagePhaseSchema,
+  SessionGoal as SessionGoalSchema
+} from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { Schema } from "effect"
 
+import { numberField, parseJsonRecord, stringField, type JsonRecord } from "./event-payloads.js"
 import { serializeAttachments } from "./row-mappers.js"
+import { integer, nullable, rowReader, text as textColumn } from "./row-reader.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
+
+const chatStateRows = rowReader({
+  next_position: integer,
+  current_item_id: nullable(textColumn)
+})
+
+const chatRouteRows = rowReader({ item_id: textColumn })
+
+const goalStateRows = rowReader({ goal_state: nullable(textColumn) })
+
+const isMessagePhase = Schema.is(MessagePhaseSchema)
 
 export const chatState = (
   sqlite: Database.Database,
@@ -24,9 +40,11 @@ export const chatState = (
        values (?, 0, null) on conflict(session_id) do nothing`
     )
     .run(sessionId)
-  return sqlite
-    .prepare("select next_position, current_item_id from session_chat_state where session_id = ?")
-    .get(sessionId) as { next_position: number; current_item_id: string | null }
+  return chatStateRows.one(
+    sqlite
+      .prepare("select next_position, current_item_id from session_chat_state where session_id = ?")
+      .get(sessionId)
+  )
 }
 
 export const upsertChatPart = (
@@ -201,10 +219,10 @@ export const chatRoute = (
   sessionId: string,
   key: string
 ): string | undefined =>
-  (
+  chatRouteRows.maybe(
     sqlite
       .prepare("select item_id from chat_item_routes where session_id = ? and route_key = ?")
-      .get(sessionId, key) as { item_id: string } | undefined
+      .get(sessionId, key)
   )?.item_id
 
 export const ensureAssistantChatItem = (
@@ -251,8 +269,7 @@ export const chatAssistantSummary = (
   planResource?: TranscriptBodyResource | undefined
 } => {
   const row = readAssistantAnswerRow(sqlite, itemId)
-  const payload =
-    row === undefined ? undefined : (JSON.parse(row.payload) as AssistantAnswerPayload)
+  const payload = row === undefined ? undefined : parseJsonRecord(row.payload)
   const plan = sqlite
     .prepare("select 1 from transcript_entries where item_id = ? and entry_key = 'plan'")
     .get(itemId)
@@ -260,32 +277,34 @@ export const chatAssistantSummary = (
     text: row === undefined ? "" : readTranscriptText(sqlite, itemId, row.entry_key, 24_000),
     ...readAssistantPlanPreview(sqlite, itemId, plan),
     ...readAssistantAnswerMetadata(sqlite, itemId, row, payload),
-    ...(row?.phase == null ? {} : { phase: row.phase })
+    ...(isMessagePhase(row?.phase) ? { phase: row.phase } : {})
   }
 }
 
-type AssistantAnswerRow = {
-  entry_key: string
-  payload: string
-  phase: MessagePhase | null
-  revision: number
-  position: number
-}
+const assistantAnswerRows = rowReader({
+  entry_key: textColumn,
+  payload: textColumn,
+  phase: nullable(textColumn),
+  revision: integer,
+  position: integer
+})
 
-type AssistantAnswerPayload = { messageId?: string; generation?: number }
+type AssistantAnswerRow = ReturnType<typeof assistantAnswerRows.one>
 
 const readAssistantAnswerRow = (
   sqlite: Database.Database,
   itemId: string
 ): AssistantAnswerRow | undefined => {
-  return sqlite
-    .prepare(
-      `select entry_key, payload, phase, revision, position from transcript_entries
+  return assistantAnswerRows.maybe(
+    sqlite
+      .prepare(
+        `select entry_key, payload, phase, revision, position from transcript_entries
     where item_id = ? and parent_id = '' and category = 'text' and text_length > 0
       and coalesce(phase, '') != 'commentary'
     order by position desc limit 1`
-    )
-    .get(itemId) as AssistantAnswerRow | undefined
+      )
+      .get(itemId)
+  )
 }
 
 const readAssistantPlanPreview = (
@@ -305,7 +324,7 @@ const readAssistantAnswerMetadata = (
   sqlite: Database.Database,
   itemId: string,
   row: AssistantAnswerRow | undefined,
-  payload: AssistantAnswerPayload | undefined
+  payload: JsonRecord | undefined
 ): Pick<
   ReturnType<typeof chatAssistantSummary>,
   "textResource" | "messageId" | "textGeneration" | "textRevision" | "textPosition"
@@ -314,8 +333,8 @@ const readAssistantAnswerMetadata = (
     ? {}
     : {
         textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
-        messageId: payload?.messageId ?? row.entry_key,
-        textGeneration: payload?.generation ?? 0,
+        messageId: stringField(payload, "messageId") ?? row.entry_key,
+        textGeneration: numberField(payload, "generation") ?? 0,
         textRevision: row.revision,
         textPosition: row.position
       }
@@ -325,9 +344,9 @@ export const sessionGoalSnapshot = (
   sqlite: Database.Database,
   sessionId: string
 ): SessionGoal | undefined => {
-  const row = sqlite.prepare("select goal_state from sessions where id = ?").get(sessionId) as
-    | { goal_state: string | null }
-    | undefined
+  const row = goalStateRows.maybe(
+    sqlite.prepare("select goal_state from sessions where id = ?").get(sessionId)
+  )
   if (row?.goal_state == null) return undefined
   return Schema.decodeUnknownSync(SessionGoalSchema)(JSON.parse(row.goal_state))
 }

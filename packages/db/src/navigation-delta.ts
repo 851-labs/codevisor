@@ -7,7 +7,7 @@ import {
   workspaceFromRow,
   workspacePaneFromRow
 } from "./row-mappers.js"
-import type { ProjectRow, SessionRow, WorkspaceRow, WorkspacePaneRow } from "./rows.js"
+import { projectRows, sessionRows, workspacePaneRows, workspaceRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { SyncBatch } from "./sync-journal.js"
 
@@ -42,30 +42,26 @@ export const materializeNavigationDelta = (
   const panes: NavigationSnapshot["panes"][number][] = []
   const deleted: Array<{ table: string; id: string }> = []
   for (const id of ids.get("projects") ?? []) {
-    const row = sqlite.prepare("select * from projects where id = ?").get(id) as
-      | ProjectRow
-      | undefined
+    const row = projectRows.maybe(sqlite.prepare("select * from projects where id = ?").get(id))
     if (row === undefined) deleted.push({ table: "projects", id })
     else projects.push(projectFromRow(row, locationRowsFor(id)))
   }
   for (const id of ids.get("sessions") ?? []) {
-    const row = sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id) as
-      | SessionRow
-      | undefined
+    const row = sessionRows.maybe(
+      sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id)
+    )
     if (row === undefined) deleted.push({ table: "sessions", id })
     else sessions.push(sessionFromRow(row, localLocationFor(row.project_id)?.folder_path))
   }
   for (const id of ids.get("workspaces") ?? []) {
-    const row = sqlite.prepare("select * from workspaces where id = ?").get(id) as
-      | WorkspaceRow
-      | undefined
+    const row = workspaceRows.maybe(sqlite.prepare("select * from workspaces where id = ?").get(id))
     if (row === undefined) deleted.push({ table: "workspaces", id })
     else workspaces.push(workspaceFromRow(row))
   }
   for (const id of ids.get("workspace_panes") ?? []) {
-    const row = sqlite.prepare("select * from workspace_panes where id = ?").get(id) as
-      | WorkspacePaneRow
-      | undefined
+    const row = workspacePaneRows.maybe(
+      sqlite.prepare("select * from workspace_panes where id = ?").get(id)
+    )
     if (row === undefined) deleted.push({ table: "workspace_panes", id })
     else panes.push(workspacePaneFromRow(row))
   }

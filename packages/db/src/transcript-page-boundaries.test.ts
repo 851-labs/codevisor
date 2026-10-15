@@ -1,6 +1,7 @@
 import { expect, it } from "vitest"
 
 import { createChatItem, seedStandaloneText, chatAssistantSummary } from "./chat-items.js"
+import type { SessionEventRow } from "./rows.js"
 import { memoryDatabase, run } from "./test-support.js"
 import { projectTranscriptState, textPatchForEvent } from "./transcript-state.js"
 
@@ -87,7 +88,7 @@ it("exposes migrated text without streaming metadata and seeds standalone conten
   expect(
     await run(db.getTranscriptBodyPage(session.id, itemId, "imported-text", "text", 0))
   ).toMatchObject({ revision: 0, text: "answer" })
-  const event = {
+  const event: SessionEventRow = {
     session_id: session.id,
     revision: 10,
     server_id: "local",
@@ -97,12 +98,12 @@ it("exposes migrated text without streaming metadata and seeds standalone conten
     payload: "null",
     chat_item_id: itemId
   }
-  projectTranscriptState(sqlite, event as never, itemId)
+  projectTranscriptState(sqlite, event, itemId)
   const payload = { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "new" } }
-  projectTranscriptState(sqlite, { ...event, payload: JSON.stringify(payload) } as never, itemId)
+  projectTranscriptState(sqlite, { ...event, payload: JSON.stringify(payload) }, itemId)
   projectTranscriptState(
     sqlite,
-    { ...event, revision: 11, payload: JSON.stringify(payload) } as never,
+    { ...event, revision: 11, payload: JSON.stringify(payload) },
     itemId
   )
   sqlite

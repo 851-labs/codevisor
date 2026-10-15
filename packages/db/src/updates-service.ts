@@ -4,7 +4,7 @@ import {
   harnessUpdateStateFromRow,
   updateFromRow
 } from "./row-mappers.js"
-import type { HarnessPendingUpdateRow, HarnessUpdateStateRow, UpdateRow } from "./rows.js"
+import { harnessPendingUpdateRows, harnessUpdateStateRows, updateRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -24,11 +24,9 @@ export const makeUpdatesService = (
 
   return {
     listHarnessPendingUpdates: attempt("listHarnessPendingUpdates", () =>
-      (
-        sqlite
-          .prepare("select * from harness_pending_updates")
-          .all() as Array<HarnessPendingUpdateRow>
-      ).map(harnessPendingUpdateFromRow)
+      harnessPendingUpdateRows
+        .all(sqlite.prepare("select * from harness_pending_updates").all())
+        .map(harnessPendingUpdateFromRow)
     ),
     setHarnessPendingUpdate: (record) =>
       attempt("setHarnessPendingUpdate", () => {
@@ -59,9 +57,9 @@ export const makeUpdatesService = (
         sqlite.prepare("delete from harness_pending_updates where harness_id = ?").run(harnessId)
       }),
     listHarnessUpdateStates: attempt("listHarnessUpdateStates", () =>
-      (
-        sqlite.prepare("select * from harness_update_state").all() as Array<HarnessUpdateStateRow>
-      ).map(harnessUpdateStateFromRow)
+      harnessUpdateStateRows
+        .all(sqlite.prepare("select * from harness_update_state").all())
+        .map(harnessUpdateStateFromRow)
     ),
     setHarnessUpdateState: (record) =>
       attempt("setHarnessUpdateState", () => {
@@ -93,7 +91,7 @@ export const makeUpdatesService = (
         return record
       }),
     getUpdateInfo: attempt("getUpdateInfo", () =>
-      updateFromRow(sqlite.prepare("select * from update_state where id = 1").get() as UpdateRow)
+      updateFromRow(updateRows.one(sqlite.prepare("select * from update_state where id = 1").get()))
     ),
     setUpdateInfo: (update) =>
       attempt("setUpdateInfo", () => {

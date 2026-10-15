@@ -2,16 +2,20 @@ import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { chatRoute, createChatItem, finishAssistantChatItem, setChatRoute } from "./chat-items.js"
+import { idRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { listPromptQueueSync } from "./row-mappers.js"
-import type { SessionActionRow } from "./rows.js"
+import { rowReader, text as textColumn } from "./row-reader.js"
+import { sessionActionRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { readTranscriptBodyPage } from "./transcript-bodies.js"
 import { readTranscriptPage } from "./transcript-pages.js"
 import { readTranscriptStatePage } from "./transcript-state-pages.js"
 import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
+
+const sessionIdRows = rowReader({ session_id: textColumn })
 
 export const makeTranscriptService = (
   context: ServiceContext
@@ -83,11 +87,13 @@ export const makeTranscriptService = (
         sqlite.transaction(() => {
           const routeKey = messageId === undefined ? undefined : `message:${role}:${messageId}`
           const routed = routeKey === undefined ? undefined : chatRoute(sqlite, sessionId, routeKey)
-          const last = sqlite
-            .prepare(
-              "select id from chat_items where session_id = ? order by position desc limit 1"
-            )
-            .get(sessionId) as { id: string } | undefined
+          const last = idRows.maybe(
+            sqlite
+              .prepare(
+                "select id from chat_items where session_id = ? order by position desc limit 1"
+              )
+              .get(sessionId)
+          )
           if (
             routed !== undefined &&
             routed === last?.id &&
@@ -147,28 +153,32 @@ export const makeTranscriptService = (
       ),
     listQuietStreamingSessions: (quietSinceIso) =>
       attempt("listQuietStreamingSessions", () =>
-        (
-          sqlite
-            .prepare(
-              `select distinct item.session_id from chat_items as item join sessions on sessions.id = item.session_id
+        sessionIdRows
+          .all(
+            sqlite
+              .prepare(
+                `select distinct item.session_id from chat_items as item join sessions on sessions.id = item.session_id
                where item.role = 'assistant' and item.status = 'streaming'
                  and coalesce(sessions.last_event_at, sessions.created_at) <= ?`
-            )
-            .all(quietSinceIso) as Array<{ session_id: string }>
-        ).map((row) => row.session_id)
+              )
+              .all(quietSinceIso)
+          )
+          .map((row) => row.session_id)
       ),
     closeStaleAssistantChatItems: (rawSessionId, excludeItemId) =>
       attempt("closeStaleAssistantChatItems", () => {
         const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         return sqlite.transaction(() => {
-          const stale = sqlite
-            .prepare(
-              `select id from chat_items
+          const stale = idRows.all(
+            sqlite
+              .prepare(
+                `select id from chat_items
                where session_id = ? and role = 'assistant' and status = 'streaming' and id != ?
                order by position asc`
-            )
-            .all(sessionId, excludeItemId ?? "") as Array<{ id: string }>
+              )
+              .all(sessionId, excludeItemId ?? "")
+          )
           const now = isoTimestamp()
           for (const row of stale) {
             finishAssistantChatItem(sqlite, sessionId, row.id, now, "end_turn")
@@ -186,9 +196,11 @@ export const makeTranscriptService = (
       }),
     getSessionActionResult: (sessionId, clientActionId) =>
       attempt("getSessionActionResult", () => {
-        const row = sqlite
-          .prepare("select * from session_actions where session_id = ? and client_action_id = ?")
-          .get(canonicalUuid(sessionId), clientActionId) as SessionActionRow | undefined
+        const row = sessionActionRows.maybe(
+          sqlite
+            .prepare("select * from session_actions where session_id = ? and client_action_id = ?")
+            .get(canonicalUuid(sessionId), clientActionId)
+        )
         return row === undefined ? undefined : (JSON.parse(row.response) as unknown)
       }),
     saveSessionActionResult: (sessionId, clientActionId, actionKind, response) =>

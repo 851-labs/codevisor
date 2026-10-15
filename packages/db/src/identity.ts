@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto"
 
 import Database from "better-sqlite3"
 
+import { readInstanceMeta } from "./common-rows.js"
+
 export const resolveServerIdentity = (filename: string): string => {
   const sqlite = new Database(filename)
   try {
@@ -11,10 +13,8 @@ export const resolveServerIdentity = (filename: string): string => {
         value text not null
       );
     `)
-    const row = sqlite.prepare("select value from instance_meta where key = 'machine-id'").get() as
-      | { readonly value: string }
-      | undefined
-    if (row !== undefined) return row.value
+    const existing = readInstanceMeta(sqlite, "machine-id")
+    if (existing !== undefined) return existing
     const id = randomUUID()
     sqlite.prepare("insert into instance_meta (key, value) values ('machine-id', ?)").run(id)
     return id

@@ -1,9 +1,8 @@
-import type { NavigationDelta } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { expect, it } from "vitest"
 
 import { makeDatabase } from "./index.js"
-import { run, tempDatabase } from "./test-support.js"
+import { navigationDelta, run, tempDatabase } from "./test-support.js"
 
 it("records metadata changes atomically and replays only changed rows after a snapshot", async () => {
   const filename = tempDatabase()
@@ -24,7 +23,7 @@ it("records metadata changes atomically and replays only changed rows after a sn
     expect(batch.requiresSnapshot).toBe(false)
     const changes = batch.events.filter((event) => event.kind === "navigation.changed")
     expect(changes).toHaveLength(1)
-    const delta = changes[0]!.payload as NavigationDelta
+    const delta = navigationDelta(changes[0])
     expect(delta.sessions).toMatchObject([{ id: session.id, title: "Latest rename" }])
     expect(delta.projects).toEqual([])
     expect(delta.eventCursor).toBeGreaterThan(snapshot.eventCursor)

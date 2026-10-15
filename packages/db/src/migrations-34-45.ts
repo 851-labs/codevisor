@@ -1,5 +1,8 @@
 import { parseJsonRecord, sessionPlanFromPayload } from "./event-payloads.js"
 import type { Migration } from "./migration-types.js"
+import { integer, rowReader, text } from "./row-reader.js"
+
+const planEventRows = rowReader({ session_id: text, revision: integer, payload: text })
 
 export const migrations34To45: ReadonlyArray<Migration> = [
   {
@@ -314,9 +317,7 @@ export const migrations34To45: ReadonlyArray<Migration> = [
         order by session_id, revision limit 1`)
       const update = sqlite.prepare("update sessions set session_plan = ? where id = ?")
       while (true) {
-        const candidate = select.get(sessionId, revision) as
-          | { session_id: string; revision: number; payload: string }
-          | undefined
+        const candidate = planEventRows.maybe(select.get(sessionId, revision))
         if (candidate === undefined) break
         sessionId = candidate.session_id
         revision = candidate.revision

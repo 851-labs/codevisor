@@ -86,8 +86,6 @@
         "packages/adapter-opencode/src/skill-tool.ts",
         "packages/api/src/openapi.ts",
         "packages/cloud-crypto/src/index.ts",
-        "packages/db/src/migrations-projects.test.ts",
-        "packages/db/src/transcript-state-pages.ts",
         "packages/skills/src/skills-remote-source.ts",
         "packages/terminal/src/vt/ghostty-vt.ts"
       ],
@@ -111,7 +109,6 @@
         "packages/api/**",
         "packages/cloud-client/**",
         "packages/cloud-crypto/**",
-        "packages/db/**",
         "packages/net/**",
         "packages/processes/**",
         "packages/skills/**",

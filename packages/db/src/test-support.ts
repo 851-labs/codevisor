@@ -2,16 +2,21 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { EventEnvelope, Project, SessionSummary } from "@codevisor/api"
+import {
+  NavigationDelta,
+  type EventEnvelope,
+  type Project,
+  type SessionSummary
+} from "@codevisor/api"
 import Database from "better-sqlite3"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { afterEach, onTestFinished } from "vitest"
 
 import { createService } from "./create-service.js"
 import type { DatabaseError } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
-import type { EventRow, SessionEventRow } from "./rows.js"
+import { eventRows, sessionEventRows } from "./rows.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 
 const tempDirs: Array<string> = []
@@ -40,12 +45,15 @@ const readDatabase = <A>(filename: string, read: (sqlite: Database.Database) => 
   }
 }
 
+export const navigationDelta = (event: EventEnvelope | undefined): NavigationDelta =>
+  Schema.decodeUnknownSync(NavigationDelta)(event?.payload)
+
 export const listEvents = (filename: string, since = 0): ReadonlyArray<EventEnvelope> =>
   readDatabase(filename, (sqlite) =>
     sqlite
       .prepare("select * from events where id > ? order by id asc")
       .all(since)
-      .map((row) => eventFromRow(row as EventRow))
+      .map((row) => eventFromRow(eventRows.one(row)))
   )
 
 export const listSubjectEvents = (
@@ -63,11 +71,11 @@ export const listSubjectEvents = (
             "select * from session_events where session_id = ? and revision > ? order by revision asc"
           )
           .all(subjectId, since)
-          .map((row) => sessionEventFromRow(row as SessionEventRow))
+          .map((row) => sessionEventFromRow(sessionEventRows.one(row)))
       : sqlite
           .prepare("select * from events where subject_id = ? and id > ? order by id asc")
           .all(subjectId, since)
-          .map((row) => eventFromRow(row as EventRow))
+          .map((row) => eventFromRow(eventRows.one(row)))
   })
 
 export const buildV4Fixture = (filename: string): void => {

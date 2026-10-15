@@ -1,11 +1,14 @@
-import type {
+import {
   McpAuthType,
   McpConnectionState,
-  McpServer,
   McpServerKind,
   McpTransport,
-  NativeMcpRemoval
+  type McpServer,
+  type NativeMcpRemoval
 } from "@codevisor/api"
+import { Schema } from "effect"
+
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 
 export interface McpServerRow {
   readonly id: string
@@ -79,3 +82,38 @@ export interface NativeMcpRemovalRow {
   readonly removed_at: string
   readonly restored_at: string | null
 }
+
+export const mcpServerRows = rowReader<McpServerRow>({
+  id: text,
+  name: text,
+  kind: Schema.is(McpServerKind),
+  transport: Schema.is(McpTransport),
+  url: nullable(text),
+  command: nullable(text),
+  args: text,
+  enabled: integer,
+  auth_type: Schema.is(McpAuthType),
+  oauth_scope: nullable(text),
+  connection_state: Schema.is(McpConnectionState),
+  tool_count: integer,
+  detail: nullable(text),
+  secret_cipher: nullable(text),
+  created_at: text,
+  updated_at: text
+})
+
+export const nativeConfigBackupRows = rowReader<NativeConfigBackupRow>({
+  file_path: text,
+  backup_path: text,
+  created_at: text
+})
+
+export const nativeMcpRemovalRows = rowReader<NativeMcpRemovalRow>({
+  id: text,
+  harness_id: text,
+  config_path: text,
+  server_name: text,
+  fragment: text,
+  removed_at: text,
+  restored_at: nullable(text)
+})

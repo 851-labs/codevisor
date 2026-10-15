@@ -1,19 +1,30 @@
 import {
+  AttachmentRef,
+  BackgroundTask,
+  QuestionPayload,
   SessionPlan as SessionPlanSchema,
-  type AttachmentRef,
-  type BackgroundTask,
   type EventKind,
-  type QuestionPayload,
   type SessionPlan
 } from "@codevisor/api"
 import { Schema } from "effect"
 
 export type JsonRecord = Record<string, unknown>
 
-export const jsonRecord = (value: unknown): JsonRecord | undefined =>
+export const isJsonRecord = (value: unknown): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
+
+export const jsonRecord = (value: unknown): JsonRecord | undefined =>
+  isJsonRecord(value) ? value : undefined
+
+export const stringField = (record: JsonRecord | undefined, key: string): string | undefined => {
+  const value = record?.[key]
+  return typeof value === "string" ? value : undefined
+}
+
+export const numberField = (record: JsonRecord | undefined, key: string): number | undefined => {
+  const value = record?.[key]
+  return typeof value === "number" ? value : undefined
+}
 
 export const withChatItemId = (payload: unknown, chatItemId: string | null): unknown => {
   const record = jsonRecord(payload)
@@ -38,11 +49,28 @@ export const sessionConfigSelectionsFromRaw = (raw: string): Readonly<Record<str
   )
 }
 
-export const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | undefined =>
-  raw === null ? undefined : (JSON.parse(raw) as QuestionPayload)
+export const AttachmentRefs = Schema.Array(AttachmentRef)
 
-export const backgroundTasksFromRaw = (raw: string): ReadonlyArray<BackgroundTask> =>
-  JSON.parse(raw) as ReadonlyArray<BackgroundTask>
+export const isAttachmentRef = Schema.is(AttachmentRef)
+
+export const isAttachmentRefs = Schema.is(AttachmentRefs)
+
+const isQuestionPayload = Schema.is(QuestionPayload)
+
+const isBackgroundTask = Schema.is(BackgroundTask)
+
+const isUnknownArray = Schema.is(Schema.Array(Schema.Unknown))
+
+export const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | undefined => {
+  if (raw === null) return undefined
+  const parsed: unknown = JSON.parse(raw)
+  return isQuestionPayload(parsed) ? parsed : undefined
+}
+
+export const backgroundTasksFromRaw = (raw: string): ReadonlyArray<BackgroundTask> => {
+  const parsed: unknown = JSON.parse(raw)
+  return isUnknownArray(parsed) ? parsed.filter(isBackgroundTask) : []
+}
 
 export const sessionPlanFromPayload = (payload: JsonRecord): SessionPlan | undefined => {
   try {
@@ -100,20 +128,18 @@ export const conversationEventPayload = (
       readonly attachments?: ReadonlyArray<AttachmentRef>
     }
   | undefined => {
-  const role = payload.role
-  const direct =
+  const { role, text: directText, messageId, attachments } = payload
+  if (
     (role === "user" || role === "assistant" || role === "system") &&
-    typeof payload.text === "string" &&
-    (payload.messageId === undefined || typeof payload.messageId === "string") &&
-    (payload.attachments === undefined || Array.isArray(payload.attachments))
-  if (direct) {
+    typeof directText === "string" &&
+    (messageId === undefined || typeof messageId === "string") &&
+    (attachments === undefined || isAttachmentRefs(attachments))
+  ) {
     return {
       role,
-      text: payload.text as string,
-      ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {}),
-      ...(Array.isArray(payload.attachments)
-        ? { attachments: payload.attachments as ReadonlyArray<AttachmentRef> }
-        : {})
+      text: directText,
+      ...(messageId === undefined ? {} : { messageId }),
+      ...(attachments === undefined ? {} : { attachments })
     }
   }
   if (
