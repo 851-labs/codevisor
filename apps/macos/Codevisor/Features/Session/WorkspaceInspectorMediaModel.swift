@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, photos, links, sourceControl, files
+  case info, photos, links, files, sourceControl
 
   var id: Self { self }
 
@@ -12,8 +12,8 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
     case .info: "Info"
     case .photos: "Photos"
     case .links: "Links"
-    case .sourceControl: "Source Control"
     case .files: "Files"
+    case .sourceControl: "Source Control"
     }
   }
 }
