@@ -340,6 +340,19 @@ export const makeProvider = (
     readFile: (path) => (path === "/tmp/existing.txt" ? "line1\nline2\nline3\n" : undefined)
   })
 
+export const startTestSession = async () => {
+  const fake = new FakeQuery()
+  const provider = makeProvider(fake)
+  const events: Array<RuntimeEvent> = []
+  const emit = async (event: RuntimeEvent): Promise<void> => {
+    events.push(event)
+  }
+  const createPromise = run(provider.createSession(definition, "/tmp", emit))
+  fake.push(initMessage())
+  const created = await createPromise
+  return { fake, events, created }
+}
+
 type SupportedModels = Awaited<ReturnType<FakeQuery["supportedModels"]>>
 
 export const RELEASE_MODELS: SupportedModels = [

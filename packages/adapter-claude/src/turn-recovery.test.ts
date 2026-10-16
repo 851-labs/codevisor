@@ -1,17 +1,13 @@
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   assistantApiErrorMessage,
   assistantErrorMessage,
-  definition,
-  FakeQuery,
-  initMessage,
-  makeProvider,
   payloadOf,
   resultMessage,
   resultWith,
   run,
+  startTestSession,
   streamEvent,
   systemMessage
 } from "./test-support.js"
@@ -31,15 +27,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("auto-continues a turn truncated by the output-token cap, then ends on the next result", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("write a very long file"))
     await fake.nextPrompt()
@@ -74,15 +62,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("stops auto-continuing once the per-turn continuation budget is exhausted", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("keep truncating"))
     await fake.nextPrompt()
@@ -102,15 +82,7 @@ describe("ClaudeProvider", () => {
 
   it("auto-retries a transient API error after backoff, then ends on success", async () => {
     vi.useFakeTimers()
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -156,15 +128,7 @@ describe("ClaudeProvider", () => {
 
   it("retries a 529 that arrives as text (no structured error), then surfaces it", async () => {
     vi.useFakeTimers()
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -214,15 +178,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("surfaces a permanent API error immediately, with no retry", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -242,15 +198,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("ends a signed-out turn as needing sign-in", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -271,15 +219,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("stops Claude's own sign-in retries and ends the turn as needing sign-in", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -301,15 +241,7 @@ describe("ClaudeProvider", () => {
 
   it("doesn't resume a transient-error turn after the session closes", async () => {
     vi.useFakeTimers()
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, created } = await startTestSession()
 
     void run(created.handle.prompt("do work"))
     await fake.drain()
