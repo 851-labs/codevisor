@@ -3,17 +3,17 @@ import Testing
 
 @Suite("ComposerPromptHistory")
 struct ComposerPromptHistoryTests {
-  @Test("Stepping back through prompts and forward again restores the draft")
-  func navigatesAndRestoresDraft() throws {
-    var history = try #require(ComposerPromptHistory(entries: ["first", "second"], draft: "half-typed"))
+  @Test("Stepping back through prompts and forward again returns to an empty composer")
+  func navigatesAndReturnsToEmpty() throws {
+    var history = try #require(ComposerPromptHistory(entries: ["first", "second"]))
 
     #expect(history.previous() == "second")
     #expect(history.previous() == "first")
     #expect(history.previous() == nil)
     #expect(history.next() == "second")
-    #expect(history.next() == "half-typed")
+    #expect(history.next() == "")
     #expect(history.next() == nil)
-    #expect(ComposerPromptHistory(entries: [], draft: "") == nil)
+    #expect(ComposerPromptHistory(entries: []) == nil)
   }
 
   @Test("Entries are the chat's sent prompts, without blanks or repeats")
@@ -38,19 +38,53 @@ struct ComposerPromptHistoryTests {
     )
   }
 
-  @Test("A kept cursor restarts after a new send and re-snapshots the draft")
+  @Test("Recall starts only from an empty composer without attachments")
+  func stepRequiresEmptyComposer() {
+    let history = ComposerPromptHistory(entries: ["a", "b"])
+    var cursor: ComposerPromptHistory?
+
+    #expect(step(&cursor, history, text: "typing", older: true) == nil)
+    #expect(cursor == nil)
+    #expect(step(&cursor, history, text: "", attachments: true, older: true) == nil)
+    #expect(cursor == nil)
+
+    #expect(step(&cursor, history, text: "", older: true) == "b")
+    #expect(step(&cursor, history, text: "b", older: true) == "a")
+    #expect(step(&cursor, history, text: "a", attachments: true, older: false) == nil)
+    #expect(cursor == nil)
+
+    #expect(step(&cursor, history, text: "", older: true) == "b")
+    #expect(step(&cursor, history, text: "b edited", older: true) == nil)
+    #expect(cursor == nil)
+  }
+
+  @Test("A kept cursor walks back to empty and restarts after a new send")
   func stepRestartsStaleCursor() {
     var cursor: ComposerPromptHistory?
-    let first = ComposerPromptHistory(entries: ["a"], draft: "draft 1")
-    #expect(ComposerPromptHistory.step(&cursor, fresh: first, older: true) == "a")
-    #expect(ComposerPromptHistory.step(&cursor, fresh: first, older: false) == "draft 1")
+    let first = ComposerPromptHistory(entries: ["a"])
+    #expect(step(&cursor, first, text: "", older: true) == "a")
+    #expect(step(&cursor, first, text: "a", older: false) == "")
+    #expect(step(&cursor, first, text: "", older: false) == nil)
 
-    let edited = ComposerPromptHistory(entries: ["a"], draft: "draft 2")
-    #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: true) == "a")
-    #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: false) == "draft 2")
+    #expect(step(&cursor, first, text: "", older: true) == "a")
+    let afterSend = ComposerPromptHistory(entries: ["a", "b"])
+    #expect(step(&cursor, afterSend, text: "a", older: true) == nil)
+    #expect(step(&cursor, afterSend, text: "", older: true) == "b")
+  }
 
-    #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: true) == "a")
-    let afterSend = ComposerPromptHistory(entries: ["a", "b"], draft: "")
-    #expect(ComposerPromptHistory.step(&cursor, fresh: afterSend, older: true) == "b")
+  private func step(
+    _ cursor: inout ComposerPromptHistory?,
+    _ fresh: ComposerPromptHistory?,
+    text: String,
+    attachments: Bool = false,
+    older: Bool
+  ) -> String? {
+    ComposerPromptHistory.step(
+      &cursor,
+      fresh: fresh,
+      composerText: text,
+      hasAttachments: attachments,
+      older: older
+    )
   }
 }
