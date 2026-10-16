@@ -18,16 +18,19 @@ enum SimulatorStreamTarget {
 final class SimulatorSenderPeer: SimulatorFrameSink {
   private let sender: ScreenSharingSender
   private let frameSender: ScreenSharingFrameSender
+  private(set) var configuration: ScreenSharingVideoConfiguration
 
   init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
     try ScreenSharingFieldTrials.process.install(profile: ScreenSharingDiagnosticProfile.process())
     var options = ScreenSharingPeerOptions()
     options.codec = .hevc
     options.fallbackCodecs = [.h264]
+    let configuration = try Self.configuration(size: size)
     let sender = try await ScreenSharingSender(
-      configuration: try Self.configuration(size: size), metrics: ScreenSharingMetrics(), options: options,
+      configuration: configuration, metrics: ScreenSharingMetrics(), options: options,
       connectivity: connectivity.native())
     self.sender = sender
+    self.configuration = configuration
     frameSender = sender.frameSender
   }
 
@@ -50,8 +53,13 @@ final class SimulatorSenderPeer: SimulatorFrameSink {
 
   func prepare(size: CGSize) {
     guard let configuration = try? Self.configuration(size: size) else { return }
+    self.configuration = configuration
     sender.updateVideoConfiguration(configuration)
   }
+
+  func adapt(to configuration: ScreenSharingVideoConfiguration) { sender.updateVideoConfiguration(configuration) }
+
+  func statistics() async -> [String: String] { await sender.statistics() }
 
   nonisolated func push(_ frame: ScreenSharingVideoFrame) { frameSender.push(frame) }
 
@@ -76,6 +84,7 @@ final class SimulatorStreamHost {
     let udid: String
     let peer: SimulatorSenderPeer
     var state = "connecting"
+    var quality: Task<Void, Never>?
     var expiresAt: TimeInterval
     init(udid: String, peer: SimulatorSenderPeer, expiresAt: TimeInterval) {
       self.udid = udid; self.peer = peer; self.expiresAt = expiresAt
@@ -185,6 +194,7 @@ final class SimulatorStreamHost {
           let answer = try await peer.answer(offer: offer)
           guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
           capture.add(peer)
+          adapt(session)
           return .init(status: "connecting", answer: answer)
         } catch {
           if sessions[owner] === session { end(owner: owner, session: session) }
@@ -229,6 +239,24 @@ final class SimulatorStreamHost {
     device.capture = capture
     device.displayName = screen.name
     capture.start()
+  }
+
+  private func adapt(_ session: Session) {
+    session.quality = Task { [weak self, weak session] in
+      await ScreenSharingQualityLoop.run(
+        base: { session?.peer.configuration },
+        isViewing: { session?.state == "viewing" },
+        statistics: { await session?.peer.statistics() ?? [:] },
+        apply: { configuration, _ in
+          guard let self, let session, let capture = self.devices[session.udid]?.capture else { return false }
+          let base = session.peer.configuration
+          session.peer.adapt(to: configuration)
+          capture.request(
+            CGSize(width: configuration.width, height: configuration.height),
+            from: CGSize(width: base.width, height: base.height), for: session.peer)
+          return true
+        })
+    }
   }
 
   private func turns(_ device: Device) -> Int {
@@ -312,6 +340,7 @@ final class SimulatorStreamHost {
   private func end(owner: Owner, session: Session) {
     guard sessions[owner] === session else { return }
     sessions.removeValue(forKey: owner)
+    session.quality?.cancel()
     session.peer.onConnectionChanged = nil
     session.peer.channel.onMessage = nil
     session.peer.channel.onAvailabilityChanged = nil

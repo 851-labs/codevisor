@@ -14,8 +14,6 @@ final class ScreenSharingHostService {
     let scale = min(1, physicalCaptureBox.width / Double(width), physicalCaptureBox.height / Double(height))
     return (max(64, Int(Double(width) * scale) / 2 * 2), max(64, Int(Double(height) * scale) / 2 * 2))
   }
-  static let fullQualityBitrate = 6_000_000
-  static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   private(set) var current: ScreenSharingHostSession?
@@ -191,41 +189,27 @@ final class ScreenSharingHostService {
 
   private func configure(_ session: ScreenSharingHostSession) {
     session.qualityTask = Task { [weak self, weak session] in
-      guard let initial = session?.configuration else { return }
-      var base = initial
-      var quality = ScreenSharingAdaptiveQuality(
-        configuration: initial, fullQualityBitrate: ScreenSharingHostService.fullQualityBitrate,
-        warmUp: ScreenSharingHostService.estimateWarmUp)
-      while !Task.isCancelled {
-        do { try await Task.sleep(for: .seconds(1)) } catch { return }
-        guard let session, !session.stopping else { return }
-        if session.configuration != base {
-          base = session.configuration
-          quality = ScreenSharingAdaptiveQuality(
-            configuration: base, fullQualityBitrate: ScreenSharingHostService.fullQualityBitrate,
-            warmUp: ScreenSharingHostService.estimateWarmUp)
-        }
-        guard session.state == "viewing" else { continue }
-        let statistics = await session.peer.statistics()
-        guard !Task.isCancelled, !session.stopping else { return }
-        guard session.state == "viewing" else { continue }
-        let bandwidth = statistics.first { $0.key.hasSuffix(".availableOutgoingBitrate") }.flatMap { Double($0.value) }
-        if let configuration = quality.update(availableBitrate: bandwidth, now: ProcessInfo.processInfo.systemUptime) {
+      await ScreenSharingQualityLoop.run(
+        base: { session.flatMap { $0.stopping ? nil : $0.configuration } },
+        isViewing: { session?.state == "viewing" },
+        statistics: { await session?.peer.statistics() ?? [:] },
+        apply: { configuration, level in
+          guard let session else { return false }
           session.peer.updateVideoConfiguration(configuration)
           do {
             try await session.capture.update(
               configuration: configuration,
-              captureIntervalFPS: session.profile?.captureIntervalFPS(adaptiveLevel: quality.level))
+              captureIntervalFPS: session.profile?.captureIntervalFPS(adaptiveLevel: level))
           } catch {
             if !Task.isCancelled {
               session.metrics.label("captureError", "Unable to adjust capture quality.")
               self?.scheduleEnd(session)
             }
-            return
+            return false
           }
-          session.metrics.label("adaptiveQualityLevel", String(quality.level))
-        }
-      }
+          session.metrics.label("adaptiveQualityLevel", String(level))
+          return true
+        })
     }
     let clipboard = ScreenSharingHostClipboard(
       channel: session.peer.clipboardChannel,

@@ -17,13 +17,24 @@ final class SimulatorScreenCapture: @unchecked Sendable {
   private let queue = DispatchQueue(label: "codevisor.simulator.capture", qos: .userInteractive)
   private let context = CIContext(options: [.cacheIntermediates: false, .useSoftwareRenderer: false])
   private var token: UUID?
-  private var sinks: [ObjectIdentifier: any SimulatorFrameSink] = [:]
-  private var pool: CVPixelBufferPool?
-  private var poolSize: CGSize = .zero
+  private var viewers: [ObjectIdentifier: Viewer] = [:]
+  private var pools: [PixelSize: CVPixelBufferPool] = [:]
   private var lastTimestamp: Int64 = 0
   private var pending = false
   private var resizing = false
   private(set) var outputSize: CGSize = .zero
+
+  private struct Viewer {
+    let sink: any SimulatorFrameSink
+    var size: CGSize?
+  }
+
+  private struct PixelSize: Hashable {
+    let width: Int
+    let height: Int
+    init(_ size: CGSize) { width = Int(size.width); height = Int(size.height) }
+    var size: CGSize { CGSize(width: width, height: height) }
+  }
 
   init(screen: SimulatorRuntime.Screen) {
     self.screen = screen
@@ -52,22 +63,31 @@ final class SimulatorScreenCapture: @unchecked Sendable {
   @MainActor func stop() {
     if let token { SimulatorRuntime.stopObserving(screen, token: token) }
     token = nil
-    queue.async { [weak self] in self?.sinks.removeAll() }
+    queue.async { [weak self] in self?.viewers.removeAll() }
   }
 
   func add(_ sink: any SimulatorFrameSink) {
     queue.async { [weak self] in
-      self?.sinks[ObjectIdentifier(sink)] = sink
+      self?.viewers[ObjectIdentifier(sink)] = Viewer(sink: sink)
       self?.frameArrived()
     }
   }
 
   func remove(_ sink: any SimulatorFrameSink) {
-    queue.async { [weak self] in _ = self?.sinks.removeValue(forKey: ObjectIdentifier(sink)) }
+    queue.async { [weak self] in _ = self?.viewers.removeValue(forKey: ObjectIdentifier(sink)) }
+  }
+
+  func request(_ size: CGSize, from base: CGSize, for sink: any SimulatorFrameSink) {
+    queue.async { [weak self] in
+      let id = ObjectIdentifier(sink)
+      guard let self, self.outputSize == base, self.viewers[id] != nil else { return }
+      self.viewers[id]?.size = size == base ? nil : size
+      self.frameArrived()
+    }
   }
 
   private func frameArrived() {
-    guard !pending, !resizing, !sinks.isEmpty else { return }
+    guard !pending, !resizing, !viewers.isEmpty else { return }
     pending = true
     queue.async { [weak self] in
       guard let self else { return }
@@ -83,7 +103,8 @@ final class SimulatorScreenCapture: @unchecked Sendable {
     if size != outputSize {
       outputSize = size
       resizing = true
-      let sinks = Array(sinks.values)
+      for id in viewers.keys { viewers[id]?.size = nil }
+      let sinks = viewers.values.map(\.sink)
       DispatchQueue.main.async { [weak self] in
         MainActor.assumeIsolated { for sink in sinks { sink.prepare(size: size) } }
         guard let self else { return }
@@ -94,32 +115,37 @@ final class SimulatorScreenCapture: @unchecked Sendable {
       }
       return
     }
-    guard let output = pixelBuffer(size: size) else { return }
-    var image = CIImage(ioSurface: surface)
-    image = image.transformed(
-      by: CGAffineTransform(scaleX: size.width / image.extent.width, y: size.height / image.extent.height))
-    context.render(image, to: output, bounds: CGRect(origin: .zero, size: size), colorSpace: Self.outputColorSpace)
+    let groups = Dictionary(grouping: viewers.values) { PixelSize($0.size ?? size) }
+    pools = pools.filter { groups[$0.key] != nil }
+    let image = CIImage(ioSurface: surface)
     let now = Int64(DispatchTime.now().uptimeNanoseconds)
     lastTimestamp = max(now, lastTimestamp + 1)
-    let frame = ScreenSharingVideoFrame(pixelBuffer: output, timestampNs: lastTimestamp)
-    for sink in sinks.values { sink.push(frame) }
+    for (pixels, members) in groups {
+      guard let output = pixelBuffer(pixels) else { continue }
+      let target = pixels.size
+      let scaled = image.transformed(
+        by: CGAffineTransform(scaleX: target.width / image.extent.width, y: target.height / image.extent.height))
+      context.render(
+        scaled, to: output, bounds: CGRect(origin: .zero, size: target), colorSpace: Self.outputColorSpace)
+      let frame = ScreenSharingVideoFrame(pixelBuffer: output, timestampNs: lastTimestamp)
+      for member in members { member.sink.push(frame) }
+    }
   }
 
-  private func pixelBuffer(size: CGSize) -> CVPixelBuffer? {
-    if pool == nil || poolSize != size {
+  private func pixelBuffer(_ size: PixelSize) -> CVPixelBuffer? {
+    if pools[size] == nil {
       let attributes: [String: Any] = [
         kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        kCVPixelBufferWidthKey as String: Int(size.width),
-        kCVPixelBufferHeightKey as String: Int(size.height),
+        kCVPixelBufferWidthKey as String: size.width,
+        kCVPixelBufferHeightKey as String: size.height,
         kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
         kCVPixelBufferMetalCompatibilityKey as String: true,
       ]
       var created: CVPixelBufferPool?
       CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &created)
-      pool = created
-      poolSize = size
+      pools[size] = created
     }
-    guard let pool else { return nil }
+    guard let pool = pools[size] else { return nil }
     var buffer: CVPixelBuffer?
     CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
     return buffer
