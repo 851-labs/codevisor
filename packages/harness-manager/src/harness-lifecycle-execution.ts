@@ -6,12 +6,7 @@ import { applyAppBundleSwap, isNewerVersion } from "@codevisor/updater"
 
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import type { HarnessUpdateDetection } from "./harness-lifecycle-detection.js"
-import {
-  installCommand,
-  METHOD_PREFERENCE,
-  methodPrerequisite,
-  run
-} from "./harness-lifecycle-support.js"
+import { installCommand, METHOD_PREFERENCE, run } from "./harness-lifecycle-support.js"
 
 export interface RunOperationOptions {
   readonly harnessId: string
@@ -61,7 +56,7 @@ export const makeHarnessOperationRunner = (
     const methods = specs.map((spec) => ({
       available:
         !(spec.kind === "brew" && spec.cask === true && platform !== "darwin") &&
-        locateExecutableOnPath(methodPrerequisite(spec.kind), env) !== undefined,
+        locateExecutableOnPath(spec.kind, env) !== undefined,
       command: installCommand(spec),
       id: spec.kind,
       kind: spec.kind,
