@@ -20,6 +20,8 @@ import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { fileURLToPath } from "node:url"
 
+import { delay, waitForExit } from "./dev-shared.mjs"
+
 const defaultOrigin = "https://updates.codevisor.dev/dev-artifacts/ghostty"
 const frameworkRelativePath = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
 export const GHOSTTY_SLICES = ["macos-arm64_x86_64", "ios-arm64", "ios-arm64_x86_64-simulator"]
@@ -264,19 +266,6 @@ function capture(command, arguments_, options = {}) {
       `${basename(command)} failed (${signal === null ? `code ${code ?? 1}` : `signal ${signal}`})`
     )
   })
-}
-
-function waitForExit(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
-  })
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 async function main() {
