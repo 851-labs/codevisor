@@ -1,3 +1,4 @@
+import type { Project } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
@@ -61,34 +62,41 @@ describe("native config safety", () => {
 
   it("canonicalizes session ids to lowercase and matches either case", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ name: "Case", folderPath: "/tmp/case" }))
-    const upper = "AB12CD34-EF56-4789-A012-3456789ABCDE"
-    const lower = upper.toLowerCase()
+    try {
+      const project = await run(db.createProject({ name: "Case", folderPath: "/tmp/case" }))
+      const upper = "AB12CD34-EF56-4789-A012-3456789ABCDE"
+      const lower = upper.toLowerCase()
 
-    const created = await run(
-      db.createSession({ id: upper, projectId: project.id.toUpperCase(), harnessId: "codex" })
-    )
-    expect(created.id).toBe(lower)
-    expect(created.projectId).toBe(project.id)
+      const created = await run(
+        db.createSession({ id: upper, projectId: project.id.toUpperCase(), harnessId: "codex" })
+      )
+      expect(created.id).toBe(lower)
+      expect(created.projectId).toBe(project.id)
 
-    expect((await run(db.getSessionSummary(upper))).id).toBe(lower)
-    const renamed = await run(db.updateSession(upper, { title: "Renamed" }))
-    expect(renamed.title).toBe("Renamed")
-    expect(await run(db.listSessions)).toHaveLength(1)
+      expect((await run(db.getSessionSummary(upper))).id).toBe(lower)
+      const renamed = await run(db.updateSession(upper, { title: "Renamed" }))
+      expect(renamed.title).toBe("Renamed")
+      expect(await run(db.listSessions)).toHaveLength(1)
 
-    const queued = await run(db.createPromptQueueItem(upper, "hello", []))
-    expect(await run(db.listPromptQueue(lower))).toMatchObject([{ id: queued.id, text: "hello" }])
+      const queued = await run(db.createPromptQueueItem(upper, "hello", []))
+      expect(await run(db.listPromptQueue(lower))).toMatchObject([{ id: queued.id, text: "hello" }])
 
-    await run(db.deleteSession(upper))
-    expect(await run(db.listSessions)).toHaveLength(0)
-    await run(db.close)
+      await run(db.deleteSession(upper))
+      expect(await run(db.listSessions)).toHaveLength(0)
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("merges case-twin sessions when the canonical ids migration runs", async () => {
     const filename = tempDatabase()
+    let project: Project
     const db = await run(makeDatabase({ filename, serverId: "local" }))
-    const project = await run(db.createProject({ name: "Twins", folderPath: "/tmp/twins" }))
-    await run(db.close)
+    try {
+      project = await run(db.createProject({ name: "Twins", folderPath: "/tmp/twins" }))
+    } finally {
+      await run(db.close)
+    }
 
     const lowerA = "aaaaaaaa-1111-4111-8111-111111111111"
     const upperA = lowerA.toUpperCase()
@@ -173,28 +181,31 @@ describe("native config safety", () => {
     }
 
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))
-    const sessions = await run(reopened.listSessions)
+    try {
+      const sessions = await run(reopened.listSessions)
 
-    const pairA = sessions.filter((session) => session.id.toLowerCase() === lowerA)
-    expect(pairA).toHaveLength(1)
-    expect(pairA[0]).toMatchObject({ id: lowerA, title: "Original A" })
+      const pairA = sessions.filter((session) => session.id.toLowerCase() === lowerA)
+      expect(pairA).toHaveLength(1)
+      expect(pairA[0]).toMatchObject({ id: lowerA, title: "Original A" })
 
-    const canonicalB = sessions.find((session) => session.id === lowerB)
-    expect(canonicalB).toMatchObject({ title: "Original B" })
-    const forkB = sessions.find((session) => session.title === "Fork B" && session.id !== lowerB)
-    expect(forkB).toBeDefined()
-    expect(forkB?.id).toBe(forkB?.id.toLowerCase())
-    const forkDetail = await run(reopened.getSessionDetail(forkB!.id))
-    expect(forkDetail.conversation).toHaveLength(1)
+      const canonicalB = sessions.find((session) => session.id === lowerB)
+      expect(canonicalB).toMatchObject({ title: "Original B" })
+      const forkB = sessions.find((session) => session.title === "Fork B" && session.id !== lowerB)
+      expect(forkB).toBeDefined()
+      expect(forkB?.id).toBe(forkB?.id.toLowerCase())
+      const forkDetail = await run(reopened.getSessionDetail(forkB!.id))
+      expect(forkDetail.conversation).toHaveLength(1)
 
-    const pairC = sessions.filter((session) => session.id.toLowerCase() === lowerC)
-    expect(pairC).toHaveLength(1)
-    expect(pairC[0]).toMatchObject({ id: lowerC, title: "Newer C" })
+      const pairC = sessions.filter((session) => session.id.toLowerCase() === lowerC)
+      expect(pairC).toHaveLength(1)
+      expect(pairC[0]).toMatchObject({ id: lowerC, title: "Newer C" })
 
-    expect(sessions).toHaveLength(4)
-    for (const session of sessions) {
-      expect(session.id).toBe(session.id.toLowerCase())
+      expect(sessions).toHaveLength(4)
+      for (const session of sessions) {
+        expect(session.id).toBe(session.id.toLowerCase())
+      }
+    } finally {
+      await run(reopened.close)
     }
-    await run(reopened.close)
   })
 })
