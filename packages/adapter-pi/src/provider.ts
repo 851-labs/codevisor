@@ -1,6 +1,7 @@
 import {
   adapterPromise,
   clampFailureDetail,
+  locateHarnessBinary,
   listPiAgentSessions,
   withoutEnv,
   type AgentProvider,
@@ -60,14 +61,6 @@ export const makePiProvider = (
     config.scanAgentSessions ??
     ((agentDir: string | undefined) => listPiAgentSessions({ agentDir }))
 
-  const locate = (definition: HarnessDefinition): string | undefined => {
-    for (const candidate of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
-      const located = environment.locateExecutable(candidate, environment.env)
-      if (located !== undefined) return located
-    }
-    return undefined
-  }
-
   const start = async (
     definition: HarnessDefinition,
     cwd: string,
@@ -76,7 +69,7 @@ export const makePiProvider = (
     toolGateway: ToolGatewayConfig | undefined,
     resume?: string
   ): Promise<PiSession> => {
-    const command = locate(definition)
+    const command = locateHarnessBinary(definition, environment)
     if (command === undefined) throw new Error("pi not found on PATH")
     const gateway =
       toolGateway === undefined
@@ -108,7 +101,7 @@ export const makePiProvider = (
   return {
     id: "pi",
     readiness: (definition) =>
-      locate(definition) === undefined
+      locateHarnessBinary(definition, environment) === undefined
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>
@@ -124,7 +117,7 @@ export const makePiProvider = (
       scanAgentSessions(account?.env?.PI_CODING_AGENT_DIR),
     probeAuth: (definition, account) =>
       adapterPromise("probeAuth", async () => {
-        const command = locate(definition)
+        const command = locateHarnessBinary(definition, environment)
         if (command === undefined) throw new Error("pi not found on PATH")
         const client = await connector({
           command,
