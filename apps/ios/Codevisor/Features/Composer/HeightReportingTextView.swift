@@ -144,6 +144,15 @@ final class HeightReportingTextView: UITextView {
     fulfillPendingFocusRequestIfPossible()
   }
 
+  override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    if action == #selector(paste(_:)), isEditable, onPasteAttachmentEvent != nil,
+      ComposerPasteProviderLoader.pasteboardHasAttachment()
+    {
+      return true
+    }
+    return super.canPerformAction(action, withSender: sender)
+  }
+
   override func paste(itemProviders: [NSItemProvider]) {
     guard let onPasteAttachmentEvent else {
       super.paste(itemProviders: itemProviders)

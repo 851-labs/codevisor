@@ -33,6 +33,12 @@ enum ComposerPasteProviderLoader {
       || preferredImageContentType(from: provider) != nil
   }
 
+  static func pasteboardHasAttachment(_ pasteboard: UIPasteboard = .general) -> Bool {
+    (pasteboard.types(forItemSet: nil) ?? []).joined().lazy
+      .compactMap(UTType.init)
+      .contains { $0.conforms(to: .fileURL) || isAttachableImage($0) }
+  }
+
   static func logInvocation(route: String, providers: [NSItemProvider]) {
     let types =
       providers
@@ -204,11 +210,13 @@ enum ComposerPasteProviderLoader {
   private static func preferredImageContentType(from provider: NSItemProvider) -> UTType? {
     provider.registeredTypeIdentifiers.lazy
       .compactMap(UTType.init)
-      .first {
-        $0.conforms(to: .image)
-          && $0.identifier != UTType.image.identifier
-          && $0.identifier != "com.apple.icns"
-      }
+      .first(where: isAttachableImage)
+  }
+
+  private static func isAttachableImage(_ type: UTType) -> Bool {
+    type.conforms(to: .image)
+      && type.identifier != UTType.image.identifier
+      && type.identifier != "com.apple.icns"
   }
 
   private static func placeholderMetadata(
