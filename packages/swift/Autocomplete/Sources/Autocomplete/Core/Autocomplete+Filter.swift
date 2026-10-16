@@ -25,7 +25,10 @@ public extension Autocomplete {
 
     public static let subsequence = preset(.subsequence) { candidate, query in
       var remaining = normalized(query)[...]
-      for character in normalized(candidate) {
+      return matchesSubsequence(normalized(candidate), remaining: &remaining)
+    }
+    private static func matchesSubsequence(_ candidate: String, remaining: inout Substring) -> Bool {
+      for character in candidate {
         guard let next = remaining.first else { return true }
         if character == next {
           remaining = remaining.dropFirst()
@@ -33,6 +36,7 @@ public extension Autocomplete {
       }
       return remaining.isEmpty
     }
+
     private static func preset(
       _ strategy: Strategy, _ predicate: @escaping @Sendable (String, String) -> Bool
     ) -> Filter {
@@ -51,11 +55,7 @@ public extension Autocomplete {
       case .startsWith: return candidate.hasPrefix(query)
       case .subsequence:
         var remaining = query[...]
-        for character in candidate {
-          guard let next = remaining.first else { return true }
-          if next == character { remaining = remaining.dropFirst() }
-        }
-        return remaining.isEmpty
+        return Self.matchesSubsequence(candidate, remaining: &remaining)
       case .custom: return matches(original, query: originalQuery)
       }
     }
