@@ -11,6 +11,7 @@ import {
   startOpenCodeServer,
   type OpenCodeServerHold
 } from "@codevisor/adapter-opencode"
+import type { OpenCodeAuthProvider, PiAuthProvider } from "@codevisor/api"
 
 import { makeAntigravityAuth } from "./antigravity-auth.js"
 import { makeGrokAuth } from "./grok-auth.js"
@@ -34,6 +35,20 @@ export type {
   HarnessAuthManager,
   HarnessAuthManagerConfig
 } from "./harness-auth-types.js"
+
+const withSharedProviderCredentials = <Provider extends PiAuthProvider | OpenCodeAuthProvider>(
+  providers: ReadonlyArray<Provider>,
+  configured: ReadonlyArray<string>,
+  disabled: ReadonlyArray<string>
+) =>
+  providers.map((provider) => {
+    if (configured.includes(provider.id)) return { ...provider, credentialType: "oauth" as const }
+    if (provider.credentialType === "oauth" && disabled.includes(provider.id)) {
+      const { credentialType: _, ...unsigned } = provider
+      return unsigned
+    }
+    return provider
+  })
 
 export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): HarnessAuthManager => {
   const core = makeHarnessAuthCore(config)
@@ -221,15 +236,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       const providers = await piAuth.providers()
       const configured = (await config.sharedProviders?.()?.configured("pi", "default")) ?? []
       const disabled = (await config.sharedProviders?.()?.disabled?.("pi", "default")) ?? []
-      return providers.map((provider) => {
-        if (configured.includes(provider.id))
-          return { ...provider, credentialType: "oauth" as const }
-        if (provider.credentialType === "oauth" && disabled.includes(provider.id)) {
-          const { credentialType: _, ...unsigned } = provider
-          return unsigned
-        }
-        return provider
-      })
+      return withSharedProviderCredentials(providers, configured, disabled)
     },
     beginPiLogin: piAuth.beginLogin,
     piLoginFlow: piAuth.flow,
@@ -246,15 +253,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           : await openCodeAuth.providers(accountId)
       const configured = (await config.sharedProviders?.()?.configured("opencode", accountId)) ?? []
       const disabled = (await config.sharedProviders?.()?.disabled?.("opencode", accountId)) ?? []
-      return providers.map((provider) => {
-        if (configured.includes(provider.id))
-          return { ...provider, credentialType: "oauth" as const }
-        if (provider.credentialType === "oauth" && disabled.includes(provider.id)) {
-          const { credentialType: _, ...unsigned } = provider
-          return unsigned
-        }
-        return provider
-      })
+      return withSharedProviderCredentials(providers, configured, disabled)
     },
     beginOpenCodeLogin: async (accountId, providerId, methodId, inputs, apiKey, shared = false) => {
       const profile = await openCodeProfile(accountId)
