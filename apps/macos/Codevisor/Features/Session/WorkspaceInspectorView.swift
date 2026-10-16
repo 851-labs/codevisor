@@ -65,8 +65,6 @@ struct WorkspaceInspectorView: View {
         row(.browser) { Label("Browser", systemImage: "globe") }
         row(.terminal) { Label("Terminal", systemImage: "apple.terminal") }
         row(.files) { Label("Files", systemImage: "doc") }
-      } header: {
-        Text("On \(project.name)/\(branch ?? workspace.worktreeName ?? workspace.name)")
       }
 
       Section("Details") {
