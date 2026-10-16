@@ -162,6 +162,15 @@ public final class TranscriptSendStaging {
     #endif
   }
 
+  static func renderedGlyphs(of view: TranscriptSendPlatformView) -> TranscriptSendPlatformView? {
+    guard !view.bounds.isEmpty else { return nil }
+    #if canImport(UIKit)
+      return drawn(view, traits: view.traitCollection)
+    #else
+      return snapshot(of: view, bounds: view.bounds)
+    #endif
+  }
+
   static func renderedText(
     _ text: NSAttributedString, width: CGFloat, appearanceOf source: TranscriptSendPlatformView
   ) -> (TranscriptSendPlatformView, CGFloat)? {
@@ -176,17 +185,8 @@ public final class TranscriptSendStaging {
       let height = ceil(view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
       guard height > 0 else { return nil }
       view.frame = CGRect(x: 0, y: 0, width: width, height: height)
-      view.layoutIfNeeded()
-      var image = UIImage()
-      source.traitCollection.performAsCurrent {
-        view.overrideUserInterfaceStyle = source.traitCollection.userInterfaceStyle
-        image = UIGraphicsImageRenderer(bounds: view.bounds).image { context in
-          view.layer.render(in: context.cgContext)
-        }
-      }
-      let drawn = UIImageView(image: image)
-      drawn.isUserInteractionEnabled = false
-      return (drawn, height)
+      view.overrideUserInterfaceStyle = source.traitCollection.userInterfaceStyle
+      return (drawn(view, traits: source.traitCollection), height)
     #else
       let view = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 10_000))
       view.textStorage?.setAttributedString(text)
@@ -258,7 +258,20 @@ public final class TranscriptSendStaging {
       DynamicTypeSize(view.traitCollection.preferredContentSizeCategory) ?? .large
     }
 
-    static func snapshot(of view: UIView, bounds: CGRect) -> UIView? {
+    private static func drawn(_ view: UIView, traits: UITraitCollection) -> UIView {
+      view.layoutIfNeeded()
+      var image = UIImage()
+      traits.performAsCurrent {
+        image = UIGraphicsImageRenderer(bounds: view.bounds).image { context in
+          view.layer.render(in: context.cgContext)
+        }
+      }
+      let drawn = UIImageView(image: image)
+      drawn.isUserInteractionEnabled = false
+      return drawn
+    }
+
+    private static func snapshot(of view: UIView, bounds: CGRect) -> UIView? {
       let tint = view.tintColor
       view.tintColor = .clear
       defer { view.tintColor = tint }
@@ -272,7 +285,7 @@ public final class TranscriptSendStaging {
 
     private static func dynamicTypeSize(of _: NSView) -> DynamicTypeSize { .large }
 
-    static func snapshot(of view: NSView, bounds: CGRect) -> NSView? {
+    private static func snapshot(of view: NSView, bounds: CGRect) -> NSView? {
       guard !bounds.isEmpty, let bitmap = view.bitmapImageRepForCachingDisplay(in: bounds) else {
         return nil
       }

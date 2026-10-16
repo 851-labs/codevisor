@@ -143,7 +143,7 @@ public final class TranscriptSendFlight {
         stage.beginMorph(toward: bubbleFrame, onSettle: landing)
       }
       if let textView = proxy.transcriptSendDescendant(ofType: TranscriptSendTextView.self),
-        let glyphs = TranscriptSendStaging.snapshot(of: textView, bounds: textView.bounds)
+        let glyphs = TranscriptSendStaging.renderedGlyphs(of: textView)
       {
         let textFrame = Self.rect(of: textView, textView.bounds, in: space, overlay: overlay)
         stage.adoptGlyphs(glyphs, frame: textFrame.offsetBy(dx: -bubbleFrame.minX, dy: -bubbleFrame.minY))
