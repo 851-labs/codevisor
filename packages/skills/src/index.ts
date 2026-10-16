@@ -1,5 +1,6 @@
 export * from "./legacy-managed-skills.js"
 export * from "./managed-skills.js"
+export { resolveNativeConfigPath, type NativePathEnvironment } from "./native-paths.js"
 export * from "./skill-store.js"
 export { parseSkillSource, type ParsedSkillSource } from "./skills-remote-source.js"
 export {
