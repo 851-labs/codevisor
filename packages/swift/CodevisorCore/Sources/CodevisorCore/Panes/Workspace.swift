@@ -60,6 +60,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var createdAt: Date
   public var isArchived: Bool
   public var isServerSynced: Bool
+  public var git: ServerWorkspaceGit?
 
   public var isDraft: Bool { !isServerSynced }
 

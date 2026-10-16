@@ -117,11 +117,13 @@ public final class SidebarGitLookups {
   }
 
   public func branch(for workspace: Workspace) -> String? {
+    if let git = workspace.git { return git.branch }
     if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return archived.branch }
     return branches.byWorkspace[workspace.id]
   }
 
   public func pullRequest(for workspace: Workspace) -> ServerGitPullRequest? {
+    if let git = workspace.git { return git.pullRequest }
     if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return archived.pullRequest }
     return pullRequests.byWorkspace[workspace.id]
   }
@@ -139,7 +141,7 @@ public final class SidebarGitLookups {
       }
     }
     let checkouts = active.compactMap { workspace -> (Workspace, String)? in
-      guard let path = workspace.rootDirectory, !path.isEmpty else { return nil }
+      guard workspace.git == nil, let path = workspace.rootDirectory, !path.isEmpty else { return nil }
       return (workspace, path)
     }
     let wantsPullRequests = details.contains(.pullRequest)
@@ -150,7 +152,7 @@ public final class SidebarGitLookups {
       branches.refresh(targets(checkouts))
     }
     archivedGit.forget(listedIds)
-    let archivedCheckouts = archived.filter { $0.rootDirectory?.isEmpty == false }
+    let archivedCheckouts = archived.filter { $0.git == nil && $0.rootDirectory?.isEmpty == false }
     archivedGit.refresh(targets(archivedCheckouts.map { ($0, wantsPullRequests) }))
   }
 }

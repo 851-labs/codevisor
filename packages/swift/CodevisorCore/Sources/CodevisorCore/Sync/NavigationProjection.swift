@@ -27,6 +27,7 @@ enum NavigationProjectionBuilder {
       createdAt: createdAt, isArchived: record.isArchived, isServerSynced: true)
     workspace.sidebarPosition = record.sidebarPosition
     workspace.sidebarOrderRevision = record.sidebarOrderRevision ?? 0
+    workspace.git = record.git
     return workspace
   }
 

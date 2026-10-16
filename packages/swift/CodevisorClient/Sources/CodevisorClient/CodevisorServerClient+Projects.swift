@@ -128,6 +128,7 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var archivedAt: String?
   public var createdAt: String
   public var updatedAt: String?
+  public var git: ServerWorkspaceGit?
 
   public init(
     id: String,
@@ -141,7 +142,8 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
     createdAt: String,
     updatedAt: String? = nil,
     sidebarPosition: String? = nil,
-    sidebarOrderRevision: Int? = nil
+    sidebarOrderRevision: Int? = nil,
+    git: ServerWorkspaceGit? = nil
   ) {
     self.sidebarPosition = sidebarPosition
     self.sidebarOrderRevision = sidebarOrderRevision
@@ -155,6 +157,7 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
     self.archivedAt = archivedAt
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+    self.git = git
   }
 }
 

@@ -145,7 +145,7 @@ struct ServerGitPullRequestLookup: Decodable {
   let pullRequest: ServerGitPullRequest?
 }
 
-public struct ServerWorkspaceGit: Decodable, Equatable, Sendable {
+public struct ServerWorkspaceGit: Codable, Hashable, Sendable {
   public let branch: String?
   public let pullRequest: ServerGitPullRequest?
 
