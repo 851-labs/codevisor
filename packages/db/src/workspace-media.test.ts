@@ -173,21 +173,27 @@ describe("workspace media", () => {
   it("backfills execution screenshots recorded before tool media was tracked", async () => {
     const filename = tempDatabase()
     const current = await run(makeDatabase({ filename, serverId: "local" }))
-    const work = await seedWorkspace(current, "upgrade")
-    const session = await work.session()
-    const screenshot = await run(
-      current.createFile("screenshot.png", "image/png", "image", Buffer.from("upgrade"))
-    )
-    tick()
-    await run(current.appendEvent("session.updated", session.id, { turnState: "started" }))
-    await run(
-      current.appendEvent(
-        "session.output",
-        session.id,
-        executeUpdate([{ fileId: screenshot.id, mimeType: "image/png" }])
+    let work: Awaited<ReturnType<typeof seedWorkspace>>
+    let session: Awaited<ReturnType<typeof work.session>>
+    let screenshot: FileMetadata
+    try {
+      work = await seedWorkspace(current, "upgrade")
+      session = await work.session()
+      screenshot = await run(
+        current.createFile("screenshot.png", "image/png", "image", Buffer.from("upgrade"))
       )
-    )
-    await Effect.runPromise(current.close)
+      tick()
+      await run(current.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await run(
+        current.appendEvent(
+          "session.output",
+          session.id,
+          executeUpdate([{ fileId: screenshot.id, mimeType: "image/png" }])
+        )
+      )
+    } finally {
+      await Effect.runPromise(current.close)
+    }
 
     const legacy = new Database(filename)
     try {

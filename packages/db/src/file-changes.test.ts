@@ -162,25 +162,30 @@ describe("workspace file edits", () => {
   it("backfills edits recorded before file changes were tracked", async () => {
     const filename = tempDatabase()
     const current = await run(makeDatabase({ filename, serverId: "local" }))
-    const work = await seedWorkspace(current, "upgrade")
-    const session = await work.session()
-    await output(
-      current,
-      session.id,
-      edit("upgrade-edit", {
-        status: "completed",
-        diffStats: [{ path: "/repo/upgrade.ts", added: 7, removed: 2 }]
-      })
-    )
-    await output(
-      current,
-      session.id,
-      edit("upgrade-running", {
-        status: "in_progress",
-        diffStats: [{ path: "/repo/running.ts", added: 1, removed: 0 }]
-      })
-    )
-    await Effect.runPromise(current.close)
+    let work: Awaited<ReturnType<typeof seedWorkspace>>
+    let session: Awaited<ReturnType<typeof work.session>>
+    try {
+      work = await seedWorkspace(current, "upgrade")
+      session = await work.session()
+      await output(
+        current,
+        session.id,
+        edit("upgrade-edit", {
+          status: "completed",
+          diffStats: [{ path: "/repo/upgrade.ts", added: 7, removed: 2 }]
+        })
+      )
+      await output(
+        current,
+        session.id,
+        edit("upgrade-running", {
+          status: "in_progress",
+          diffStats: [{ path: "/repo/running.ts", added: 1, removed: 0 }]
+        })
+      )
+    } finally {
+      await Effect.runPromise(current.close)
+    }
 
     const legacy = new Database(filename)
     try {
