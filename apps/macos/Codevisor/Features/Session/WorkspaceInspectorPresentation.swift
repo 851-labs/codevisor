@@ -25,7 +25,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   @Environment(AppEnvironment.self) private var environment
   @Environment(AdaptivePanelLayout.self) private var panelLayout
-  @ClientPreference(FeatureFlag.workspaceInspector.preferenceKey, default: false) private var isEnabled
   @ClientPreference(Self.presentedKey, default: true) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @State private var media = WorkspaceInspectorMediaModel()
@@ -35,7 +34,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   let selection: SidebarSelection?
 
   func body(content: Content) -> some View {
-    let inspected = isEnabled && store != nil ? inspectedWorkspace : nil
+    let inspected = inspectedWorkspace
     let showsDrawer = inspected != nil && !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
     content
