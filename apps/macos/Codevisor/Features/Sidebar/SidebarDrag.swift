@@ -5,6 +5,8 @@ import SwiftUI
 @MainActor
 final class SidebarDragGeometryStore {
   var workspaces: [UUID: CGRect] = [:]
+  var groups: [String: CGRect] = [:]
+  var headings: [String: CGRect] = [:]
 }
 
 struct SidebarDrag: Equatable {
@@ -81,17 +83,7 @@ extension SidebarView {
     let others = dropCandidates(for: drag.workspaceID)
       .filter { $0 != drag.workspaceID }
       .compactMap { dragGeometry.workspaces[$0] }
-    guard !others.isEmpty else { return nil }
-    let y: CGFloat
-    let span: CGRect
-    if others.indices.contains(index) {
-      span = others[index]
-      y = index > 0 ? (others[index - 1].maxY + span.minY) / 2 : span.minY - 1
-    } else {
-      span = others[others.count - 1]
-      y = span.maxY + 1
-    }
-    return CGRect(x: span.minX, y: y, width: span.width, height: 0)
+    return SidebarInsertionLine.frame(at: index, among: others)
   }
 
   @ViewBuilder
@@ -136,6 +128,20 @@ extension SidebarView {
 
 struct SidebarInsertionLine: View {
   static let height: CGFloat = 7
+
+  static func frame(at index: Int, among others: [CGRect]) -> CGRect? {
+    guard !others.isEmpty else { return nil }
+    let y: CGFloat
+    let span: CGRect
+    if others.indices.contains(index) {
+      span = others[index]
+      y = index > 0 ? (others[index - 1].maxY + span.minY) / 2 : span.minY - 1
+    } else {
+      span = others[others.count - 1]
+      y = span.maxY + 1
+    }
+    return CGRect(x: span.minX, y: y, width: span.width, height: 0)
+  }
 
   var body: some View {
     HStack(spacing: 0) {

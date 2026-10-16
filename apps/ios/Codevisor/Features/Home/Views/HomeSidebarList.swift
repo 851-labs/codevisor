@@ -49,6 +49,7 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) private var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedIDs: [String]
+  @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) private var machineOrder: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   private var rowDetails: [SidebarRowDetail]
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) private var pinnedExpanded
@@ -60,7 +61,8 @@ struct HomeSidebarList: View {
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(
-      grouping: grouping, pinnedIDs: pinnedIDs, rowDetails: rowDetails, archivedLimit: archivedLimit)
+      grouping: grouping, pinnedIDs: pinnedIDs, machineOrder: machineOrder, rowDetails: rowDetails,
+      archivedLimit: archivedLimit)
   }
 
   var body: some View {

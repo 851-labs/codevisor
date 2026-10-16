@@ -55,6 +55,10 @@ public final class NavigationStore {
 
   public var cachedMachineIds: Set<String> { Set(caches.caches.keys) }
 
+  public func serverIdentity(forMachineId machineId: String) -> String? {
+    caches.caches[machineId]?.snapshot.workspaces.first?.serverId
+  }
+
   func eventCursor(for machineId: String) -> Int? { caches.caches[machineId]?.eventCursor }
 
   @discardableResult

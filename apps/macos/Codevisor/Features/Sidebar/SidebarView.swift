@@ -16,6 +16,7 @@ struct SidebarView: View {
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
   @State var drag: SidebarDrag?
+  @State var groupDrag: SidebarGroupDrag?
   @State var revealedWorkspaceID: UUID?
   @State var folds = SidebarFoldState()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
@@ -29,12 +30,13 @@ struct SidebarView: View {
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) var listExpanded
   @State var archivedVisibleCount = sidebarArchivedPageSize
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
+  @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) var machineOrder: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
 
   var list: ProjectListModel { environment.projectList }
-  var isReordering: Bool { drag != nil }
+  var isReordering: Bool { drag != nil || groupDrag != nil }
 
   var isNewChatSelected: Bool {
     switch selection {
@@ -88,6 +90,7 @@ struct SidebarView: View {
     }
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
+    .overlay(alignment: .topLeading) { groupReorderOverlay }
   }
 
   private var workspacesHeader: some View {
@@ -165,11 +168,23 @@ struct SidebarView: View {
               },
               onNewChat: heading.newChatTarget.map { target in { selection = .newChat(target) } }
             )
+            .opacity(groupDrag?.groupID == group.id ? 0.4 : 1)
+            .onGeometryChange(for: CGRect.self) { proxy in
+              proxy.frame(in: .named(Self.reorderSpace))
+            } action: { frame in
+              dragGeometry.headings[group.id] = frame
+            }
+            .simultaneousGesture(groupReorderGesture(for: group), including: reordersMachines ? .all : .subviews)
             .sidebarFoldingRow(listFolding, progress: progress, shows: listExpanded)
           }
           workspaceList(of: group)
             .padding(.leading, group.heading == nil ? 0 : Self.groupIndent * progress.shown)
             .sidebarFoldingRow(listFolding && !keepsSelection(group), progress: progress, shows: listExpanded)
+        }
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(Self.reorderSpace))
+        } action: { frame in
+          dragGeometry.groups[group.id] = frame
         }
       }
       archivedSection

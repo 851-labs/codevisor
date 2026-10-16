@@ -1,0 +1,119 @@
+import CodevisorCore
+import CodevisorUI
+import SwiftUI
+
+struct SidebarGroupDrag: Equatable {
+  let groupID: String
+  let title: String
+  let systemImage: String
+  let liftedFrame: CGRect
+  var translation: CGFloat = 0
+  var targetIndex: Int?
+
+  var ghostFrame: CGRect { liftedFrame.offsetBy(dx: 0, dy: translation) }
+}
+
+extension SidebarView {
+  var reordersMachines: Bool { grouping == .machine }
+
+  func machineKey(_ serverId: String) -> String {
+    environment.navigationStore.serverIdentity(forMachineId: serverId)
+      ?? environment.machines.syncKey(forMachineId: serverId) ?? serverId
+  }
+
+  func groupReorderGesture(for group: SidebarWorkspaceGroup) -> some Gesture {
+    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.reorderSpace))
+      .onChanged { value in
+        if groupDrag?.groupID != group.id {
+          guard let heading = group.heading, let frame = dragGeometry.headings[group.id], frame != .zero
+          else { return }
+          withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+            groupDrag = SidebarGroupDrag(
+              groupID: group.id, title: heading.title, systemImage: heading.systemImage, liftedFrame: frame)
+          }
+        }
+        groupDrag?.translation = value.translation.height
+        retargetGroup()
+      }
+      .onEnded { value in
+        guard groupDrag?.groupID == group.id else { return }
+        groupDrag?.translation = value.translation.height
+        retargetGroup()
+        guard let finished = groupDrag else { return }
+        withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+          if let target = finished.targetIndex { commitMachineMove(finished.groupID, toIndex: target) }
+          groupDrag = nil
+        }
+      }
+  }
+
+  private var machineGroups: [SidebarWorkspaceGroup] {
+    workspaceGroups.filter { $0.id != SidebarWorkspaceGroup.pinnedID && $0.heading != nil }
+  }
+
+  private func groupDropCandidates() -> [String] {
+    machineGroups.map(\.id).filter { dragGeometry.groups[$0] != nil }
+  }
+
+  private func retargetGroup() {
+    guard let current = groupDrag else { return }
+    let order = groupDropCandidates()
+    guard
+      let index = ListReorder.destinationIndex(
+        of: current.groupID, in: order, frames: dragGeometry.groups, midY: current.ghostFrame.midY)
+    else { return }
+    let target = order.firstIndex(of: current.groupID) == index ? nil : index
+    guard target != current.targetIndex else { return }
+    groupDrag?.targetIndex = target
+  }
+
+  private func commitMachineMove(_ groupID: String, toIndex index: Int) {
+    let groups = machineGroups
+    let moved = ListReorder.moving(groupID, to: index, in: groups.map(\.id))
+    let serverIds = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0.items[0].serverId) })
+    let keys = moved.compactMap { serverIds[$0].map(machineKey) }
+    machineOrder = keys + machineOrder.filter { !keys.contains($0) }
+  }
+
+  @ViewBuilder
+  var groupReorderOverlay: some View {
+    if let groupDrag {
+      ZStack(alignment: .topLeading) {
+        let frame = groupDrag.ghostFrame
+        HStack(spacing: 7) {
+          Image(systemName: groupDrag.systemImage)
+            .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
+            .foregroundStyle(.secondary)
+            .frame(width: 18)
+          Text(groupDrag.title)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(width: frame.width, height: frame.height)
+        .background {
+          RoundedRectangle(cornerRadius: 6)
+            .fill(.regularMaterial)
+            .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        }
+        .opacity(0.92)
+        .position(x: frame.midX, y: frame.midY)
+        if let line = groupInsertionLine(for: groupDrag) {
+          SidebarInsertionLine()
+            .frame(width: line.width, height: SidebarInsertionLine.height)
+            .position(x: line.midX, y: line.minY)
+        }
+      }
+      .allowsHitTesting(false)
+      .transition(.opacity)
+    }
+  }
+
+  private func groupInsertionLine(for drag: SidebarGroupDrag) -> CGRect? {
+    guard let index = drag.targetIndex else { return nil }
+    let others = groupDropCandidates()
+      .filter { $0 != drag.groupID }
+      .compactMap { dragGeometry.groups[$0] }
+    return SidebarInsertionLine.frame(at: index, among: others)
+  }
+}

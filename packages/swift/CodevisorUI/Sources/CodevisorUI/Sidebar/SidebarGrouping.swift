@@ -32,9 +32,10 @@ public enum SidebarPreferenceKey {
   public static let listExpanded = "sidebar.listExpanded"
   public static let archivedExpanded = "sidebar.archivedExpanded"
   public static let botsExpanded = "sidebar.botsExpanded"
+  public static let machineOrder = "sidebar.machineOrder"
 
   public static let synced: Set<String> = [
-    SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces,
+    SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces, machineOrder,
   ]
 }
 
@@ -89,6 +90,8 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     pinnedIDs: [String],
     projects: [Project],
     defaultServerId: String,
+    machineOrder: [String] = [],
+    machineKey: (String) -> String = { $0 },
     machineHeading: (String) -> Heading
   ) -> [SidebarWorkspaceGroup] {
     let pinned = Set(pinnedIDs)
@@ -99,7 +102,9 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
       case .flat:
         [SidebarWorkspaceGroup(id: "all", heading: nil, items: rest)]
       case .machine:
-        Self.grouping(rest, by: { "machine:\($0.serverId)" }) { machineHeading($0.serverId) }
+        Self.ordered(
+          Self.grouping(rest, by: { "machine:\($0.serverId)" }) { machineHeading($0.serverId) },
+          by: machineOrder, key: { machineKey($0.items[0].serverId) })
       case .project:
         projectGroups(rest, projects: projects, defaultServerId: defaultServerId)
       }
@@ -129,6 +134,20 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
         newChatTarget: target
       )
     }
+  }
+
+  static func ordered(
+    _ groups: [SidebarWorkspaceGroup], by order: [String], key: (SidebarWorkspaceGroup) -> String
+  ) -> [SidebarWorkspaceGroup] {
+    guard !order.isEmpty else { return groups }
+    let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+    return groups.enumerated()
+      .sorted { lhs, rhs in
+        let left = rank[key(lhs.element)] ?? .max
+        let right = rank[key(rhs.element)] ?? .max
+        return left != right ? left < right : lhs.offset < rhs.offset
+      }
+      .map(\.element)
   }
 
   static func grouping(

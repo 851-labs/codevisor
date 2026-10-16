@@ -12,13 +12,14 @@ struct SidebarWorkspaceGroupTests {
   }
 
   private func groups(
-    _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping, pinned: [UUID] = []
+    _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping, pinned: [UUID] = [],
+    machineOrder: [String] = []
   )
     -> [SidebarWorkspaceGroup]
   {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinned.map(\.uuidString), projects: [studio, linux],
-      defaultServerId: "studio"
+      defaultServerId: "studio", machineOrder: machineOrder, machineKey: { "server-\($0)" }
     ) { serverId in SidebarWorkspaceGroup.Heading(title: serverId, systemImage: "desktopcomputer") }
   }
 
@@ -38,6 +39,17 @@ struct SidebarWorkspaceGroupTests {
     let result = groups(items, .machine)
     #expect(result.map(\.heading?.title) == ["linux", "studio"])
     #expect(result[0].items.map(\.id) == [items[0].id, items[2].id])
+  }
+
+  @Test("Machines follow the saved order by their server identity, and unknown ones keep their place after it")
+  func machinesFollowSavedOrder() {
+    let mini = Project(id: UUID(), serverId: "mini", name: "bots")
+    let items = [item(linux), item(studio), item(mini)]
+
+    let result = groups(items, .machine, machineOrder: ["server-mini", "server-gone", "server-studio"])
+
+    #expect(result.map(\.heading?.title) == ["mini", "studio", "linux"])
+    #expect(groups(items, .project, machineOrder: ["server-studio"]).map(\.id) == groups(items, .project).map(\.id))
   }
 
   @Test func flatGroupingHasNoHeadingAndNoPinnedGroupWithoutPins() {
