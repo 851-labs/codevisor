@@ -122,6 +122,18 @@ export const checkGithubLatest = async (
   }
 }
 
+const resolveBinaryPath = (
+  binaryPath: string,
+  realpath: ((path: string) => string) | undefined
+): string => {
+  const resolve = realpath ?? ((path: string) => realpathSync(path))
+  try {
+    return resolve(binaryPath)
+  } catch {
+    return binaryPath
+  }
+}
+
 export const detectInstallOrigin = (
   binaryPath: string,
   options: {
@@ -129,13 +141,7 @@ export const detectInstallOrigin = (
     readonly realpath?: (path: string) => string
   } = {}
 ): InstallOrigin => {
-  const resolve = options.realpath ?? ((path: string) => realpathSync(path))
-  let real: string
-  try {
-    real = resolve(binaryPath)
-  } catch {
-    real = binaryPath
-  }
+  const real = resolveBinaryPath(binaryPath, options.realpath)
   if (/\/uv\/tools\/[^/]+\//.test(real)) return "uv"
   if (real.includes("/node_modules/")) return "npm"
   if (real.includes("/Cellar/") || real.includes("/Caskroom/") || real.includes("/homebrew/")) {
@@ -155,13 +161,7 @@ export const detectBrewPackage = (
   binaryPath: string,
   options: { readonly realpath?: (path: string) => string } = {}
 ): BrewPackage | undefined => {
-  const resolve = options.realpath ?? ((path: string) => realpathSync(path))
-  let real: string
-  try {
-    real = resolve(binaryPath)
-  } catch {
-    real = binaryPath
-  }
+  const real = resolveBinaryPath(binaryPath, options.realpath)
   const match = real.match(/\/(Cellar|Caskroom)\/([A-Za-z0-9@+_.-]+)\//)
   const location = match?.[1]
   const formula = match?.[2]
