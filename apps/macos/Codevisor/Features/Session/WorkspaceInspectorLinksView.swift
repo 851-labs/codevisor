@@ -3,15 +3,7 @@ import CodevisorClient
 import CodevisorUI
 import SwiftUI
 
-struct WorkspaceInspectorOpenTab: Identifiable {
-  let id: UUID
-  let url: URL
-  let title: String
-  let favicon: NSImage?
-}
-
 struct WorkspaceInspectorLinksView: View {
-  let openTabs: [WorkspaceInspectorOpenTab]
   let model: WorkspaceInspectorMediaModel
   let client: any CodevisorServerClienting
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
@@ -19,36 +11,17 @@ struct WorkspaceInspectorLinksView: View {
 
   @Environment(\.theme) private var theme
 
-  private var chatLinks: [ServerWorkspaceLink] {
-    let open = Set(openTabs.map { Self.matchKey($0.url) })
-    return model.links.filter { !open.contains(Self.matchKey($0.url)) }
-  }
-
   var body: some View {
-    if openTabs.isEmpty && model.links.isEmpty {
+    if model.links.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
         phase: model.linksPhase, emptyTitle: "No Links", systemImage: "link",
-        emptyDescription: "Links mentioned in this workspace's chats and its open browser tabs appear here.",
+        emptyDescription: "Links mentioned in this workspace's chats appear here.",
         onRetry: onRetry
       )
     } else {
       Form {
-        if !openTabs.isEmpty {
-          Section("Open Tabs") {
-            ForEach(openTabs) { tab in
-              row(title: tab.title, subtitle: Self.host(tab.url), url: tab.url, destination: .browserPane(tab.id)) {
-                if let favicon = tab.favicon {
-                  Image(nsImage: favicon).resizable().scaledToFit()
-                } else {
-                  WorkspaceInspectorSiteIcon(url: tab.url, client: client)
-                }
-              }
-            }
-          }
-        }
-        Section("From Chats") {
-          let links = chatLinks
-          ForEach(links) { link in
+        Section {
+          ForEach(model.links) { link in
             row(
               title: link.title ?? Self.host(link.url),
               subtitle: link.title == nil ? Self.location(link.url) : Self.host(link.url),
@@ -72,9 +45,6 @@ struct WorkspaceInspectorLinksView: View {
               .task(id: "\(model.linksNextBefore ?? ""):\(model.linksPhase == .loaded)") {
                 await model.loadMoreLinks()
               }
-          } else if links.isEmpty {
-            Text(model.linksPhase == .loading ? "Loading…" : "No links in chats yet")
-              .foregroundStyle(.secondary)
           }
         }
       }
@@ -128,10 +98,6 @@ struct WorkspaceInspectorLinksView: View {
     let path = url.path(percentEncoded: false)
     guard path.count > 1 else { return host(url) }
     return host(url) + (path.hasSuffix("/") ? String(path.dropLast()) : path)
-  }
-
-  private static func matchKey(_ url: URL) -> String {
-    (BrowserLocation.canonicalURL(url) ?? url).absoluteString
   }
 }
 

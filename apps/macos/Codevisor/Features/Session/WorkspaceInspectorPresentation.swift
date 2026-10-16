@@ -51,7 +51,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           supportsDesktop: environment.machines.statusByMachineId[workspace.serverId]?.supportsScreenSharing == true,
           tab: $tab,
           media: media,
-          openTabs: openTabs(in: workspace, store: store),
           client: environment.machines.client(for: workspace.serverId),
           onReload: { Task { await reload(workspace) } },
           onOpen: { destination in
@@ -90,17 +89,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       }
       .map(\.sidebarStateChangedAt)
       .max()
-  }
-
-  private func openTabs(in workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorOpenTab] {
-    workspace.allPanes.compactMap { pane in
-      guard pane.kind == .browser, let url = pane.browserURL.flatMap(URL.init(string:)) else { return nil }
-      let model = store.localBrowserModel(paneId: pane.id)
-      let title = model?.title ?? pane.name
-      return WorkspaceInspectorOpenTab(
-        id: pane.id, url: url, title: title.isEmpty ? BrowserLocation.display(url) : title,
-        favicon: model?.favicon)
-    }
   }
 
   private var inspectedWorkspace: Inspected? {
