@@ -38,10 +38,20 @@ public final class TranscriptSendStage {
     self.overlay = overlay
   }
 
-  var isMultiline: Bool {
+  private var visibleTextRect: CGRect {
     let visible = textRect.intersection(editorFrame)
-    let height = visible.isNull || visible.isEmpty ? textRect.height : visible.height
-    return lineHeight > 0 && height >= lineHeight * 1.5
+    return visible.isNull || visible.isEmpty ? textRect : visible
+  }
+
+  var isMultiline: Bool {
+    lineHeight > 0 && visibleTextRect.height >= lineHeight * 1.5
+  }
+
+  func adoptGlyphs(_ glyphs: TranscriptSendPlatformView, frame: CGRect) {
+    for old in snapshot.subviews { old.removeFromSuperview() }
+    glyphs.frame = frame
+    snapshot.addSubview(glyphs)
+    wrappedTextWidth = frame.width
   }
 
   @discardableResult
@@ -68,9 +78,10 @@ public final class TranscriptSendStage {
     var end = TranscriptSendMorphGeometry.predictedEnd(
       start: snapshot.frame, editorFrame: editorFrame, textRect: textRect,
       lineHeight: lineHeight, landing: landing)
-    if isMultiline {
-      let insets = TranscriptSendFlightGeometry.bubbleTextInsets
-      if let height = rewrap(toTextWidth: end.width - insets.horizontal * 2) {
+    let insets = TranscriptSendFlightGeometry.bubbleTextInsets
+    let textWidth = end.width - insets.horizontal * 2
+    if isMultiline || visibleTextRect.width > textWidth + 0.5 {
+      if let height = rewrap(toTextWidth: textWidth) {
         end.size.height = height + insets.vertical * 2
       }
     }

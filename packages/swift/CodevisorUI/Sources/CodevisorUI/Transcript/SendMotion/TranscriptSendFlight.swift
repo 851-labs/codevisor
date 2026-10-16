@@ -5,9 +5,11 @@ import SwiftUI
 #if canImport(UIKit)
   import UIKit
   public typealias TranscriptSendPlatformView = UIView
+  typealias TranscriptSendTextView = UITextView
 #else
   import AppKit
   public typealias TranscriptSendPlatformView = NSView
+  typealias TranscriptSendTextView = NSTextView
 #endif
 
 let transcriptSendLog = Logger(subsystem: "dev.codevisor.transcript", category: "send")
@@ -140,7 +142,12 @@ public final class TranscriptSendFlight {
       } else {
         stage.beginMorph(toward: bubbleFrame, onSettle: landing)
       }
-      if stage.isMultiline {
+      if let textView = proxy.transcriptSendDescendant(ofType: TranscriptSendTextView.self),
+        let glyphs = TranscriptSendStaging.snapshot(of: textView, bounds: textView.bounds)
+      {
+        let textFrame = Self.rect(of: textView, textView.bounds, in: space, overlay: overlay)
+        stage.adoptGlyphs(glyphs, frame: textFrame.offsetBy(dx: -bubbleFrame.minX, dy: -bubbleFrame.minY))
+      } else if stage.isMultiline {
         stage.rewrap(
           toTextWidth: bubbleFrame.width - TranscriptSendFlightGeometry.bubbleTextInsets.horizontal * 2)
       }

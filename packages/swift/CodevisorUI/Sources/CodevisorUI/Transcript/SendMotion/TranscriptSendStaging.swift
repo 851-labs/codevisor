@@ -103,7 +103,7 @@ public final class TranscriptSendStaging {
     cancel(session: session)
     guard let window = textView.window,
       let overlay = TranscriptSendOverlayView.overlay(in: window),
-      let glyphs = Self.snapshot(of: textView)
+      let glyphs = Self.snapshot(of: textView, bounds: Self.visibleBounds(of: textView))
     else {
       transcriptSendLog.debug(
         "stage failed: window=\(textView.window != nil) visible=\(Self.visibleBounds(of: textView).debugDescription)")
@@ -258,11 +258,12 @@ public final class TranscriptSendStaging {
       DynamicTypeSize(view.traitCollection.preferredContentSizeCategory) ?? .large
     }
 
-    private static func snapshot(of view: UIView) -> UIView? {
+    static func snapshot(of view: UIView, bounds: CGRect) -> UIView? {
       let tint = view.tintColor
       view.tintColor = .clear
       defer { view.tintColor = tint }
-      let snapshot = view.snapshotView(afterScreenUpdates: true)
+      let snapshot = view.resizableSnapshotView(
+        from: bounds, afterScreenUpdates: true, withCapInsets: .zero)
       snapshot?.isUserInteractionEnabled = false
       return snapshot
     }
@@ -271,8 +272,7 @@ public final class TranscriptSendStaging {
 
     private static func dynamicTypeSize(of _: NSView) -> DynamicTypeSize { .large }
 
-    private static func snapshot(of view: NSView) -> NSView? {
-      let bounds = view.visibleRect
+    static func snapshot(of view: NSView, bounds: CGRect) -> NSView? {
       guard !bounds.isEmpty, let bitmap = view.bitmapImageRepForCachingDisplay(in: bounds) else {
         return nil
       }
