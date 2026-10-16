@@ -34,6 +34,11 @@ public final class TranscriptSendStaging {
     landingProviders[session] = providers
   }
 
+  public func removeLandingProvider(for session: ObjectIdentifier, owner: AnyObject) {
+    let providers = (landingProviders[session] ?? []).filter { $0.owner != nil && $0.owner !== owner }
+    landingProviders[session] = providers.isEmpty ? nil : providers
+  }
+
   public func releaseHeldSend(session: ObjectIdentifier) {
     guard let stage = stages[session], stage.morph == nil, let overlay = stage.overlay else { return }
     if let found = landing(for: session) {

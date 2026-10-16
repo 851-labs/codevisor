@@ -159,19 +159,11 @@ struct NewChatView: View {
     } action: { frame in
       sendLanding.pageFrame = frame
     }
-    .onChange(of: controller.map(ObjectIdentifier.init), initial: true) { _, session in
-      guard let session else { return }
-      let owner = sendLanding
-      TranscriptSendStaging.shared.setLandingProvider(
-        for: session,
-        owner: owner,
-        holds: { [weak owner] in owner?.holdsSend ?? false },
-        landing: { [weak owner] in owner?.landing }
-      )
-    }
     .onChange(of: controller?.isSubmitting ?? false) { wasSubmitting, isSubmitting in
-      guard wasSubmitting, !isSubmitting, sendLanding.holdsSend, let controller else { return }
-      TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
+      guard wasSubmitting, !isSubmitting, let controller else { return }
+      let session = ObjectIdentifier(controller)
+      guard sendLanding.holds(session) else { return }
+      TranscriptSendStaging.shared.cancel(session: session)
     }
     .overlay(alignment: .top) {
       if let controller, case let .failed(message) = controller.status {
@@ -327,6 +319,7 @@ struct NewChatView: View {
     }
     let heldSend = sendLanding
     let heldSession = ObjectIdentifier(controller)
+    heldSend.hold(heldSession)
     controller.onFirstSend = { [weak controller] submittedText in
       defer { heldSend.release(heldSession) }
       guard let controller else { return }
@@ -446,11 +439,29 @@ struct NewChatView: View {
 @MainActor
 private final class NewChatSendLanding {
   var pageFrame: CGRect = .zero
-  var holdsSend = true
+  private var heldSession: ObjectIdentifier?
+
+  func hold(_ session: ObjectIdentifier) {
+    if let heldSession, heldSession != session {
+      TranscriptSendStaging.shared.removeLandingProvider(for: heldSession, owner: self)
+    }
+    heldSession = session
+    TranscriptSendStaging.shared.setLandingProvider(
+      for: session,
+      owner: self,
+      holds: { [weak self] in self?.heldSession == session },
+      landing: { [weak self] in self?.landing }
+    )
+  }
+
+  func holds(_ session: ObjectIdentifier) -> Bool {
+    heldSession == session
+  }
 
   func release(_ session: ObjectIdentifier) {
-    holdsSend = false
+    if heldSession == session { heldSession = nil }
     TranscriptSendStaging.shared.releaseHeldSend(session: session)
+    TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: self)
   }
 
   var landing: TranscriptSendLanding? {

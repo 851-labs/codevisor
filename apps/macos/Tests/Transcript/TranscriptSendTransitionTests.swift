@@ -120,6 +120,34 @@ struct TranscriptSendTransitionTests {
     #expect(fixture.events.completed == [fixture.request.token])
   }
 
+  @Test("A removed landing stops aiming later sends and leaves other owners' landings in place")
+  func removedLandingStopsAimingLaterSends() throws {
+    let fixture = SendFixture()
+    let session = ObjectIdentifier(fixture)
+    let newChat = NSObject()
+    let transcript = NSObject()
+    defer {
+      TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: newChat)
+      TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: transcript)
+      fixture.tearDown()
+    }
+    let unaimed = try fixture.stagedBubbleFrame(session: session)
+    TranscriptSendStaging.shared.setLandingProvider(
+      for: session, owner: transcript,
+      landing: { TranscriptSendLanding(trailing: 600, top: 300, maxBubbleWidth: 400) })
+    TranscriptSendStaging.shared.setLandingProvider(
+      for: session, owner: newChat,
+      landing: { TranscriptSendLanding(trailing: 800, top: 60, maxBubbleWidth: 400) })
+
+    #expect(try fixture.stagedBubbleFrame(session: session).maxX == 800)
+
+    TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: newChat)
+    #expect(try fixture.stagedBubbleFrame(session: session).maxX == 600)
+
+    TranscriptSendStaging.shared.removeLandingProvider(for: session, owner: transcript)
+    #expect(try fixture.stagedBubbleFrame(session: session) == unaimed)
+  }
+
   @Test("A surface replaced before its flight starts leaves the send for its replacement")
   func replacedSurfaceKeepsTheSend() throws {
     let fixture = SendFixture()
@@ -238,6 +266,15 @@ private final class SendFixture {
     view.updateMountedRows()
     for host in view.mountedHosts.values { host.prepareForImmediatePresentation() }
     view.scrollToBottom()
+  }
+
+  func stagedBubbleFrame(session: ObjectIdentifier) throws -> CGRect {
+    TranscriptSendStaging.shared.stage(
+      session: session, textView: editor, textRect: editor.bounds, lineHeight: 17, bubble: .gray)
+    let overlayWindow = try #require(window.childWindows?.first)
+    let overlay = try #require(
+      overlayWindow.contentView?.subviews.first { $0 is TranscriptSendOverlayView })
+    return try #require(overlay.subviews.last).frame
   }
 
   func tearDown() {
