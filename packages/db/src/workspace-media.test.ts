@@ -190,11 +190,14 @@ describe("workspace media", () => {
     await Effect.runPromise(current.close)
 
     const legacy = new Database(filename)
-    legacy.exec(`
+    try {
+      legacy.exec(`
       drop table chat_item_media;
       delete from schema_migrations where id = 62;
     `)
-    legacy.close()
+    } finally {
+      legacy.close()
+    }
 
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     try {

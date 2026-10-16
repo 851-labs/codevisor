@@ -314,61 +314,64 @@ describe("@codevisor/db", () => {
     await run(db.close)
 
     const sqlite = new Database(filename)
-    const items = rowReader({ id: text, has_details: integer }).all(
-      sqlite
-        .prepare(
-          "select id, has_details from chat_items where role = 'assistant' order by position"
-        )
-        .all()
-    )
-    expect(items).toHaveLength(2)
-    sqlite.prepare("update chat_items set has_details = 1 where id = ?").run(items[0]!.id)
-    sqlite.prepare("update chat_items set has_details = 0 where id = ?").run(items[1]!.id)
-    const insertSyntheticDetail = sqlite.prepare(
-      `insert into session_events (
+    try {
+      const items = rowReader({ id: text, has_details: integer }).all(
+        sqlite
+          .prepare(
+            "select id, has_details from chat_items where role = 'assistant' order by position"
+          )
+          .all()
+      )
+      expect(items).toHaveLength(2)
+      sqlite.prepare("update chat_items set has_details = 1 where id = ?").run(items[0]!.id)
+      sqlite.prepare("update chat_items set has_details = 0 where id = ?").run(items[1]!.id)
+      const insertSyntheticDetail = sqlite.prepare(
+        `insert into session_events (
         session_id, revision, global_event_id, server_id, kind, created_at, payload, chat_item_id
       ) values (?, ?, null, 'local', 'session.output', ?, ?, ?)`
-    )
-    for (const [revision, payload] of [
-      [9, "{"],
-      [10, JSON.stringify({ sessionUpdate: 42 })],
-      [11, JSON.stringify({ content: { type: "status" }, sessionUpdate: "agent_thought_chunk" })],
-      [
-        12,
-        JSON.stringify({
-          content: { type: "text", text: "Commentary" },
-          phase: "commentary",
-          sessionUpdate: "agent_message_chunk"
-        })
-      ],
-      [
-        13,
-        JSON.stringify({
-          content: { type: "text", text: "" },
-          messageId: "retroactive-commentary",
-          phase: "commentary",
-          sessionUpdate: "agent_message_chunk"
-        })
-      ],
-      [
-        14,
-        JSON.stringify({
-          content: { type: "text", text: "" },
-          phase: "commentary",
-          sessionUpdate: "agent_message_chunk"
-        })
-      ]
-    ] as const) {
-      insertSyntheticDetail.run(
-        session.id,
-        revision,
-        `2026-07-10T00:00:${String(revision).padStart(2, "0")}.000Z`,
-        payload,
-        items[1]!.id
       )
+      for (const [revision, payload] of [
+        [9, "{"],
+        [10, JSON.stringify({ sessionUpdate: 42 })],
+        [11, JSON.stringify({ content: { type: "status" }, sessionUpdate: "agent_thought_chunk" })],
+        [
+          12,
+          JSON.stringify({
+            content: { type: "text", text: "Commentary" },
+            phase: "commentary",
+            sessionUpdate: "agent_message_chunk"
+          })
+        ],
+        [
+          13,
+          JSON.stringify({
+            content: { type: "text", text: "" },
+            messageId: "retroactive-commentary",
+            phase: "commentary",
+            sessionUpdate: "agent_message_chunk"
+          })
+        ],
+        [
+          14,
+          JSON.stringify({
+            content: { type: "text", text: "" },
+            phase: "commentary",
+            sessionUpdate: "agent_message_chunk"
+          })
+        ]
+      ] as const) {
+        insertSyntheticDetail.run(
+          session.id,
+          revision,
+          `2026-07-10T00:00:${String(revision).padStart(2, "0")}.000Z`,
+          payload,
+          items[1]!.id
+        )
+      }
+      sqlite.prepare("delete from schema_migrations where id = 10").run()
+    } finally {
+      sqlite.close()
     }
-    sqlite.prepare("delete from schema_migrations where id = 10").run()
-    sqlite.close()
 
     const migrated = await run(makeDatabase({ filename, serverId: "local" }))
     const page = await run(migrated.getTranscriptPage(session.id, undefined, 32))
@@ -385,7 +388,8 @@ describe("@codevisor/db", () => {
     expect(legacyJournals(filename)).toEqual([])
 
     const sqlite = new Database(filename)
-    sqlite.exec(`
+    try {
+      sqlite.exec(`
       create table legacy_events (id integer primary key autoincrement, payload text not null);
       create table legacy_session_events (
         session_id text not null references sessions(id) on delete cascade,
@@ -393,7 +397,9 @@ describe("@codevisor/db", () => {
       );
       delete from schema_migrations where id = 53;
     `)
-    sqlite.close()
+    } finally {
+      sqlite.close()
+    }
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
     expect(legacyJournals(filename)).toEqual([])
   })
@@ -401,15 +407,19 @@ describe("@codevisor/db", () => {
   it("finds a deleted chat item's routes by index instead of scanning every route", async () => {
     const filename = tempDatabase()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+    let plan: ReadonlyArray<string>
     const sqlite = new Database(filename)
-    const plan = rowReader({ detail: text })
-      .all(
-        sqlite
-          .prepare("explain query plan delete from chat_item_routes where item_id = ?")
-          .all("item")
-      )
-      .map((row) => row.detail)
-    sqlite.close()
+    try {
+      plan = rowReader({ detail: text })
+        .all(
+          sqlite
+            .prepare("explain query plan delete from chat_item_routes where item_id = ?")
+            .all("item")
+        )
+        .map((row) => row.detail)
+    } finally {
+      sqlite.close()
+    }
     expect(plan.join("\n")).toContain("INDEX chat_item_routes_item_idx")
   })
 })
