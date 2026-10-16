@@ -75,7 +75,8 @@ for arch in arm64; do
     --cache-control "public, max-age=60"
 done
 
-for target in linux-arm64 linux-x64 darwin-arm64 darwin-x64; do
+server_targets=(linux-arm64 linux-x64 darwin-arm64 darwin-x64)
+for target in "${server_targets[@]}"; do
   archive="$artifact_dir/codevisor-server-$target.tar.gz"
   checksum="$archive.sha256"
   [[ -f "$archive" && -f "$checksum" ]] || { echo "Missing server artifact for $target" >&2; exit 1; }
@@ -98,14 +99,14 @@ jq -n \
     version: $version,
     buildNumber: $buildNumber,
     releasePageURL: $releasePageURL,
-    targets: (["linux-arm64","linux-x64","darwin-arm64","darwin-x64"] | map({
+    targets: ($ARGS.positional | map({
       key: .,
       value: {
         archiveURL: ($origin + "/codevisor-server-" + . + ".tar.gz"),
         checksumURL: ($origin + "/codevisor-server-" + . + ".tar.gz.sha256")
       }
     }) | from_entries)
-  }' > "$manifest"
+  }' --args "${server_targets[@]}" > "$manifest"
 aws s3 cp "$manifest" "s3://$bucket/server/$channel.json" \
   --endpoint-url "$R2_S3_API_ENDPOINT" \
   --content-type application/json \
