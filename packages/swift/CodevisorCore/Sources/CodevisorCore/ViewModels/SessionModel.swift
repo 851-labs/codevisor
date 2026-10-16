@@ -195,9 +195,7 @@ public final class SessionModel {
   }
 
   @ObservationIgnored var appliedUpdateCount = 0
-}
 
-extension SessionModel {
   func runningSubagentSpawnIds(_ tasks: [BackgroundTaskInfo]) -> Set<String> {
     var ids = Set<String>()
     for task in tasks where task.taskType == "subagent" {
