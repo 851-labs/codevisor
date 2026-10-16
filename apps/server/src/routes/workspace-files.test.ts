@@ -99,7 +99,7 @@ const fixture = async () => {
 }
 
 describe("workspace files route", () => {
-  it("merges agent edits with the checkout's uncommitted changes", async () => {
+  it("lists the checkout's uncommitted changes, dated by the latest agent edit", async () => {
     const { repo } = makeRepo()
     const f = await fixture()
     vi.useFakeTimers({ toFake: ["Date"] })
@@ -127,10 +127,9 @@ describe("workspace files route", () => {
       "shell.txt",
       "src/app.ts",
       "src/new.ts",
-      "committed.ts",
       "gone.txt"
     ])
-    const [shell, app, created, committed, gone] = body.files
+    const [shell, app, created, gone] = body.files
     expect(shell).toMatchObject({ status: "modified", added: 1, removed: 0, uncommitted: true })
     expect(shell?.sessionId).toBeUndefined()
     expect(app).toEqual({
@@ -143,14 +142,6 @@ describe("workspace files route", () => {
       sessionId: work.session.id
     })
     expect(created).toMatchObject({ status: "added", added: 2, removed: 0, uncommitted: true })
-    expect(committed).toEqual({
-      path: "committed.ts",
-      added: 5,
-      removed: 1,
-      uncommitted: false,
-      changedAt: "2020-01-01T12:02:00.000Z",
-      sessionId: work.session.id
-    })
     expect(gone).toEqual({
       path: "gone.txt",
       added: 0,
@@ -169,7 +160,7 @@ describe("workspace files route", () => {
     )
   })
 
-  it("reads agent edits without git when the checkout is linked, missing, archived or failing", async () => {
+  it("follows a linked checkout, and lists nothing without a readable checkout", async () => {
     const { root, repo } = makeRepo()
     const linked = join(root, "linked")
     symlinkSync(repo, linked)
@@ -177,42 +168,28 @@ describe("workspace files route", () => {
     vi.useFakeTimers({ toFake: ["Date"] })
 
     const throughLink = await f.workspace({ rootDirectory: linked })
-    await throughLink.edit(1, "real", [{ path: join(repo, "committed.ts"), added: 1, removed: 0 }])
+    await throughLink.edit(1, "real", [{ path: join(repo, "shell.txt"), added: 1, removed: 0 }])
+    await throughLink.edit(2, "older", [{ path: join(linked, "shell.txt"), added: 1, removed: 0 }])
     const rootless = await f.workspace({})
-    await rootless.edit(2, "rootless", [
-      { path: "notes.md", added: 2, removed: 0 },
-      { path: join(repo, "committed.ts"), added: 1, removed: 0 }
-    ])
-    const archived = await f.workspace({
-      rootDirectory: join(root, "archived-worktree"),
-      isArchived: true
-    })
-    await archived.edit(3, "archived", [
-      { path: join(root, "archived-worktree", "kept.ts"), added: 3, removed: 1 }
-    ])
+    await rootless.edit(3, "rootless", [{ path: "notes.md", added: 2, removed: 0 }])
+    const archived = await f.workspace({ rootDirectory: repo, isArchived: true })
+    await archived.edit(4, "archived", [{ path: join(repo, "shell.txt"), added: 1, removed: 0 }])
     vi.useRealTimers()
     writeFileSync(join(repo, "shell.txt"), "x\ny\n")
 
-    expect((await f.files(throughLink.workspace.id)).files).toMatchObject([
-      { path: "shell.txt", uncommitted: true },
-      { path: "committed.ts", added: 1, uncommitted: false }
+    expect((await f.files(throughLink.workspace.id)).files).toEqual([
+      {
+        path: "shell.txt",
+        added: 1,
+        removed: 0,
+        status: "modified",
+        uncommitted: true,
+        changedAt: "2020-01-01T12:02:00.000Z",
+        sessionId: throughLink.session.id
+      }
     ])
-    expect(await f.files(rootless.workspace.id)).toEqual({
-      files: [
-        {
-          path: "notes.md",
-          added: 2,
-          removed: 0,
-          uncommitted: false,
-          changedAt: "2020-01-01T12:02:00.000Z",
-          sessionId: rootless.session.id
-        }
-      ],
-      truncated: false
-    })
-    expect((await f.files(archived.workspace.id)).files).toMatchObject([
-      { path: "kept.ts", added: 3, removed: 1, uncommitted: false }
-    ])
+    expect(await f.files(rootless.workspace.id)).toEqual({ files: [], truncated: false })
+    expect(await f.files(archived.workspace.id)).toEqual({ files: [], truncated: false })
 
     const failure = vi.spyOn(console, "error").mockImplementation(() => {})
     try {
@@ -221,7 +198,7 @@ describe("workspace files route", () => {
         "workspace-files",
         throughLink.workspace
       )
-      expect(failing.files).toMatchObject([{ path: "committed.ts", uncommitted: false }])
+      expect(failing).toEqual({ files: [], truncated: false })
       expect(failure).toHaveBeenCalledWith("Could not read workspace changes:", expect.any(Error))
     } finally {
       failure.mockRestore()
