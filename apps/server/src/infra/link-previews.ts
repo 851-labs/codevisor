@@ -128,11 +128,11 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
     options.background ?? ((refresh: Promise<unknown>) => void refresh.catch(() => undefined))
   /* v8 ignore stop */
   const fetchBounded = makeBoundedFetch(fetchImpl, FETCH_TIMEOUT_MS)
-  const inFlight = new Map<string, Promise<Entry>>()
+  const inFlight = new Map<string, Promise<Entry | undefined>>()
 
-  const resolve = async (url: string, hops = 0): Promise<Entry> => {
+  const resolve = async (url: string, hops = 0): Promise<Entry | undefined> => {
     const page = await fetchBounded(url, HTML_MAX_BYTES, "text/html,application/xhtml+xml")
-    if (page === undefined) return {}
+    if (page === undefined) return undefined
     const direct = sniffImageFormat(page.data) === undefined ? undefined : page
     const metadata =
       direct === undefined
@@ -213,14 +213,14 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
     } catch {}
   }
 
-  const cached = async (url: string): Promise<Entry> => {
+  const cached = async (url: string): Promise<Entry | undefined> => {
     const key = `preview:${url}`
-    const refresh = (): Promise<Entry> => {
+    const refresh = (): Promise<Entry | undefined> => {
       const running = inFlight.get(key)
       if (running !== undefined) return running
       const task = resolve(url)
         .then(async (entry) => {
-          await writeCache(key, entry)
+          if (entry !== undefined) await writeCache(key, entry)
           return entry
         })
         .finally(() => inFlight.delete(key))
@@ -235,13 +235,13 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
     return entry
   }
 
-  const load = async (raw: string): Promise<Entry> => {
+  const load = async (raw: string): Promise<Entry | undefined> => {
     const url = normalizePreviewUrl(raw)
-    return url === undefined ? {} : cached(url)
+    return url === undefined ? undefined : cached(url)
   }
 
   return {
-    preview: async (url) => (await load(url)).preview,
-    image: async (url) => (await load(url)).image
+    preview: async (url) => (await load(url))?.preview,
+    image: async (url) => (await load(url))?.image
   }
 }

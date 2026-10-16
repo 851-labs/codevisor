@@ -144,7 +144,7 @@ describe("link preview store", () => {
     expect(untitled?.image).toMatchObject({ width: 20, height: 20 })
   })
 
-  it("remembers pages without a preview for an hour", async () => {
+  it("remembers pages without a preview for an hour, but retries pages that failed to load", async () => {
     const { previews, requested, advance } = await store({
       "https://site.test/bare": html("<meta charset=utf-8>")
     })
@@ -152,11 +152,13 @@ describe("link preview store", () => {
     expect(await previews.preview("https://site.test/bare")).toBeUndefined()
     expect(await previews.image("https://site.test/bare")).toBeUndefined()
     expect(requested).toHaveLength(2)
+    expect(await previews.image("https://site.test/missing")).toBeUndefined()
+    expect(requested).toHaveLength(3)
     advance(HOUR)
     expect(await previews.preview("https://site.test/bare")).toBeUndefined()
-    expect(requested).toHaveLength(3)
+    expect(requested).toHaveLength(4)
     expect(await previews.preview("mailto:someone@site.test")).toBeUndefined()
-    expect(requested).toHaveLength(3)
+    expect(requested).toHaveLength(4)
   })
 
   it("retries a failed image after an hour and refreshes good previews after a day", async () => {
