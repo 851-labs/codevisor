@@ -134,20 +134,32 @@ struct ProtocolCodableTests {
       SessionUpdate.availableSkillsUpdate(
         SessionSkills(skills: [SessionSkill(name: "review", invocation: "/review", source: .builtin)])))
     try roundTrip(SessionUpdate.currentModeUpdate(currentModeId: "fast"))
-    try roundTrip(
-      SessionUpdate.goalUpdate(
-        SessionGoal(
-          objective: "ship goal mode",
-          status: .active,
-          activity: .verifying,
-          tokenBudget: 50_000,
-          tokensUsed: 1_200,
-          timeUsedSeconds: 42.125,
-          createdAt: "2026-07-05T00:00:00.000Z",
-          updatedAt: "2026-07-05T00:01:00.000Z"
-        )))
-    try roundTrip(SessionUpdate.goalUpdate(SessionGoal(objective: "unbounded", status: .paused)))
+    let boundedGoal = SessionUpdate.goalUpdate(
+      SessionGoal(
+        objective: "ship goal mode",
+        status: .active,
+        activity: .verifying,
+        tokenBudget: 50_000,
+        tokensUsed: 1_200,
+        timeUsedSeconds: 42.125,
+        createdAt: "2026-07-05T00:00:00.000Z",
+        updatedAt: "2026-07-05T00:01:00.000Z"
+      ))
+    try roundTrip(boundedGoal)
+    try assertWire(
+      boundedGoal,
+      json:
+        #"{"sessionUpdate":"goal_update","goal":{"objective":"ship goal mode","status":"active","activity":"verifying","tokenBudget":50000,"tokensUsed":1200,"timeUsedSeconds":42.125,"createdAt":"2026-07-05T00:00:00.000Z","updatedAt":"2026-07-05T00:01:00.000Z"}}"#
+    )
+    let unboundedGoal = SessionUpdate.goalUpdate(SessionGoal(objective: "unbounded", status: .paused))
+    try roundTrip(unboundedGoal)
+    try assertWire(
+      unboundedGoal,
+      json:
+        #"{"sessionUpdate":"goal_update","goal":{"objective":"unbounded","status":"paused","tokensUsed":0,"timeUsedSeconds":0,"createdAt":"","updatedAt":""}}"#
+    )
     try roundTrip(SessionUpdate.goalCleared)
+    try assertWire(SessionUpdate.goalCleared, json: #"{"sessionUpdate":"goal_cleared"}"#)
     try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .started))
     try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .completed))
     try roundTrip(SessionUpdate.contextCompaction(id: nil, status: .failed))
