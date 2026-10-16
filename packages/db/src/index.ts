@@ -12,6 +12,11 @@ export * from "./identity.js"
 export * from "./ids.js"
 
 export {
+  botPath,
+  botsRoot,
+  isBotFolder,
+  isManagedFolder,
+  isScratchFolder,
   managedRepoPath,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
@@ -28,3 +33,7 @@ export type {
   WorkspaceMediaCursor,
   WorkspaceMessageText
 } from "./workspace-media.js"
+export type {
+  CreateWorkspaceWithSessionRecord,
+  UpsertWorkspaceRecord
+} from "./workspace-service-types.js"

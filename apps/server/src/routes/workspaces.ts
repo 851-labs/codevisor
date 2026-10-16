@@ -29,6 +29,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { assertNotOwnedByBot } from "./bot-guards.js"
 import { cachedPullRequest } from "./git-review.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { routeParam } from "./route-params.js"
@@ -274,6 +275,9 @@ export const routeWorkspaces = async (
         `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
       )
     }
+    if (payload.isArchived === true) {
+      await assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
+    }
     const wasArchived = (await run(services.db.listWorkspaces)).some(
       (candidate) =>
         candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
@@ -297,6 +301,9 @@ export const routeWorkspaces = async (
     if (existing === undefined) {
       throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
     }
+    if (payload.isArchived === true) {
+      await assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
+    }
     const wasArchived = existing.isArchived
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
     const settled = await applyWorkspaceArchiveEffects(
@@ -312,6 +319,7 @@ export const routeWorkspaces = async (
   }
 
   if (workspaceId !== undefined && request.method === "DELETE") {
+    await assertNotOwnedByBot(services, { workspaceId }, "delete this workspace")
     const existing = await findWorkspace(services, workspaceId)
     if (existing === undefined) {
       writeJson(response, 204, undefined)

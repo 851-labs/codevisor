@@ -1,8 +1,7 @@
 import { stat } from "node:fs/promises"
-import { dirname } from "node:path"
 
 import type { Project } from "@codevisor/api"
-import { scratchWorkspacesRoot, type CodevisorDatabaseService } from "@codevisor/db"
+import { isManagedFolder, type CodevisorDatabaseService } from "@codevisor/db"
 import { gitRemoteUrl, isGitWorkTree } from "@codevisor/worktrees"
 
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
@@ -38,7 +37,7 @@ export const reconcileProjectRepoUrls = async (
   const results = [...projects]
   const reconcile = async (project: Project): Promise<Project> => {
     const location = project.locations.find((candidate) => candidate.serverId === serverId)
-    if (location === undefined || dirname(location.folderPath) === scratchWorkspacesRoot()) {
+    if (location === undefined || isManagedFolder(location.folderPath)) {
       return project
     }
     const exists = (await stat(location.folderPath).catch(() => undefined))?.isDirectory() === true

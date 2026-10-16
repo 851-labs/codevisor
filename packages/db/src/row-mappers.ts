@@ -1,5 +1,3 @@
-import { dirname } from "node:path"
-
 import { GitPullRequest, repoIdentityKey } from "@codevisor/api"
 import type {
   ArchivedWorktree,
@@ -16,8 +14,7 @@ import type {
 
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { StringArray, parseJsonColumn } from "./json-column.js"
-import { scratchWorkspacesRoot } from "./paths.js"
-import { resolveSessionCwd, worktreePath } from "./paths.js"
+import { isBotFolder, isScratchFolder, resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,
   FileMetadataRow,
@@ -70,9 +67,10 @@ export const projectFromRow = (
   origin: row.origin,
   createdAt: row.created_at,
   locations: locations.map(projectLocationFromRow),
-  ...(locations.some((location) => dirname(location.folder_path) === scratchWorkspacesRoot())
+  ...(locations.some((location) => isScratchFolder(location.folder_path))
     ? { isScratch: true }
     : {}),
+  ...(locations.some((location) => isBotFolder(location.folder_path)) ? { isBot: true } : {}),
   ...(row.repo_url === null ? {} : { repoKey: repoIdentityKey(row.repo_url) }),
   ...(row.repo_url === null ? {} : { repoUrl: row.repo_url }),
   ...(row.worktree_base_remote === null || row.worktree_base_branch === null
@@ -162,7 +160,8 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     ...(labels === undefined ? {} : { labels }),
-    ...(git === undefined ? {} : { git })
+    ...(git === undefined ? {} : { git }),
+    ...(row.bot_id == null ? {} : { botId: row.bot_id })
   }
 }
 

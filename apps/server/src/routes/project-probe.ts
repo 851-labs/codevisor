@@ -1,14 +1,13 @@
-import { dirname } from "node:path"
-
 import type { Project } from "@codevisor/api"
 import { repoIdentityKey } from "@codevisor/api"
-import { scratchWorkspacesRoot } from "@codevisor/db"
+import { isBotFolder, isScratchFolder } from "@codevisor/db"
 import { isGitWorkTree } from "@codevisor/worktrees"
 
 import { existingDirectory } from "../server-context.js"
 
 export const probeProject = async (serverId: string, project: Project): Promise<Project> => {
   const isScratch = isScratchProject(project)
+  const isBot = isBotProject(project)
   return {
     ...project,
     ...(() => {
@@ -20,14 +19,18 @@ export const probeProject = async (serverId: string, project: Project): Promise<
         location.serverId === serverId && existingDirectory(location.folderPath) !== undefined
           ? {
               ...location,
-              isGitRepository: isScratch ? false : await isGitWorkTree(location.folderPath)
+              isGitRepository: isScratch || isBot ? false : await isGitWorkTree(location.folderPath)
             }
           : location
       )
     ),
-    ...(isScratch ? { isScratch: true } : {})
+    ...(isScratch ? { isScratch: true } : {}),
+    ...(isBot ? { isBot: true } : {})
   }
 }
 
 export const isScratchProject = (project: Project): boolean =>
-  project.locations.some((location) => dirname(location.folderPath) === scratchWorkspacesRoot())
+  project.locations.some((location) => isScratchFolder(location.folderPath))
+
+export const isBotProject = (project: Project): boolean =>
+  project.locations.some((location) => isBotFolder(location.folderPath))

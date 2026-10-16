@@ -14,7 +14,8 @@ extension WorkspaceSyncModel {
       createdAt: ServerDateCoding.string(from: workspace.createdAt),
       sidebarPosition: workspace.sidebarPosition,
       sidebarOrderRevision: workspace.sidebarOrderRevision > 0 ? workspace.sidebarOrderRevision : nil,
-      git: workspace.git
+      git: workspace.git,
+      botId: workspace.botId?.uuidString
     )
   }
 }

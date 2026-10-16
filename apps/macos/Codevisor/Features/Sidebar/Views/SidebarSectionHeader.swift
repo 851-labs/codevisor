@@ -3,9 +3,15 @@ import CodevisorUI
 import SwiftUI
 
 struct SidebarSectionHeader: View {
+  struct Add {
+    let help: String
+    let action: () -> Void
+  }
+
   let title: String
   let isExpanded: Bool
   let onToggle: () -> Void
+  var add: Add? = nil
   @Environment(\.controlActiveState) private var controlActiveState
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isHovered = false
@@ -16,6 +22,19 @@ struct SidebarSectionHeader: View {
       SidebarSectionTitle(title: title)
 
       Spacer(minLength: 0)
+
+      if let add {
+        Button(action: add.action) {
+          Image(systemName: "plus")
+            .font(.system(size: 11, weight: .semibold))
+            .frame(width: 16, height: 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(showsChevron ? AnyShapeStyle(.secondary) : AnyShapeStyle(.clear))
+        .help(add.help)
+        .accessibilityLabel(add.help)
+      }
 
       Button(action: onToggle) {
         Image(systemName: "chevron.right")

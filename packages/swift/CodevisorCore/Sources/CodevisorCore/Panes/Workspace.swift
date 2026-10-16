@@ -61,13 +61,14 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var isArchived: Bool
   public var isServerSynced: Bool
   public var git: ServerWorkspaceGit?
+  public var botId: UUID?
 
   public var isDraft: Bool { !isServerSynced }
 
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
     case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
-    case isServerSynced, sidebarPosition, sidebarOrderRevision
+    case isServerSynced, sidebarPosition, sidebarOrderRevision, botId
   }
 
   public init(from decoder: Decoder) throws {
@@ -96,6 +97,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
+    botId = try container.decodeIfPresent(UUID.self, forKey: .botId)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -114,6 +116,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(isServerSynced, forKey: .isServerSynced)
     try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
     try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
+    try container.encodeIfPresent(botId, forKey: .botId)
   }
 
   public init(

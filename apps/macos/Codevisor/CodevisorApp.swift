@@ -101,6 +101,7 @@ struct RootView: View {
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
   @ClientPreference("sidebar.collapsed", default: false) var sidebarCollapsed
+  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController.withAlerts()
@@ -146,9 +147,16 @@ struct RootView: View {
       guard let store else { return }
       if case let .session(serverId, sessionId) = newValue {
         store.markOpened(sessionId, serverId: serverId)
+      } else if case let .bot(serverId, botId) = newValue,
+        let bot = environment.bots.bot(serverId: serverId, id: botId)
+      {
+        store.markOpened(bot.sessionId, serverId: serverId)
       } else {
         store.clearOpenSession()
       }
+    }
+    .onChange(of: botsEnabled) { _, enabled in
+      if !enabled, case .bot = selection { selection = .newChat(nil) }
     }
     .onChange(of: controlActiveState, initial: true) { _, state in
       store?.setWindowFocused(state == .key)
@@ -209,7 +217,11 @@ struct RootView: View {
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
     store?.selectChat(session)
-    selection = .session(serverId: serverId, id: sessionId)
+    if botsEnabled, let bot = environment.bots.bot(forSession: sessionId, serverId: serverId) {
+      selection = .bot(serverId: serverId, id: bot.id)
+    } else {
+      selection = .session(serverId: serverId, id: sessionId)
+    }
   }
 
   private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {
@@ -286,6 +298,8 @@ struct RootView: View {
       workspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
     case let .archivedWorkspace(serverId, workspaceId):
       archivedWorkspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
+    case let .bot(serverId, botId):
+      botDetail(store, serverId: serverId, botId: botId)
     case let .newChat(target):
       newChat(store, target: target)
     case .none:
@@ -382,6 +396,7 @@ enum SidebarSelection: Hashable {
   case session(serverId: String, id: UUID)
   case workspace(serverId: String, id: UUID)
   case archivedWorkspace(serverId: String, id: UUID)
+  case bot(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
 }
 

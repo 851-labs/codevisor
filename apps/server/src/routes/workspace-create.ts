@@ -17,6 +17,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { botForParentSession } from "./bot-guards.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
@@ -76,7 +77,12 @@ export const routeWorkspaceCreate = async (
   }
   const created = await run(
     services.db.createWorkspaceWithSession({
-      workspace: { ...payload.workspace, id: workspaceId, projectId: project.id },
+      workspace: {
+        ...payload.workspace,
+        ...(await botForParentSession(services, payload.session.parentSessionId)),
+        id: workspaceId,
+        projectId: project.id
+      },
       session: sessionPayload,
       ...(payload.pane === undefined ? {} : { pane: payload.pane })
     })

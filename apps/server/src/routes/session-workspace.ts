@@ -28,6 +28,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { botForParentSession } from "./bot-guards.js"
 import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
@@ -72,6 +73,7 @@ const createServerSession = async (
         ...(payload.sidebarOrderHead === undefined
           ? {}
           : { sidebarOrderHead: payload.sidebarOrderHead }),
+        ...(await botForParentSession(services, payload.parentSessionId)),
         id: payload.workspaceId.toLowerCase(),
         projectId: project.id,
         name: payload.worktreeName ?? project.name,
@@ -285,9 +287,21 @@ export const loadAgentSessionFor = async (
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
   const startOptions = { configSelections: session.configSelections ?? {} }
-  if (session.agentSessionId === "") {
-    const sink = sessionEventSink(services, fanout, serverId, sessionId)
-    const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
+  const sink = sessionEventSink(services, fanout, serverId, sessionId)
+  const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
+  const load = (agentSessionId: string) =>
+    run(
+      services.agents.loadAgentSession(
+        session.harnessId,
+        agentSessionId,
+        cwd,
+        sink,
+        accountContext,
+        toolGateway,
+        startOptions
+      )
+    )
+  const startFresh = async () => {
     const agentSessionId = await run(
       services.agents.createAgentSession(
         session.harnessId,
@@ -306,44 +320,42 @@ export const loadAgentSessionFor = async (
       updatedSession.id,
       updatedSession
     )
-    const metadata = await run(
-      services.agents.loadAgentSession(
-        session.harnessId,
-        agentSessionId,
-        cwd,
-        sink,
-        accountContext,
-        toolGateway,
-        startOptions
-      )
-    )
-    if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
-      await run(services.agents.closeAgentSession(agentSessionId))
-      throw new HttpFailure(409, "Workspace was archived while starting its agent")
-    }
-    await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
-    return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
+    return { agentSessionId, metadata: await load(agentSessionId) }
   }
-  const agentSessionId = session.agentSessionId ?? sessionId
-  const sink = sessionEventSink(services, fanout, serverId, sessionId)
-  const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
-  const metadata = await run(
-    services.agents.loadAgentSession(
-      session.harnessId,
-      agentSessionId,
-      cwd,
-      sink,
-      accountContext,
-      toolGateway,
-      startOptions
-    )
-  )
+  const { agentSessionId, metadata } =
+    session.agentSessionId === ""
+      ? await startFresh()
+      : await (async () => {
+          const resumedId = session.agentSessionId ?? sessionId
+          try {
+            return { agentSessionId: resumedId, metadata: await load(resumedId) }
+          } catch (cause) {
+            if (
+              session.origin !== "codevisor" ||
+              !(await hasNoAgentReplyToLose(services, sessionId))
+            ) {
+              throw cause
+            }
+            return startFresh()
+          }
+        })()
   if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
     await run(services.agents.closeAgentSession(agentSessionId))
     throw new HttpFailure(409, "Workspace was archived while starting its agent")
   }
   await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
   return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
+}
+
+const hasNoAgentReplyToLose = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<boolean> => {
+  const detail = await run(services.db.getSessionDetail(sessionId))
+  return (
+    !detail.hasMore &&
+    detail.conversation.every((item) => item.role === "user" || item.text.trim() === "")
+  )
 }
 
 export const configRestorePriority = (option: SessionConfigOption | undefined): number => {

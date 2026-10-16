@@ -19,6 +19,7 @@ public final class AppEnvironment {
   public let appUpdate: AppUpdateModel
   public let updateCenter: UpdateCenter
   public let configSync: ConfigSync
+  public let bots: BotListModel
   public var requiresPermissionsReview = false
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
@@ -92,6 +93,7 @@ public final class AppEnvironment {
     )
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
     configSync = ConfigSync(machines: machines)
+    bots = BotListModel(machines: machines)
     updateCenter.listedHarnessIds = { [configSync] in
       guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
       return Set(HarnessFleet.settings(configSync).map(\.id))
@@ -152,6 +154,10 @@ public final class AppEnvironment {
     applyBootSyncState()
     machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
     machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
+    machines.onBotsChanged = { [weak self] serverId in
+      guard let bots = self?.bots else { return }
+      Task { await bots.refresh(serverId: serverId) }
+    }
     machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
     backfillComposerDefaultsFromPersistedState()
     if self.composerDefaults.lastNewWorkspaceServerId == nil,

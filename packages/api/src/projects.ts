@@ -38,7 +38,8 @@ export const Project = Schema.Struct({
   repoKey: Schema.optional(Schema.String),
   worktreeBase: Schema.optional(ProjectWorktreeBase),
   defaultRunLocation: Schema.optional(ProjectRunLocation),
-  isScratch: Schema.optional(Schema.Boolean)
+  isScratch: Schema.optional(Schema.Boolean),
+  isBot: Schema.optional(Schema.Boolean)
 })
 export type Project = typeof Project.Type
 

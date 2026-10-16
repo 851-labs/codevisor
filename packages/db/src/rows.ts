@@ -60,3 +60,13 @@ export type {
   FileStorageRecord
 } from "./file-storage-rows.js"
 export { fileMetadataRows, fileStorageRows, fileStorageState } from "./file-storage-rows.js"
+
+export type {
+  BotRow,
+  BotProjectRow,
+  BotOwnerQuery,
+  BotsService,
+  CreateBotRecord,
+  UpdateBotRecord
+} from "./bot-rows.js"
+export { botRows, botProjectRows } from "./bot-rows.js"

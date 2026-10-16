@@ -122,7 +122,7 @@ extension SidebarView {
       return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
     case let .workspace(serverId, id):
       return serverId == workspace.serverId && id == workspace.id
-    case .archivedWorkspace, .newChat, .none:
+    case .archivedWorkspace, .bot, .newChat, .none:
       return false
     }
   }
@@ -202,7 +202,7 @@ extension SidebarView {
       switch selection {
       case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
       case let .workspace(_, id): id
-      case .archivedWorkspace, .newChat, .none: nil
+      case .archivedWorkspace, .bot, .newChat, .none: nil
       }
     guard let workspace = workspaceId.flatMap({ environment.workspaces.workspace(id: $0) }),
       !workspace.isArchived

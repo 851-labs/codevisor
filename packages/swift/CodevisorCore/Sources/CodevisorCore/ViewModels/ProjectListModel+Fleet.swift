@@ -34,7 +34,7 @@ extension ProjectListModel {
 
   public var fleetActiveProjects: [Project] {
     projects
-      .filter { $0.origin == .codevisor || !fleetSessions(in: $0).isEmpty }
+      .filter { !$0.isBot && ($0.origin == .codevisor || !fleetSessions(in: $0).isEmpty) }
       .sorted { $0.createdAt > $1.createdAt }
   }
 

@@ -61,6 +61,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
   public var worktreeBase: ProjectWorktreeBase?
   public var defaultRunLocation: ProjectRunLocation?
   public var isScratch: Bool
+  public var isBot: Bool
 
   public init(
     id: UUID = UUID(),
@@ -73,7 +74,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     repoKey: String? = nil,
     worktreeBase: ProjectWorktreeBase? = nil,
     defaultRunLocation: ProjectRunLocation? = nil,
-    isScratch: Bool = false
+    isScratch: Bool = false,
+    isBot: Bool = false
   ) {
     self.id = id
     self.serverId = serverId
@@ -86,6 +88,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     self.worktreeBase = worktreeBase
     self.defaultRunLocation = defaultRunLocation
     self.isScratch = isScratch
+    self.isBot = isBot
   }
 
   public func location(for serverId: String) -> ProjectLocation? {
@@ -121,7 +124,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
 
   private enum Keys: String, CodingKey {
     case id, serverId, name, folderURL, origin, createdAt, locations
-    case isScratch, worktreeBase, defaultRunLocation, repoUrl, repoKey
+    case isScratch, isBot, worktreeBase, defaultRunLocation, repoUrl, repoKey
   }
 
   public init(from decoder: any Decoder) throws {
@@ -132,6 +135,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
     createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
+    isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
     repoUrl = try container.decodeIfPresent(String.self, forKey: .repoUrl)
     repoKey = try container.decodeIfPresent(String.self, forKey: .repoKey)
     worktreeBase = try container.decodeIfPresent(ProjectWorktreeBase.self, forKey: .worktreeBase)
@@ -167,5 +171,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     try container.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
     try container.encodeIfPresent(defaultRunLocation, forKey: .defaultRunLocation)
     try container.encode(isScratch, forKey: .isScratch)
+    try container.encode(isBot, forKey: .isBot)
   }
 }
