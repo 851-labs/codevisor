@@ -146,12 +146,23 @@ struct ComputerUseInteractionTests {
     #expect(computerUseActionLabel("AXPress") == "AXPress")
   }
 
-  @Test("A menu update reports only changed rows with their current element references")
+  @Test("A follow-up observation reports changed, added and removed elements by their stable indexes")
   func observationDifferences() {
-    let old = "4 AXMenu Add\n  5 AXMenuItem New Playlist"
-    let new = old + "\n  8 AXMenuItem agents only (codevisor)"
-    #expect(computerUseObservationText(current: new, previous: old) == "+   8 AXMenuItem agents only (codevisor)")
-    #expect(computerUseObservationText(current: new, previous: new) == "No changes.")
+    let old = [
+      "4 AXMenu Add", "  5 AXMenuItem New Playlist", "  6 AXMenuItem Chill", "  7 AXMenuItem Pool",
+      "  9 AXMenuItem Dance", "… 3 more rows not shown",
+    ].joined(separator: "\n")
+    let new = [
+      "4 AXMenu Add", "  5 AXMenuItem New Playlist Selected", "  8 AXMenuItem agents only (codevisor)",
+      "… 3 more rows not shown",
+    ].joined(separator: "\n")
+    #expect(
+      computerUseObservationText(current: new, previous: old)
+        == [
+          computerUseDiffHeader, "Removed element IDs: 6-7, 9", "~   5 AXMenuItem New Playlist Selected",
+          "+   8 AXMenuItem agents only (codevisor)",
+        ].joined(separator: "\n"))
+    #expect(computerUseObservationText(current: new, previous: new) == "No changes since the previous observation.")
     #expect(computerUseObservationText(current: new, previous: nil) == new)
   }
 

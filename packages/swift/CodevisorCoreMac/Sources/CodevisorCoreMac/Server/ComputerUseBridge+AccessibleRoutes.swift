@@ -223,21 +223,4 @@ extension ComputerUseBridge {
     result["deliveryMode"] = mode
     return result
   }
-
-  func rowLabel(_ row: AXUIElement) -> String? {
-    var queue: [(AXUIElement, Int)] = elementsAttribute(row, kAXChildrenAttribute).map { ($0, 1) }
-    var visited = 0
-    while !queue.isEmpty, visited < 12 {
-      let (element, depth) = queue.removeFirst()
-      visited += 1
-      if ["AXStaticText", "AXTextField"].contains(stringAttribute(element, kAXRoleAttribute) ?? ""),
-        let text = stringAttribute(element, kAXValueAttribute) ?? stringAttribute(element, kAXTitleAttribute),
-        !text.isEmpty
-      {
-        return text
-      }
-      if depth < 3 { queue += elementsAttribute(element, kAXChildrenAttribute).map { ($0, depth + 1) } }
-    }
-    return nil
-  }
 }

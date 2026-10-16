@@ -21,6 +21,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { WebSocket } from "ws"
 
 import type { AutomationTool } from "./mcp-automation-use.js"
+import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
@@ -168,6 +169,7 @@ export interface McpManagerConfig {
   readonly skillSource?: SkillSource
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly pluginTools?: PluginToolSource
+  readonly executionTimers?: ExecutionTimers
   readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
   readonly makeComputerProvider?:
     | (() => AutomationToolProvider & {

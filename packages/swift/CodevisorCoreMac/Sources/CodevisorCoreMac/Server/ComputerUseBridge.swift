@@ -48,6 +48,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
   var windowIDBySession: [String: CGWindowID] = [:]
   var nextElementIndices: [String: Int] = [:]
   var flippedContentWindows: [CGWindowID: Bool] = [:]
+  var lastActionUptimes: [String: TimeInterval] = [:]
 
   public init(supportDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL()) {
     self.supportDirectory = supportDirectory
@@ -175,6 +176,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     var activeSessionIDs = Set<String>()
     defer {
       for sessionID in activeSessionIDs {
+        ComputerUseSyntheticActivation.shared.release(sessionID: sessionID)
         ComputerUseForeground.shared.cancel(sessionID: sessionID)
         ComputerUsePresentation.end(sessionID: sessionID)
         recordings.end(sessionID: sessionID)
@@ -209,7 +211,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 activeSessionIDs.insert(sessionID)
               }
             }
-            response = ["id": id, "result": try handle(message)]
+            let budget = ComputerUseReadBudget(
+              budgetMilliseconds: double(message["budgetMs"]),
+              clientDisconnected: { computerUseClientDisconnected(descriptor) })
+            response = ["id": id, "result": try handle(message, budget: budget)]
           }
         } catch {
           let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]

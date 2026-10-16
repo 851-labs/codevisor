@@ -25,12 +25,30 @@ export interface ExecutionTimers {
   readonly setTimeout: (callback: () => void, ms: number) => () => void
 }
 
-const systemTimers: ExecutionTimers = {
+export const systemExecutionTimers: ExecutionTimers = {
   now: () => performance.now(),
   setTimeout: (callback, ms) => {
     const handle = setTimeout(callback, ms)
     return () => clearTimeout(handle)
   }
+}
+
+export const EXECUTE_DEFAULT_TIMEOUT_MS = 120_000
+export const EXECUTE_MAX_TIMEOUT_MS = 600_000
+
+export const executeTimeoutMessage = (
+  timeoutMs: number,
+  running: ReadonlyArray<string>
+): string => {
+  const still =
+    running.length === 0
+      ? "while your code was running"
+      : `while ${[...new Set(running)].join(", ")} ${running.length === 1 ? "was" : "were"} still running`
+  return (
+    `execute timed out after ${timeoutMs / 1000}s (timeout_ms ${timeoutMs}) ${still}; ` +
+    `its pending tool calls were cancelled. If this work legitimately needs longer, ` +
+    `pass a larger timeout_ms (up to ${EXECUTE_MAX_TIMEOUT_MS}).`
+  )
 }
 
 export const truncateText = (text: string, max: number): string => {
@@ -49,6 +67,7 @@ export const errorSummary = (error: string, max: number): string => {
 export const executionArgsHash = (args: {
   readonly code: string
   readonly description: string
+  readonly timeout_ms?: number
 }): string => createHash("sha256").update(canonicalExecutionArgs(args)).digest("hex")
 
 export interface ExecutionRecorder {
@@ -76,7 +95,7 @@ export const makeExecutionRecorder = (options: {
   readonly timers?: ExecutionTimers
 }): ExecutionRecorder => {
   const { sink, sessionId, argsHash } = options
-  const timers = options.timers ?? systemTimers
+  const timers = options.timers ?? systemExecutionTimers
   const firstLine = options.description?.split("\n").find((line) => line.trim().length > 0)
   const description =
     firstLine === undefined

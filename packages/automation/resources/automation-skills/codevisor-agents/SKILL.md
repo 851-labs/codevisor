@@ -80,10 +80,12 @@ A new workspace, optionally with its own git worktree, suits separate work that 
   tools.codevisor.sessions.wait({
     ids: [a, b, c],
     until: ["idle", "waitingForUser", "errored"],
-    timeoutMs: 240000
+    timeoutMs: 100000
   })
 // → { sessions: [{ id, sidebarState, actionRequiredKind?, pendingQuestion? }], timedOut }
 ```
+
+- Keep `timeoutMs` inside the execute call's `timeout_ms` (default 120000). For a longer wait, pass a larger `timeout_ms` to execute.
 
 - It returns as soon as any listed session reaches one of the `until` states.
 - Call it again with the remaining ids to keep waiting.

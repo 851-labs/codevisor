@@ -54,7 +54,7 @@ class ActiveExecutionBudget {
 }
 
 const timeoutMessage = (timeoutMs: number): string =>
-  `QuickJS active execution timed out after ${timeoutMs}ms`
+  `Script used its ${timeoutMs}ms CPU budget for running JavaScript (time spent waiting on tools does not count); check for an infinite loop`
 
 const cancellationMessage = (): string => "QuickJS execution was cancelled"
 
@@ -62,6 +62,7 @@ const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
 const toErrorMessage = (cause: unknown): string => {
+  if (typeof cause === "string") return cause
   if (typeof cause === "object" && cause !== null) {
     const message =
       "message" in cause && typeof cause.message === "string" ? cause.message : undefined
@@ -80,6 +81,10 @@ const normalizeExecutionError = (
 ): string => {
   if (signal?.aborted === true) return cancellationMessage()
   const message = toErrorMessage(cause)
+    .split("\n")
+    .filter((line) => !new RegExp(`^\\s*at .*${EXECUTION_FILENAME}:\\d+:\\d+\\)?\\s*$`).test(line))
+    .join("\n")
+    .trimEnd()
   return budget.exhausted() && /\binterrupted\b/i.test(message)
     ? timeoutMessage(budget.limitMs)
     : message
@@ -422,7 +427,7 @@ export const makePersistentCodeExecutor = (
         )
         if (
           executeOptions.signal?.aborted ||
-          /QuickJS active execution timed out|out of memory/i.test(result.error ?? "")
+          /CPU budget for running JavaScript|out of memory/i.test(result.error ?? "")
         ) {
           dispose()
           return { ...result, error: `${result.error}. Computer Use bindings were reset.` }

@@ -3,7 +3,7 @@ import ApplicationServices
 import Foundation
 
 extension ComputerUseBridge {
-  func handle(_ message: [String: Any]) throws -> [String: Any] {
+  func handle(_ message: [String: Any], budget: ComputerUseReadBudget = .unlimited) throws -> [String: Any] {
     let type = message["type"] as? String
     if type == "screenSharing" {
       guard let request = message["request"] as? [String: Any] else {
@@ -18,16 +18,19 @@ extension ComputerUseBridge {
     let sessionID = message["sessionId"] as? String ?? ""
     let agentLabel = message["agentLabel"] as? String
     if type == "finishTurn" {
+      ComputerUseSyntheticActivation.shared.release(sessionID: sessionID)
       ComputerUseForeground.shared.cancel(sessionID: sessionID)
       ComputerUsePresentation.finishTurn(sessionID: sessionID)
       return textResult("turn finished")
     }
     if type == "closeSession" {
+      ComputerUseSyntheticActivation.shared.release(sessionID: sessionID)
       ComputerUseForeground.shared.cancel(sessionID: sessionID)
       _ = lock.withLock { snapshots.removeValue(forKey: sessionID) }
       lock.withLock {
         latestSnapshotIDs = latestSnapshotIDs.filter { !$0.key.hasPrefix(sessionID + ":app:") }
         windowIDBySession = windowIDBySession.filter { !$0.key.hasPrefix(sessionID + ":app:") }
+        lastActionUptimes = lastActionUptimes.filter { !$0.key.hasPrefix(sessionID + ":app:") }
         nextElementIndices.removeValue(forKey: sessionID)
       }
       ComputerUsePresentation.end(sessionID: sessionID)
@@ -62,7 +65,18 @@ extension ComputerUseBridge {
         agentLabel: agentLabel,
         app: appName,
         requestedWindowID: requestedWindowID,
-        options: arguments
+        options: arguments,
+        budget: budget
+      )
+    }
+    if tool == "find" {
+      return try findElements(
+        sessionID: sessionID,
+        agentLabel: agentLabel,
+        app: appName,
+        requestedWindowID: requestedWindowID,
+        options: arguments,
+        budget: budget
       )
     }
     if tool == "await_change" {
@@ -97,6 +111,15 @@ extension ComputerUseBridge {
     } catch let error as ComputerUseNoWindow {
       guard addressesProcess else { throw error }
       resolvedWindow = nil
+    }
+    ComputerUseSyntheticActivation.shared.hold(
+      app: app, sessionID: sessionID, windowID: resolvedWindow?.windowID,
+      forKeyboard: ["press_key", "type_text", "paste_text"].contains(tool))
+    defer {
+      lock.withLock {
+        lastActionUptimes[computerUseAppScope(sessionID, app.processIdentifier)] =
+          ProcessInfo.processInfo.systemUptime
+      }
     }
     if let resolvedWindow {
       return try handleWindowedTool(

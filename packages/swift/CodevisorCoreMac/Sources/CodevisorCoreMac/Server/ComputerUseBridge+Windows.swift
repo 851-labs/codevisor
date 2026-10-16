@@ -67,6 +67,10 @@ func computerUseWindowIsOnVisibleSpace(
   }
 }
 
+func computerUseIsDialogWindow(role: String?, subrole: String?, modal: Bool) -> Bool {
+  role == "AXSheet" || modal || ["AXDialog", "AXSystemDialog"].contains(subrole ?? "")
+}
+
 extension ComputerUseBridge {
   private func mainWindow(_ application: AXUIElement) throws -> AXUIElement {
     AXUIElementSetMessagingTimeout(application, 1)
@@ -89,6 +93,17 @@ extension ComputerUseBridge {
     throw ComputerUseNoWindow()
   }
 
+  func accessibleWindows(_ application: AXUIElement) -> [AXUIElement] {
+    var seen = Set<CGWindowID>()
+    return
+      (elementsAttribute(application, kAXWindowsAttribute)
+      + [
+        elementAttribute(application, kAXFocusedWindowAttribute),
+        elementAttribute(application, kAXMainWindowAttribute),
+      ].compactMap { $0 })
+      .filter { window in computerUseWindowID(for: window).map { seen.insert($0).inserted } ?? true }
+  }
+
   func selectSessionWindow(
     sessionID: String,
     application: AXUIElement,
@@ -96,10 +111,7 @@ extension ComputerUseBridge {
   ) throws {
     var pid: pid_t = 0
     AXUIElementGetPid(application, &pid)
-    guard
-      elementsAttribute(application, kAXWindowsAttribute).contains(where: {
-        computerUseWindowID(for: $0) == requestedWindowID
-      })
+    guard accessibleWindows(application).contains(where: { computerUseWindowID(for: $0) == requestedWindowID })
     else {
       throw BridgeError(
         "That window does not belong to this app. Use a windowId from the app state's windows list."
@@ -131,13 +143,7 @@ extension ComputerUseBridge {
     let scope = computerUseAppScope(sessionID, pid)
     let pinnedID = lock.withLock { windowIDBySession[scope] }
     if let pinnedID {
-      let candidates =
-        elementsAttribute(application, kAXWindowsAttribute)
-        + [
-          elementAttribute(application, kAXFocusedWindowAttribute),
-          elementAttribute(application, kAXMainWindowAttribute),
-        ].compactMap { $0 }
-      if let pinned = candidates.first(where: { computerUseWindowID(for: $0) == pinnedID }) {
+      if let pinned = accessibleWindows(application).first(where: { computerUseWindowID(for: $0) == pinnedID }) {
         return (pinned, pinnedID)
       }
     }
@@ -267,7 +273,7 @@ extension ComputerUseBridge {
   ) -> [[String: Any]] {
     let focusedID = elementAttribute(application, kAXFocusedWindowAttribute)
       .flatMap { computerUseWindowID(for: $0) }
-    return elementsAttribute(application, kAXWindowsAttribute).compactMap { candidate in
+    return accessibleWindows(application).compactMap { candidate in
       guard let id = computerUseWindowID(for: candidate) else { return nil }
       var entry: [String: Any] = [
         "windowId": Int(id),

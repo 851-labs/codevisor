@@ -19,8 +19,24 @@ export { computerUseTools } from "./computer-use-tools.js"
 interface PendingRequest {
   readonly resolve: (value: unknown) => void
   readonly reject: (cause: Error) => void
-  readonly timer: ReturnType<typeof setTimeout>
+  readonly cleanup: () => void
 }
+
+const HOUSEKEEPING_TIMEOUT_MS = 30_000
+const NATIVE_REPLY_MARGIN_MS = 1_000
+
+const housekeepingSignal = (): AbortSignal => {
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () => controller.abort(new Error("Computer Use helper timed out")),
+    HOUSEKEEPING_TIMEOUT_MS
+  )
+  timer.unref?.()
+  return controller.signal
+}
+
+const abortError = (signal: AbortSignal): Error =>
+  signal.reason instanceof Error ? signal.reason : new Error("Computer Use request was cancelled")
 
 const toolResult = (value: unknown): CallToolResult => {
   const parsed = CallToolResultSchema.safeParse(value)
@@ -29,7 +45,10 @@ const toolResult = (value: unknown): CallToolResult => {
 }
 
 interface HelperClient {
-  readonly request: (payload: Readonly<Record<string, unknown>>) => Promise<unknown>
+  readonly request: (
+    payload: Readonly<Record<string, unknown>>,
+    signal: AbortSignal
+  ) => Promise<unknown>
   readonly close: () => Promise<void>
   readonly isClosed: () => boolean
 }
@@ -37,7 +56,8 @@ interface HelperClient {
 const jsonLineClient = (
   write: (line: string) => void,
   closeTransport: () => Promise<void>,
-  subscribe: (onData: (data: Buffer) => void, onClose: (cause?: Error) => void) => void
+  subscribe: (onData: (data: Buffer) => void, onClose: (cause?: Error) => void) => void,
+  dropConnectionOnCancel: boolean
 ): HelperClient => {
   const pending = new Map<string, PendingRequest>()
   let buffer = ""
@@ -45,10 +65,14 @@ const jsonLineClient = (
   const failAll = (cause = new Error("Computer Use helper closed")) => {
     closed = cause
     for (const request of pending.values()) {
-      clearTimeout(request.timer)
+      request.cleanup()
       request.reject(cause)
     }
     pending.clear()
+  }
+  const close = async () => {
+    failAll()
+    await closeTransport()
   }
   subscribe((data) => {
     buffer += data.toString("utf8")
@@ -64,30 +88,33 @@ const jsonLineClient = (
         const request = pending.get(message.id)
         if (request === undefined) continue
         pending.delete(message.id)
-        clearTimeout(request.timer)
+        request.cleanup()
         if (typeof message.error === "string") request.reject(new Error(message.error))
         else request.resolve(message.result)
       } catch {}
     }
   }, failAll)
   return {
-    request: (payload) => {
+    request: (payload, signal) => {
       if (closed !== undefined) return Promise.reject(closed)
+      if (signal.aborted) return Promise.reject(abortError(signal))
       const id = randomUUID()
       return new Promise<unknown>((resolve, reject) => {
-        const timer = setTimeout(() => {
+        const onAbort = () => {
           pending.delete(id)
-          reject(new Error("Computer Use helper timed out"))
-        }, 30_000)
-        timer.unref?.()
-        pending.set(id, { resolve, reject, timer })
+          reject(abortError(signal))
+          if (dropConnectionOnCancel) void close()
+        }
+        signal.addEventListener("abort", onAbort, { once: true })
+        pending.set(id, {
+          resolve,
+          reject,
+          cleanup: () => signal.removeEventListener("abort", onAbort)
+        })
         write(`${JSON.stringify({ id, ...payload })}\n`)
       })
     },
-    close: async () => {
-      failAll()
-      await closeTransport()
-    },
+    close,
     isClosed: () => closed !== undefined
   }
 }
@@ -149,10 +176,11 @@ const connectMacHelper = async (dataDir: string): Promise<HelperClient> => {
       socket.on("data", onData)
       socket.once("close", () => onClose())
       socket.once("error", onClose)
-    }
+    },
+    true
   )
   try {
-    await client.request({ type: "authenticate", token })
+    await client.request({ type: "authenticate", token }, housekeepingSignal())
     return client
   } catch (cause) {
     await client.close()
@@ -166,7 +194,7 @@ export const requestMacScreenSharing = async (
 ): Promise<unknown> => {
   const client = await connectMacHelper(dataDir)
   try {
-    return await client.request({ type: "screenSharing", request })
+    return await client.request({ type: "screenSharing", request }, housekeepingSignal())
   } finally {
     await client.close()
   }
@@ -218,7 +246,8 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
       processHandle.once("exit", (code) =>
         onClose(new Error(stderr.trim() || `Linux Computer Use helper exited with ${code}`))
       )
-    }
+    },
+    false
   )
 }
 
@@ -283,7 +312,10 @@ export const makeComputerUseProvider = (
     ensureSetup: async () => {
       const client = await connect("setup")
       try {
-        await client.request({ type: "tool", sessionId: "setup", tool: "list_apps", arguments: {} })
+        await client.request(
+          { type: "tool", sessionId: "setup", tool: "list_apps", arguments: {} },
+          housekeepingSignal()
+        )
       } finally {
         if (perSessionConnections) await release("setup")
       }
@@ -293,6 +325,7 @@ export const makeComputerUseProvider = (
       if (!computerUseTools.some((candidate) => candidate.name === toolName)) {
         return textToolResult(`Unknown Computer Use tool: ${toolName}`, true)
       }
+      const signal = context.signal ?? new AbortController().signal
       try {
         if (toolName === "js") {
           if (typeof args.code !== "string") return textToolResult("code is required", true)
@@ -313,13 +346,16 @@ export const makeComputerUseProvider = (
               ? async (ms) => {
                   await (
                     await connect(context.sessionId)
-                  ).request({
-                    type: "tool",
-                    sessionId: context.sessionId,
-                    agentLabel: context.agentLabel,
-                    tool: "await_change",
-                    arguments: { app: args.app, timeout_ms: ms }
-                  })
+                  ).request(
+                    {
+                      type: "tool",
+                      sessionId: context.sessionId,
+                      agentLabel: context.agentLabel,
+                      tool: "await_change",
+                      arguments: { app: args.app, timeout_ms: ms }
+                    },
+                    signal
+                  )
                 }
               : undefined
           )
@@ -330,6 +366,16 @@ export const makeComputerUseProvider = (
         ) {
           return textToolResult(
             "Foreground delivery requires foreground_reason explaining why background cannot complete this action.",
+            true
+          )
+        }
+        if (
+          process.platform !== "darwin" &&
+          (toolName === "find" ||
+            (toolName === "get_app_state" && args.element_index !== undefined))
+        ) {
+          return textToolResult(
+            "find and element_index reads are currently available in the native macOS Codevisor app.",
             true
           )
         }
@@ -350,13 +396,24 @@ export const makeComputerUseProvider = (
         const result = toolResult(
           await (
             await connect(context.sessionId)
-          ).request({
-            type: "tool",
-            sessionId: context.sessionId,
-            agentLabel: context.agentLabel,
-            tool: toolName,
-            arguments: args
-          })
+          ).request(
+            {
+              type: "tool",
+              sessionId: context.sessionId,
+              agentLabel: context.agentLabel,
+              tool: toolName,
+              arguments: args,
+              ...(context.deadline === undefined
+                ? {}
+                : {
+                    budgetMs: Math.max(
+                      0,
+                      Math.floor(context.deadline - performance.now() - NATIVE_REPLY_MARGIN_MS)
+                    )
+                  })
+            },
+            signal
+          )
         )
         const app = computerResultApp(result)
         if (app !== undefined) context.onApp?.(app)
@@ -370,12 +427,16 @@ export const makeComputerUseProvider = (
     finishTurn: async (sessionId) => {
       if (!perSessionConnections) return
       const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
-      await active?.request({ type: "finishTurn", sessionId }).catch(() => undefined)
+      await active
+        ?.request({ type: "finishTurn", sessionId }, housekeepingSignal())
+        .catch(() => undefined)
     },
     closeSession: async (sessionId) => {
       await repls.reset(sessionId)
       const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
-      await active?.request({ type: "closeSession", sessionId }).catch(() => undefined)
+      await active
+        ?.request({ type: "closeSession", sessionId }, housekeepingSignal())
+        .catch(() => undefined)
       if (perSessionConnections) await release(sessionId)
       recordingArtifacts.closeSession(sessionId)
     },

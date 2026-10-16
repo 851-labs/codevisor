@@ -2,6 +2,14 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+func computerUseHoldSeconds(_ value: Any?) throws -> TimeInterval {
+  guard let value else { return 0 }
+  guard let milliseconds = double(value), (0...10_000).contains(milliseconds) else {
+    throw BridgeError("duration_ms must be 0–10000")
+  }
+  return milliseconds / 1_000
+}
+
 func computerUseAXOutcome(_ error: AXError, menuOpened: Bool = false) -> (status: String, verified: Bool) {
   if menuOpened { return ("delivered", true) }
   if error == .success { return ("delivered", false) }
@@ -42,10 +50,14 @@ extension ComputerUseBridge {
     application: AXUIElement, window: AXUIElement, kind: String
   ) throws -> [String: Any] {
     let error = axPerformAction(element, action as CFString, pid: app.processIdentifier)
-    let menuOpened =
-      action == kAXShowMenuAction as String
-      && openMenu(application: application, window: window) != nil
-    let outcome = computerUseAXOutcome(error, menuOpened: menuOpened)
+    let mayOpenMenu =
+      action == kAXShowMenuAction as String || error != .success
+      || ["AXMenuButton", "AXPopUpButton", "AXMenuItem", "AXMenuBarItem"].contains(
+        stringAttribute(element, kAXRoleAttribute) ?? "")
+    let menuOpened = mayOpenMenu && openMenu(near: element, application: application) != nil
+    let menuLikelyOpened = !menuOpened && action == kAXShowMenuAction as String && error == .cannotComplete
+    let outcome =
+      menuLikelyOpened ? (status: "delivered", verified: false) : computerUseAXOutcome(error, menuOpened: menuOpened)
     if outcome.status == "rejected" {
       throw BridgeError(
         "\(computerUseActionLabel(action)) rejected (AXError \(error.rawValue)). Observe the app before retrying.")
@@ -55,6 +67,10 @@ extension ComputerUseBridge {
       detail: ["accessibilityAction": computerUseActionLabel(action), "status": outcome.status])
     if error != .success { result["nativeErrorCode"] = error.rawValue }
     if menuOpened { result["effect"] = "menu_opened" }
+    if menuLikelyOpened {
+      result["effect"] = "menu_probably_opened"
+      result["next"] = "A menu is probably open. Observe the app to read it before choosing an item."
+    }
     if outcome.status == "uncertain" {
       result["delivered"] = NSNull()
       result["next"] =
@@ -82,7 +98,9 @@ extension ComputerUseBridge {
     guard target != nil || arguments["extend_selection"] as? Bool != true else {
       throw BridgeError("extend_selection requires an element, not screenshot coordinates.")
     }
-    if let target {
+    let modifiers = try (arguments["key"] as? String).map(computerUseModifierFlags) ?? []
+    let holdSeconds = try computerUseHoldSeconds(arguments["duration_ms"] ?? arguments["durationMs"])
+    if let target, modifiers.isEmpty, holdSeconds == 0 {
       if let result = try accessibleClickResult(
         target: target.element, button: button, count: count,
         extendingSelection: arguments["extend_selection"] as? Bool == true, app: app,
@@ -101,7 +119,7 @@ extension ComputerUseBridge {
       windowID: delivery.windowID, windowFrame: delivery.windowFrame,
       chromium: computerUseUsesChromiumInput(
         appName: app.localizedName, bundleIdentifier: app.bundleIdentifier, executablePath: app.executableURL?.path),
-      global: mode == "foreground")
+      global: mode == "foreground", flags: modifiers, holdSeconds: holdSeconds)
     ComputerUsePresentation.moveCursor(sessionID: sessionID, to: point, pulse: true)
     return actionResultMetadata(
       kind: "click", path: path, deliveryMode: mode,

@@ -8,7 +8,8 @@ extension ComputerUseBridge {
     agentLabel: String?,
     app name: String,
     requestedWindowID: CGWindowID? = nil,
-    options: [String: Any] = [:]
+    options: [String: Any] = [:],
+    budget: ComputerUseReadBudget = .unlimited
   ) throws -> [String: Any] {
     try requireAccessibility(prompt: true)
     let app = try resolveApp(name)
@@ -40,7 +41,21 @@ extension ComputerUseBridge {
         detail: String(describing: error)
       )
     }
-    let (window, windowID) = resolved
+    var (window, windowID) = resolved
+    ComputerUseSyntheticActivation.shared.hold(app: app, sessionID: sessionID, windowID: windowID)
+    settleAfterAction(sessionID: sessionID, pid: app.processIdentifier, budget: budget)
+    var followedFrom: CGWindowID?
+    if requestedWindowID == nil, options["view"] as? String ?? "auto" == "auto",
+      let dialog = elementAttribute(application, kAXFocusedWindowAttribute),
+      let dialogID = computerUseWindowID(for: dialog), dialogID != windowID,
+      computerUseIsDialogWindow(
+        role: stringAttribute(dialog, kAXRoleAttribute), subrole: stringAttribute(dialog, kAXSubroleAttribute),
+        modal: copyAttribute(dialog, kAXModalAttribute) as? Bool == true)
+    {
+      try selectSessionWindow(sessionID: sessionID, application: application, requestedWindowID: dialogID)
+      followedFrom = windowID
+      (window, windowID) = (dialog, dialogID)
+    }
     activatePresentation(
       sessionID: sessionID,
       agentLabel: agentLabel,
@@ -67,11 +82,11 @@ extension ComputerUseBridge {
     guard ["auto", "window", "menu", "dialog", "menubar"].contains(requestedView) else {
       throw BridgeError("view must be auto, window, menu, dialog, or menubar")
     }
+    let subtreeRoot = try targetElement(
+      sessionID: sessionID, pid: app.processIdentifier, windowID: windowID, arguments: options)
     let accessibility = computerUsePerformAccessibilityRead(
       targetPID: app.processIdentifier
     ) {
-      var records: [String: ElementRecord] = [:]
-      var lines: [String] = []
       let contentIsFlipped =
         windowFrame.map {
           self.windowContentIsFlipped(
@@ -81,28 +96,64 @@ extension ComputerUseBridge {
             windowFrame: $0
           )
         } ?? false
-      let roots = self.observationRoots(application: application, window: window, view: requestedView)
       let previousByHash = Dictionary(grouping: previous?.elements ?? [:]) { CFHash($0.value.element) }
-      var remaining = 2_000
-      let buttons = self.dialogButtons(
-        of: roots.elements + (roots.view == "window" ? self.sheetElements(of: window) : []))
-      for root in roots.elements {
-        self.snapshotTree(
-          root, depth: 0,
-          screenshotWindowFrame: (options["include_frames"] as? Bool ?? wantsScreenshot) ? windowFrame : nil,
-          screenshotPixelSize: capture?.pixelSize,
-          correctFrame: { element, reported in
-            guard contentIsFlipped, let windowFrame else { return reported }
-            return self.correctedFrame(
-              of: element, reported: reported, application: application, windowFrame: windowFrame)
-          },
-          includeClosedMenus: roots.view == "menubar", dialogButtons: buttons,
-          previous: previousByHash, nextIndex: &nextIndex, remaining: &remaining,
-          records: &records, lines: &lines
-        )
+      let firstIndex = nextIndex
+      let walk = { (roots: (elements: [AXUIElement], view: String)) in
+        nextIndex = firstIndex
+        var records: [String: ElementRecord] = [:]
+        var lines: [String] = []
+        var limits = ComputerUseSnapshotLimits(budget: budget)
+        var redundant: [Int: String] = [:]
+        let buttons = self.dialogButtons(
+          of: roots.elements + (roots.view == "window" ? self.sheetElements(of: window) : []))
+        for root in roots.elements {
+          self.snapshotTree(
+            root, depth: 0,
+            screenshotWindowFrame: (options["include_frames"] as? Bool ?? wantsScreenshot) ? windowFrame : nil,
+            screenshotPixelSize: capture?.pixelSize,
+            correctFrame: { element, reported in
+              guard contentIsFlipped, let windowFrame else { return reported }
+              return self.correctedFrame(
+                of: element, reported: reported, application: application, windowFrame: windowFrame)
+            },
+            includeClosedMenus: roots.view == "menubar", dialogButtons: buttons,
+            previous: previousByHash, nextIndex: &nextIndex, limits: &limits,
+            records: &records, lines: &lines, redundant: &redundant
+          )
+        }
+        return (records: records, lines: lines.filter { !$0.isEmpty }, limits: limits)
       }
-      if remaining == 0 || records.count >= 1_200 {
-        lines.append("Observation truncated; inspect a menu/dialog or scroll to the relevant controls.")
+      var roots =
+        subtreeRoot.map { (elements: [$0.element], view: "element") }
+        ?? self.observationRoots(
+          application: application, window: window, view: requestedView,
+          searchWindowForMenus: requestedView != "auto")
+      var (records, lines, limits) = walk(roots)
+      if requestedView == "auto", subtreeRoot == nil, roots.view != "menu", let menu = limits.openMenu {
+        roots = (elements: [menu], view: "menu")
+        (records, lines, limits) = walk(roots)
+      }
+      var waitedForLoading = false
+      while limits.sawBusyIndicator {
+        let wait = min(
+          computerUseLoadingWindow(
+            sinceAction: self.secondsSinceAction(sessionID: sessionID, pid: app.processIdentifier)),
+          budget.deadline.map { max(0, $0 - ProcessInfo.processInfo.systemUptime - 1) } ?? .infinity, 1)
+        guard wait > 0 else { break }
+        self.awaitQuiet(pid: app.processIdentifier, quietPeriod: 0.25, maxWait: wait)
+        waitedForLoading = true
+        (records, lines, limits) = walk(roots)
+      }
+      if let note = limits.truncationNote { lines.append(note) }
+      if waitedForLoading, limits.sawBusyIndicator {
+        lines.append("A loading indicator is still showing; observe again or use waitFor before relying on this view.")
+      }
+      if let focused = elementAttribute(application, kAXFocusedUIElementAttribute),
+        stringAttribute(focused, kAXRoleAttribute) != kAXWindowRole as String,
+        let id = records.first(where: { CFEqual($0.value.element, focused) })?.key,
+        let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("\(id) ") })
+      {
+        lines.append("Focused element: \(line.trimmingCharacters(in: .whitespaces))")
       }
       if roots.elements.isEmpty { lines.append("No open \(requestedView).") }
       return ComputerUseAppAccessibilityState(
@@ -115,34 +166,25 @@ extension ComputerUseBridge {
         view: roots.view
       )
     }
-    lock.withLock {
-      var session = snapshots[sessionID] ?? [:]
-      session[snapshotID] = SnapshotRecord(
-        elements: accessibility.records,
+    storeSnapshot(
+      sessionID: sessionID, scope: scope, snapshotID: snapshotID, nextIndex: nextIndex,
+      record: SnapshotRecord(
+        elements: computerUseCarriedRecords(previous?.elements ?? [:]).merging(accessibility.records) { $1 },
         pid: app.processIdentifier,
         windowID: windowID,
         windowFrame: windowFrame,
         screenshotPixelSize: capture?.pixelSize,
         createdAt: DispatchTime.now().uptimeNanoseconds,
-        text: accessibility.text,
-        view: accessibility.view
-      )
-      if session.count > 8,
-        let oldest = session.min(by: { $0.value.createdAt < $1.value.createdAt })?.key
-      {
-        session.removeValue(forKey: oldest)
-      }
-      snapshots[sessionID] = session
-      latestSnapshotIDs[scope] = snapshotID
-      nextElementIndices[sessionID] = nextIndex
-    }
+        text: subtreeRoot == nil ? accessibility.text : previous?.text ?? "",
+        view: subtreeRoot == nil ? accessibility.view : previous?.view ?? accessibility.view
+      ))
     let screenshotMetadata: [String: Any] =
       if capture == nil {
         ["available": false, "reason": outcome.reason ?? "No screenshot was produced."]
       } else {
         ["available": true]
       }
-    let diff = options["disableDiff"] as? Bool == false && previous?.view == accessibility.view
+    let diff = options["disableDiff"] as? Bool != true && previous?.view == accessibility.view
     let rendered = computerUseObservationText(current: accessibility.text, previous: diff ? previous?.text : nil)
     var metadata: [String: Any] = [
       "snapshotId": snapshotID,
@@ -163,13 +205,18 @@ extension ComputerUseBridge {
     if accessibility.contentIsFlipped {
       metadata["frameOrientationCorrected"] = true
     }
+    if let followedFrom {
+      metadata["followedDialogFrom"] = Int(followedFrom)
+      metadata["next"] =
+        "A dialog opened in its own window, so this observation shows it; click its elements directly. The window it came from is windowId \(followedFrom)."
+    }
     if accessibility.hasModalSheet {
       metadata["modalSheetPresent"] = true
       metadata["next"] = "A modal dialog is open; dismiss or complete it before using other controls."
     }
     let windows = accessibility.windows
     metadata["windows"] = windows
-    if windows.count > 1,
+    if windows.count > 1, accessibility.view != "dialog",
       let focused = windows.first(where: { $0["isFocused"] as? Bool == true }),
       focused["isSessionWindow"] as? Bool != true,
       let focusedID = focused["windowId"]
@@ -208,6 +255,36 @@ extension ComputerUseBridge {
       ])
     }
     return ["content": content]
+  }
+
+  func secondsSinceAction(sessionID: String, pid: pid_t) -> TimeInterval? {
+    let now = ProcessInfo.processInfo.systemUptime
+    return lock.withLock { lastActionUptimes[computerUseAppScope(sessionID, pid)] }.map { now - $0 }
+  }
+
+  func settleAfterAction(sessionID: String, pid: pid_t, budget: ComputerUseReadBudget) {
+    let now = ProcessInfo.processInfo.systemUptime
+    let elapsed = secondsSinceAction(sessionID: sessionID, pid: pid)
+    let remaining = budget.deadline.map { max(0, $0 - now - 1) } ?? .infinity
+    let wait = min(computerUseSettleWindow(sinceAction: elapsed), remaining)
+    if wait > 0 { awaitQuiet(pid: pid, maxWait: wait) }
+  }
+
+  func storeSnapshot(
+    sessionID: String, scope: String, snapshotID: String, nextIndex: Int, record: SnapshotRecord
+  ) {
+    lock.withLock {
+      var session = snapshots[sessionID] ?? [:]
+      session[snapshotID] = record
+      if session.count > 8,
+        let oldest = session.min(by: { $0.value.createdAt < $1.value.createdAt })?.key
+      {
+        session.removeValue(forKey: oldest)
+      }
+      snapshots[sessionID] = session
+      latestSnapshotIDs[scope] = snapshotID
+      nextElementIndices[sessionID] = nextIndex
+    }
   }
 
   private func windowlessAppState(

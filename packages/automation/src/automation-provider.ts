@@ -12,6 +12,8 @@ export interface AutomationProviderContext {
   readonly sessionId: string
   readonly projectId?: string | undefined
   readonly agentLabel?: string | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly deadline?: number | undefined
   readonly invokeBrowser?: (name: string, args: Record<string, unknown>) => Promise<unknown>
   readonly onApp?: (app: ComputerUseApp) => void
   readonly publishRecording?: (file: { readonly path: string; readonly name: string }) => Promise<{

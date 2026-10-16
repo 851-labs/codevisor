@@ -46,7 +46,11 @@ export const makeComputerUseRepls = () => {
         }
       })
       const content: ContentBlock[] = outputContentBlocks(result.output)
-      if (result.error) content.unshift({ type: "text", text: result.error.split("\n")[0]! })
+      if (result.error)
+        content.unshift({
+          type: "text",
+          text: result.error.split("\n")[0]!.replace(/^(?:Error: )+/, "")
+        })
       else if (result.result !== undefined && result.result !== null) {
         const value = result.result
         if (typeof value === "object" && "image" in value) {

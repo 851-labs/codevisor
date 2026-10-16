@@ -136,6 +136,86 @@ describe("Computer Use turn lifecycle", () => {
   )
 })
 
+describe("Computer Use execute deadlines", () => {
+  it.skipIf(process.platform !== "darwin")(
+    "sends the remaining budget, and a cancelled call drops its connection but keeps REPL bindings",
+    async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "codevisor-deadline-bridge-"))
+      const socketPath = macComputerUseSocketPath(dataDir)
+      const requests: Record<string, unknown>[] = []
+      const sockets = new Set<import("node:net").Socket>()
+      let held: { socket: import("node:net").Socket; request: Record<string, unknown> } | undefined
+      let onHeld: (() => void) | undefined
+      const server = createServer((socket) => {
+        sockets.add(socket)
+        socket.once("close", () => sockets.delete(socket))
+        let pending = ""
+        socket.on("data", (data) => {
+          pending += data.toString()
+          let newline: number
+          while ((newline = pending.indexOf("\n")) >= 0) {
+            const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
+            pending = pending.slice(newline + 1)
+            requests.push(request)
+            if (expectRecord(request.arguments ?? {}, "arguments").view === "dialog") {
+              held = { socket, request }
+              onHeld?.()
+              continue
+            }
+            const text = JSON.stringify({ snapshotId: "s", windowId: 1, text: "1 AXWindow Music" })
+            const result = { content: [{ type: "text", text }] }
+            socket.write(`${JSON.stringify({ id: request.id, result })}\n`)
+          }
+        })
+      })
+      const provider = makeComputerUseProvider(dataDir)
+      try {
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_SOCKET", socketPath)
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_TOKEN", "fixture-token")
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject)
+          server.listen(socketPath, resolve)
+        })
+        await provider.invoke({ sessionId: "a" }, "js", {
+          code: 'let count = 7; let music = await computer.getApp("Music", {emit: false});'
+        })
+        const deadline = new AbortController()
+        const reachedNative = new Promise<void>((resolve) => (onHeld = resolve))
+        const cancelled = provider.invoke(
+          { sessionId: "a", signal: deadline.signal, deadline: performance.now() + 60_000 },
+          "js",
+          { code: 'await music.getAXState({view: "dialog"})' }
+        )
+        await reachedNative
+        const budgetMs = held!.request.budgetMs
+        expect(budgetMs).toBeGreaterThan(0)
+        expect(budgetMs).toBeLessThanOrEqual(59_000)
+        const droppedConnection = new Promise<void>((resolve) =>
+          held!.socket.once("close", resolve)
+        )
+        deadline.abort(new Error("execute timed out after 60s"))
+        expect(await cancelled).toMatchObject({
+          isError: true,
+          content: [{ type: "text", text: "execute timed out after 60s" }]
+        })
+        await droppedConnection
+
+        const next = await provider.invoke({ sessionId: "a" }, "js", {
+          code: "await music.getAXState(); count"
+        })
+        expect(next.content).toEqual([{ type: "text", text: "7" }])
+        expect(requests.filter((r) => r.type === "authenticate")).toHaveLength(2)
+      } finally {
+        await provider.close()
+        for (const socket of sockets) socket.destroy()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+        vi.unstubAllEnvs()
+        rmSync(dataDir, { recursive: true, force: true })
+      }
+    }
+  )
+})
+
 describe("native Screen Sharing bridge", () => {
   it.each(["success", "request failure", "authentication failure"])(
     "authenticates and closes its one-shot socket on %s",

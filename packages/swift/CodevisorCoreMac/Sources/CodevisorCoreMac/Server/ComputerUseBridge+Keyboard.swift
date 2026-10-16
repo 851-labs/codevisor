@@ -12,6 +12,20 @@ func computerUseModifierFlag(named name: String) -> CGEventFlags? {
   }
 }
 
+func computerUseModifierFlags(_ chord: String) throws -> CGEventFlags {
+  var flags: CGEventFlags = []
+  for part in chord.lowercased().split(separator: "+").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+    switch part {
+    case "shift", "shift_l", "shift_r": flags.insert(.maskShift)
+    case "ctrl", "control", "control_l", "control_r": flags.insert(.maskControl)
+    case "alt", "option", "opt", "alt_l", "alt_r": flags.insert(.maskAlternate)
+    case "super", "cmd", "command", "meta", "super_l", "super_r": flags.insert(.maskCommand)
+    default: throw BridgeError("key must be modifier keys such as shift, ctrl, alt or cmd, joined with +")
+    }
+  }
+  return flags
+}
+
 extension ComputerUseBridge {
   func validateKey(_ value: String) throws {
     _ = try keyStroke(value)
@@ -126,5 +140,20 @@ extension ComputerUseBridge {
       event.postToPid(pid)
     }
     Thread.sleep(forTimeInterval: 0.01)
+  }
+
+  func announceTextEdit(_ element: AXUIElement, text: String, pid: pid_t) throws -> Bool {
+    guard let last = text.last else { return true }
+    _ = axSetAttribute(element, kAXFocusedAttribute as CFString, kCFBooleanTrue, pid: pid)
+    var end = CFRange(location: (text as NSString).length, length: 0)
+    guard let range = AXValueCreate(.cfRange, &end) else { return true }
+    _ = axSetAttribute(element, kAXSelectedTextRangeAttribute as CFString, range, pid: pid)
+    try keyPress("BackSpace", pid: pid)
+    try typeText(String(last), pid: pid)
+    if computerUseAccessibilityValuesMatch(copyAttribute(element, kAXValueAttribute), text as CFString) {
+      return true
+    }
+    _ = axSetAttribute(element, kAXValueAttribute as CFString, text as CFString, pid: pid)
+    return computerUseAccessibilityValuesMatch(copyAttribute(element, kAXValueAttribute), text as CFString)
   }
 }

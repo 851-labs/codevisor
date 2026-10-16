@@ -102,10 +102,19 @@ extension ComputerUseBridge {
       }
       let coerced = try computerUseAccessibilityValue(value, matching: copyAttribute(element, kAXValueAttribute))
       let error = axSetAttribute(element, kAXValueAttribute as CFString, coerced, pid: app.processIdentifier)
-      let verified = computerUseAccessibilityValuesMatch(copyAttribute(element, kAXValueAttribute), coerced)
+      var verified = computerUseAccessibilityValuesMatch(copyAttribute(element, kAXValueAttribute), coerced)
+      let singleLineText = ["AXTextField", "AXComboBox"].contains(stringAttribute(element, kAXRoleAttribute) ?? "")
+      if verified, singleLineText, let text = coerced as? String, !text.isEmpty {
+        verified = try announceTextEdit(element, text: text, pid: app.processIdentifier)
+      }
       result = try accessibilityMutationResult(error: error, kind: tool, verified: verified)
       if arguments["submit"] as? Bool == true {
-        if actionNames(of: element).contains(kAXConfirmAction as String) {
+        if singleLineText {
+          _ = axSetAttribute(element, kAXFocusedAttribute as CFString, kCFBooleanTrue, pid: app.processIdentifier)
+          try keyPress("Return", pid: app.processIdentifier)
+          result["submitted"] = true
+          result["submitPath"] = "return_key"
+        } else if actionNames(of: element).contains(kAXConfirmAction as String) {
           let submitted = axPerformAction(element, kAXConfirmAction as CFString, pid: app.processIdentifier)
           result["submitted"] = computerUseAXOutcome(submitted).status != "rejected"
         } else {

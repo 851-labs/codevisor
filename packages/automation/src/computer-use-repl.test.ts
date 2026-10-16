@@ -28,7 +28,9 @@ const replyWithMissedWait = async (method: string) =>
   reply({
     snapshotId: "s",
     text: "1 AXWindow",
-    ...(method === "wait_for" ? { matched: false } : {})
+    ...(method === "wait_for"
+      ? { matched: false, waitError: "The requested state did not appear within 0ms" }
+      : {})
   })
 
 describe("Computer Use REPL", () => {
@@ -258,25 +260,25 @@ describe("Computer Use REPL", () => {
     expect((await repl.execute("a", "app.id", invoke)).isError).toBeUndefined()
   })
 
-  it("preserves app bindings after an ordinary wait timeout", async () => {
+  it("preserves app bindings after a wait whose condition was not met", async () => {
     const repl = pool()
     await repl.execute(
       "a",
       'let app=await computer.getApp("Music",{emit:false})',
       replyWithMissedWait
     )
-    const timedOut = await repl.execute(
+    const missed = await repl.execute(
       "a",
       'computer.write("Move attempted"); await app.waitFor({text:"Missing",timeout_ms:0})',
       replyWithMissedWait
     )
-    expect(timedOut.isError).toBe(true)
-    expect(timedOut.content[0]).toMatchObject({
+    expect(missed.isError).toBe(true)
+    expect(missed.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("Timed out")
+      text: "The requested state did not appear within 0ms"
     })
-    expect(text(timedOut)).toContain('"matched":false')
-    expect(text(timedOut)).toContain("Move attempted")
+    expect(text(missed)).toContain('"matched":false')
+    expect(text(missed)).toContain("Move attempted")
     expect(text(await repl.execute("a", "app.id", replyWithMissedWait))).toBe("Music")
   })
 
@@ -330,7 +332,7 @@ describe("Computer Use REPL", () => {
       isError: true,
       content: [{ type: "text", text: "App not found" }]
     }))
-    expect(text(failure)).toBe("Error: App not found")
+    expect(text(failure)).toBe("App not found")
   })
 
   it("returns explicit state images and supports window recovery without retaining a closed window", async () => {

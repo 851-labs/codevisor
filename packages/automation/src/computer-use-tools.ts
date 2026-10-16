@@ -119,11 +119,17 @@ export const computerUseTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "get_app_state",
-    "Launch the app if needed, then explicitly observe its accessibility text and optional screenshot. Actions never take hidden snapshots. Observe after a UI change before choosing another element.",
+    "Launch the app if needed, then explicitly observe its accessibility text and optional screenshot. Actions never take hidden snapshots. Observe after a UI change before choosing another element. Long lists show their visible rows (up to 50) and say how many were left out; use find to search everything.",
     {
       app,
       window_id: window,
       view,
+      element_index: {
+        ...element,
+        description:
+          "Read only the part of the window under this element from the latest observation. Its elements are added to the latest observation."
+      },
+      snapshot_id: snapshot,
       screenshot: {
         type: "boolean",
         description: "Include a screenshot (default true); false reads accessibility only"
@@ -135,7 +141,28 @@ export const computerUseTools: ReadonlyArray<Tool> = [
       disableDiff: {
         type: "boolean",
         description:
-          "true (default) returns full text; false returns changes from this window's previous observation"
+          "false (default) returns only changes since this window's previous observation of the same view; true returns the full text"
+      }
+    },
+    ["app"]
+  ),
+  tool(
+    "find",
+    "Search the app's whole accessibility tree for elements whose name, value, help, placeholder or identifier contains text, optionally filtered by role. Unlike get_app_state it includes rows outside the visible part of a list. Matches are added to the latest observation, so their element indexes work with click and other element actions. Rows are matched by their text.",
+    {
+      app,
+      window_id: window,
+      view,
+      text: { type: "string", description: "Case- and accent-insensitive text to look for" },
+      role: {
+        type: "string",
+        description: "Accessibility role or subrole, e.g. AXRow, AXButton or AXSearchField"
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 200,
+        description: "Maximum matches; default 25"
       }
     },
     ["app"]
@@ -174,6 +201,18 @@ export const computerUseTools: ReadonlyArray<Tool> = [
         type: "boolean",
         description:
           "Add a list or table row to the current selection instead of replacing it, like a Command-click"
+      },
+      key: {
+        type: "string",
+        description:
+          "Modifier keys held for the whole click, e.g. shift, alt or cmd+shift. Uses pointer input, so the window must be visible"
+      },
+      duration_ms: {
+        type: "integer",
+        minimum: 0,
+        maximum: 10000,
+        description:
+          "Hold the mouse button down this long before releasing. Uses pointer input, so the window must be visible"
       }
     },
     ["app"]

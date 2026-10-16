@@ -38,12 +38,27 @@ extension ComputerUseBridge {
   ) throws -> ElementRecord? {
     guard let rawID = arguments["elementId"] ?? arguments["element_index"] else { return nil }
     let snapshot = try currentSnapshot(sessionID: sessionID, pid: pid, windowID: windowID, arguments: arguments)
-    guard let record = snapshot.elements[String(describing: rawID)],
-      elementIdentity(record.element) == record.identity
-    else {
-      throw BridgeError("Unknown or changed element. Call get_app_state again; do not reuse this index.")
+    let id = String(describing: rawID)
+    guard let record = snapshot.elements[id] else {
+      throw BridgeError("Unknown element index. Call get_app_state again; do not reuse this index.")
     }
-    return record
+    if elementIdentity(record.element) == record.identity { return record }
+    guard let moved = relocate(record, pid: pid, windowID: windowID) else {
+      throw BridgeError(
+        "That element is gone or changed (the app redrew it). Call get_app_state again; do not reuse this index.")
+    }
+    lock.withLock {
+      let scope = computerUseSnapshotScope(sessionID, pid, windowID)
+      guard let latest = latestSnapshotIDs[scope], var current = snapshots[sessionID]?[latest] else { return }
+      var elements = current.elements
+      elements[id] = moved
+      current = SnapshotRecord(
+        elements: elements, pid: current.pid, windowID: current.windowID, windowFrame: current.windowFrame,
+        screenshotPixelSize: current.screenshotPixelSize, createdAt: current.createdAt, text: current.text,
+        view: current.view)
+      snapshots[sessionID]?[latest] = current
+    }
+    return moved
   }
 
   func elementIdentity(_ element: AXUIElement) -> String {

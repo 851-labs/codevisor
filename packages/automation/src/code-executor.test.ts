@@ -231,7 +231,9 @@ describe.sequential("Codevisor code executor", () => {
       unavailableTool
     )
 
-    expect(result.error).toBe("QuickJS active execution timed out after 100ms")
+    expect(result.error).toBe(
+      "Script used its 100ms CPU budget for running JavaScript (time spent waiting on tools does not count); check for an infinite loop"
+    )
   })
 
   it("lets sandbox code catch intentional tool errors without leaking defects", async () => {
@@ -254,6 +256,16 @@ describe.sequential("Codevisor code executor", () => {
 
     expect(visible.result).toBe("The click target is unavailable")
     expect(hidden.result).toBe("Internal tool error")
+  })
+
+  it("reports an uncaught tool error without the host's stack frames", async () => {
+    const result = await makeCodeExecutor().execute(`async () => tools.computer.click({})`, {
+      invoke: async () => {
+        throw new CodeExecutionToolError("That element is gone or changed")
+      }
+    })
+
+    expect(result.error).toBe("That element is gone or changed")
   })
 
   it("cancels a suspended execution without waiting for its host tool", async () => {

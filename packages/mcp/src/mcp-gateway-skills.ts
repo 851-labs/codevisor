@@ -103,6 +103,10 @@ export const executeSkill: BuiltinSkill = {
       ].join("\n\n"),
       ["## The `description` argument", DESCRIPTION_GUIDANCE].join("\n\n"),
       [
+        "## The `timeout_ms` argument",
+        "Each call has one wall-clock deadline: `timeout_ms`, default 120000 (2 minutes), maximum 600000. When it passes, the call fails with `execute timed out`, names what was still running, and cancels its pending tool calls. Pass a larger `timeout_ms` next to `code` and `description` for work that legitimately takes longer, such as waiting on other agents."
+      ].join("\n\n"),
+      [
         "## Skills for each capability",
         "Read the skill for a capability (call the `skills` tool with its name) before using it.",
         [

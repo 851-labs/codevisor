@@ -158,7 +158,9 @@ extension ComputerUseBridge {
     windowID: CGWindowID?,
     windowFrame: CGRect?,
     chromium: Bool,
-    global: Bool = false
+    global: Bool = false,
+    flags: CGEventFlags = [],
+    holdSeconds: TimeInterval = 0
   ) throws -> String {
     if global {
       let down: CGEventType =
@@ -170,13 +172,16 @@ extension ComputerUseBridge {
         try postMouseEvent(
           type: .mouseMoved, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: 0)
         try postMouseEvent(
-          type: down, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index)
+          type: down, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index,
+          flags: flags)
+        if holdSeconds > 0 { Thread.sleep(forTimeInterval: holdSeconds) }
         try postMouseEvent(
-          type: up, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index)
+          type: up, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index,
+          flags: flags)
       }
       return "cgevent_global"
     }
-    if chromium, button.caseInsensitiveCompare("left") == .orderedSame {
+    if chromium, button.caseInsensitiveCompare("left") == .orderedSame, flags.isEmpty, holdSeconds == 0 {
       guard let windowID, let windowFrame else {
         throw BridgeError(
           "Chromium pixel delivery needs a visible target window. Restore the window and call get_app_state again."
@@ -226,8 +231,9 @@ extension ComputerUseBridge {
           groupID: groupID,
           phase: Int64(phase)
         )
+        event.flags = flags
         event.postToPid(pid)
-        Thread.sleep(forTimeInterval: 0.03)
+        Thread.sleep(forTimeInterval: event.type == eventTypes.down ? max(0.03, holdSeconds) : 0.03)
       }
     }
     return "cgevent_pid"
@@ -410,7 +416,8 @@ extension ComputerUseBridge {
     clickState: Int = 1,
     windowID: CGWindowID? = nil,
     windowFrame: CGRect? = nil,
-    groupID: Int64 = 0
+    groupID: Int64 = 0,
+    flags: CGEventFlags = []
   ) throws {
     guard
       let event = CGEvent(
@@ -421,7 +428,7 @@ extension ComputerUseBridge {
       )
     else { throw BridgeError("Unable to create mouse event") }
     event.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
-    event.flags = []
+    event.flags = flags
     event.setIntegerValueField(.eventSourceUserData, value: ComputerUseForeground.eventTag)
     if global {
       let release = [.leftMouseUp, .rightMouseUp, .otherMouseUp].contains(type)

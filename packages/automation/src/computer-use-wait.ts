@@ -76,7 +76,11 @@ export const waitForComputerState = async (
             text: JSON.stringify({
               ...state,
               matched,
-              ...(matched ? {} : { waitError: "Timed out waiting for the requested state" })
+              ...(matched
+                ? {}
+                : {
+                    waitError: `The requested state ${requested === "absent" ? "was still present after" : "did not appear within"} ${timeout}ms`
+                  })
             })
           },
           ...result.content.filter((c) => c.type !== "text")

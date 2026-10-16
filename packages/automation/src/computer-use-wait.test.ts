@@ -50,7 +50,20 @@ describe("Computer Use waits", () => {
       async () => reply("Current state"),
       clock()
     )
-    expect(computerUseState(timed)).toMatchObject({ matched: false, text: "Current state" })
+    expect(computerUseState(timed)).toMatchObject({
+      matched: false,
+      text: "Current state",
+      waitError: "The requested state did not appear within 0ms"
+    })
+    const stillOpen = await waitForComputerState(
+      { app: "Music", role: "AXSheet", state: "absent", timeout_ms: 0 },
+      async () => reply("1 AXSheet Create"),
+      clock()
+    )
+    expect(computerUseState(stillOpen)).toMatchObject({
+      matched: false,
+      waitError: "The requested state was still present after 0ms"
+    })
   })
   it("waits for accessibility changes between reads and falls back to polling when unavailable", async () => {
     const time = clock()

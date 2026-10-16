@@ -25,6 +25,7 @@ import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
 export interface GatewayInvokeOptions {
   readonly artifacts?: SandboxArtifactCollector
   readonly signal?: AbortSignal
+  readonly deadline?: number
   readonly onBrowser?: () => void
   readonly onBrowserPage?: (url: string) => void
   readonly onComputerApp?: (app: ComputerUseApp) => void
@@ -85,7 +86,12 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
 
   const invokeAutomationProvider = async (
     provider: AutomationToolProvider,
-    context: { readonly sessionId: string; readonly projectId?: string | undefined },
+    context: {
+      readonly sessionId: string
+      readonly projectId?: string | undefined
+      readonly signal?: AbortSignal | undefined
+      readonly deadline?: number | undefined
+    },
     toolName: string,
     args: Readonly<Record<string, unknown>>,
     collector?: SandboxArtifactCollector,
@@ -253,7 +259,12 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       if (serverId === "browser") options.onBrowser?.()
       const result = await invokeAutomationProvider(
         provider,
-        { sessionId: scopeKey, ...(projectId === undefined ? {} : { projectId }) },
+        {
+          sessionId: scopeKey,
+          ...(projectId === undefined ? {} : { projectId }),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...(options.deadline === undefined ? {} : { deadline: options.deadline })
+        },
         toolName,
         input,
         artifacts,

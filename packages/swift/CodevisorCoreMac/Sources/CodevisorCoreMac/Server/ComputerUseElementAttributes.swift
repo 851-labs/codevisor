@@ -7,14 +7,20 @@ struct ComputerUseElementAttributes {
     kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXIdentifierAttribute,
   ]
 
-  init(_ element: AXUIElement) {
-    let names =
-      Self.identityNames + [
-        kAXValueAttribute, kAXChildrenAttribute, kAXPositionAttribute,
-        kAXSizeAttribute, kAXSelectedAttribute, kAXSelectedTextRangeAttribute, kAXEnabledAttribute,
-        kAXPlaceholderValueAttribute, kAXHelpAttribute, kAXTitleUIElementAttribute, kAXDisclosingAttribute,
-        kAXMenuItemCmdCharAttribute, kAXMenuItemCmdModifiersAttribute,
-      ]
+  static let observationNames =
+    identityNames + [
+      kAXValueAttribute, kAXChildrenAttribute, kAXPositionAttribute,
+      kAXSizeAttribute, kAXSelectedAttribute, kAXSelectedTextRangeAttribute, kAXEnabledAttribute,
+      kAXPlaceholderValueAttribute, kAXHelpAttribute, kAXTitleUIElementAttribute, kAXDisclosingAttribute,
+      kAXMenuItemCmdCharAttribute, kAXMenuItemCmdModifiersAttribute,
+    ]
+  static let searchNames =
+    identityNames + [
+      kAXValueAttribute, kAXChildrenAttribute, kAXSelectedAttribute, kAXEnabledAttribute,
+      kAXPlaceholderValueAttribute, kAXHelpAttribute,
+    ]
+
+  init(_ element: AXUIElement, names: [String] = observationNames) {
     var raw: CFArray?
     let error = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw)
     if error == .success, let raw = raw as? [CFTypeRef], raw.count == names.count {

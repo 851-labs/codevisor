@@ -1,16 +1,48 @@
 import ApplicationServices
 import Foundation
 
+let computerUseDiffHeader = "Changes since the previous observation (~ changed, + added):"
+
 func computerUseObservationText(current: String, previous: String?) -> String {
   guard let previous else { return current }
-  if current == previous { return "No changes." }
-  let old = previous.components(separatedBy: "\n")
-  let new = current.components(separatedBy: "\n")
-  let oldSet = Set(old)
-  let newSet = Set(new)
-  return
-    (old.filter { !newSet.contains($0) }.map { "- " + $0 }
-    + new.filter { !oldSet.contains($0) }.map { "+ " + $0 }).joined(separator: "\n")
+  let keyed = { (text: String) -> [(id: Int?, line: String)] in
+    text.components(separatedBy: "\n").map { line in
+      (Int(line.drop { $0 == " " }.prefix { $0 != " " }), line)
+    }
+  }
+  let old = keyed(previous)
+  let new = keyed(current)
+  let oldLines = Dictionary(old.compactMap { entry in entry.id.map { ($0, entry.line) } }) { first, _ in first }
+  let newIDs = Set(new.compactMap(\.id))
+  let oldNotes = Set(old.filter { $0.id == nil }.map(\.line))
+  var changes: [String] = []
+  let removed = oldLines.keys.filter { !newIDs.contains($0) }.sorted()
+  if !removed.isEmpty { changes.append("Removed element IDs: \(computerUseIDRanges(removed))") }
+  for (id, line) in new {
+    if let id {
+      if let before = oldLines[id] {
+        if before != line { changes.append("~ " + line) }
+      } else {
+        changes.append("+ " + line)
+      }
+    } else if !oldNotes.contains(line) {
+      changes.append("+ " + line)
+    }
+  }
+  return changes.isEmpty
+    ? "No changes since the previous observation." : ([computerUseDiffHeader] + changes).joined(separator: "\n")
+}
+
+func computerUseIDRanges(_ ids: [Int]) -> String {
+  var ranges: [String] = []
+  var index = 0
+  while index < ids.count {
+    var end = index
+    while end + 1 < ids.count, ids[end + 1] == ids[end] + 1 { end += 1 }
+    ranges.append(end == index ? "\(ids[index])" : "\(ids[index])-\(ids[end])")
+    index = end + 1
+  }
+  return ranges.joined(separator: ", ")
 }
 
 func computerUseActionLabel(_ action: String) -> String {
@@ -39,6 +71,31 @@ func computerUseMenuShortcut(character: String?, modifiers: Int?) -> String? {
   return (names + [character.lowercased()]).joined(separator: "+")
 }
 
+func computerUseIsLabelText(_ text: String) -> Bool {
+  text.contains { $0.isLetter }
+}
+
+func computerUseHiddenAction(_ action: String) -> Bool {
+  ["AXShowAlternateUI", "AXShowDefaultUI"].contains(action)
+}
+
+struct ComputerUseSubtreeText {
+  var label: String?
+  var fallback: String?
+
+  init(_ text: String? = nil) {
+    guard let text else { return }
+    if computerUseIsLabelText(text) { label = text } else { fallback = text }
+  }
+
+  var best: String? { label ?? fallback }
+
+  mutating func absorb(_ other: ComputerUseSubtreeText) {
+    if label == nil { label = other.label }
+    if fallback == nil { fallback = other.fallback }
+  }
+}
+
 func computerUseObservationValue(role: String, subrole: String?, value: Any?) -> String {
   if (role + (subrole ?? "")).localizedCaseInsensitiveContains("secure") { return "<redacted>" }
   if let value = value as? String { return value }
@@ -47,7 +104,7 @@ func computerUseObservationValue(role: String, subrole: String?, value: Any?) ->
 }
 
 extension ComputerUseBridge {
-  func openMenu(application: AXUIElement, window: AXUIElement) -> AXUIElement? {
+  func openMenu(application: AXUIElement, window: AXUIElement, searchWindow: Bool = true) -> AXUIElement? {
     var focused = elementAttribute(application, kAXFocusedUIElementAttribute)
     for _ in 0..<12 {
       guard let element = focused else { break }
@@ -58,17 +115,28 @@ extension ComputerUseBridge {
     for child in elementsAttribute(application, kAXChildrenAttribute) {
       if stringAttribute(child, kAXRoleAttribute) == "AXMenu", menuIsOpen(child) { return child }
     }
-    if let menu = findOpenMenu(window, remaining: &remaining) { return menu }
+    if searchWindow, let menu = findOpenMenu(window, remaining: &remaining) { return menu }
     if let bar = elementAttribute(application, kAXMenuBarAttribute) {
       return findOpenMenu(bar, remaining: &remaining)
     }
     return nil
   }
 
+  func openMenu(near element: AXUIElement, application: AXUIElement) -> AXUIElement? {
+    var scope: AXUIElement? = element
+    var remaining = 400
+    for _ in 0..<4 {
+      guard let root = scope else { break }
+      if let menu = findOpenMenu(root, remaining: &remaining) { return menu }
+      scope = elementAttribute(root, kAXParentAttribute)
+    }
+    return openMenu(application: application, window: element, searchWindow: false)
+  }
+
   private func findOpenMenu(_ element: AXUIElement, remaining: inout Int, depth: Int = 0) -> AXUIElement? {
     guard remaining > 0, depth < 64 else { return nil }
     remaining -= 1
-    if stringAttribute(element, kAXRoleAttribute) == "AXMenu", menuIsOpen(element) { return element }
+    if stringAttribute(element, kAXRoleAttribute) == "AXMenu" { return menuIsOpen(element) ? element : nil }
     for child in elementsAttribute(element, kAXChildrenAttribute) {
       if let menu = findOpenMenu(child, remaining: &remaining, depth: depth + 1) { return menu }
     }
@@ -83,9 +151,11 @@ extension ComputerUseBridge {
   }
 
   func observationRoots(
-    application: AXUIElement, window: AXUIElement, view: String
+    application: AXUIElement, window: AXUIElement, view: String, searchWindowForMenus: Bool = true
   ) -> (elements: [AXUIElement], view: String) {
-    if view == "auto" || view == "menu", let menu = openMenu(application: application, window: window) {
+    if view == "auto" || view == "menu",
+      let menu = openMenu(application: application, window: window, searchWindow: searchWindowForMenus)
+    {
       return ([menu], "menu")
     }
     if view == "menu" { return ([], "menu") }
@@ -108,18 +178,23 @@ extension ComputerUseBridge {
     }
   }
 
+  @discardableResult
   func snapshotTree(
     _ element: AXUIElement, depth: Int, screenshotWindowFrame: CGRect?, screenshotPixelSize: CGSize?,
     correctFrame: (AXUIElement, CGRect) -> CGRect, includeClosedMenus: Bool = false,
     dialogButtons: [(element: AXUIElement, label: String)] = [],
-    previous: [CFHashCode: [(key: String, value: ElementRecord)]], nextIndex: inout Int, remaining: inout Int,
-    records: inout [String: ElementRecord], lines: inout [String]
-  ) {
-    guard depth <= 64, records.count < 1_200, remaining > 0 else { return }
-    remaining -= 1
+    previous: [CFHashCode: [(key: String, value: ElementRecord)]], nextIndex: inout Int,
+    limits: inout ComputerUseSnapshotLimits, records: inout [String: ElementRecord], lines: inout [String],
+    redundant: inout [Int: String]
+  ) -> ComputerUseSubtreeText {
+    guard depth <= 64, limits.admit(recordCount: records.count) else { return ComputerUseSubtreeText() }
     let attributes = ComputerUseElementAttributes(element)
     let role = attributes.string(kAXRoleAttribute) ?? "element"
-    if role == "AXMenu", !includeClosedMenus, !menuIsOpen(element) { return }
+    if ["AXBusyIndicator", "AXProgressIndicator"].contains(role) { limits.sawBusyIndicator = true }
+    if role == "AXMenu", !includeClosedMenus {
+      guard menuIsOpen(element) else { return ComputerUseSubtreeText() }
+      if limits.openMenu == nil { limits.openMenu = element }
+    }
     let linkedTitle = attributes[kAXTitleUIElementAttribute].flatMap { linked -> String? in
       guard CFGetTypeID(linked) == AXUIElementGetTypeID() else { return nil }
       let label = linked as! AXUIElement
@@ -130,12 +205,15 @@ extension ComputerUseBridge {
         attributes.string(kAXTitleAttribute), attributes.string(kAXDescriptionAttribute), linkedTitle,
         computerUseWindowButtonLabel(subrole: attributes.string(kAXSubroleAttribute)),
       ]
-      .compactMap { $0 }.first { !$0.isEmpty } ?? (role == "AXRow" ? rowLabel(element) : nil) ?? ""
+      .compactMap { $0 }.first { !$0.isEmpty } ?? ""
     let value = computerUseObservationValue(
       role: role, subrole: attributes.string(kAXSubroleAttribute),
       value: attributes[kAXValueAttribute] ?? selectionDescription(of: element, role: role))
     let children = attributes.children
-    let actions = Array(Set(actionNames(of: element).map(computerUseActionLabel))).sorted()
+    let advertised = Array(
+      Set(actionNames(of: element).filter { !computerUseHiddenAction($0) }.map(computerUseActionLabel))
+    ).sorted()
+    let actions = advertised.filter { title.isEmpty || !title.hasPrefix($0) }
     let editor = ["AXTextField", "AXTextArea", "AXComboBox"].contains(role)
     let settable = [kAXValueAttribute, kAXSelectedTextRangeAttribute].filter {
       (attributes[$0] != nil || editor) && isSettable(element, attribute: $0)
@@ -146,20 +224,15 @@ extension ComputerUseBridge {
       && title.isEmpty && value.isEmpty && settable.isEmpty && actions.isEmpty
     let emptyLeaf = children.isEmpty && title.isEmpty && value.isEmpty && actions.isEmpty && settable.isEmpty
     let separator = role == "AXMenuItem" && title.isEmpty && value.isEmpty && children.isEmpty
-    let include = !emptyContainer && !emptyLeaf && !separator
-    if include {
-      let identity = attributes.identity
-      let existing = previous[CFHash(element)]?.first {
-        CFEqual($0.value.element, element) && $0.value.identity == identity
-      }?.key
-      let id = existing ?? String(nextIndex)
-      if existing == nil { nextIndex += 1 }
-      guard records[id] == nil else { return }
-      records[id] = ElementRecord(element: element, frame: elementFrame, identity: identity)
+    let labelsFromChildren = role == "AXRow" && title.isEmpty && !children.isEmpty
+    let ownText =
+      ["AXStaticText", "AXTextField"].contains(role)
+      ? [value, title].first { !$0.isEmpty && $0 != "<redacted>" } : nil
+    let describe = { (title: String, id: String) -> String in
       var line = "\(String(repeating: "  ", count: min(depth, 12)))\(id) \(role)"
       if !title.isEmpty { line += " \(title)" }
       if !value.isEmpty && value != title {
-        let formatted = role == "AXTextArea" ? formattedTextValue(element: element, plainText: value) : nil
+        let formatted = role == "AXTextArea" ? self.formattedTextValue(element: element, plainText: value) : nil
         line += " Value: \(String((formatted ?? value).prefix(4_000)))"
       }
       if editor, value.isEmpty, let placeholder = attributes.string(kAXPlaceholderValueAttribute),
@@ -169,10 +242,14 @@ extension ComputerUseBridge {
       }
       if title.isEmpty, let help = attributes.string(kAXHelpAttribute), !help.isEmpty {
         line += " Help: \(help.prefix(200))"
+      } else if title.isEmpty, value.isEmpty, let identifier = attributes.string(kAXIdentifierAttribute),
+        !identifier.isEmpty
+      {
+        line += " ID: \(identifier.prefix(120))"
       }
       if attributes[kAXSelectedAttribute] as? Bool == true { line += " Selected" }
       if role == "AXRow", let disclosing = attributes[kAXDisclosingAttribute] as? Bool,
-        isSettable(element, attribute: kAXDisclosingAttribute)
+        self.isSettable(element, attribute: kAXDisclosingAttribute)
       {
         line += disclosing ? " Expanded" : " Collapsed"
       }
@@ -199,14 +276,90 @@ extension ComputerUseBridge {
       if let selection = attributes.selection, selection.length > 0 {
         line += " Selection: \(selection.location):\(selection.length)"
       }
-      lines.append(line)
+      return line
     }
-    for child in children {
-      snapshotTree(
-        child, depth: depth + 1, screenshotWindowFrame: screenshotWindowFrame,
-        screenshotPixelSize: screenshotPixelSize, correctFrame: correctFrame,
-        includeClosedMenus: includeClosedMenus, dialogButtons: dialogButtons, previous: previous,
-        nextIndex: &nextIndex, remaining: &remaining, records: &records, lines: &lines)
+    var recorded: (id: String, line: Int)?
+    if labelsFromChildren || (!emptyContainer && !emptyLeaf && !separator) {
+      let identity = attributes.identity
+      let existing = previous[CFHash(element)]?.first {
+        CFEqual($0.value.element, element) && $0.value.identity == identity
+      }?.key
+      let id = existing ?? String(nextIndex)
+      if existing == nil { nextIndex += 1 }
+      guard records[id] == nil else { return ComputerUseSubtreeText() }
+      records[id] = ElementRecord(element: element, frame: elementFrame, identity: identity)
+      recorded = (id, lines.count)
+      if ["AXCell", "AXStaticText", "AXImage"].contains(role), actions.isEmpty, settable.isEmpty,
+        let text = [title, value].first(where: { !$0.isEmpty })
+      {
+        redundant[lines.count] = text
+      }
+      lines.append(labelsFromChildren ? "" : describe(title, id))
     }
+    let (walked, hiddenRows) = listChildren(of: element, role: role, children: children, limit: limits.rowsPerList)
+    var subtreeText = ComputerUseSubtreeText(ownText)
+    for child in walked {
+      subtreeText.absorb(
+        snapshotTree(
+          child, depth: depth + 1, screenshotWindowFrame: screenshotWindowFrame,
+          screenshotPixelSize: screenshotPixelSize, correctFrame: correctFrame,
+          includeClosedMenus: includeClosedMenus, dialogButtons: dialogButtons, previous: previous,
+          nextIndex: &nextIndex, limits: &limits, records: &records, lines: &lines, redundant: &redundant))
+    }
+    if let hiddenRows { lines.append("\(String(repeating: "  ", count: min(depth + 1, 12)))\(hiddenRows)") }
+    guard let recorded else { return subtreeText }
+    let label = labelsFromChildren ? subtreeText.best ?? title : title
+    if labelsFromChildren {
+      if subtreeText.best == nil, emptyContainer {
+        lines[recorded.line] = ""
+        records.removeValue(forKey: recorded.id)
+        return subtreeText
+      }
+      lines[recorded.line] = describe(label, recorded.id)
+    }
+    if !label.isEmpty {
+      for index in (recorded.line + 1)..<lines.count where redundant[index] == label {
+        lines[index] = ""
+        redundant.removeValue(forKey: index)
+      }
+    }
+    return subtreeText
+  }
+
+  private func listChildren(
+    of element: AXUIElement, role: String, children: [AXUIElement], limit: Int
+  ) -> (walked: [AXUIElement], hiddenRowsNote: String?) {
+    guard ["AXTable", "AXOutline"].contains(role) else {
+      return visibleChildren(of: element, children: children, limit: limit)
+    }
+    let rows = elementsAttribute(element, kAXRowsAttribute)
+    guard rows.count > limit else { return (children, nil) }
+    let indicesByHash = Dictionary(grouping: rows.indices) { CFHash(rows[$0]) }
+    let rowIndex = { (candidate: AXUIElement) -> Int? in
+      indicesByHash[CFHash(candidate)]?.first { CFEqual(rows[$0], candidate) }
+    }
+    let shown = computerUseShownRows(
+      total: rows.count,
+      visible: elementsAttribute(element, kAXVisibleRowsAttribute).compactMap(rowIndex),
+      limit: limit)
+    return (
+      children.filter { rowIndex($0).map(shown.contains) ?? true },
+      computerUseHiddenRowsNote(shown: shown, total: rows.count)
+    )
+  }
+
+  private func visibleChildren(
+    of element: AXUIElement, children: [AXUIElement], limit: Int
+  ) -> (walked: [AXUIElement], hiddenRowsNote: String?) {
+    guard children.count > limit else { return (children, nil) }
+    let indicesByHash = Dictionary(grouping: children.indices) { CFHash(children[$0]) }
+    let visible = elementsAttribute(element, kAXVisibleChildrenAttribute).compactMap { candidate in
+      indicesByHash[CFHash(candidate)]?.first { CFEqual(children[$0], candidate) }
+    }
+    let shown = computerUseShownRows(total: children.count, visible: visible, limit: limit)
+    return (
+      Array(children[shown]),
+      computerUseHiddenRowsNote(shown: shown, total: children.count, noun: "items")
+    )
   }
 }

@@ -89,7 +89,7 @@ if (!globalThis.computer) {
       info.name = state.resolvedApp?.id ?? info.name;
       info.windowId = state.windowId;
       info.snapshotId = state.snapshotId;
-      if (method === 'wait_for' && state.matched === false) { write(state); throw new Error('Timed out waiting for the requested app state'); }
+      if (method === 'wait_for' && state.matched === false) { write(state); throw new Error(state.waitError ?? 'The requested app state did not appear'); }
       return state;
     };
     const endpoint = (prefix, value) => typeof value === 'number' ? { [prefix + '_element_index']: value } : { [prefix + '_x']: value?.x, [prefix + '_y']: value?.y };
@@ -99,6 +99,7 @@ if (!globalThis.computer) {
       getAXState: (options = {}) => observe('get_app_state', { ...options, screenshot: false }),
       getWindow: (id) => { if (!Number.isInteger(id)) throw new Error('Use a windowId from getState().windows'); return makeApp(info.name, id, deliveryMode, foregroundReason); },
       waitFor: (options) => observe('wait_for', options),
+      find: (options) => observe('find', typeof options === 'string' ? { text: options } : options),
       startRecording: (options = {}) => {
         if (!Number.isInteger(info.windowId)) throw new Error('This app has no observed windowId. Use computer.listRecordingTargets() to choose a capturable window.');
         return startRecording({ ...options, window_id: info.windowId });
@@ -131,7 +132,7 @@ if (!globalThis.computer) {
       let app = handles.get(key);
       if (!app) { app = makeApp(name, options.window_id, options.delivery_mode, options.foreground_reason); handles.set(key, app); }
       const { emit, delivery_mode, foreground_reason, window_id, ...observation } = options;
-      const state = await app.getState(observation);
+      const state = await app.getState({ disableDiff: true, ...observation });
       if (options.emit !== false) write(state);
       return app;
     }

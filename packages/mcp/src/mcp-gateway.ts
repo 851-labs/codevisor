@@ -19,9 +19,13 @@ import { z } from "zod"
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import { gatewayToolError, makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
 import {
+  EXECUTE_DEFAULT_TIMEOUT_MS,
+  EXECUTE_MAX_TIMEOUT_MS,
+  executeTimeoutMessage,
   executionArgsHash,
   makeExecutionRecorder,
-  reportSkillRead
+  reportSkillRead,
+  systemExecutionTimers
 } from "./mcp-gateway-execution.js"
 import {
   composerSkills,
@@ -261,16 +265,40 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         description: executeToolDescription(inventory),
         inputSchema: {
           description: z.string().min(1).describe(DESCRIPTION_GUIDANCE),
-          code: z.string().min(1)
+          code: z.string().min(1),
+          timeout_ms: z
+            .number()
+            .int()
+            .min(1_000)
+            .max(EXECUTE_MAX_TIMEOUT_MS)
+            .optional()
+            .describe(
+              `Wall-clock limit for this call in milliseconds; default ${EXECUTE_DEFAULT_TIMEOUT_MS}. Raise it for work that legitimately takes longer.`
+            )
         }
       },
-      async ({ code, description }, { signal }) => {
+      async ({ code, description, timeout_ms }, { signal: requestSignal }) => {
         const recorder = makeExecutionRecorder({
           sink: runtime.sink,
           sessionId,
-          argsHash: executionArgsHash({ code, description }),
+          argsHash: executionArgsHash({
+            code,
+            description,
+            ...(timeout_ms === undefined ? {} : { timeout_ms })
+          }),
           description
         })
+        const timeoutMs = timeout_ms ?? EXECUTE_DEFAULT_TIMEOUT_MS
+        const timers = config.executionTimers ?? systemExecutionTimers
+        const deadline = timers.now() + timeoutMs
+        const running: Array<string> = []
+        const expiry = new AbortController()
+        let timedOut: string | undefined
+        const cancelExpiry = timers.setTimeout(() => {
+          timedOut = executeTimeoutMessage(timeoutMs, running)
+          expiry.abort(new Error(timedOut))
+        }, timeoutMs)
+        const signal = AbortSignal.any([requestSignal, expiry.signal])
         const steps = makeExecutionSteps({
           recorder,
           collector: newArtifactCollector(),
@@ -299,65 +327,72 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
           origin
         }
         let usedBrowser = false
-        const result = await codeExecutor.execute(
-          code,
-          {
-            invoke: async ({ path, args, target }) => {
-              const machine =
-                target?.machine === undefined || target.machine === selfMachine.id
-                  ? undefined
-                  : {
-                      machine: target.machine,
-                      ...(target.machineName === undefined
-                        ? {}
-                        : { machineName: target.machineName })
-                    }
-              const settle = await steps.begin(path, {
-                internal: target?.internal === true,
-                local: machine === undefined,
-                ...(machine === undefined
-                  ? {}
-                  : { machine: machine.machineName ?? machine.machine })
-              })
-              try {
-                const value =
-                  machine === undefined
-                    ? await invokeGatewayTool(callContext, path, args, {
-                        artifacts: steps.artifacts,
-                        signal,
-                        onBrowser: () => {
-                          usedBrowser = true
-                        },
-                        onBrowserPage: steps.onBrowserPage,
-                        onComputerApp: steps.onComputerApp
-                      })
-                    : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
-                await settle({ ok: true, value })
-                return value
-              } catch (cause) {
-                const error = gatewayToolError(cause)
-                await settle({ ok: false, error: error.message })
-                throw error
+        const result = await codeExecutor
+          .execute(
+            code,
+            {
+              invoke: async ({ path, args, target }) => {
+                const machine =
+                  target?.machine === undefined || target.machine === selfMachine.id
+                    ? undefined
+                    : {
+                        machine: target.machine,
+                        ...(target.machineName === undefined
+                          ? {}
+                          : { machineName: target.machineName })
+                      }
+                const settle = await steps.begin(path, {
+                  internal: target?.internal === true,
+                  local: machine === undefined,
+                  ...(machine === undefined
+                    ? {}
+                    : { machine: machine.machineName ?? machine.machine })
+                })
+                running.push(path)
+                try {
+                  const value =
+                    machine === undefined
+                      ? await invokeGatewayTool(callContext, path, args, {
+                          artifacts: steps.artifacts,
+                          signal,
+                          deadline,
+                          onBrowser: () => {
+                            usedBrowser = true
+                          },
+                          onBrowserPage: steps.onBrowserPage,
+                          onComputerApp: steps.onComputerApp
+                        })
+                      : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
+                  await settle({ ok: true, value })
+                  return value
+                } catch (cause) {
+                  const error = gatewayToolError(cause)
+                  await settle({ ok: false, error: error.message })
+                  throw error
+                } finally {
+                  running.splice(running.indexOf(path), 1)
+                }
+              }
+            },
+            {
+              signal,
+              onStatus: recorder.status,
+              context: {
+                machine: selfMachine,
+                ...(clientId === undefined ? {} : { originClientId: clientId })
               }
             }
-          },
-          {
-            signal,
-            onStatus: recorder.status,
-            context: {
-              machine: selfMachine,
-              ...(clientId === undefined ? {} : { originClientId: clientId })
-            }
-          }
-        )
-        await recorder.finish(result.error)
-        if (result.error !== undefined) {
+          )
+          .finally(cancelExpiry)
+        const error = timedOut ?? result.error
+        await recorder.finish(error)
+        if (error !== undefined) {
           const openTabs = usedBrowser
             ? await openBrowserSessionTabs(sessionId, projectId).catch(() => "")
             : ""
           return {
             isError: true,
-            content: [{ type: "text" as const, text: `${result.error}${openTabs}` }]
+            content: [{ type: "text" as const, text: `${error}${openTabs}` }]
           }
         }
         return {
