@@ -70,7 +70,7 @@ describe("ClaudeProvider", () => {
 
   it("auto-allows checks the CLI escalates while in bypassPermissions", async () => {
     const { fake, events, created } = await startTestSession()
-    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    using log = vi.spyOn(console, "error").mockImplementation(() => {})
 
     expect(fake.options?.allowDangerouslySkipPermissions).toBe(true)
     expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
@@ -115,7 +115,6 @@ describe("ClaudeProvider", () => {
       })
     )
     await expect(asked).resolves.toMatchObject({ behavior: "deny" })
-    log.mockRestore()
   })
 
   it("surfaces ExitPlanMode as a plan-approval question: implement allows, keep planning denies", async () => {
