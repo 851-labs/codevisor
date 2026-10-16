@@ -165,7 +165,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
             hooks: [
               async (hookInput) => {
                 if (hookInput.hook_event_name === "PostToolUse" && session !== undefined) {
-                  emitAuthoritativeDiff(session, hookInput, readFile)
+                  emitAuthoritativeDiff(session, hookInput)
                 }
                 return {}
               }
