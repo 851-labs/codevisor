@@ -22,6 +22,7 @@ struct WorkspaceInspectorFileOutlineView: View {
         row(node)
       }
       .listStyle(.inset)
+      .scrollContentBackground(.hidden)
     } else if let root = model.root, let error = model.errors[root] {
       WorkspaceInspectorMediaPlaceholder(
         phase: .failed(error), emptyTitle: "No Files", systemImage: "folder", emptyDescription: "",
