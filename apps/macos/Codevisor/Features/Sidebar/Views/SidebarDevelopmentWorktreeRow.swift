@@ -26,7 +26,7 @@ struct SidebarDevelopmentWorktreeRow: View {
       systemImage: "ladybug.fill",
       foregroundColor: developmentWorktreeForegroundColor
     )
-    .background(RoundedRectangle(cornerRadius: 6).fill(developmentWorktreeColor))
+    .background(RoundedRectangle.sidebarRow.fill(developmentWorktreeColor))
     .accessibilityLabel("Development worktree: \(worktreeName)")
     .help("Development worktree: \(worktreeName)")
   }

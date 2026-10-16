@@ -100,7 +100,7 @@ extension SidebarView {
         reorderGhost(for: drag.workspaceID)
           .frame(width: frame.width, height: frame.height)
           .background {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle.sidebarRow
               .fill(.regularMaterial)
               .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
           }

@@ -11,7 +11,7 @@ struct SidebarRowHoverModifier: ViewModifier {
     let showsHover = controlActiveState == .key && isEnabled && isHovered
     content
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        RoundedRectangle.sidebarRow
           .fill(
             isSelected
               ? Color.primary.opacity(0.14)
@@ -25,4 +25,8 @@ extension View {
   func sidebarRowHover(isSelected: Bool = false, isEnabled: Bool = true) -> some View {
     modifier(SidebarRowHoverModifier(isSelected: isSelected, isEnabled: isEnabled))
   }
+}
+
+extension RoundedRectangle {
+  static let sidebarRow = RoundedRectangle(cornerRadius: 8.5, style: .continuous)
 }

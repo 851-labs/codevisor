@@ -62,11 +62,14 @@ final class WorkspaceInspectorFileTreeModel {
     }
   }
 
-  func toggle(_ directory: String) async {
-    if expanded.remove(directory) != nil { return }
+  func setExpanded(_ directory: String, _ isExpanded: Bool) {
+    guard isExpanded else {
+      expanded.remove(directory)
+      return
+    }
     expanded.insert(directory)
     if listings[directory] == nil || stale.contains(directory) {
-      await load(directory)
+      Task { await load(directory) }
     }
   }
 

@@ -52,6 +52,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           tab: $tab,
           media: media,
           fileTree: fileTree,
+          activeFilePath: activeDocumentPath(in: workspace),
           client: environment.machines.client(for: workspace.serverId),
           onReload: { Task { await reload(workspace) } },
           onOpen: { destination in
@@ -86,6 +87,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     } else {
       await media.reload(tab, workspaceId: workspace.id, client: client)
     }
+  }
+
+  private func activeDocumentPath(in workspace: Workspace) -> String? {
+    guard let tab = workspace.selectedCenterTab,
+      let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
+      pane.kind == .document
+    else { return nil }
+    return pane.documentPath
   }
 
   private func activity(in workspace: Workspace) -> Date? {

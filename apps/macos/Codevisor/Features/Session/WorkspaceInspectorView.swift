@@ -16,6 +16,7 @@ struct WorkspaceInspectorView: View {
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
+  let activeFilePath: String?
   let client: any CodevisorServerClienting
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -30,7 +31,7 @@ struct WorkspaceInspectorView: View {
       case .links:
         WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
       case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
-      case .files: WorkspaceInspectorFileTreeView(model: fileTree, onOpen: onOpen)
+      case .files: WorkspaceInspectorFileTreeView(model: fileTree, activeFilePath: activeFilePath, onOpen: onOpen)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
