@@ -16,13 +16,16 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(current.close)
 
     const legacy = new Database(filename)
-    legacy.pragma("foreign_keys = OFF")
-    legacy.exec(`
+    try {
+      legacy.pragma("foreign_keys = OFF")
+      legacy.exec(`
       drop table session_read_state;
       drop table session_attention;
       delete from schema_migrations where id in (31, 37, 42);
     `)
-    legacy.close()
+    } finally {
+      legacy.close()
+    }
 
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     expect(await run(upgraded.getSessionSummary(session.id))).toMatchObject({
@@ -64,11 +67,14 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(upgraded.close)
 
     const verified = new Database(filename)
-    expect(verified.prepare("select name from schema_migrations where id = 31").get()).toEqual({
-      name: "durable cross-device session attention"
-    })
-    expect(verified.pragma("foreign_key_check")).toEqual([])
-    verified.close()
+    try {
+      expect(verified.prepare("select name from schema_migrations where id = 31").get()).toEqual({
+        name: "durable cross-device session attention"
+      })
+      expect(verified.pragma("foreign_key_check")).toEqual([])
+    } finally {
+      verified.close()
+    }
   })
 
   it("upgrades a v41 attention ledger to the revision counter", async () => {
@@ -83,8 +89,9 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(current.close)
 
     const legacy = new Database(filename)
-    legacy.pragma("foreign_keys = OFF")
-    legacy.exec(`
+    try {
+      legacy.pragma("foreign_keys = OFF")
+      legacy.exec(`
       drop table session_attention;
       delete from schema_migrations where id = 42;
       create table session_attention_state (
@@ -119,7 +126,9 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       insert into session_attention_state (session_id, current_mode_id, pending_plan_approval)
         values ('${planning.id}', 'plan', 1);
     `)
-    legacy.close()
+    } finally {
+      legacy.close()
+    }
 
     vi.useFakeTimers({ toFake: ["Date"] })
     onTestFinished(() => {
@@ -154,16 +163,19 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(upgraded.close)
 
     const verified = new Database(filename)
-    expect(
-      verified
-        .prepare(
-          `select name from sqlite_master where type = 'table'
+    try {
+      expect(
+        verified
+          .prepare(
+            `select name from sqlite_master where type = 'table'
            and name in ('session_attention_events', 'session_attention_state')`
-        )
-        .all()
-    ).toEqual([])
-    expect(verified.pragma("foreign_key_check")).toEqual([])
-    verified.close()
+          )
+          .all()
+      ).toEqual([])
+      expect(verified.pragma("foreign_key_check")).toEqual([])
+    } finally {
+      verified.close()
+    }
   })
 
   it("upgrades a v44 database and backfills the newest valid session checklist", async () => {
@@ -207,11 +219,14 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(current.close)
 
     const legacy = new Database(filename)
-    legacy.exec(`
+    try {
+      legacy.exec(`
       alter table sessions drop column session_plan;
       delete from schema_migrations where id = 45;
     `)
-    legacy.close()
+    } finally {
+      legacy.close()
+    }
 
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     expect((await run(upgraded.getTranscriptPage(active.id, undefined, 8))).sessionPlan).toEqual(
@@ -224,9 +239,12 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await Effect.runPromise(upgraded.close)
 
     const verified = new Database(filename)
-    expect(verified.prepare("select name from schema_migrations where id = 45").get()).toEqual({
-      name: "durable session checklists"
-    })
-    verified.close()
+    try {
+      expect(verified.prepare("select name from schema_migrations where id = 45").get()).toEqual({
+        name: "durable session checklists"
+      })
+    } finally {
+      verified.close()
+    }
   })
 })
