@@ -30,11 +30,7 @@ export const handleCollabItem = (
         subjectId: session.key
       })
     } else if (item.status === "failed") {
-      void session.emit({
-        kind: "session.output",
-        payload: { sessionUpdate: "tool_call_update", status: "failed", toolCallId: itemId },
-        subjectId: session.key
-      })
+      emitRunStatus(session, itemId, "failed")
     }
     return
   }
@@ -42,11 +38,7 @@ export const handleCollabItem = (
     for (const receiver of receivers) {
       const spawnId = session.collabThreads.get(receiver)
       if (spawnId === undefined) continue
-      void session.emit({
-        kind: "session.output",
-        payload: { sessionUpdate: "tool_call_update", status: "completed", toolCallId: spawnId },
-        subjectId: session.key
-      })
+      emitRunStatus(session, spawnId, "completed")
     }
   }
 }
