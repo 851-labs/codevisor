@@ -426,9 +426,9 @@ export const makeComputerUseProvider = (
     },
     finishTurn: async (sessionId) => {
       if (!perSessionConnections) return
-      const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
-      await active
-        ?.request({ type: "finishTurn", sessionId }, housekeepingSignal())
+      void helpers
+        .get(helperKey(sessionId))
+        ?.then((active) => active.request({ type: "finishTurn", sessionId }, housekeepingSignal()))
         .catch(() => undefined)
     },
     closeSession: async (sessionId) => {

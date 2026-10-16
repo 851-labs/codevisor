@@ -71,7 +71,7 @@ describe("macOS Computer Use bridge discovery", () => {
 
 describe("Computer Use turn lifecycle", () => {
   it.skipIf(process.platform !== "darwin")(
-    "finishes only the used session and preserves its bridge and REPL for the next turn",
+    "finishes only the used session without awaiting the helper, ahead of its next turn on the same bridge",
     async () => {
       const dataDir = mkdtempSync(join(tmpdir(), "codevisor-turn-bridge-"))
       const socketPath = macComputerUseSocketPath(dataDir)
@@ -88,6 +88,7 @@ describe("Computer Use turn lifecycle", () => {
             const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
             pending = pending.slice(newline + 1)
             requests.push(request)
+            if (request.type === "finishTurn") continue
             const result = {
               content: [
                 {
@@ -115,13 +116,14 @@ describe("Computer Use turn lifecycle", () => {
         })
         await provider.invoke({ sessionId: "b" }, "get_app_state", { app: "Notes" })
         await provider.finishTurn!("a")
-        expect(requests.filter((r) => r.type === "finishTurn")).toMatchObject([
-          { type: "finishTurn", sessionId: "a" }
-        ])
         const next = await provider.invoke({ sessionId: "a" }, "js", {
           code: "await app.getAXState(); ++count"
         })
         expect(next.content).toEqual([{ type: "text", text: "8" }])
+        expect(
+          requests.filter((r) => r.sessionId === "a" && r.type !== "authenticate").slice(-2)
+        ).toMatchObject([{ type: "finishTurn", sessionId: "a" }, { type: "tool" }])
+        expect(requests.filter((r) => r.type === "finishTurn")).toHaveLength(1)
         expect(requests.filter((r) => r.type === "authenticate")).toHaveLength(2)
         expect(sockets.size).toBe(2)
         expect(requests.some((r) => r.type === "closeSession")).toBe(false)
