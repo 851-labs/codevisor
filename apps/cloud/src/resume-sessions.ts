@@ -1,3 +1,6 @@
+import { toBase64Url } from "@codevisor/cloud-crypto"
+
+import { sha256Hex } from "./tokens.js"
 export const DEFAULT_RESUME_GRACE_MS = 60_000
 
 export const RESUME_BUFFER_CAP_BYTES = 256 * 1024
@@ -9,17 +12,6 @@ export interface ResumeSessionRow extends Record<string, SqlStorageValue> {
   public_key: string | null
   resume_token_hash: string
   expires_at: number | null
-}
-
-const encodeToken = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "")
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 export class ResumeSessions {
@@ -34,7 +26,7 @@ export class ResumeSessions {
     deviceId: string,
     publicKey: string | undefined
   ): Promise<string> {
-    const token = encodeToken(crypto.getRandomValues(new Uint8Array(32)))
+    const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
     const hash = await sha256Hex(token)
     this.sql.exec(
       `INSERT INTO sessions (connection_id, kind, device_id, public_key, resume_token_hash, expires_at)
@@ -63,7 +55,7 @@ export class ResumeSessions {
     if (resumeToken !== undefined) {
       const session = await this.tryResume(kind, resumeToken, Date.now())
       if (session !== undefined && session.device_id === device.deviceId) {
-        const token = encodeToken(crypto.getRandomValues(new Uint8Array(32)))
+        const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
         const hash = await sha256Hex(token)
         const claimed = this.sql
           .exec<ResumeSessionRow>(
