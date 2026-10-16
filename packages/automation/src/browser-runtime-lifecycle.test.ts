@@ -91,6 +91,7 @@ it("only disconnects from a browser it does not own", async () => {
 })
 
 it("waits until closed tabs stop being listed, and no longer than the deadline", async () => {
+  vi.useFakeTimers()
   const replies: Array<unknown> = [
     { targetInfos: [{ targetId: "popup" }, { targetId: "other" }] },
     { targetInfos: [{ targetId: "other" }] }
@@ -100,7 +101,9 @@ it("waits until closed tabs stop being listed, and no longer than the deadline",
 
   await waitForTargetsClosed(active, [])
   expect(send).not.toHaveBeenCalled()
-  await waitForTargetsClosed(active, ["popup"], 2_000, 1)
+  const closed = waitForTargetsClosed(active, ["popup"], 2_000, 1)
+  await vi.advanceTimersByTimeAsync(1)
+  await closed
   expect(send).toHaveBeenCalledTimes(2)
 
   send.mockImplementation(async () => ({ targetInfos: [{ targetId: "stuck" }] }))
