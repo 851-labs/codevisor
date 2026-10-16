@@ -5,6 +5,13 @@ import Observation
 @MainActor
 @Observable
 final class WorkspaceInspectorFileTreeModel {
+  struct Row: Identifiable {
+    let entry: ServerFileEntry
+    let depth: Int
+
+    var id: String { entry.path }
+  }
+
   private static let hiddenNames: Set<String> = [".git"]
   private static let slowDelay = Duration.milliseconds(800)
 
@@ -16,6 +23,21 @@ final class WorkspaceInspectorFileTreeModel {
   @ObservationIgnored private var loading: Set<String> = []
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
+
+  var rows: [Row] {
+    guard let root else { return [] }
+    var rows: [Row] = []
+    func walk(_ directory: String, depth: Int) {
+      for entry in listings[directory] ?? [] {
+        rows.append(Row(entry: entry, depth: depth))
+        if entry.isDirectory, expanded.contains(entry.path) {
+          walk(entry.path, depth: depth + 1)
+        }
+      }
+    }
+    walk(root, depth: 0)
+    return rows
+  }
 
   func show(root: String?, client: any CodevisorServerClienting) async {
     if root != self.root {

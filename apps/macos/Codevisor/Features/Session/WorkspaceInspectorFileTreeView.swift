@@ -18,7 +18,7 @@ struct WorkspaceInspectorFileTreeView: View {
     if let root = model.root, model.listings[root]?.isEmpty == false {
       Form {
         Section {
-          WorkspaceInspectorFileTreeFolder(directory: root, depth: 0, model: model, onOpen: onOpen)
+          WorkspaceInspectorFileTreeRows(model: model, onOpen: onOpen)
         }
       }
       .formStyle(.grouped)
@@ -36,27 +36,26 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 }
 
-private struct WorkspaceInspectorFileTreeFolder: View {
-  let directory: String
-  let depth: Int
+private struct WorkspaceInspectorFileTreeRows: View {
   let model: WorkspaceInspectorFileTreeModel
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let disclosureWidth: CGFloat = 11
-
-  private var levelIndent: CGFloat { depth == 0 ? 0 : Self.disclosureWidth }
+  private static let disclosureRowInset: CGFloat = 4
 
   var body: some View {
-    ForEach(model.listings[directory] ?? []) { entry in
+    ForEach(model.rows) { row in
+      let entry = row.entry
+      let indent = CGFloat(row.depth) * Self.disclosureWidth
       if entry.isDirectory {
         DisclosureGroup(isExpanded: expansion(entry.path)) {
-          WorkspaceInspectorFileTreeFolder(directory: entry.path, depth: depth + 1, model: model, onOpen: onOpen)
+          EmptyView()
         } label: {
           label(entry)
         }
-        .padding(.leading, levelIndent)
+        .padding(.leading, indent)
       } else {
         Button {
           onOpen(.file(entry.path))
@@ -64,7 +63,8 @@ private struct WorkspaceInspectorFileTreeFolder: View {
           label(entry)
         }
         .buttonStyle(.plain)
-        .padding(.leading, levelIndent + Self.disclosureWidth)
+        .padding(.leading, indent + Self.disclosureWidth)
+        .padding(.vertical, Self.disclosureRowInset)
       }
     }
   }
