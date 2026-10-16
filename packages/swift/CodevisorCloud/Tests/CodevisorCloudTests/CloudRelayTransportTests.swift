@@ -16,26 +16,32 @@ struct CloudRelayTransportTests {
       URLRequest(url: URL(string: "https://relay.invalid/v1/sessions/x/events/socket")!),
       maximumMessageSize: 1 << 20
     )
-    let base64 = { (piece: String) in CloudChannelCrypto.base64URLEncode(Data(piece.utf8)) }
+    do {
+      let base64 = { (piece: String) in CloudChannelCrypto.base64URLEncode(Data(piece.utf8)) }
 
-    let first = Task { try await socket.receive() }
-    #expect(await waitUntil { scriptedMachine.openChannelId != nil })
-    scriptedMachine.push(#"{"kind":"part","data":"\#(base64("hello, "))"}"#)
-    scriptedMachine.push(#"{"kind":"future-frame","data":"ignored"}"#)
-    scriptedMachine.push(#"{"kind":"text-end","data":"\#(base64("chunked world"))"}"#)
-    #expect(relayMessageText(try await first.value) == "hello, chunked world")
+      let first = Task { try await socket.receive() }
+      #expect(await waitUntil { scriptedMachine.openChannelId != nil })
+      scriptedMachine.push(#"{"kind":"part","data":"\#(base64("hello, "))"}"#)
+      scriptedMachine.push(#"{"kind":"future-frame","data":"ignored"}"#)
+      scriptedMachine.push(#"{"kind":"text-end","data":"\#(base64("chunked world"))"}"#)
+      #expect(relayMessageText(try await first.value) == "hello, chunked world")
 
-    let second = Task { try await socket.receive() }
-    scriptedMachine.push(#"{"kind":"text","data":"plain"}"#)
-    #expect(relayMessageText(try await second.value) == "plain")
+      let second = Task { try await socket.receive() }
+      scriptedMachine.push(#"{"kind":"text","data":"plain"}"#)
+      #expect(relayMessageText(try await second.value) == "plain")
 
-    let third = Task { try await socket.receive() }
-    scriptedMachine.push(#"{"kind":"part","data":"\#(base64("01"))"}"#)
-    scriptedMachine.push(#"{"kind":"binary-end","data":"\#(base64("23"))"}"#)
-    #expect(relayMessageBinary(try await third.value) == Data("0123".utf8))
+      let third = Task { try await socket.receive() }
+      scriptedMachine.push(#"{"kind":"part","data":"\#(base64("01"))"}"#)
+      scriptedMachine.push(#"{"kind":"binary-end","data":"\#(base64("23"))"}"#)
+      #expect(relayMessageBinary(try await third.value) == Data("0123".utf8))
 
-    socket.cancel(with: .goingAway, reason: nil)
-    await pipe.shutdown()
+      socket.cancel(with: .goingAway, reason: nil)
+      await pipe.shutdown()
+    } catch {
+      socket.cancel(with: .goingAway, reason: nil)
+      await pipe.shutdown()
+      throw error
+    }
   }
 
   @Test("HTTP requests round-trip: method, path+query, headers, chunked bodies")
@@ -50,28 +56,33 @@ struct CloudRelayTransportTests {
       )
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
-    let transport = CloudRelayRequestTransport(endpoint: endpoint)
+    do {
+      let transport = CloudRelayRequestTransport(endpoint: endpoint)
 
-    let requestBody = Data((0..<(CloudRelayRequestTransport.chunkSize + 1000)).map { UInt8($0 % 251) })
-    var request = URLRequest(
-      url: URL(string: "https://cloud-relay.invalid/v1/health?probe=1")!
-    )
-    request.httpMethod = "POST"
-    request.httpBody = requestBody
-    request.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+      let requestBody = Data((0..<(CloudRelayRequestTransport.chunkSize + 1000)).map { UInt8($0 % 251) })
+      var request = URLRequest(
+        url: URL(string: "https://cloud-relay.invalid/v1/health?probe=1")!
+      )
+      request.httpMethod = "POST"
+      request.httpBody = requestBody
+      request.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
 
-    let (data, response) = try await transport.data(for: request)
+      let (data, response) = try await transport.data(for: request)
 
-    #expect(response.statusCode == 200)
-    #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json")
-    #expect(data == responseBody)
-    #expect(scriptedMachine.completedRequests.count == 1)
-    let received = try #require(scriptedMachine.completedRequests.first)
-    #expect(received.method == "POST")
-    #expect(received.path == "/v1/health?probe=1")
-    #expect(received.headers["Authorization"] == "Bearer secret")
-    #expect(received.body == requestBody)
-    await pipe.shutdown()
+      #expect(response.statusCode == 200)
+      #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json")
+      #expect(data == responseBody)
+      #expect(scriptedMachine.completedRequests.count == 1)
+      let received = try #require(scriptedMachine.completedRequests.first)
+      #expect(received.method == "POST")
+      #expect(received.path == "/v1/health?probe=1")
+      #expect(received.headers["Authorization"] == "Bearer secret")
+      #expect(received.body == requestBody)
+      await pipe.shutdown()
+    } catch {
+      await pipe.shutdown()
+      throw error
+    }
   }
 
   @Test("A rejected close surfaces as an error")
@@ -148,16 +159,21 @@ struct CloudRelayTransportTests {
       )
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
-    let client = CodevisorServerClient(
-      config: CodevisorServerConfig(
-        baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
-        requestTransport: CloudRelayRequestTransport(endpoint: endpoint),
-        webSocketTransport: CloudRelayWebSocketTransport(endpoint: endpoint)
-      ))
+    do {
+      let client = CodevisorServerClient(
+        config: CodevisorServerConfig(
+          baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
+          requestTransport: CloudRelayRequestTransport(endpoint: endpoint),
+          webSocketTransport: CloudRelayWebSocketTransport(endpoint: endpoint)
+        ))
 
-    let info = try await client.info()
-    #expect(info.name == "Relay Mac")
-    #expect(info.cloudDeviceId == "machine-1")
-    await pipe.shutdown()
+      let info = try await client.info()
+      #expect(info.name == "Relay Mac")
+      #expect(info.cloudDeviceId == "machine-1")
+      await pipe.shutdown()
+    } catch {
+      await pipe.shutdown()
+      throw error
+    }
   }
 }
