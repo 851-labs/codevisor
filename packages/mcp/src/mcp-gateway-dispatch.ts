@@ -57,6 +57,46 @@ export interface GatewayDispatchDeps {
   readonly selfMachine: { readonly id: string; readonly name: string }
 }
 
+const assertAutomationToolArguments = (
+  provider: AutomationToolProvider,
+  toolName: string,
+  args: Readonly<Record<string, unknown>>
+): void => {
+  if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
+    throw new Error(`Unknown automation provider: ${String(provider.id)}`)
+  }
+  const definition = provider.tools.find((candidate) => candidate.name === toolName)
+  if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)
+  const declared = definition.inputSchema.properties
+  const properties = isRecord(declared) ? declared : {}
+  const unknownArguments = Object.keys(args).filter((key) => !(key in properties))
+  if (unknownArguments.length > 0) {
+    throw new Error(
+      `${provider.id}.${toolName} does not accept ${unknownArguments.map((key) => `\`${key}\``).join(", ")}`
+    )
+  }
+}
+
+const workspaceUploadPaths = (
+  args: Readonly<Record<string, unknown>>,
+  workspaceRoot: string,
+  toolName: string
+): Array<string> => {
+  const paths = Array.isArray(args.paths) ? args.paths : []
+  if (paths.length === 0 || !paths.every((path) => typeof path === "string")) {
+    throw new Error(`${toolName} requires one or more workspace file paths`)
+  }
+  return paths.map((path) => {
+    const candidate = realpathSync(isAbsolute(path) ? path : resolve(workspaceRoot, path))
+    const withinWorkspace = relative(workspaceRoot, candidate)
+    if (withinWorkspace.startsWith("..") || isAbsolute(withinWorkspace)) {
+      throw new Error("Browser Use can only upload files from the current workspace")
+    }
+    if (!statSync(candidate).isFile()) throw new Error(`Upload path is not a file: ${path}`)
+    return candidate
+  })
+}
+
 export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   const {
     artifactPersistence,
@@ -99,19 +139,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     onPage?: (url: string) => void,
     onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
-    if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
-      throw new Error(`Unknown automation provider: ${String(provider.id)}`)
-    }
-    const definition = provider.tools.find((candidate) => candidate.name === toolName)
-    if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)
-    const declared = definition.inputSchema.properties
-    const properties = isRecord(declared) ? declared : {}
-    const unknownArguments = Object.keys(args).filter((key) => !(key in properties))
-    if (unknownArguments.length > 0) {
-      throw new Error(
-        `${provider.id}.${toolName} does not accept ${unknownArguments.map((key) => `\`${key}\``).join(", ")}`
-      )
-    }
+    assertAutomationToolArguments(provider, toolName, args)
     const providerContext =
       provider.id === "computer"
         ? {
@@ -164,19 +192,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       const session = await run(config.db.getSessionSummary(context.sessionId))
       if (session.cwd === undefined) throw new Error("This session has no workspace folder")
       const workspaceRoot = realpathSync(session.cwd)
-      const paths = Array.isArray(args.paths) ? args.paths : []
-      if (paths.length === 0 || !paths.every((path) => typeof path === "string")) {
-        throw new Error(`${toolName} requires one or more workspace file paths`)
-      }
-      const resolvedPaths = paths.map((path) => {
-        const candidate = realpathSync(isAbsolute(path) ? path : resolve(workspaceRoot, path))
-        const withinWorkspace = relative(workspaceRoot, candidate)
-        if (withinWorkspace.startsWith("..") || isAbsolute(withinWorkspace)) {
-          throw new Error("Browser Use can only upload files from the current workspace")
-        }
-        if (!statSync(candidate).isFile()) throw new Error(`Upload path is not a file: ${path}`)
-        return candidate
-      })
+      const resolvedPaths = workspaceUploadPaths(args, workspaceRoot, toolName)
       safeArgs = { ...args, paths: resolvedPaths }
     }
     if (provider.id === "browser") {
