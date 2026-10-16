@@ -51,7 +51,8 @@ describe("@codevisor/db project and archive upgrades", () => {
     await run(seed.close)
 
     const sqlite = new Database(filename)
-    sqlite.exec(`
+    try {
+      sqlite.exec(`
       alter table sessions add column is_archived integer not null default 0;
       alter table sessions add column archived_at text;
       alter table sessions add column archive_cascade_from text;
@@ -61,17 +62,19 @@ describe("@codevisor/db project and archive upgrades", () => {
       alter table archived_worktrees drop column state;
       delete from schema_migrations where id = 50;
     `)
-    const archiveSession = sqlite.prepare(
-      "update sessions set is_archived = 1, archived_at = '2026-06-01T00:00:00.000Z' where id = ?"
-    )
-    archiveSession.run(closedByHand.id)
-    archiveSession.run(wentWithWorkspace.id)
-    sqlite
-      .prepare(
-        "update projects set is_archived = 1, archived_at = '2026-06-02T00:00:00.000Z' where id = ?"
+      const archiveSession = sqlite.prepare(
+        "update sessions set is_archived = 1, archived_at = '2026-06-01T00:00:00.000Z' where id = ?"
       )
-      .run(retired.id)
-    sqlite.close()
+      archiveSession.run(closedByHand.id)
+      archiveSession.run(wentWithWorkspace.id)
+      sqlite
+        .prepare(
+          "update projects set is_archived = 1, archived_at = '2026-06-02T00:00:00.000Z' where id = ?"
+        )
+        .run(retired.id)
+    } finally {
+      sqlite.close()
+    }
 
     const db = await run(makeDatabase({ filename, serverId: "local" }))
     const panes = await run(db.listWorkspacePanes)
@@ -131,30 +134,35 @@ describe("@codevisor/db project and archive upgrades", () => {
     expect(await run(db.getSessionConfigSelections("sess-1"))).toEqual({})
 
     const sqlite = new Database(filename)
-    expect(
-      sqlite.prepare("select title_is_user_set from sessions where id = 'sess-1'").get()
-    ).toEqual({ title_is_user_set: 1 })
-    const workspaceColumns = tableColumns(sqlite, "workspaces")
-    expect(workspaceColumns).toContain("project_id")
-    expect(workspaceColumns).not.toContain("folder_path")
-    expect(workspaceColumns).not.toContain("symbol_name")
-    expect(tableColumns(sqlite, "projects")).not.toContain("symbol_name")
-    expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
-    expect(
-      sqlite
-        .prepare("select name from sqlite_master where type = 'table' and name = 'workspace_notes'")
-        .get()
-    ).toBeUndefined()
-    expect(
-      sqlite
-        .prepare("select count(*) as count from events where kind = 'workspace.notes.updated'")
-        .get()
-    ).toEqual({ count: 0 })
-    expect(tableColumns(sqlite, "sessions")).toEqual(
-      expect.arrayContaining(["workspace_id", "config_selections"])
-    )
-    expect(sqlite.pragma("foreign_key_check")).toEqual([])
-    sqlite.close()
+    try {
+      expect(
+        sqlite.prepare("select title_is_user_set from sessions where id = 'sess-1'").get()
+      ).toEqual({ title_is_user_set: 1 })
+      const workspaceColumns = tableColumns(sqlite, "workspaces")
+      expect(workspaceColumns).toContain("project_id")
+      expect(workspaceColumns).not.toContain("folder_path")
+      expect(workspaceColumns).not.toContain("symbol_name")
+      expect(tableColumns(sqlite, "projects")).not.toContain("symbol_name")
+      expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
+      expect(
+        sqlite
+          .prepare(
+            "select name from sqlite_master where type = 'table' and name = 'workspace_notes'"
+          )
+          .get()
+      ).toBeUndefined()
+      expect(
+        sqlite
+          .prepare("select count(*) as count from events where kind = 'workspace.notes.updated'")
+          .get()
+      ).toEqual({ count: 0 })
+      expect(tableColumns(sqlite, "sessions")).toEqual(
+        expect.arrayContaining(["workspace_id", "config_selections"])
+      )
+      expect(sqlite.pragma("foreign_key_check")).toEqual([])
+    } finally {
+      sqlite.close()
+    }
 
     expect(await run(db.migrate)).toEqual([])
     await Effect.runPromise(db.close)
@@ -164,14 +172,17 @@ describe("@codevisor/db project and archive upgrades", () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
     const sqlite = new Database(filename)
-    sqlite.pragma("foreign_keys = OFF")
-    sqlite
-      .prepare(
-        `insert into sessions (id, workspace_id, server_id, harness_id, title, origin, is_archived, created_at)
+    try {
+      sqlite.pragma("foreign_keys = OFF")
+      sqlite
+        .prepare(
+          `insert into sessions (id, workspace_id, server_id, harness_id, title, origin, is_archived, created_at)
          values ('orphan', 'missing-workspace', 'local', 'codex', 'Orphan', 'codevisor', 0, '2026-06-01T02:00:00.000Z')`
-      )
-      .run()
-    sqlite.close()
+        )
+        .run()
+    } finally {
+      sqlite.close()
+    }
 
     await expect(run(makeDatabase({ filename, serverId: "local" }))).rejects.toBeInstanceOf(
       DatabaseError

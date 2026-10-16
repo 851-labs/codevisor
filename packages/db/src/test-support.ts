@@ -80,7 +80,8 @@ export const listSubjectEvents = (
 
 export const buildV4Fixture = (filename: string): void => {
   const sqlite = new Database(filename)
-  sqlite.exec(`
+  try {
+    sqlite.exec(`
     create table schema_migrations (id integer primary key, name text not null);
     insert into schema_migrations (id, name) values
       (1, 'initial'), (2, 'session action idempotency'),
@@ -207,7 +208,9 @@ export const buildV4Fixture = (filename: string): void => {
     insert into session_actions (session_id, client_action_id, action_kind, response, created_at)
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `)
-  sqlite.close()
+  } finally {
+    sqlite.close()
+  }
 }
 
 export const memoryDatabase = async (): Promise<{
