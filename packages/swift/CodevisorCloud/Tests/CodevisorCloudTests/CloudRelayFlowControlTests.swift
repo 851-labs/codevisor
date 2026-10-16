@@ -39,20 +39,25 @@ struct CloudRelayFlowControlTests {
         status: 200, headers: [:], bodyChunks: [request.body])
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
-    let transport = CloudRelayRequestTransport(endpoint: endpoint)
-    var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/upload")!)
-    request.httpMethod = "POST"
-    request.httpBody = Data("held until granted".utf8)
+    do {
+      let transport = CloudRelayRequestTransport(endpoint: endpoint)
+      var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/upload")!)
+      request.httpMethod = "POST"
+      request.httpBody = Data("held until granted".utf8)
 
-    let pending = Task { try await transport.data(for: request) }
-    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
-    let channelId = scriptedMachine.openChannelIds[0]
-    scriptedMachine.grantUploadWindow(channelId: channelId)
+      let pending = Task { try await transport.data(for: request) }
+      #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+      let channelId = scriptedMachine.openChannelIds[0]
+      scriptedMachine.grantUploadWindow(channelId: channelId)
 
-    let (data, response) = try await pending.value
-    #expect(response.statusCode == 200)
-    #expect(data == Data("held until granted".utf8))
-    await pipe.shutdown()
+      let (data, response) = try await pending.value
+      #expect(response.statusCode == 200)
+      #expect(data == Data("held until granted".utf8))
+      await pipe.shutdown()
+    } catch {
+      await pipe.shutdown()
+      throw error
+    }
   }
 
   private func uploadFixture() throws -> (url: URL, contents: Data) {
@@ -83,26 +88,31 @@ struct CloudRelayFlowControlTests {
         status: 201, headers: [:], bodyChunks: [Data("\(request.body.count)".utf8)])
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
-    let clock = TestClock()
-    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
+    do {
+      let clock = TestClock()
+      let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
 
-    let pending = Task { try await transport.upload(for: uploadRequest(), fromFile: fileURL) }
-    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
-    let channelId = scriptedMachine.openChannelIds[0]
-    for chunk in 1...3 {
-      await clock.waitForSleep(.seconds(30))
-      clock.advance(by: .seconds(20))
-      scriptedMachine.grantUploadWindow(channelId: channelId, bytes: Self.oneChunkGrant)
-      let expected = min(chunk * CloudRelayRequestTransport.chunkSize, contents.count)
-      #expect(await waitUntil { scriptedMachine.receivedBodyBytes(channelId: channelId) >= expected })
-      #expect(scriptedMachine.receivedBodyBytes(channelId: channelId) == expected)
+      let pending = Task { try await transport.upload(for: uploadRequest(), fromFile: fileURL) }
+      #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+      let channelId = scriptedMachine.openChannelIds[0]
+      for chunk in 1...3 {
+        await clock.waitForSleep(.seconds(30))
+        clock.advance(by: .seconds(20))
+        scriptedMachine.grantUploadWindow(channelId: channelId, bytes: Self.oneChunkGrant)
+        let expected = min(chunk * CloudRelayRequestTransport.chunkSize, contents.count)
+        #expect(await waitUntil { scriptedMachine.receivedBodyBytes(channelId: channelId) >= expected })
+        #expect(scriptedMachine.receivedBodyBytes(channelId: channelId) == expected)
+      }
+
+      let (data, response) = try await pending.value
+      #expect(response.statusCode == 201)
+      #expect(data == Data("\(contents.count)".utf8))
+      #expect(scriptedMachine.completedRequests.first?.body == contents)
+      await pipe.shutdown()
+    } catch {
+      await pipe.shutdown()
+      throw error
     }
-
-    let (data, response) = try await pending.value
-    #expect(response.statusCode == 201)
-    #expect(data == Data("\(contents.count)".utf8))
-    #expect(scriptedMachine.completedRequests.first?.body == contents)
-    await pipe.shutdown()
   }
 
   @Test("A file upload that stalls fails with the transport timeout")
@@ -138,30 +148,35 @@ struct CloudRelayFlowControlTests {
         status: 200, headers: [:], bodyChunks: [first, second], sendsClose: false)
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
-    let transport = CloudRelayRequestTransport(endpoint: endpoint)
-    let request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/big")!)
+    do {
+      let transport = CloudRelayRequestTransport(endpoint: endpoint)
+      let request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/big")!)
 
-    let (response, body) = try await transport.stream(for: request)
-    #expect(response.statusCode == 200)
-    var chunks: [Data] = []
-    for try await chunk in body {
-      chunks.append(chunk)
+      let (response, body) = try await transport.stream(for: request)
+      #expect(response.statusCode == 200)
+      var chunks: [Data] = []
+      for try await chunk in body {
+        chunks.append(chunk)
+      }
+      #expect(chunks == [first, second])
+
+      #expect(await waitUntil { scriptedMachine.creditGrants.count >= 5 })
+      #expect(scriptedMachine.creditGrants[0] == 1024 * 1024)
+
+      struct OpenProbe: Decodable {
+        var compress: Bool?
+        var flowControl: Bool?
+      }
+      let openPayload = try #require(
+        scriptedMachine.machine.channel(scriptedMachine.openChannelIds[0])?.openPayload)
+      let probe = try JSONDecoder().decode(OpenProbe.self, from: openPayload)
+      #expect(probe.compress == true)
+      #expect(probe.flowControl == true)
+      await pipe.shutdown()
+    } catch {
+      await pipe.shutdown()
+      throw error
     }
-    #expect(chunks == [first, second])
-
-    #expect(await waitUntil { scriptedMachine.creditGrants.count >= 5 })
-    #expect(scriptedMachine.creditGrants[0] == 1024 * 1024)
-
-    struct OpenProbe: Decodable {
-      var compress: Bool?
-      var flowControl: Bool?
-    }
-    let openPayload = try #require(
-      scriptedMachine.machine.channel(scriptedMachine.openChannelIds[0])?.openPayload)
-    let probe = try JSONDecoder().decode(OpenProbe.self, from: openPayload)
-    #expect(probe.compress == true)
-    #expect(probe.flowControl == true)
-    await pipe.shutdown()
   }
 
   @Test("ws windows replenish only as messages are consumed")
@@ -172,22 +187,28 @@ struct CloudRelayFlowControlTests {
       URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/events/socket")!),
       maximumMessageSize: 1024 * 1024
     )
-    try await connection.send(.string("subscribe"))
-    #expect(await waitUntil { scriptedMachine.openChannelId != nil })
+    do {
+      try await connection.send(.string("subscribe"))
+      #expect(await waitUntil { scriptedMachine.openChannelId != nil })
 
-    let credits: @Sendable () -> Int = { scriptedMachine.scripted.credits.count }
-    #expect(await waitUntil { credits() == 1 })
+      let credits: @Sendable () -> Int = { scriptedMachine.scripted.credits.count }
+      #expect(await waitUntil { credits() == 1 })
 
-    scriptedMachine.push(#"{"kind":"text","data":"one"}"#)
-    scriptedMachine.push(#"{"kind":"text","data":"two"}"#)
-    #expect(relayMessageText(try await connection.receive()) == "one")
-    #expect(await waitUntil { credits() == 2 })
-    await scriptedMachine.scripted.socket.drain()
-    #expect(credits() == 2)
-    #expect(relayMessageText(try await connection.receive()) == "two")
-    #expect(await waitUntil { credits() == 3 })
+      scriptedMachine.push(#"{"kind":"text","data":"one"}"#)
+      scriptedMachine.push(#"{"kind":"text","data":"two"}"#)
+      #expect(relayMessageText(try await connection.receive()) == "one")
+      #expect(await waitUntil { credits() == 2 })
+      await scriptedMachine.scripted.socket.drain()
+      #expect(credits() == 2)
+      #expect(relayMessageText(try await connection.receive()) == "two")
+      #expect(await waitUntil { credits() == 3 })
 
-    connection.cancel(with: .normalClosure, reason: nil)
-    await pipe.shutdown()
+      connection.cancel(with: .normalClosure, reason: nil)
+      await pipe.shutdown()
+    } catch {
+      connection.cancel(with: .normalClosure, reason: nil)
+      await pipe.shutdown()
+      throw error
+    }
   }
 }
