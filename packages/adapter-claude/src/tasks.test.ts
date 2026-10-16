@@ -10,6 +10,7 @@ import {
   resultMessage,
   run,
   sdkMessage,
+  startTestSession,
   streamEvent
 } from "./test-support.js"
 
@@ -19,15 +20,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("renders plan tools as plan updates, never as tool calls", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
     const promptPromise = run(created.handle.prompt("plan the feature"))
     await fake.nextPrompt()
 

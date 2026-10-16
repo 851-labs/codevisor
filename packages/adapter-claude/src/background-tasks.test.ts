@@ -12,6 +12,7 @@ import {
   recordsValue,
   resultMessage,
   run,
+  startTestSession,
   systemMessage
 } from "./test-support.js"
 
@@ -199,15 +200,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("tracks background tasks across the turn boundary and clears on notification", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const snapshots = () =>
       events
