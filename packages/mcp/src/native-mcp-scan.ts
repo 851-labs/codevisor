@@ -7,14 +7,11 @@ import type {
   NativeMcpScan,
   NativeMcpServer
 } from "@codevisor/api"
+import { resolveNativeConfigPath } from "@codevisor/skills"
 
 import { errorMessage, run } from "./mcp-support.js"
 import type { NativeConfigFileSystem } from "./native-config-files.js"
-import {
-  getNestedValue,
-  parseNativeConfig,
-  resolveNativeConfigPath
-} from "./native-config-files.js"
+import { getNestedValue, parseNativeConfig } from "./native-config-files.js"
 import {
   extractServerIdentity,
   normalizeNativeServer,
