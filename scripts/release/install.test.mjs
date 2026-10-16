@@ -59,8 +59,15 @@ const runShell = (input, options) =>
     let stderr = ""
     child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk))
     child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk))
-    child.once("error", (error) => resolve({ error, status: null, stdout, stderr }))
-    child.once("close", (status, signal) => resolve({ status, signal, stdout, stderr }))
+    let spawnError
+    child.once("error", (error) => (spawnError = error))
+    child.once("close", (status, signal) =>
+      resolve(
+        spawnError === undefined
+          ? { status, signal, stdout, stderr }
+          : { error: spawnError, status: null, stdout, stderr }
+      )
+    )
     child.stdin.end(input)
   })
 
