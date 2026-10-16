@@ -54,20 +54,4 @@ final class WorkspacePaneStore {
       ClientPreferences.shared.set(data, forKey: key(for: workspaceId))
     }
   }
-
-  func selectChat(
-    _ sessionId: UUID,
-    in workspaceId: UUID,
-    legacySessionIds: [UUID]
-  ) {
-    var state = state(for: workspaceId, legacySessionIds: legacySessionIds)
-    if let pane = state.panes.first(where: {
-      $0.kind == .chat && $0.chatSessionId == sessionId
-    }) {
-      state.selectPane(id: pane.id)
-    } else {
-      _ = state.addChatPane(sessionId: sessionId)
-    }
-    save(state, for: workspaceId)
-  }
 }
