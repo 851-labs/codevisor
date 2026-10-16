@@ -14,6 +14,7 @@ for (const asynchronous of [false, true]) {
     let child
     let closed
     let watchdog
+    let cleaning = false
     const server = createServer()
     try {
       await mkdir(join(fixture, "apps/cloud"), { recursive: true })
@@ -54,6 +55,10 @@ process.disconnect()
         if (ready && (!asynchronous || pulse !== undefined)) connection.end("release")
       }
       server.on("connection", (socket) => {
+        if (cleaning) {
+          socket.destroy()
+          return
+        }
         connection = socket
         socket.once("data", () => {
           ready = true
@@ -67,7 +72,8 @@ process.disconnect()
         env: { ...process.env, PATH: fixture, CLOUD_TEST_GATE: String(server.address().port) },
         stdio: ["ignore", "ignore", "pipe", "ipc"]
       })
-      closed = once(child, "close")
+      closed = new Promise((done) => child.once("close", (code, signal) => done([code, signal])))
+      const completed = once(child, "close")
       let stderr = ""
       child.stderr.on("data", (chunk) => (stderr += chunk))
       child.on("message", (message) => {
@@ -80,17 +86,25 @@ process.disconnect()
         connection?.destroy()
         child.kill("SIGKILL")
       }, 15_000)
-      assert.deepEqual(await closed, [0, null], stderr)
+      assert.deepEqual(await completed, [0, null], stderr)
       assert.equal(ready, true)
       assert.equal(pulse?.finished, !asynchronous)
       assert.deepEqual(variables, { VALUE: "local=content" })
     } finally {
       clearTimeout(watchdog)
+      cleaning = true
       connection?.destroy()
-      if (child?.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
-      if (closed) await closed
-      await new Promise((done) => server.close(done))
-      await rm(fixture, { recursive: true, force: true })
+      try {
+        if (child?.pid && child.exitCode === null && child.signalCode === null)
+          child.kill("SIGKILL")
+        if (closed) await closed
+      } finally {
+        try {
+          await new Promise((done) => server.close(done))
+        } finally {
+          await rm(fixture, { recursive: true, force: true })
+        }
+      }
     }
   })
 }
