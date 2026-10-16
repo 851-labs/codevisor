@@ -39,6 +39,10 @@ extension SessionContainerView {
     )
   }
 
+  func keepCenterTab(_ tabId: UUID) {
+    environment.workspaceSync.keepTab(workspaceId: selectedWorkspace.id, tabId: tabId)
+  }
+
   func selectCenterTab(_ tabId: UUID) {
     store.selectDestination(.tab(tabId), in: selectedWorkspace.id)
   }
@@ -61,7 +65,8 @@ extension SessionContainerView {
         icon: .workspaceTab(
           descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store),
         canClose: true,
-        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil
+        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil,
+        isPreview: tab.isPreview
       )
     }
   }

@@ -6,6 +6,7 @@ final class FileEditorSessions {
   private var order: [String] = []
   private let capacity: Int
   private let document: (String) -> FileDocumentModel
+  var onEdit: (() -> Void)?
 
   init(capacity: Int = 32, document: @escaping (String) -> FileDocumentModel) {
     self.capacity = capacity
@@ -17,6 +18,7 @@ final class FileEditorSessions {
     order.append(path)
     if let session = sessions[path] { return session }
     let session = FileEditorSession(document: document(path))
+    session.onEdit = { [weak self] in self?.onEdit?() }
     sessions[path] = session
     while order.count > capacity { sessions.removeValue(forKey: order.removeFirst())?.close() }
     return session

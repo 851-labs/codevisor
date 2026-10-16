@@ -215,6 +215,7 @@ struct SessionContainerView: View {
           onClose: closeCenterTab,
           onMove: moveCenterTab,
           onRename: renameCenterTab,
+          onKeep: keepCenterTab,
           onNew: addCenterTab
         )
       }

@@ -135,6 +135,23 @@ struct SessionRenameSyncTests {
     #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.customTitle == "Logs")
     #expect(fixture.navigation.store.pendingIntents.isEmpty)
   }
+
+  @Test("Keeping a preview tab clears its preview flag and leaves other tabs alone")
+  func keepsPreviewTab() async {
+    let fixture = await ChatRenameFixture.make()
+    let id = fixture.workspace.id
+    var workspace = fixture.workspace
+    workspace.centerTabs[0].isPreview = true
+    fixture.repository.save(workspace)
+    let tabId = workspace.centerTabs[0].id
+    fixture.sync.keepTab(workspaceId: id, tabId: UUID())
+    #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.isPreview == true)
+    fixture.sync.keepTab(workspaceId: id, tabId: tabId)
+    #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.isPreview == false)
+    fixture.sync.keepTab(workspaceId: id, tabId: tabId)
+    #expect(fixture.repository.workspace(id: id)?.centerTabs.first?.isPreview == false)
+    #expect(fixture.navigation.store.pendingIntents.isEmpty)
+  }
 }
 
 @MainActor

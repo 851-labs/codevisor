@@ -8,6 +8,7 @@ struct WorkspaceTabBar: View {
   var onClose: ((UUID) -> Void)? = nil
   var onMove: ((_ id: UUID, _ successorId: UUID?) -> Void)? = nil
   var onRename: ((UUID, String?) -> Void)? = nil
+  var onKeep: ((UUID) -> Void)? = nil
   var onNew: (() -> Void)? = nil
 
   @State private var renamingTabId: UUID?
@@ -23,7 +24,8 @@ struct WorkspaceTabBar: View {
       onClose: { onClose?($0) },
       onMove: onMove,
       onAdd: onNew,
-      onRename: onRename.map { _ in beginRename }
+      onRename: onRename.map { _ in beginRename },
+      onKeep: onKeep
     )
     .padding(.horizontal, 10)
     .padding(.vertical, 6)

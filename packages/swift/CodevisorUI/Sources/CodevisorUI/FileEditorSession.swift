@@ -5,6 +5,7 @@ import Observation
 public final class FileEditorSession {
   public let document: FileDocumentModel
   public var preview = false
+  var onEdit: (() -> Void)?
   public var wrapsLines = false
   public var showsLineNumbers = true
   public private(set) var selection = NSRange(location: 0, length: 0)

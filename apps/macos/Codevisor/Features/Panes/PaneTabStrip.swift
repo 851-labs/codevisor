@@ -17,6 +17,7 @@ struct PaneTabStripItem: Identifiable {
   let icon: PaneTabIcon
   let canClose: Bool
   var shortcutHint: String? = nil
+  var isPreview = false
 }
 
 struct PaneTabStrip: View {
@@ -31,6 +32,7 @@ struct PaneTabStrip: View {
   let onMove: ((_ id: UUID, _ successorId: UUID?) -> Void)?
   let onAdd: (() -> Void)?
   var onRename: ((UUID) -> Void)?
+  var onKeep: ((UUID) -> Void)?
 
   @State private var draggingId: UUID?
   @State private var dragOrder: [UUID]?
@@ -172,12 +174,14 @@ struct PaneTabStrip: View {
             && ordered[index + 1].id != selectedId
             && draggingId == nil,
           shortcutHint: item.shortcutHint,
+          isPreview: item.isPreview,
           onSelect: { onSelect(item.id) },
           onClose: {
             frozenTabWidth = tabWidth
             onClose(item.id)
           },
-          onRename: onRename.map { rename in { rename(item.id) } }
+          onRename: onRename.map { rename in { rename(item.id) } },
+          onKeep: onKeep.map { keep in { keep(item.id) } }
         )
         .clipped()
         .scaleEffect(x: isAppearing ? 0.01 : 1, y: 1, anchor: .trailing)
