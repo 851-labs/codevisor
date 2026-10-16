@@ -5,6 +5,7 @@ import SwiftUI
 
 struct WorkspaceInspectorFileTreeView: View {
   let model: WorkspaceInspectorFileTreeModel
+  let activeFilePath: String?
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -58,6 +59,9 @@ struct WorkspaceInspectorFileTreeView: View {
       }
       .focusable()
       .focusEffectDisabled()
+      .onChange(of: activeFilePath, initial: true) { _, path in
+        selection = path
+      }
       .onKeyPress(.upArrow) { move(by: -1, in: rows, proxy: proxy) }
       .onKeyPress(.downArrow) { move(by: 1, in: rows, proxy: proxy) }
       .onKeyPress(.rightArrow) { stepIn(rows, proxy: proxy) }
@@ -162,10 +166,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
     .padding(.trailing, 6)
     .frame(height: 22)
     .contentShape(Rectangle())
-    .background(
-      RoundedRectangle(cornerRadius: 5)
-        .fill(isSelected ? Color.primary.opacity(0.1) : .clear)
-    )
+    .sidebarRowHover(isSelected: isSelected)
     .onTapGesture(perform: onActivate)
     .help(entry.path)
     .contextMenu {
