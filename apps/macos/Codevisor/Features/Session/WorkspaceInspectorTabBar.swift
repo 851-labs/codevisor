@@ -13,16 +13,8 @@ struct WorkspaceInspectorTabBar: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       Capsule()
-        .fill(Color.accentColor.opacity(isPressed || isMoving ? 1 : 0.62))
-        .overlay {
-          Capsule()
-            .strokeBorder(
-              LinearGradient(
-                colors: [.white.opacity(0.38), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom),
-              lineWidth: 0.75
-            )
-        }
-        .shadow(color: .black.opacity(0.15), radius: 1.5, y: 0.5)
+        .fill(.white.opacity(isPressed || isMoving ? 0.12 : 0))
+        .glassEffect(.regular, in: Capsule())
         .frame(width: indicator.width, height: indicator.height)
         .offset(x: indicator.minX, y: indicator.minY)
         .opacity(indicator.isEmpty ? 0 : 1)
@@ -62,7 +54,7 @@ struct WorkspaceInspectorTabBar: View {
       ForEach(WorkspaceInspectorTab.allCases) { tab in
         Text(tab.title)
           .font(.system(size: 11, weight: highlighted ? .semibold : .regular))
-          .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+          .foregroundStyle(highlighted ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
           .fixedSize()
           .frame(width: highlighted ? frames[tab]?.width : nil, height: highlighted ? frames[tab]?.height : nil)
           .padding(.horizontal, highlighted ? 0 : 10)
