@@ -6,7 +6,6 @@
   struct MacFileOpenPicker: View {
     let model: FilePaneModel
     let focus: Autocomplete.InputFocus
-    var onDismiss: (() -> Void)? = nil
 
     @Environment(\.openFileDocument) private var openFile
     @State private var query = ""
@@ -37,7 +36,7 @@
     }
 
     var body: some View {
-      Autocomplete.Suggestions(query: $query, focus: focus, onCancel: onDismiss) {
+      Autocomplete.Suggestions(query: $query, focus: focus) {
         if trimmedQuery.isEmpty {
           if !recentPaths.isEmpty {
             Autocomplete.Section("Recent") {
@@ -108,12 +107,10 @@
 
     private func open(_ path: String) {
       model.navigate(to: path)
-      onDismiss?()
     }
 
     private func openInNewTab(_ path: String) {
-      guard openFile?(path) == true else { return open(path) }
-      onDismiss?()
+      if openFile?(path) != true { open(path) }
     }
   }
 
@@ -134,17 +131,6 @@
         }
       }
       .onChange(of: model.explorerFocusRequests) { _, _ in focus.focus() }
-    }
-  }
-
-  struct MacFileOpenPopover: View {
-    let model: FilePaneModel
-    @State private var focus = Autocomplete.InputFocus()
-
-    var body: some View {
-      MacFileOpenPicker(model: model, focus: focus, onDismiss: { model.showsExplorer = false })
-        .padding(4)
-        .onAppear { focus.focus() }
     }
   }
 #endif
