@@ -133,38 +133,27 @@ function removeInBackground(path) {
 }
 
 export function localDevelopmentEnvironment(layout, environment = process.env) {
-  return {
-    ...environment,
-    TMPDIR: layout.runtime.temp,
-    BUN_INSTALL_CACHE_DIR: layout.build.bunCache,
-    npm_config_devdir: layout.build.nodeGyp,
-    ...(process.platform === "darwin" ? { npm_config_python: "/usr/bin/python3" } : {}),
-    CODEVISOR_DEV_DATA_DIR: layout.local.data,
-    CODEVISOR_DEV_LOGS_DIR: layout.local.logs,
-    CODEVISOR_DEV_CACHE_DIR: layout.local.cache,
-    CODEVISOR_DATA_DIR: layout.local.data,
-    CODEVISOR_LOGS_DIR: layout.local.logs,
-    CODEVISOR_WORKTREES_ROOT: layout.local.worktrees,
-    CODEVISOR_REPOS_ROOT: layout.local.repos,
-    CODEVISOR_PLUGINS_ROOT: layout.local.plugins
-  }
+  return developmentEnvironment(layout, layout.local, environment)
 }
 
 export function remoteDevelopmentEnvironment(layout, environment = process.env) {
-  const remote = layout.remoteCloud
+  return developmentEnvironment(layout, layout.remoteCloud, environment)
+}
+
+function developmentEnvironment(layout, roots, environment) {
   return {
     ...environment,
     TMPDIR: layout.runtime.temp,
     BUN_INSTALL_CACHE_DIR: layout.build.bunCache,
     npm_config_devdir: layout.build.nodeGyp,
     ...(process.platform === "darwin" ? { npm_config_python: "/usr/bin/python3" } : {}),
-    CODEVISOR_DEV_DATA_DIR: remote.data,
-    CODEVISOR_DEV_LOGS_DIR: remote.logs,
-    CODEVISOR_DEV_CACHE_DIR: remote.cache,
-    CODEVISOR_DATA_DIR: remote.data,
-    CODEVISOR_LOGS_DIR: remote.logs,
-    CODEVISOR_WORKTREES_ROOT: remote.worktrees,
-    CODEVISOR_REPOS_ROOT: remote.repos,
-    CODEVISOR_PLUGINS_ROOT: remote.plugins
+    CODEVISOR_DEV_DATA_DIR: roots.data,
+    CODEVISOR_DEV_LOGS_DIR: roots.logs,
+    CODEVISOR_DEV_CACHE_DIR: roots.cache,
+    CODEVISOR_DATA_DIR: roots.data,
+    CODEVISOR_LOGS_DIR: roots.logs,
+    CODEVISOR_WORKTREES_ROOT: roots.worktrees,
+    CODEVISOR_REPOS_ROOT: roots.repos,
+    CODEVISOR_PLUGINS_ROOT: roots.plugins
   }
 }
