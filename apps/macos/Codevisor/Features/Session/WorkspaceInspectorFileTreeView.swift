@@ -148,21 +148,22 @@ private struct WorkspaceInspectorFileTreeRow: View {
           ProgressView().controlSize(.mini)
         } else if entry.isDirectory {
           Image(systemName: "chevron.right")
-            .font(.caption2.weight(.bold))
+            .font(.caption2.weight(.semibold))
+            .scaleEffect(0.95)
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
         }
       }
       .frame(width: 10, height: 10)
-      .padding(.trailing, 2)
-      FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
+      .padding(.trailing, 3.5)
+      FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 15)
       Text(entry.name)
         .lineLimit(1)
         .truncationMode(.middle)
         .padding(.leading, 6)
       Spacer(minLength: 0)
     }
-    .padding(.leading, CGFloat(row.depth) * Self.indent + 5)
+    .padding(.leading, CGFloat(row.depth) * Self.indent + 4)
     .padding(.trailing, 6)
     .frame(height: 22)
     .contentShape(Rectangle())
