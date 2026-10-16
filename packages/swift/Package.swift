@@ -26,6 +26,7 @@ let package = Package(
     .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     .library(name: "SimulatorPane", targets: ["SimulatorPane"]),
+    .library(name: "ScreenSharingPane", targets: ["ScreenSharingPane"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
     .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
@@ -346,6 +347,21 @@ let package = Package(
       name: "SimulatorPaneTests",
       dependencies: ["SimulatorPane", "CodevisorTestSupport"],
       path: "SimulatorPane/Tests/SimulatorPaneTests",
+      swiftSettings: strictSwiftSettings,
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
+    ),
+    .target(
+      name: "ScreenSharingPane",
+      dependencies: ["CodevisorCloud", "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC"],
+      path: "ScreenSharingPane/Sources/ScreenSharingPane",
+      swiftSettings: strictSwiftSettings
+    ),
+    .testTarget(
+      name: "ScreenSharingPaneTests",
+      dependencies: ["ScreenSharingPane", "CodevisorTestSupport"],
+      path: "ScreenSharingPane/Tests/ScreenSharingPaneTests",
       swiftSettings: strictSwiftSettings,
       linkerSettings: [
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))

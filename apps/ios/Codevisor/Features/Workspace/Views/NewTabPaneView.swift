@@ -19,6 +19,8 @@ struct NewTabPaneView: View {
   var onReviewChanges: () -> Void = {}
   var onNewSimulator: () -> Void = {}
   var supportsSimulator = false
+  var onNewScreenSharing: () -> Void = {}
+  var supportsScreenSharing = false
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
   var onOpenPlugin: (PluginNewTabOption) -> Void = { _ in }
@@ -49,6 +51,11 @@ struct NewTabPaneView: View {
           }
           newTabOption(title: "Review Changes", action: onReviewChanges) {
             Image(systemName: "plusminus")
+          }
+          if supportsScreenSharing {
+            newTabOption(title: "Open Desktop", action: onNewScreenSharing) {
+              Image(systemName: "display")
+            }
           }
           if supportsSimulator {
             newTabOption(title: "Open Simulator", action: onNewSimulator) {
