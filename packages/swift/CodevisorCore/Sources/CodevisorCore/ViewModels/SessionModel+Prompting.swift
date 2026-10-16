@@ -70,7 +70,8 @@ extension SessionModel {
 
     do {
       _ = try await transport.prompt(
-        "Continue from the failed attempt without repeating completed work.",
+        prompt.text,
+        attachments: prompt.attachments,
         messageId: prompt.id.uuidString.lowercased(),
         clientId: promptClientId
       )

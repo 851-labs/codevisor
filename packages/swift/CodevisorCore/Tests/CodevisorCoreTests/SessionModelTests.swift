@@ -121,7 +121,7 @@ struct SessionModelTests {
     #expect(
       client.promptedTexts == [
         "finish the change",
-        "Continue from the failed attempt without repeating completed work.",
+        "finish the change",
       ])
     #expect(
       client.promptedMessageIds == [
