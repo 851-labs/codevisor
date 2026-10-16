@@ -196,6 +196,7 @@ export const handleRequest = async (
             : ["screen-sharing-v1", "computer-use-stream-v1"]),
           ...(services.mcp === undefined ? [] : ["live-preview-v1"]),
           "canonical-chat-v1",
+          ...(config.workspaceGit === true ? ["workspace-git-v1"] : []),
           "session-event-stream-v1",
           "transcript-pagination-v1",
           ...(services.plugins === undefined ? [] : ["plugins-v1"]),

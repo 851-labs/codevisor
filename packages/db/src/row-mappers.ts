@@ -1,6 +1,6 @@
 import { dirname } from "node:path"
 
-import { repoIdentityKey } from "@codevisor/api"
+import { GitPullRequest, repoIdentityKey } from "@codevisor/api"
 import type {
   ArchivedWorktree,
   FileMetadata,
@@ -9,6 +9,7 @@ import type {
   SessionSummary,
   UpdateInfo,
   Workspace,
+  WorkspaceGit,
   WorkspacePane,
   Worktree
 } from "@codevisor/api"
@@ -130,8 +131,23 @@ export const serializeLabels = (
 ): string | null =>
   labels === undefined || Object.keys(labels).length === 0 ? null : JSON.stringify(labels)
 
+const parsePullRequest = (raw: string | null | undefined): GitPullRequest | null => {
+  if (raw == null) return null
+  try {
+    return parseJsonColumn(GitPullRequest, raw)
+  } catch {
+    return null
+  }
+}
+
+const workspaceGitFromRow = (row: WorkspaceRow): WorkspaceGit | undefined =>
+  row.git_checked_at == null
+    ? undefined
+    : { branch: row.git_branch ?? null, pullRequest: parsePullRequest(row.git_pull_request) }
+
 export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
   const labels = parseLabels(row.labels)
+  const git = workspaceGitFromRow(row)
   return {
     sidebarPosition: row.sidebar_position,
     sidebarOrderRevision: row.sidebar_order_revision,
@@ -145,7 +161,8 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
-    ...(labels === undefined ? {} : { labels })
+    ...(labels === undefined ? {} : { labels }),
+    ...(git === undefined ? {} : { git })
   }
 }
 

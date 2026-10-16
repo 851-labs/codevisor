@@ -37,11 +37,13 @@ export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
   return pending ? "pending" : "passing"
 }
 
-const gh = (
+type GhResult = { readonly stdout: string } | { readonly failure: string }
+
+const runGh = (
   args: ReadonlyArray<string>,
   cwd: string,
   env: NodeJS.ProcessEnv
-): Promise<string | undefined> =>
+): Promise<GhResult> =>
   new Promise((resolve) => {
     execFile(
       "gh",
@@ -51,9 +53,12 @@ const gh = (
         timeout: ghTimeoutMs,
         env: { ...env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }
       },
-      (error, stdout) => resolve(error === null ? stdout : undefined)
+      (error, stdout, stderr) => resolve(error === null ? { stdout } : { failure: stderr })
     )
   })
+
+const pullRequestFields = "number,title,state,isDraft,url,statusCheckRollup"
+const noPullRequest = /no (?:open )?pull requests? found/i
 
 export const parseGitPullRequest = (json: string): GitPullRequest | null => {
   let value: unknown
@@ -104,10 +109,15 @@ export const gitPullRequest = async (
 ): Promise<GitPullRequest | null> => {
   const branch = knownBranch ?? (await gitCurrentBranch(dir, env))
   if (branch === null || branch.length === 0) return null
-  const output = await gh(
-    ["pr", "view", branch, "--json", "number,title,state,isDraft,url,statusCheckRollup"],
-    dir,
-    env
-  )
-  return output === undefined ? null : parseGitPullRequest(output)
+  return (await findGitPullRequest(dir, env, branch)) ?? null
+}
+
+export const findGitPullRequest = async (
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  branch: string
+): Promise<GitPullRequest | null | undefined> => {
+  const result = await runGh(["pr", "view", branch, "--json", pullRequestFields], dir, env)
+  if ("stdout" in result) return parseGitPullRequest(result.stdout)
+  return noPullRequest.test(result.failure) ? null : undefined
 }

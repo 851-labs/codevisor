@@ -364,6 +364,7 @@ export const runServe = (
         directPathEnabled: directPathMode === "enabled",
         worktreeNameStyle,
         cloud: cloudControl,
+        workspaceGit: true,
         icon,
         bootId,
         processId: process.pid,

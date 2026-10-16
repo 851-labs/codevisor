@@ -31,5 +31,6 @@ export const defaultServerConfig = (
   simulators: overrides.simulators,
   cloudDeviceId: overrides.cloudDeviceId,
   cloud: overrides.cloud,
-  icon: overrides.icon
+  icon: overrides.icon,
+  workspaceGit: overrides.workspaceGit
 })

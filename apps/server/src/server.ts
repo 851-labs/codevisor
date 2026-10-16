@@ -15,6 +15,7 @@ import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import { forwardTerminalTitles } from "./infra/terminal-titles.js"
+import { startWorkspaceGitMonitor } from "./infra/workspace-git.js"
 import {
   makeFileRestartSnapshotStore,
   makeMemoryRestartSnapshotStore,
@@ -37,7 +38,8 @@ import {
   makeEventFanout,
   ServerError,
   swallowError,
-  sweepAttachmentTempFiles
+  sweepAttachmentTempFiles,
+  workspaceGitCheckout
 } from "./server-context.js"
 import type {
   CodevisorServerApp,
@@ -110,6 +112,16 @@ export const makeCodevisorServerApp = (
   staleTurnSweep.unref()
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
+  const workspaceGit =
+    config.workspaceGit === true
+      ? startWorkspaceGitMonitor({
+          db: services.db,
+          fanout,
+          checkout: (workspace) => workspaceGitCheckout(services, config.id, workspace),
+          environment: (directory) =>
+            services.resolveGitEnvironment?.(directory) ?? Promise.resolve(process.env)
+        })
+      : undefined
   void attentionSettle.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = config.sessionActivity
@@ -268,6 +280,7 @@ export const makeCodevisorServerApp = (
       void services.mcp?.close().catch(swallowError)
       await sharedAccountReconcile
       await closeTerminalTitles()
+      await workspaceGit?.close()
       await archiveJobs(services).jobsFinished()
     })
   }

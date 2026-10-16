@@ -4,7 +4,12 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { gitPullRequest, parseGitPullRequest, rollUpChecks } from "./git-pull-request.js"
+import {
+  findGitPullRequest,
+  gitPullRequest,
+  parseGitPullRequest,
+  rollUpChecks
+} from "./git-pull-request.js"
 import { makeGitRepo } from "./git-test-support.js"
 
 const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFile: string } => {
@@ -43,6 +48,17 @@ describe("gitPullRequest", () => {
     const { env } = fakeGh(root, `echo 'no pull requests found for branch "main"' >&2; exit 1`)
 
     expect(await gitPullRequest(repo, env)).toBeNull()
+  })
+
+  it("tells a branch without a pull request apart from a lookup that failed", async () => {
+    const { root, repo } = makeGitRepo()
+    const missing = fakeGh(root, `echo 'no pull requests found for branch "main"' >&2; exit 1`)
+    expect(await findGitPullRequest(repo, missing.env, "main")).toBeNull()
+
+    const offline = makeGitRepo()
+    const failing = fakeGh(offline.root, `echo 'error connecting to api.github.com' >&2; exit 1`)
+    expect(await findGitPullRequest(offline.repo, failing.env, "main")).toBeUndefined()
+    expect(await gitPullRequest(offline.repo, failing.env, "main")).toBeNull()
   })
 
   it("asks gh about a branch it is given instead of the checkout's", async () => {

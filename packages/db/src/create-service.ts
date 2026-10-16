@@ -21,6 +21,7 @@ import { makeTerminalPaneTitlesService } from "./terminal-pane-titles.js"
 import { makeTranscriptService } from "./transcript-service.js"
 import { makeUpdatesService } from "./updates-service.js"
 import { makeWorkspaceCreationService } from "./workspace-creation-service.js"
+import { makeWorkspaceGitService } from "./workspace-git.js"
 import { makeWorkspaceMediaService } from "./workspace-media.js"
 import { makeWorkspacesService } from "./workspaces-service.js"
 import { makeWorktreesService } from "./worktrees-service.js"
@@ -41,6 +42,7 @@ export const createService = (
     ...makeWorktreesService(context),
     ...makeWorkspacesService(context),
     ...makeTerminalPaneTitlesService(context),
+    ...makeWorkspaceGitService(context),
     ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),
     ...makeTranscriptService(context),

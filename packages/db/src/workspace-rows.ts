@@ -17,6 +17,9 @@ export interface WorkspaceRow {
   readonly created_at: string
   readonly updated_at: string | null
   readonly labels?: string | null
+  readonly git_branch?: string | null
+  readonly git_pull_request?: string | null
+  readonly git_checked_at?: string | null
 }
 
 export interface WorkspacePaneRow {
@@ -49,7 +52,10 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   archived_at: nullable(text),
   created_at: text,
   updated_at: nullable(text),
-  labels: optional(nullable(text))
+  labels: optional(nullable(text)),
+  git_branch: optional(nullable(text)),
+  git_pull_request: optional(nullable(text)),
+  git_checked_at: optional(nullable(text))
 })
 
 export const workspacePaneRows = rowReader<WorkspacePaneRow>({

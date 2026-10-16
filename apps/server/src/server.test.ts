@@ -1,4 +1,5 @@
 import { request, Server } from "node:http"
+import { tmpdir } from "node:os"
 
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
@@ -31,6 +32,29 @@ const attentionEvent = (subjectId: string, sidebarState: "inProgress" | "idle") 
   createdAt: new Date().toISOString(),
   payload: { sidebarState }
 })
+
+const serverWithPlainWorkspace = async (id: string, workspaceGit: boolean) => {
+  const { services } = await makeServices(id)
+  const project = await run(services.db.createProject({ folderPath: tmpdir() }))
+  await run(
+    services.db.upsertWorkspace({
+      projectId: project.id,
+      name: "plain folder",
+      hasCustomName: false,
+      rootDirectory: tmpdir()
+    })
+  )
+  const server = await run(
+    startCodevisorServer(
+      services,
+      defaultServerConfig({ bootId: "test-boot", id, port: 0, workspaceGit })
+    )
+  )
+  runningServers.push(server)
+  const features = field((await jsonRequest(server, "/v1/info")).body, "features")
+  const git = async () => (await run(services.db.listWorkspaces))[0]?.git
+  return { features, git }
+}
 
 describe("@codevisor/server", () => {
   it("holds host sleep only while at least one session is active", async () => {
@@ -286,6 +310,17 @@ describe("@codevisor/server", () => {
       operation: "start",
       message: expect.stringContaining("already has a listener")
     })
+  })
+
+  it("advertises server-owned workspace git only when the server keeps it up to date", async () => {
+    const watched = await serverWithPlainWorkspace("server-git", true)
+    expect(watched.features).toContain("workspace-git-v1")
+    await vi.waitFor(async () =>
+      expect(await watched.git()).toEqual({ branch: null, pullRequest: null })
+    )
+    const unwatched = await serverWithPlainWorkspace("server-no-git", false)
+    expect(unwatched.features).not.toContain("workspace-git-v1")
+    expect(await unwatched.git()).toBeUndefined()
   })
 
   it("reports the machine's icon in its info", async () => {

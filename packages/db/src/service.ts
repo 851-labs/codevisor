@@ -13,6 +13,7 @@ import type {
   EventEnvelope,
   EventKind,
   FileMetadata,
+  GitPullRequest,
   Harness,
   Project,
   PromptQueueItem,
@@ -151,6 +152,11 @@ export interface CodevisorDatabaseService extends SessionStateService {
     activity: TerminalActivity | undefined
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly clearTerminalPaneStatuses: Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  readonly setWorkspaceGit: (
+    workspaceId: string,
+    branch: string | null,
+    pullRequest: GitPullRequest | null | undefined
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly setSessionWorkspace: (
     sessionId: string,
     workspaceId: string | null

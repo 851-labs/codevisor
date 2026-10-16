@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { WorkspaceGit } from "./git-review.js"
 import { Labels } from "./labels.js"
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
 import { WorkspacePosition } from "./workspace-position.js"
@@ -17,7 +18,8 @@ export const Workspace = Schema.Struct({
   updatedAt: Schema.optional(Schema.String),
   sidebarPosition: Schema.optional(WorkspacePosition),
   sidebarOrderRevision: Schema.optional(Schema.Number),
-  labels: Schema.optional(Labels)
+  labels: Schema.optional(Labels),
+  git: Schema.optional(WorkspaceGit)
 })
 export type Workspace = typeof Workspace.Type
 

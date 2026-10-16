@@ -68,6 +68,7 @@ export interface CodevisorServerConfig {
   readonly cloudDeviceId?: string | undefined
   readonly cloud?: CloudServerControl | undefined
   readonly icon?: string | undefined
+  readonly workspaceGit?: boolean | undefined
 }
 
 export interface ScreenSharingVNCConfig {
