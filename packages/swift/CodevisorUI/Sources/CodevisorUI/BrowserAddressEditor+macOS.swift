@@ -169,17 +169,19 @@
 
   private final class AddressField: NSTextField {
     var onFocus: (() -> Void)?
+    private var justFocused = false
     override func becomeFirstResponder() -> Bool {
-      if currentEditor() == nil { onFocus?() }
+      if currentEditor() == nil {
+        onFocus?()
+        justFocused = true
+        DispatchQueue.main.async { [weak self] in self?.justFocused = false }
+      }
       return super.becomeFirstResponder()
     }
     override func mouseDown(with event: NSEvent) {
-      if currentEditor() == nil {
-        onFocus?()
-        selectText(nil)
-      } else {
-        super.mouseDown(with: event)
-      }
+      guard currentEditor() == nil || justFocused else { return super.mouseDown(with: event) }
+      justFocused = false
+      if let editor = currentEditor() { editor.selectAll(nil) } else { selectText(nil) }
     }
   }
 

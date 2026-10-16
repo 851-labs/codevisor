@@ -59,8 +59,11 @@
       } else {
         let click = try #require(
           NSEvent.mouseEvent(
-            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
-            windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+            with: .leftMouseDown,
+            location: field.convert(NSPoint(x: field.bounds.maxX - 1, y: field.bounds.midY), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+            clickCount: 1, pressure: 1))
+        #expect(window.makeFirstResponder(field))
         field.mouseDown(with: click)
       }
       let editor = try #require(field.currentEditor() as? NSTextView)
