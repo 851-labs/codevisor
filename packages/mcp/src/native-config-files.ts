@@ -10,6 +10,8 @@ import { parse as parseYaml } from "yaml"
 import { isMissingFileError, isNonArrayRecord, isRecord } from "./mcp-guards.js"
 import { NativeMcpError } from "./native-mcp-types.js"
 
+export { resolveNativeConfigPath, type NativePathEnvironment } from "@codevisor/skills"
+
 export interface NativeConfigFileSystem {
   readonly readFile: (path: string) => Promise<string | undefined>
   readonly writeFileAtomic: (
