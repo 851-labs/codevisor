@@ -68,6 +68,7 @@ struct WorkspaceInspectorFileTreeView: View {
               },
               onKeep: { onOpen(.file(row.entry.path)) }
             )
+            .padding(.bottom, WorkspaceInspectorFileTreeRow.spacing)
             .modifier(
               WorkspaceInspectorFileTreeFold(
                 progress: placement?.progress ?? 1, index: placement?.index ?? 0, count: placement?.count ?? 1
@@ -214,7 +215,7 @@ private struct WorkspaceInspectorFileTreeFold: ViewModifier, Animatable {
   }
 
   func body(content: Content) -> some View {
-    let height = WorkspaceInspectorFileTreeRow.height
+    let height = WorkspaceInspectorFileTreeRow.height + WorkspaceInspectorFileTreeRow.spacing
     let visible = min(height, max(0, progress * CGFloat(count) * height - CGFloat(index) * height))
     content
       .frame(height: visible, alignment: .top)
@@ -234,6 +235,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let height: CGFloat = 22
+  static let spacing: CGFloat = 1
   private static let indent: CGFloat = 14
 
   private var entry: ServerFileEntry { row.entry }
