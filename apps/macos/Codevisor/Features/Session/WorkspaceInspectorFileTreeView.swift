@@ -15,10 +15,14 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 
   var body: some View {
-    let rows = model.rows
-    if rows.isEmpty, rootPhase == nil {
-      Color.clear
-    } else if rows.isEmpty, let rootPhase {
+    if let root = model.root, model.listings[root]?.isEmpty == false {
+      Form {
+        Section {
+          WorkspaceInspectorFileTreeFolder(directory: root, depth: 0, model: model, onOpen: onOpen)
+        }
+      }
+      .formStyle(.grouped)
+    } else if let rootPhase {
       WorkspaceInspectorMediaPlaceholder(
         phase: rootPhase, emptyTitle: model.root == nil ? "No Folder" : "No Files", systemImage: "folder",
         emptyDescription: model.root == nil
@@ -27,54 +31,73 @@ struct WorkspaceInspectorFileTreeView: View {
         onRetry: { Task { await model.refresh() } }
       )
     } else {
-      Form {
-        Section {
-          ForEach(rows) { row in
-            self.row(row)
-          }
+      Color.clear
+    }
+  }
+}
+
+private struct WorkspaceInspectorFileTreeFolder: View {
+  let directory: String
+  let depth: Int
+  let model: WorkspaceInspectorFileTreeModel
+  let onOpen: (WorkspaceInspectorView.Destination) -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private static let disclosureWidth: CGFloat = 11
+
+  private var levelIndent: CGFloat { depth == 0 ? 0 : Self.disclosureWidth }
+
+  var body: some View {
+    ForEach(model.listings[directory] ?? []) { entry in
+      if entry.isDirectory {
+        DisclosureGroup(isExpanded: expansion(entry.path)) {
+          WorkspaceInspectorFileTreeFolder(directory: entry.path, depth: depth + 1, model: model, onOpen: onOpen)
+        } label: {
+          label(entry)
         }
+        .padding(.leading, levelIndent)
+      } else {
+        Button {
+          onOpen(.file(entry.path))
+        } label: {
+          label(entry)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, levelIndent + Self.disclosureWidth)
       }
-      .formStyle(.grouped)
     }
   }
 
-  private func row(_ row: WorkspaceInspectorFileTreeModel.Row) -> some View {
-    let entry = row.entry
-    let isExpanded = model.expanded.contains(entry.path)
-    return Button {
-      if entry.isDirectory {
-        Task { await model.toggle(entry.path) }
-      } else {
-        onOpen(.file(entry.path))
-      }
-    } label: {
-      HStack(spacing: 4) {
-        Group {
-          if model.slow.contains(entry.path) {
-            ProgressView().controlSize(.mini)
-          } else {
-            Image(systemName: "chevron.right")
-              .font(.caption2.weight(.semibold))
-              .foregroundStyle(.secondary)
-              .rotationEffect(.degrees(isExpanded ? 90 : 0))
-              .opacity(entry.isDirectory ? 1 : 0)
-          }
+  private func expansion(_ path: String) -> Binding<Bool> {
+    Binding(
+      get: { model.expanded.contains(path) },
+      set: { isExpanded in
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+          model.setExpanded(path, isExpanded)
         }
-        .frame(width: 12)
-        FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
-        Text(entry.name)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer(minLength: 0)
       }
-      .padding(.leading, CGFloat(row.depth) * 14)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
+    )
+  }
+
+  private func label(_ entry: ServerFileEntry) -> some View {
+    HStack(spacing: 6) {
+      Group {
+        if model.slow.contains(entry.path) {
+          ProgressView().controlSize(.mini)
+        } else {
+          FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
+        }
+      }
+      .frame(width: 16, height: 16)
+      Text(entry.name)
+        .lineLimit(1)
+        .truncationMode(.middle)
+      Spacer(minLength: 0)
     }
-    .buttonStyle(.plain)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
     .help(entry.path)
-    .accessibilityAddTraits(entry.isDirectory ? [] : .isLink)
-    .accessibilityValue(entry.isDirectory ? (isExpanded ? "Expanded" : "Collapsed") : "")
     .contextMenu {
       Button("Copy Path") {
         NSPasteboard.general.clearContents()

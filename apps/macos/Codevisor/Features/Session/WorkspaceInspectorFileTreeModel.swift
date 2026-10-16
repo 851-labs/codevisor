@@ -5,13 +5,6 @@ import Observation
 @MainActor
 @Observable
 final class WorkspaceInspectorFileTreeModel {
-  struct Row: Identifiable {
-    let entry: ServerFileEntry
-    let depth: Int
-
-    var id: String { entry.path }
-  }
-
   private static let hiddenNames: Set<String> = [".git"]
   private static let slowDelay = Duration.milliseconds(800)
 
@@ -23,21 +16,6 @@ final class WorkspaceInspectorFileTreeModel {
   @ObservationIgnored private var loading: Set<String> = []
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
-
-  var rows: [Row] {
-    guard let root else { return [] }
-    var rows: [Row] = []
-    func walk(_ directory: String, depth: Int) {
-      for entry in listings[directory] ?? [] {
-        rows.append(Row(entry: entry, depth: depth))
-        if entry.isDirectory, expanded.contains(entry.path) {
-          walk(entry.path, depth: depth + 1)
-        }
-      }
-    }
-    walk(root, depth: 0)
-    return rows
-  }
 
   func show(root: String?, client: any CodevisorServerClienting) async {
     if root != self.root {
@@ -62,11 +40,14 @@ final class WorkspaceInspectorFileTreeModel {
     }
   }
 
-  func toggle(_ directory: String) async {
-    if expanded.remove(directory) != nil { return }
+  func setExpanded(_ directory: String, _ isExpanded: Bool) {
+    guard isExpanded else {
+      expanded.remove(directory)
+      return
+    }
     expanded.insert(directory)
     if listings[directory] == nil || stale.contains(directory) {
-      await load(directory)
+      Task { await load(directory) }
     }
   }
 
