@@ -13,12 +13,15 @@ final class WorkspaceInspectorFileTreeModel {
   }
 
   private static let hiddenNames: Set<String> = [".git"]
+  private static let slowDelay = Duration.milliseconds(800)
 
   private(set) var root: String?
   private(set) var listings: [String: [ServerFileEntry]] = [:]
-  private(set) var loading: Set<String> = []
   private(set) var errors: [String: String] = [:]
   private(set) var expanded: Set<String> = []
+  private(set) var slow: Set<String> = []
+  @ObservationIgnored private var loading: Set<String> = []
+  @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
 
   var rows: [Row] {
@@ -40,9 +43,11 @@ final class WorkspaceInspectorFileTreeModel {
     if root != self.root {
       self.root = root
       listings = [:]
-      loading = []
       errors = [:]
       expanded = []
+      slow = []
+      loading = []
+      stale = []
     }
     self.client = client
     await refresh()
@@ -50,6 +55,7 @@ final class WorkspaceInspectorFileTreeModel {
 
   func refresh() async {
     guard let root else { return }
+    stale = Set(listings.keys).subtracting(expanded).subtracting([root])
     await load(root)
     for directory in expanded where listings[directory] != nil {
       await load(directory)
@@ -57,24 +63,46 @@ final class WorkspaceInspectorFileTreeModel {
   }
 
   func toggle(_ directory: String) async {
-    if expanded.remove(directory) == nil {
-      expanded.insert(directory)
-      if listings[directory] == nil { await load(directory) }
+    if expanded.remove(directory) != nil { return }
+    expanded.insert(directory)
+    if listings[directory] == nil || stale.contains(directory) {
+      await load(directory)
     }
   }
 
   private func load(_ directory: String) async {
-    guard let client, let root, !loading.contains(directory) else { return }
+    var next = await fetch(directory)
+    while let child = next, listings[child] == nil {
+      next = await fetch(child)
+    }
+  }
+
+  private func fetch(_ directory: String) async -> String? {
+    guard let client, let root, !loading.contains(directory) else { return nil }
     loading.insert(directory)
-    defer { loading.remove(directory) }
+    stale.remove(directory)
+    let timer = Task {
+      try await Task.sleep(for: Self.slowDelay)
+      slow.insert(directory)
+    }
+    defer {
+      timer.cancel()
+      loading.remove(directory)
+      slow.remove(directory)
+    }
     do {
       let entries = try await client.fileEntries(path: directory, showHidden: true).entries
-      guard root == self.root else { return }
-      listings[directory] = entries.filter { !Self.hiddenNames.contains($0.name) }
+        .filter { !Self.hiddenNames.contains($0.name) }
+      guard root == self.root else { return nil }
+      listings[directory] = entries
       errors[directory] = nil
+      guard entries.count == 1, let only = entries.first, only.isDirectory else { return nil }
+      return only.path
     } catch {
-      guard root == self.root, !Task.isCancelled else { return }
+      guard root == self.root, !Task.isCancelled else { return nil }
       errors[directory] = error.localizedDescription
+      if directory != root { expanded.remove(directory) }
+      return nil
     }
   }
 }
