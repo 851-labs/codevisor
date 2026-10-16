@@ -41,6 +41,9 @@ struct WorkspaceInspectorTabBar: View {
           selection = tab
         }
     )
+    .focusable(interactions: .activate)
+    .onKeyPress(.leftArrow) { step(-1) }
+    .onKeyPress(.rightArrow) { step(1) }
     .onChange(of: selection) { _, tab in move(to: tab) }
     .accessibilityRepresentation {
       Picker("Inspector Section", selection: $selection) {
@@ -77,6 +80,15 @@ struct WorkspaceInspectorTabBar: View {
           }
       }
     }
+  }
+
+  private func step(_ offset: Int) -> KeyPress.Result {
+    let tabs = WorkspaceInspectorTab.allCases
+    guard let index = tabs.firstIndex(of: selection), tabs.indices.contains(index + offset) else {
+      return .ignored
+    }
+    selection = tabs[index + offset]
+    return .handled
   }
 
   private func move(to tab: WorkspaceInspectorTab) {
