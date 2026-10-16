@@ -8,7 +8,7 @@ import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { isMachineIcon, type MachineUpdate } from "./hub-registry.js"
 import { relayMap } from "./hub-tunnel.js"
-import { hubLocationHint } from "./location-hint.js"
+import { userHub } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
@@ -29,11 +29,6 @@ import { CLOUD_VERSION } from "./version.js"
 export { UserHub }
 
 type HonoEnv = { Bindings: CloudEnv }
-
-const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
-  const locationHint = hubLocationHint(cf)
-  return env.USER_HUB.getByName(userId, locationHint === undefined ? undefined : { locationHint })
-}
 
 const sessionUserId = async (env: CloudEnv, headers: Headers): Promise<string | undefined> => {
   const session = await createAuth(env).api.getSession({ headers })
@@ -142,7 +137,7 @@ app.get("/auth/error", nativeHandoff)
 app.get("/api/machines", async (c) => {
   const userId = await sessionUserId(c.env, c.req.raw.headers)
   if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
-  return c.json({ machines: await hub(c.env, userId, c.req.raw.cf).listMachines() })
+  return c.json({ machines: await userHub(c.env, userId, c.req.raw.cf).listMachines() })
 })
 
 const machineName = (value: unknown): string | undefined => {
@@ -169,7 +164,7 @@ app.patch("/api/machines/:deviceId", async (c) => {
   if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
   const update = parseMachineUpdate(await c.req.json<unknown>().catch(() => undefined))
   if (update === undefined) return c.json({ error: "invalid machine update" }, 400)
-  const updated = await hub(c.env, userId, c.req.raw.cf).updateMachine(
+  const updated = await userHub(c.env, userId, c.req.raw.cf).updateMachine(
     c.req.param("deviceId"),
     update
   )
@@ -182,9 +177,12 @@ app.post("/api/machines/:deviceId/rename", async (c) => {
   const body = await c.req.json<{ name?: unknown }>().catch(() => ({ name: undefined }))
   const name = machineName(body.name)
   if (name === undefined) return c.json({ error: "invalid name" }, 400)
-  const renamed = await hub(c.env, userId, c.req.raw.cf).updateMachine(c.req.param("deviceId"), {
-    name
-  })
+  const renamed = await userHub(c.env, userId, c.req.raw.cf).updateMachine(
+    c.req.param("deviceId"),
+    {
+      name
+    }
+  )
   return renamed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
@@ -217,7 +215,7 @@ const removeMachine = async (
     )
   }
   await forgetTunnelEndpoints(env, userId, deviceId)
-  return hub(env, userId, cf).removeMachine(deviceId)
+  return userHub(env, userId, cf).removeMachine(deviceId)
 }
 
 app.delete("/api/machines/:deviceId", async (c) => {
@@ -322,7 +320,7 @@ app.get("/connect", async (c) => {
     deviceId,
     kind: headers.get(HUB_KIND_HEADER)!
   })
-  return hub(c.env, userId, c.req.raw.cf).fetch(new Request(c.req.raw.url, { headers }))
+  return userHub(c.env, userId, c.req.raw.cf).fetch(new Request(c.req.raw.url, { headers }))
 })
 
 app.get("/", (c) => homePage(c))
