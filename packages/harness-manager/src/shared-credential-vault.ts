@@ -57,6 +57,15 @@ export interface SharedCredentialVaultConfig {
   }
 }
 
+const hasDifferentCredentialAccount = (
+  candidate: SharedTokenBundle,
+  previous: SharedTokenBundle
+): boolean =>
+  candidate.subject !== previous.subject ||
+  candidate.organizationId !== previous.organizationId ||
+  candidate.providerId !== previous.providerId ||
+  candidate.harnessId !== previous.harnessId
+
 const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
   ["pi", "opencode", "grok-build"].includes(harnessId) ? 6 * 60_000 : 60_000
 
@@ -168,12 +177,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       const rotated = await config.rotate(bundle).catch(() => {
         throw new SharedCredentialError("reauthenticate")
       })
-      if (
-        rotated.subject !== bundle.subject ||
-        rotated.organizationId !== bundle.organizationId ||
-        rotated.providerId !== bundle.providerId ||
-        rotated.harnessId !== bundle.harnessId
-      ) {
+      if (hasDifferentCredentialAccount(rotated, bundle)) {
         throw new SharedCredentialError("reauthenticate")
       }
       const sealed = sealSharedCredential(reference, rotated)
@@ -237,13 +241,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
         return
       }
       const previous = remember(reference, state.credential)
-      if (
-        previous.ownership !== "external" ||
-        previous.subject !== bundle.subject ||
-        previous.organizationId !== bundle.organizationId ||
-        previous.providerId !== bundle.providerId ||
-        previous.harnessId !== bundle.harnessId
-      )
+      if (previous.ownership !== "external" || hasDifferentCredentialAccount(previous, bundle))
         return
       if (!isNewer(previous)) return
       const operationId = randomUUID()
