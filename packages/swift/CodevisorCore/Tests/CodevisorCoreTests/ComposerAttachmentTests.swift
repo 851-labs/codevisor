@@ -121,13 +121,18 @@ struct ComposerAttachmentTests {
   private func sparseFile(named name: String, bytes: Int) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("attachment-limit-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let url = directory.appendingPathComponent(name)
-    #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
-    let handle = try FileHandle(forWritingTo: url)
-    try handle.truncate(atOffset: UInt64(bytes))
-    try handle.close()
-    return url
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let url = directory.appendingPathComponent(name)
+      try #require(FileManager.default.createFile(atPath: url.path, contents: nil))
+      let handle = try FileHandle(forWritingTo: url)
+      try handle.truncate(atOffset: UInt64(bytes))
+      try handle.close()
+      return url
+    } catch {
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
   }
 
   @MainActor
@@ -177,7 +182,13 @@ struct ComposerAttachmentTests {
     let (controller, machines) = controller(maxUploadBytes: 64 * 1024 * 1024, files: files)
     defer { withExtendedLifetime(machines) {} }
     let aboveLegacy = try sparseFile(named: "capture.mov", bytes: 32 * 1024 * 1024 + 1)
-    let aboveAdvertised = try sparseFile(named: "longer.mov", bytes: 64 * 1024 * 1024 + 1)
+    let aboveAdvertised: URL
+    do {
+      aboveAdvertised = try sparseFile(named: "longer.mov", bytes: 64 * 1024 * 1024 + 1)
+    } catch {
+      try? FileManager.default.removeItem(at: aboveLegacy.deletingLastPathComponent())
+      throw error
+    }
     defer {
       try? FileManager.default.removeItem(at: aboveLegacy.deletingLastPathComponent())
       try? FileManager.default.removeItem(at: aboveAdvertised.deletingLastPathComponent())
