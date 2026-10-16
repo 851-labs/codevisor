@@ -160,10 +160,6 @@ struct ProtocolCodableTests {
     )
     try roundTrip(SessionUpdate.goalCleared)
     try assertWire(SessionUpdate.goalCleared, json: #"{"sessionUpdate":"goal_cleared"}"#)
-    try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .started))
-    try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .completed))
-    try roundTrip(SessionUpdate.contextCompaction(id: nil, status: .failed))
-    try roundTrip(SessionUpdate.planDocument(markdown: "# The Plan\n\n1. Do it"))
     try roundTrip(
       SessionUpdate.question(
         QuestionRequest(
@@ -215,6 +211,36 @@ struct ProtocolCodableTests {
             )
           ]
         )))
+  }
+
+  @Test("Context compaction preserves server wire tags, statuses and omitted IDs")
+  func contextCompactionWire() throws {
+    let cases: [(SessionUpdate, String)] = [
+      (
+        .contextCompaction(id: "compact-1", status: .started),
+        #"{"sessionUpdate":"context_compaction","compactionId":"compact-1","status":"started"}"#
+      ),
+      (
+        .contextCompaction(id: "compact-1", status: .completed),
+        #"{"sessionUpdate":"context_compaction","compactionId":"compact-1","status":"completed"}"#
+      ),
+      (
+        .contextCompaction(id: nil, status: .failed),
+        #"{"sessionUpdate":"context_compaction","status":"failed"}"#
+      ),
+    ]
+    for (update, json) in cases {
+      try roundTrip(update)
+      try assertWire(update, json: json)
+    }
+  }
+
+  @Test("Plan documents preserve server wire tag and markdown bytes")
+  func planDocumentWire() throws {
+    let update = SessionUpdate.planDocument(markdown: "# The Plan\n\n1. Do it")
+    try roundTrip(update)
+    try assertWire(
+      update, json: ##"{"sessionUpdate":"plan_document","markdown":"# The Plan\n\n1. Do it"}"##)
   }
 
   @Test("Goal update decodes a null token budget and rejects unknown statuses")
