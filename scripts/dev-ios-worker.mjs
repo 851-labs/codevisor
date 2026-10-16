@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { readFile, realpath } from "node:fs/promises"
-import { basename, join, resolve } from "node:path"
+import { realpath } from "node:fs/promises"
+import { basename, join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
@@ -13,6 +13,7 @@ import {
   prepareDevContainers,
   resolveContainerEngine
 } from "./dev-containers.mjs"
+import { makeCommandRunner, readCloudDevVariables } from "./dev-host-tools.mjs"
 import {
   buildIOSDevelopmentApp,
   launchIOSDevelopmentApp,
@@ -38,6 +39,7 @@ import {
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
+const { capture } = makeCommandRunner(repoRoot)
 const simulator = await requireIOSSimulator(repoRoot)
 const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
   process.argv.slice(2)
@@ -131,7 +133,7 @@ if (externalCloudURL === undefined) {
   ).catch((error) => {
     console.error(`Cloud dev migrations failed (${error instanceof Error ? error.message : error})`)
   })
-  const cloudDevVariables = await readCloudDevVariables()
+  const cloudDevVariables = await readCloudDevVariables(repoRoot, capture)
   const cloudExtraVariables = Object.entries(cloudDevVariables)
     .filter(([key]) => !key.startsWith("CODEVISOR_DEV_"))
     .flatMap(([key, value]) => ["--var", `${key}:${value}`])
@@ -262,23 +264,6 @@ function run(command, arguments_, cwd = repoRoot, environment = process.env) {
   })
 }
 
-function capture(command, arguments_) {
-  const child = spawn(command, arguments_, {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ["ignore", "pipe", "inherit"]
-  })
-  let output = ""
-  child.stdout.setEncoding("utf8")
-  child.stdout.on("data", (chunk) => {
-    output += chunk
-  })
-  return waitForExit(child).then((result) => {
-    if (result.code === 0) return output
-    throw new Error(`${command} failed (${describeExit(result)})`)
-  })
-}
-
 async function resolveCloudSession(cloudUrl, ownedCloud) {
   const attempts = ownedCloud === undefined ? 1 : 120
   let lastError
@@ -307,34 +292,4 @@ async function resolveCloudSession(cloudUrl, ownedCloud) {
     `Cloud dev instance unavailable (${lastError instanceof Error ? lastError.message : String(lastError)}); continuing without it.`
   )
   return undefined
-}
-
-async function readCloudDevVariables() {
-  const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
-  try {
-    const commonDir = (await capture("git", ["rev-parse", "--git-common-dir"])).trim()
-    const mainRoot = resolve(repoRoot, commonDir, "..")
-    if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
-  } catch {}
-  for (const candidate of candidates) {
-    let content
-    try {
-      content = await readFile(candidate, "utf8")
-    } catch {
-      continue
-    }
-    const variables = {}
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim()
-      if (trimmed === "" || trimmed.startsWith("#")) continue
-      const separator = trimmed.indexOf("=")
-      if (separator === -1) continue
-      variables[trimmed.slice(0, separator).trim()] = trimmed
-        .slice(separator + 1)
-        .trim()
-        .replace(/^"(.*)"$/, "$1")
-    }
-    return variables
-  }
-  return {}
 }
