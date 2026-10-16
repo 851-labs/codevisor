@@ -71,6 +71,7 @@ struct WorkspaceInspectorTabBar: View {
           .frame(width: highlighted ? frames[tab]?.width : nil, height: highlighted ? frames[tab]?.height : nil)
           .padding(.horizontal, highlighted ? 0 : 10)
           .padding(.vertical, highlighted ? 0 : 6.5)
+          .scrollAnchor(highlighted ? nil : tab)
           .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.space))
           } action: { frame in
@@ -107,5 +108,12 @@ struct WorkspaceInspectorTabBar: View {
       if let settled = frames[selection], settled != indicator { indicator = settled }
       withAnimation(.easeOut(duration: 0.15)) { isMoving = false }
     }
+  }
+}
+
+extension View {
+  @ViewBuilder
+  fileprivate func scrollAnchor(_ tab: WorkspaceInspectorTab?) -> some View {
+    if let tab { id(tab) } else { self }
   }
 }

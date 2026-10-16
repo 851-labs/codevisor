@@ -15,11 +15,13 @@ struct WorkspaceInspectorView: View {
   let machineName: String?
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
+  let fileTree: WorkspaceInspectorFileTreeModel
   let client: any CodevisorServerClienting
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
   @Environment(\.theme) private var theme
+  @State private var tabBarWidth: CGFloat = 0
 
   var body: some View {
     ZStack {
@@ -28,15 +30,30 @@ struct WorkspaceInspectorView: View {
       case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
       case .links:
         WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
-      case .files: WorkspaceInspectorFilesView(model: media, onOpen: onOpen, onRetry: onReload)
+      case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
+      case .files: WorkspaceInspectorFileTreeView(model: fileTree, onOpen: onOpen)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .safeAreaInset(edge: .top, spacing: 0) {
-      WorkspaceInspectorTabBar(selection: $tab)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+      ScrollViewReader { proxy in
+        ScrollView(.horizontal, showsIndicators: false) {
+          WorkspaceInspectorTabBar(selection: $tab)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minWidth: tabBarWidth)
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.width
+        } action: {
+          tabBarWidth = $0
+        }
+        .onAppear { proxy.scrollTo(tab, anchor: .center) }
+        .onChange(of: tab) { _, selected in
+          withAnimation(.smooth(duration: 0.28)) { proxy.scrollTo(selected, anchor: .center) }
+        }
+      }
     }
   }
 

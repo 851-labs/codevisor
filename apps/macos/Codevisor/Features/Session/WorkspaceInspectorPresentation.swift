@@ -28,6 +28,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @ClientPreference(Self.presentedKey, default: true) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @State private var media = WorkspaceInspectorMediaModel()
+  @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
   let store: SessionStore?
   let selection: SidebarSelection?
@@ -50,6 +51,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           machineName: environment.machines.fleetMachineName(for: workspace.serverId),
           tab: $tab,
           media: media,
+          fileTree: fileTree,
           client: environment.machines.client(for: workspace.serverId),
           onReload: { Task { await reload(workspace) } },
           onOpen: { destination in
@@ -78,7 +80,12 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func reload(_ workspace: Workspace) async {
-    await media.reload(tab, workspaceId: workspace.id, client: environment.machines.client(for: workspace.serverId))
+    let client = environment.machines.client(for: workspace.serverId)
+    if tab == .files {
+      await fileTree.show(root: workspace.rootDirectory, client: client)
+    } else {
+      await media.reload(tab, workspaceId: workspace.id, client: client)
+    }
   }
 
   private func activity(in workspace: Workspace) -> Date? {

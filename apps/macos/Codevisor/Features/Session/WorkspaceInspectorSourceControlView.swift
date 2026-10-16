@@ -4,7 +4,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct WorkspaceInspectorFilesView: View {
+struct WorkspaceInspectorSourceControlView: View {
   let model: WorkspaceInspectorMediaModel
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
   let onRetry: () -> Void
@@ -12,21 +12,21 @@ struct WorkspaceInspectorFilesView: View {
   @Environment(\.theme) private var theme
 
   var body: some View {
-    if model.files.isEmpty {
+    if model.changes.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
-        phase: model.filesPhase, emptyTitle: "No Files", systemImage: "doc.on.doc",
+        phase: model.changesPhase, emptyTitle: "No Changes", systemImage: "arrow.triangle.branch",
         emptyDescription: "Files this workspace's agents change, and uncommitted changes in its checkout, appear here.",
         onRetry: onRetry
       )
     } else {
       Form {
         Section {
-          ForEach(model.files) { file in
+          ForEach(model.changes) { file in
             row(file)
           }
-          if case let .failed(message) = model.filesPhase {
+          if case let .failed(message) = model.changesPhase {
             HStack {
-              Text("Couldn't refresh files: \(message)")
+              Text("Couldn't refresh changes: \(message)")
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
               Spacer()
@@ -34,7 +34,7 @@ struct WorkspaceInspectorFilesView: View {
             }
           }
         } footer: {
-          if model.filesTruncated {
+          if model.changesTruncated {
             Text("Showing the first 300 uncommitted changes.")
               .foregroundStyle(.secondary)
           }
@@ -68,12 +68,12 @@ struct WorkspaceInspectorFilesView: View {
           }
         }
         Spacer(minLength: 4)
-        if file.uncommitted {
-          Circle()
-            .fill(.tint)
-            .frame(width: 6, height: 6)
-            .help("Uncommitted")
-            .accessibilityLabel("Uncommitted")
+        if file.uncommitted, let status = file.status {
+          Text(status.letter)
+            .font(.caption.weight(.semibold).monospaced())
+            .foregroundStyle(statusColor(status))
+            .help(status.description)
+            .accessibilityLabel(status.description)
         }
         DiffCounter(totals: LineDiff.Totals(added: file.added, removed: file.removed))
       }
@@ -88,6 +88,32 @@ struct WorkspaceInspectorFilesView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(file.path, forType: .string)
       }
+    }
+  }
+
+  private func statusColor(_ status: ServerWorkspaceFileChange.Status) -> Color {
+    switch status {
+    case .added: theme.diffAddedFg
+    case .modified: theme.statusWarn
+    case .deleted: theme.diffRemovedFg
+    }
+  }
+}
+
+extension ServerWorkspaceFileChange.Status {
+  fileprivate var letter: String {
+    switch self {
+    case .added: "A"
+    case .modified: "M"
+    case .deleted: "D"
+    }
+  }
+
+  fileprivate var description: String {
+    switch self {
+    case .added: "Added, uncommitted"
+    case .modified: "Modified, uncommitted"
+    case .deleted: "Deleted, uncommitted"
     }
   }
 }

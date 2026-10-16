@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, photos, links, files
+  case info, photos, links, sourceControl, files
 
   var id: Self { self }
 
@@ -12,6 +12,7 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
     case .info: "Info"
     case .photos: "Photos"
     case .links: "Links"
+    case .sourceControl: "Source Control"
     case .files: "Files"
     }
   }
@@ -30,11 +31,11 @@ final class WorkspaceInspectorMediaModel {
 
   private(set) var photos: [ServerWorkspacePhoto] = []
   private(set) var links: [ServerWorkspaceLink] = []
-  private(set) var files: [ServerWorkspaceFileChange] = []
-  private(set) var filesTruncated = false
+  private(set) var changes: [ServerWorkspaceFileChange] = []
+  private(set) var changesTruncated = false
   private(set) var photosPhase = Phase.idle
   private(set) var linksPhase = Phase.idle
-  private(set) var filesPhase = Phase.idle
+  private(set) var changesPhase = Phase.idle
   private var photosNextBefore: String?
   private(set) var linksNextBefore: String?
   @ObservationIgnored private var workspaceId: UUID?
@@ -48,18 +49,19 @@ final class WorkspaceInspectorMediaModel {
       self.workspaceId = workspaceId
       photos = []
       links = []
-      files = []
-      filesTruncated = false
+      changes = []
+      changesTruncated = false
       photosPhase = .idle
       linksPhase = .idle
-      filesPhase = .idle
+      changesPhase = .idle
     }
     self.client = client
     switch tab {
     case .info: break
     case .photos: await loadPhotos(before: nil)
     case .links: await loadLinks(before: nil)
-    case .files: await loadFiles()
+    case .sourceControl: await loadChanges()
+    case .files: break
     }
   }
 
@@ -109,18 +111,18 @@ final class WorkspaceInspectorMediaModel {
     }
   }
 
-  private func loadFiles() async {
+  private func loadChanges() async {
     guard let client, let workspaceId else { return }
-    filesPhase = .loading
+    changesPhase = .loading
     do {
-      let changes = try await client.workspaceFiles(workspaceId: workspaceId)
+      let page = try await client.workspaceFiles(workspaceId: workspaceId)
       guard workspaceId == self.workspaceId else { return }
-      files = changes.files
-      filesTruncated = changes.truncated
-      filesPhase = .loaded
+      changes = page.files
+      changesTruncated = page.truncated
+      changesPhase = .loaded
     } catch {
       guard workspaceId == self.workspaceId, !Task.isCancelled else { return }
-      filesPhase = .failed(error.localizedDescription)
+      changesPhase = .failed(error.localizedDescription)
     }
   }
 
