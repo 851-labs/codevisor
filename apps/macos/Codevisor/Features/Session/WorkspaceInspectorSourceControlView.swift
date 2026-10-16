@@ -13,7 +13,7 @@ struct WorkspaceInspectorSourceControlView: View {
     if model.changes.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
         phase: model.changesPhase, emptyTitle: "No Changes", systemImage: "arrow.triangle.branch",
-        emptyDescription: "Files this workspace's agents change, and uncommitted changes in its checkout, appear here.",
+        emptyDescription: "Uncommitted changes in this workspace's checkout appear here.",
         onRetry: onRetry
       )
     } else {
