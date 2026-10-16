@@ -39,12 +39,6 @@
         "wrangler": "4.120.0",
       },
     },
-    "apps/macos": {
-      "name": "@codevisor/macos",
-      "devDependencies": {
-        "@shikijs/themes": "4.3.1",
-      },
-    },
     "apps/screen-sharing-rig": {
       "name": "@codevisor/screen-sharing-rig",
     },
@@ -628,8 +622,6 @@
     "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
 
     "@codevisor/harness-manager": ["@codevisor/harness-manager@workspace:packages/harness-manager"],
-
-    "@codevisor/macos": ["@codevisor/macos@workspace:apps/macos"],
 
     "@codevisor/mcp": ["@codevisor/mcp@workspace:packages/mcp"],
 

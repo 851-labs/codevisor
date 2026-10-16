@@ -9,7 +9,6 @@ struct HarnessAuthenticationScreen: View {
   @Environment(\.harnessMachineSignIn) var machineSignIn
   @Environment(\.openURL) var openURL
   @Environment(\.dismiss) var dismiss
-  @Environment(\.theme) var theme
 
   let serverId: String
   @State var harness: ServerHarness
@@ -130,7 +129,7 @@ struct HarnessAuthenticationScreen: View {
       if let errorMessage = model.errorMessage {
         Section {
           Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
         }
       }
 
@@ -192,7 +191,7 @@ struct HarnessAuthenticationScreen: View {
         if let status = accountStatus(account) {
           Text(status)
             .font(.callout)
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
             .lineLimit(2)
         }
       }

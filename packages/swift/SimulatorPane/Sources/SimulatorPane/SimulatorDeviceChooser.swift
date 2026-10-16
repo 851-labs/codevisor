@@ -25,7 +25,6 @@ struct SimulatorDeviceChooser: View {
   var body: some View { chooser }
 
   #if os(macOS)
-    @Environment(\.theme) private var theme
     @State private var query = ""
     @State private var focus = Autocomplete.InputFocus()
 
@@ -44,7 +43,6 @@ struct SimulatorDeviceChooser: View {
           .frame(minHeight: geometry.size.height)
         }
       }
-      .background(theme.paneBackground)
       .onChange(of: model.chooserFocusRequests, initial: true) { _, requests in
         guard requests > 0 else { return }
         focus.focus(ifCurrent: model.canFocusChooser)

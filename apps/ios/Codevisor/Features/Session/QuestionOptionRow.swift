@@ -13,7 +13,6 @@ struct QuestionOptionRow: View {
   let isSelected: Bool
   let action: () -> Void
 
-  @Environment(\.theme) private var theme
   @State private var showsInfo = false
   private static let ringWidth: CGFloat = 1.5
   private let cardStyle = ComposerCardStyle()
@@ -56,7 +55,7 @@ struct QuestionOptionRow: View {
     .background(shape.fill(fillStyle))
     .overlay(
       cardStyle.insetShape(by: ComposerCardStyle.contentPadding + Self.ringWidth / 2)
-        .stroke(theme.accent.opacity(isSelected ? 0.55 : 0), lineWidth: Self.ringWidth)
+        .stroke(Color.accentColor.opacity(isSelected ? 0.55 : 0), lineWidth: Self.ringWidth)
         .padding(Self.ringWidth / 2)
     )
     .contentShape(shape)
@@ -69,7 +68,7 @@ struct QuestionOptionRow: View {
     } label: {
       Image(systemName: "info.circle")
         .font(.title3)
-        .foregroundStyle(showsInfo ? theme.accent : Color.secondary)
+        .foregroundStyle(showsInfo ? Color.accentColor : Color.secondary)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
@@ -88,14 +87,14 @@ struct QuestionOptionRow: View {
 
   private var fillStyle: AnyShapeStyle {
     isSelected
-      ? AnyShapeStyle(theme.accent.opacity(0.14))
+      ? AnyShapeStyle(Color.accentColor.opacity(0.14))
       : AnyShapeStyle(HierarchicalShapeStyle.quaternary.opacity(0.6))
   }
 
   private var indicatorView: some View {
     Image(systemName: symbolName)
       .font(.title3)
-      .foregroundStyle(isSelected ? theme.accent : Color.secondary)
+      .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
       .contentTransition(.symbolEffect(.replace))
       .accessibilityHidden(true)
   }

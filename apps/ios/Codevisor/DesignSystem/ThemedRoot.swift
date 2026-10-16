@@ -1,33 +1,14 @@
-import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 
 struct ThemedRoot: ViewModifier {
-  @Environment(AppEnvironment.self) private var environment
-  @Environment(\.colorScheme) private var systemScheme
+  @Environment(\.colorScheme) private var colorScheme
 
   func body(content: Content) -> some View {
-    let scheme = resolvedScheme
-    let theme = Theme(palette: environment.theme.palette(for: scheme))
-    let highlight = environment.theme.highlightTheme(for: scheme)
+    let highlight = CodeHighlightTheme.bundled(isDark: colorScheme == .dark)
     content
-      .environment(\.theme, theme)
-      .environment(
-        \.codeHighlightTheme,
-        highlight.map { CodeHighlightTheme(key: $0.key, json: $0.json) }
-      )
-      .markdownTheme(makeMarkdownTheme(theme: theme, highlight: highlight))
-      .foregroundStyle(theme.isSystem ? AnyShapeStyle(.foreground) : AnyShapeStyle(theme.textPrimary))
-      .tint(theme.isSystem ? nil : theme.accent)
-  }
-
-  private var resolvedScheme: ThemeDescriptor.SchemeType {
-    switch environment.theme.mode {
-    case .light: return .light
-    case .dark: return .dark
-    case .system: return systemScheme == .dark ? .dark : .light
-    }
+      .environment(\.codeHighlightTheme, highlight)
+      .markdownTheme(makeMarkdownTheme(highlight: highlight.map { ($0.key, $0.json) }))
   }
 }

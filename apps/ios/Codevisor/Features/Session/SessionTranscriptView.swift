@@ -34,7 +34,6 @@ struct SessionTranscriptView: View {
   @Environment(\.displayScale) var displayScale
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.scenePhase) var scenePhase
-  @Environment(\.theme) var theme
   @Environment(\.markdownTheme) var markdownTheme
   @Environment(AppEnvironment.self) var environment
   @State private var presentationOwner = UUID()
@@ -374,8 +373,7 @@ struct SessionTranscriptView: View {
             SentAttachmentThumbnails.prepare(controller.composerAttachments)
             ComposerSendStaging.stage(
               session: ObjectIdentifier(controller),
-              sourceFrame: sendAnimationSourceFrame ?? .zero,
-              theme: theme
+              sourceFrame: sendAnimationSourceFrame ?? .zero
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)

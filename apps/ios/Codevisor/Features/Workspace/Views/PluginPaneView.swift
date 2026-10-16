@@ -4,14 +4,13 @@ import SwiftUI
 
 struct PluginPaneView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
   let model: PluginPaneModel
   let onRename: (String) -> Void
 
   private var themeTokens: WebPaneThemeTokens {
-    WebPaneThemeTokens(palette: theme.palette, isDark: colorScheme == .dark)
+    WebPaneThemeTokens(isDark: colorScheme == .dark)
   }
 
   private var updateRevision: UInt64 {
@@ -32,7 +31,6 @@ struct PluginPaneView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(theme.paneBackground)
     .task(id: model.id) {
       model.onTitleChange = onRename
       model.loadIfNeeded(theme: tokens, updateRevision: revision)
@@ -66,13 +64,13 @@ struct PluginPaneView: View {
     VStack(spacing: 12) {
       Image(systemName: "puzzlepiece.extension")
         .font(.system(size: 26, weight: .regular))
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
       Text("Couldn't load this plugin pane")
         .font(.body.weight(.medium))
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
       Text(message)
         .font(.subheadline)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .frame(maxWidth: 420)
       Button("Retry") {

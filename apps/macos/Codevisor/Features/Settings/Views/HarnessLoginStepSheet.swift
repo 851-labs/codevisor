@@ -22,7 +22,6 @@ struct HarnessLoginStepSheet: View {
   let submitApiKey: (ServerHarnessAccount, ServerHarnessAuthMethod, String) async -> String?
   let cancel: () -> Void
 
-  @Environment(\.theme) private var theme
   @State private var input = ""
   @State private var isSubmitting = false
   @State private var errorText: String?
@@ -35,7 +34,7 @@ struct HarnessLoginStepSheet: View {
         if let errorText {
           Text(errorText)
             .font(.callout)
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -48,7 +47,6 @@ struct HarnessLoginStepSheet: View {
       SheetFooter(status: footerStatus) { actions }
     }
     .sheetSize(.step)
-    .themedSurface(.sheet)
   }
 
   @ViewBuilder
@@ -75,7 +73,6 @@ struct HarnessLoginStepSheet: View {
           )
         }
         .buttonStyle(.bordered)
-        .settingsActionTint(theme)
       }
 
     case .flow:
@@ -92,18 +89,15 @@ struct HarnessLoginStepSheet: View {
   @ViewBuilder
   private var actions: some View {
     Button("Cancel", role: .cancel) { cancel() }
-      .settingsActionTint(theme)
       .keyboardShortcut(.cancelAction)
       .disabled(isSubmitting)
       .accessibilityLabel("Cancel sign-in")
     if let browserURL {
       Button("Open Browser") { NSWorkspace.shared.open(browserURL) }
-        .settingsActionTint(theme)
         .keyboardShortcut(needsSubmit ? nil : .defaultAction)
     }
     if needsSubmit {
       Button("Continue") { submit() }
-        .settingsActionTint(theme)
         .keyboardShortcut(.defaultAction)
         .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
     }
@@ -134,7 +128,7 @@ struct HarnessLoginStepSheet: View {
   private func instruction(_ text: String) -> some View {
     Text(text)
       .font(.callout)
-      .foregroundStyle(theme.textSecondary)
+      .foregroundStyle(.secondary)
       .multilineTextAlignment(.center)
       .fixedSize(horizontal: false, vertical: true)
   }

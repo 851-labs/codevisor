@@ -1,5 +1,4 @@
 import AppKit
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
@@ -44,7 +43,6 @@ struct SidebarSectionHeader: View {
 }
 
 struct SidebarSectionTitle: NSViewRepresentable {
-  @Environment(\.theme) private var theme
   let title: String
 
   func makeNSView(context: Context) -> SidebarSectionTitleLabel {
@@ -54,31 +52,23 @@ struct SidebarSectionTitle: NSViewRepresentable {
     label.maximumNumberOfLines = 1
     label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     label.setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
+    label.applyColor()
     return label
   }
 
   func updateNSView(_ label: SidebarSectionTitleLabel, context: Context) {
     label.stringValue = title
-    label.themeColor = theme.palette.map { NSColor(rgba: $0.textTertiary) }
   }
 }
 
 final class SidebarSectionTitleLabel: NSTextField {
-  var themeColor: NSColor? {
-    didSet { applyColor() }
-  }
-
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
     applyColor()
   }
 
-  private func applyColor() {
-    if let themeColor {
-      textColor = themeColor
-    } else {
-      let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-      textColor = isDark ? .secondaryLabelColor : .tertiaryLabelColor
-    }
+  func applyColor() {
+    let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    textColor = isDark ? .secondaryLabelColor : .tertiaryLabelColor
   }
 }

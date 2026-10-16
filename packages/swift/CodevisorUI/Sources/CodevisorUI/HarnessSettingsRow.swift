@@ -6,7 +6,6 @@ public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: Vi
   public static var minContentHeight: CGFloat { FleetRowMetrics.minContentHeight }
   public static var iconColumnWidth: CGFloat { FleetRowMetrics.iconColumnWidth }
 
-  @Environment(\.theme) private var theme
   private let name: String
   private let state: HarnessRowState
   @Binding private var isEnabled: Bool
@@ -44,7 +43,7 @@ public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: Vi
         accessory
         if isEnabled && state.needsSignIn && !state.isBusy {
           Button("Sign In…", action: signIn)
-            .fleetRowButton(theme)
+            .fleetRowButton()
         }
       },
       actions: { actions })
@@ -60,12 +59,5 @@ extension HarnessSettingsRow where Accessory == EmptyView {
     self.init(
       name: name, state: state, isEnabled: isEnabled, isChanging: isChanging, signIn: signIn,
       icon: icon, accessory: { EmptyView() }, actions: actions)
-  }
-}
-
-extension View {
-  @ViewBuilder
-  func harnessRowButton(_ theme: Theme) -> some View {
-    fleetRowButton(theme)
   }
 }

@@ -8,7 +8,6 @@ import SwiftUI
 #endif
 
 public struct HarnessSignInInvitation<Action: View>: View {
-  @Environment(\.theme) private var theme
   #if os(iOS)
     @Environment(\.self) private var environment
   #endif
@@ -67,7 +66,7 @@ public struct HarnessSignInInvitation<Action: View>: View {
       if let errorMessage {
         Text(errorMessage)
           .font(.callout)
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
       }
     }
@@ -87,7 +86,7 @@ public struct HarnessSignInInvitation<Action: View>: View {
 
   #if os(iOS)
     private var actionTint: Color {
-      let resolved = environment.theme.accent.resolve(in: environment)
+      let resolved = Color.accentColor.resolve(in: environment)
       let accent = RGBA(r: Double(resolved.red) * 255, g: Double(resolved.green) * 255, b: Double(resolved.blue) * 255)
       let black = RGBA(r: 0, g: 0, b: 0)
       let minimumRatio = environment.colorSchemeContrast == .increased ? 7.0 : 4.5

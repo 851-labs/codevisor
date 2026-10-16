@@ -8,7 +8,7 @@
     weak var textView: IOSNativeDiffTextView?
     private var rows: [LineDiff.Row] = []
     private var metrics = IOSNativeDiffMetrics(rows: [])
-    private var colors = IOSNativeDiffColors(theme: .system)
+    private var colors = IOSNativeDiffColors()
 
     override init(frame: CGRect) {
       super.init(frame: frame)

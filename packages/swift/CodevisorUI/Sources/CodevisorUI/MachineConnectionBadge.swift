@@ -1,9 +1,6 @@
-import CodevisorTheming
 import SwiftUI
 
 public struct MachineConnectionBadge: View {
-  @Environment(\.theme) private var theme
-
   let connection: MachineConnectionPresentation
   let font: Font
 
@@ -20,7 +17,7 @@ public struct MachineConnectionBadge: View {
           .controlSize(.mini)
       case .connected, .inactive:
         Circle()
-          .fill(connection.indicator == .connected ? theme.statusOK : Color.gray)
+          .fill(connection.indicator == .connected ? Color.green : Color.gray)
           .frame(width: 7, height: 7)
       }
       Text(connection.label())

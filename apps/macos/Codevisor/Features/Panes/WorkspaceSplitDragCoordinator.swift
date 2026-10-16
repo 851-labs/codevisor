@@ -194,17 +194,16 @@ extension View {
 }
 
 private struct WorkspaceSplitDropPreview: View {
-  @Environment(\.theme) private var theme
   let edge: SplitEdge
 
   var body: some View {
     GeometryReader { geometry in
       let rect = regionRect(in: geometry.size)
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .fill(theme.accent.opacity(0.12))
+        .fill(Color.accentColor.opacity(0.12))
         .overlay {
           RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .strokeBorder(theme.accent.opacity(0.4))
+            .strokeBorder(Color.accentColor.opacity(0.4))
         }
         .frame(width: rect.width, height: rect.height)
         .offset(x: rect.minX, y: rect.minY)
@@ -228,7 +227,6 @@ private struct WorkspaceSplitDropPreview: View {
 }
 
 struct WorkspaceSplitDragGhost: View {
-  @Environment(\.theme) private var theme
   let name: String
   let kind: PaneKind
 
@@ -251,18 +249,18 @@ struct WorkspaceSplitDragGhost: View {
     HStack(spacing: 7) {
       Image(systemName: iconName)
         .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
       Text(name)
         .font(.tabLabel(weight: .medium))
         .lineLimit(1)
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
     }
     .padding(.horizontal, 10)
     .frame(height: 28)
-    .background(theme.popoverBackground, in: RoundedRectangle(cornerRadius: 6))
+    .background(Color.windowBackgroundColor, in: RoundedRectangle(cornerRadius: 6))
     .overlay {
       RoundedRectangle(cornerRadius: 6)
-        .strokeBorder(theme.separator)
+        .strokeBorder(Color.separatorColor)
     }
     .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
   }

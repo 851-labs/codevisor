@@ -113,7 +113,6 @@ struct ReviewFileBody: View {
   @State private var expansions: [Int: ReviewGapExpansion] = [:]
   @State private var scrollSync = DiffScrollSync()
   @State private var highlighted: (key: String, rows: [Int: AttributedString])?
-  @Environment(\.theme) private var theme
   @Environment(\.codeHighlightTheme) private var highlightTheme
 
   var body: some View {
@@ -179,13 +178,13 @@ struct ReviewFileBody: View {
     let revision = "\(diff.revision)|\(id)|\(rows.count)|\(highlights.isEmpty ? "plain" : "colored")"
     #if canImport(AppKit)
       NativeDiffView(
-        rows: rows, highlights: highlights, theme: theme, revision: revision,
+        rows: rows, highlights: highlights, revision: revision,
         maximumHeight: nil, lineNumberDigits: lineNumberDigits, scrollSync: scrollSync
       )
       .frame(maxWidth: .infinity, alignment: .leading)
     #elseif canImport(UIKit)
       IOSNativeDiffView(
-        rows: rows, highlights: highlights, theme: theme, revision: revision,
+        rows: rows, highlights: highlights, revision: revision,
         maximumHeight: nil, lineNumberDigits: lineNumberDigits, scrollSync: scrollSync
       )
       .frame(maxWidth: .infinity, alignment: .leading)

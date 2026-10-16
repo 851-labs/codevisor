@@ -19,8 +19,6 @@ struct WorkspaceInspectorView: View {
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     ZStack {
       switch tab {
@@ -74,7 +72,6 @@ struct WorkspaceInspectorView: View {
       }
     }
     .formStyle(.grouped)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
   }
 
   private func row(_ destination: Destination, @ViewBuilder label: () -> some View) -> some View {

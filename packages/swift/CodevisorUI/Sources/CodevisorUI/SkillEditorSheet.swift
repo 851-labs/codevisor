@@ -3,7 +3,6 @@ import SwiftUI
 
 public struct SkillEditorSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   private let name: String
   private let load: () async throws -> String
   private let onSave: (String) async throws -> Void
@@ -83,7 +82,7 @@ public struct SkillEditorSheet: View {
       if let errorMessage {
         Section {
           Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(theme.statusWarn)
+            .foregroundStyle(.orange)
           if originalContent == nil {
             Button("Retry") { Task { await reload() } }
           }

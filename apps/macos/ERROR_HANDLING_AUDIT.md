@@ -12,7 +12,7 @@ Legend: **(a)** must surface a human-readable error to the user · **(b)** log-o
 - `SessionModel.errorMessage` (`CodevisorCore/ViewModels/SessionModel.swift:52`) → session error banner (`Features/Session/SessionView.swift:383`, `SessionController.swift:234`)
 - `status = .failed(serverErrorMessage(error))` pattern in `SessionController` / `SessionModel`
 - Attachment `.failed(...)` + retry UI (`SessionController.swift:790-819`, `ComposerView.swift:608-624`)
-- Settings `@State` error strings + `.alert` (`SettingsView.swift:59/226`, `AppearanceSettingsView.swift:12/81-91`, `MachinesSettingsView.swift:66-77`)
+- Settings `@State` error strings + `.alert` (`SettingsView.swift:59/226`, `MachinesSettingsView.swift:66-77`)
 - `NSAlert` in menu commands (`MachineCommands.swift:79-83`, `AppUpdateCommands.swift:53-58`)
 - `MachineController.serverUpdatePhase.failed`, `LocalCodevisorServer.state = .unavailable`, `AppUpdateModel.phase = .failed`
 - `CodevisorServerClientError` + `serverErrorMessage(_:)` helper (`Server/CodevisorServerClient.swift:4/15`)
@@ -26,7 +26,6 @@ User clicks/taps something, it fails, and *nothing happens*:
 
 | Site | What fails silently | User impact |
 |---|---|---|
-| `Codevisor/Features/Settings/AppearanceSettingsView.swift:55` | `try? manager.deleteCustomTheme(...)` | Trash click, theme not deleted, no feedback |
 | `Codevisor/Features/Settings/SettingsView.swift:326` | harness toggle: `catch { revert toggle }` | Toggle snaps back with no reason shown |
 | `Codevisor/Features/Session/AttachmentLightbox.swift:201-203` | `try?` fetch attachment bytes on Download | Download click does nothing |
 | `Codevisor/Features/Session/AttachmentLightbox.swift:207` | `try? data.write(to:)` | User picked save location; file never written |
@@ -62,7 +61,6 @@ Persistence and sync failures that lose state invisibly:
 | `CodevisorCore/ViewModels/ProjectListModel.swift:459` | `Task { try? upsertProject }` | Project never reaches server |
 | `CodevisorCore/Server/ServerAgentService.swift:39` | `(try? allHarnesses()) ?? []` | "No agents available" indistinguishable from failed request |
 | `CodevisorCore/Services/SessionImporter.swift:28` | per-harness listSessions failures ignored | Whole harness omitted from import picker |
-| `Packages/CodevisorTheming/.../ThemeCatalog.swift:157-160` | corrupt bundled manifest → `[]` (assert is debug-only) | All preset themes vanish in release |
 | `Packages/ACPKit/.../ToolCall.swift:153-165` | lenient decode: malformed `status`/`content` dropped | Completed tool call can appear to hang forever |
 | `Packages/ACPKit/.../SessionConfig.swift:70-76` | options in neither shape → `[]` | Config picker renders with zero options — dead-end |
 
@@ -75,12 +73,9 @@ Persistence and sync failures that lose state invisibly:
 - `CodevisorCore/Server/CodevisorServerClient.swift:982` — WS stream reconnects forever, no "disconnected" state
 - `CodevisorCore/Server/MachineController.swift:248` — event-sync errors discarded
 - `CodevisorCore/Server/CommandRunner.swift:63` — process output read failure → looks like empty output
-- `CodevisorCore/Theme/ThemeManager.swift:86/96` — theme load failure → silent stock-Apple look
 - `CodevisorCore/AppSettings.swift:129-130`, `ComposerDefaultsStore.swift:28/67-68`, `AppVariant.swift:47/53` — pref/cache writes lost
 - `Codevisor/Features/Session/SessionController.swift:1349` — capability fetch `catch { return false }`
 - `Codevisor/Features/Terminal/CodevisorGhosttyApp.swift:268` — terminal config write fails → silent default fonts/colors
-- `Packages/CodevisorTheming/.../ThemeCatalog.swift:171-180` — unparseable imported theme silently omitted from picker
-- `Packages/CodevisorTheming/.../ThemeCatalog.swift:146` — `try? removeItem` → orphaned file, UI says gone
 - `Packages/ACPKit/.../ToolCall.swift:77` — malformed tool-call content element dropped from array
 - `CodevisorCore/Services/AppUpdateModel.swift:157` — background update-check failure resets to `.idle` silently
 

@@ -23,7 +23,6 @@ struct HarnessLoginStepScreen: View {
   let cancel: () -> Void
 
   @Environment(\.openURL) private var openURL
-  @Environment(\.theme) private var theme
   @State private var input = ""
   @State private var isSubmitting = false
   @State private var errorText: String?
@@ -37,7 +36,7 @@ struct HarnessLoginStepScreen: View {
         if let errorText {
           Section {
             Label(errorText, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(theme.statusError)
+              .foregroundStyle(.red)
           }
         }
       }

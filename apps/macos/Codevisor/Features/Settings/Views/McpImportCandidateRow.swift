@@ -3,7 +3,6 @@ import SwiftUI
 import CodevisorUI
 
 struct McpImportCandidateRow: View {
-  @Environment(\.theme) private var theme
   let candidate: ServerNativeMcpImportCandidate
   let foundIn: String
   let isImporting: Bool
@@ -31,7 +30,6 @@ struct McpImportCandidateRow: View {
         Button("Import") {
           onImport()
         }
-        .settingsActionTint(theme)
         .controlSize(.small)
         .disabled(importDisabled)
         .help("Add to Codevisor's managed MCP servers")

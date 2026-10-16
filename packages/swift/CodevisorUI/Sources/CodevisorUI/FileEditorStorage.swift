@@ -1,5 +1,4 @@
 import CodeHighlighter
-import CodevisorTheming
 import Foundation
 import SwiftUI
 
@@ -9,7 +8,6 @@ final class FileEditorStorage: NSObject {
   let native = NativeFileEditor()
   private lazy var syntax = FileEditorHighlighting(textView: native.textView)
   private var highlightTheme: CodeHighlightTheme?
-  private var foreground: FileColor = .fileEditorLabel
   private var appliedSelection = -1
   private var applying = false
 
@@ -22,13 +20,12 @@ final class FileEditorStorage: NSObject {
     applying = false
   }
 
-  func update(theme: Theme, highlight: CodeHighlightTheme?) {
+  func update(highlight: CodeHighlightTheme?) {
     guard let session else { return }
     let document = session.document
-    let changedTheme = highlight != highlightTheme || foreground != FileColor(theme.textPrimary)
-    foreground = FileColor(theme.textPrimary)
+    let changedTheme = highlight != highlightTheme
     highlightTheme = highlight
-    native.update(theme: theme, session: session)
+    native.update(session: session)
     if native.text != document.text {
       applying = true
       native.text = document.text
@@ -70,16 +67,15 @@ final class FileEditorStorage: NSObject {
     guard let document = session?.document else { return }
     syntax.configure(
       language: CodeHighlighter.language(forPath: document.name),
-      theme: highlightTheme, foreground: foreground, replaced: replaced)
+      theme: highlightTheme, replaced: replaced)
   }
 }
 
 struct FileSourceEditor: View {
   let session: FileEditorSession
-  @Environment(\.theme) private var theme
   @Environment(\.codeHighlightTheme) private var highlight
   var body: some View {
-    NativeFileSourceEditor(storage: session.storage, theme: theme, highlight: highlight)
+    NativeFileSourceEditor(storage: session.storage, highlight: highlight)
       .onChange(of: session.document.snapshot?.version, initial: true) { _, _ in session.resolvePendingLine() }
       #if os(iOS)
         .ignoresSafeArea(.container, edges: .vertical)

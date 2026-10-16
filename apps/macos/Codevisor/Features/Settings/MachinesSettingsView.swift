@@ -4,7 +4,6 @@ import CodevisorUI
 
 struct MachinesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) private var controlActiveState
 
   @State private var editingCloud: CloudMachine?
@@ -48,7 +47,7 @@ struct MachinesSettingsView: View {
         .foregroundStyle(.secondary)
       }
     }
-    .settingsPaneFormStyle(theme)
+    .formStyle(.grouped)
   }
 
   var body: some View {
@@ -74,9 +73,7 @@ struct MachinesSettingsView: View {
         Button("Disconnect Machine", role: .destructive) {
           Task { await environment.cloud.remove(deviceId: machine.deviceId) }
         }
-        .settingsActionTint(theme)
         Button("Cancel", role: .cancel) {}
-          .settingsActionTint(theme)
       } message: { machine in
         Text(
           "“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it."
@@ -91,9 +88,7 @@ struct MachinesSettingsView: View {
         Button("Trust New Key", role: .destructive) {
           environment.cloud.trustChangedMachineKey(deviceId: machine.deviceId)
         }
-        .settingsActionTint(theme)
         Button("Cancel", role: .cancel) {}
-          .settingsActionTint(theme)
       } message: { machine in
         Text(
           "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
@@ -128,7 +123,7 @@ struct MachinesSettingsView: View {
     HStack(spacing: 10) {
       Image(systemName: machine.icon.systemImage)
         .symbolRenderingMode(.monochrome)
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
         .frame(width: 20)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
@@ -151,7 +146,6 @@ struct MachinesSettingsView: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .settingsActionTint(theme)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Machine actions")

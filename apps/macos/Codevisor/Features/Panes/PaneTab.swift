@@ -3,7 +3,6 @@ import CodevisorCore
 import CodevisorUI
 
 struct PaneTab: View {
-  @Environment(\.theme) private var theme
   let name: String
   let icon: PaneTabIcon
   let isSelected: Bool
@@ -38,15 +37,11 @@ struct PaneTab: View {
     capsuleContent
       .background {
         Group {
-          if isSelected && theme.isSystem {
+          if isSelected {
             Color.clear
               .glassEffect(.regular, in: Capsule())
               .glassEffectTransition(.identity)
-              .overlay(Capsule().strokeBorder(theme.border))
-          } else if isSelected {
-            Capsule()
-              .fill(theme.rowSelectedBackground)
-              .overlay(Capsule().strokeBorder(theme.border))
+              .overlay(Capsule().strokeBorder(Color.separatorColor))
           } else {
             Capsule().fill(Color.primary.opacity(isHovered ? 0.06 : 0))
           }
@@ -76,7 +71,7 @@ struct PaneTab: View {
       .frame(width: width, height: barHeight)
       .overlay(alignment: .trailing) {
         Rectangle()
-          .fill(theme.separator)
+          .fill(Color.separatorColor)
           .frame(width: 1, height: 14)
           .offset(x: 0.5)
           .opacity(showsTrailingSeparator ? 1 : 0)

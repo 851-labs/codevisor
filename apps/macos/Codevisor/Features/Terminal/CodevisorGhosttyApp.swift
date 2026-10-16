@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import GhosttyKit
 import CodevisorCore
-import CodevisorTheming
 import SwiftUI
 import os
 
@@ -24,16 +23,12 @@ final class CodevisorGhosttyApp {
 
   nonisolated let pendingWakeupTick = OSAllocatedUnfairLock(initialState: false)
 
-  static var currentTheme: TerminalPalette?
   static var currentSystemIsDark: Bool?
   private static var runtimeInitialized = false
 
-  static func applyTheme(_ theme: TerminalPalette?, systemIsDark: Bool) {
-    let themeChanged = theme != currentTheme
-    let systemAppearanceChanged = theme == nil && currentSystemIsDark != systemIsDark
-    currentTheme = theme
-    currentSystemIsDark = systemIsDark
-    guard themeChanged || systemAppearanceChanged else { return }
+  static func applySystemAppearance(isDark: Bool) {
+    guard currentSystemIsDark != isDark else { return }
+    currentSystemIsDark = isDark
     guard runtimeInitialized else { return }
     shared.reloadConfig()
   }
@@ -43,11 +38,7 @@ final class CodevisorGhosttyApp {
 
     _ = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
 
-    let config = Ghostty.Config(
-      config: Self.buildConfig(
-        theme: Self.currentTheme,
-        systemIsDark: Self.currentSystemIsDark
-      ))
+    let config = Ghostty.Config(config: Self.buildConfig(systemIsDark: Self.currentSystemIsDark))
     self.config = config
 
     var runtime_cfg = ghostty_runtime_config_s(

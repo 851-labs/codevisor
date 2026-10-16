@@ -121,7 +121,7 @@ http
   `crypto.timingSafeEqual`:
   `createHmac("sha256", process.env.CODEVISOR_PLUGIN_CONTEXT_SECRET).update(header).digest("hex")`.
 - Style with the injected `--codevisor-*` CSS variables so panes match the
-  app theme (full reference under "Styling panes"); every `var()` needs a
+  app's light or dark look (full reference under "Styling panes"); every `var()` needs a
   fallback: `var(--codevisor-bg, Canvas)`.
 - **Treat the pane document as content, not a standalone app shell.** Codevisor
   already renders native chrome above the webview with the pane icon, title,
@@ -217,8 +217,9 @@ step, no shadows or gradients, whitespace over boxes, and color reserved
 for meaning — the accent, status, and diff tokens below. A pane inherits
 that look by building from these variables instead of its own palette.
 
-The clients inject these on `:root` (values track the user's theme live —
-a `codevisor:themechange` event fires on `window` when they change):
+The clients inject these on `:root` (values track the system light/dark
+appearance live — a `codevisor:themechange` event fires on `window` when
+they change):
 
 | Variable                                     | Meaning                               |
 | -------------------------------------------- | ------------------------------------- |

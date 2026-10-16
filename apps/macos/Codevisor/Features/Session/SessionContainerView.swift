@@ -24,7 +24,6 @@ struct SessionContainerView: View {
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @Environment(\.theme) var theme
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
 
@@ -243,10 +242,9 @@ struct SessionContainerView: View {
         onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
       )
     }
-    .background(theme.contentBackground)
     .overlay(alignment: .top) {
       if !showsTabBar {
-        theme.separator
+        Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)
       }

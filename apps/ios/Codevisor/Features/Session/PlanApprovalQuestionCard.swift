@@ -10,7 +10,6 @@ struct PlanApprovalQuestionCard: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-  @Environment(\.theme) private var theme
   @State private var isGivingFeedback = false
   @State private var feedback = ""
   @State private var submittingLabel: String?
@@ -188,7 +187,7 @@ struct PlanApprovalQuestionCard: View {
       .foregroundStyle(.white)
     }
     .buttonStyle(.borderedProminent)
-    .tint(theme.accent)
+    .tint(.accentColor)
     .disabled(controller.isResolvingQuestion)
   }
 

@@ -7,7 +7,6 @@ enum ComposerCircleActionEmphasis {
 }
 
 private struct ComposerCircleActionLabelModifier: ViewModifier {
-  @Environment(\.theme) private var theme
   let emphasis: ComposerCircleActionEmphasis
   let isEnabled: Bool
 
@@ -23,7 +22,7 @@ private struct ComposerCircleActionLabelModifier: ViewModifier {
         )
         .background(
           Circle().fill(
-            isEnabled ? AnyShapeStyle(theme.accent) : AnyShapeStyle(Color.secondary.opacity(0.16))
+            isEnabled ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )
         .expandedHitTarget(base: 30)

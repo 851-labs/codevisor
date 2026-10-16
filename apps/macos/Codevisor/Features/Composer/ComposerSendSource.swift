@@ -7,7 +7,7 @@ import SwiftUI
 final class ComposerSendSource {
   weak var textView: NSTextView?
 
-  func stage(controller: SessionController, theme: Theme) {
+  func stage(controller: SessionController) {
     SentAttachmentThumbnails.prepare(controller.composerAttachments)
     guard let textView, textView.window != nil else { return }
     let session = ObjectIdentifier(controller)
@@ -16,8 +16,7 @@ final class ComposerSendSource {
       textView: textView,
       textRect: textView.laidOutTextRect,
       lineHeight: textView.firstLineHeight,
-      bubble: theme.bubbleBackground,
-      theme: theme
+      bubble: Color.bubbleBackground
     )
     (textView as? SubmittingTextView)?.hideSentText()
   }

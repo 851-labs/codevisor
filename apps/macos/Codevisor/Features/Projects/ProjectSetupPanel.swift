@@ -116,8 +116,6 @@ final class ProjectSetupModel {
 }
 
 struct ProjectSetupSelectionView: View {
-  @Environment(\.theme) private var theme
-
   let model: ProjectSetupModel
   let isLocalMachine: Bool
   let machineName: String
@@ -189,7 +187,7 @@ struct ProjectSetupSelectionView: View {
       .padding(.vertical, 10)
       .background(
         RoundedRectangle(cornerRadius: 10)
-          .fill(isSelected ? AnyShapeStyle(theme.rowSelectedBackground) : theme.cardBackground)
+          .fill(isSelected ? Color.primary.opacity(0.14) : Color.cardBackgroundColor)
       )
       .overlay(
         RoundedRectangle(cornerRadius: 10)
@@ -335,8 +333,6 @@ struct ProjectSetupPanel: View {
 }
 
 struct ProjectSetupActionCard: View {
-  @Environment(\.theme) private var theme
-
   let systemImage: String
   let title: String
   var subtitle: String?
@@ -367,7 +363,7 @@ struct ProjectSetupActionCard: View {
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: 10).fill(theme.cardBackground))
+      .background(RoundedRectangle(cornerRadius: 10).fill(Color.cardBackgroundColor))
       .contentShape(RoundedRectangle(cornerRadius: 10))
     }
     .buttonStyle(.plain)

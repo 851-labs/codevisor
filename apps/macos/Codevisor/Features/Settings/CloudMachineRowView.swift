@@ -4,8 +4,6 @@ import CodevisorUI
 import SwiftUI
 
 struct CloudMachineRowView: View {
-  @Environment(\.theme) private var theme
-
   let machine: CodevisorMachine
   let presence: CloudMachine
   let keyChanged: Bool
@@ -18,7 +16,7 @@ struct CloudMachineRowView: View {
     HStack(spacing: 10) {
       Image(systemName: machine.icon.systemImage)
         .symbolRenderingMode(.monochrome)
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
         .frame(width: 20)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
@@ -58,7 +56,6 @@ struct CloudMachineRowView: View {
       }
       .menuStyle(.button)
       .buttonStyle(.plain)
-      .settingsActionTint(theme)
       .menuIndicator(.hidden)
       .fixedSize()
       .help("Machine actions")

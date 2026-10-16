@@ -8,14 +8,12 @@ struct ChatSessionLeadingIcon: View {
   var activityColor: Color = .secondary
   var iconSize: CGFloat = 13
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     Group {
       if store?.hasUnreadError(session) == true {
-        ErrorUnreadBadge(color: theme.statusError)
+        ErrorUnreadBadge(color: .red)
       } else if store?.isWaitingOnUser(session) == true {
-        ActionRequiredIndicator(color: theme.statusError)
+        ActionRequiredIndicator(color: .red)
       } else if store?.isInProgress(session) == true {
         AgentStatusIndicator(status: .working, activityColor: activityColor)
       } else if let store, store.unreadCount(session) > 0 {

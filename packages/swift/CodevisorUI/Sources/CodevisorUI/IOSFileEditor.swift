@@ -1,6 +1,5 @@
 #if canImport(UIKit)
   import CodeHighlighter
-  import CodevisorTheming
   import SwiftUI
   import UIKit
 
@@ -36,6 +35,7 @@
       textView.contentInsetAdjustmentBehavior = .always
       textView.contentInset.bottom = 24
       textView.alwaysBounceVertical = true
+      textView.backgroundColor = .systemBackground
       gutter.textView = textView
       gutter.isUserInteractionEnabled = false
       gutter.backgroundColor = .clear
@@ -49,9 +49,8 @@
     var selection: NSRange { textView.selectedRange }
     func connect(_ storage: FileEditorStorage) { textView.delegate = storage }
 
-    func update(theme: Theme, session: FileEditorSession) {
+    func update(session: FileEditorSession) {
       textView.isEditable = session.document.isEditable
-      textView.backgroundColor = UIColor(theme.windowBackground)
       gutter.isHidden = !session.showsLineNumbers
       textView.textContainerInset.left = session.showsLineNumbers ? 48 : 16
     }
@@ -84,10 +83,9 @@
 
   struct NativeFileSourceEditor: UIViewRepresentable {
     let storage: FileEditorStorage
-    let theme: Theme
     let highlight: CodeHighlightTheme?
     func makeUIView(context: Context) -> UITextView { storage.native.textView }
-    func updateUIView(_ view: UITextView, context: Context) { storage.update(theme: theme, highlight: highlight) }
+    func updateUIView(_ view: UITextView, context: Context) { storage.update(highlight: highlight) }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
       CGSize(width: proposal.width ?? 400, height: proposal.height ?? 400)
     }

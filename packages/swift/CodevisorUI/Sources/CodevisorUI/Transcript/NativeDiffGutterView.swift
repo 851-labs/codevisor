@@ -8,7 +8,7 @@
     weak var textView: NativeDiffTextView?
     private var rows: [LineDiff.Row] = []
     private var metrics = NativeDiffMetrics(rows: [])
-    private var colors = NativeDiffColors(theme: .system)
+    private var colors = NativeDiffColors()
 
     override var isFlipped: Bool { true }
 

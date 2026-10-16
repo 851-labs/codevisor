@@ -8,7 +8,6 @@ struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
   var includesFullDiskAccess = false
   var embedded = false
-  @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) private var controlActiveState
 
   var body: some View {
@@ -19,7 +18,7 @@ struct ComputerUsePermissionRowsView: View {
         rows
           .padding(.horizontal, 14)
           .padding(.vertical, 4)
-          .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
+          .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
       }
 
       if model.screenRecordingGrantedThisRun {
@@ -83,7 +82,7 @@ struct ComputerUsePermissionRowsView: View {
         .font(.system(size: embedded ? 14 : 18, weight: .medium))
         .symbolRenderingMode(.hierarchical)
         .frame(width: embedded ? 26 : 34, height: embedded ? 26 : 34)
-        .background(RoundedRectangle(cornerRadius: embedded ? 6 : 8).fill(theme.cardHoverBackground))
+        .background(RoundedRectangle(cornerRadius: embedded ? 6 : 8).fill(Color.secondary.opacity(0.12)))
         .accessibilityHidden(true)
 
       VStack(alignment: .leading, spacing: 2) {
@@ -99,7 +98,7 @@ struct ComputerUsePermissionRowsView: View {
       if granted {
         Label("Granted", systemImage: "checkmark.circle.fill")
           .font(.callout.weight(.medium))
-          .foregroundStyle(theme.statusOK)
+          .foregroundStyle(.green)
           .labelStyle(.titleAndIcon)
           .transition(.opacity.combined(with: .scale(scale: 0.9)))
       } else {
@@ -135,7 +134,6 @@ struct ComputerUsePermissionsGateView: View {
   var onComplete: () -> Void
   var onSkip: () -> Void
 
-  @Environment(\.theme) private var theme
   @State private var model = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live
   )
@@ -184,7 +182,7 @@ struct ComputerUsePermissionsGateView: View {
     .frame(width: 480)
     .background(
       RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(theme.isSystem ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(theme.cardBackground))
+        .fill(.regularMaterial)
     )
     .overlay(
       RoundedRectangle(cornerRadius: 14, style: .continuous)

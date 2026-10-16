@@ -75,10 +75,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       open: { [weak self] url in self?.markdownImageActions?.open(url) },
       openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
       copy: { [weak self] url in self?.markdownImageActions?.copy?(url) }))
-  var markdownRowStyle = TranscriptMarkdownRowStyle(
-    markdown: .default,
-    appTheme: .system
-  )
+  var markdownRowStyle = TranscriptMarkdownRowStyle(markdown: .default)
   var pendingMeasuredHeights: [String: CGFloat] = [:]
   var measurementCommitTask: Task<Void, Never>?
   weak var sessionController: SessionController?

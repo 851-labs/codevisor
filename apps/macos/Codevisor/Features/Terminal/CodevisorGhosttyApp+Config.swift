@@ -2,18 +2,14 @@ import AppKit
 import Foundation
 import GhosttyKit
 import CodevisorCore
-import CodevisorTheming
 import SwiftUI
 import os
 
 extension CodevisorGhosttyApp {
-  static func buildConfig(
-    theme: TerminalPalette?,
-    systemIsDark: Bool?
-  ) -> ghostty_config_t {
+  static func buildConfig(systemIsDark: Bool?) -> ghostty_config_t {
     let cfg = ghostty_config_new()
     ghostty_config_load_default_files(cfg)
-    if let overrideFile = writeOverrideConfig(theme: theme, systemIsDark: systemIsDark) {
+    if let overrideFile = writeOverrideConfig(systemIsDark: systemIsDark) {
       ghostty_config_load_file(cfg, overrideFile)
     }
     ghostty_config_finalize(cfg)
@@ -22,11 +18,7 @@ extension CodevisorGhosttyApp {
   }
 
   func reloadConfig() {
-    let newConfig = Ghostty.Config(
-      config: Self.buildConfig(
-        theme: Self.currentTheme,
-        systemIsDark: Self.currentSystemIsDark
-      ))
+    let newConfig = Ghostty.Config(config: Self.buildConfig(systemIsDark: Self.currentSystemIsDark))
     ghostty_app_update_config(app, newConfig.config!)
     for view in surfaces.allObjects {
       if let surface = view.surface {
@@ -85,10 +77,7 @@ extension CodevisorGhosttyApp {
     }
   }
 
-  private static func writeOverrideConfig(
-    theme: TerminalPalette?,
-    systemIsDark: Bool?
-  ) -> String? {
+  private static func writeOverrideConfig(systemIsDark: Bool?) -> String? {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("codevisor-ghostty.conf")
     var contents = """
       font-size = \(terminalFontSize)
@@ -96,35 +85,16 @@ extension CodevisorGhosttyApp {
       keybind = super+k=unbind
 
       """
-    if let theme {
-      contents += "background = \(theme.background.hexString())\n"
-      contents += "foreground = \(theme.foreground.hexString())\n"
-      if let cursor = theme.cursorColor {
-        contents += "cursor-color = \(cursor.hexString())\n"
-      }
-      if let selectionBg = theme.selectionBackground {
-        contents += "selection-background = \(selectionBg.hexString())\n"
-      }
-      if let selectionFg = theme.selectionForeground {
-        contents += "selection-foreground = \(selectionFg.hexString())\n"
-      }
-      for (index, color) in theme.ansi.enumerated() {
-        if let color {
-          contents += "palette = \(index)=\(color.hexString())\n"
-        }
-      }
-    } else {
-      let isDark =
-        systemIsDark
-        ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
-      let background = Self.systemWindowBackgroundHex(isDark: isDark)
-      let foreground = isDark ? "FFFFFF" : "000000"
-      contents += "background = \(background)\n"
-      contents += "background-opacity = 0.01\n"
-      contents += "foreground = \(foreground)\n"
-      contents += "cursor-color = cell-foreground\n"
-      contents += "cursor-text = cell-background\n"
-    }
+    let isDark =
+      systemIsDark
+      ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+    let background = Self.systemWindowBackgroundHex(isDark: isDark)
+    let foreground = isDark ? "FFFFFF" : "000000"
+    contents += "background = \(background)\n"
+    contents += "background-opacity = 0.01\n"
+    contents += "foreground = \(foreground)\n"
+    contents += "cursor-color = cell-foreground\n"
+    contents += "cursor-text = cell-background\n"
     do {
       try contents.write(to: url, atomically: true, encoding: .utf8)
       return url.path

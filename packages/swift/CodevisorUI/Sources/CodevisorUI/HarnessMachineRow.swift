@@ -32,7 +32,6 @@ struct HarnessMachineMark: View {
 }
 
 struct HarnessMachineActionButton: View {
-  @Environment(\.theme) private var theme
   let row: HarnessFleet.MachineRow
   let harnessName: String
   let actions: HarnessMachineActions
@@ -61,6 +60,6 @@ struct HarnessMachineActionButton: View {
         EmptyView()
       }
     }
-    .fleetRowButton(theme)
+    .fleetRowButton()
   }
 }

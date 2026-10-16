@@ -15,7 +15,6 @@ public struct ToolCallRow: View {
     self.call = call
     self.isTurnActive = isTurnActive
   }
-  @Environment(\.theme) private var theme
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
   @State private var totalsCache = DiffTotalsCache()
@@ -142,16 +141,15 @@ public struct DiffCounter: View {
   public init(totals: LineDiff.Totals) {
     self.totals = totals
   }
-  @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   public var body: some View {
     HStack(spacing: 4) {
       Text("+\(totals.added)")
-        .foregroundStyle(theme.diffAddedFg)
+        .foregroundStyle(.green)
         .contentTransition(.numericText(value: Double(totals.added)))
       Text("−\(totals.removed)")
-        .foregroundStyle(theme.diffRemovedFg)
+        .foregroundStyle(.red)
         .contentTransition(.numericText(value: Double(totals.removed)))
     }
     .font(.caption.monospacedDigit())
@@ -300,18 +298,17 @@ public struct ToolCallContentCard: View {
 
 private struct ToolCallStatusBadge: View {
   let call: ToolCall
-  @Environment(\.theme) private var theme
 
   var body: some View {
     switch call.status {
     case .completed:
       Label(call.exitCode.map { "Exit \($0)" } ?? "Success", systemImage: "checkmark")
         .font(.caption2)
-        .foregroundStyle(theme.statusOK)
+        .foregroundStyle(.green)
     case .failed:
       Label(call.exitCode.map { "Exit \($0)" } ?? "Failed", systemImage: "xmark")
         .font(.caption2)
-        .foregroundStyle(theme.statusError)
+        .foregroundStyle(.red)
     case .cancelled:
       Label("Cancelled", systemImage: "slash.circle")
         .font(.caption2)
@@ -324,7 +321,6 @@ private struct ToolCallStatusBadge: View {
 
 private struct ToolCallRawSectionView: View {
   let section: ToolCallRawSection
-  @Environment(\.theme) private var theme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @State private var showsFullText = false
 
@@ -349,7 +345,7 @@ private struct ToolCallRawSectionView: View {
         }
         .buttonStyle(.plain)
         .font(.caption2.weight(.medium))
-        .foregroundStyle(theme.accent)
+        .foregroundStyle(Color.accentColor)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -360,7 +356,6 @@ struct ToolCallMonospacedText: View {
   let title: String
   let text: String
   var copyText: String?
-  @Environment(\.theme) private var theme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -381,22 +376,22 @@ struct ToolCallMonospacedText: View {
       output
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(theme.codeBackground)
+    .background(.quaternary.opacity(0.4))
     .clipShape(RoundedRectangle(cornerRadius: 8))
   }
 
   @ViewBuilder
   private var output: some View {
     #if canImport(AppKit)
-      NativePlainOutputView(text: text, theme: theme, followsTail: false)
+      NativePlainOutputView(text: text, followsTail: false)
         .frame(maxWidth: .infinity, alignment: .leading)
     #elseif canImport(UIKit)
-      IOSNativePlainOutputView(text: text, theme: theme, followsTail: false)
+      IOSNativePlainOutputView(text: text, followsTail: false)
         .frame(maxWidth: .infinity, alignment: .leading)
     #else
       Text(text)
         .font(.system(.caption, design: .monospaced))
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     #endif
@@ -405,7 +400,6 @@ struct ToolCallMonospacedText: View {
 
 public struct ToolSourceLinkView: View {
   let link: ResourceLink
-  @Environment(\.theme) private var theme
 
   private var label: String {
     let title = link.title ?? link.name
@@ -422,7 +416,7 @@ public struct ToolSourceLinkView: View {
           VStack(alignment: .leading, spacing: 1) {
             Text(label)
               .font(.caption)
-              .foregroundStyle(theme.accent)
+              .foregroundStyle(Color.accentColor)
               .lineLimit(1)
             Text(url.host ?? link.uri)
               .font(.caption2)

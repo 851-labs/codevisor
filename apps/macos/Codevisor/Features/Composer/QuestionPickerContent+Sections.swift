@@ -87,7 +87,7 @@ extension QuestionPickerContent {
           .foregroundStyle(
             isHighlighted
               ? AnyShapeStyle(.white)
-              : isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.tertiary)
+              : isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary)
           )
         Text(label)
           .fontWeight(.medium)
@@ -112,9 +112,9 @@ extension QuestionPickerContent {
         RoundedRectangle(cornerRadius: 6)
           .fill(
             isHighlighted
-              ? AnyShapeStyle(theme.accent)
+              ? AnyShapeStyle(Color.accentColor)
               : isSelected
-                ? AnyShapeStyle(theme.rowSelectedBackground)
+                ? AnyShapeStyle(Color.primary.opacity(0.14))
                 : AnyShapeStyle(Color.clear)
           )
       )
@@ -155,11 +155,11 @@ extension QuestionPickerContent {
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 2)
-    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardQuietBackground))
+    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
     .overlay(
       RoundedRectangle(cornerRadius: 8)
         .strokeBorder(
-          isOtherSelected ? theme.accent : theme.border,
+          isOtherSelected ? Color.accentColor : Color.separatorColor,
           lineWidth: 1
         )
     )

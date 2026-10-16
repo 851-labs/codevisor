@@ -1,11 +1,9 @@
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
 struct MachinesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var editingMachine: CloudMachine?
   @State private var removingCloudMachine: CloudMachine?
   @State private var trustingKey: CloudMachine?
@@ -75,7 +73,7 @@ struct MachinesSettingsScreen: View {
   private func connectionText(_ connection: MachineConnectionPresentation) -> Text {
     let dot = Text(Image(systemName: "circlebadge.fill"))
       .font(.caption2)
-      .foregroundStyle(connection.indicator == .connected ? theme.statusOK : .gray)
+      .foregroundStyle(connection.indicator == .connected ? Color.green : .gray)
     return Text("\(dot) \(connection.label())")
   }
 

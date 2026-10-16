@@ -2,7 +2,6 @@ import CodevisorUI
 import SwiftUI
 
 struct ModeChip: View {
-  @Environment(\.theme) private var theme
   let label: String
   let systemImage: String
   var isRemoveDisabled: Bool = false
@@ -18,7 +17,7 @@ struct ModeChip: View {
       removeButton
       Text(label)
     }
-    .foregroundStyle(AnyShapeStyle(theme.windowBackground))
+    .foregroundStyle(Color.windowBackgroundColor)
     .padding(.leading, 6)
     .padding(.trailing, 10)
     .frame(height: 26)
@@ -47,7 +46,7 @@ struct ModeChip: View {
         .frame(width: 16, height: 16)
         .background(
           Circle().fill(
-            theme.windowBackground.opacity(isRemoveHovered && showsRemoveGlyph ? 0.22 : 0)
+            Color.windowBackgroundColor.opacity(isRemoveHovered && showsRemoveGlyph ? 0.22 : 0)
           )
         )
         .contentShape(Circle())

@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import GhosttyKit
 import CodevisorCore
-import CodevisorTheming
 import SwiftUI
 import os
 

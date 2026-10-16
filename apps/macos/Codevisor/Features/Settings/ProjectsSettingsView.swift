@@ -4,7 +4,6 @@ import SwiftUI
 
 struct ProjectsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var showingAdd = false
 
   private var groups: [ProjectGroup] {
@@ -66,11 +65,10 @@ struct ProjectsSettingsView: View {
           } label: {
             Label("Add Project…", systemImage: "plus")
           }
-          .settingsActionTint(theme)
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .formStyle(.grouped)
     .sheet(isPresented: $showingAdd) {
       NewProjectSheet(serverId: initialMachineId) { project in
         SettingsRouter.shared.projectCreationMachineId = project.serverId

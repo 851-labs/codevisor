@@ -5,7 +5,6 @@ import SwiftUI
 
 struct UpdateCenterView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var failureDetailsId: String?
 
   @State private var majorUpdate: UpdateComponent?
@@ -35,11 +34,8 @@ struct UpdateCenterView: View {
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .formStyle(.grouped)
     .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
-    .background {
-      if !theme.isSystem { theme.windowBackground }
-    }
     .animation(.default, value: center.components.map(\.id))
     .task {
       if !hasLoaded { await center.refresh() }
@@ -62,7 +58,6 @@ struct UpdateCenterView: View {
         } label: {
           BusyButtonLabel(title: "Check Again", isBusy: isChecking)
         }
-        .settingsActionTint(theme)
         .disabled(isChecking || center.hasUpdateInFlight)
         if hasLoaded, center.availableCount > 0 {
           Button {
@@ -129,7 +124,7 @@ struct UpdateCenterView: View {
         detail(for: component)
           .font(.callout)
           .foregroundStyle(
-            component.isFailed ? AnyShapeStyle(theme.statusError) : AnyShapeStyle(.secondary)
+            component.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)
           )
           .help(component.detailText)
       }
@@ -192,18 +187,15 @@ struct UpdateCenterView: View {
     case let .failed(message):
       HStack(spacing: 8) {
         Button("Details…") { failureDetailsId = component.id }
-          .settingsActionTint(theme)
           .popover(isPresented: failureDetailsBinding(for: component.id), arrowEdge: .bottom) {
             UpdateFailureDetails(component: component, message: message)
           }
         Button("Try Again") { Task { await center.update(component) } }
-          .settingsActionTint(theme)
           .disabled(center.isUpdatingAll)
       }
     case .idle:
       if component.updateAvailable {
         Button("Update") { requestUpdate(component) }
-          .settingsActionTint(theme)
           .disabled(center.isUpdatingAll)
       } else {
         Image(systemName: "checkmark.circle")

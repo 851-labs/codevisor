@@ -19,7 +19,6 @@ public struct TodoPanelView: View {
     self.glassNamespace = glassNamespace
     self.maximumExpandedHeight = maximumExpandedHeight
   }
-  @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var completedCount: Int {
@@ -127,7 +126,7 @@ public struct TodoPanelView: View {
     switch status {
     case .pending: return Color.secondary.opacity(0.6)
     case .inProgress: return Color.primary
-    case .completed: return theme.statusOK
+    case .completed: return Color.green
     }
   }
 

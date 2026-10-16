@@ -1,6 +1,5 @@
 import AuthenticationServices
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 import os
@@ -41,7 +40,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "updates", "general", "appearance", "agents", "mcps",
+    "root", "account", "machines", "projects", "updates", "general", "agents", "mcps",
     "skills", "plugins",
   ]
 
@@ -160,9 +159,6 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.section("general")) {
         settingsLabel("Privacy & Data", systemImage: "hand.raised")
       }
-      NavigationLink(value: SettingsDestination.section("appearance")) {
-        settingsLabel("Appearance", systemImage: "paintpalette")
-      }
     }
     Section {
       NavigationLink(value: SettingsDestination.section("agents")) {
@@ -243,7 +239,6 @@ struct SettingsSheet: View {
     case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "general": GeneralSettingsScreen(dismissSettings: { dismiss() })
-    case "appearance": AppearanceSettingsScreen()
     case "agents": HarnessesSettingsScreen()
     case "mcps": McpSettingsScreen()
     case "skills": SkillsSettingsScreen()

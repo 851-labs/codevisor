@@ -6,19 +6,18 @@
 
   struct IOSNativePlainOutputView: UIViewRepresentable {
     let text: String
-    let theme: Theme
     let followsTail: Bool
     var command: String? = nil
     var syntax: [[CodeHighlighter.Token]]? = nil
 
     func makeUIView(context _: Context) -> IOSNativePlainOutputScrollView {
       let scrollView = IOSNativePlainOutputScrollView()
-      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail, syntax: syntax)
+      scrollView.setContent(text: text, command: command, followsTail: followsTail, syntax: syntax)
       return scrollView
     }
 
     func updateUIView(_ scrollView: IOSNativePlainOutputScrollView, context _: Context) {
-      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail, syntax: syntax)
+      scrollView.setContent(text: text, command: command, followsTail: followsTail, syntax: syntax)
     }
 
     func sizeThatFits(
@@ -40,7 +39,6 @@
 
     private let metrics = IOSNativePlainOutputMetrics()
     private var renderedText: String?
-    private var renderedTheme: Theme?
     private var renderedCommand: String?
     private var renderedSyntax: [[CodeHighlighter.Token]]?
 
@@ -92,24 +90,23 @@
     }
 
     func setContent(
-      text output: String, command: String? = nil, theme: Theme, followsTail: Bool,
+      text output: String, command: String? = nil, followsTail: Bool,
       syntax: [[CodeHighlighter.Token]]? = nil
     ) {
       let text = command.map { output.isEmpty ? $0 : "\($0)\n\(output)" } ?? output
       guard
-        renderedText != text || renderedTheme != theme || renderedCommand != command
+        renderedText != text || renderedCommand != command
           || renderedSyntax != syntax
       else { return }
 
       let shouldFollowTail = followsTail && (renderedText == nil || isAtBottom)
       let oldText = renderedText
-      let oldTheme = renderedTheme
       let selection = outputTextView.selectedRange
-      let primary = UIColor(theme.textPrimary)
-      let foreground = command == nil ? primary : UIColor(theme.textSecondary)
+      let primary: UIColor = .label
+      let foreground = command == nil ? primary : .secondaryLabel
 
       outputTextView.textStorage.beginEditing()
-      if let oldText, oldTheme == theme, renderedCommand == command, renderedSyntax == syntax,
+      if let oldText, renderedCommand == command, renderedSyntax == syntax,
         text.hasPrefix(oldText)
       {
         let suffix = String(text.dropFirst(oldText.count))
@@ -132,7 +129,6 @@
       }
       outputTextView.textStorage.endEditing()
       renderedText = text
-      renderedTheme = theme
       renderedCommand = command
       renderedSyntax = syntax
 

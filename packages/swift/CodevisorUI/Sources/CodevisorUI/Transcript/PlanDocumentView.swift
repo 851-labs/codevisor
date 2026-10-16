@@ -15,7 +15,6 @@ public struct PlanDocumentView: View {
   public init(markdown: String) {
     self.markdown = markdown
   }
-  @Environment(\.theme) private var theme
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -34,8 +33,7 @@ public struct PlanDocumentView: View {
     }
     .padding(PlanDocumentMetrics.horizontalPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
-    .themedCardShadow(theme)
+    .background(RoundedRectangle(cornerRadius: 8).fill(Color.cardBackgroundColor))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Proposed plan")
@@ -43,8 +41,6 @@ public struct PlanDocumentView: View {
 }
 
 public struct PlanDocumentHeaderView: View {
-  @Environment(\.theme) private var theme
-
   public init() {}
 
   public var body: some View {
@@ -61,7 +57,6 @@ public struct PlanDocumentHeaderView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
       PlanDocumentFragmentBackground(
-        color: theme.cardBackground,
         includesTop: true,
         includesBottom: false
       )
@@ -80,7 +75,6 @@ public struct PlanDocumentBlockView: View {
   private let topSpacing: CGFloat
   private let isLast: Bool
   private let fragmentLayout: MarkdownFragmentLayout?
-  @Environment(\.theme) private var theme
 
   public init(
     block: MarkdownBlock,
@@ -135,7 +129,6 @@ public struct PlanDocumentBlockView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         PlanDocumentFragmentBackground(
-          color: theme.cardBackground,
           includesTop: false,
           includesBottom: isLast
         )
@@ -166,7 +159,6 @@ public struct PlanDocumentBlockView: View {
 }
 
 private struct PlanDocumentFragmentBackground: View {
-  let color: AnyShapeStyle
   let includesTop: Bool
   let includesBottom: Bool
 
@@ -177,7 +169,7 @@ private struct PlanDocumentFragmentBackground: View {
       bottomTrailingRadius: includesBottom ? 8 : 0,
       topTrailingRadius: includesTop ? 8 : 0
     )
-    .fill(color)
+    .fill(Color.cardBackgroundColor)
     .overlay {
       PlanDocumentFragmentBorder(
         includesTop: includesTop,

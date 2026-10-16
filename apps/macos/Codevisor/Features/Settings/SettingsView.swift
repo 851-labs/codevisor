@@ -7,7 +7,7 @@ import UserNotifications
 import CodevisorUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case general, account, updates, appearance, notifications
+  case general, account, updates, notifications
   case shortcuts
   case agents, mcps, skills, plugins
   case projects, machines
@@ -20,7 +20,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .account: "Account"
     case .updates: "Updates"
     case .general: "General"
-    case .appearance: "Appearance"
     case .notifications: "Notifications"
     case .shortcuts: "Shortcuts"
     case .agents: "Harnesses"
@@ -38,7 +37,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .account: "person.crop.circle"
     case .updates: "arrow.down.circle"
     case .general: "gear"
-    case .appearance: "paintpalette"
     case .notifications: "bell"
     case .shortcuts: "keyboard"
     case .agents: "brain"
@@ -214,7 +212,6 @@ extension EnvironmentValues {
 struct SettingsView: View {
   @Bindable private var router = SettingsRouter.shared
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
 
   var body: some View {
     NavigationSplitView {
@@ -250,7 +247,6 @@ struct SettingsView: View {
             }
           }
       }
-      .themedToolbarBackground(theme)
     }
     .onChange(of: router.currentLocation) { previous, current in
       if let pending = router.pendingAppliedLocation {
@@ -261,7 +257,6 @@ struct SettingsView: View {
     }
     .frame(minWidth: 780, idealWidth: 780, minHeight: 560, idealHeight: 560)
     .settingsWindowToolbarStyle()
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
   }
 
   private func selectSidebarTab(_ tab: SettingsTab) {
@@ -279,9 +274,6 @@ struct SettingsView: View {
     case .general:
       GeneralSettingsView()
         .navigationTitle("Privacy & Data")
-    case .appearance:
-      AppearanceSettingsView()
-        .navigationTitle("Appearance")
     case .notifications:
       NotificationsSettingsView()
         .navigationTitle("Notifications")
@@ -351,16 +343,8 @@ private struct SettingsSidebarRow: View {
   }
 }
 
-extension View {
-  func settingsPaneFormStyle(_ theme: Theme) -> some View {
-    formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-  }
-}
-
 struct GeneralSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var showingConfirmation = false
 
   var body: some View {
@@ -404,12 +388,11 @@ struct GeneralSettingsView: View {
           Button("Delete…", role: .destructive) {
             showingConfirmation = true
           }
-          .settingsActionTint(theme)
           .fixedSize()
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .formStyle(.grouped)
     .confirmationDialog(
       "Delete all Codevisor data?",
       isPresented: $showingConfirmation,
@@ -418,9 +401,7 @@ struct GeneralSettingsView: View {
       Button("Delete everything", role: .destructive) {
         environment.deleteAllData()
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) {}
-        .settingsActionTint(theme)
     } message: {
       Text("This can't be undone. You'll be taken back through setup.")
     }

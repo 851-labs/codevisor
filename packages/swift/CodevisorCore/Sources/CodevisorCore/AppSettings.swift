@@ -1,5 +1,4 @@
 import Foundation
-import CodevisorTheming
 import Observation
 
 public struct AppSettings: Sendable, Codable, Equatable {
@@ -16,9 +15,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public var alphaUpdatesEnabled: Bool
   public var confirmBeforeQuitting: Bool
   public var confirmBeforeClosingWorkingChat: Bool
-  public var themeMode: ThemeMode
-  public var lightThemeId: String
-  public var darkThemeId: String
   public var notificationsEnabled: Bool
   public var systemNotificationsEnabled: Bool
   public var notificationSoundsEnabled: Bool
@@ -37,9 +33,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     alphaUpdatesEnabled: Bool = false,
     confirmBeforeQuitting: Bool = true,
     confirmBeforeClosingWorkingChat: Bool = true,
-    themeMode: ThemeMode = .system,
-    lightThemeId: String = ThemeCatalog.systemLightID,
-    darkThemeId: String = ThemeCatalog.systemDarkID,
     notificationsEnabled: Bool = true,
     systemNotificationsEnabled: Bool = true,
     notificationSoundsEnabled: Bool = true,
@@ -57,9 +50,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     self.alphaUpdatesEnabled = alphaUpdatesEnabled
     self.confirmBeforeQuitting = confirmBeforeQuitting
     self.confirmBeforeClosingWorkingChat = confirmBeforeClosingWorkingChat
-    self.themeMode = themeMode
-    self.lightThemeId = lightThemeId
-    self.darkThemeId = darkThemeId
     self.notificationsEnabled = notificationsEnabled
     self.systemNotificationsEnabled = systemNotificationsEnabled
     self.notificationSoundsEnabled = notificationSoundsEnabled
@@ -74,7 +64,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     case shareCrashReports, alphaUpdatesEnabled
     case betaUpdatesEnabled
     case confirmBeforeQuitting, confirmBeforeClosingWorkingChat
-    case themeMode, lightThemeId, darkThemeId
     case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
     case chatFinishedSoundPath, actionRequiredSoundPath
   }
@@ -102,9 +91,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     confirmBeforeQuitting = try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeQuitting) ?? true
     confirmBeforeClosingWorkingChat =
       try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeClosingWorkingChat) ?? true
-    themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
-    lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
-    darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
     notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
     systemNotificationsEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .systemNotificationsEnabled) ?? true
@@ -134,9 +120,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
     try container.encode(confirmBeforeQuitting, forKey: .confirmBeforeQuitting)
     try container.encode(confirmBeforeClosingWorkingChat, forKey: .confirmBeforeClosingWorkingChat)
-    try container.encode(themeMode, forKey: .themeMode)
-    try container.encode(lightThemeId, forKey: .lightThemeId)
-    try container.encode(darkThemeId, forKey: .darkThemeId)
     try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
     try container.encode(systemNotificationsEnabled, forKey: .systemNotificationsEnabled)
     try container.encode(notificationSoundsEnabled, forKey: .notificationSoundsEnabled)
@@ -251,21 +234,6 @@ public final class AppSettingsModel {
 
   public func setConfirmBeforeClosingWorkingChat(_ value: Bool) {
     settings.confirmBeforeClosingWorkingChat = value
-    persist()
-  }
-
-  public func setThemeMode(_ mode: ThemeMode) {
-    settings.themeMode = mode
-    persist()
-  }
-
-  public func setLightThemeId(_ id: String) {
-    settings.lightThemeId = id
-    persist()
-  }
-
-  public func setDarkThemeId(_ id: String) {
-    settings.darkThemeId = id
     persist()
   }
 

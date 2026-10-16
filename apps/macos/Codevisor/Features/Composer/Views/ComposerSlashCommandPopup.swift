@@ -4,7 +4,6 @@ import SwiftUI
 
 struct ComposerSlashCommandPopup: View {
   private var cardStyle = ComposerCardStyle()
-  @Environment(\.theme) private var theme
 
   private static let listInset: CGFloat = 6
 
@@ -37,7 +36,7 @@ struct ComposerSlashCommandPopup: View {
       } action: {
         onContentHeightChange($0)
       }
-      .background(theme.windowBackground, in: cardStyle.shape)
+      .background(Color.windowBackgroundColor, in: cardStyle.shape)
       .composerGlassSurface(shape: cardStyle.shape)
       .accessibilityElement(children: .combine)
       .accessibilityLabel("Connecting to harness")
@@ -70,7 +69,7 @@ struct ComposerSlashCommandPopup: View {
       }
     }
     .clipShape(cardStyle.shape)
-    .background(theme.windowBackground, in: cardStyle.shape)
+    .background(Color.windowBackgroundColor, in: cardStyle.shape)
     .composerGlassSurface(shape: cardStyle.shape)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Commands and skills")
@@ -112,7 +111,7 @@ struct ComposerSlashCommandPopup: View {
       .padding(.vertical, 6)
       .background(
         selectionShape
-          .fill(isSelected ? theme.accent : .clear)
+          .fill(isSelected ? Color.accentColor : .clear)
       )
       .contentShape(selectionShape)
     }

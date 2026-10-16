@@ -12,8 +12,6 @@ struct HarnessInstallHintRow: View {
     settingsMachineId ?? environment.defaultComposerServerId
   }
 
-  @Environment(\.theme) private var theme
-
   @State private var showsConfirm = false
   @State private var isStarting = false
   @State private var startError: String?
@@ -28,7 +26,7 @@ struct HarnessInstallHintRow: View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 10) {
         HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
           .frame(width: 20)
         Text(harness.name)
         Spacer()
@@ -37,7 +35,7 @@ struct HarnessInstallHintRow: View {
       if let failure = failureMessage {
         Text(failure)
           .font(.caption)
-          .foregroundStyle(theme.statusWarn)
+          .foregroundStyle(.orange)
           .lineLimit(3)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.leading, 30)
@@ -56,13 +54,12 @@ struct HarnessInstallHintRow: View {
         ProgressView().controlSize(.small)
         Text(installingLabel)
           .font(.callout)
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
       }
     } else if !availableMethods.isEmpty {
       Button(lifecyclePhase == "failed" ? "Try Again" : "Install") {
         showsConfirm = true
       }
-      .settingsActionTint(theme)
       .popover(isPresented: $showsConfirm, arrowEdge: .bottom) {
         HarnessInstallPopover(harness: harness, methods: availableMethods) { methodId in
           showsConfirm = false
@@ -72,7 +69,7 @@ struct HarnessInstallHintRow: View {
     } else {
       Text(harness.readiness.detail ?? "Not installed")
         .font(.callout)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -180,7 +177,6 @@ struct HarnessInstallPopover: View {
 struct InstallCommandChip: View {
   let command: String
 
-  @Environment(\.theme) private var theme
   @State private var copied = false
 
   var body: some View {
@@ -190,13 +186,13 @@ struct InstallCommandChip: View {
         .textSelection(.enabled)
         .lineLimit(1)
         .truncationMode(.middle)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
       Button {
         copy()
       } label: {
         Image(systemName: copied ? "checkmark" : "doc.on.doc")
           .font(.caption)
-          .foregroundStyle(copied ? AnyShapeStyle(theme.statusOK) : AnyShapeStyle(theme.textSecondary))
+          .foregroundStyle(copied ? Color.green : Color.secondary)
           .contentTransition(.symbolEffect(.replace))
       }
       .buttonStyle(.plain)

@@ -22,7 +22,6 @@ private struct NewTabOption: Identifiable, Equatable {
 
 struct NewTabPageView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let paneId: UUID
   let group: PaneGroupModel?
   var onNewChat: (() -> Void)? = nil
@@ -69,7 +68,6 @@ struct NewTabPageView: View {
           .frame(minHeight: geometry.size.height)
       }
     }
-    .background(theme.paneBackground)
     .simultaneousGesture(
       TapGesture().onEnded {
         group?.onActivated?()

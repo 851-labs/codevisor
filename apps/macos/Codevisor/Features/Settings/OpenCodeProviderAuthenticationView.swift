@@ -17,7 +17,6 @@ struct OpenCodeProviderAuthenticationView: View {
   }
 
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) var theme
 
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
@@ -53,13 +52,11 @@ struct OpenCodeProviderAuthenticationView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SheetFooter(status: footerStatus) {
             Button("Done") { dismiss() }
-              .settingsActionTint(theme)
               .keyboardShortcut(.defaultAction)
               .disabled(footerStatus != nil)
           }
         }
         .sheetSize(.browser)
-        .themedSurface(.sheet)
       } else {
         profiles
       }
@@ -155,7 +152,6 @@ struct OpenCodeProviderAuthenticationView: View {
         Spacer()
       }
       .buttonStyle(.borderless)
-      .settingsActionTint(theme)
       .padding(10)
     }
     .frame(width: 220)
@@ -187,7 +183,7 @@ struct OpenCodeProviderAuthenticationView: View {
   private func profileRow(_ account: ServerHarnessAccount) -> some View {
     HStack(spacing: 8) {
       Image(systemName: account.profileKind == "default" ? "desktopcomputer" : "person.crop.circle")
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 18)
       Text(profileName(account))
         .lineLimit(1)

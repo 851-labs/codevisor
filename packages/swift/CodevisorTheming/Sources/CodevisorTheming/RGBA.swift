@@ -96,14 +96,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     return (encode(sr), encode(sg), encode(sb))
   }
 
-  public func hexString() -> String {
-    func hex(_ value: Double) -> String {
-      let clamped = max(0, min(255, Int(value.rounded())))
-      return String(format: "%02x", clamped)
-    }
-    return "#" + hex(r) + hex(g) + hex(b)
-  }
-
   public func mixed(with other: RGBA, weight: Double) -> RGBA {
     let w = max(0, min(1, weight))
     return RGBA(
@@ -114,24 +106,11 @@ public struct RGBA: Equatable, Hashable, Sendable {
     )
   }
 
-  public func compositedOver(_ background: RGBA) -> RGBA {
-    RGBA(
-      r: (r * a + background.r * (1 - a)).rounded(),
-      g: (g * a + background.g * (1 - a)).rounded(),
-      b: (b * a + background.b * (1 - a)).rounded(),
-      a: 1
-    )
-  }
-
   public var relativeLuminance: Double {
     func channel(_ value: Double) -> Double {
       let v = value / 255
       return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
     }
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-  }
-
-  public func withAlpha(_ alpha: Double) -> RGBA {
-    RGBA(r: r, g: g, b: b, a: alpha)
   }
 }

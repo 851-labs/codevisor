@@ -17,7 +17,6 @@ struct AssistantTurnView: View {
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
-  @Environment(\.theme) private var theme
   @Environment(\.openSettings) private var openSettings
   @Environment(\.quickLook) private var quickLook
   @Environment(\.openFileDocument) private var openFileDocument

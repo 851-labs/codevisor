@@ -22,7 +22,6 @@ struct DeveloperSettingsView: View {
   }
 
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
 
   private var center: UpdateCenter { environment.updateCenter }
 
@@ -68,7 +67,7 @@ struct DeveloperSettingsView: View {
         Text("Experimental Features")
       }
     }
-    .settingsPaneFormStyle(theme)
+    .formStyle(.grouped)
   }
 
   private var channelBinding: Binding<UpdateChannel> {

@@ -89,7 +89,7 @@ struct TranscriptSendTransitionTests {
     view.sendTransitions.session = session
     TranscriptSendStaging.shared.stage(
       session: session, textView: fixture.editor, textRect: fixture.editor.bounds, lineHeight: 17,
-      bubble: .gray, theme: Theme(palette: nil))
+      bubble: .gray)
     #expect(TranscriptSendStaging.shared.hasStage(for: session))
 
     view.sendTransitions.receive(fixture.request, isForeground: true)
@@ -129,7 +129,7 @@ struct TranscriptSendTransitionTests {
     view.sendTransitions.session = session
     TranscriptSendStaging.shared.stage(
       session: session, textView: fixture.editor, textRect: fixture.editor.bounds, lineHeight: 17,
-      bubble: .gray, theme: Theme(palette: nil))
+      bubble: .gray)
     view.sendTransitions.receive(fixture.request, isForeground: true)
 
     view.sendTransitions.interrupt()
