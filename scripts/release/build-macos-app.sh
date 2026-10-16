@@ -160,52 +160,62 @@ else
   sign_args=(--force --sign -)
 fi
 
-sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
-sparkle_version="$sparkle_framework/Versions/Current"
-sparkle_components=(
-  "$sparkle_version/Autoupdate"
-  "$sparkle_version/Updater.app"
-  "$sparkle_version/XPCServices/Downloader.xpc"
-  "$sparkle_version/XPCServices/Installer.xpc"
-)
-for component in "${sparkle_components[@]}"; do
-  [[ -e "$component" ]] || { echo "error: missing Sparkle component: $component" >&2; exit 1; }
-  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$component"
-done
-codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
-codesign --verify --deep --strict "$sparkle_framework"
+sign_sparkle() {
+  sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
+  sparkle_version="$sparkle_framework/Versions/Current"
+  sparkle_components=(
+    "$sparkle_version/Autoupdate"
+    "$sparkle_version/Updater.app"
+    "$sparkle_version/XPCServices/Downloader.xpc"
+    "$sparkle_version/XPCServices/Installer.xpc"
+  )
+  for component in "${sparkle_components[@]}"; do
+    [[ -e "$component" ]] || { echo "error: missing Sparkle component: $component" >&2; exit 1; }
+    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$component"
+  done
+  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
+  codesign --verify --deep --strict "$sparkle_framework"
+}
 
-node "$script_dir/macos-browser-artifact.mjs" sign-libraries "$app_path" "${identity:--}"
-while IFS= read -r library; do
-  codesign "${sign_args[@]}" "$library"
-done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
-while IFS= read -r helper; do
-  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
-done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Browser Helper*.app" -type d)
+sign_browser_and_frameworks() {
+  node "$script_dir/macos-browser-artifact.mjs" sign-libraries "$app_path" "${identity:--}"
+  while IFS= read -r library; do
+    codesign "${sign_args[@]}" "$library"
+  done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
+  while IFS= read -r helper; do
+    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
+  done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Browser Helper*.app" -type d)
 
-while IFS= read -r framework; do
-  [[ -n "$framework" ]] || continue
-  [[ "$(basename "$framework")" != "Sparkle.framework" ]] || continue
-  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework"
-  codesign --verify --deep --strict "$framework"
-done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null)
+  while IFS= read -r framework; do
+    [[ -n "$framework" ]] || continue
+    [[ "$(basename "$framework")" != "Sparkle.framework" ]] || continue
+    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework"
+    codesign --verify --deep --strict "$framework"
+  done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null)
+}
 
-macho_manifest="$repo_root/dist/release/work/macho-manifest.txt"
-mkdir -p "$(dirname "$macho_manifest")"
-find "$server_resources" -type f -print0 \
-  | xargs -0 file --no-pad \
-  | grep ": Mach-O" \
-  | sed 's/: Mach-O.*//' > "$macho_manifest"
+sign_server_runtime() {
+  macho_manifest="$repo_root/dist/release/work/macho-manifest.txt"
+  mkdir -p "$(dirname "$macho_manifest")"
+  find "$server_resources" -type f -print0 \
+    | xargs -0 file --no-pad \
+    | grep ": Mach-O" \
+    | sed 's/: Mach-O.*//' > "$macho_manifest"
 
-while IFS= read -r macho; do
-  case "$macho" in
-    "$server_resources"/*/bin/node)
-      codesign "${sign_args[@]}" --entitlements "$node_entitlements" "$macho"
-      ;;
-  esac
-done < "$macho_manifest"
-{ grep -v "/bin/node$" "$macho_manifest" || true; } | tr '\n' '\0' \
-  | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
+  while IFS= read -r macho; do
+    case "$macho" in
+      "$server_resources"/*/bin/node)
+        codesign "${sign_args[@]}" --entitlements "$node_entitlements" "$macho"
+        ;;
+    esac
+  done < "$macho_manifest"
+  { grep -v "/bin/node$" "$macho_manifest" || true; } | tr '\n' '\0' \
+    | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
+}
+
+sign_sparkle
+sign_browser_and_frameworks
+sign_server_runtime
 
 codesign "${sign_args[@]}" "$app_path"
 codesign --verify --deep --strict "$app_path"
