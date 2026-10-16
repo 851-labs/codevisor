@@ -36,13 +36,17 @@ export function makeCommandRunner(repoRoot) {
   return { capture, run }
 }
 
-export async function readCloudDevVariables(repoRoot) {
+export async function readCloudDevVariables(repoRoot, capture) {
   const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
   try {
-    const commonDir = execFileSync("git", ["rev-parse", "--git-common-dir"], {
-      cwd: repoRoot,
-      encoding: "utf8"
-    }).trim()
+    const commonDir = (
+      capture === undefined
+        ? execFileSync("git", ["rev-parse", "--git-common-dir"], {
+            cwd: repoRoot,
+            encoding: "utf8"
+          })
+        : await capture("git", ["rev-parse", "--git-common-dir"])
+    ).trim()
     const mainRoot = resolve(repoRoot, commonDir, "..")
     if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
   } catch {}
