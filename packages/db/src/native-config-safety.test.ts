@@ -97,67 +97,68 @@ describe("native config safety", () => {
     const lowerC = "cccccccc-3333-4333-8333-333333333333"
     const upperC = lowerC.toUpperCase()
     const sqlite = new Database(filename)
-    const insertSession = sqlite.prepare(
-      `insert into sessions (id, project_id, server_id, harness_id, title, origin, created_at, updated_at)
+    try {
+      const insertSession = sqlite.prepare(
+        `insert into sessions (id, project_id, server_id, harness_id, title, origin, created_at, updated_at)
        values (?, ?, 'local', 'codex', ?, 'codevisor', ?, ?)`
-    )
-    insertSession.run(
-      lowerA,
-      project.id,
-      "Original A",
-      "2026-07-01T00:00:00.000Z",
-      "2026-07-01T01:00:00.000Z"
-    )
-    insertSession.run(
-      upperA,
-      project.id,
-      "Phantom A",
-      "2026-07-02T00:00:00.000Z",
-      "2026-07-02T01:00:00.000Z"
-    )
-    insertSession.run(
-      lowerB,
-      project.id,
-      "Original B",
-      "2026-07-03T00:00:00.000Z",
-      "2026-07-03T02:00:00.000Z"
-    )
-    insertSession.run(
-      upperB,
-      project.id,
-      "Fork B",
-      "2026-07-03T00:30:00.000Z",
-      "2026-07-03T01:00:00.000Z"
-    )
-    insertSession.run(
-      lowerC,
-      project.id,
-      "Older C",
-      "2026-07-04T00:00:00.000Z",
-      "2026-07-04T01:00:00.000Z"
-    )
-    insertSession.run(
-      upperC,
-      project.id,
-      "Newer C",
-      "2026-07-04T00:30:00.000Z",
-      "2026-07-04T02:00:00.000Z"
-    )
-    const insertChatItem = sqlite.prepare(
-      `insert into chat_items (id, session_id, position, role, status, created_at, updated_at)
+      )
+      insertSession.run(
+        lowerA,
+        project.id,
+        "Original A",
+        "2026-07-01T00:00:00.000Z",
+        "2026-07-01T01:00:00.000Z"
+      )
+      insertSession.run(
+        upperA,
+        project.id,
+        "Phantom A",
+        "2026-07-02T00:00:00.000Z",
+        "2026-07-02T01:00:00.000Z"
+      )
+      insertSession.run(
+        lowerB,
+        project.id,
+        "Original B",
+        "2026-07-03T00:00:00.000Z",
+        "2026-07-03T02:00:00.000Z"
+      )
+      insertSession.run(
+        upperB,
+        project.id,
+        "Fork B",
+        "2026-07-03T00:30:00.000Z",
+        "2026-07-03T01:00:00.000Z"
+      )
+      insertSession.run(
+        lowerC,
+        project.id,
+        "Older C",
+        "2026-07-04T00:00:00.000Z",
+        "2026-07-04T01:00:00.000Z"
+      )
+      insertSession.run(
+        upperC,
+        project.id,
+        "Newer C",
+        "2026-07-04T00:30:00.000Z",
+        "2026-07-04T02:00:00.000Z"
+      )
+      const insertChatItem = sqlite.prepare(
+        `insert into chat_items (id, session_id, position, role, status, created_at, updated_at)
        values (?, ?, 0, 'user', 'complete', '2026-07-01T00:01:00.000Z', '2026-07-01T00:01:00.000Z')`
-    )
-    insertChatItem.run("item-a", lowerA)
-    insertChatItem.run("item-b-original", lowerB)
-    insertChatItem.run("item-b-fork", upperB)
-    const insertChatText = sqlite.prepare(
-      `insert into chat_parts (id, item_id, position, kind, text, revision)
+      )
+      insertChatItem.run("item-a", lowerA)
+      insertChatItem.run("item-b-original", lowerB)
+      insertChatItem.run("item-b-fork", upperB)
+      const insertChatText = sqlite.prepare(
+        `insert into chat_parts (id, item_id, position, kind, text, revision)
        values (?, ?, 0, 'text', ?, 1)`
-    )
-    insertChatText.run("part-a", "item-a", "prompt A")
-    insertChatText.run("part-b-original", "item-b-original", "original prompt B")
-    insertChatText.run("part-b-fork", "item-b-fork", "fork prompt B")
-    sqlite.exec(`
+      )
+      insertChatText.run("part-a", "item-a", "prompt A")
+      insertChatText.run("part-b-original", "item-b-original", "original prompt B")
+      insertChatText.run("part-b-fork", "item-b-fork", "fork prompt B")
+      sqlite.exec(`
       alter table sessions add column is_archived integer not null default 0;
       alter table sessions add column archived_at text;
       alter table sessions add column archive_cascade_from text;
@@ -167,7 +168,9 @@ describe("native config safety", () => {
       alter table archived_worktrees drop column state;
       delete from schema_migrations where id in (30, 50);
     `)
-    sqlite.close()
+    } finally {
+      sqlite.close()
+    }
 
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))
     const sessions = await run(reopened.listSessions)

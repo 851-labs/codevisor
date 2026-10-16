@@ -30,8 +30,11 @@ it("drops the hidden terminal tabs clients made for agent background commands", 
   }
   await Effect.runPromise(db.close)
   const legacy = new Database(filename)
-  legacy.exec("delete from schema_migrations where id = 60")
-  legacy.close()
+  try {
+    legacy.exec("delete from schema_migrations where id = 60")
+  } finally {
+    legacy.close()
+  }
 
   const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
   expect((await run(upgraded.listWorkspacePanes)).map((pane) => pane.id)).toEqual(["user-pane"])
