@@ -173,6 +173,12 @@ private struct TranscriptWorkedItemPresentation<Content: View>: View {
       if hasThinking {
         WorkedTimelineThinking(isFirst: items.isEmpty)
       }
+    } else if reference.itemID == WorkedItem.earlierHistoryLineID {
+      WorkedTimelineEarlierHistory(
+        count: items.earlierHistoryCount,
+        messageID: reference.messageID,
+        kind: reference.section
+      )
     } else if let index = items.firstIndex(where: { $0.id == reference.itemID }) {
       WorkedTimelineLine(
         item: items[index], isFirst: index == 0, isLast: index == items.count - 1 && !hasThinking,

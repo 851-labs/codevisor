@@ -4,6 +4,7 @@ import TranscriptKit
 
 public struct TranscriptWorkedRowsVisibilityRevision: Equatable, Sendable {
   fileprivate let expandedSections: Set<TranscriptWorkedSectionIdentity>
+  fileprivate let revealedEarlierHistory: Set<TranscriptWorkedSectionIdentity>
 }
 
 public struct TranscriptRowSetRevision: Equatable, Sendable {
@@ -70,6 +71,7 @@ public enum TranscriptWorkedRowsVisibility {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
     var expansion: [TranscriptWorkedSectionIdentity: Bool] = [:]
+    var revealedEarlierHistory: Set<TranscriptWorkedSectionIdentity> = []
     var hiddenStreamIDs: [String] = []
 
     for row in rows {
@@ -91,9 +93,24 @@ public enum TranscriptWorkedRowsVisibility {
             default: defaultExpanded
           )
         expansion[membership.identity] = expanded
+        if disclosure.isExpanded(
+          membership.identity.kind.earlierHistoryDisclosureKey(
+            messageID: membership.identity.messageID
+          ),
+          default: false
+        ) {
+          revealedEarlierHistory.insert(membership.identity)
+        }
         result.append(row)
-      case .content:
-        if expansion[membership.identity] ?? true {
+      case .earlierHistoryToggle, .earlierHistory, .content:
+        let revealsEarlier = revealedEarlierHistory.contains(membership.identity)
+        let visibleInSection: Bool =
+          switch membership.role {
+          case .earlierHistoryToggle: !revealsEarlier
+          case .earlierHistory: revealsEarlier
+          default: true
+          }
+        if visibleInSection, expansion[membership.identity] ?? true {
           result.append(row)
         } else if case let .markdownChunk(chunk) = row.content, chunk.lifecycle == .receiving {
           hiddenStreamIDs.append(chunk.animationStreamID)
@@ -108,7 +125,8 @@ public enum TranscriptWorkedRowsVisibility {
           expansion.compactMap { identity, isExpanded in
             isExpanded ? identity : nil
           }
-        )
+        ),
+        revealedEarlierHistory: revealedEarlierHistory
       ),
       hiddenStreamIDs: hiddenStreamIDs
     )
@@ -358,11 +376,18 @@ struct TranscriptWorkingForLabel: View {
   }
 }
 
-private extension TranscriptWorkedSectionKind {
+extension TranscriptWorkedSectionKind {
   func disclosureKey(messageID: UUID) -> TranscriptDisclosureStore.Key {
     switch self {
     case .planning: .turn(messageID)
     case .implementation: .turnImplementation(messageID)
+    }
+  }
+
+  func earlierHistoryDisclosureKey(messageID: UUID) -> TranscriptDisclosureStore.Key {
+    switch self {
+    case .planning: .turnEarlierHistory(messageID)
+    case .implementation: .turnImplementationEarlierHistory(messageID)
     }
   }
 }

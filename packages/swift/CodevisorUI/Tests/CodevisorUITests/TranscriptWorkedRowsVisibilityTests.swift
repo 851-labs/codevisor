@@ -73,6 +73,44 @@ struct TranscriptWorkedRowsVisibilityTests {
     #expect(present().hiddenStreamIDs.isEmpty)
   }
 
+  @Test("Only the last three text parts show until earlier history is revealed")
+  func earlierHistory() {
+    let messageID = UUID()
+    func text(_ id: String) -> TranscriptEntry { .text(id: id, markdown: "Note \(id).") }
+    func tool(_ id: String) -> TranscriptEntry {
+      .tool(ToolCall(toolCallId: id, title: "Ran \(id)", kind: .execute, status: .completed))
+    }
+    var message = AssistantMessage(
+      id: messageID,
+      turn: AssistantTurn(
+        entries: [text("a"), tool("1"), text("b"), tool("2"), text("c"), tool("3")],
+        isGenerating: true,
+        textPhases: ["a": .commentary, "b": .commentary, "c": .commentary, "d": .commentary]
+      )
+    )
+    let store = TranscriptDisclosureStore()
+    func visibleWorkedIDs() -> [String] {
+      TranscriptWorkedRowsVisibility.present(
+        TranscriptActiveRowProjection.rows(for: .assistant(message)),
+        disclosure: store,
+        activeItem: .assistant(message)
+      ).rows.compactMap { row in
+        guard row.workedSection?.role.isContent == true else { return nil }
+        if case let .markdownChunk(chunk) = row.content { return chunk.animationSourceID }
+        if case let .activeWorkedItem(reference) = row.content { return reference.itemID }
+        return nil
+      }
+    }
+
+    #expect(visibleWorkedIDs() == ["a", "wgroup:1", "b", "wgroup:2", "c", "wgroup:3"])
+
+    message.turn.entries += [text("d"), tool("4")]
+    #expect(visibleWorkedIDs() == [WorkedItem.earlierHistoryLineID, "b", "wgroup:2", "c", "wgroup:3", "d", "wgroup:4"])
+
+    store.setExpanded(.turnEarlierHistory(messageID), true)
+    #expect(visibleWorkedIDs() == ["a", "wgroup:1", "b", "wgroup:2", "c", "wgroup:3", "d", "wgroup:4"])
+  }
+
   private func isWorkedContent(_ row: TranscriptPresentationRow) -> Bool {
     row.workedSection?.role == .content
   }

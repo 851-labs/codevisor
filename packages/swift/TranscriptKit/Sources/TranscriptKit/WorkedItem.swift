@@ -23,6 +23,8 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
   case subagents(id: String, calls: [ToolCall])
 
   public static let thinkingLineID = "wthinking"
+  public static let earlierHistoryLineID = "wearlier"
+  public static let recentTextCount = 3
 
   public var id: String {
     switch self {
@@ -30,6 +32,18 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
     case let .toolGroup(group): return "wgroup:\(group.id)"
     case let .subagents(id, _): return "wagent:\(id)"
     }
+  }
+}
+
+extension Array where Element == WorkedItem {
+  public var earlierHistoryCount: Int {
+    var remaining = WorkedItem.recentTextCount
+    for index in indices.reversed() {
+      guard case .text = self[index] else { continue }
+      remaining -= 1
+      if remaining == 0 { return index }
+    }
+    return 0
   }
 }
 

@@ -74,25 +74,33 @@ enum TranscriptWorkedSectionProjection {
     to rows: inout [TranscriptPresentationRow]
   ) {
     let hasThinking = lifecycle == .receiving && message.turn.showsWorkedThinkingLine(kind)
+    let earlierCount = items.earlierHistoryCount
+    if earlierCount > 0 {
+      appendWorkedItemRow(
+        message, kind: kind, itemID: WorkedItem.earlierHistoryLineID, estimatedHeight: 26,
+        lifecycle: lifecycle, identity: identity, role: .earlierHistoryToggle,
+        spacingAfter: 0, to: &rows)
+    }
     for (index, item) in items.enumerated() {
       let isFirst = index == 0
       let isLast = index == items.count - 1 && !hasThinking
+      let role: TranscriptWorkedSectionRowRole = index < earlierCount ? .earlierHistory : .content
       if case let .text(entryID, markdown) = item {
         appendMarkdown(
           message, kind: kind, entryID: entryID, markdown: markdown,
           isFirst: isFirst, isLast: isLast,
-          lifecycle: lifecycle, identity: identity, to: &rows)
+          lifecycle: lifecycle, identity: identity, role: role, to: &rows)
       } else {
         appendWorkedItemRow(
           message, kind: kind, itemID: item.id, estimatedHeight: 26,
-          lifecycle: lifecycle, identity: identity,
+          lifecycle: lifecycle, identity: identity, role: role,
           spacingAfter: isLast ? 12 : 0, to: &rows)
       }
     }
     if hasThinking {
       appendWorkedItemRow(
         message, kind: kind, itemID: WorkedItem.thinkingLineID, estimatedHeight: 30,
-        lifecycle: lifecycle, identity: identity, spacingAfter: 12, to: &rows)
+        lifecycle: lifecycle, identity: identity, role: .content, spacingAfter: 12, to: &rows)
     }
   }
 
@@ -105,6 +113,7 @@ enum TranscriptWorkedSectionProjection {
     isLast: Bool,
     lifecycle: TranscriptBlockLifecycle,
     identity: TranscriptWorkedSectionIdentity,
+    role: TranscriptWorkedSectionRowRole,
     to rows: inout [TranscriptPresentationRow]
   ) {
     let sourceID = "worked:\(kind.layoutComponent):\(entryID)"
@@ -146,7 +155,7 @@ enum TranscriptWorkedSectionProjection {
           estimatedHeight: projected.estimatedHeight,
           measurementRevision: projected.measurementRevision,
           spacingAfter: isLast && endsLine ? 12 : 0,
-          workedSection: .init(identity: identity, role: .content)
+          workedSection: .init(identity: identity, role: role)
         ))
     }
   }
@@ -158,6 +167,7 @@ enum TranscriptWorkedSectionProjection {
     estimatedHeight: CGFloat,
     lifecycle: TranscriptBlockLifecycle,
     identity: TranscriptWorkedSectionIdentity,
+    role: TranscriptWorkedSectionRowRole,
     spacingAfter: CGFloat,
     to rows: inout [TranscriptPresentationRow]
   ) {
@@ -185,7 +195,7 @@ enum TranscriptWorkedSectionProjection {
           waitingOnBackgroundTask: nil
         ),
         spacingAfter: spacingAfter,
-        workedSection: .init(identity: identity, role: .content)
+        workedSection: .init(identity: identity, role: role)
       ))
   }
 

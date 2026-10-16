@@ -314,11 +314,11 @@ extension VirtualizedTranscriptScrollView {
     }.compactMap { identity, keys -> [String]? in
       guard let identity, automaticSections.contains(identity),
         keys.contains(where: { key in
-          previousRowsByKey[key]?.workedSection?.role == .content
+          previousRowsByKey[key]?.workedSection?.role.isContent == true
         })
       else { return nil }
       return keys.filter {
-        previousRowsByKey[$0]?.workedSection?.role == .content
+        previousRowsByKey[$0]?.workedSection?.role.isContent == true
       }
     }.filter(canAnimateDisclosureCollapse)
     let animatedKeys = Set(automaticGroups.flatMap { $0 })

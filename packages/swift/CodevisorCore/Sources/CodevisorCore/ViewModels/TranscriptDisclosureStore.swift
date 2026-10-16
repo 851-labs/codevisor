@@ -17,6 +17,8 @@ public final class TranscriptDisclosureStore {
   public enum Key: Hashable, Sendable {
     case turn(UUID)
     case turnImplementation(UUID)
+    case turnEarlierHistory(UUID)
+    case turnImplementationEarlierHistory(UUID)
     case toolCall(String)
   }
 
@@ -53,7 +55,7 @@ public final class TranscriptDisclosureStore {
 
   private func advanceWorkedSectionRevisionIfNeeded(for key: Key) {
     switch key {
-    case .turn, .turnImplementation:
+    case .turn, .turnImplementation, .turnEarlierHistory, .turnImplementationEarlierHistory:
       workedSectionRevision &+= 1
     case .toolCall:
       break

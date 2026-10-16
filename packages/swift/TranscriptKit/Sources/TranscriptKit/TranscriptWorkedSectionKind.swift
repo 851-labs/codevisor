@@ -21,7 +21,14 @@ public struct TranscriptWorkedSectionIdentity: Sendable, Equatable, Hashable {
 
 public enum TranscriptWorkedSectionRowRole: Sendable, Equatable {
   case header(defaultExpanded: Bool, isFixedExpanded: Bool)
+  case earlierHistoryToggle
+  case earlierHistory
   case content
+
+  public var isContent: Bool {
+    if case .header = self { return false }
+    return true
+  }
 }
 
 public struct TranscriptWorkedSectionMembership: Sendable, Equatable {
