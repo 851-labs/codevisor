@@ -7,6 +7,14 @@ public struct MachineRegistry: Sendable, Codable, Equatable {
   public init(selectedMachineId: String = CodevisorMachine.local.id) {
     self.selectedMachineId = selectedMachineId
   }
+
+  func normalized() -> MachineRegistry {
+    let keepsSelection =
+      selectedMachineId == CodevisorMachine.local.id
+      || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
+    return MachineRegistry(
+      selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id)
+  }
 }
 
 public struct MachineStatus: Sendable, Equatable {
@@ -237,15 +245,5 @@ public final class MachineController {
       Log.persistence.error(
         "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
     }
-  }
-}
-
-extension MachineRegistry {
-  func normalized() -> MachineRegistry {
-    let keepsSelection =
-      selectedMachineId == CodevisorMachine.local.id
-      || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
-    return MachineRegistry(
-      selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id)
   }
 }
