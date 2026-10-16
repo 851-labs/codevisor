@@ -18,6 +18,7 @@ import { Effect } from "effect"
 
 import {
   grokAskUserQuestion,
+  grokAuthFailureSession,
   grokGoalNotification,
   grokModeState,
   grokPlanApprovalQuestion,
@@ -47,6 +48,8 @@ const withGrokMetadata = (
   supportsGoals: true
 })
 
+const grokSignedOutDetail = "Grok Build isn't signed in. Sign in to continue."
+
 const emitAll = (
   emit: (event: RuntimeEvent) => void,
   events: ReadonlyArray<RuntimeEvent>
@@ -59,7 +62,8 @@ const extendGrokConnection = (
   context: AcpConnectionExtensionContext,
   emit: (event: RuntimeEvent) => void,
   normalizer: GrokStreamNormalizer,
-  goals: Map<string, SessionGoal>
+  goals: Map<string, SessionGoal>,
+  authFailures: Set<string>
 ): AcpAgentConnection => {
   const goalTurns = new Map<string, Promise<void>>()
 
@@ -69,6 +73,7 @@ const extendGrokConnection = (
     announceActivity = false
   ): Promise<void> => {
     const turnId = randomUUID()
+    authFailures.delete(sessionId)
     emit(turnLifecycleEvent(sessionId, turnId, "started"))
     if (announceActivity) {
       emit({
@@ -92,7 +97,19 @@ const extendGrokConnection = (
         },
         (cause) => {
           normalizer.cancelTurn(sessionId)
-          emit(turnLifecycleEvent(sessionId, turnId, "ended", "cancelled"))
+          emit(
+            authFailures.delete(sessionId)
+              ? turnLifecycleEvent(
+                  sessionId,
+                  turnId,
+                  "ended",
+                  "end_turn",
+                  grokSignedOutDetail,
+                  false,
+                  "authRequired"
+                )
+              : turnLifecycleEvent(sessionId, turnId, "ended", "cancelled")
+          )
           throw cause
         }
       )
@@ -189,7 +206,15 @@ const extendGrokConnection = (
   return {
     ...base,
     prompt: (sessionId, input) =>
-      base.prompt(sessionId, input).pipe(
+      Effect.suspend(() => {
+        authFailures.delete(sessionId)
+        return base.prompt(sessionId, input)
+      }).pipe(
+        Effect.catch((cause) =>
+          authFailures.delete(sessionId)
+            ? Effect.succeed({ stopReason: "end_turn", stopKind: "authRequired" as const })
+            : Effect.fail(cause)
+        ),
         Effect.map((result) => {
           emitAll(emit, normalizer.completeTurn(sessionId))
           return result
@@ -212,6 +237,7 @@ const extendGrokConnection = (
 
 export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueueQuestion }) => {
   const goals = new Map<string, SessionGoal>()
+  const authFailures = new Set<string>()
   const modelStates = new Map<string, AcpModelState>()
   const nativeConfigIds = new Map<string, ReadonlySet<string>>()
   const normalizer = new GrokStreamNormalizer()
@@ -248,6 +274,8 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           method,
           (params) => params,
           ({ params }) => {
+            const authFailure = grokAuthFailureSession(params)
+            if (authFailure !== undefined) authFailures.add(authFailure)
             emitAll(emit, subagents.notification(params))
             const events = normalizer.mapExtensionNotification(params)
             const sessionId = subagents.sessionOf(params)
@@ -299,7 +327,7 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
         return Promise.resolve(undefined)
       },
       extendConnection: (connection, context) =>
-        extendGrokConnection(connection, context, emit, normalizer, goals)
+        extendGrokConnection(connection, context, emit, normalizer, goals, authFailures)
     }
   }
 }

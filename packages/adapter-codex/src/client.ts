@@ -21,6 +21,7 @@ export interface CodexClient {
   onClose: (handler: (error: Error) => void) => void
   close: () => void
   closeAndWait?: () => Promise<void>
+  authRejected?: () => boolean
 }
 
 export interface CodexSpawnRequest {

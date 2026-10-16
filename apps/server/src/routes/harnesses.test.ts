@@ -382,6 +382,16 @@ describe("harness routes", () => {
     await waitFor(async () =>
       listSubjectEvents(services, created.id).some((event) => event.kind === "session.error")
     )
+    await jsonRequest(server, `/v1/sessions/${created.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "signed out" })
+    })
+    await waitFor(() => vi.mocked(auth.markAccountExpired).mock.calls.length === 4)
+    await waitFor(async () =>
+      (await run(services.db.getTranscriptPage(created.id, undefined, 16))).items.some(
+        (item) => item.stopKind === "authRequired" && item.stopDetail === "Internal error"
+      )
+    )
 
     const explicitAccountSession = await jsonRequest(server, "/v1/sessions", {
       method: "POST",

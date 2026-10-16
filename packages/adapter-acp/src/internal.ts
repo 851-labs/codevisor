@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { TurnStopKind } from "@codevisor/api"
 
 export const turnLifecycleEvent = (
   sessionId: string,
@@ -6,7 +7,8 @@ export const turnLifecycleEvent = (
   turnState: "started" | "ended",
   stopReason?: string,
   stopDetail?: string,
-  retryable?: boolean
+  retryable?: boolean,
+  stopKind?: TurnStopKind
 ): RuntimeEvent => ({
   kind: "session.updated",
   subjectId: sessionId,
@@ -16,6 +18,7 @@ export const turnLifecycleEvent = (
     turnState,
     ...(stopReason === undefined ? {} : { stopReason }),
     ...(stopDetail === undefined ? {} : { stopDetail }),
+    ...(stopKind === undefined ? {} : { stopKind }),
     ...(retryable === true ? { retryable: true } : {})
   }
 })

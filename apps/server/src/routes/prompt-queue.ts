@@ -1,3 +1,4 @@
+import { AgentRuntimeError } from "@codevisor/agent-runtime"
 import type { AttachmentRef, EventEnvelope, PromptQueueItem } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
@@ -258,7 +259,8 @@ const runPromptInBackground = async (
         : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
-    if (isAuthenticationFailure(cause)) {
+    const signedOut = isAuthenticationFailure(cause)
+    if (signedOut) {
       const session = await run(services.db.getSessionSummary(sessionId))
       /* v8 ignore next */
       if (session.harnessAccountId !== undefined) {
@@ -271,12 +273,14 @@ const runPromptInBackground = async (
     }
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
+      ...(signedOut ? { stopKind: "authRequired" } : {}),
       serverId
     })
   }
 }
 
 const isAuthenticationFailure = (cause: unknown): boolean => {
+  if (cause instanceof AgentRuntimeError && cause.authRequired === true) return true
   const message = failureMessage(cause).toLowerCase()
   return (
     message.includes("authentication") ||

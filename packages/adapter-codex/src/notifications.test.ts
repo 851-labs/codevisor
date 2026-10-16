@@ -202,6 +202,123 @@ describe("CodexProvider", () => {
     expect(payloadOf(events.at(-1)).retryable).toBeUndefined()
   })
 
+  it("ends a turn Codex rejected as unauthorized as needing sign-in", async () => {
+    const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("try this"))
+    await turnRequested
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-401", status: "inProgress" }
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: {
+        id: "turn-401",
+        status: "failed",
+        error: {
+          message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication",
+          codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } }
+        }
+      }
+    })
+    expect(await prompt).toMatchObject({ stopReason: "end_turn" })
+    expect(events.at(-1)?.payload).toMatchObject({
+      stopDetail: "Codex isn't signed in. Sign in to continue.",
+      stopKind: "authRequired",
+      turnState: "ended"
+    })
+  })
+
+  it("stops Codex's own retries once a request is rejected as unauthorized", async () => {
+    const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("try this"))
+    await turnRequested
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-retrying-401", status: "inProgress" }
+    })
+    const interrupted = client.nextRequest("turn/interrupt")
+    const retry = (attempt: number) =>
+      client.emit("error", {
+        error: {
+          message: `Reconnecting... ${attempt}/5`,
+          codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 401 } }
+        },
+        threadId: "thread-new",
+        turnId: "turn-retrying-401",
+        willRetry: true
+      })
+    retry(1)
+    retry(2)
+    await interrupted
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-retrying-401", status: "interrupted" }
+    })
+    expect(await prompt).toMatchObject({ stopReason: "end_turn" })
+    expect(client.requests.filter((request) => request.method === "turn/interrupt")).toHaveLength(1)
+    expect(events.some((event) => payloadField(event, "retrying") !== undefined)).toBe(false)
+    expect(events.at(-1)?.payload).toMatchObject({
+      stopKind: "authRequired",
+      stopReason: "end_turn",
+      turnState: "ended"
+    })
+  })
+
+  it("asks Codex whether a ChatGPT sign-in is gone when a turn fails without a reason", async () => {
+    const { client, created, events } = await setup()
+    client.account = { account: null, requiresOpenaiAuth: true }
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("try this"))
+    await turnRequested
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-chatgpt", status: "inProgress" }
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: {
+        id: "turn-chatgpt",
+        status: "failed",
+        error: {
+          message: "workspace routing discovery unauthorized (401)",
+          codexErrorInfo: "other"
+        }
+      }
+    })
+    await prompt
+    expect(client.requests).toContainEqual({
+      method: "account/read",
+      params: { refreshToken: false }
+    })
+    expect(events.at(-1)?.payload).toMatchObject({ stopKind: "authRequired", turnState: "ended" })
+  })
+
+  it("keeps an unexplained failure as-is while the ChatGPT account is still signed in", async () => {
+    const { client, created, events } = await setup()
+    client.account = { account: { type: "chatgpt" }, requiresOpenaiAuth: true }
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("try this"))
+    await turnRequested
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-other", status: "failed" }
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: {
+        id: "turn-other",
+        status: "failed",
+        error: { message: "boom", codexErrorInfo: "other" }
+      }
+    })
+    await prompt
+    expect(events.at(-1)?.payload).toMatchObject({ stopDetail: "boom", turnState: "ended" })
+    expect(payloadOf(events.at(-1)).stopKind).toBeUndefined()
+  })
+
   it("labels a retryable HTTP 429 as temporary request throttling", async () => {
     const { client, created, events } = await setup()
     const turnRequested = client.nextRequest("turn/start")

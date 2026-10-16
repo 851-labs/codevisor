@@ -1,4 +1,4 @@
-import { harnessCatalog } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, harnessCatalog } from "@codevisor/agent-runtime"
 import type {
   AgentRuntimeService,
   PromptInput,
@@ -263,6 +263,13 @@ export const makeAgents = (): AgentRuntimeService & {
         }
         if (text === "token expired") {
           throw new Error("authentication token expired")
+        }
+        if (text === "signed out") {
+          throw new AgentRuntimeError({
+            authRequired: true,
+            message: "Internal error",
+            operation: "prompt"
+          })
         }
         const turnId = `turn-${prompts.length}`
         await emit(sessionId, {

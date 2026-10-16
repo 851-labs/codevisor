@@ -122,6 +122,9 @@ export const startAgyChat = async (
       ...(outcome.detail === undefined || stopReason === "cancelled"
         ? {}
         : { stopDetail: outcome.detail }),
+      ...(outcome.detail === SIGN_IN_DETAIL && stopReason !== "cancelled"
+        ? { stopKind: "authRequired" }
+        : {}),
       turnId: ended.id,
       turnState: "ended"
     })

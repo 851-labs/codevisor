@@ -166,14 +166,16 @@ describe("Antigravity chat", () => {
     await expect(two).resolves.toEqual({ stopReason: "end_turn" })
   })
 
-  it.each<[Record<string, unknown>, { stopReason: string; stopDetail?: string }]>([
+  it.each<
+    [Record<string, unknown>, { stopReason: string; stopDetail?: string; stopKind?: string }]
+  >([
     [
       { status: "ERROR", error: "model capacity exhausted" },
       { stopReason: "end_turn", stopDetail: "model capacity exhausted" }
     ],
     [
       { status: "ERROR", error: "authentication failed or timed out" },
-      { stopReason: "end_turn", stopDetail: SIGN_IN_DETAIL }
+      { stopReason: "end_turn", stopDetail: SIGN_IN_DETAIL, stopKind: "authRequired" }
     ],
     [
       { status: "ERROR" },
@@ -198,6 +200,7 @@ describe("Antigravity chat", () => {
     const ended = turnStates(events.updates()).at(-1)!
     expect(ended.stopReason).toBe(ending.stopReason)
     expect(ended.stopDetail).toBe(ending.stopDetail)
+    expect(ended.stopKind).toBe(ending.stopKind)
   })
 
   it("can't start without a sign-in, and says so", async () => {
@@ -332,7 +335,10 @@ describe("Antigravity chat", () => {
     })
     first.exit()
     await expect(chat.prompt("go")).resolves.toEqual({ stopReason: "end_turn" })
-    expect(turnStates(events.updates()).at(-1)!.stopDetail).toBe(SIGN_IN_DETAIL)
+    expect(turnStates(events.updates()).at(-1)).toMatchObject({
+      stopDetail: SIGN_IN_DETAIL,
+      stopKind: "authRequired"
+    })
   })
 
   it("switches model and reasoning on the next prompt, keeping the conversation", async () => {

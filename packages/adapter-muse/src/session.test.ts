@@ -148,17 +148,15 @@ describe("Muse chat", () => {
       })
     ).toMatchObject({
       stopReason: "end_turn",
-      stopDetail: "Sign in to Muse Code to continue."
+      stopDetail: "Sign in to Muse Code to continue.",
+      stopKind: "authRequired"
     })
-    expect(
-      await run({
-        terminal: "failed",
-        error: { kind: "provider", message: "Overloaded", retryable: true }
-      })
-    ).toMatchObject({
-      stopDetail: "Overloaded",
-      retryable: true
+    const overloaded = await run({
+      terminal: "failed",
+      error: { kind: "provider", message: "Overloaded", retryable: true }
     })
+    expect(overloaded).toMatchObject({ stopDetail: "Overloaded", retryable: true })
+    expect(overloaded).not.toHaveProperty("stopKind")
     expect(await run({ terminal: "failed", reason: "host died" })).toMatchObject({
       stopDetail: "host died"
     })
@@ -172,10 +170,14 @@ describe("Muse chat", () => {
     const { client, chat, events } = await start()
     client.replies["turn/start"] = new MuseRequestError("not signed in", -32010, "authRequired")
     await chat.prompt("go")
-    expect(turns(events).at(-1)).toMatchObject({ stopDetail: "Sign in to Muse Code to continue." })
+    expect(turns(events).at(-1)).toMatchObject({
+      stopDetail: "Sign in to Muse Code to continue.",
+      stopKind: "authRequired"
+    })
     client.replies["turn/start"] = new Error("busy")
     await chat.prompt("go")
     expect(turns(events).at(-1)).toMatchObject({ stopDetail: "busy" })
+    expect(turns(events).at(-1)).not.toHaveProperty("stopKind")
     client.replies["turn/start"] = { status: "accepted" }
     const queued = await send(chat, client, "later")
     client.emit("turn/unqueued", { turnId: queued.turnId })

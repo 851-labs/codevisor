@@ -1,5 +1,5 @@
 import type { QuestionAnswer, RuntimeEmit } from "@codevisor/agent-runtime"
-import type { QuestionSpec, SessionGoal } from "@codevisor/api"
+import type { QuestionSpec, SessionGoal, TurnStopKind } from "@codevisor/api"
 
 import type { CodexClient } from "./client.js"
 import type { CodexSkill } from "./skills.js"
@@ -30,7 +30,7 @@ export interface CodexSession {
   readonly emit: RuntimeEmit
   readonly cwd: string
   activeTurnId: string | undefined
-  pendingTurnError: { message: string; retryable: boolean; stopKind?: "usageLimit" } | undefined
+  pendingTurnError: { message: string; retryable: boolean; stopKind?: TurnStopKind } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
   lastHarnessTitle: string | undefined

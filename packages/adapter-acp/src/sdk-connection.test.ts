@@ -74,3 +74,43 @@ describe("sdkConnection.createSession", () => {
     await Effect.runPromise(connection.close)
   })
 })
+
+const promptingAgent = (fail: () => never) =>
+  acp.client({ name: "test" }).connect(
+    acp
+      .agent({ name: "fake-agent" })
+      .onRequest(acp.methods.agent.session.new, () => newSession)
+      .onRequest(acp.methods.agent.session.prompt, fail)
+  )
+
+describe("sdkConnection.prompt", () => {
+  it("ends the turn as needing sign-in when the agent rejects the prompt for authentication", async () => {
+    const connection = sdkConnection(
+      promptingAgent(() => {
+        throw acp.RequestError.authRequired({}, "provider authentication required")
+      }),
+      () => ""
+    )
+    expect(await Effect.runPromise(connection.prompt("s-1", "hi"))).toEqual({
+      stopKind: "authRequired",
+      stopReason: "end_turn"
+    })
+    await Effect.runPromise(connection.close)
+  })
+
+  it("still fails the prompt for other agent errors", async () => {
+    const connection = sdkConnection(
+      promptingAgent(() => {
+        throw acp.RequestError.internalError(
+          { errorName: "provider.no-route" },
+          "Model unavailable"
+        )
+      }),
+      () => ""
+    )
+    await expect(Effect.runPromise(connection.prompt("s-1", "hi"))).rejects.toMatchObject({
+      operation: "prompt"
+    })
+    await Effect.runPromise(connection.close)
+  })
+})

@@ -9,7 +9,7 @@ import type {
   SetGoalUpdate,
   ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-import type { SessionConfigOption, SessionGoal } from "@codevisor/api"
+import type { SessionConfigOption, SessionGoal, TurnStopKind } from "@codevisor/api"
 import { Effect } from "effect"
 
 export const acpClientCapabilities = (): acp.ClientCapabilities => ({
@@ -45,6 +45,7 @@ export interface AcpAgentConnection {
     {
       readonly stopReason: string
       readonly stopDetail?: string
+      readonly stopKind?: TurnStopKind
       readonly retryable?: boolean
     },
     AgentRuntimeError
