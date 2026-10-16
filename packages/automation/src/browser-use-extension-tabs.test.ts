@@ -39,6 +39,39 @@ const relaySocket = (value: unknown): WebSocket => {
   return value
 }
 
+const makeExtensionFixture = (directory: string) => {
+  const provider = makeBrowserUseProvider(directory)
+  let relay: WebSocketServer | undefined
+  let client: WebSocket | undefined
+  let clientClosed: Promise<void> | undefined
+  return {
+    provider,
+    createRelay: () => {
+      relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+      return relay
+    },
+    createClient: (server: WebSocketServer) => {
+      const peer = new WebSocket(relayUrl(server))
+      client = peer
+      clientClosed = new Promise<void>((resolve) => peer.once("close", () => resolve()))
+      return peer
+    },
+    close: async () => {
+      try {
+        await provider.close()
+      } finally {
+        if (client?.readyState === WebSocket.CONNECTING) client.once("error", () => undefined)
+        client?.close()
+        const server = relay
+        if (server !== undefined) {
+          await new Promise<void>((resolve) => server.close(() => resolve()))
+        }
+        await clientClosed
+      }
+    }
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
@@ -66,84 +99,85 @@ describe("Browser Use extension tab lifecycle", () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-new-tab-"))
     directories.push(directory)
     observeCdp()
-    const provider = makeBrowserUseProvider(directory)
-    const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
-    await once(relay, "listening")
-    const serverSocket = once(relay, "connection")
-    const client = new WebSocket(relayUrl(relay))
-    let creates = 0
-    let targetPolls = 0
-    const extensionCommands: string[] = []
-    client.on("message", (data: Buffer) => {
-      const request = relayRequest(data)
-      let result: unknown = {}
-      if (request.method === "Target.createTarget") {
-        creates += 1
-        result = { targetId: "created-tab" }
-      } else if (request.method === "Target.getTargets") {
-        targetPolls += 1
-        result = {
-          targetInfos: [
+    const fixture = makeExtensionFixture(directory)
+    const { provider } = fixture
+    try {
+      const relay = fixture.createRelay()
+      await once(relay, "listening")
+      const serverSocket = once(relay, "connection")
+      const client = fixture.createClient(relay)
+      let creates = 0
+      let targetPolls = 0
+      const extensionCommands: string[] = []
+      client.on("message", (data: Buffer) => {
+        const request = relayRequest(data)
+        let result: unknown = {}
+        if (request.method === "Target.createTarget") {
+          creates += 1
+          result = { targetId: "created-tab" }
+        } else if (request.method === "Target.getTargets") {
+          targetPolls += 1
+          result = {
+            targetInfos: [
+              {
+                targetId: "existing-tab",
+                type: "page",
+                title: "Existing",
+                url: "https://example.com/"
+              },
+              ...(targetPolls < 2
+                ? []
+                : [
+                    {
+                      targetId: "created-tab",
+                      type: "page",
+                      title: "Emojis",
+                      url: "https://emojis.com/"
+                    }
+                  ])
+            ]
+          }
+        } else if (request.method === "Target.attachToTarget") {
+          result = { sessionId: "tab:created-tab" }
+        } else if (request.method.startsWith("Codevisor.")) {
+          extensionCommands.push(request.method)
+          if (request.method === "Codevisor.clipboard.readText") {
+            result = { text: "extension clipboard" }
+          }
+          if (request.method === "Codevisor.armDownload") {
             {
-              targetId: "existing-tab",
-              type: "page",
-              title: "Existing",
-              url: "https://example.com/"
-            },
-            ...(targetPolls < 2
-              ? []
-              : [
-                  {
-                    targetId: "created-tab",
-                    type: "page",
-                    title: "Emojis",
-                    url: "https://emojis.com/"
+              client.send(
+                JSON.stringify({
+                  method: "Browser.downloadWillBegin",
+                  sessionId: request.sessionId,
+                  params: {
+                    guid: "download-1",
+                    url: "https://emojis.com/fixture.txt",
+                    suggestedFilename: "fixture.txt",
+                    filePath: "/tmp/fixture.txt"
                   }
-                ])
-          ]
-        }
-      } else if (request.method === "Target.attachToTarget") {
-        result = { sessionId: "tab:created-tab" }
-      } else if (request.method.startsWith("Codevisor.")) {
-        extensionCommands.push(request.method)
-        if (request.method === "Codevisor.clipboard.readText") {
-          result = { text: "extension clipboard" }
-        }
-        if (request.method === "Codevisor.armDownload") {
-          {
-            client.send(
-              JSON.stringify({
-                method: "Browser.downloadWillBegin",
-                sessionId: request.sessionId,
-                params: {
-                  guid: "download-1",
-                  url: "https://emojis.com/fixture.txt",
-                  suggestedFilename: "fixture.txt",
-                  filePath: "/tmp/fixture.txt"
-                }
-              })
-            )
-            client.send(
-              JSON.stringify({
-                method: "Browser.downloadProgress",
-                sessionId: request.sessionId,
-                params: {
-                  guid: "download-1",
-                  state: "completed",
-                  filePath: "/tmp/fixture.txt"
-                }
-              })
-            )
+                })
+              )
+              client.send(
+                JSON.stringify({
+                  method: "Browser.downloadProgress",
+                  sessionId: request.sessionId,
+                  params: {
+                    guid: "download-1",
+                    state: "completed",
+                    filePath: "/tmp/fixture.txt"
+                  }
+                })
+              )
+            }
           }
         }
-      }
-      client.send(JSON.stringify({ id: request.id, result }))
-    })
-    await once(client, "open")
-    const [socket] = await serverSocket
-    provider.acceptExtensionConnection(relaySocket(socket))
+        client.send(JSON.stringify({ id: request.id, result }))
+      })
+      await once(client, "open")
+      const [socket] = await serverSocket
+      provider.acceptExtensionConnection(relaySocket(socket))
 
-    try {
       const context = { sessionId: "new-tab-test", projectId: "new-tab-test" }
       provider.setSessionBackend(context.sessionId, "extension")
       const response = await provider.invoke(context, "tabs", {
@@ -186,9 +220,7 @@ describe("Browser Use extension tab lifecycle", () => {
         "Codevisor.armDownload"
       ])
     } finally {
-      await provider.close()
-      client.close()
-      await new Promise<void>((resolve) => relay.close(() => resolve()))
+      await fixture.close()
     }
   })
 
@@ -196,62 +228,63 @@ describe("Browser Use extension tab lifecycle", () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-session-recovery-"))
     directories.push(directory)
     const cdp = observeCdp()
-    const provider = makeBrowserUseProvider(directory)
-    const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
-    await once(relay, "listening")
-    const serverSocket = once(relay, "connection")
-    const client = new WebSocket(relayUrl(relay))
-    let attachCount = 0
-    let rejectNextSessionCommand: string | undefined
-    const evaluatedSessions: string[] = []
-    client.on("message", (data: Buffer) => {
-      const request = relayRequest(data)
-      if (request.method === "Target.getTargets") {
-        client.send(
-          JSON.stringify({
-            id: request.id,
-            result: {
-              targetInfos: [
-                {
-                  targetId: "recoverable-tab",
-                  type: "page",
-                  title: "Recoverable",
-                  url: "https://example.com/"
-                }
-              ]
-            }
-          })
-        )
-        return
-      }
-      if (request.method === "Target.attachToTarget") {
-        attachCount += 1
-        client.send(
-          JSON.stringify({ id: request.id, result: { sessionId: "tab:recoverable-tab" } })
-        )
-        return
-      }
-      if (request.method === "Runtime.evaluate") {
-        evaluatedSessions.push(request.sessionId ?? "missing")
-        if (rejectNextSessionCommand !== undefined) {
-          const message = rejectNextSessionCommand
-          rejectNextSessionCommand = undefined
+    const fixture = makeExtensionFixture(directory)
+    const { provider } = fixture
+    try {
+      const relay = fixture.createRelay()
+      await once(relay, "listening")
+      const serverSocket = once(relay, "connection")
+      const client = fixture.createClient(relay)
+      let attachCount = 0
+      let rejectNextSessionCommand: string | undefined
+      const evaluatedSessions: string[] = []
+      client.on("message", (data: Buffer) => {
+        const request = relayRequest(data)
+        if (request.method === "Target.getTargets") {
           client.send(
             JSON.stringify({
               id: request.id,
-              error: { message }
+              result: {
+                targetInfos: [
+                  {
+                    targetId: "recoverable-tab",
+                    type: "page",
+                    title: "Recoverable",
+                    url: "https://example.com/"
+                  }
+                ]
+              }
             })
           )
           return
         }
-      }
-      client.send(JSON.stringify({ id: request.id, result: {} }))
-    })
-    await once(client, "open")
-    const [socket] = await serverSocket
-    provider.acceptExtensionConnection(relaySocket(socket))
+        if (request.method === "Target.attachToTarget") {
+          attachCount += 1
+          client.send(
+            JSON.stringify({ id: request.id, result: { sessionId: "tab:recoverable-tab" } })
+          )
+          return
+        }
+        if (request.method === "Runtime.evaluate") {
+          evaluatedSessions.push(request.sessionId ?? "missing")
+          if (rejectNextSessionCommand !== undefined) {
+            const message = rejectNextSessionCommand
+            rejectNextSessionCommand = undefined
+            client.send(
+              JSON.stringify({
+                id: request.id,
+                error: { message }
+              })
+            )
+            return
+          }
+        }
+        client.send(JSON.stringify({ id: request.id, result: {} }))
+      })
+      await once(client, "open")
+      const [socket] = await serverSocket
+      provider.acceptExtensionConnection(relaySocket(socket))
 
-    try {
       const context = { sessionId: "session-recovery-test", projectId: "session-recovery-test" }
       provider.setSessionBackend(context.sessionId, "extension")
       const claimed = await provider.invoke(context, "tabs", {
@@ -319,9 +352,7 @@ describe("Browser Use extension tab lifecycle", () => {
         "tab:recoverable-tab"
       ])
     } finally {
-      await provider.close()
-      client.close()
-      await new Promise<void>((resolve) => relay.close(() => resolve()))
+      await fixture.close()
     }
   })
 })
