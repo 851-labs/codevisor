@@ -142,6 +142,7 @@ export const startMuseChat = async (
     detail?: string
     retryable?: boolean
     cancelled?: boolean
+    authRequired?: boolean
   }) => {
     const ended = turn
     if (ended === undefined) return
@@ -154,6 +155,7 @@ export const startMuseChat = async (
       initiatedBy: ended.initiatedBy,
       stopReason,
       ...(outcome.detail === undefined ? {} : { stopDetail: outcome.detail }),
+      ...(outcome.authRequired === true ? { stopKind: "authRequired" } : {}),
       ...(outcome.retryable === true ? { retryable: true } : {}),
       turnId: ended.id,
       turnState: "ended"
@@ -230,6 +232,9 @@ export const startMuseChat = async (
             ...(event.terminal === "cancelled" ? { cancelled: true } : {}),
             ...(event.terminal === "failed"
               ? { detail: stopDetail(error, text(event.reason)) ?? "Muse stopped with an error." }
+              : {}),
+            ...(event.terminal === "failed" && error.kind === "authRequired"
+              ? { authRequired: true }
               : {}),
             ...(error.retryable === true ? { retryable: true } : {})
           })
@@ -362,11 +367,10 @@ export const startMuseChat = async (
         )
         if (typeof accepted.turnId === "string") started.museTurnId = accepted.turnId
       } catch (cause) {
+        const signedOut = cause instanceof MuseRequestError && cause.kind === "authRequired"
         await endTurn({
-          detail:
-            cause instanceof MuseRequestError && cause.kind === "authRequired"
-              ? "Sign in to Muse Code to continue."
-              : messageOf(cause)
+          detail: signedOut ? "Sign in to Muse Code to continue." : messageOf(cause),
+          ...(signedOut ? { authRequired: true } : {})
         })
       }
       return finished

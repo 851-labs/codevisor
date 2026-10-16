@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { handleCollabItem, handleSubAgentActivity } from "./collab.js"
 import { fileChangeStats, fileChangeTitle, planStatus } from "./diff-presentation.js"
-import { codexErrorDetails, codexRetryStatus } from "./errors.js"
+import { codexErrorDetails, codexRetryStatus, codexSignedOutDetail } from "./errors.js"
 import { emitGoalCleared, flushPendingGoalSnapshot, handleGoalUpdated } from "./goals.js"
 import { isRecord } from "./internal.js"
 import { emitItemLifecycle } from "./items.js"
@@ -92,20 +92,23 @@ const completeNotificationTurn = (
 ): void => {
   const turn = isRecord(payload.turn) ? payload.turn : {}
   const status = typeof turn.status === "string" ? turn.status : "completed"
+  const signedOut =
+    !session.interruptRequested && session.pendingTurnError?.stopKind === "authRequired"
   const stopReason =
-    status === "interrupted" || session.interruptRequested
+    !signedOut && (status === "interrupted" || session.interruptRequested)
       ? "cancelled"
-      : status === "failed"
-        ? "end_turn"
-        : "end_turn"
+      : "end_turn"
   const completedError =
     status === "failed" && !session.interruptRequested && isRecord(turn.error)
       ? codexErrorDetails({ error: turn.error })
       : undefined
-  const terminalError = completedError ?? session.pendingTurnError
-  if (terminalError !== undefined && rejectsReasoningSummaries(terminalError.message)) {
+  const reportedError = signedOut
+    ? session.pendingTurnError
+    : (completedError ?? session.pendingTurnError)
+  if (reportedError !== undefined && rejectsReasoningSummaries(reportedError.message)) {
     session.reasoningSummariesRejected = true
   }
+  const sharedAuthRejected = session.client.authRejected?.() === true
   const pending = session.pendingPrompt
   session.pendingPrompt = undefined
   session.interruptRequested = false
@@ -115,8 +118,9 @@ const completeNotificationTurn = (
   cancelPendingQuestions(session)
   void refreshCodexSessionTitle(session)
     .then(() => flushPendingGoalSnapshot(session))
-    .then(() =>
-      session.emit({
+    .then(() => confirmSignedOut(session, status, reportedError, sharedAuthRejected))
+    .then(async (terminalError) => {
+      await session.emit({
         kind: "session.updated",
         payload: {
           initiatedBy: pending === undefined ? "agent" : "user",
@@ -129,13 +133,38 @@ const completeNotificationTurn = (
         },
         subjectId: session.key
       })
-    )
-    .then(() => {
+      return terminalError
+    })
+    .then((terminalError) => {
       pending?.resolve({ stopReason })
       if (pending !== undefined && status === "completed" && terminalError === undefined) {
         void session.titleGenerator?.onTurnCompleted()
       }
     })
+}
+
+const signedOutError = {
+  message: codexSignedOutDetail,
+  retryable: false,
+  stopKind: "authRequired" as const
+}
+
+const confirmSignedOut = async (
+  session: CodexSession,
+  status: string,
+  error: CodexSession["pendingTurnError"],
+  sharedAuthRejected: boolean
+): Promise<CodexSession["pendingTurnError"]> => {
+  if (status !== "failed" || error === undefined || error.stopKind !== undefined) return error
+  if (sharedAuthRejected) return signedOutError
+  try {
+    const result = await session.client.request<unknown>("account/read", { refreshToken: false })
+    return isRecord(result) && result.account === null && result.requiresOpenaiAuth === true
+      ? signedOutError
+      : error
+  } catch {
+    return error
+  }
 }
 
 const rejectsReasoningSummaries = (message: string): boolean =>
@@ -226,6 +255,16 @@ const emitStreamedFilePatch = (
 }
 
 const handleNotificationError = (session: CodexSession, payload: Record<string, unknown>): void => {
+  const terminalError = codexErrorDetails(payload)
+  if (terminalError.stopKind === "authRequired" && session.activeTurnId !== undefined) {
+    if (session.pendingTurnError?.stopKind !== "authRequired") {
+      session.pendingTurnError = terminalError
+      void session.client
+        .request("turn/interrupt", { threadId: session.threadId, turnId: session.activeTurnId })
+        .catch(() => undefined)
+    }
+    return
+  }
   if (payload.willRetry === true) {
     void session.emit({
       kind: "session.updated",
@@ -237,7 +276,6 @@ const handleNotificationError = (session: CodexSession, payload: Record<string, 
     })
     return
   }
-  const terminalError = codexErrorDetails(payload)
   if (session.activeTurnId !== undefined) {
     session.pendingTurnError = terminalError
     return

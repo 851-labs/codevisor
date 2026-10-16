@@ -9,6 +9,7 @@ import type {
   SessionModeState,
   SessionSkills
 } from "@codevisor/api"
+import { isRecord } from "@codevisor/api"
 import { Effect, Schema } from "effect"
 
 import type { HarnessDefinition, ProviderId } from "./harness-definition-types.js"
@@ -17,7 +18,8 @@ export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError
   "AgentRuntimeError",
   {
     operation: Schema.String,
-    message: Schema.String
+    message: Schema.String,
+    authRequired: Schema.optional(Schema.Boolean)
   }
 ) {}
 
@@ -238,9 +240,18 @@ export const adapterPromise = <A>(
     catch: (cause) => runtimeError(operation, cause)
   })
 
+const requiresSignIn = (cause: unknown): boolean =>
+  isRecord(cause) &&
+  (cause.authRequired === true ||
+    cause.code === -32000 ||
+    cause.kind === "authRequired" ||
+    cause.reason === "reauthenticate" ||
+    cause.reason === "revoked")
+
 export const runtimeError = (operation: string, cause: unknown): AgentRuntimeError =>
   new AgentRuntimeError({
     operation,
     /* v8 ignore next */
-    message: cause instanceof Error ? cause.message : String(cause)
+    message: cause instanceof Error ? cause.message : String(cause),
+    ...(requiresSignIn(cause) ? { authRequired: true } : {})
   })

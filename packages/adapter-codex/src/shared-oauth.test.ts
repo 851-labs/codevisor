@@ -45,6 +45,25 @@ describe("Codex external OAuth", () => {
     expect(token).toHaveBeenLastCalledWith("old")
     expect(approval).toHaveBeenCalledOnce()
   })
+  it("remembers a rejected sign-in until the next turn starts", async () => {
+    const f = fixture()
+    let reason: string | undefined
+    const client = await connectSharedCodexAccount(f.client, {
+      token: async (rejected) => {
+        if (rejected && reason !== undefined)
+          throw Object.assign(new Error("signed out"), { reason })
+        return { accessToken: "token", accountId: "work" }
+      }
+    })
+    reason = "offline"
+    await expect(f.request("account/chatgptAuthTokens/refresh")).rejects.toThrow("signed out")
+    expect(client.authRejected?.()).toBe(false)
+    reason = "reauthenticate"
+    await expect(f.request("account/chatgptAuthTokens/refresh")).rejects.toThrow("signed out")
+    expect(client.authRejected?.()).toBe(true)
+    await client.request("turn/start", { threadId: "thread" })
+    expect(client.authRejected?.()).toBe(false)
+  })
   it("rejects missing identity, mismatched workspace and cancelled requests", async () => {
     const f = fixture()
     await expect(

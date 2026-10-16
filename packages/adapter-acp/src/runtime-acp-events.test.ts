@@ -99,6 +99,41 @@ describe("@codevisor/agent-runtime", () => {
     })
   })
 
+  it("ends a turn the agent rejected for sign-in as needing sign-in, named for the harness", async () => {
+    class SignedOutConnection extends FakeConnection {
+      override prompt(_sessionId: string, _input: Parameters<FakeConnection["prompt"]>[1]) {
+        return Effect.succeed({ stopKind: "authRequired" as const, stopReason: "end_turn" })
+      }
+    }
+    const connector: AcpConnector = {
+      connect: (request, emit) => Effect.succeed(new SignedOutConnection(request, emit))
+    }
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const events: Array<RuntimeEvent> = []
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
+        events.push(event)
+      })
+    )
+
+    await run(runtime.prompt(sessionId, "hello"))
+
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        stopDetail: "Gemini CLI isn't signed in. Sign in to continue.",
+        stopKind: "authRequired",
+        stopReason: "end_turn",
+        turnState: "ended"
+      }
+    })
+  })
+
   it("demotes narration before tool calls, so each tool group follows its own text", async () => {
     class NarratingConnection extends FakeConnection {
       override prompt(sessionId: string) {

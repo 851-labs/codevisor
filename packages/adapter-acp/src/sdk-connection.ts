@@ -230,11 +230,16 @@ export const sdkConnection = (
       }),
     prompt: (sessionId, input) =>
       adapterPromise("prompt", async () => {
-        const response = await connection.agent.request(acp.methods.agent.session.prompt, {
-          prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
-          sessionId
-        })
-        return { stopReason: response.stopReason }
+        try {
+          const response = await connection.agent.request(acp.methods.agent.session.prompt, {
+            prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
+            sessionId
+          })
+          return { stopReason: response.stopReason }
+        } catch (cause) {
+          if (!isAuthenticationRequired(cause)) throw cause
+          return { stopReason: "end_turn", stopKind: "authRequired" as const }
+        }
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {

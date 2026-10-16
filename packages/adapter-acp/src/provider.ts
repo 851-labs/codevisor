@@ -128,6 +128,7 @@ const acpSessionHandle = (
   connection: AcpAgentConnection,
   sessionId: string,
   emit: RuntimeEmit,
+  harnessName: string,
   account?: HarnessAccountContext
 ): AgentSessionHandle => ({
   prompt: (input) =>
@@ -141,6 +142,10 @@ const acpSessionHandle = (
         emit(turnLifecycleEvent(sessionId, turnId, "started"))
       )
       const result = yield* connection.prompt(sessionId, input)
+      const stopDetail =
+        result.stopKind === "authRequired"
+          ? (result.stopDetail ?? `${harnessName} isn't signed in. Sign in to continue.`)
+          : result.stopDetail
       yield* adapterPromise("promptTurnEnd", () =>
         emit(
           turnLifecycleEvent(
@@ -148,8 +153,9 @@ const acpSessionHandle = (
             turnId,
             "ended",
             result.stopReason,
-            result.stopDetail,
-            result.retryable
+            stopDetail,
+            result.retryable,
+            result.stopKind
           )
         )
       )
@@ -262,7 +268,13 @@ export const makeAcpProvider = (
           .createSession(cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(
             Effect.map((metadata) => ({
-              handle: acpSessionHandle(connection, metadata.sessionId, emit, account),
+              handle: acpSessionHandle(
+                connection,
+                metadata.sessionId,
+                emit,
+                definition.name,
+                account
+              ),
               metadata
             })),
             Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
@@ -283,7 +295,13 @@ export const makeAcpProvider = (
           .loadSession(agentSessionId, cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(
             Effect.map((metadata) => ({
-              handle: acpSessionHandle(connection, metadata.sessionId, emit, account),
+              handle: acpSessionHandle(
+                connection,
+                metadata.sessionId,
+                emit,
+                definition.name,
+                account
+              ),
               metadata,
               sessionId: metadata.sessionId
             })),

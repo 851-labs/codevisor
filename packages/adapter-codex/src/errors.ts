@@ -1,4 +1,8 @@
+import type { TurnStopKind } from "@codevisor/api"
+
 import { isRecord } from "./internal.js"
+
+export const codexSignedOutDetail = "Codex isn't signed in. Sign in to continue."
 
 const codexErrorSignal = (
   info: unknown
@@ -19,7 +23,7 @@ const codexErrorSignal = (
 
 export const codexErrorDetails = (
   payload: Record<string, unknown>
-): { message: string; retryable: boolean; stopKind?: "usageLimit" } => {
+): { message: string; retryable: boolean; stopKind?: TurnStopKind } => {
   const error = isRecord(payload.error) ? payload.error : payload
   const message =
     typeof error.message === "string"
@@ -29,6 +33,9 @@ export const codexErrorDetails = (
         : "Codex error"
   const info = error.codexErrorInfo
   const signal = codexErrorSignal(info)
+  if (signal.kind === "unauthorized" || signal.statusCode === 401) {
+    return { message: codexSignedOutDetail, retryable: false, stopKind: "authRequired" }
+  }
   const serializedInfo = (() => {
     try {
       return JSON.stringify(info)

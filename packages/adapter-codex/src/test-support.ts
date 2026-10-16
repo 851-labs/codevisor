@@ -67,6 +67,7 @@ export class FakeCodexClient implements CodexClient {
   listedThreads: Array<Record<string, unknown>> = []
   listedSkills: Array<Record<string, unknown>> | undefined
   threadName: string | null = null
+  account: unknown
   threadPreview = ""
   goal:
     | {
@@ -112,6 +113,9 @@ export class FakeCodexClient implements CodexClient {
           return { turn: { id: "turn-1", status: "inProgress" } }
         case "turn/interrupt":
           return {}
+        case "account/read":
+          if (this.account === undefined) throw new Error(`Unexpected request: ${method}`)
+          return this.account
         case "thread/goal/set": {
           const update = recordOf(params)
           this.goal = {

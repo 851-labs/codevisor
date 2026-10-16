@@ -59,6 +59,17 @@ const grokGoalStatus = (status: string): GoalStatus | undefined => {
   }
 }
 
+export const grokAuthFailureSession = (params: unknown): string | undefined => {
+  const notification = record(unwrapGrokExtensionParams(params))
+  const update = record(notification?.update)
+  return typeof notification?.sessionId === "string" &&
+    update?.sessionUpdate === "retry_state" &&
+    update.type === "failed" &&
+    update.error_type === "auth"
+    ? notification.sessionId
+    : undefined
+}
+
 export const grokGoalNotification = (
   params: unknown,
   currentGoal: (sessionId: string) => SessionGoal | undefined = () => undefined,
