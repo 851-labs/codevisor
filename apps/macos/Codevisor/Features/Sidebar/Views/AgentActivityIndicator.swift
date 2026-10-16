@@ -23,26 +23,29 @@ private enum BrailleSpinnerFrames {
 
   private struct Key: Hashable {
     let color: Color
-    let appearance: String
+    let appearance: NSAppearance.Name
     let scale: CGFloat
   }
 
   private static var cache: [Key: [CGImage]] = [:]
 
-  static func images(color: Color, scale: CGFloat) -> [CGImage] {
-    let key = Key(
-      color: color,
-      appearance: NSApp.effectiveAppearance.name.rawValue,
-      scale: scale
-    )
+  static func images(color: Color, appearance: NSAppearance, scale: CGFloat) -> [CGImage] {
+    let key = Key(color: color, appearance: appearance.name, scale: scale)
     if let cached = cache[key] { return cached }
-    let images = glyphs.compactMap { render($0, color: color, scale: scale) }
+    let images = glyphs.compactMap {
+      render($0, color: color, appearance: appearance, scale: scale)
+    }
     guard images.count == glyphs.count else { return images }
     cache[key] = images
     return images
   }
 
-  private static func render(_ glyph: String, color: Color, scale: CGFloat) -> CGImage? {
+  private static func render(
+    _ glyph: String,
+    color: Color,
+    appearance: NSAppearance,
+    scale: CGFloat
+  ) -> CGImage? {
     let pixelsWide = Int(size.width * scale)
     let pixelsHigh = Int(size.height * scale)
     guard pixelsWide > 0, pixelsHigh > 0,
@@ -62,7 +65,7 @@ private enum BrailleSpinnerFrames {
     rep.size = NSSize(width: size.width, height: size.height)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+    appearance.performAsCurrentDrawingAppearance {
       let text = NSAttributedString(
         string: glyph,
         attributes: [
@@ -89,41 +92,87 @@ private struct BrailleSpinnerLayer: NSViewRepresentable {
   let color: Color
   let isAnimated: Bool
 
+  func makeNSView(context: Context) -> BrailleSpinnerView {
+    BrailleSpinnerView()
+  }
+
+  func updateNSView(_ view: BrailleSpinnerView, context: Context) {
+    view.configure(color: color, isAnimated: isAnimated)
+  }
+}
+
+private final class BrailleSpinnerView: NSView {
   private static let animationKey = "brailleFrames"
 
-  @MainActor
-  final class Coordinator {
-    var appliedKey: String?
+  private struct AppliedState: Hashable {
+    let color: Color
+    let appearance: NSAppearance.Name
+    let scale: CGFloat
+    let isAnimated: Bool
   }
 
-  func makeCoordinator() -> Coordinator { Coordinator() }
+  private var color: Color = .secondary
+  private var isAnimated = true
+  private var applied: AppliedState?
+  private var frames: [CGImage] = []
 
-  func makeNSView(context: Context) -> NSView {
-    let view = NSView()
-    view.wantsLayer = true
-    view.layer?.contentsGravity = .resizeAspect
-    return view
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layerContentsPlacement = .scaleProportionallyToFit
   }
 
-  func updateNSView(_ view: NSView, context: Context) {
-    guard let layer = view.layer else { return }
-    let scale =
-      view.window?.backingScaleFactor
-      ?? NSScreen.main?.backingScaleFactor
-      ?? 2
-    let key = "\(color.hashValue)-\(scale)-\(isAnimated)-\(NSApp.effectiveAppearance.name.rawValue)"
-    guard context.coordinator.appliedKey != key else { return }
-    context.coordinator.appliedKey = key
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
 
-    let images = BrailleSpinnerFrames.images(color: color, scale: scale)
-    guard let first = images.first else { return }
-    layer.contentsScale = scale
-    layer.removeAnimation(forKey: Self.animationKey)
-    layer.contents = first
-    guard isAnimated, images.count > 1 else { return }
+  func configure(color: Color, isAnimated: Bool) {
+    self.color = color
+    self.isAnimated = isAnimated
+    refresh()
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    refresh()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    refresh()
+  }
+
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    refresh()
+  }
+
+  private func refresh() {
+    guard let layer, let window else { return }
+    let state = AppliedState(
+      color: color,
+      appearance: effectiveAppearance.name,
+      scale: window.backingScaleFactor,
+      isAnimated: isAnimated
+    )
+    if state != applied {
+      let images = BrailleSpinnerFrames.images(
+        color: color,
+        appearance: effectiveAppearance,
+        scale: state.scale
+      )
+      guard images.count == BrailleSpinnerFrames.glyphs.count else { return }
+      applied = state
+      frames = images
+      layer.contentsScale = state.scale
+      layer.removeAnimation(forKey: Self.animationKey)
+      layer.contents = images[0]
+    }
+    guard state.isAnimated, layer.animation(forKey: Self.animationKey) == nil else { return }
 
     let animation = CAKeyframeAnimation(keyPath: "contents")
-    animation.values = images
+    animation.values = frames
     animation.calculationMode = .discrete
     animation.duration = BrailleSpinnerFrames.cycleDuration
     animation.repeatCount = .infinity
