@@ -130,7 +130,7 @@ extension SidebarView {
     let groupID = Self.botGroupID(bot)
     return SidebarBotRow(
       title: bot.name,
-      systemImage: bot.symbolName,
+      icon: SidebarBotIcon(bot: bot, store: store),
       isSelected: isBotSelected(bot),
       isHoverEnabled: !isReordering,
       isExpanded: hasChildren && botsExpanded ? !collapsedGroupIDs.contains(groupID) : nil,
