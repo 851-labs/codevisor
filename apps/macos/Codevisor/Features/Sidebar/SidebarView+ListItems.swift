@@ -12,20 +12,11 @@ extension SidebarView {
   }
 
   func routingSession(for item: WorkspaceSidebarItem) -> ChatSession? {
-    var fallback: ChatSession?
-    for id in item.routingChatIds {
-      guard let session = list.session(id, serverId: item.serverId) else { continue }
-      if session.origin == .codevisor || list.showsImportedSessions { return session }
-      if fallback == nil { fallback = session }
-    }
-    return fallback
+    rowContent.routingSession(for: item)
   }
 
   func listItem(for item: WorkspaceSidebarItem) -> SidebarWorkspaceListItem? {
-    guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace,
-      !workspace.isArchived
-    else { return nil }
-    return SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
+    rowContent.listItem(for: item)
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
@@ -79,6 +70,15 @@ extension SidebarView {
     case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
     case let .workspace(_, id), let .archivedWorkspace(_, id): id
     case .bot, .newChat, .none: nil
+    }
+  }
+
+  var routedWorkspace: (serverId: String, id: UUID)? {
+    switch selection {
+    case let .session(serverId, sessionId):
+      environment.workspaces.workspaceId(forSession: sessionId).map { (serverId, $0) }
+    case let .workspace(serverId, id): (serverId, id)
+    case .archivedWorkspace, .bot, .newChat, .none: nil
     }
   }
 

@@ -3,33 +3,21 @@ import CodevisorCore
 import CodevisorUI
 
 extension SidebarView {
-  func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
-    let workspace = item.workspace
-    let id = workspace.id
-    return row(
-      for: workspace,
-      icon: icon(for: item),
-      isSelected: routesSelectedSession(workspace),
-      onActivate: { activateWorkspace(item) },
-      lifecycle: .active(
-        isPinned: isPinned(workspace),
-        onTogglePin: { togglePin(workspace) },
-        onNewTab: { addTab(in: item) },
-        onRename: {
-          workspaceRenameTitle = workspace.name
-          renamingWorkspace = workspace
-        },
-        onArchive: { archiveWorkspace(workspace) }
-      )
+  var rowContent: SidebarRowContent {
+    SidebarRowContent(environment: environment, store: store, grouping: grouping, rowDetails: rowDetails)
+  }
+
+  var rowActions: SidebarWorkspaceSection.Actions {
+    SidebarWorkspaceSection.Actions(
+      activate: { activateWorkspace($0) },
+      togglePin: { togglePin($0) },
+      newTab: { addTab(in: $0) },
+      rename: { workspace in
+        workspaceRenameTitle = workspace.name
+        renamingWorkspace = workspace
+      },
+      archive: { archiveWorkspace($0) }
     )
-    .opacity(draggingID == id ? 0.4 : 1)
-    .onGeometryChange(for: CGRect.self) { proxy in
-      proxy.frame(in: .named(Self.reorderSpace))
-    } action: { frame in
-      recordWorkspaceFrame(frame, for: id)
-    }
-    .onDisappear { forgetWorkspaceGeometry(for: id) }
-    .simultaneousGesture(reorderGesture(for: id))
   }
 
   func row(
@@ -39,13 +27,15 @@ extension SidebarView {
     onActivate: @escaping () -> Void,
     lifecycle: SidebarWorkspaceRow.Lifecycle
   ) -> SidebarWorkspaceRow {
-    SidebarWorkspaceRow(
+    let content = rowContent
+    let isPinned = isPinned(workspace)
+    return SidebarWorkspaceRow(
       name: workspace.name,
-      subtitle: rowSubtitle(for: workspace),
+      subtitle: content.subtitle(for: workspace, isPinned: isPinned),
       icon: icon,
       store: store,
-      pullRequest: rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil,
-      machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
+      pullRequest: content.pullRequest(for: workspace),
+      machine: content.machine(for: workspace, isPinned: isPinned),
       isSelected: isSelected,
       isReordering: isReordering,
       onActivate: onActivate,
@@ -53,32 +43,12 @@ extension SidebarView {
     )
   }
 
-  func isUnderGroupHeading(_ workspace: Workspace) -> Bool {
-    !workspace.isArchived && !isPinned(workspace)
-  }
-
   func machineName(forServer serverId: String) -> String? {
-    let machine = environment.machines.machine(for: serverId)
-    return machine.map { $0.isLocal ? "This Mac" : $0.name }
-  }
-
-  func rowMachine(for workspace: Workspace) -> SidebarRowMachine? {
-    guard grouping != .machine || !isUnderGroupHeading(workspace),
-      let machine = environment.machines.machine(for: workspace.serverId),
-      let name = machineName(forServer: workspace.serverId)
-    else { return nil }
-    return SidebarRowMachine(name: name, systemImage: machine.icon.systemImage)
+    rowContent.machineName(forServer: serverId)
   }
 
   func rowSubtitle(for workspace: Workspace) -> String? {
-    SidebarRowSubtitle.make(
-      details: rowDetails,
-      projectName: ProjectGroup.grouping(list.projects).first {
-        $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
-      }?.name,
-      branch: store?.gitLookups.branch(for: workspace),
-      groupNamesProject: grouping == .project && isUnderGroupHeading(workspace)
-    )
+    rowContent.subtitle(for: workspace, isPinned: isPinned(workspace))
   }
 
   var gitLookupRefreshKey: SidebarGitLookups.RefreshKey? {
@@ -96,23 +66,7 @@ extension SidebarView {
   }
 
   func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {
-    let workspace = item.workspace
-    let panes = workspace.centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
-    let chats = panes.compactMap { pane -> ChatSession? in
-      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
-      return list.session(id, serverId: workspace.serverId)
-    }
-    if let store {
-      let urgent: [(ChatSession) -> Bool] = [
-        store.hasUnreadError, store.isWaitingOnUser, store.isInProgress, { store.unreadCount($0) > 0 },
-      ]
-      for isUrgent in urgent {
-        if let chat = chats.first(where: isUrgent) { return .chat(chat) }
-      }
-    }
-    let selectedChat = workspace.selectedCenterTab.flatMap { routableChat(in: $0, serverId: workspace.serverId) }
-    if let chat = selectedChat ?? item.routingSession ?? chats.first { return .chat(chat) }
-    return panes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
+    rowContent.icon(for: item)
   }
 
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
@@ -165,12 +119,12 @@ extension SidebarView {
       selection = .newChat(nil)
     } else if target <= items.count {
       let item = items[target - 1]
+      revealRequest.workspaceID = item.workspace.id
       activateWorkspace(item)
-      revealedWorkspaceID = item.workspace.id
     } else {
       let workspace = archived[target - items.count - 1]
+      revealRequest.workspaceID = workspace.id
       selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
-      revealedWorkspaceID = workspace.id
     }
   }
 
