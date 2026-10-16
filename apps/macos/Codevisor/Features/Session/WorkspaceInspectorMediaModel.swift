@@ -41,7 +41,6 @@ final class WorkspaceInspectorMediaModel {
   @ObservationIgnored private var workspaceId: UUID?
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
 
-  var hasMorePhotos: Bool { photosNextBefore != nil }
   var hasMoreLinks: Bool { linksNextBefore != nil }
 
   func reload(_ tab: WorkspaceInspectorTab, workspaceId: UUID, client: any CodevisorServerClienting) async {
