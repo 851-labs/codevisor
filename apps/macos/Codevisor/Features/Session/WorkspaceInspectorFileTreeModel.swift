@@ -73,11 +73,6 @@ final class WorkspaceInspectorFileTreeModel {
     }
   }
 
-  func loadIfNeeded(_ directory: String) async {
-    guard listings[directory] == nil || stale.contains(directory) else { return }
-    await load(directory)
-  }
-
   private func load(_ directory: String) async {
     var next = await fetch(directory)
     while let child = next, listings[child] == nil {

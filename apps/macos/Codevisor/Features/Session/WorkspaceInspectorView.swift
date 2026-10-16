@@ -31,7 +31,6 @@ struct WorkspaceInspectorView: View {
         WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
       case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
       case .files: WorkspaceInspectorFileTreeView(model: fileTree, onOpen: onOpen)
-      case .filesV2: WorkspaceInspectorFileOutlineView(model: fileTree, onOpen: onOpen)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

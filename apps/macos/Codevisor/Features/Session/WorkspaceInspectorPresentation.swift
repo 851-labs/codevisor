@@ -81,7 +81,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func reload(_ workspace: Workspace) async {
     let client = environment.machines.client(for: workspace.serverId)
-    if tab == .files || tab == .filesV2 {
+    if tab == .files {
       await fileTree.show(root: workspace.rootDirectory, client: client)
     } else {
       await media.reload(tab, workspaceId: workspace.id, client: client)
