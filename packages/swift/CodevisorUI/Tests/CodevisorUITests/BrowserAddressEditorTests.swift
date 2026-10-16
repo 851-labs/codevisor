@@ -22,52 +22,76 @@
   }
 
   @MainActor
-  @Suite("Native browser address editing")
-  struct BrowserAddressEditorTests {
-    private func field(in view: NSView) -> NSTextField? {
+  private final class AddressEditorFixture {
+    static let full = "https://example.com/path?query=" + String(repeating: "long-address-value-", count: 20)
+    var text = "example.com"
+    var editing: Bool
+    let window = BrowserFocusWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 500, height: 44),
+      styleMask: .borderless, backing: .buffered, defer: false)
+    let suggestions = BrowserSuggestions(profile: "test", history: BrowserHistory(defaults: nil), fetch: { _ in [] })
+    private(set) var field: NSTextField?
+
+    init(command: Bool) {
+      _ = NSApplication.shared
+      editing = command
+      window.isReleasedWhenClosed = false
+      window.contentView = NSHostingView(
+        rootView: BrowserAddressEditor(
+          text: Binding(get: { self.text }, set: { self.text = $0 }),
+          editing: Binding(get: { self.editing }, set: { self.editing = $0 }),
+          focusRequest: command ? 1 : 0, fullAddress: Self.full, suggestions: suggestions,
+          submit: { _ in }, cancel: {}))
+      window.contentView?.layoutSubtreeIfNeeded()
+      field = window.contentView.flatMap(Self.field(in:))
+    }
+
+    private static func field(in view: NSView) -> NSTextField? {
       if let field = view as? NSTextField { return field }
       return view.subviews.lazy.compactMap { field(in: $0) }.first
     }
 
+    func send(_ type: NSEvent.EventType, x: CGFloat) throws {
+      let field = try #require(field)
+      let event = try #require(
+        NSEvent.mouseEvent(
+          with: type, location: field.convert(NSPoint(x: x, y: field.bounds.midY), to: nil),
+          modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+          clickCount: 1, pressure: 1))
+      switch type {
+      case .leftMouseDown:
+        #expect(window.makeFirstResponder(field))
+        field.mouseDown(with: event)
+      case .leftMouseDragged: field.mouseDragged(with: event)
+      default: field.mouseUp(with: event)
+      }
+    }
+
+    func close() {
+      suggestions.dismiss()
+      window.childWindows?.forEach { $0.close() }
+      window.contentView = nil
+      window.close()
+    }
+  }
+
+  @MainActor
+  @Suite("Native browser address editing")
+  struct BrowserAddressEditorTests {
     @Test(arguments: [false, true])
     func clickAndLocationCommandSelectTheFullURLBeforeTyping(command: Bool) async throws {
-      _ = NSApplication.shared
-      let window = BrowserFocusWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 500, height: 44),
-        styleMask: .borderless, backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
-      var text = "example.com"
-      var editing = command
-      let full = "https://example.com/path?query=" + String(repeating: "long-address-value-", count: 20)
-      let suggestions = BrowserSuggestions(profile: "test", history: BrowserHistory(defaults: nil), fetch: { _ in [] })
-      defer {
-        suggestions.dismiss()
-        window.childWindows?.forEach { $0.close() }
-        window.contentView = nil
-        window.close()
-      }
-      window.contentView = NSHostingView(
-        rootView: BrowserAddressEditor(
-          text: Binding(get: { text }, set: { text = $0 }),
-          editing: Binding(get: { editing }, set: { editing = $0 }),
-          focusRequest: command ? 1 : 0, fullAddress: full, suggestions: suggestions,
-          submit: { _ in }, cancel: {}))
-      window.contentView?.layoutSubtreeIfNeeded()
-      let field = try #require(window.contentView.flatMap { self.field(in: $0) })
+      let fixture = AddressEditorFixture(command: command)
+      defer { fixture.close() }
+      let field = try #require(fixture.field)
+      let full = AddressEditorFixture.full
       if command {
-        await window.waitForEditor()
+        await fixture.window.waitForEditor()
       } else {
-        let click = try #require(
-          NSEvent.mouseEvent(
-            with: .leftMouseDown,
-            location: field.convert(NSPoint(x: field.bounds.maxX - 1, y: field.bounds.midY), to: nil),
-            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
-            clickCount: 1, pressure: 1))
-        #expect(window.makeFirstResponder(field))
-        field.mouseDown(with: click)
+        try fixture.send(.leftMouseDown, x: field.bounds.maxX - 1)
+        try fixture.send(.leftMouseUp, x: field.bounds.maxX - 1)
       }
       let editor = try #require(field.currentEditor() as? NSTextView)
-      #expect(editing)
+      #expect(fixture.editing)
       #expect(field.stringValue == full)
       #expect(editor.selectedRange() == NSRange(location: 0, length: (full as NSString).length))
       let layout = try #require(editor.layoutManager)
@@ -79,20 +103,32 @@
       }
       #expect(lineCount == 1, "Long addresses scroll horizontally instead of wrapping inside the toolbar")
       editor.insertText("swift", replacementRange: editor.selectedRange())
-      #expect(text == "swift")
+      #expect(fixture.text == "swift")
       #expect(field.stringValue == "swift")
       #expect(field.currentEditor() === editor)
-      #expect(suggestions.query == "swift")
+      #expect(fixture.suggestions.query == "swift")
 
       let coordinator = try #require(field.delegate as? BrowserAddressEditor.Coordinator)
       editor.setSelectedRange(NSRange(location: 5, length: 0))
       coordinator.focusAndSelectAll()
-      #expect(editing, "Repeating Open Location must not end editing")
+      #expect(fixture.editing, "Repeating Open Location must not end editing")
       #expect(field.currentEditor() === editor)
       #expect(field.stringValue == "swift", "Open Location preserves an unsubmitted draft")
       #expect(editor.selectedRange() == NSRange(location: 0, length: 5))
       coordinator.focusAndSelectAll()
       #expect(editor.selectedRange() == NSRange(location: 0, length: 5))
+    }
+
+    @Test func draggingFromTheFocusingClickSelectsOnlyTheDraggedText() throws {
+      let fixture = AddressEditorFixture(command: false)
+      defer { fixture.close() }
+      try fixture.send(.leftMouseDown, x: 0)
+      try fixture.send(.leftMouseDragged, x: 120)
+      try fixture.send(.leftMouseUp, x: 120)
+      let selection = try #require(fixture.field?.currentEditor()).selectedRange
+      #expect(selection.location == 0)
+      #expect(selection.length > 0)
+      #expect(selection.length < (AddressEditorFixture.full as NSString).length)
     }
   }
 #endif

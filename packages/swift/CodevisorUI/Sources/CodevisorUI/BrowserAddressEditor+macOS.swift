@@ -170,6 +170,7 @@
   private final class AddressField: NSTextField {
     var onFocus: (() -> Void)?
     private var justFocused = false
+    private var dragAnchor: Int?
     override func becomeFirstResponder() -> Bool {
       if currentEditor() == nil {
         onFocus?()
@@ -181,7 +182,23 @@
     override func mouseDown(with event: NSEvent) {
       guard currentEditor() == nil || justFocused else { return super.mouseDown(with: event) }
       justFocused = false
-      if let editor = currentEditor() { editor.selectAll(nil) } else { selectText(nil) }
+      if currentEditor() == nil { selectText(nil) }
+      guard let editor = currentEditor() as? NSTextView else { return }
+      editor.selectAll(nil)
+      dragAnchor = editor.characterIndexForInsertion(at: editor.convert(event.locationInWindow, from: nil))
+    }
+    override func mouseDragged(with event: NSEvent) {
+      guard let anchor = dragAnchor, let editor = currentEditor() as? NSTextView else {
+        return super.mouseDragged(with: event)
+      }
+      editor.autoscroll(with: event)
+      let index = editor.characterIndexForInsertion(at: editor.convert(event.locationInWindow, from: nil))
+      editor.setSelectedRange(NSRange(location: min(anchor, index), length: abs(index - anchor)))
+    }
+    override func mouseUp(with event: NSEvent) {
+      guard dragAnchor != nil else { return super.mouseUp(with: event) }
+      dragAnchor = nil
+      if let editor = currentEditor(), editor.selectedRange.length == 0 { editor.selectAll(nil) }
     }
   }
 
