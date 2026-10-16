@@ -1,8 +1,9 @@
+import CodevisorCore
 import SwiftUI
 
 struct SidebarBotRow: View {
   let title: String
-  let systemImage: String
+  let icon: SidebarBotIcon
   let isSelected: Bool
   let isHoverEnabled: Bool
   let isExpanded: Bool?
@@ -15,8 +16,7 @@ struct SidebarBotRow: View {
   var body: some View {
     HStack(spacing: 8) {
       ZStack {
-        Image(systemName: systemImage)
-          .foregroundStyle(.secondary)
+        icon
           .opacity(showsChevron ? 0 : 1)
         Button(action: onToggle) {
           Image(systemName: "chevron.right")
@@ -52,5 +52,33 @@ struct SidebarBotRow: View {
     .accessibilityActions {
       if let isExpanded { Button(isExpanded ? "Collapse" : "Expand", action: onToggle) }
     }
+  }
+}
+
+struct SidebarBotIcon: View {
+  let bot: Bot
+  let store: SessionStore?
+  @Environment(AppEnvironment.self) private var environment
+
+  var body: some View {
+    if let chat = urgentChat {
+      ChatSessionLeadingIcon(
+        session: chat, store: store, activityColor: .secondary, iconSize: SidebarRowIcon.size
+      )
+      .foregroundStyle(.secondary)
+    } else {
+      Image(systemName: bot.symbolName)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  private var urgentChat: ChatSession? {
+    let list = environment.projectList
+    let status = SidebarChatStatus(list: list, store: store)
+    let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
+    let chats =
+      [list.session(bot.sessionId, serverId: bot.serverId)].compactMap { $0 }
+      + (workspace.map(status.chats(in:)) ?? []).filter { $0.id != bot.sessionId }
+    return status.urgentChat(among: chats)
   }
 }
