@@ -24,6 +24,7 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { assertNotOwnedByBot } from "./bot-guards.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { routeSessionActions } from "./session-actions.js"
 import { waitForSessions } from "./session-wait.js"
@@ -201,6 +202,7 @@ export const routeSessions = async (
   }
 
   if (sessionId !== undefined && request.method === "DELETE") {
+    await assertNotOwnedByBot(services, { sessionId }, "delete this chat")
     const workspaceId = (await run(services.db.listSessions)).find(
       (session) => session.id === sessionId
     )?.workspaceId

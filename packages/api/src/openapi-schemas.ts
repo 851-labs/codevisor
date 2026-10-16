@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { Bot, CreateBotRequest, UpdateBotRequest } from "./bots.js"
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import {
@@ -188,6 +189,8 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/native-mcps/remove": RemoveNativeMcpRequest,
   "POST /v1/native-mcps/set-enabled": SetNativeMcpEnabledRequest,
   "POST /v1/skills": CreateSkillRequest,
+  "POST /v1/bots": CreateBotRequest,
+  "PATCH /v1/bots/:id": UpdateBotRequest,
   "POST /v1/skills/import-remote": ImportRemoteSkillRequest,
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsRequest,
   "POST /v1/sessions": CreateSessionRequest,
@@ -311,6 +314,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/native-mcps/removals/:id/restore": NativeMcpScan,
   "POST /v1/native-mcps/set-enabled": NativeMcpScan,
   "GET /v1/skills": SkillsList,
+  "GET /v1/bots": arrayOf(Bot),
+  "POST /v1/bots": Bot,
+  "PATCH /v1/bots/:id": Bot,
   "POST /v1/skills": SkillsList,
   "POST /v1/skills/import-remote": SkillsList,
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsResult,

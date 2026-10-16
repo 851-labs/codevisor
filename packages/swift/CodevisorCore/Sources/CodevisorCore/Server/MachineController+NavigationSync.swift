@@ -9,6 +9,7 @@ extension MachineController {
     "plugin.state.updated",
     "plugin.updated",
     "mcp.updated",
+    "bot.updated",
     "update.changed",
     "sync.changed",
   ]
@@ -120,6 +121,8 @@ extension MachineController {
       onPluginStateChanged?(serverId)
     case "mcp.updated":
       onMcpStateChanged?(serverId)
+    case "bot.updated":
+      onBotsChanged?(serverId)
     case "plugin.updated":
       onPluginUpdated?(serverId, event.subjectId)
     case "update.changed":

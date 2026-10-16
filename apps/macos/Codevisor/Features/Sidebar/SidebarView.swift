@@ -21,6 +21,10 @@ struct SidebarView: View {
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
+  @ClientPreference(SidebarPreferenceKey.botsExpanded, default: true) var botsExpanded
+  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
+  @State var botEditor: BotEditorTarget?
+  @State var deletingBot: Bot?
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) var listExpanded
   @State var archivedVisibleCount = sidebarArchivedPageSize
@@ -35,7 +39,7 @@ struct SidebarView: View {
   var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .session, .workspace, .archivedWorkspace: false
+    case .session, .workspace, .archivedWorkspace, .bot: false
     }
   }
 
@@ -103,6 +107,9 @@ struct SidebarView: View {
         .labelStyle(.titleAndIcon)
     }
     .pickerStyle(.menu)
+    if canCreateBots {
+      Button("New Bot…", systemImage: "sparkles") { botEditor = .create }
+    }
     Menu {
       ForEach(SidebarRowDetail.trailingDetails) { detail in
         rowDetailToggle(detail)
@@ -137,6 +144,7 @@ struct SidebarView: View {
     let rest = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }
     let listFolding = folds.isFolding(Self.listSection)
     return SidebarStack(spacing: 1) {
+      botsSection
       if let pinned {
         SidebarSectionHeader(title: "Pinned", isExpanded: pinnedExpanded) {
           fold(pinned.id) { pinnedExpanded.toggle() }
@@ -223,7 +231,7 @@ struct SidebarView: View {
     }
   }
 
-  private func workspaceList(
+  func workspaceList(
     _ items: [WorkspaceSidebarItem], folding: Set<UUID>, releasing: Set<UUID>, shows: Bool
   ) -> some View {
     SidebarFoldingList(shows: shows, isReleasing: !releasing.isEmpty) { progress in
@@ -262,6 +270,7 @@ struct SidebarView: View {
           offerSessionImport(for: project)
         }
       }
+      .modifier(SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection))
   }
 
   private var sidebarAlertsView: some View {

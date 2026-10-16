@@ -19,6 +19,7 @@ extension AppEnvironment {
   }
 
   func noteMachineConnected(_ machineId: String) {
+    Task { await bots.refresh(serverId: machineId) }
     Task {
       await configSync.synchronizeMachine(machineId)
       if machineId == CodevisorMachine.local.id {

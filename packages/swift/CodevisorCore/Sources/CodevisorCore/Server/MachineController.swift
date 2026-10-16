@@ -41,6 +41,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
   public var supportsLivePreview: Bool { features.contains("live-preview-v1") }
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
+  public var supportsBots: Bool { features.contains("bots-v1") }
 }
 
 public func codevisorMachineIsThisMac(
@@ -89,6 +90,7 @@ public final class MachineController {
   @ObservationIgnored public var onHarnessAuthChanged: ((String) -> Void)?
   @ObservationIgnored public var onPluginStateChanged: ((String) -> Void)?
   @ObservationIgnored public var onMcpStateChanged: ((String) -> Void)?
+  @ObservationIgnored public var onBotsChanged: ((String) -> Void)?
   @ObservationIgnored public var onPluginUpdated: ((String, String) -> Void)?
   @ObservationIgnored public var onSyncChanged: ((String, ServerSyncDocument) -> Void)?
   @ObservationIgnored public var onMachineConnected: ((String) -> Void)?

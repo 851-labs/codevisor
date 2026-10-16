@@ -109,6 +109,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private var inspectedWorkspace: Inspected? {
     guard let store else { return nil }
     switch selection {
+    case let .bot(serverId, botId):
+      guard let bot = environment.bots.bot(serverId: serverId, id: botId),
+        let session = environment.projectList.session(bot.sessionId, serverId: serverId),
+        let project = project(serverId: serverId, id: session.projectId)
+      else { return nil }
+      let workspace = environment.navigationStore.workspaceEntries.entry(bot.workspaceId).workspace
+      return Inspected(workspace: workspace ?? store.workspace(for: session, project: project), project: project)
     case let .session(serverId, sessionId):
       guard let session = environment.projectList.session(sessionId, serverId: serverId),
         let project = project(serverId: serverId, id: session.projectId)

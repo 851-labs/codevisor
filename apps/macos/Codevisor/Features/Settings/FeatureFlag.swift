@@ -3,6 +3,7 @@ import SwiftUI
 
 enum FeatureFlag: String, CaseIterable, Identifiable {
   case workspaceInspector
+  case bots
 
   var id: String { rawValue }
 
@@ -11,12 +12,14 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .workspaceInspector: "Workspace Inspector"
+    case .bots: "Bots"
     }
   }
 
   var detail: String {
     switch self {
     case .workspaceInspector: "Adds a right sidebar to each workspace with its tools and details."
+    case .bots: "Adds a Bots section to the sidebar for long-lived agents that work across several projects."
     }
   }
 

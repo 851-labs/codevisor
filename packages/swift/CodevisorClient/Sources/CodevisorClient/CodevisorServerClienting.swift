@@ -113,6 +113,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate]
   func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsList
   func removeSkill(directoryName: String) async throws -> ServerSkillsList
+  func listBots() async throws -> [ServerBot]
+  func createBot(_ request: ServerCreateBotRequest) async throws -> ServerBot
+  func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot
+  func deleteBot(id: String) async throws
   func listPlugins() async throws -> [ServerPluginSummary]
   func listPluginUpdates() async throws -> [ServerPluginUpdateStatus]
   func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan

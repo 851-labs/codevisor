@@ -31,6 +31,7 @@ public enum SidebarPreferenceKey {
   public static let pinnedExpanded = "sidebar.pinnedExpanded"
   public static let listExpanded = "sidebar.listExpanded"
   public static let archivedExpanded = "sidebar.archivedExpanded"
+  public static let botsExpanded = "sidebar.botsExpanded"
 
   public static let synced: Set<String> = [
     SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces,

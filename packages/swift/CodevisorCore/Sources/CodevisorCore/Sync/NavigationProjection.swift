@@ -28,6 +28,7 @@ enum NavigationProjectionBuilder {
     workspace.sidebarPosition = record.sidebarPosition
     workspace.sidebarOrderRevision = record.sidebarOrderRevision ?? 0
     workspace.git = record.git
+    workspace.botId = record.botId.flatMap(UUID.init(uuidString:))
     return workspace
   }
 

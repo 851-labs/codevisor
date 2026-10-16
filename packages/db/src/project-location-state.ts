@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path"
 
 import type Database from "better-sqlite3"
 
-import { scratchWorkspacesRoot } from "./paths.js"
+import { isManagedFolder } from "./paths.js"
 import { rowReader, text } from "./row-reader.js"
 
 const pendingLocationRows = rowReader({ id: text, folder_path: text })
@@ -14,7 +14,7 @@ export const detectGitLocation = (folder: string): boolean => {
   } catch {
     return false
   }
-  if (dirname(folder) === scratchWorkspacesRoot()) return false
+  if (isManagedFolder(folder)) return false
   let current = resolve(folder)
   while (true) {
     if (existsSync(join(current, ".git"))) return true

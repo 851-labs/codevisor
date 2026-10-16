@@ -4,7 +4,6 @@ import {
   initialWorkspacePosition,
   workspacePositionEpoch,
   isoTimestamp,
-  type UpsertWorkspaceRequest,
   type Workspace
 } from "@codevisor/api"
 
@@ -18,6 +17,7 @@ import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 import * as panes from "./workspace-pane-operations.js"
+import type { UpsertWorkspaceRecord } from "./workspace-service-types.js"
 
 const sidebarPositionRows = rowReader({ sidebar_position: text })
 
@@ -36,7 +36,7 @@ export const listWorkspaceRows = (sqlite: ServiceContext["sqlite"]) =>
 
 export const upsertWorkspaceRow = (
   context: ServiceContext,
-  request: UpsertWorkspaceRequest
+  request: UpsertWorkspaceRecord
 ): Workspace => {
   const { sqlite, config, getProject } = context
 
@@ -66,8 +66,8 @@ export const upsertWorkspaceRow = (
       `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
                  root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position,
-                 labels
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?)
+                 labels, bot_id
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
@@ -76,6 +76,7 @@ export const upsertWorkspaceRow = (
                  is_archived = excluded.is_archived,
                  archived_at = excluded.archived_at,
                  labels = case when ? then excluded.labels else workspaces.labels end,
+                 bot_id = coalesce(workspaces.bot_id, excluded.bot_id),
                  updated_at = ?`
     )
     .run(
@@ -90,6 +91,7 @@ export const upsertWorkspaceRow = (
       request.createdAt ?? now,
       position,
       serializeLabels(request.labels),
+      request.botId === undefined ? null : canonicalUuid(request.botId),
       request.labels === undefined ? 0 : 1,
       now
     )

@@ -6,6 +6,7 @@ import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from 
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
 import { applyAfterDrain } from "./apply-after-drain.js"
+import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
@@ -199,6 +200,7 @@ export const handleRequest = async (
           ...(config.workspaceGit === true ? ["workspace-git-v1"] : []),
           "session-event-stream-v1",
           "transcript-pagination-v1",
+          "bots-v1",
           ...(services.plugins === undefined ? [] : ["plugins-v1"]),
           ...((await simulatorsAvailable(config)) ? ["simulator-v1"] : [])
         ],
@@ -329,6 +331,9 @@ export const handleRequest = async (
     if (await routeProjects(services, config, fanout, request, response, url)) return
     if (await routeClientControl(routeState.clientControl, config, request, response, url)) return
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
+      return
+    }
+    if (await routeBots(services, config, fanout, routeState, request, response, url)) {
       return
     }
     if (await routeHarnesses(services, config, fanout, request, response, url)) {

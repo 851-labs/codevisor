@@ -127,6 +127,10 @@ export const endpoints = [
   "POST /v1/skills/import-remote",
   "POST /v1/skills/discover-remote",
   "DELETE /v1/skills/:name",
+  "GET /v1/bots",
+  "POST /v1/bots",
+  "PATCH /v1/bots/:id",
+  "DELETE /v1/bots/:id",
   "GET /v1/navigation",
   "GET /v1/sessions",
   "POST /v1/sessions",
@@ -203,6 +207,7 @@ export const summaries: Partial<Record<Endpoint, string>> = {
 }
 
 export const noContent = new Set<Endpoint>([
+  "DELETE /v1/bots/:id",
   "DELETE /v1/projects/:id",
   "DELETE /v1/workspaces/:id",
   "DELETE /v1/harnesses/:id/accounts/:accountId",
@@ -230,6 +235,7 @@ export const created = new Set<Endpoint>([
   "POST /v1/mcps/:id/oauth-start",
   "POST /v1/skills",
   "POST /v1/skills/import-remote",
+  "POST /v1/bots",
   "POST /v1/sessions",
   "POST /v1/files",
   "POST /v1/terminals"

@@ -33,6 +33,7 @@ export const EventKind = Schema.Literals([
   "terminal.exit",
   "update.changed",
   "mcp.updated",
+  "bot.updated",
   "sync.changed"
 ])
 export type EventKind = typeof EventKind.Type

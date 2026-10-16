@@ -20,6 +20,7 @@ export interface WorkspaceRow {
   readonly git_branch?: string | null
   readonly git_pull_request?: string | null
   readonly git_known?: number
+  readonly bot_id?: string | null
 }
 
 export interface WorkspacePaneRow {
@@ -55,7 +56,8 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   labels: optional(nullable(text)),
   git_branch: optional(nullable(text)),
   git_pull_request: optional(nullable(text)),
-  git_known: optional(integer)
+  git_known: optional(integer),
+  bot_id: optional(nullable(text))
 })
 
 export const workspacePaneRows = rowReader<WorkspacePaneRow>({

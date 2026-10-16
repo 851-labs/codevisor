@@ -30,7 +30,6 @@ import type {
   UpdateWorkspaceRequest,
   UpdateWorkspacePaneRequest,
   UpsertWorkspacePaneRequest,
-  UpsertWorkspaceRequest,
   Workspace,
   WorkspacePane,
   WorkspacePhoto,
@@ -41,6 +40,7 @@ import type { SyncEntryRecord } from "@codevisor/sync"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 
+import type { BotsService } from "./bot-rows.js"
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
 import type {
@@ -65,7 +65,11 @@ import type {
   WorkspaceMediaCursor,
   WorkspaceMessageText
 } from "./workspace-media.js"
-import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
+import type {
+  CreateWorkspaceWithSession,
+  DeleteWorkspacePane,
+  UpsertWorkspaceRecord
+} from "./workspace-service-types.js"
 
 export interface CodevisorDatabaseConfig {
   readonly filename: string
@@ -73,7 +77,7 @@ export interface CodevisorDatabaseConfig {
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
-export interface CodevisorDatabaseService extends SessionStateService {
+export interface CodevisorDatabaseService extends SessionStateService, BotsService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
@@ -116,7 +120,7 @@ export interface CodevisorDatabaseService extends SessionStateService {
   readonly deleteArchivedWorktree: (id: string) => Effect.Effect<void, DatabaseError>
   readonly listWorkspaces: Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>
   readonly upsertWorkspace: (
-    request: UpsertWorkspaceRequest
+    request: UpsertWorkspaceRecord
   ) => Effect.Effect<Workspace, DatabaseError>
   readonly updateWorkspace: (
     id: string,

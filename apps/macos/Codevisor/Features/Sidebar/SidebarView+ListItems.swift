@@ -5,8 +5,9 @@ import SwiftUI
 
 extension SidebarView {
   var listedSidebarItems: [WorkspaceSidebarItem] {
-    environment.navigationStore.workspaceEntries.sidebar.filter {
-      environment.machines.machine(for: $0.serverId) != nil
+    let nested = botNestedWorkspaceIDs
+    return environment.navigationStore.workspaceEntries.sidebar.filter {
+      environment.machines.machine(for: $0.serverId) != nil && !nested.contains($0.id)
     }
   }
 
@@ -76,7 +77,7 @@ extension SidebarView {
     switch selection {
     case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
     case let .workspace(_, id), let .archivedWorkspace(_, id): id
-    case .newChat, .none: nil
+    case .bot, .newChat, .none: nil
     }
   }
 

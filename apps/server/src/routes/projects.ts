@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
-import { dirname, isAbsolute, relative, resolve } from "node:path"
+import { isAbsolute, relative, resolve } from "node:path"
 
 import type { Project } from "@codevisor/api"
 import {
@@ -9,7 +9,12 @@ import {
   CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema
 } from "@codevisor/api"
-import { scratchWorkspacePath, scratchWorkspacesRoot, worktreesRoot } from "@codevisor/db"
+import {
+  isScratchFolder,
+  scratchWorkspacePath,
+  scratchWorkspacesRoot,
+  worktreesRoot
+} from "@codevisor/db"
 import { isGitWorkTree, listProjectGitBranches, trashDirectory } from "@codevisor/worktrees"
 import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
 import { availableProductionWorktreeName } from "@codevisor/worktrees"
@@ -32,6 +37,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { assertNotOwnedByBot } from "./bot-guards.js"
 import { routeProjectFromGit } from "./project-clone.js"
 import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
@@ -244,7 +250,7 @@ const deleteProjectFolder = async (
       id: `project-${projectId}`
     })
     archiveJobs(services).track(trashed.purged)
-  } else if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
+  } else if (folderPath !== undefined && isScratchFolder(folderPath)) {
     retireEmptyScratchFolder(folderPath)
   }
 }
@@ -258,6 +264,7 @@ const deleteProject = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  await assertNotOwnedByBot(services, { projectId }, "delete this project")
   const targets = (await run(services.db.listProjects)).filter(
     (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
   )

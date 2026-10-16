@@ -62,6 +62,7 @@ public struct ServerProject: Codable, Equatable, Sendable {
   public var repoUrl: String? = nil
   public var repoKey: String? = nil
   public var isScratch: Bool? = nil
+  public var isBot: Bool? = nil
 
   public func project(serverId: String = "local") throws -> Project {
     guard let uuid = UUID(uuidString: id) else {
@@ -86,7 +87,8 @@ public struct ServerProject: Codable, Equatable, Sendable {
       repoKey: repoKey,
       worktreeBase: worktreeBase,
       defaultRunLocation: defaultRunLocation.flatMap(ProjectRunLocation.init(rawValue:)),
-      isScratch: isScratch ?? false
+      isScratch: isScratch ?? false,
+      isBot: isBot ?? false
     )
   }
 
@@ -100,7 +102,8 @@ public struct ServerProject: Codable, Equatable, Sendable {
     defaultRunLocation: String? = nil,
     repoUrl: String? = nil,
     repoKey: String? = nil,
-    isScratch: Bool? = nil
+    isScratch: Bool? = nil,
+    isBot: Bool? = nil
   ) {
     self.id = id
     self.name = name
@@ -112,6 +115,7 @@ public struct ServerProject: Codable, Equatable, Sendable {
     self.repoUrl = repoUrl
     self.repoKey = repoKey
     self.isScratch = isScratch
+    self.isBot = isBot
   }
 }
 
@@ -129,6 +133,7 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var createdAt: String
   public var updatedAt: String?
   public var git: ServerWorkspaceGit?
+  public var botId: String?
 
   public init(
     id: String,
@@ -143,8 +148,10 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
     updatedAt: String? = nil,
     sidebarPosition: String? = nil,
     sidebarOrderRevision: Int? = nil,
-    git: ServerWorkspaceGit? = nil
+    git: ServerWorkspaceGit? = nil,
+    botId: String? = nil
   ) {
+    self.botId = botId
     self.sidebarPosition = sidebarPosition
     self.sidebarOrderRevision = sidebarOrderRevision
     self.id = id

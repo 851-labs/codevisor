@@ -11,6 +11,8 @@ extension RootView {
       workspaceId = environment.workspaces.workspaceId(forSession: sessionId)
     } else if case let .workspace(selectedServer, id) = selection, selectedServer == serverId {
       workspaceId = id
+    } else if case let .bot(selectedServer, id) = selection, selectedServer == serverId {
+      workspaceId = environment.bots.bot(serverId: serverId, id: id)?.workspaceId
     } else {
       workspaceId = nil
     }
@@ -26,6 +28,7 @@ extension RootView {
         if case .session = selection { return "workspace" }
         if case .workspace = selection { return "workspace" }
         if case .archivedWorkspace = selection { return "archived_workspace" }
+        if case .bot = selection { return "bot" }
         return "new_chat"
       }(),
       settingsSection: settings.controlWindow?.isVisible == true ? settings.selectedTab.rawValue : nil,

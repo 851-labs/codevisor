@@ -25,12 +25,14 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let serverId: String
   public let projectId: UUID
   public let routingChatIds: [UUID]
+  public let botId: UUID?
 
-  public init(id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID]) {
+  public init(id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], botId: UUID? = nil) {
     self.id = id
     self.serverId = serverId
     self.projectId = projectId
     self.routingChatIds = routingChatIds
+    self.botId = botId
   }
 }
 
@@ -40,6 +42,7 @@ public final class NavigationWorkspaces {
   @ObservationIgnored private var entries: [UUID: WorkspaceEntry] = [:]
   public private(set) var sidebar: [WorkspaceSidebarItem] = []
   public private(set) var archived: [WorkspaceSidebarItem] = []
+  public private(set) var botChildren: [UUID: [WorkspaceSidebarItem]] = [:]
   @ObservationIgnored private var sidebarIndex: [UUID: UUID] = [:]
   @ObservationIgnored var lookup: (UUID) -> Workspace? = { _ in nil }
 
@@ -57,8 +60,10 @@ public final class NavigationWorkspaces {
     for id in removed { entries[id]?.update(nil) }
     guard !changed.isEmpty || !removed.isEmpty || projection.sessionIndex != sidebarIndex else { return }
     sidebarIndex = projection.sessionIndex
-    let next = Self.sidebar(from: projection)
-    if next != sidebar { sidebar = next }
+    let live = Self.live(from: projection)
+    if live != sidebar { sidebar = live }
+    let nextChildren = Dictionary(grouping: live.filter { $0.botId != nil }) { $0.botId! }
+    if nextChildren != botChildren { botChildren = nextChildren }
     let nextArchived = Self.archived(from: projection)
     if nextArchived != archived { archived = nextArchived }
   }
@@ -71,21 +76,32 @@ public final class NavigationWorkspaces {
       .map { workspace in
         WorkspaceSidebarItem(
           id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-          routingChatIds: workspace.chatSessionIds)
+          routingChatIds: workspace.chatSessionIds, botId: workspace.botId)
       }
   }
 
   func update(_ workspace: Workspace, sessionWorkspace: (UUID) -> UUID?) {
     entries[workspace.id]?.update(workspace)
-    guard let index = sidebar.firstIndex(where: { $0.id == workspace.id }) else { return }
     let routed = workspace.chatSessionIds.filter { sessionWorkspace($0) == workspace.id }
-    let item = WorkspaceSidebarItem(
-      id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-      routingChatIds: routed.isEmpty ? sidebar[index].routingChatIds : routed)
-    if sidebar[index] != item { sidebar[index] = item }
+    func refreshed(_ current: WorkspaceSidebarItem) -> WorkspaceSidebarItem {
+      WorkspaceSidebarItem(
+        id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
+        routingChatIds: routed.isEmpty ? current.routingChatIds : routed, botId: current.botId)
+    }
+    if let index = sidebar.firstIndex(where: { $0.id == workspace.id }) {
+      let item = refreshed(sidebar[index])
+      if sidebar[index] != item { sidebar[index] = item }
+    }
+    if let botId = workspace.botId,
+      let index = botChildren[botId]?.firstIndex(where: { $0.id == workspace.id }),
+      let current = botChildren[botId]?[index]
+    {
+      let item = refreshed(current)
+      if current != item { botChildren[botId]?[index] = item }
+    }
   }
 
-  static func sidebar(from projection: NavigationProjection) -> [WorkspaceSidebarItem] {
+  static func live(from projection: NavigationProjection) -> [WorkspaceSidebarItem] {
     var indexedChats: [UUID: UUID] = [:]
     for session in projection.sessions {
       guard let workspaceId = projection.sessionIndex[session.id], indexedChats[workspaceId] == nil else { continue }
@@ -106,7 +122,7 @@ public final class NavigationWorkspaces {
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-        routingChatIds: routed.isEmpty ? fallback : routed)
+        routingChatIds: routed.isEmpty ? fallback : routed, botId: workspace.botId)
     }
   }
 

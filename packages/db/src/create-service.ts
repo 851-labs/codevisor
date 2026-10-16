@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { Effect } from "effect"
 
 import { makeAuthService } from "./auth-service.js"
+import { makeBotsService } from "./bots-service.js"
 import { makeBrowserStateService } from "./browser-state-service.js"
 import { runDatabaseMigrations } from "./database-migrations.js"
 import { attempt } from "./errors.js"
@@ -40,6 +41,7 @@ export const createService = (
     ...makeNavigationService(context),
     ...makeProjectsService(context),
     ...makeWorktreesService(context),
+    ...makeBotsService(context),
     ...makeWorkspacesService(context),
     ...makeTerminalPaneTitlesService(context),
     ...makeWorkspaceGitService(context),

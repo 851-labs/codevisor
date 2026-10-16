@@ -57,7 +57,9 @@ extension SidebarView {
   }
 
   private func dropCandidates(for id: UUID) -> [UUID] {
-    let group = workspaceGroups.first { $0.items.contains { $0.id == id } }?.items ?? []
+    let group =
+      workspaceGroups.first { $0.items.contains { $0.id == id } }?.items
+      ?? botChildren(containing: id) ?? []
     return group.map(\.id).filter { dragGeometry.workspaces[$0] != nil }
   }
 

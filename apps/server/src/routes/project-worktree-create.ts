@@ -148,7 +148,7 @@ export const createProjectWorktree = async (
   throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
 }
 
-const slugifyWorktreeName = (name: string | undefined): string | undefined => {
+export const slugifyWorktreeName = (name: string | undefined): string | undefined => {
   const slug = (name ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -158,7 +158,7 @@ const slugifyWorktreeName = (name: string | undefined): string | undefined => {
   return slug.length > 0 ? slug : undefined
 }
 
-const availableWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
+export const availableWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
   if (!existing.has(base)) {
     return base
   }
