@@ -5,8 +5,7 @@ import SwiftUI
 
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
-    case changes, pullRequest(URL), desktop, browser, terminal, files
-    case link(URL)
+    case pullRequest(URL), link(URL)
   }
 
   let workspace: Workspace
@@ -14,7 +13,6 @@ struct WorkspaceInspectorView: View {
   let branch: String?
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
-  let supportsDesktop: Bool
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let client: any CodevisorServerClienting
@@ -43,9 +41,8 @@ struct WorkspaceInspectorView: View {
 
   private var info: some View {
     Form {
-      Section {
-        row(.changes) { Label("Changes", systemImage: "plus.forwardslash.minus") }
-        if let pullRequest {
+      if let pullRequest {
+        Section {
           row(.pullRequest(pullRequest.url)) {
             Label {
               Text("PR #\(pullRequest.number): \(pullRequest.title)")
@@ -60,11 +57,6 @@ struct WorkspaceInspectorView: View {
             }
           }
         }
-        row(.desktop) { Label("Desktop", systemImage: "desktopcomputer") }
-          .disabled(!supportsDesktop)
-        row(.browser) { Label("Browser", systemImage: "globe") }
-        row(.terminal) { Label("Terminal", systemImage: "apple.terminal") }
-        row(.files) { Label("Files", systemImage: "doc") }
       }
 
       Section("Details") {

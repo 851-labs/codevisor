@@ -48,7 +48,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           branch: store.gitLookups.branch(for: workspace),
           pullRequest: store.gitLookups.pullRequest(for: workspace),
           machineName: environment.machines.fleetMachineName(for: workspace.serverId),
-          supportsDesktop: environment.machines.statusByMachineId[workspace.serverId]?.supportsScreenSharing == true,
           tab: $tab,
           media: media,
           client: environment.machines.client(for: workspace.serverId),
