@@ -57,13 +57,19 @@ struct AppInstanceLeaseTests {
       applicationBundleURL: bundleURL,
       timeout: 3600
     )
-    owner = nil
+    do {
+      owner = nil
 
-    #expect(try AppInstanceLease.acquire(at: lockURL) == nil)
-    try writeBundleVersion("101", to: bundleURL)
-    await handoff?.waitForExit()
-    let successor = try AppInstanceLease.acquire(at: lockURL)
-    #expect(successor != nil)
+      #expect(try AppInstanceLease.acquire(at: lockURL) == nil)
+      try writeBundleVersion("101", to: bundleURL)
+      await handoff?.waitForExit()
+      let successor = try AppInstanceLease.acquire(at: lockURL)
+      #expect(successor != nil)
+    } catch {
+      handoff?.cancel()
+      await handoff?.waitForExit()
+      throw error
+    }
   }
 
   @Test("Cancelling an aborted update releases the inherited lock")
