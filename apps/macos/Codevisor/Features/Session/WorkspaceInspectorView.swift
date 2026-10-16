@@ -6,7 +6,7 @@ import SwiftUI
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
     case changes, pullRequest(URL), desktop, browser, terminal, files
-    case link(URL), browserPane(UUID)
+    case link(URL)
   }
 
   let workspace: Workspace
@@ -17,7 +17,6 @@ struct WorkspaceInspectorView: View {
   let supportsDesktop: Bool
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
-  let openTabs: [WorkspaceInspectorOpenTab]
   let client: any CodevisorServerClienting
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -30,8 +29,7 @@ struct WorkspaceInspectorView: View {
       case .info: info
       case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
       case .links:
-        WorkspaceInspectorLinksView(
-          openTabs: openTabs, model: media, client: client, onOpen: onOpen, onRetry: onReload)
+        WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
