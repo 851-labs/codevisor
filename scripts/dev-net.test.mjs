@@ -44,34 +44,34 @@ test("a relay probe that never gets an answer settles false within its timeout",
   }
 })
 
-test("waiting on relays that never answer gives up after its attempts", async () => {
+test("waiting on relays that never answer gives up after its attempts", async (t) => {
   const server = await silentServer()
-  const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
-  try {
-    const caFile = join(netRoot, "ca.pem")
-    await writeFile(caFile, rootCertificates[0])
-    const net = {
-      caFile,
-      relays: [
-        {
-          name: "relay-1",
-          url: "https://192.0.2.1:1",
-          ports: { https: server.port, router: server.port }
-        }
-      ]
-    }
-    const startedAt = Date.now()
-    const healthy = await waitForDevRelays(net, {
-      attempts: 3,
-      intervalMs: 10,
-      probeTimeoutMs: 100
-    })
-    assert.equal(healthy, false)
-    assert.ok(Date.now() - startedAt < 3000, "the wait must stay bounded")
-  } finally {
+  let netRoot
+  t.after(async () => {
     await server.close()
-    await rm(netRoot, { recursive: true, force: true })
+    if (netRoot !== undefined) await rm(netRoot, { recursive: true, force: true })
+  })
+  netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
+  const caFile = join(netRoot, "ca.pem")
+  await writeFile(caFile, rootCertificates[0])
+  const net = {
+    caFile,
+    relays: [
+      {
+        name: "relay-1",
+        url: "https://192.0.2.1:1",
+        ports: { https: server.port, router: server.port }
+      }
+    ]
   }
+  const startedAt = Date.now()
+  const healthy = await waitForDevRelays(net, {
+    attempts: 3,
+    intervalMs: 10,
+    probeTimeoutMs: 100
+  })
+  assert.equal(healthy, false)
+  assert.ok(Date.now() - startedAt < 3000, "the wait must stay bounded")
 })
 
 test("a relay probe passes its CA and handles a request constructor that throws", async () => {
