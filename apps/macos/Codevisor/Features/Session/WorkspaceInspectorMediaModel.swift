@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, photos, links
+  case info, photos, links, files
 
   var id: Self { self }
 
@@ -12,6 +12,7 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
     case .info: "Info"
     case .photos: "Photos"
     case .links: "Links"
+    case .files: "Files"
     }
   }
 }
@@ -29,8 +30,11 @@ final class WorkspaceInspectorMediaModel {
 
   private(set) var photos: [ServerWorkspacePhoto] = []
   private(set) var links: [ServerWorkspaceLink] = []
+  private(set) var files: [ServerWorkspaceFileChange] = []
+  private(set) var filesTruncated = false
   private(set) var photosPhase = Phase.idle
   private(set) var linksPhase = Phase.idle
+  private(set) var filesPhase = Phase.idle
   private var photosNextBefore: String?
   private(set) var linksNextBefore: String?
   @ObservationIgnored private var workspaceId: UUID?
@@ -44,14 +48,18 @@ final class WorkspaceInspectorMediaModel {
       self.workspaceId = workspaceId
       photos = []
       links = []
+      files = []
+      filesTruncated = false
       photosPhase = .idle
       linksPhase = .idle
+      filesPhase = .idle
     }
     self.client = client
     switch tab {
     case .info: break
     case .photos: await loadPhotos(before: nil)
     case .links: await loadLinks(before: nil)
+    case .files: await loadFiles()
     }
   }
 
@@ -98,6 +106,21 @@ final class WorkspaceInspectorMediaModel {
     } catch {
       guard workspaceId == self.workspaceId, !Task.isCancelled else { return }
       linksPhase = .failed(error.localizedDescription)
+    }
+  }
+
+  private func loadFiles() async {
+    guard let client, let workspaceId else { return }
+    filesPhase = .loading
+    do {
+      let changes = try await client.workspaceFiles(workspaceId: workspaceId)
+      guard workspaceId == self.workspaceId else { return }
+      files = changes.files
+      filesTruncated = changes.truncated
+      filesPhase = .loaded
+    } catch {
+      guard workspaceId == self.workspaceId, !Task.isCancelled else { return }
+      filesPhase = .failed(error.localizedDescription)
     }
   }
 

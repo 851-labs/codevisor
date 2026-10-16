@@ -5,7 +5,7 @@ import SwiftUI
 
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
-    case pullRequest(URL), link(URL)
+    case pullRequest(URL), link(URL), file(String)
   }
 
   let workspace: Workspace
@@ -28,6 +28,7 @@ struct WorkspaceInspectorView: View {
       case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
       case .links:
         WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
+      case .files: WorkspaceInspectorFilesView(model: media, onOpen: onOpen, onRetry: onReload)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

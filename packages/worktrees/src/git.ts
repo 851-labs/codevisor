@@ -141,7 +141,7 @@ export const parseGitNumstat = (numstat: string): BranchDiffTotals => {
   return totals
 }
 
-async function untrackedLineCount(path: string): Promise<number> {
+export async function untrackedLineCount(path: string): Promise<number> {
   try {
     const data = await readFile(path)
     if (data.length === 0 || data.length > 4_000_000) return 0

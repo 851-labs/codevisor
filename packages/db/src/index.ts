@@ -23,4 +23,8 @@ export * from "./rows.js"
 
 export * from "./service.js"
 
-export type { WorkspaceMediaCursor, WorkspaceMessageText } from "./workspace-media.js"
+export type {
+  WorkspaceFileEdit,
+  WorkspaceMediaCursor,
+  WorkspaceMessageText
+} from "./workspace-media.js"

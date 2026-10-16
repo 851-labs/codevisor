@@ -34,6 +34,7 @@ import { matchesLabelFilters } from "./label-filters.js"
 import { routeParam } from "./route-params.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
+import { routeWorkspaceFiles } from "./workspace-files.js"
 import { routeWorkspaceMedia } from "./workspace-media.js"
 
 const workspaceGit = async (
@@ -93,6 +94,19 @@ export const routeWorkspaces = async (
   if (
     await routeWorkspaceMedia(
       services,
+      (workspaceId) => findWorkspace(services, workspaceId),
+      request,
+      response,
+      url
+    )
+  ) {
+    return true
+  }
+
+  if (
+    await routeWorkspaceFiles(
+      services,
+      config.id,
       (workspaceId) => findWorkspace(services, workspaceId),
       request,
       response,

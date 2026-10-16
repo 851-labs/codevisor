@@ -59,7 +59,11 @@ import type {
 import type { SessionStateService } from "./session-state-types.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
-import type { WorkspaceMediaCursor, WorkspaceMessageText } from "./workspace-media.js"
+import type {
+  WorkspaceFileEdit,
+  WorkspaceMediaCursor,
+  WorkspaceMessageText
+} from "./workspace-media.js"
 import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
 
 export interface CodevisorDatabaseConfig {
@@ -255,6 +259,10 @@ export interface CodevisorDatabaseService extends SessionStateService {
     before: WorkspaceMediaCursor | undefined,
     limit: number
   ) => Effect.Effect<ReadonlyArray<WorkspaceMessageText>, DatabaseError>
+  readonly listWorkspaceFileEdits: (
+    workspaceId: string,
+    limit: number
+  ) => Effect.Effect<ReadonlyArray<WorkspaceFileEdit>, DatabaseError>
   readonly getFileStorage: (
     id: string
   ) => Effect.Effect<FileStorageRecord | undefined, DatabaseError>
