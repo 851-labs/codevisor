@@ -69,6 +69,7 @@ struct HomeSidebarPreferences: Equatable {
   var grouping = SidebarGrouping.flat
   var pinnedIDs: [String] = []
   var machineOrder: [String] = []
+  var projectOrder: [String] = []
   var rowDetails = SidebarRowDetail.defaults
   var archivedLimit = sidebarArchivedPageSize
 }
@@ -122,7 +123,7 @@ struct HomeSidebarContent: Equatable {
     let groups = SidebarWorkspaceGroup.groups(
       listed, grouping: preferences.grouping, pinnedIDs: preferences.pinnedIDs, projects: projects,
       defaultServerId: defaultServerId, machineOrder: preferences.machineOrder, machineKey: machineKey,
-      machineHeading: machineHeading
+      projectOrder: preferences.projectOrder, machineHeading: machineHeading
     )
     var content = HomeSidebarContent(listTitle: preferences.grouping.listTitle)
     for group in groups {

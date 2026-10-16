@@ -19,7 +19,8 @@
       didResetPreferences = true
       for key in [
         SidebarGrouping.preferenceKey, SidebarGrouping.collapsedPreferenceKey, SidebarRowDetail.preferenceKey,
-        SidebarPreferenceKey.pinnedWorkspaces, SidebarPreferenceKey.machineOrder, SidebarPreferenceKey.pinnedExpanded,
+        SidebarPreferenceKey.pinnedWorkspaces, SidebarPreferenceKey.machineOrder, SidebarPreferenceKey.projectOrder,
+        SidebarPreferenceKey.pinnedExpanded,
         SidebarPreferenceKey.listExpanded,
         SidebarPreferenceKey.archivedExpanded, HomeSidebarList.expandedWorkspacesKey,
       ] {

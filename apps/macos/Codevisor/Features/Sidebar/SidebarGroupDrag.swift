@@ -14,7 +14,7 @@ struct SidebarGroupDrag: Equatable {
 }
 
 extension SidebarView {
-  var reordersMachines: Bool { grouping == .machine }
+  var reordersGroups: Bool { grouping != .flat }
 
   func machineKey(_ serverId: String) -> String {
     environment.navigationStore.serverIdentity(forMachineId: serverId)
@@ -41,18 +41,18 @@ extension SidebarView {
         retargetGroup()
         guard let finished = groupDrag else { return }
         withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-          if let target = finished.targetIndex { commitMachineMove(finished.groupID, toIndex: target) }
+          if let target = finished.targetIndex { commitGroupMove(finished.groupID, toIndex: target) }
           groupDrag = nil
         }
       }
   }
 
-  private var machineGroups: [SidebarWorkspaceGroup] {
+  private var headedGroups: [SidebarWorkspaceGroup] {
     workspaceGroups.filter { $0.id != SidebarWorkspaceGroup.pinnedID && $0.heading != nil }
   }
 
   private func groupDropCandidates() -> [String] {
-    machineGroups.map(\.id).filter { dragGeometry.groups[$0] != nil }
+    headedGroups.map(\.id).filter { dragGeometry.groups[$0] != nil }
   }
 
   private func retargetGroup() {
@@ -67,12 +67,20 @@ extension SidebarView {
     groupDrag?.targetIndex = target
   }
 
-  private func commitMachineMove(_ groupID: String, toIndex index: Int) {
-    let groups = machineGroups
+  private func commitGroupMove(_ groupID: String, toIndex index: Int) {
+    let groups = headedGroups
     let moved = ListReorder.moving(groupID, to: index, in: groups.map(\.id))
-    let serverIds = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0.items[0].serverId) })
-    let keys = moved.compactMap { serverIds[$0].map(machineKey) }
-    machineOrder = keys + machineOrder.filter { !keys.contains($0) }
+    let byID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+    let keys = moved.compactMap { byID[$0].map(orderKey) }
+    switch grouping {
+    case .machine: machineOrder = keys + machineOrder.filter { !keys.contains($0) }
+    case .project: projectOrder = keys + projectOrder.filter { !keys.contains($0) }
+    case .flat: break
+    }
+  }
+
+  private func orderKey(_ group: SidebarWorkspaceGroup) -> String {
+    grouping == .project ? SidebarWorkspaceGroup.projectKey(group) : machineKey(group.items[0].serverId)
   }
 
   @ViewBuilder

@@ -33,9 +33,10 @@ public enum SidebarPreferenceKey {
   public static let archivedExpanded = "sidebar.archivedExpanded"
   public static let botsExpanded = "sidebar.botsExpanded"
   public static let machineOrder = "sidebar.machineOrder"
+  public static let projectOrder = "sidebar.projectOrder"
 
   public static let synced: Set<String> = [
-    SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces, machineOrder,
+    SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces, machineOrder, projectOrder,
   ]
 }
 
@@ -92,6 +93,7 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     defaultServerId: String,
     machineOrder: [String] = [],
     machineKey: (String) -> String = { $0 },
+    projectOrder: [String] = [],
     machineHeading: (String) -> Heading
   ) -> [SidebarWorkspaceGroup] {
     let pinned = Set(pinnedIDs)
@@ -106,7 +108,9 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
           Self.grouping(rest, by: { "machine:\($0.serverId)" }) { machineHeading($0.serverId) },
           by: machineOrder, key: { machineKey($0.items[0].serverId) })
       case .project:
-        projectGroups(rest, projects: projects, defaultServerId: defaultServerId)
+        Self.ordered(
+          projectGroups(rest, projects: projects, defaultServerId: defaultServerId), by: projectOrder,
+          key: projectKey)
       }
     guard !pinnedItems.isEmpty else { return grouped }
     return [SidebarWorkspaceGroup(id: pinnedID, heading: nil, items: pinnedItems)] + grouped
@@ -134,6 +138,12 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
         newChatTarget: target
       )
     }
+  }
+
+  public static func projectKey(_ group: SidebarWorkspaceGroup) -> String {
+    let repoPrefix = "project:repo|"
+    guard group.id.hasPrefix(repoPrefix) else { return group.items.first?.projectId.uuidString ?? group.id }
+    return String(group.id.dropFirst("project:".count))
   }
 
   static func ordered(

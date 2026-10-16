@@ -13,13 +13,14 @@ struct SidebarWorkspaceGroupTests {
 
   private func groups(
     _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping, pinned: [UUID] = [],
-    machineOrder: [String] = []
+    machineOrder: [String] = [], projectOrder: [String] = []
   )
     -> [SidebarWorkspaceGroup]
   {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinned.map(\.uuidString), projects: [studio, linux],
-      defaultServerId: "studio", machineOrder: machineOrder, machineKey: { "server-\($0)" }
+      defaultServerId: "studio", machineOrder: machineOrder, machineKey: { "server-\($0)" },
+      projectOrder: projectOrder
     ) { serverId in SidebarWorkspaceGroup.Heading(title: serverId, systemImage: "desktopcomputer") }
   }
 
@@ -50,6 +51,19 @@ struct SidebarWorkspaceGroupTests {
 
     #expect(result.map(\.heading?.title) == ["mini", "studio", "linux"])
     #expect(groups(items, .project, machineOrder: ["server-studio"]).map(\.id) == groups(items, .project).map(\.id))
+  }
+
+  @Test("Projects follow the saved order by repository, or by project id when they have no repository")
+  func projectsFollowSavedOrder() {
+    let items = [item(studio), item(linux)]
+    let natural = groups(items, .project)
+    let keys = natural.map(SidebarWorkspaceGroup.projectKey)
+
+    let result = groups(items, .project, projectOrder: ["gone"] + keys.reversed())
+
+    #expect(result.map(\.id) == natural.map(\.id).reversed())
+    #expect(keys == natural.map { $0.items[0].projectId.uuidString })
+    #expect(groups(items, .machine, projectOrder: keys.reversed()).map(\.id) == groups(items, .machine).map(\.id))
   }
 
   @Test func flatGroupingHasNoHeadingAndNoPinnedGroupWithoutPins() {

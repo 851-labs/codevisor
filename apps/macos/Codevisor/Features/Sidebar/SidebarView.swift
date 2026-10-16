@@ -31,6 +31,7 @@ struct SidebarView: View {
   @State var archivedVisibleCount = sidebarArchivedPageSize
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) var machineOrder: [String]
+  @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) var projectOrder: [String]
   @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
   var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
@@ -174,7 +175,7 @@ struct SidebarView: View {
             } action: { frame in
               dragGeometry.headings[group.id] = frame
             }
-            .simultaneousGesture(groupReorderGesture(for: group), including: reordersMachines ? .all : .subviews)
+            .simultaneousGesture(groupReorderGesture(for: group), including: reordersGroups ? .all : .subviews)
             .sidebarFoldingRow(listFolding, progress: progress, shows: listExpanded)
           }
           workspaceList(of: group)

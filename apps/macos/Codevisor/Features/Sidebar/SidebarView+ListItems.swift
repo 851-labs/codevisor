@@ -31,7 +31,8 @@ extension SidebarView {
   var workspaceGroups: [SidebarWorkspaceGroup] {
     SidebarWorkspaceGroup.groups(
       listedSidebarItems, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs, projects: list.projects,
-      defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey
+      defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey,
+      projectOrder: projectOrder
     ) { serverId in
       let machine = environment.machines.machine(for: serverId)
       return SidebarWorkspaceGroup.Heading(
