@@ -65,7 +65,8 @@ struct WorkspaceInspectorFileTreeView: View {
               onActivate: {
                 selection = row.id
                 activate(row)
-              }
+              },
+              onKeep: { onOpen(.file(row.entry.path)) }
             )
             .modifier(
               WorkspaceInspectorFileTreeFold(
@@ -102,7 +103,7 @@ struct WorkspaceInspectorFileTreeView: View {
     if row.entry.isDirectory {
       setExpanded(row.id, !model.expanded.contains(row.id))
     } else {
-      onOpen(.file(row.entry.path))
+      onOpen(.previewFile(row.entry.path))
     }
   }
 
@@ -228,6 +229,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
   let isLoading: Bool
   let isSelected: Bool
   let onActivate: () -> Void
+  let onKeep: () -> Void
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -264,7 +266,13 @@ private struct WorkspaceInspectorFileTreeRow: View {
     .frame(height: Self.height)
     .contentShape(Rectangle())
     .sidebarRowHover(isSelected: isSelected)
-    .onTapGesture(perform: onActivate)
+    .onTapGesture {
+      if !entry.isDirectory, let event = NSApp.currentEvent, event.type == .leftMouseUp, event.clickCount > 1 {
+        onKeep()
+      } else {
+        onActivate()
+      }
+    }
     .help(entry.path)
     .contextMenu {
       Button("Copy Path") {

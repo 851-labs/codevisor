@@ -53,6 +53,7 @@ final class FileEditorStorage: NSObject {
   func changed() {
     guard !applying else { return }
     session?.document.edit(native.text)
+    session?.onEdit?()
     selectionChanged()
     scheduleHighlight()
     native.redrawGutter()

@@ -11,9 +11,11 @@ struct PaneTab: View {
   let canClose: Bool
   let showsTrailingSeparator: Bool
   let shortcutHint: String?
+  var isPreview = false
   let onSelect: () -> Void
   let onClose: () -> Void
   var onRename: (() -> Void)? = nil
+  var onKeep: (() -> Void)? = nil
   @State private var isHovered = false
   @State private var isCloseHovered = false
 
@@ -80,6 +82,7 @@ struct PaneTab: View {
       .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
       .contentShape(Rectangle())
       .onTapGesture(perform: onSelect)
+      .simultaneousGesture(TapGesture(count: 2).onEnded { onKeep?() }, including: onKeep == nil ? .none : .all)
       .onHover { isHovered = $0 }
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(name)
@@ -103,6 +106,7 @@ struct PaneTab: View {
       }
       Text(name)
         .font(.tabLabel())
+        .italic(isPreview)
         .lineLimit(1)
         .truncationMode(.tail)
         .foregroundStyle(isSelected ? .primary : .secondary)

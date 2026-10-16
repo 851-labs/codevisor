@@ -43,6 +43,11 @@ public final class FilePaneModel {
 
   public var editor: FileEditorSession { sessions.editor(for: path) }
 
+  public var onEdit: (() -> Void)? {
+    get { sessions.onEdit }
+    set { sessions.onEdit = newValue }
+  }
+
   public func close() { sessions.close() }
 
   public var isBrowsing: Bool { path.hasSuffix("/") }

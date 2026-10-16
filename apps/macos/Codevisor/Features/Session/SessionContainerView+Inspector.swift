@@ -12,6 +12,8 @@ extension SessionContainerView {
       )
     case let .file(path):
       _ = openFileDocument(path)
+    case let .previewFile(path):
+      _ = openFileDocument(path, preview: true)
     }
   }
 

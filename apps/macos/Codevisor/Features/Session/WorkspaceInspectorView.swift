@@ -5,7 +5,7 @@ import SwiftUI
 
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
-    case pullRequest(URL), link(URL), file(String)
+    case pullRequest(URL), link(URL), file(String), previewFile(String)
   }
 
   let workspace: Workspace

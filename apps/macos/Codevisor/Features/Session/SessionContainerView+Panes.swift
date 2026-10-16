@@ -44,6 +44,11 @@ extension SessionContainerView {
       }
     }
     model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
+    model.onPaneEdited = { _ in
+      guard let tab = selectedWorkspace.centerTabs.first(where: { $0.isPreview && $0.root.group(id: leafId) != nil })
+      else { return }
+      keepCenterTab(tab.id)
+    }
     model.onPaneWillClose = { descriptor in
       rememberClosedPane(descriptor, leafId: leafId)
     }

@@ -90,4 +90,15 @@ struct FileEditorSessionTests {
     #expect(preserved?.text == "unsaved")
     await preserved?.save()
   }
+
+  @Test
+  func editorSessionsForwardEditsFromEverySession() {
+    let sessions = FileEditorSessions { self.document($0) }
+    let early = sessions.editor(for: "/a.md")
+    var edits = 0
+    sessions.onEdit = { edits += 1 }
+    early.onEdit?()
+    sessions.editor(for: "/b.md").onEdit?()
+    #expect(edits == 2)
+  }
 }
