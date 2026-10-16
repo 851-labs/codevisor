@@ -44,7 +44,6 @@ struct WorkspaceInspectorFileTreeView: View {
               isExpanded: model.expanded.contains(row.id),
               isLoading: model.slow.contains(row.id),
               isSelected: selection == row.id,
-              showsDivider: row.id != rows.last?.id,
               onActivate: {
                 selection = row.id
                 activate(row)
@@ -53,9 +52,8 @@ struct WorkspaceInspectorFileTreeView: View {
             .id(row.id)
           }
         }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.cardBackgroundColor))
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: rows.map(\.id))
       }
       .focusable()
@@ -133,7 +131,6 @@ private struct WorkspaceInspectorFileTreeRow: View {
   let isExpanded: Bool
   let isLoading: Bool
   let isSelected: Bool
-  let showsDivider: Bool
   let onActivate: () -> Void
 
   private static let indent: CGFloat = 14
@@ -141,34 +138,34 @@ private struct WorkspaceInspectorFileTreeRow: View {
   private var entry: ServerFileEntry { row.entry }
 
   var body: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: 0) {
       Group {
         if isLoading {
           ProgressView().controlSize(.mini)
         } else if entry.isDirectory {
           Image(systemName: "chevron.right")
-            .font(.system(size: 10, weight: .semibold))
+            .font(.caption2.weight(.bold))
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
         }
       }
-      .frame(width: 14, height: 14)
+      .frame(width: 10, height: 10)
+      .padding(.trailing, 2)
       FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
       Text(entry.name)
         .lineLimit(1)
         .truncationMode(.middle)
+        .padding(.leading, 6)
       Spacer(minLength: 0)
     }
-    .padding(.leading, CGFloat(row.depth) * Self.indent + 4)
+    .padding(.leading, CGFloat(row.depth) * Self.indent + 5)
     .padding(.trailing, 6)
-    .frame(height: 28)
+    .frame(height: 22)
     .contentShape(Rectangle())
-    .sidebarRowHover(isSelected: isSelected)
-    .overlay(alignment: .bottom) {
-      if showsDivider {
-        Divider().padding(.horizontal, 6)
-      }
-    }
+    .background(
+      RoundedRectangle(cornerRadius: 5)
+        .fill(isSelected ? Color.primary.opacity(0.1) : .clear)
+    )
     .onTapGesture(perform: onActivate)
     .help(entry.path)
     .contextMenu {
