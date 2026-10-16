@@ -26,14 +26,6 @@ private final class AttachmentPreviewBox {
   }
 }
 
-extension PreviewFile {
-  fileprivate var isPDF: Bool {
-    mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
-  }
-
-  fileprivate var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
-}
-
 @MainActor
 @Observable
 public final class AttachmentImageStore {
