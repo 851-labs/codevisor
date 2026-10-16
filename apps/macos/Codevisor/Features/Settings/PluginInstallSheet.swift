@@ -27,7 +27,6 @@ struct PluginInstallSheet: View {
         }
     }
     .frame(width: 480, height: discovery == nil ? 220 : 480)
-    .themedSurface(.sheet)
     .task {
       if let initialSource, discovery == nil {
         source = initialSource

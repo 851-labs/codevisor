@@ -48,10 +48,8 @@ struct SkillCreateSheet: View {
         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 460, height: 420)
-    .themedSurface(.sheet)
   }
 
   private func save() async {
@@ -91,7 +89,6 @@ struct SkillRemoteImportSheet: View {
         }
     }
     .frame(width: 480, height: candidates == nil ? 220 : 420)
-    .themedSurface(.sheet)
   }
 
   private var sheetContent: some View {

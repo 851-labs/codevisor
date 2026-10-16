@@ -186,10 +186,8 @@ struct McpServerEditorSheet: View {
           .disabled(!isValid || isSaving)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 560, height: 570)
-    .themedSurface(.sheet)
     .task(id: location) { await detectAuthorization() }
   }
 

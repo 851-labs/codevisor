@@ -57,7 +57,6 @@ struct OpenCodeProviderAuthenticationView: View {
           }
         }
         .sheetSize(.browser)
-        .themedSurface(.sheet)
       } else {
         profiles
       }

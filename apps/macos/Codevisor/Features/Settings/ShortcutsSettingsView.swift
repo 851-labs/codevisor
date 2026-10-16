@@ -14,7 +14,7 @@ struct ShortcutsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
   }
 }
 

@@ -80,7 +80,7 @@ extension OnboardingView {
         HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .frame(height: fleetListHeight)
   }
 

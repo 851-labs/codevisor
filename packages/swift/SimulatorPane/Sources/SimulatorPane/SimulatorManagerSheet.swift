@@ -24,7 +24,6 @@ struct SimulatorManagerSheet: View {
           }
         }
         .sheetSize(.list)
-        .themedSurface(.sheet)
       #else
         navigation
       #endif

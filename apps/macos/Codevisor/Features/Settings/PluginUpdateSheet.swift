@@ -42,10 +42,8 @@ struct PluginUpdateSheet: View {
         }
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 540, height: 620)
-    .themedSurface(.sheet)
   }
 
   private var overview: some View {

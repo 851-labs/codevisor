@@ -40,7 +40,7 @@ struct McpSettingsView: View {
       }
       McpOtherServersSection(isExpanded: $showsOtherServers)
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: mcpStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .sheet(isPresented: $showingAdd) {

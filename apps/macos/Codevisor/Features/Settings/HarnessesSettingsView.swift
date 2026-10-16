@@ -18,7 +18,7 @@ struct HarnessesSettingsView: View {
         HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .harnessFleetSheets(presenter)
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in
       guard let request else { return }

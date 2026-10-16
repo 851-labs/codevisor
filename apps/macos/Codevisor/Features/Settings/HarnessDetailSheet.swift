@@ -32,7 +32,6 @@ struct HarnessDetailSheet: View {
       }
     }
     .sheetSize(.step)
-    .themedSurface(.sheet)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(harness.name) details")
     .task { await loadBundledApp() }

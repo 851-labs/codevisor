@@ -13,7 +13,7 @@ enum ComposerSendStaging {
       textView: editor,
       textRect: editor.laidOutTextRect,
       lineHeight: editor.caretRect(for: editor.beginningOfDocument).height,
-      bubble: Color.primary.opacity(0.08)
+      bubble: Color.bubbleBackground
     )
     if TranscriptSendStaging.shared.hasStage(for: session) {
       (editor as? HeightReportingTextView)?.hideSentText()

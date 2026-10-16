@@ -35,7 +35,7 @@ struct SkillsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
       await model.load(client: localClient)
     }

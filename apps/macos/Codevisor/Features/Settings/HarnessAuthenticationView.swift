@@ -61,7 +61,6 @@ struct HarnessAuthenticationView: View {
           }
         }
         .sheetSize(.list)
-        .themedSurface(.sheet)
       } else {
         accountsForm
       }

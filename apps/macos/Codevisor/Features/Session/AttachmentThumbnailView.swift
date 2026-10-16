@@ -91,7 +91,7 @@ struct AttachmentThumbnailView: View {
     return ZStack {
       if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
-          .fill(Color.primary.opacity(0.08))
+          .fill(Color.bubbleBackground)
       }
       if let image = image ?? attachmentImages?.memoryPreview(for: file)?.image
         ?? SentAttachmentThumbnails.image(for: file)
@@ -192,7 +192,7 @@ struct AttachmentFileChip: View {
     .padding(.horizontal, 10)
     .frame(height: 56)
     .frame(maxWidth: 200)
-    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08)))
+    .background(RoundedRectangle(cornerRadius: 8).fill(Color.bubbleBackground))
     .overlay(
       RoundedRectangle(cornerRadius: 8)
         .strokeBorder(.separator, lineWidth: 1)

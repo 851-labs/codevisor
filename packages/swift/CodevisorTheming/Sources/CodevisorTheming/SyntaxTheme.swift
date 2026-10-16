@@ -9,6 +9,7 @@ public enum SyntaxTheme {
   public static func json(isDark: Bool) -> String? {
     let key = key(isDark: isDark)
     if let cached = cache[key] { return cached }
+    cache[key] = .some(nil)
     guard
       let url = Bundle.module.url(forResource: key, withExtension: "json", subdirectory: "Themes"),
       let data = try? Data(contentsOf: url),
@@ -21,5 +22,5 @@ public enum SyntaxTheme {
     return json
   }
 
-  @MainActor private static var cache: [String: String] = [:]
+  @MainActor private static var cache: [String: String?] = [:]
 }

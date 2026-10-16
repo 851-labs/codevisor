@@ -27,7 +27,6 @@ struct PiProviderAuthenticationView: View {
           }
         }
         .sheetSize(.list)
-        .themedSurface(.sheet)
     } else {
       accounts
     }

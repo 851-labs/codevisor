@@ -80,10 +80,8 @@ struct NativeMcpDetailSheet: View {
           .keyboardShortcut(.defaultAction)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 540, height: 420)
-    .themedSurface(.sheet)
   }
 
 }

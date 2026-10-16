@@ -66,7 +66,7 @@ struct PluginsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: pluginStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .onChange(of: SettingsRouter.shared.pendingPluginInstallSource, initial: true) { _, source in

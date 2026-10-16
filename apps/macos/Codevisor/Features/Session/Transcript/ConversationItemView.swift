@@ -55,7 +55,7 @@ struct UserMessageView: View {
           )
           .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
           .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
-          .background { UserBubbleBackground(color: Color.primary.opacity(0.08)) }
+          .background { UserBubbleBackground(color: Color.bubbleBackground) }
           MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)
             .opacity(isHovered ? 1 : 0)
         }

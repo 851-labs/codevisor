@@ -47,7 +47,7 @@ struct MachinesSettingsView: View {
         .foregroundStyle(.secondary)
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
   }
 
   var body: some View {

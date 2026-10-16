@@ -39,10 +39,8 @@ struct PluginRegistryBrowseSheet: View {
           .keyboardShortcut(.cancelAction)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 520, height: 520)
-    .themedSurface(.sheet)
     .task { await load() }
   }
 

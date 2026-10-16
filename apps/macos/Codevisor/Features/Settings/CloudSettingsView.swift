@@ -17,7 +17,7 @@ struct CloudSettingsView: View {
         signInWithEmail: { showsEmailSignIn = true }
       )
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
     .sheet(isPresented: $showsServer) {
       NavigationStack {

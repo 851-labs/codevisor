@@ -119,7 +119,7 @@ struct NotificationsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .fileImporter(
       isPresented: $showingSoundImporter,
       allowedContentTypes: [.audio]

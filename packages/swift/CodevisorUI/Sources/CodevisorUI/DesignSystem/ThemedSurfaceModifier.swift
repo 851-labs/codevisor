@@ -3,7 +3,6 @@ import SwiftUI
 public enum ThemedSurfaceRole {
   case sidebar
   case popover
-  case sheet
 }
 
 public struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
@@ -17,8 +16,6 @@ public struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
       content.background { extended(shape.fill(.regularMaterial)) }
     case .popover:
       content.background { extended(shape.fill(Color.windowBackgroundColor)) }
-    case .sheet:
-      content
     }
   }
 

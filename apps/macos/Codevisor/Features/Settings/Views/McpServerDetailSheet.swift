@@ -102,10 +102,8 @@ struct McpServerDetailSheet: View {
           .keyboardShortcut(.defaultAction)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 540, height: 470)
-    .themedSurface(.sheet)
     .task { await loadTools() }
     .confirmationDialog(
       "Remove \(server.name)?",

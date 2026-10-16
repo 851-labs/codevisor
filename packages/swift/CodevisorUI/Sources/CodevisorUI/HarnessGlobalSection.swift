@@ -99,7 +99,7 @@ private struct HarnessFleetRow<Icon: View>: View {
     } accessory: {
       if state.showsAccounts {
         Button("Accounts…") { onAccounts(setting, false) }
-          .harnessRowButton()
+          .fleetRowButton()
       }
       if let single {
         HarnessMachineActionButton(row: single, harnessName: setting.name, actions: actions)

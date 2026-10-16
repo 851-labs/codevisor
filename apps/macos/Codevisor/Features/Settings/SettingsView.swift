@@ -343,12 +343,6 @@ private struct SettingsSidebarRow: View {
   }
 }
 
-extension View {
-  func settingsPaneFormStyle() -> some View {
-    formStyle(.grouped)
-  }
-}
-
 struct GeneralSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var showingConfirmation = false
@@ -398,7 +392,7 @@ struct GeneralSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .confirmationDialog(
       "Delete all Codevisor data?",
       isPresented: $showingConfirmation,

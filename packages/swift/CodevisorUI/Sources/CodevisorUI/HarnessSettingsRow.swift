@@ -61,9 +61,3 @@ extension HarnessSettingsRow where Accessory == EmptyView {
       icon: icon, accessory: { EmptyView() }, actions: actions)
   }
 }
-
-extension View {
-  func harnessRowButton() -> some View {
-    fleetRowButton()
-  }
-}

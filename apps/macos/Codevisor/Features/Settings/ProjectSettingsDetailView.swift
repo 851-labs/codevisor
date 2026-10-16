@@ -30,7 +30,7 @@ struct ProjectSettingsDetailView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .navigationTitle(group?.name ?? "Project")
     .task(id: branchSources) { await loadBranches() }
     .confirmationDialog(

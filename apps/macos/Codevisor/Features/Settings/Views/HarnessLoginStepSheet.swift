@@ -47,7 +47,6 @@ struct HarnessLoginStepSheet: View {
       SheetFooter(status: footerStatus) { actions }
     }
     .sheetSize(.step)
-    .themedSurface(.sheet)
   }
 
   @ViewBuilder

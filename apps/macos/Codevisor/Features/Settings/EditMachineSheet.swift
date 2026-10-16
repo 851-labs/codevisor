@@ -71,7 +71,6 @@ struct EditMachineSheet: View {
     }
     .frame(width: 460)
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
-    .themedSurface(.sheet)
   }
 
   private var header: some View {

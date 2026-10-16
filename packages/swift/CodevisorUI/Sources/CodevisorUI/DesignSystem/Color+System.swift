@@ -28,22 +28,6 @@ extension Color {
     #endif
   }
 
-  public static var controlBackgroundColor: Color {
-    #if canImport(AppKit)
-      Color(nsColor: .controlBackgroundColor)
-    #else
-      Color(uiColor: .secondarySystemBackground)
-    #endif
-  }
-
-  public static var underPageBackgroundColor: Color {
-    #if canImport(AppKit)
-      Color(nsColor: .underPageBackgroundColor)
-    #else
-      Color(uiColor: .secondarySystemBackground)
-    #endif
-  }
-
   public static var tertiaryLabelColor: Color {
     #if canImport(AppKit)
       Color(nsColor: .tertiaryLabelColor)
@@ -59,6 +43,8 @@ extension Color {
       Color(uiColor: .quaternaryLabel).opacity(cardFillOpacity)
     #endif
   }
+
+  public static var bubbleBackground: Color { Color.primary.opacity(0.08) }
 
   public static var separatorColor: Color {
     #if canImport(AppKit)

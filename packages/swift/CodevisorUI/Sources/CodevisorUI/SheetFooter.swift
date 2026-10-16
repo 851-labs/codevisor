@@ -24,7 +24,6 @@
         .padding(20)
       }
       .animation(.default, value: status)
-      .themedSurface(.sheet)
     }
   }
 #endif

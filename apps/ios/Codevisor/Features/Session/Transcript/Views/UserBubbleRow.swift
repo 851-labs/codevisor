@@ -45,7 +45,7 @@ struct UserBubbleRow: View {
           .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
           .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
           .background {
-            UserBubbleBackground(color: Color.primary.opacity(0.08))
+            UserBubbleBackground(color: Color.bubbleBackground)
               .background(
                 UserBubbleBackground.transcriptBackdrop(),
                 in: UserBubbleBackground.shape(for: dynamicTypeSize))

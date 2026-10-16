@@ -67,7 +67,7 @@ struct DeveloperSettingsView: View {
         Text("Experimental Features")
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
   }
 
   private var channelBinding: Binding<UpdateChannel> {

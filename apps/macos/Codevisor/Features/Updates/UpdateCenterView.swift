@@ -34,7 +34,7 @@ struct UpdateCenterView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
     .animation(.default, value: center.components.map(\.id))
     .task {

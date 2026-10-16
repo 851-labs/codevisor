@@ -23,7 +23,6 @@ struct HarnessSignInSheet: View {
       }
     }
     .sheetSize(.list)
-    .themedSurface(.sheet)
     .environment(\.settingsMachineId, serverId)
     .task {
       guard harness == nil else { return }

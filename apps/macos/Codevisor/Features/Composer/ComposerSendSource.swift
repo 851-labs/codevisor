@@ -16,7 +16,7 @@ final class ComposerSendSource {
       textView: textView,
       textRect: textView.laidOutTextRect,
       lineHeight: textView.firstLineHeight,
-      bubble: Color.primary.opacity(0.08)
+      bubble: Color.bubbleBackground
     )
     (textView as? SubmittingTextView)?.hideSentText()
   }

@@ -96,14 +96,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     return (encode(sr), encode(sg), encode(sb))
   }
 
-  public func hexString() -> String {
-    func hex(_ value: Double) -> String {
-      let clamped = max(0, min(255, Int(value.rounded())))
-      return String(format: "%02x", clamped)
-    }
-    return "#" + hex(r) + hex(g) + hex(b)
-  }
-
   public func mixed(with other: RGBA, weight: Double) -> RGBA {
     let w = max(0, min(1, weight))
     return RGBA(

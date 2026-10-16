@@ -68,7 +68,6 @@ struct HarnessProviderSignInSheet: View {
         }
       }
       .sheetSize(.list)
-      .themedSurface(.sheet)
     #else
       .sheetStatus(draft.status)
     #endif

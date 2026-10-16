@@ -18,7 +18,7 @@ struct ComposerAttachmentThumb: View {
         if attachment.hasVisualPreview {
           ZStack {
             RoundedRectangle(cornerRadius: 8)
-              .fill(Color.primary.opacity(0.08))
+              .fill(Color.bubbleBackground)
             if let image = thumbnail {
               Image(nsImage: image)
                 .resizable()

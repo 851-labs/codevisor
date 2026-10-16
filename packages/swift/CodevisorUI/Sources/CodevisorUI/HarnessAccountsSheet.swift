@@ -102,7 +102,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
         }
       }
       .sheetSize(metrics)
-      .themedSurface(.sheet)
     #endif
     .task { if sharesOAuth { await loadSharedHost() } }
     .sheet(item: $machineSignIn) { request in
@@ -128,7 +127,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           }
         }
         .sheetSize(metrics)
-        .themedSurface(.sheet)
       #endif
     }
   }

@@ -68,7 +68,7 @@ struct ProjectsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle()
+    .formStyle(.grouped)
     .sheet(isPresented: $showingAdd) {
       NewProjectSheet(serverId: initialMachineId) { project in
         SettingsRouter.shared.projectCreationMachineId = project.serverId

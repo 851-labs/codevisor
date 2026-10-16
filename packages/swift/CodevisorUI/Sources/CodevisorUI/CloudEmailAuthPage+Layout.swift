@@ -78,7 +78,6 @@ extension CloudEmailAuthPage {
       }
       .padding(24)
       .frame(width: 420)
-      .themedSurface(.sheet)
     #endif
   }
 

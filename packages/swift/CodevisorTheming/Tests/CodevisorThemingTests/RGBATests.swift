@@ -20,11 +20,6 @@ struct RGBATests {
     #expect(RGBA(hex: "rgb(0,0,0)") == nil)
   }
 
-  @Test("Hex round-trip")
-  func hexRoundTrip() {
-    #expect(RGBA(hex: "#1e1e2e")!.hexString() == "#1e1e2e")
-  }
-
   @Test("Luminance extremes and contrast")
   func luminanceAndContrast() {
     let white = RGBA(hex: "#ffffff")!
@@ -42,9 +37,9 @@ struct RGBATests {
   func mixing() {
     let fg = RGBA(hex: "#ffffff")!
     let bg = RGBA(hex: "#000000")!
-    #expect(fg.mixed(with: bg, weight: 0.06).hexString() == "#0f0f0f")
-    #expect(fg.mixed(with: bg, weight: 1).hexString() == "#ffffff")
-    #expect(fg.mixed(with: bg, weight: 0).hexString() == "#000000")
+    #expect(fg.mixed(with: bg, weight: 0.06) == RGBA(r: 15, g: 15, b: 15))
+    #expect(fg.mixed(with: bg, weight: 1) == RGBA(r: 255, g: 255, b: 255))
+    #expect(fg.mixed(with: bg, weight: 0) == RGBA(r: 0, g: 0, b: 0))
   }
 
   @Test("pickReadableForeground")
