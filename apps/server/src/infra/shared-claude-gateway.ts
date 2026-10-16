@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { pipeline } from "node:stream/promises"
 
-import type { SharedTokenBundle } from "@codevisor/harness-manager"
+import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harness-manager"
 
 const digest = (token: string) => createHash("sha256").update(token).digest("hex")
 const MAX_BODY = 32 * 1024 * 1024
@@ -111,9 +111,12 @@ export const makeSharedClaudeGateway = (options: {
             signal: abort.signal
           })
         else response.end()
-      } catch {
+      } catch (cause) {
+        const signedOut =
+          cause instanceof SharedCredentialError &&
+          (cause.reason === "reauthenticate" || cause.reason === "revoked")
         if (!response.headersSent)
-          response.writeHead(503, { "content-type": "application/json" }).end(
+          response.writeHead(signedOut ? 401 : 503, { "content-type": "application/json" }).end(
             JSON.stringify({
               type: "error",
               error: {

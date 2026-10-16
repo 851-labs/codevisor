@@ -22,9 +22,7 @@ extension ChatScreen {
       ChatErrorRow(
         message,
         actionTitle: "Sign In",
-        action: {
-          authSignInHarnessId = controller.selectedHarnessId ?? controller.activeHarnessId
-        }
+        action: openHarnessAccounts
       )
     } else {
       ChatErrorRow(
@@ -33,5 +31,14 @@ extension ChatScreen {
         action: { Task { await controller.retrySessionFailure() } }
       )
     }
+  }
+
+  private func openHarnessAccounts() {
+    if let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId {
+      SettingsRouter.shared.showHarnessAccounts(machineId: controller.project.serverId, harnessId: harnessId)
+    } else {
+      SettingsRouter.shared.showHarnesses()
+    }
+    openSettings()
   }
 }

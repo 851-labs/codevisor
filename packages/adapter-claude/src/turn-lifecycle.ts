@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { normalizePromptInput, type RuntimeEvent } from "@codevisor/agent-runtime"
+import type { TurnStopKind } from "@codevisor/api"
 
 import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
@@ -25,7 +26,7 @@ export const finishActiveTurn = (
   stopReason: string,
   stopDetail?: string,
   retryable?: boolean,
-  stopKind?: "usageLimit"
+  stopKind?: TurnStopKind
 ): Promise<void> => {
   const completion = session.turnCompletion
   if (!session.turnActive) return completion?.promise ?? Promise.resolve()

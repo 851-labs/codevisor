@@ -6,6 +6,7 @@ import { decode } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
+import { makeEventFanout } from "../server.js"
 import {
   jsonRequest,
   makeServices,
@@ -16,6 +17,7 @@ import {
   listSubjectEvents
 } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
+import { sessionEventSink } from "./session-events.js"
 
 describe("harness routes", () => {
   it("returns 501 for authentication routes without an auth service", async () => {
@@ -284,6 +286,34 @@ describe("harness routes", () => {
     ).toBe(204)
   })
 
+  it("still ends a sign-in turn for a session without a harness account", async () => {
+    const { services } = await makeServices("server-a")
+    const { auth } = makeAuthFixture()
+    const folderPath = mkdtempSync(join(tmpdir(), "codevisor-auth-unbound-"))
+    tempDirs.push(folderPath)
+    const project = await run(services.db.createProject({ folderPath }))
+    const session = await run(services.db.createSession({ projectId: project.id, harnessId: "pi" }))
+    const sink = sessionEventSink(
+      { ...services, auth },
+      await run(makeEventFanout),
+      "server-a",
+      session.id
+    )
+    await sink({
+      kind: "session.updated",
+      subjectId: session.id,
+      payload: { stopKind: "authRequired", stopReason: "end_turn", turnState: "ended" }
+    })
+
+    expect(auth.markAccountExpired).not.toHaveBeenCalled()
+    expect(
+      listSubjectEvents(services, session.id).some(
+        (event) =>
+          event.kind === "session.updated" && JSON.stringify(event.payload).includes("authRequired")
+      )
+    ).toBe(true)
+  })
+
   it("binds sessions to harness accounts and reports expired sign-ins", async () => {
     const { services, agents } = await makeServices("server-a")
     const { account, auth, state } = makeAuthFixture()
@@ -324,17 +354,26 @@ describe("harness routes", () => {
     )(createdResponse.body)
 
     expect(created.harnessAccountId).toBe(account.id)
-    await agents.emit(created.agentSessionId, {
-      kind: "session.authRequired",
-      subjectId: created.agentSessionId,
-      payload: { detail: "Please sign in again" }
-    })
-    await agents.emit(created.agentSessionId, {
-      kind: "session.authRequired",
-      subjectId: created.agentSessionId,
-      payload: null
-    })
+    const endTurn = (turnId: string, payload: Record<string, unknown>) =>
+      agents.emit(created.agentSessionId, {
+        kind: "session.updated",
+        subjectId: created.agentSessionId,
+        payload: {
+          initiatedBy: "user",
+          stopReason: "end_turn",
+          turnId,
+          turnState: "ended",
+          ...payload
+        }
+      })
+    await endTurn("turn-ok", {})
+    await endTurn("turn-auth", { stopDetail: "Please sign in again", stopKind: "authRequired" })
+    await endTurn("turn-auth-bare", { stopKind: "authRequired" })
     await waitFor(() => vi.mocked(auth.markAccountExpired).mock.calls.length === 2)
+    expect(vi.mocked(auth.markAccountExpired).mock.calls).toEqual([
+      [account.id, "Please sign in again"],
+      [account.id, undefined]
+    ])
     await jsonRequest(server, `/v1/sessions/${created.id}/prompt`, {
       method: "POST",
       body: JSON.stringify({ text: "token expired" })

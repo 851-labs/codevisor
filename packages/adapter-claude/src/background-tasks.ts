@@ -17,6 +17,13 @@ export const handleSystemMessage = (
       break
     case "api_retry": {
       if (!session.turnActive) break
+      if (message.error === "authentication_failed") {
+        if (session.lastAssistantError !== "authentication_failed") {
+          session.lastAssistantError = "authentication_failed"
+          void session.q.interrupt().catch(() => undefined)
+        }
+        break
+      }
       const retry = claudeInternalRetryStatus(message)
       void session.emit({
         kind: "session.updated",

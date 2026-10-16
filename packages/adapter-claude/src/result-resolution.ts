@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { TurnStopKind } from "@codevisor/api"
 
 import type { ClaudeSession } from "./session.js"
 import { rejectedUsageLimitDetail, usageLimitTextFromResult } from "./usage.js"
@@ -31,7 +32,7 @@ export type TurnResolution =
       readonly kind: "end"
       readonly stopReason: string
       readonly stopDetail?: string | undefined
-      readonly stopKind?: "usageLimit" | undefined
+      readonly stopKind?: TurnStopKind | undefined
       readonly retryable?: boolean | undefined
     }
 
@@ -46,6 +47,14 @@ export const classifyResult = (
   const lastError = session.lastAssistantError ?? ""
   const usageLimit = usageLimitResolution(session, message, subtype, lastError)
   if (usageLimit !== undefined) return usageLimit
+  if (lastError === "authentication_failed" && (message.is_error || subtype !== "success")) {
+    return {
+      kind: "end",
+      stopReason: "end_turn",
+      stopDetail: describeStop(subtype, lastError),
+      stopKind: "authRequired"
+    }
+  }
   return recoveryResolution(session, subtype, stopReasonRaw, lastError)
 }
 
@@ -167,7 +176,7 @@ const describeStop = (subtype: string, lastError: string): string => {
     case "server_error":
       return "The Claude API returned a server error."
     case "authentication_failed":
-      return "Claude authentication failed."
+      return "Claude isn't signed in. Sign in to continue."
     case "oauth_org_not_allowed":
       return "This organization isn't allowed to use this model."
     case "billing_error":

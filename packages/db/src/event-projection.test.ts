@@ -303,6 +303,37 @@ describe("@codevisor/db", () => {
     }
   })
 
+  it("keeps a sign-in stop kind on the ended turn", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/sign-in-stop-kind" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, { turnId: "t1", turnState: "started" })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          stopDetail: "Claude isn't signed in. Sign in to continue.",
+          stopKind: "authRequired",
+          stopReason: "end_turn",
+          turnId: "t1",
+          turnState: "ended"
+        })
+      )
+
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.items.find((item) => item.role === "assistant")).toMatchObject({
+        stopDetail: "Claude isn't signed in. Sign in to continue.",
+        stopKind: "authRequired"
+      })
+    } finally {
+      await Effect.runPromise(db.close)
+    }
+  })
+
   it("does not project ACP startup metadata as an assistant turn", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

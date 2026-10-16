@@ -137,8 +137,6 @@ export const handleResult = (
 
   const assistantError = session.lastAssistantError
   const resolution = classifyResult(session, message)
-  const authFailure =
-    assistantError === "authentication_failed" || assistantError === "oauth_org_not_allowed"
   if (process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined) {
     logTurnEnd(session, message, resolution)
   }
@@ -171,15 +169,6 @@ export const handleResult = (
   }
 
   session.lastErrorText = undefined
-  if (authFailure) {
-    void session.emit({
-      kind: "session.authRequired",
-      subjectId: session.key,
-      payload: {
-        detail: resolution.kind === "end" ? resolution.stopDetail : "Claude sign-in is required."
-      }
-    })
-  }
   void cancelClaudePendingQuestions(session)
   settleForkedCommands(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)

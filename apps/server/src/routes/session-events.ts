@@ -35,20 +35,6 @@ export const sessionEventSink =
     if (isUserRuntimeEvent(event)) {
       return undefined
     }
-    if (event.kind === "session.authRequired") {
-      return (async () => {
-        const session = await run(services.db.getSessionSummary(sessionId))
-        const detail =
-          isRecord(event.payload) && typeof event.payload.detail === "string"
-            ? event.payload.detail
-            : undefined
-        /* v8 ignore next */
-        if (session?.harnessAccountId !== undefined) {
-          await services.auth?.markAccountExpired(session.harnessAccountId, detail)
-        }
-        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
-      })()
-    }
     const payload = objectPayload(event.payload)
     if (event.kind === "session.output" && payload.kind === "image_generation") {
       return persistGeneratedImage(services, event).then((persisted) =>
@@ -81,6 +67,15 @@ export const sessionEventSink =
             )
           }
         )
+        if (payload.stopKind === "authRequired") {
+          const session = await run(services.db.getSessionSummary(sessionId))
+          if (session.harnessAccountId !== undefined) {
+            await services.auth?.markAccountExpired(
+              session.harnessAccountId,
+              typeof payload.stopDetail === "string" ? payload.stopDetail : undefined
+            )
+          }
+        }
         await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
       })()
     }

@@ -48,7 +48,9 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.plan_resumed_at === null ? {} : { planResumedAt: row.plan_resumed_at }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
     ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
-    ...(row.stop_kind === "usageLimit" ? { stopKind: "usageLimit" as const } : {}),
+    ...(row.stop_kind === "usageLimit" || row.stop_kind === "authRequired"
+      ? { stopKind: row.stop_kind }
+      : {}),
     ...(row.retryable === 1 ? { retryable: true } : {}),
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),

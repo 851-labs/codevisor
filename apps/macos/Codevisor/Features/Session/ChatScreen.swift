@@ -6,7 +6,6 @@ import StreamMarkdown
 import TranscriptKit
 
 struct ChatScreen: View {
-  @State var authSignInHarnessId: String?
   static let composerBottomMargin: CGFloat = 16
 
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
@@ -85,10 +84,6 @@ struct ChatScreen: View {
         presentationSurface.isQueueExpanded = isExpanded
       }
       .overlay { initialLoadingOverlay }
-      .harnessSignInSheet(
-        harnessId: $authSignInHarnessId,
-        serverId: controller.project.serverId
-      )
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)

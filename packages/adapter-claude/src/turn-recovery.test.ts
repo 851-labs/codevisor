@@ -12,8 +12,18 @@ import {
   resultMessage,
   resultWith,
   run,
-  streamEvent
+  streamEvent,
+  systemMessage
 } from "./test-support.js"
+
+const authRetry = (attempt: number) =>
+  systemMessage("api_retry", {
+    attempt,
+    error: "authentication_failed",
+    error_status: 401,
+    max_retries: 10,
+    retry_delay_ms: 500
+  })
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -217,7 +227,7 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
 
-    fake.push(assistantErrorMessage("authentication_failed"))
+    fake.push(assistantErrorMessage("model_not_found"))
     fake.push(resultMessage("error_during_execution"))
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
@@ -226,8 +236,67 @@ describe("ClaudeProvider", () => {
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     ).toHaveLength(0)
     const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
-    expect(endedPayload?.stopDetail).toBe("Claude authentication failed.")
+    expect(endedPayload?.stopDetail).toBe("The selected model is unavailable.")
+    expect(endedPayload?.stopKind).toBeUndefined()
     expect(events.some((event) => event.kind === "session.error")).toBe(false)
+  })
+
+  it("ends a signed-out turn as needing sign-in", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+
+    fake.push(assistantErrorMessage("authentication_failed"))
+    fake.push(resultWith({ is_error: true, result: "Not logged in · Please run /login" }))
+    const result = await promptPromise
+    expect(result.stopReason).toBe("end_turn")
+
+    expect(
+      fake.userMessages.filter((message) => message.message.content === "Please continue.")
+    ).toHaveLength(0)
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
+    expect(endedPayload?.stopDetail).toBe("Claude isn't signed in. Sign in to continue.")
+    expect(endedPayload?.stopKind).toBe("authRequired")
+    expect(endedPayload?.retryable).toBeUndefined()
+    expect(events.some((event) => event.kind === "session.authRequired")).toBe(false)
+  })
+
+  it("stops Claude's own sign-in retries and ends the turn as needing sign-in", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    fake.push(authRetry(1))
+    fake.push(authRetry(2))
+    await fake.drain()
+    expect(fake.interrupts).toHaveLength(1)
+
+    fake.push(resultMessage("error_during_execution"))
+    const result = await promptPromise
+    expect(result.stopReason).toBe("end_turn")
+    const payloads = events.map(payloadOf)
+    expect(payloads.some((payload) => payload.retrying !== undefined)).toBe(false)
+    expect(payloads.find((payload) => payload.turnState === "ended")).toMatchObject({
+      stopDetail: "Claude isn't signed in. Sign in to continue.",
+      stopKind: "authRequired"
+    })
   })
 
   it("doesn't resume a transient-error turn after the session closes", async () => {

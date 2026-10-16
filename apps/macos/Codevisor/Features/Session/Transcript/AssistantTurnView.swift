@@ -227,13 +227,13 @@ struct AssistantTurnView: View {
         actionTitle: "Switch Account",
         action: openHarnessAccountSettings
       )
-    } else if let transcriptController,
-      transcriptController.errorRequiresHarnessAuthentication,
-      transcriptController.errorMessage == message
+    } else if turn.stopKind == "authRequired"
+      || (transcriptController?.errorRequiresHarnessAuthentication == true
+        && transcriptController?.errorMessage == message)
     {
       ChatErrorRow(
         message,
-        actionTitle: "Open Harness Settings",
+        actionTitle: "Sign In",
         action: openHarnessAccountSettings
       )
     } else if let transcriptController,

@@ -1,6 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http"
 import { Socket } from "node:net"
 
+import { SharedCredentialError } from "@codevisor/harness-manager"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { listeningPort } from "../test-support-net.js"
@@ -94,6 +95,20 @@ describe("Claude shared account gateway", () => {
     const failed = await f.send()
     expect(failed.status).toBe(503)
     expect(await failed.text()).not.toContain("SECRET")
+    for (const reason of ["reauthenticate", "revoked"] as const) {
+      const signedOut = await fixture({
+        token: async () => {
+          throw new SharedCredentialError(reason)
+        }
+      })
+      expect((await signedOut.send()).status).toBe(401)
+    }
+    const offline = await fixture({
+      token: async () => {
+        throw new SharedCredentialError("offline")
+      }
+    })
+    expect((await offline.send()).status).toBe(503)
     const upstream = vi.fn<typeof fetch>(async () => new Response("limited", { status: 429 }))
     const g = await fixture({ token: async () => bundle, fetch: upstream })
     expect((await g.send()).status).toBe(429)

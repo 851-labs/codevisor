@@ -46,13 +46,16 @@ final class HarnessFleetPresenter {
 }
 
 extension View {
-  func harnessFleetSheets(_ presenter: HarnessFleetPresenter) -> some View {
-    modifier(HarnessFleetSheetsModifier(presenter: presenter))
+  func harnessFleetSheets(
+    _ presenter: HarnessFleetPresenter, onPresented: @escaping () -> Void = {}
+  ) -> some View {
+    modifier(HarnessFleetSheetsModifier(presenter: presenter, onPresented: onPresented))
   }
 }
 
 private struct HarnessFleetSheetsModifier: ViewModifier {
   @Bindable var presenter: HarnessFleetPresenter
+  let onPresented: () -> Void
 
   func body(content: Content) -> some View {
     content
@@ -69,9 +72,11 @@ private struct HarnessFleetSheetsModifier: ViewModifier {
           )
           .environment(\.settingsMachineId, machineId)
         }
+        .onAppear(perform: onPresented)
       }
       .sheet(item: $presenter.signInTarget) { target in
         HarnessSignInSheet(serverId: target.machineId, harnessId: target.harnessId, startsSignIn: target.startsSignIn)
+          .onAppear(perform: onPresented)
       }
   }
 }

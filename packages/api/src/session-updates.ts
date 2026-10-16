@@ -19,7 +19,7 @@ export type ToolCallStatus = typeof ToolCallStatus.Type
 export const TurnInitiator = Schema.Literals(["user", "agent"])
 export type TurnInitiator = typeof TurnInitiator.Type
 
-export const TurnStopKind = Schema.Literals(["usageLimit"])
+export const TurnStopKind = Schema.Literals(["usageLimit", "authRequired"])
 export type TurnStopKind = typeof TurnStopKind.Type
 
 export const TurnLifecycle = Schema.Struct({

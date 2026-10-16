@@ -19,12 +19,11 @@ struct HarnessesSettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .harnessFleetSheets(presenter)
+    .harnessFleetSheets(presenter) { settingsRouter.pendingHarnessAccountRequest = nil }
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in
       guard let request else { return }
       presenter.present(
         harnessId: request.harnessId, machineId: request.machineId, startsSignIn: false, in: environment)
-      settingsRouter.pendingHarnessAccountRequest = nil
     }
   }
 }
