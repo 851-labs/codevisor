@@ -14,7 +14,7 @@ struct HoverableRow<Content: View>: View {
     let showsHoverBackground = isHoverForced || revealsHoverContent
     content(revealsHoverContent)
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        RoundedRectangle.sidebarRow
           .fill(
             isSelected
               ? Color.primary.opacity(0.14)

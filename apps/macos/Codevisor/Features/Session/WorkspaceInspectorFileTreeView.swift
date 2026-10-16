@@ -167,7 +167,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
     .padding(.trailing, 6)
     .frame(height: 22)
     .contentShape(Rectangle())
-    .sidebarRowHover(isSelected: isSelected, cornerRadius: 8.5, cornerStyle: .continuous)
+    .sidebarRowHover(isSelected: isSelected)
     .onTapGesture(perform: onActivate)
     .help(entry.path)
     .contextMenu {
