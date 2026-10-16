@@ -17,38 +17,32 @@ struct WorkspaceInspectorLinksView: View {
         onRetry: onRetry
       )
     } else {
-      ScrollView {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
+      Form {
+        Section {
           ForEach(model.links) { link in
-            WorkspaceInspectorLinkCard(link: link, client: client) {
+            WorkspaceInspectorLinkRow(link: link, client: client) {
               onOpen(.link(link.url))
             }
           }
+          if case let .failed(message) = model.linksPhase {
+            HStack {
+              Text("Couldn't load links: \(message)")
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+              Spacer()
+              Button("Try Again", action: onRetry)
+            }
+          } else if model.hasMoreLinks {
+            ProgressView()
+              .controlSize(.small)
+              .frame(maxWidth: .infinity)
+              .task(id: "\(model.linksNextBefore ?? ""):\(model.linksPhase == .loaded)") {
+                await model.loadMoreLinks()
+              }
+          }
         }
-        .padding(12)
-        footer
       }
-    }
-  }
-
-  @ViewBuilder private var footer: some View {
-    if case let .failed(message) = model.linksPhase {
-      HStack {
-        Text("Couldn't load links: \(message)")
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-        Spacer()
-        Button("Try Again", action: onRetry)
-      }
-      .padding([.horizontal, .bottom], 12)
-    } else if model.hasMoreLinks {
-      ProgressView()
-        .controlSize(.small)
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 12)
-        .task(id: "\(model.linksNextBefore ?? ""):\(model.linksPhase == .loaded)") {
-          await model.loadMoreLinks()
-        }
+      .formStyle(.grouped)
     }
   }
 }
@@ -76,14 +70,12 @@ private final class WorkspaceInspectorLinkPreview {
   }
 }
 
-private struct WorkspaceInspectorLinkCard: View {
+private struct WorkspaceInspectorLinkRow: View {
   let link: ServerWorkspaceLink
   let client: any CodevisorServerClienting
   let onOpen: () -> Void
 
   @State private var loaded: WorkspaceInspectorLinkPreview?
-
-  private static let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
   private var current: WorkspaceInspectorLinkPreview? {
     loaded ?? WorkspaceInspectorLinkPreview.cache.object(forKey: link.url as NSURL)
@@ -93,23 +85,40 @@ private struct WorkspaceInspectorLinkCard: View {
     current?.preview.title ?? link.title ?? WorkspaceInspectorLinksView.host(link.url)
   }
 
-  private var tint: (red: Double, green: Double, blue: Double)? {
-    guard current?.image != nil, let hex = current?.preview.image?.color else { return nil }
-    return Self.rgb(hex)
-  }
-
   var body: some View {
     Button(action: onOpen) {
-      VStack(spacing: 0) {
-        Color.clear
-          .aspectRatio(1.15, contentMode: .fit)
-          .overlay { artwork }
-          .clipped()
-          .background(.fill.quaternary)
-        caption
+      HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 3) {
+          Text(title)
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+          if let description = current?.preview.description {
+            Text(description)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+          HStack(spacing: 5) {
+            WorkspaceInspectorSiteIcon(url: link.url, client: client)
+              .frame(width: 12, height: 12)
+            Text(current?.preview.siteName ?? WorkspaceInspectorLinksView.host(link.url))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+          .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+        if let image = current?.image {
+          Image(nsImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
       }
-      .clipShape(Self.shape)
-      .contentShape(Self.shape)
+      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .help(link.url.absoluteString)
@@ -130,59 +139,6 @@ private struct WorkspaceInspectorLinkCard: View {
       }
       loaded = result
     }
-  }
-
-  @ViewBuilder private var artwork: some View {
-    if let image = current?.image {
-      Image(nsImage: image)
-        .resizable()
-        .scaledToFill()
-    } else if let description = current?.preview.description {
-      Text(description)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .padding(10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    } else {
-      WorkspaceInspectorSiteIcon(url: link.url, client: client)
-        .frame(width: 28, height: 28)
-    }
-  }
-
-  private var caption: some View {
-    VStack(alignment: .leading, spacing: 1) {
-      Text(title)
-        .font(.callout.weight(.semibold))
-        .lineLimit(1)
-      Text(WorkspaceInspectorLinksView.host(link.url))
-        .font(.caption)
-        .lineLimit(1)
-        .opacity(0.7)
-    }
-    .foregroundStyle(captionForeground)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 6)
-    .background {
-      if let tint {
-        Color(red: tint.red, green: tint.green, blue: tint.blue)
-      } else {
-        Rectangle().fill(.fill.tertiary)
-      }
-    }
-  }
-
-  private var captionForeground: Color {
-    guard let tint else { return .primary }
-    let luminance = 0.2126 * tint.red + 0.7152 * tint.green + 0.0722 * tint.blue
-    return luminance > 0.6 ? .black : .white
-  }
-
-  private static func rgb(_ hex: String) -> (red: Double, green: Double, blue: Double)? {
-    guard hex.count == 7, hex.hasPrefix("#"), let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-    return (
-      Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255
-    )
   }
 }
 
