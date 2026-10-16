@@ -1,4 +1,3 @@
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -8,6 +7,7 @@ import {
   makeProvider,
   payloadOf,
   run,
+  startTestSession,
   stringValue,
   toolCheck
 } from "./test-support.js"
@@ -27,15 +27,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("surfaces tool approvals as Allow/Deny questions in ask modes", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
     await run(created.handle.setMode("default"))
     expect(fake.permissionModes).toEqual(["default"])
 
@@ -77,15 +69,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("auto-allows checks the CLI escalates while in bypassPermissions", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
     const log = vi.spyOn(console, "error").mockImplementation(() => {})
 
     expect(fake.options?.allowDangerouslySkipPermissions).toBe(true)
@@ -135,15 +119,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("surfaces ExitPlanMode as a plan-approval question: implement allows, keep planning denies", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const planFilePath = "/home/user/.claude/plans/golden-gathering-eagle.md"
     const toolInput = { plan: "# The Plan\n\n1. Do it", planFilePath }
@@ -220,15 +196,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("blocks AskUserQuestion on the human's answer and folds it into updatedInput", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const toolInput = {
       questions: [
@@ -291,15 +259,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("cancelling a question denies the tool; interrupts deny all held questions", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const ask = (question: string) =>
       fake.options!.canUseTool!(
