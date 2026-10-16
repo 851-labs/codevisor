@@ -55,8 +55,9 @@ public final class NavigationStore {
 
   public var cachedMachineIds: Set<String> { Set(caches.caches.keys) }
 
-  public func serverIdentity(forMachineId machineId: String) -> String? {
+  public func machineOrderKey(forMachineId machineId: String, machines: MachineController) -> String {
     caches.caches[machineId]?.snapshot.workspaces.first?.serverId
+      ?? machines.syncKey(forMachineId: machineId) ?? machineId
   }
 
   func eventCursor(for machineId: String) -> Int? { caches.caches[machineId]?.eventCursor }

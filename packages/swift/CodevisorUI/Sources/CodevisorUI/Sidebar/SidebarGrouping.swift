@@ -146,18 +146,22 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     return String(group.id.dropFirst("project:".count))
   }
 
+  public static func savedOrder(
+    _ saved: [String], moving key: String, to index: Int, among shown: [String]
+  ) -> [String] {
+    var order: [String] = []
+    for entry in saved + shown where !order.contains(entry) { order.append(entry) }
+    return ListReorder.moving(key, to: index, within: shown, in: order)
+  }
+
   static func ordered(
     _ groups: [SidebarWorkspaceGroup], by order: [String], key: (SidebarWorkspaceGroup) -> String
   ) -> [SidebarWorkspaceGroup] {
     guard !order.isEmpty else { return groups }
     let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-    return groups.enumerated()
-      .sorted { lhs, rhs in
-        let left = rank[key(lhs.element)] ?? .max
-        let right = rank[key(rhs.element)] ?? .max
-        return left != right ? left < right : lhs.offset < rhs.offset
-      }
-      .map(\.element)
+    let ranks: [Int] = groups.map { rank[key($0)] ?? .max }
+    let positions = groups.indices.sorted { ranks[$0] != ranks[$1] ? ranks[$0] < ranks[$1] : $0 < $1 }
+    return positions.map { groups[$0] }
   }
 
   static func grouping(

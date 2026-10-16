@@ -17,8 +17,7 @@ extension SidebarView {
   var reordersGroups: Bool { grouping != .flat }
 
   func machineKey(_ serverId: String) -> String {
-    environment.navigationStore.serverIdentity(forMachineId: serverId)
-      ?? environment.machines.syncKey(forMachineId: serverId) ?? serverId
+    environment.navigationStore.machineOrderKey(forMachineId: serverId, machines: environment.machines)
   }
 
   func groupReorderGesture(for group: SidebarWorkspaceGroup) -> some Gesture {
@@ -44,7 +43,23 @@ extension SidebarView {
           if let target = finished.targetIndex { commitGroupMove(finished.groupID, toIndex: target) }
           groupDrag = nil
         }
+        holdGroupToggles()
       }
+  }
+
+  var allowsGroupToggle: Bool { groupDrag == nil && !holdsGroupToggles }
+
+  private func holdGroupToggles() {
+    holdsGroupToggles = true
+    Task {
+      try? await Task.sleep(for: .milliseconds(250))
+      holdsGroupToggles = false
+    }
+  }
+
+  func endGroupDrag(ifMissingFrom ids: [String]) {
+    guard let groupDrag, !ids.contains(groupDrag.groupID) else { return }
+    self.groupDrag = nil
   }
 
   private var headedGroups: [SidebarWorkspaceGroup] {
@@ -68,13 +83,12 @@ extension SidebarView {
   }
 
   private func commitGroupMove(_ groupID: String, toIndex index: Int) {
-    let groups = headedGroups
-    let moved = ListReorder.moving(groupID, to: index, in: groups.map(\.id))
-    let byID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
-    let keys = moved.compactMap { byID[$0].map(orderKey) }
+    let byID = Dictionary(uniqueKeysWithValues: headedGroups.map { ($0.id, $0) })
+    guard let key = byID[groupID].map(orderKey) else { return }
+    let shown = groupDropCandidates().compactMap { byID[$0].map(orderKey) }
     switch grouping {
-    case .machine: machineOrder = keys + machineOrder.filter { !keys.contains($0) }
-    case .project: projectOrder = keys + projectOrder.filter { !keys.contains($0) }
+    case .machine: machineOrder = SidebarWorkspaceGroup.savedOrder(machineOrder, moving: key, to: index, among: shown)
+    case .project: projectOrder = SidebarWorkspaceGroup.savedOrder(projectOrder, moving: key, to: index, among: shown)
     case .flat: break
     }
   }

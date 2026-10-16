@@ -18,10 +18,7 @@ struct HomeSidebarContentBuilder {
       preferences: preferences,
       projects: environment.projectList.projects,
       defaultServerId: environment.defaultComposerServerId,
-      machineKey: { serverId in
-        environment.navigationStore.serverIdentity(forMachineId: serverId)
-          ?? environment.machines.syncKey(forMachineId: serverId) ?? serverId
-      },
+      machineKey: { environment.navigationStore.machineOrderKey(forMachineId: $0, machines: environment.machines) },
       machineHeading: machineHeading
     ) { item, placement in
       guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace,

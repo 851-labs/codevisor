@@ -17,6 +17,7 @@ struct SidebarView: View {
   @State var workspaceRenameTitle = ""
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
+  @State var holdsGroupToggles = false
   @State var revealedWorkspaceID: UUID?
   @State var folds = SidebarFoldState()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
@@ -165,6 +166,7 @@ struct SidebarView: View {
               isExpanded: isExpanded(group),
               isReordering: isReordering,
               onToggle: {
+                guard allowsGroupToggle else { return }
                 fold(group.id) { toggleGroup(group) }
               },
               onNewChat: heading.newChatTarget.map { target in { selection = .newChat(target) } }
@@ -175,6 +177,7 @@ struct SidebarView: View {
             } action: { frame in
               dragGeometry.headings[group.id] = frame
             }
+            .onDisappear { dragGeometry.headings[group.id] = nil }
             .simultaneousGesture(groupReorderGesture(for: group), including: reordersGroups ? .all : .subviews)
             .sidebarFoldingRow(listFolding, progress: progress, shows: listExpanded)
           }
@@ -187,12 +190,14 @@ struct SidebarView: View {
         } action: { frame in
           dragGeometry.groups[group.id] = frame
         }
+        .onDisappear { dragGeometry.groups[group.id] = nil }
       }
       archivedSection
     }
     .padding(.horizontal, 8)
     .padding(.bottom, 8)
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
+    .onChange(of: rest.map(\.id)) { _, ids in endGroupDrag(ifMissingFrom: ids) }
   }
 
   static let groupIndent: CGFloat = 8

@@ -66,6 +66,13 @@ struct SidebarWorkspaceGroupTests {
     #expect(groups(items, .machine, projectOrder: keys.reversed()).map(\.id) == groups(items, .machine).map(\.id))
   }
 
+  @Test("Moving a shown group keeps hidden ones where they were saved and adds new ones after them")
+  func savedOrderKeepsHiddenGroupsInPlace() {
+    #expect(
+      SidebarWorkspaceGroup.savedOrder(["a", "b", "c"], moving: "c", to: 0, among: ["a", "c"]) == ["c", "b", "a"])
+    #expect(SidebarWorkspaceGroup.savedOrder(["a", "a"], moving: "d", to: 0, among: ["a", "d"]) == ["d", "a"])
+  }
+
   @Test func flatGroupingHasNoHeadingAndNoPinnedGroupWithoutPins() {
     let items = [item(studio), item(linux)]
     let result = groups(items, .flat)
