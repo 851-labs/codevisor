@@ -23,8 +23,17 @@ import { record } from "./protocol.js"
 const roots: Array<string> = []
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()))
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  const results = await Promise.allSettled(cleanups.splice(0).map(async (cleanup) => cleanup()))
+  results.push(
+    ...(await Promise.allSettled(
+      roots.splice(0).map(async (root) => rm(root, { recursive: true, force: true }))
+    ))
+  )
+  const errors: Array<unknown> = []
+  for (const result of results) {
+    if (result.status === "rejected") errors.push(result.reason)
+  }
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to clean up agy gateway tests")
 })
 const temporary = async () => {
   const root = await mkdtemp(join(tmpdir(), "agy-gateway-"))
@@ -246,7 +255,11 @@ const runBridge = async (env: Record<string, string>) => {
     env: { PATH: process.env.PATH ?? "", ...env },
     stdio: ["pipe", "pipe", "inherit"]
   })
-  cleanups.push(() => child.kill())
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
+  cleanups.push(async () => {
+    child.kill()
+    await closed
+  })
   const received: Array<Record<string, unknown>> = []
   const waiting: Array<{
     match: (message: Record<string, unknown>) => boolean
