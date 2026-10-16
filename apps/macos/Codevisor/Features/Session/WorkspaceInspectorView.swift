@@ -22,19 +22,20 @@ struct WorkspaceInspectorView: View {
   let onOpen: (Destination) -> Void
 
   @State private var tabBarWidth: CGFloat = 0
+  @State private var visited: Set<WorkspaceInspectorTab> = []
 
   var body: some View {
     ZStack {
-      switch tab {
-      case .info: info
-      case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
-      case .links:
-        WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
-      case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
-      case .files: WorkspaceInspectorFileTreeView(model: fileTree, activeFilePath: activeFilePath, onOpen: onOpen)
+      ForEach(WorkspaceInspectorTab.allCases.filter { $0 == tab || visited.contains($0) }) { candidate in
+        content(for: candidate)
+          .opacity(candidate == tab ? 1 : 0)
+          .allowsHitTesting(candidate == tab)
+          .disabled(candidate != tab)
+          .accessibilityHidden(candidate != tab)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
     .safeAreaInset(edge: .top, spacing: 0) {
       ScrollViewReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
@@ -48,12 +49,24 @@ struct WorkspaceInspectorView: View {
           $0.size.width
         } action: { width in
           tabBarWidth = width
-          Task { proxy.scrollTo(tab, anchor: .center) }
+          Task { proxy.scrollTo(tab) }
         }
         .onChange(of: tab) { _, selected in
-          withAnimation(.smooth(duration: 0.28)) { proxy.scrollTo(selected, anchor: .center) }
+          withAnimation(.smooth(duration: 0.28)) { proxy.scrollTo(selected) }
         }
       }
+    }
+  }
+
+  @ViewBuilder
+  private func content(for tab: WorkspaceInspectorTab) -> some View {
+    switch tab {
+    case .info: info
+    case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
+    case .links:
+      WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
+    case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
+    case .files: WorkspaceInspectorFileTreeView(model: fileTree, activeFilePath: activeFilePath, onOpen: onOpen)
     }
   }
 

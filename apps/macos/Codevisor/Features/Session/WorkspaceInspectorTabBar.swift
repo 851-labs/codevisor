@@ -36,8 +36,10 @@ struct WorkspaceInspectorTabBar: View {
     .gesture(
       DragGesture(minimumDistance: 0, coordinateSpace: .local)
         .updating($isPressed) { _, pressed, _ in pressed = true }
-        .onEnded { value in
-          guard let tab = frames.first(where: { $0.value.contains(value.location) })?.key else { return }
+        .onChanged { value in
+          guard let tab = frames.first(where: { $0.value.contains(value.location) })?.key, tab != selection else {
+            return
+          }
           selection = tab
         }
     )
