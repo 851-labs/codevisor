@@ -4,6 +4,8 @@ import SwiftUI
 struct SidebarRowHoverModifier: ViewModifier {
   var isSelected = false
   var isEnabled = true
+  var cornerRadius: CGFloat = 6
+  var cornerStyle: RoundedCornerStyle = .circular
   @Environment(\.controlActiveState) private var controlActiveState
   @State private var isHovered = false
 
@@ -11,7 +13,7 @@ struct SidebarRowHoverModifier: ViewModifier {
     let showsHover = controlActiveState == .key && isEnabled && isHovered
     content
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        RoundedRectangle(cornerRadius: cornerRadius, style: cornerStyle)
           .fill(
             isSelected
               ? Color.primary.opacity(0.14)
@@ -22,7 +24,12 @@ struct SidebarRowHoverModifier: ViewModifier {
 }
 
 extension View {
-  func sidebarRowHover(isSelected: Bool = false, isEnabled: Bool = true) -> some View {
-    modifier(SidebarRowHoverModifier(isSelected: isSelected, isEnabled: isEnabled))
+  func sidebarRowHover(
+    isSelected: Bool = false, isEnabled: Bool = true, cornerRadius: CGFloat = 6,
+    cornerStyle: RoundedCornerStyle = .circular
+  ) -> some View {
+    modifier(
+      SidebarRowHoverModifier(
+        isSelected: isSelected, isEnabled: isEnabled, cornerRadius: cornerRadius, cornerStyle: cornerStyle))
   }
 }
