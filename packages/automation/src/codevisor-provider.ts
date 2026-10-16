@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 
+import { jsonSchema } from "@codevisor/api"
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Schema } from "effect"
 
@@ -8,7 +9,6 @@ import { textToolResult } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
 import {
   CODEVISOR_API_TOOLS,
-  objectSchema,
   type CodevisorApiToolSpec,
   type JsonSchema
 } from "./codevisor-api-tools.js"
@@ -104,7 +104,7 @@ const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"] => {
     }
     required.add("dataBase64")
   } else if (spec.body !== undefined) {
-    const schema = objectSchema(spec.body)
+    const schema = jsonSchema(spec.body)
     if (spec.wrappedBody === true) {
       properties.body = schema
       required.add("body")
@@ -159,7 +159,7 @@ const loopbackBaseUrl = (value: string): URL => {
 }
 
 const bodyPropertyNames = (schema: Schema.Constraint): ReadonlyArray<string> =>
-  Object.keys(recordOrEmpty(objectSchema(schema).properties))
+  Object.keys(recordOrEmpty(jsonSchema(schema).properties))
 
 const responseError = async (spec: CodevisorApiToolSpec, response: Response): Promise<Error> => {
   const text = await response.text()

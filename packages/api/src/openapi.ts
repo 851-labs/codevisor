@@ -13,6 +13,7 @@ import {
 import { jsonSchema, requestSchemas, responseSchemas, type JsonObject } from "./openapi-schemas.js"
 
 export { endpoints } from "./openapi-endpoints.js"
+export { jsonSchema } from "./openapi-schemas.js"
 
 export interface CodevisorOpenApi {
   readonly openapi: "3.1.0"
