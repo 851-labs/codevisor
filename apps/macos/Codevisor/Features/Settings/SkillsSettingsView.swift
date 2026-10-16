@@ -4,7 +4,6 @@ import SwiftUI
 
 struct SkillsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var model = SkillListModel()
   @State private var showingCreate = false
   @State private var showingRemoteImport = false
@@ -33,14 +32,10 @@ struct SkillsSettingsView: View {
             Label("New Skill", systemImage: "plus")
           }
           .fixedSize()
-          .settingsActionTint(theme)
         }
       }
     }
-    .settingsPaneFormStyle(theme)
-    .background {
-      if !theme.isSystem { theme.windowBackground }
-    }
+    .formStyle(.grouped)
     .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
       await model.load(client: localClient)
     }
@@ -98,9 +93,7 @@ struct SkillsSettingsView: View {
         guard let entry = pendingRemoval else { return }
         Task { await remove(entry) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        .settingsActionTint(theme)
     } message: {
       Text("It will be removed from every device.")
     }

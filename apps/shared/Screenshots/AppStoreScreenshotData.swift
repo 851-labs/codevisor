@@ -1,7 +1,6 @@
 #if DEBUG
   import ACPKit
   import CodevisorCore
-  import CodevisorTheming
   import Foundation
   import SwiftUI
 
@@ -24,7 +23,6 @@
             lastSeenAt: "2027-01-15T08:00:00.000Z")
         ], seedCapabilities: capabilities
       )
-      environment.theme.setMode(colorScheme == .dark ? .dark : .light)
       environment.composerDefaults.rememberNewWorkspaceServer(serverId: machineID)
       environment.composerDefaults.rememberNewWorkspaceProject(serverId: machineID, projectId: projectID)
       environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: "claude-code")

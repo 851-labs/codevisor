@@ -23,7 +23,6 @@ struct ErrorBannerLayer: View {
 }
 
 private struct ErrorBannerView: View {
-  @Environment(\.theme) private var theme
   private var cardStyle = ComposerCardStyle()
   let entry: ErrorReporter.Entry
   let onDismiss: () -> Void
@@ -61,13 +60,13 @@ private struct ErrorBannerView: View {
       .help("Dismiss")
       .accessibilityLabel("Dismiss")
     }
-    .foregroundStyle(theme.statusError)
+    .foregroundStyle(.red)
     .padding(ComposerCardStyle.contentPadding)
     .frame(width: 360, alignment: .leading)
     .background {
       ZStack {
-        cardStyle.shape.fill(theme.windowBackground)
-        cardStyle.shape.fill(theme.statusError.opacity(0.08))
+        cardStyle.shape.fill(Color.windowBackgroundColor)
+        cardStyle.shape.fill(Color.red.opacity(0.08))
       }
     }
     .shadow(color: .black.opacity(0.18), radius: 14, y: 4)

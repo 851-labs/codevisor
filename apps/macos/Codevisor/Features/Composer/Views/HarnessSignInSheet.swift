@@ -5,7 +5,6 @@ import SwiftUI
 struct HarnessSignInSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
 
   let serverId: String
   let harnessId: String
@@ -20,12 +19,10 @@ struct HarnessSignInSheet: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SheetFooter {
         Button("Done") { finish() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
       }
     }
     .sheetSize(.list)
-    .themedSurface(.sheet)
     .environment(\.settingsMachineId, serverId)
     .task {
       guard harness == nil else { return }

@@ -4,12 +4,11 @@ import SwiftUI
 
 struct SidebarSyncFooter: View {
   var indicator: NavigationPresentation.SyncIndicator
-  @Environment(\.theme) private var theme
 
   var body: some View {
     if let label = indicator.label {
       VStack(spacing: 0) {
-        Hairline(color: theme.separator)
+        Hairline(color: .separatorColor)
         HStack(spacing: 6) {
           if indicator.unreachableMachineNames.isEmpty {
             ProgressView()

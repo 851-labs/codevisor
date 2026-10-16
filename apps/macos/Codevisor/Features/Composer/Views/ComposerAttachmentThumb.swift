@@ -4,7 +4,6 @@ import CodevisorUI
 import SwiftUI
 
 struct ComposerAttachmentThumb: View {
-  @Environment(\.theme) private var theme
   @Environment(\.quickLook) private var quickLook
   let attachment: ComposerAttachment
   let onRemove: () -> Void
@@ -19,7 +18,7 @@ struct ComposerAttachmentThumb: View {
         if attachment.hasVisualPreview {
           ZStack {
             RoundedRectangle(cornerRadius: 8)
-              .fill(theme.bubbleBackground)
+              .fill(Color.bubbleBackground)
             if let image = thumbnail {
               Image(nsImage: image)
                 .resizable()
@@ -123,7 +122,7 @@ struct ComposerAttachmentThumb: View {
           .overlay(
             VStack(spacing: 2) {
               Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(theme.statusWarn)
+                .foregroundStyle(.orange)
               Text("Retry")
                 .font(.caption2)
                 .foregroundStyle(.white)

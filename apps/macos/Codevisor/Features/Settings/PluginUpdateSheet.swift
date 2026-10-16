@@ -4,7 +4,6 @@ import SwiftUI
 
 struct PluginUpdateSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let plan: ServerPluginUpdatePlan
   let onApply: () async throws -> Void
   @State private var isWorking = false
@@ -21,37 +20,30 @@ struct PluginUpdateSheet: View {
         if let errorMessage {
           Section {
             Label(errorMessage, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(theme.statusError)
+              .foregroundStyle(.red)
           }
-          .listRowBackground(theme.formRowBackground)
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       .disabled(isWorking)
-      Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+      Divider()
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
           .disabled(isWorking)
         if isWorking {
           ProgressView()
             .controlSize(.small)
-            .tint(theme.isSystem ? nil : theme.accent)
             .padding(.horizontal, 12)
         } else {
           Button("Update Plugin") { Task { await apply() } }
-            .settingsActionTint(theme)
             .keyboardShortcut(.defaultAction)
         }
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 540, height: 620)
-    .themedSurface(.sheet)
   }
 
   private var overview: some View {
@@ -79,7 +71,6 @@ struct PluginUpdateSheet: View {
         "Codevisor will apply these exact staged bytes. If the plan expires or the installed plugin changes, you’ll review a new plan."
       )
     }
-    .listRowBackground(theme.formRowBackground)
   }
 
   private func commands(title: String, review: ServerPluginUpdateReview) -> some View {
@@ -93,7 +84,6 @@ struct PluginUpdateSheet: View {
       }
       commandRow(title: "Run", command: review.runCommand)
     }
-    .listRowBackground(theme.formRowBackground)
   }
 
   @ViewBuilder
@@ -117,7 +107,6 @@ struct PluginUpdateSheet: View {
         }
       }
     }
-    .listRowBackground(theme.formRowBackground)
   }
 
   private var changes: some View {
@@ -125,7 +114,6 @@ struct PluginUpdateSheet: View {
       changeRows(label: "Pane", changes: plan.paneChanges)
       changeRows(label: "Tool", changes: plan.toolChanges)
     }
-    .listRowBackground(theme.formRowBackground)
   }
 
   @ViewBuilder
@@ -135,15 +123,15 @@ struct PluginUpdateSheet: View {
     } else {
       ForEach(changes.added, id: \.self) { name in
         Label("Add \(label.lowercased()) “\(name)”", systemImage: "plus.circle")
-          .foregroundStyle(theme.statusOK)
+          .foregroundStyle(.green)
       }
       ForEach(changes.changed, id: \.self) { name in
         Label("Change \(label.lowercased()) “\(name)”", systemImage: "arrow.triangle.2.circlepath")
-          .foregroundStyle(theme.statusWarn)
+          .foregroundStyle(.orange)
       }
       ForEach(changes.removed, id: \.self) { name in
         Label("Remove \(label.lowercased()) “\(name)”", systemImage: "minus.circle")
-          .foregroundStyle(theme.statusError)
+          .foregroundStyle(.red)
       }
     }
   }

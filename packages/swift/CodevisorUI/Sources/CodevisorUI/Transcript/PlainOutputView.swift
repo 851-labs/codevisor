@@ -15,8 +15,6 @@ public struct PlainOutputView<Trailing: View>: View {
   private let followsTail: Bool
   private let trailing: Trailing
 
-  @Environment(\.theme) private var theme
-
   public init(
     title: String,
     text: String,
@@ -58,10 +56,10 @@ public struct PlainOutputView<Trailing: View>: View {
         outputBody
       }
     }
-    .background(theme.codeBackground)
+    .background(.quaternary.opacity(0.4))
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
+      RoundedRectangle(cornerRadius: 8).strokeBorder(Color.separatorColor, lineWidth: 1)
     }
     .contentShape(RoundedRectangle(cornerRadius: 8))
   }
@@ -69,16 +67,16 @@ public struct PlainOutputView<Trailing: View>: View {
   @ViewBuilder
   private var outputBody: some View {
     #if canImport(AppKit)
-      NativePlainOutputView(text: text, theme: theme, followsTail: followsTail)
+      NativePlainOutputView(text: text, followsTail: followsTail)
         .frame(maxWidth: .infinity, alignment: .leading)
     #elseif canImport(UIKit)
-      IOSNativePlainOutputView(text: text, theme: theme, followsTail: followsTail)
+      IOSNativePlainOutputView(text: text, followsTail: followsTail)
         .frame(maxWidth: .infinity, alignment: .leading)
     #else
       ScrollView(.horizontal, showsIndicators: true) {
         Text(text.isEmpty ? " " : text)
           .font(.system(.caption, design: .monospaced))
-          .foregroundStyle(theme.textPrimary)
+          .foregroundStyle(.primary)
           .textSelection(.enabled)
           .padding(.horizontal, 8)
           .padding(.vertical, 4)
@@ -113,8 +111,6 @@ struct PlainCodeBodyView: View {
   var followsTail = false
   var syntax: [[CodeHighlighter.Token]]? = nil
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     Group {
       if command == nil, output.isEmpty {
@@ -130,10 +126,10 @@ struct PlainCodeBodyView: View {
           .padding(.vertical, 2)
       }
     }
-    .background(theme.codeBackground)
+    .background(.quaternary.opacity(0.4))
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
+      RoundedRectangle(cornerRadius: 8).strokeBorder(Color.separatorColor, lineWidth: 1)
     }
     .contentShape(RoundedRectangle(cornerRadius: 8))
   }
@@ -142,18 +138,18 @@ struct PlainCodeBodyView: View {
   private var terminalBody: some View {
     #if canImport(AppKit)
       NativePlainOutputView(
-        text: output, theme: theme, followsTail: followsTail, command: command, syntax: syntax
+        text: output, followsTail: followsTail, command: command, syntax: syntax
       )
       .frame(maxWidth: .infinity, alignment: .leading)
     #elseif canImport(UIKit)
       IOSNativePlainOutputView(
-        text: output, theme: theme, followsTail: followsTail, command: command, syntax: syntax
+        text: output, followsTail: followsTail, command: command, syntax: syntax
       )
       .frame(maxWidth: .infinity, alignment: .leading)
     #else
       Text([command, output.isEmpty ? nil : output].compactMap { $0 }.joined(separator: "\n"))
         .font(.system(.caption, design: .monospaced))
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
         .textSelection(.enabled)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

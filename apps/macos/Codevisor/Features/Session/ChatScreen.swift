@@ -9,7 +9,6 @@ struct ChatScreen: View {
   @State var authSignInHarnessId: String?
   static let composerBottomMargin: CGFloat = 16
 
-  @Environment(\.theme) var theme
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openSettings) var openSettings

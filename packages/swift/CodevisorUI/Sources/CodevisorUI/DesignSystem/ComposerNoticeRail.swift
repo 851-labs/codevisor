@@ -7,8 +7,6 @@ public struct ComposerNoticeRail: View {
     case error
   }
 
-  @Environment(\.theme) private var theme
-
   private let message: String
   private let details: String?
   private let kind: Kind
@@ -55,7 +53,7 @@ public struct ComposerNoticeRail: View {
     .background {
       ZStack {
         cardStyle.shape
-          .fill(theme.windowBackground)
+          .fill(Color.windowBackgroundColor)
         cardStyle.shape
           .fill(foregroundColor.opacity(0.08))
       }
@@ -123,6 +121,6 @@ public struct ComposerNoticeRail: View {
   }
 
   private var foregroundColor: Color {
-    kind == .error ? theme.statusError : theme.statusWarn
+    kind == .error ? .red : .orange
   }
 }

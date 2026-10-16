@@ -3,7 +3,6 @@ import CodevisorUI
 
 struct SettingsDisclosureRow<Label: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.theme) private var theme
   @Binding var isExpanded: Bool
   @ViewBuilder let label: () -> Label
   @ViewBuilder let content: () -> Content
@@ -31,7 +30,7 @@ struct SettingsDisclosureRow<Label: View, Content: View>: View {
           Image(systemName: "chevron.right")
             .font(.system(size: Typography.IconSize.disclosure, weight: .semibold))
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
+            .foregroundStyle(.secondary)
             .accessibilityHidden(true)
           label()
           Spacer(minLength: 0)
@@ -66,7 +65,6 @@ extension SettingsDisclosureRow where Label == SettingsDisclosureTitle {
 }
 
 struct SettingsDisclosureTitle: View {
-  @Environment(\.theme) private var theme
   let systemImage: String?
   let title: String
 
@@ -75,12 +73,12 @@ struct SettingsDisclosureTitle: View {
       if let systemImage {
         Image(systemName: systemImage)
           .font(.system(size: Typography.IconSize.chrome))
-          .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
+          .foregroundStyle(.secondary)
           .frame(width: 16)
           .accessibilityHidden(true)
       }
       Text(title)
-        .foregroundStyle(theme.isSystem ? Color.primary : theme.textPrimary)
+        .foregroundStyle(.primary)
     }
   }
 }

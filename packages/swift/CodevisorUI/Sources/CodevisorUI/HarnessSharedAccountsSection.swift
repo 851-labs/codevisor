@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 
 public struct HarnessSharedAccountRows: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let source: HarnessSharedCredentials
   let excludedProviderIds: Set<String>
 
@@ -18,7 +17,7 @@ public struct HarnessSharedAccountRows: View {
       ForEach(credentials.filter { !excludedProviderIds.contains($0.id) }) { credential in
         #if os(macOS)
           LabeledContent {
-            Text("Shared").foregroundStyle(theme.textSecondary)
+            Text("Shared").foregroundStyle(.secondary)
           } label: {
             Label(credential.name, systemImage: "key")
           }
@@ -32,7 +31,6 @@ public struct HarnessSharedAccountRows: View {
 
 public struct HarnessSharedAccountsSection: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let source: HarnessSharedCredentials
 
   public init(source: HarnessSharedCredentials) { self.source = source }
@@ -46,14 +44,14 @@ public struct HarnessSharedAccountsSection: View {
             HarnessSharedCredentialEditor(source: source, credential: credential)
           } label: {
             LabeledContent {
-              Text(credential.kind).foregroundStyle(theme.textSecondary)
+              Text(credential.kind).foregroundStyle(.secondary)
             } label: {
               Label(credential.name, systemImage: "key")
             }
           }
         }
         if credentials.isEmpty {
-          Text("No accounts").foregroundStyle(theme.textSecondary)
+          Text("No accounts").foregroundStyle(.secondary)
         }
         #if os(macOS)
           if source != .devin {
@@ -66,7 +64,7 @@ public struct HarnessSharedAccountsSection: View {
         #endif
       case .failure:
         Label("Shared credentials couldn’t be read.", systemImage: "exclamationmark.triangle")
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
       }
     } footer: {
       #if os(macOS)

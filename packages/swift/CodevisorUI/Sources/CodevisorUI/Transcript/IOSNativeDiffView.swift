@@ -7,7 +7,6 @@
   struct IOSNativeDiffView: UIViewRepresentable {
     let rows: [LineDiff.Row]
     let highlights: [Int: AttributedString]
-    let theme: Theme
     let revision: String
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
     var lineNumberDigits = 2
@@ -21,7 +20,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: revision
       )
       return scrollView
@@ -34,7 +32,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: revision
       )
     }
@@ -58,7 +55,6 @@
     private let codeMask = CALayer()
     private(set) var contentFittingSize = CGSize(width: 1, height: 1)
     private var renderedRevision: String?
-    private var renderedTheme: Theme?
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
     var lineNumberDigits = 2
     var scrollSync: DiffScrollSync? {
@@ -118,12 +114,10 @@
     func setContent(
       rows: [LineDiff.Row],
       highlights: [Int: AttributedString],
-      theme: Theme,
       revision: String
     ) {
-      guard renderedRevision != revision || renderedTheme != theme else { return }
+      guard renderedRevision != revision else { return }
       renderedRevision = revision
-      renderedTheme = theme
 
       let metrics = IOSNativeDiffMetrics(rows: rows, minimumDigits: lineNumberDigits)
       let text = Self.attributedText(
@@ -131,9 +125,9 @@
         highlights: highlights,
         font: metrics.font,
         rowHeight: metrics.rowHeight,
-        foreground: UIColor(theme.textPrimary)
+        foreground: .label
       )
-      let colors = IOSNativeDiffColors(theme: theme)
+      let colors = IOSNativeDiffColors()
       diffTextView.setContent(
         text,
         rows: rows,
@@ -336,7 +330,7 @@
   final class IOSNativeDiffTextView: UITextView {
     private var rows: [LineDiff.Row] = []
     private var metrics = IOSNativeDiffMetrics(rows: [])
-    private var colors = IOSNativeDiffColors(theme: .system)
+    private var colors = IOSNativeDiffColors()
 
     func setContent(
       _ text: NSAttributedString,
@@ -470,20 +464,11 @@
   }
 
   struct IOSNativeDiffColors {
-    let lineNumber: UIColor
-    let addedForeground: UIColor
-    let removedForeground: UIColor
-    let addedBackground: UIColor
-    let removedBackground: UIColor
-    let gutterBackground: UIColor
-
-    init(theme: Theme) {
-      lineNumber = UIColor(theme.diffLineNumberFg)
-      addedForeground = UIColor(theme.diffAddedFg)
-      removedForeground = UIColor(theme.diffRemovedFg)
-      addedBackground = UIColor(theme.diffAddedBg)
-      removedBackground = UIColor(theme.diffRemovedBg)
-      gutterBackground = UIColor(theme.diffLineNumberFg).withAlphaComponent(0.08)
-    }
+    let lineNumber = UIColor.tertiaryLabel
+    let addedForeground = UIColor(Color.green)
+    let removedForeground = UIColor(Color.red)
+    let addedBackground = UIColor(Color.green.opacity(0.12))
+    let removedBackground = UIColor(Color.red.opacity(0.12))
+    let gutterBackground = UIColor.tertiaryLabel.withAlphaComponent(0.08)
   }
 #endif

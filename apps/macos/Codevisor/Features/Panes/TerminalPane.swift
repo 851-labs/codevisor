@@ -106,13 +106,11 @@ final class TerminalPane: Pane, Identifiable {
 }
 
 struct TerminalPaneView: View {
-  @Environment(\.theme) private var theme
   var pane: TerminalPane
 
   var body: some View {
     TerminalSurfaceView(pane: pane)
       .id(pane.surfaceGeneration)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(theme.terminalBackground)
   }
 }

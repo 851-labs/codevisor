@@ -44,7 +44,6 @@ public extension View {
 
 private struct FleetBlockedDetailsModifier: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Binding var item: FleetBlockedMachine?
   @State private var isRetrying = false
   @State private var retryError: String?
@@ -62,7 +61,7 @@ private struct FleetBlockedDetailsModifier: ViewModifier {
           }
           .frame(maxHeight: 160)
           if let retryError {
-            Text(retryError).font(.callout).foregroundStyle(theme.textSecondary)
+            Text(retryError).font(.callout).foregroundStyle(.secondary)
           }
           HStack {
             Button("Copy") { PlatformPasteboard.copy(blocked.reason) }

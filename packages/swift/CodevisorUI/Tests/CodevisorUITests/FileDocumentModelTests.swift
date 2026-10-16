@@ -47,7 +47,7 @@ struct FileDocumentModelTests {
       let editor = session.storage
       editor.native.textView.setFrameSize(NSSize(width: 2000, height: 600))
       session.wrapsLines = wrapping
-      editor.update(theme: .system, highlight: nil)
+      editor.update(highlight: nil)
       for width in [1000.0, 760.0, 1000.0] {
         editor.native.container.setFrameSize(NSSize(width: width, height: 600))
         editor.native.container.layoutSubtreeIfNeeded()

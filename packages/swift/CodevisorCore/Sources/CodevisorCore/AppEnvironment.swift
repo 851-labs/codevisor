@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import ACPKit
-import CodevisorTheming
 
 @MainActor
 @Observable
@@ -12,7 +11,6 @@ public final class AppEnvironment {
   public let composerDefaults: ComposerDefaultsStore
   public let composerDrafts: ComposerDraftStore
   public let settings: AppSettingsModel
-  public let theme: ThemeManager
   public let machines: MachineController
   public let cloud: CloudAccountController
   public let directMachineAdoption: DirectMachineCloudAdoption
@@ -51,7 +49,6 @@ public final class AppEnvironment {
     paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
     localServer: (any LocalServerControlling)? = nil,
     appUpdate: AppUpdateModel? = nil,
-    customThemesDirectory: URL? = nil,
     harnessService: (any HarnessServicing)? = nil,
     machineClientFactory: MachineController.ClientFactory? = nil
   ) {
@@ -64,14 +61,6 @@ public final class AppEnvironment {
     self.navigationStore = navigationStore
     let workspaces = ProjectedWorkspaceRepository(store: navigationStore)
     self.workspaces = workspaces
-    self.theme = ThemeManager(
-      settings: settings,
-      catalog: ThemeCatalog(
-        customThemesDirectory: customThemesDirectory
-          ?? FileManager.default.temporaryDirectory
-          .appendingPathComponent("codevisor-themes-\(UUID().uuidString)")
-      )
-    )
     self.appUpdate =
       appUpdate
       ?? AppUpdateModel(

@@ -7,8 +7,6 @@ struct WorkspaceInspectorFileTreeView: View {
   let model: WorkspaceInspectorFileTreeModel
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
-  @Environment(\.theme) private var theme
-
   private var rootPhase: WorkspaceInspectorMediaModel.Phase {
     guard let root = model.root else { return .loaded }
     if let error = model.errors[root] { return .failed(error) }
@@ -34,7 +32,6 @@ struct WorkspaceInspectorFileTreeView: View {
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     }
   }
 

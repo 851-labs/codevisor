@@ -2,7 +2,6 @@
   import SwiftUI
 
   public struct SheetFooter<Actions: View>: View {
-    @Environment(\.theme) private var theme
     private let status: String?
     private let actions: Actions
 
@@ -13,7 +12,7 @@
 
     public var body: some View {
       VStack(spacing: 0) {
-        Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+        Divider()
         HStack(spacing: 12) {
           if let status {
             SheetActivityLabel(status)
@@ -25,7 +24,6 @@
         .padding(20)
       }
       .animation(.default, value: status)
-      .themedSurface(.sheet)
     }
   }
 #endif

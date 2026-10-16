@@ -2,7 +2,6 @@ import CodevisorCore
 import SwiftUI
 
 public struct HarnessSignInMethods: View {
-  @Environment(\.theme) private var theme
   let methods: [ServerHarnessAuthMethod]
   let model: HarnessAccountListModel
   let choose: (ServerHarnessAuthMethod) -> Void
@@ -27,7 +26,7 @@ public struct HarnessSignInMethods: View {
               HStack {
                 Text(method.name)
                 Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(theme.textSecondary)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
               }
               .contentShape(Rectangle())
             }
@@ -38,7 +37,7 @@ public struct HarnessSignInMethods: View {
       .formStyle(.grouped)
       .disabled(model.isWorking)
       if let error = model.errorMessage {
-        Text(error).font(.callout).foregroundStyle(theme.statusError).padding()
+        Text(error).font(.callout).foregroundStyle(.red).padding()
       }
     }
     .harnessWorking(model.operation)

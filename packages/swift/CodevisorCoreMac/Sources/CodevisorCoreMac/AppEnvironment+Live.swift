@@ -44,8 +44,7 @@ extension AppEnvironment {
         currentVersion: AppUpdateModel.bundleVersion(),
         currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
         allowsAlphaUpdates: settings.alphaUpdatesEnabled
-      ),
-      customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
+      )
     )
   }
 }

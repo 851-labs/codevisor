@@ -3,7 +3,6 @@ import SwiftUI
 import CodevisorUI
 
 struct McpKeyValueEditor: View {
-  @Environment(\.theme) private var theme
   @Binding var entries: [McpSecretEntry]
   let nameHeading: String
   let namePrompt: String
@@ -26,7 +25,6 @@ struct McpKeyValueEditor: View {
       .background(containerBackground)
 
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
 
       ScrollViewReader { proxy in
         ScrollView(.vertical) {
@@ -49,7 +47,6 @@ struct McpKeyValueEditor: View {
                     placeholder: namePrompt,
                     isEditable: !entry.existing,
                     isSelected: isSelected,
-                    theme: theme,
                     onFocus: { selection = entryID }
                   )
                   .padding(.horizontal, 12)
@@ -60,7 +57,6 @@ struct McpKeyValueEditor: View {
                     placeholder: entry.existing ? "Keep saved value" : valuePrompt,
                     isEditable: true,
                     isSelected: isSelected,
-                    theme: theme,
                     onFocus: { selection = entryID }
                   )
                   .padding(.horizontal, 12)
@@ -90,7 +86,6 @@ struct McpKeyValueEditor: View {
       .frame(height: bodyHeight)
 
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
 
       HStack(spacing: 0) {
         Button {
@@ -103,12 +98,10 @@ struct McpKeyValueEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .settingsActionTint(theme)
         .accessibilityLabel(addLabel)
         .help(addLabel)
 
         Divider()
-          .overlay(theme.isSystem ? Color.clear : theme.separator)
           .frame(height: 16)
 
         Button {
@@ -121,7 +114,6 @@ struct McpKeyValueEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .settingsActionTint(theme)
         .disabled(selection == nil)
         .accessibilityLabel("Remove selected \(nameHeading.lowercased())")
         .help("Remove Selected")
@@ -133,12 +125,6 @@ struct McpKeyValueEditor: View {
     }
     .background(rowBackground(at: 0))
     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    .overlay {
-      if !theme.isSystem {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .strokeBorder(theme.border, lineWidth: 1)
-      }
-    }
     .onChange(of: entries.map(\.id)) { _, ids in
       if let selection, !ids.contains(selection) { self.selection = nil }
     }
@@ -151,20 +137,16 @@ struct McpKeyValueEditor: View {
   }
 
   private var containerBackground: Color {
-    if !theme.isSystem { return theme.cardQuietBackground }
-    return Color(nsColor: NSColor.alternatingContentBackgroundColors[1])
+    Color(nsColor: NSColor.alternatingContentBackgroundColors[1])
   }
 
   private func rowBackground(at index: Int) -> Color {
-    if !theme.isSystem {
-      return index.isMultiple(of: 2) ? theme.composerBackground : theme.cardQuietBackground
-    }
     let colors = NSColor.alternatingContentBackgroundColors
     return Color(nsColor: colors[index % colors.count])
   }
 
   private var selectedRowBackground: Color {
-    theme.isSystem ? Color(nsColor: .selectedContentBackgroundColor) : theme.rowSelectedBackground
+    Color(nsColor: .selectedContentBackgroundColor)
   }
 
   private func columns<Leading: View, Trailing: View>(
@@ -175,7 +157,6 @@ struct McpKeyValueEditor: View {
       leading()
         .frame(maxWidth: .infinity, alignment: .leading)
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       trailing()
         .frame(maxWidth: .infinity, alignment: .leading)
     }

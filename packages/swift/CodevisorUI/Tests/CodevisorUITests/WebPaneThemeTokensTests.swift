@@ -20,10 +20,10 @@ struct WebPaneThemeTokensTests {
     "--codevisor-status-error",
   ]
 
-  @Test("System themes emit the full frozen variable set in both modes")
+  @Test("Light and dark tokens emit the full frozen variable set in both modes")
   func systemVariableCoverage() {
     for isDark in [false, true] {
-      let tokens = WebPaneThemeTokens(palette: nil, isDark: isDark)
+      let tokens = WebPaneThemeTokens(isDark: isDark)
       #expect(tokens.mode == (isDark ? "dark" : "light"))
       #expect(tokens.background != nil)
       for name in Self.frozenVariables {
@@ -31,8 +31,8 @@ struct WebPaneThemeTokensTests {
       }
     }
     #expect(
-      WebPaneThemeTokens(palette: nil, isDark: false)
-        != WebPaneThemeTokens(palette: nil, isDark: true)
+      WebPaneThemeTokens(isDark: false)
+        != WebPaneThemeTokens(isDark: true)
     )
   }
 }

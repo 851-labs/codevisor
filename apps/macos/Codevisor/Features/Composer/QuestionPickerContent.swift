@@ -5,7 +5,6 @@ import ACPKit
 import CodevisorUI
 
 struct QuestionPickerContent: View {
-  @Environment(\.theme) var theme
   @Bindable var controller: SessionController
   let request: QuestionRequest
   @Binding var didStartResolving: Bool

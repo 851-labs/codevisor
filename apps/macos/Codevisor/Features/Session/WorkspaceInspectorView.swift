@@ -20,7 +20,6 @@ struct WorkspaceInspectorView: View {
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
-  @Environment(\.theme) private var theme
   @State private var tabBarWidth: CGFloat = 0
 
   var body: some View {
@@ -92,7 +91,6 @@ struct WorkspaceInspectorView: View {
       }
     }
     .formStyle(.grouped)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
   }
 
   private func row(_ destination: Destination, @ViewBuilder label: () -> some View) -> some View {

@@ -34,7 +34,6 @@ public struct SubagentRow: View {
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.theme) private var theme
 
   private static var iconSize: CGFloat {
     #if os(iOS)
@@ -150,7 +149,7 @@ public struct SubagentRow: View {
     case .failed:
       Image(systemName: "xmark.circle")
         .font(.caption)
-        .foregroundStyle(theme.statusError)
+        .foregroundStyle(.red)
         .accessibilityHidden(true)
     case .cancelled:
       Image(systemName: "slash.circle")

@@ -69,7 +69,7 @@ extension ComposerBar {
   }
 
   var expandedSurfaceColor: Color {
-    theme.isSystem ? Color(.secondarySystemGroupedBackground) : theme.composerBackground
+    Color(.secondarySystemGroupedBackground)
   }
 
   var compactPreviewLine: some View {

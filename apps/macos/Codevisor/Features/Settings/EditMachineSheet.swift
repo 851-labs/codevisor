@@ -4,7 +4,6 @@ import SwiftUI
 
 struct EditMachineSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   @State private var name: String
   @State private var pickedIcon: String?
   private let shownIcon: String
@@ -37,7 +36,6 @@ struct EditMachineSheet: View {
       Section {
         header
       }
-      .listRowBackground(theme.formRowBackground)
       Section {
         TextField("Name", text: $name, prompt: Text("Machine name"))
         Picker("Icon", selection: Binding(get: { icon }, set: { pickedIcon = $0 })) {
@@ -48,10 +46,8 @@ struct EditMachineSheet: View {
         }
         .pickerStyle(.menu)
       }
-      .listRowBackground(theme.formRowBackground)
     }
     .formStyle(.grouped)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .scrollDisabled(true)
     .toolbar {
       if let onDisconnect {
@@ -75,7 +71,6 @@ struct EditMachineSheet: View {
     }
     .frame(width: 460)
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
-    .themedSurface(.sheet)
   }
 
   private var header: some View {

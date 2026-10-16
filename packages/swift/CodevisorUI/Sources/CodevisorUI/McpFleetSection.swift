@@ -81,7 +81,6 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
 
 private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let entry: McpFleetEntry
   let machines: [FleetMachineInfo]
   let model: McpGlobalModel
@@ -117,7 +116,7 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
           let machineId = entry.machineId(preferring: CodevisorMachine.local.id)
         {
           Button("Connect…") { onConnect(entry, machineId) }
-            .fleetRowButton(theme)
+            .fleetRowButton()
         }
         if let single, single.status.rowStatus.isWorthFoldingUp {
           FleetStatusMark(status: single.status.rowStatus, details: details(for: single))

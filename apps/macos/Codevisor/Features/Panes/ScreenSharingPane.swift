@@ -164,7 +164,6 @@ final class ScreenSharingPane: Pane {
 
 private struct ScreenSharingPaneView: View {
   let pane: ScreenSharingPane
-  @Environment(\.theme) private var theme
   @State private var mount = UUID()
 
   var body: some View {
@@ -183,7 +182,6 @@ private struct ScreenSharingPaneView: View {
           description: Text("Open this pane in a workspace connected to a Mac."))
       }
     }
-    .background(theme.paneBackground)
     .onAppear { pane.mounted(mount) }
     .onDisappear { pane.unmounted(mount) }
   }
@@ -246,7 +244,7 @@ private struct ScreenSharingPaneView: View {
       }
       ZStack {
         if let endpoint = store.endpoint {
-          ScreenSharingNativeView(endpoint: endpoint, letterbox: theme.isSystem ? nil : theme.paneBackground)
+          ScreenSharingNativeView(endpoint: endpoint)
         }
         if store.phase != .viewing {
           VStack(spacing: 12) {
@@ -266,7 +264,6 @@ private struct ScreenSharingPaneView: View {
 
 private struct ScreenSharingNativeView: NSViewRepresentable {
   let endpoint: ScreenSharingViewerEndpoint
-  let letterbox: Color?
 
   func makeNSView(context: Context) -> NSView { NSView() }
 
@@ -279,7 +276,7 @@ private struct ScreenSharingNativeView: NSViewRepresentable {
       video.autoresizingMask = [.width, .height]
       container.addSubview(video)
     }
-    endpoint.letterbox(letterbox.map(NSColor.init) ?? .windowBackgroundColor)
+    endpoint.letterbox(.windowBackgroundColor)
   }
 
   static func dismantleNSView(_ container: NSView, coordinator: ()) {

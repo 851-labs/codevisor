@@ -20,7 +20,6 @@ struct PaneTabStripItem: Identifiable {
 }
 
 struct PaneTabStrip: View {
-  @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
 
   let items: [PaneTabStripItem]
@@ -307,7 +306,7 @@ struct PaneTabStrip: View {
     } label: {
       Image(systemName: "plus")
         .font(.system(size: Typography.IconSize.chrome, weight: .medium))
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
         .frame(width: addButtonDiameter, height: addButtonDiameter)
         .contentShape(Circle())
     }

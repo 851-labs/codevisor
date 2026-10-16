@@ -1,5 +1,4 @@
 import AppKit
-import CodevisorTheming
 import CodevisorUI
 import MarkdownCore
 import StreamMarkdown
@@ -13,14 +12,8 @@ enum TranscriptMarkdownRowLayout {
 
 struct TranscriptMarkdownRowStyle {
   var markdown: MarkdownTheme
-  let planBackground: NSColor
-  let planBorder: NSColor
-
-  init(markdown: MarkdownTheme, appTheme: Theme) {
-    self.markdown = markdown
-    planBackground = appTheme.cardBackgroundNSColor
-    planBorder = NSColor(appTheme.separator)
-  }
+  let planBackground = NSColor.cardBackgroundColor
+  let planBorder = NSColor.separatorColor
 }
 
 @MainActor

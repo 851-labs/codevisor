@@ -44,7 +44,6 @@ struct NewChatView: View {
   static let favoriteProjectsKey = "composer.favoriteProjects"
 
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.theme) private var theme
   let store: SessionStore
   @Binding var selection: SidebarSelection?
   var initialProjectTarget: NewChatTarget?
@@ -74,7 +73,7 @@ struct NewChatView: View {
   }
 
   var body: some View {
-    if paneDraftId == nil, theme.isSystem {
+    if paneDraftId == nil {
       machineScopedBody
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     } else {
@@ -174,7 +173,6 @@ struct NewChatView: View {
       guard wasSubmitting, !isSubmitting, sendLanding.holdsSend, let controller else { return }
       TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
     }
-    .background(theme.contentBackground)
     .overlay(alignment: .top) {
       if let controller, case let .failed(message) = controller.status {
         setupFailureBanner(message)
@@ -263,7 +261,7 @@ struct NewChatView: View {
     HStack(spacing: 10) {
       Image(systemName: "exclamationmark.triangle.fill")
         .font(.callout)
-        .foregroundStyle(theme.statusError)
+        .foregroundStyle(.red)
       Text(message)
         .font(.subheadline)
         .fixedSize(horizontal: false, vertical: true)
@@ -277,8 +275,7 @@ struct NewChatView: View {
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
-    .themedCardShadow(theme)
+    .background(RoundedRectangle(cornerRadius: 8).fill(Color.cardBackgroundColor))
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Could not start chat. \(message)")
   }

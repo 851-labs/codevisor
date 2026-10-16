@@ -28,7 +28,6 @@ struct ConversationItemView: View {
 }
 
 struct UserMessageView: View {
-  @Environment(\.theme) private var theme
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
   let message: UserMessage
   @State private var isHovered = false
@@ -48,7 +47,7 @@ struct UserMessageView: View {
           SelectableTextView(
             message.text,
             font: .preferredFont(forTextStyle: .body),
-            foregroundColor: NSColor(theme.textPrimary)
+            foregroundColor: NSColor(Color.primary)
           )
           .environment(
             \.streamMarkdownTextLayoutWidth,
@@ -56,7 +55,7 @@ struct UserMessageView: View {
           )
           .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
           .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
-          .background { UserBubbleBackground(color: theme.bubbleBackground) }
+          .background { UserBubbleBackground(color: Color.bubbleBackground) }
           MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)
             .opacity(isHovered ? 1 : 0)
         }

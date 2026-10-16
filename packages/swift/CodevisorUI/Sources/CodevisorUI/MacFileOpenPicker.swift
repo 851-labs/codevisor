@@ -119,7 +119,6 @@
 
   struct MacFileOpenPage: View {
     let model: FilePaneModel
-    @Environment(\.theme) private var theme
     @State private var focus = Autocomplete.InputFocus()
 
     private static let cornerRadius: CGFloat = 18
@@ -134,7 +133,6 @@
             .frame(minHeight: geometry.size.height)
         }
       }
-      .background(theme.paneBackground)
       .onChange(of: model.explorerFocusRequests) { _, _ in focus.focus() }
     }
   }

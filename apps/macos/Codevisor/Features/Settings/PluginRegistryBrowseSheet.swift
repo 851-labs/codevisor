@@ -4,7 +4,6 @@ import CodevisorUI
 
 struct PluginRegistryBrowseSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let fetchRegistry: () async throws -> ServerPluginRegistryIndex
   let installedIds: Set<String>
   let onInstall: (ServerPluginRegistryEntry) -> Void
@@ -34,18 +33,14 @@ struct PluginRegistryBrowseSheet: View {
           }
       }
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       HStack {
         Spacer()
         Button("Close") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 520, height: 520)
-    .themedSurface(.sheet)
     .task { await load() }
   }
 
@@ -60,7 +55,6 @@ struct PluginRegistryBrowseSheet: View {
             prompt: Text(verbatim: "Search plugins")
           )
         }
-        .listRowBackground(theme.formRowBackground)
         Section {
           if entries.isEmpty {
             emptyRegistryText
@@ -75,10 +69,8 @@ struct PluginRegistryBrowseSheet: View {
         } header: {
           Text("Plugin Registry")
         }
-        .listRowBackground(theme.formRowBackground)
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     } else if let errorMessage {
       ContentUnavailableView {
         Label("Registry Unavailable", systemImage: "exclamationmark.triangle")
@@ -89,7 +81,6 @@ struct PluginRegistryBrowseSheet: View {
     } else {
       ProgressView()
         .controlSize(.regular)
-        .tint(theme.isSystem ? nil : theme.accent)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityLabel("Loading the plugin registry")
     }
@@ -125,7 +116,6 @@ struct PluginRegistryBrowseSheet: View {
         installedChip
       } else {
         Button("Install") { onInstall(entry) }
-          .settingsActionTint(theme)
       }
       Image(systemName: "chevron.right")
         .font(.caption.weight(.semibold))
@@ -148,9 +138,9 @@ struct PluginRegistryBrowseSheet: View {
       .padding(.vertical, 1)
       .background(
         RoundedRectangle(cornerRadius: 4)
-          .fill(theme.isSystem ? AnyShapeStyle(.quaternary) : AnyShapeStyle(theme.cardQuietBackground))
+          .fill(.quaternary)
       )
-      .foregroundStyle(theme.isSystem ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusOK))
+      .foregroundStyle(.secondary)
   }
 
   private func load() async {
@@ -164,7 +154,6 @@ struct PluginRegistryBrowseSheet: View {
 }
 
 private struct PluginRegistryDetailView: View {
-  @Environment(\.theme) private var theme
   let entry: ServerPluginRegistryEntry
   let isInstalled: Bool
   let onInstall: () -> Void
@@ -189,7 +178,6 @@ private struct PluginRegistryDetailView: View {
               .foregroundStyle(.secondary)
           } else {
             Button("Install…") { onInstall() }
-              .settingsActionTint(theme)
           }
         }
         if let description = entry.description, !description.isEmpty {
@@ -197,7 +185,6 @@ private struct PluginRegistryDetailView: View {
             .foregroundStyle(.secondary)
         }
       }
-      .listRowBackground(theme.formRowBackground)
       if let tools = entry.tools, !tools.isEmpty {
         Section("Agent Tools") {
           ForEach(tools) { tool in
@@ -210,7 +197,6 @@ private struct PluginRegistryDetailView: View {
             }
           }
         }
-        .listRowBackground(theme.formRowBackground)
       }
       Section("Information") {
         if !entry.panes.isEmpty {
@@ -238,10 +224,8 @@ private struct PluginRegistryDetailView: View {
           .foregroundStyle(.primary)
         }
       }
-      .listRowBackground(theme.formRowBackground)
     }
     .formStyle(.grouped)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .navigationTitle(entry.name)
   }
 

@@ -3,7 +3,6 @@ import SwiftUI
 
 public struct ReviewPaneView: View {
   @Bindable private var model: ReviewPaneModel
-  @Environment(\.theme) private var theme
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,7 +15,7 @@ public struct ReviewPaneView: View {
   public var body: some View {
     content
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(ReviewSurface(theme: theme).page)
+      .background(ReviewSurface.page)
       #if !canImport(AppKit)
         .sheet(isPresented: $model.showsBranchPicker) {
           ReviewBranchSheet(model: model)
@@ -65,7 +64,7 @@ public struct ReviewPaneView: View {
           Section {
             if !isCollapsed {
               ReviewFileBody(diff: diff)
-                .reviewCardBody(theme: theme)
+                .reviewCardBody()
                 .transition(.opacity)
             }
           } header: {
@@ -74,7 +73,7 @@ public struct ReviewPaneView: View {
               toggle: { withAnimation(disclosureAnimation) { model.toggleCollapsed(diff) } },
               toggleViewed: { withAnimation(disclosureAnimation) { model.toggleViewed(diff) } }
             )
-            .reviewCardHeader(isCollapsed: isCollapsed, theme: theme)
+            .reviewCardHeader(isCollapsed: isCollapsed)
           }
         }
         if model.truncated {

@@ -4,7 +4,6 @@ import SwiftUI
 import CodevisorUI
 
 struct NativeMcpServerRow: View {
-  @Environment(\.theme) private var theme
   let server: ServerNativeMcpServer
   let setEnabled: (Bool) async -> Void
   let showDetails: () -> Void
@@ -75,7 +74,6 @@ struct NativeMcpServerRow: View {
       }
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
-      .settingsActionTint(theme)
       .menuIndicator(.hidden)
       .help("More Actions")
     }
@@ -90,7 +88,7 @@ struct NativeMcpServerRow: View {
       .padding(.vertical, 1)
       .background(
         RoundedRectangle(cornerRadius: 4)
-          .fill(theme.isSystem ? AnyShapeStyle(.quaternary) : AnyShapeStyle(theme.cardQuietBackground))
+          .fill(.quaternary)
       )
       .foregroundStyle(.secondary)
   }

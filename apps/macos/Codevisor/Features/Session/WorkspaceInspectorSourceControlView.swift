@@ -9,8 +9,6 @@ struct WorkspaceInspectorSourceControlView: View {
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
   let onRetry: () -> Void
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     if model.changes.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
@@ -41,7 +39,6 @@ struct WorkspaceInspectorSourceControlView: View {
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     }
   }
 
@@ -93,9 +90,9 @@ struct WorkspaceInspectorSourceControlView: View {
 
   private func statusColor(_ status: ServerWorkspaceFileChange.Status) -> Color {
     switch status {
-    case .added: theme.diffAddedFg
-    case .modified: theme.statusWarn
-    case .deleted: theme.diffRemovedFg
+    case .added: .green
+    case .modified: .orange
+    case .deleted: .red
     }
   }
 }

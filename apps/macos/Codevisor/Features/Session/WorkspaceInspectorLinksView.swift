@@ -9,8 +9,6 @@ struct WorkspaceInspectorLinksView: View {
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
   let onRetry: () -> Void
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     if model.links.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
@@ -49,7 +47,6 @@ struct WorkspaceInspectorLinksView: View {
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     }
   }
 

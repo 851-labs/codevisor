@@ -4,7 +4,6 @@ import SwiftUI
 
 struct OpenCodeProviderAuthenticationScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
 
   let serverId: String
@@ -35,7 +34,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
       if let errorMessage {
         Section {
           Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
         }
       }
 
@@ -125,7 +124,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
   private func profileRow(_ account: ServerHarnessAccount) -> some View {
     HStack(spacing: 10) {
       Image(systemName: account.profileKind == "default" ? "desktopcomputer" : "person.crop.circle")
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 22)
       Text(profileName(account))
       Spacer()

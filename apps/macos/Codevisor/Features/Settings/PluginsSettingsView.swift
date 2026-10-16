@@ -5,7 +5,6 @@ import SwiftUI
 
 struct PluginsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var model = PluginGlobalModel()
   @State private var activeSheet: PluginsRootSheet?
   @State private var pendingRemoval: PluginFleetEntry?
@@ -59,20 +58,15 @@ struct PluginsSettingsView: View {
           } label: {
             Label("Browse Plugins…", systemImage: "magnifyingglass")
           }
-          .settingsActionTint(theme)
           Button {
             activeSheet = .install(initialSource: nil)
           } label: {
             Label("Install Plugin…", systemImage: "plus")
           }
-          .settingsActionTint(theme)
         }
       }
     }
-    .settingsPaneFormStyle(theme)
-    .background {
-      if !theme.isSystem { theme.windowBackground }
-    }
+    .formStyle(.grouped)
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: pluginStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .onChange(of: SettingsRouter.shared.pendingPluginInstallSource, initial: true) { _, source in
@@ -97,9 +91,7 @@ struct PluginsSettingsView: View {
         guard let entry = pendingRemoval else { return }
         Task { await uninstall(entry) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        .settingsActionTint(theme)
     } message: {
       Text(uninstallMessage)
     }
@@ -113,9 +105,7 @@ struct PluginsSettingsView: View {
         guard let request = pendingUnlink else { return }
         Task { await unlink(request) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingUnlink = nil }
-        .settingsActionTint(theme)
     } message: {
       Text("Your checkout isn't deleted.")
     }
@@ -129,9 +119,7 @@ struct PluginsSettingsView: View {
         guard let entry = pendingRestore else { return }
         Task { await restore(entry) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingRestore = nil }
-        .settingsActionTint(theme)
     }
   }
 

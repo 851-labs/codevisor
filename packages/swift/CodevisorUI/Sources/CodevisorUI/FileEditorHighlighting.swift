@@ -16,11 +16,7 @@ final class FileEditorHighlighting: NSObject, @preconcurrency NSTextStorageDeleg
   private var session: CodeHighlightDocument?
   private var language: String?
   private var theme: CodeHighlightTheme?
-  #if canImport(AppKit)
-    private var foreground: FileColor = .labelColor
-  #else
-    private var foreground: FileColor = .label
-  #endif
+  private let foreground: FileColor = .fileEditorLabel
   private var pending: [CodeHighlightDocument.Edit] = []
   private var revision = 0
   private var requested = false
@@ -39,18 +35,17 @@ final class FileEditorHighlighting: NSObject, @preconcurrency NSTextStorageDeleg
     textView?.textStorage
   }
 
-  func configure(language: String?, theme: CodeHighlightTheme?, foreground: FileColor, replaced: Bool) {
+  func configure(language: String?, theme: CodeHighlightTheme?, replaced: Bool) {
     if self.language != language {
       self.language = language
       session = language.map { CodeHighlightDocument(language: $0) }
       replaceSource = true
     }
-    if self.theme != theme || self.foreground != foreground || replaced {
+    if self.theme != theme || replaced {
       revision += 1
       requested = true
     }
     self.theme = theme
-    self.foreground = foreground
     if replaced { replaceSource = true; pending.removeAll() }
     request()
   }

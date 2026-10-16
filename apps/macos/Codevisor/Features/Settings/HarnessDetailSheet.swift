@@ -13,7 +13,6 @@ struct HarnessDetailSheet: View {
   }
 
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
 
   @State private var bundledApp: ServerHarnessBundledApp?
   @State private var isUpdatingBundledApp = false
@@ -29,12 +28,10 @@ struct HarnessDetailSheet: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SheetFooter {
         Button("Done") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
       }
     }
     .sheetSize(.step)
-    .themedSurface(.sheet)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(harness.name) details")
     .task { await loadBundledApp() }
@@ -45,11 +42,11 @@ struct HarnessDetailSheet: View {
       HStack(spacing: 10) {
         HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
           .frame(width: 30, height: 30)
-          .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardHoverBackground))
+          .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.12)))
           .accessibilityHidden(true)
         Text("Built-in harness")
           .font(.callout)
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
         Spacer(minLength: 0)
       }
 
@@ -65,7 +62,7 @@ struct HarnessDetailSheet: View {
             Text(
               update.installedVersion.map { "\($0) → \(latest)" } ?? latest
             )
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
           }
         } else if update.latestVersion != nil {
           HStack {
@@ -73,7 +70,7 @@ struct HarnessDetailSheet: View {
             Spacer()
             if let checkedAt = update.checkedAt {
               Text("Checked \(relativeTime(checkedAt))")
-                .foregroundStyle(theme.textSecondary)
+                .foregroundStyle(.secondary)
             }
           }
         }
@@ -85,7 +82,7 @@ struct HarnessDetailSheet: View {
       if let path = harness.readiness.path {
         VStack(alignment: .leading, spacing: 4) {
           Text("Binary")
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
           Text(path)
             .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
@@ -115,7 +112,7 @@ struct HarnessDetailSheet: View {
           Text("Also bundled with \(app.appName)")
           Text(bundledAppSubtitle(app))
             .font(.callout)
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
         }
         Spacer()
         if isUpdatingBundledApp || harness.lifecycle?.phase == "updating" {
@@ -129,13 +126,13 @@ struct HarnessDetailSheet: View {
           "Replaces \(app.appName) with the verified build from its own update feed. Safe while the app is running — it uses the new version after its next launch."
         )
         .font(.caption)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       }
       if let bundledAppError {
         Text(bundledAppError)
           .font(.caption)
-          .foregroundStyle(theme.statusWarn)
+          .foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
       }
     }
@@ -200,7 +197,7 @@ struct HarnessDetailSheet: View {
   private func detailRow(_ title: String, value: String) -> some View {
     HStack {
       Text(title)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
       Spacer()
       Text(value)
         .textSelection(.enabled)

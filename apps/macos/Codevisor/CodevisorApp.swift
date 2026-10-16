@@ -96,7 +96,6 @@ private struct ClientDataStartupFailureView: View {
 
 struct RootView: View {
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) var controlActiveState
   @Environment(\.openSettings) var openClientSettings
   @State var clientWindow = ClientWindowControl()
@@ -241,7 +240,6 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .themedToolbarBackground(theme)
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: selection))
     .overlay {

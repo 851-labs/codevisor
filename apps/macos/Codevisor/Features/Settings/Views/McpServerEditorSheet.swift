@@ -5,7 +5,6 @@ import CodevisorUI
 struct McpServerEditorSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   @Environment(\.settingsMachineId) private var settingsMachineId
   let initialServer: ServerMcpServer?
   let save: (McpFormValues) async throws -> Void
@@ -117,7 +116,6 @@ struct McpServerEditorSheet: View {
               ), prompt: Text("Playwright"))
           }
         }
-        .listRowBackground(theme.formRowBackground)
 
         if effectiveAuthType == "oauth" {
           Section {
@@ -137,7 +135,6 @@ struct McpServerEditorSheet: View {
               .padding(.top, 8)
             }
           }
-          .listRowBackground(theme.formRowBackground)
         }
 
         Section {
@@ -169,21 +166,17 @@ struct McpServerEditorSheet: View {
             .padding(.top, 8)
           }
         }
-        .listRowBackground(theme.formRowBackground)
 
         if let errorMessage {
           Section {
             Text(errorMessage)
-              .foregroundStyle(theme.statusError)
+              .foregroundStyle(.red)
               .font(.callout)
           }
-          .listRowBackground(theme.formRowBackground)
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       HStack {
         Spacer()
         cancelButton
@@ -193,11 +186,8 @@ struct McpServerEditorSheet: View {
           .disabled(!isValid || isSaving)
       }
       .padding()
-      .themedSurface(.sheet)
     }
     .frame(width: 560, height: 570)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-    .themedSurface(.sheet)
     .task(id: location) { await detectAuthorization() }
   }
 
@@ -210,46 +200,24 @@ struct McpServerEditorSheet: View {
     return authSelection == "auto" ? (detectedAuthType ?? "none") : authSelection
   }
 
-  @ViewBuilder
   private var transportPicker: some View {
-    if theme.isSystem {
-      Picker("Transport", selection: $transport) {
-        Text("HTTP").tag("http")
-        Text("STDIO").tag("stdio")
-      }
-      .pickerStyle(.segmented)
-    } else {
-      LabeledContent("Transport") {
-        McpThemedTransportPicker(selection: $transport, theme: theme)
-          .frame(width: 244)
-      }
+    Picker("Transport", selection: $transport) {
+      Text("HTTP").tag("http")
+      Text("STDIO").tag("stdio")
     }
+    .pickerStyle(.segmented)
   }
 
-  @ViewBuilder
   private var authorizationPicker: some View {
-    if theme.isSystem {
-      Picker(selection: $authSelection) {
-        Text(automaticAuthorizationLabel).tag("auto")
-        Text("None").tag("none")
-        Text("Bearer Token").tag("bearer")
-        Text("OAuth").tag("oauth")
-      } label: {
-        authorizationLabel
-      }
-      .pickerStyle(.menu)
-    } else {
-      LabeledContent {
-        McpThemedAuthorizationPicker(
-          selection: $authSelection,
-          automaticLabel: automaticAuthorizationLabel,
-          theme: theme
-        )
-        .frame(width: 244)
-      } label: {
-        authorizationLabel
-      }
+    Picker(selection: $authSelection) {
+      Text(automaticAuthorizationLabel).tag("auto")
+      Text("None").tag("none")
+      Text("Bearer Token").tag("bearer")
+      Text("OAuth").tag("oauth")
+    } label: {
+      authorizationLabel
     }
+    .pickerStyle(.menu)
   }
 
   private var authorizationLabel: some View {
@@ -261,7 +229,6 @@ struct McpServerEditorSheet: View {
 
   private var cancelButton: some View {
     Button("Cancel", role: .cancel) { dismiss() }
-      .settingsActionTint(theme)
       .keyboardShortcut(.cancelAction)
   }
 
