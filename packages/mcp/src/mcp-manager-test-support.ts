@@ -27,20 +27,37 @@ export const cleanupMcpManagerTests = async (): Promise<void> => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
-  await Promise.all(managers.splice(0).map((manager) => manager.close()))
-  await Promise.all(databases.splice(0).map((database) => run(database.close)))
-  await Promise.all(
-    servers
-      .splice(0)
-      .map(
-        (server) =>
-          new Promise<void>((resolve, reject) =>
-            server.close((error) => (error === undefined ? resolve() : reject(error)))
-          )
-      )
+  const outcomes = await Promise.allSettled(
+    managers.splice(0).map(async (manager) => manager.close())
   )
+  outcomes.push(
+    ...(await Promise.allSettled(databases.splice(0).map(async (database) => run(database.close))))
+  )
+  outcomes.push(
+    ...(await Promise.allSettled(
+      servers
+        .splice(0)
+        .map(
+          (server) =>
+            new Promise<void>((resolve, reject) =>
+              server.close((error) => (error === undefined ? resolve() : reject(error)))
+            )
+        )
+    ))
+  )
+  const failures: Array<unknown> = []
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") failures.push(outcome.reason)
+  }
   for (const directory of directories.splice(0)) {
-    rmSync(directory, { force: true, recursive: true })
+    try {
+      rmSync(directory, { force: true, recursive: true })
+    } catch (cause) {
+      failures.push(cause)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "MCP manager fixture cleanup failed")
   }
 }
 

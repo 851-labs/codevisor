@@ -22,9 +22,22 @@ export const directories: string[] = []
 export const databases: CodevisorDatabaseService[] = []
 
 export const cleanupNativeMcpTests = async (): Promise<void> => {
-  await Promise.all(databases.splice(0).map((database) => run(database.close)))
+  const outcomes = await Promise.allSettled(
+    databases.splice(0).map(async (database) => run(database.close))
+  )
+  const failures: Array<unknown> = []
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") failures.push(outcome.reason)
+  }
   for (const directory of directories.splice(0)) {
-    rmSync(directory, { force: true, recursive: true })
+    try {
+      rmSync(directory, { force: true, recursive: true })
+    } catch (cause) {
+      failures.push(cause)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Native MCP fixture cleanup failed")
   }
 }
 
