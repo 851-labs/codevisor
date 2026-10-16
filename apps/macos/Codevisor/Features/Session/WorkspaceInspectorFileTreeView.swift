@@ -8,8 +8,22 @@ struct WorkspaceInspectorFileTreeView: View {
   let activeFilePath: String?
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
+  private struct Fold {
+    var progress: CGFloat
+    let generation: Int
+  }
+
+  private struct FoldPlacement {
+    let progress: CGFloat
+    let index: Int
+    let count: Int
+  }
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var selection: String?
-  @State private var folds = SidebarFoldState()
+  @State private var folding: [String: Fold] = [:]
+  @State private var revealing: Set<String> = []
+  @State private var foldGeneration = 0
 
   private var rootPhase: WorkspaceInspectorMediaModel.Phase? {
     guard let root = model.root else { return .loaded }
@@ -36,21 +50,37 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 
   private func tree(_ rows: [WorkspaceInspectorFileTreeModel.Row]) -> some View {
-    ScrollViewReader { proxy in
+    let shown = folding.isEmpty ? rows : model.rows(showing: folding.keys)
+    let placements = foldPlacements(shown)
+    return ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 0) {
-          ForEach(model.root.flatMap { model.listings[$0] } ?? []) { entry in
-            WorkspaceInspectorFileTreeNode(
-              entry: entry, depth: 0, model: model, folds: folds, selection: selection
-            ) { row in
-              selection = row.id
-              activate(row)
-            }
+          ForEach(shown) { row in
+            let placement = placements[row.id]
+            WorkspaceInspectorFileTreeRow(
+              row: row,
+              isExpanded: model.expanded.contains(row.id),
+              isLoading: model.slow.contains(row.id),
+              isSelected: selection == row.id,
+              onActivate: {
+                selection = row.id
+                activate(row)
+              }
+            )
+            .modifier(
+              WorkspaceInspectorFileTreeFold(
+                progress: placement?.progress ?? 1, index: placement?.index ?? 0, count: placement?.count ?? 1
+              )
+            )
+            .allowsHitTesting(placement == nil)
+            .id(row.id)
           }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
       }
+      .onChange(of: shown.map(\.id)) { _, _ in reveal() }
+      .onChange(of: revealing) { _, _ in reveal() }
       .focusable()
       .focusEffectDisabled()
       .onChange(of: activeFilePath, initial: true) { _, path in
@@ -77,13 +107,57 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 
   private func setExpanded(_ path: String, _ isExpanded: Bool) {
-    let folds = folds
-    let generation = folds.begin(path)
-    model.setExpanded(path, isExpanded)
+    foldGeneration += 1
+    let generation = foldGeneration
+    if isExpanded {
+      folding[path] = Fold(progress: 0, generation: generation)
+      revealing.insert(path)
+      model.setExpanded(path, true)
+    } else {
+      revealing.remove(path)
+      folding[path] = Fold(progress: folding[path]?.progress ?? 1, generation: generation)
+      model.setExpanded(path, false)
+      withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { folding[path]?.progress = 0 }
+      endFold(path, generation: generation)
+    }
+  }
+
+  private func reveal() {
+    for path in revealing where model.listings[path] != nil || !model.expanded.contains(path) {
+      revealing.remove(path)
+      guard model.expanded.contains(path), let generation = folding[path]?.generation else {
+        folding[path] = nil
+        continue
+      }
+      withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { folding[path]?.progress = 1 }
+      endFold(path, generation: generation)
+    }
+  }
+
+  private func endFold(_ path: String, generation: Int) {
     Task {
       try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
-      folds.end(path, generation: generation)
+      if folding[path]?.generation == generation { folding[path] = nil }
     }
+  }
+
+  private func foldPlacements(
+    _ rows: [WorkspaceInspectorFileTreeModel.Row]
+  ) -> [String: FoldPlacement] {
+    var placements: [String: FoldPlacement] = [:]
+    guard !folding.isEmpty else { return placements }
+    var index = 0
+    while index < rows.count {
+      let row = rows[index]
+      index += 1
+      guard let fold = folding[row.id] else { continue }
+      let block = rows[index...].prefix { $0.depth > row.depth }
+      for (offset, child) in block.enumerated() {
+        placements[child.id] = FoldPlacement(progress: fold.progress, index: offset, count: block.count)
+      }
+      index += block.count
+    }
+    return placements
   }
 
   private func select(_ id: String, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -128,41 +202,23 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 }
 
-private struct WorkspaceInspectorFileTreeNode: View {
-  let entry: ServerFileEntry
-  let depth: Int
-  let model: WorkspaceInspectorFileTreeModel
-  let folds: SidebarFoldState
-  let selection: String?
-  let onActivate: (WorkspaceInspectorFileTreeModel.Row) -> Void
+private struct WorkspaceInspectorFileTreeFold: ViewModifier, Animatable {
+  var progress: CGFloat
+  let index: Int
+  let count: Int
 
-  var body: some View {
-    let row = WorkspaceInspectorFileTreeModel.Row(entry: entry, depth: depth)
-    let isExpanded = model.expanded.contains(entry.path)
-    let isFolding = folds.isFolding(entry.path)
-    VStack(spacing: 0) {
-      WorkspaceInspectorFileTreeRow(
-        row: row,
-        isExpanded: isExpanded,
-        isLoading: model.slow.contains(entry.path),
-        isSelected: selection == entry.path,
-        onActivate: { onActivate(row) }
-      )
-      .id(entry.path)
-      if entry.isDirectory, isExpanded || isFolding, let children = model.listings[entry.path] {
-        SidebarFoldingList(shows: isExpanded, appearsFolded: isFolding, spacing: 0) { progress in
-          VStack(spacing: 0) {
-            ForEach(children) { child in
-              WorkspaceInspectorFileTreeNode(
-                entry: child, depth: depth + 1, model: model, folds: folds, selection: selection,
-                onActivate: onActivate
-              )
-            }
-          }
-          .sidebarFoldingRow(true, progress: progress, shows: isExpanded)
-        }
-      }
-    }
+  var animatableData: CGFloat {
+    get { progress }
+    set { progress = newValue }
+  }
+
+  func body(content: Content) -> some View {
+    let height = WorkspaceInspectorFileTreeRow.height
+    let visible = min(height, max(0, progress * CGFloat(count) * height - CGFloat(index) * height))
+    content
+      .frame(height: visible, alignment: .top)
+      .clipped()
+      .opacity(progress)
   }
 }
 
@@ -175,6 +231,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  static let height: CGFloat = 22
   private static let indent: CGFloat = 14
 
   private var entry: ServerFileEntry { row.entry }
@@ -204,7 +261,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
     }
     .padding(.leading, CGFloat(row.depth) * Self.indent + 4)
     .padding(.trailing, 6)
-    .frame(height: 22)
+    .frame(height: Self.height)
     .contentShape(Rectangle())
     .sidebarRowHover(isSelected: isSelected)
     .onTapGesture(perform: onActivate)
