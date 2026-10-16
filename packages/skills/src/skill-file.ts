@@ -46,7 +46,7 @@ export const newSkillFile = (request: {
 }): { readonly file: string; readonly namingSource: string } => {
   const name = request.name.trim()
   if (name === "") throw new SkillsError("Skill name is required", "invalid")
-  const description = request.description.trim() === "" ? name : request.description.trim()
+  const description = request.description.trim() || name
   const pasted = request.content?.trim() ?? ""
   if (pasted.startsWith("---")) return pastedSkillFile(pasted, name)
   return templateSkillFile(pasted, name, description)
