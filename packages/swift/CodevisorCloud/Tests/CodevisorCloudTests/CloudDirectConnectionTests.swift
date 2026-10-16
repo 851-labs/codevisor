@@ -26,24 +26,29 @@ struct CloudDirectConnectionTests {
     let scripted = ScriptedDirectMachine()
     let downs = Recorder()
     let connection = makeDirectConnection(to: scripted) { downs.record(Data()) }
-    let recorder = Recorder()
+    do {
+      let recorder = Recorder()
 
-    _ = try await connection.openChannel(
-      channelType: "ws",
-      params: nil,
-      onMessage: { recorder.record($0) },
-      onClosed: { recorder.recordClose($0) }
-    )
-    scripted.socket.disconnect()
-
-    #expect(await waitUntil { recorder.closes.count == 1 })
-    #expect(recorder.closes == [nil])
-    #expect(await waitUntil { downs.messages.count == 1 })
-    await #expect(throws: CloudHubConnectionError.disconnected) {
       _ = try await connection.openChannel(
-        channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
+        channelType: "ws",
+        params: nil,
+        onMessage: { recorder.record($0) },
+        onClosed: { recorder.recordClose($0) }
+      )
+      scripted.socket.disconnect()
+
+      #expect(await waitUntil { recorder.closes.count == 1 })
+      #expect(recorder.closes == [nil])
+      #expect(await waitUntil { downs.messages.count == 1 })
+      await #expect(throws: CloudHubConnectionError.disconnected) {
+        _ = try await connection.openChannel(
+          channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
+      }
+      #expect(downs.messages.count == 1)
+    } catch {
+      await connection.shutdown()
+      throw error
     }
-    #expect(downs.messages.count == 1)
   }
 
   @Test("An answered keepalive keeps the pipe up past the pong deadline")
@@ -59,21 +64,26 @@ struct CloudDirectConnectionTests {
       clock: clock
     ) { downs.record(Data()) }
 
-    try await connection.waitUntilReady()
-    await clock.waitForSleep(.seconds(10))
-    clock.advance(by: .seconds(10))
-    #expect(await waitUntil { scripted.pings == 1 })
-    await clock.waitForSleep(.seconds(5))
-    scripted.socket.pushJSON(#"{"t":"pong"}"#)
-    await scripted.socket.drain()
-    await clock.waitForSleep(.seconds(10), count: 2)
+    do {
+      try await connection.waitUntilReady()
+      await clock.waitForSleep(.seconds(10))
+      clock.advance(by: .seconds(10))
+      #expect(await waitUntil { scripted.pings == 1 })
+      await clock.waitForSleep(.seconds(5))
+      scripted.socket.pushJSON(#"{"t":"pong"}"#)
+      await scripted.socket.drain()
+      await clock.waitForSleep(.seconds(10), count: 2)
 
-    clock.advance(by: .seconds(10))
-    #expect(await waitUntil { scripted.pings == 2 || !downs.messages.isEmpty })
-    #expect(downs.messages.isEmpty)
-    #expect(scripted.pings == 2)
-    #expect(await connection.isReady)
-    await connection.shutdown()
+      clock.advance(by: .seconds(10))
+      #expect(await waitUntil { scripted.pings == 2 || !downs.messages.isEmpty })
+      #expect(downs.messages.isEmpty)
+      #expect(scripted.pings == 2)
+      #expect(await connection.isReady)
+      await connection.shutdown()
+    } catch {
+      await connection.shutdown()
+      throw error
+    }
   }
 
   @Test("A missed pong deadline tears the pipe down")
@@ -89,14 +99,19 @@ struct CloudDirectConnectionTests {
       clock: clock
     ) { downs.record(Data()) }
 
-    try await connection.waitUntilReady()
-    await clock.waitForSleep(.seconds(10))
-    clock.advance(by: .seconds(10))
-    await clock.waitForSleep(.seconds(5))
-    #expect(downs.messages.isEmpty)
-    clock.advance(by: .seconds(5))
-    #expect(await waitUntil { downs.messages.count == 1 })
-    #expect(scripted.pings >= 1)
+    do {
+      try await connection.waitUntilReady()
+      await clock.waitForSleep(.seconds(10))
+      clock.advance(by: .seconds(10))
+      await clock.waitForSleep(.seconds(5))
+      #expect(downs.messages.isEmpty)
+      clock.advance(by: .seconds(5))
+      #expect(await waitUntil { downs.messages.count == 1 })
+      #expect(scripted.pings >= 1)
+    } catch {
+      await connection.shutdown()
+      throw error
+    }
   }
 
   @Test("An unanswered open demotes the pipe even while pings succeed")
@@ -105,25 +120,30 @@ struct CloudDirectConnectionTests {
     let downs = Recorder()
     let connection = makeDirectConnection(to: scripted) { downs.record(Data()) }
 
-    let recorder = Recorder()
-    let answered = try await connection.openChannel(
-      channelType: "ws",
-      params: nil,
-      onMessage: { recorder.record($0) },
-      onClosed: { _ in }
-    )
-    #expect(await waitUntil { scripted.machine.channel(answered.id) != nil })
-    let reply = try scripted.machine.sealData(channelId: answered.id, payload: Data("hi".utf8))
-    scripted.sendToApp(frame: reply.frame, payload: reply.payload)
-    #expect(await waitUntil { recorder.messages.count == 1 })
-    await answered.reportUnanswered()
-    #expect(await connection.isReady)
+    do {
+      let recorder = Recorder()
+      let answered = try await connection.openChannel(
+        channelType: "ws",
+        params: nil,
+        onMessage: { recorder.record($0) },
+        onClosed: { _ in }
+      )
+      #expect(await waitUntil { scripted.machine.channel(answered.id) != nil })
+      let reply = try scripted.machine.sealData(channelId: answered.id, payload: Data("hi".utf8))
+      scripted.sendToApp(frame: reply.frame, payload: reply.payload)
+      #expect(await waitUntil { recorder.messages.count == 1 })
+      await answered.reportUnanswered()
+      #expect(await connection.isReady)
 
-    let silent = try await connection.openChannel(
-      channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
-    await silent.reportUnanswered()
-    #expect(!(await connection.isReady))
-    #expect(downs.messages.count == 1)
+      let silent = try await connection.openChannel(
+        channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
+      await silent.reportUnanswered()
+      #expect(!(await connection.isReady))
+      #expect(downs.messages.count == 1)
+    } catch {
+      await connection.shutdown()
+      throw error
+    }
   }
 
   @Test("Shutdown is silent: channels fail but onDown never fires")
@@ -131,19 +151,24 @@ struct CloudDirectConnectionTests {
     let scripted = ScriptedDirectMachine()
     let downs = Recorder()
     let connection = makeDirectConnection(to: scripted) { downs.record(Data()) }
-    let recorder = Recorder()
+    do {
+      let recorder = Recorder()
 
-    _ = try await connection.openChannel(
-      channelType: "ws",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { recorder.recordClose($0) }
-    )
-    await connection.shutdown()
+      _ = try await connection.openChannel(
+        channelType: "ws",
+        params: nil,
+        onMessage: { _ in },
+        onClosed: { recorder.recordClose($0) }
+      )
+      await connection.shutdown()
 
-    #expect(await waitUntil { recorder.closes.count == 1 })
-    await scripted.socket.cancelled.wait()
-    #expect(downs.messages.isEmpty)
+      #expect(await waitUntil { recorder.closes.count == 1 })
+      await scripted.socket.cancelled.wait()
+      #expect(downs.messages.isEmpty)
+    } catch {
+      await connection.shutdown()
+      throw error
+    }
   }
 }
 
@@ -156,25 +181,33 @@ struct SwitchingChannelTransportTests {
       machine: ScriptedRelayMachine(deviceId: first.machine.deviceId))
     let firstConnection = makeDirectConnection(to: first)
     let secondConnection = makeDirectConnection(to: second)
-    let useSecond = Recorder()
-    let transport = SwitchingChannelTransport(machineDeviceId: first.machine.deviceId) {
-      useSecond.messages.isEmpty
-        ? CloudDirectTransport(connection: firstConnection)
-        : CloudDirectTransport(connection: secondConnection)
+    do {
+      let useSecond = Recorder()
+      let transport = SwitchingChannelTransport(machineDeviceId: first.machine.deviceId) {
+        useSecond.messages.isEmpty
+          ? CloudDirectTransport(connection: firstConnection)
+          : CloudDirectTransport(connection: secondConnection)
+      }
+      #expect(transport.machineDeviceId == first.machine.deviceId)
+
+      let overFirst = try await transport.openChannel(
+        channelType: "http", params: nil, compressed: false,
+        onMessage: { _ in }, onClosed: { _ in })
+      #expect(await waitUntil { first.machine.channel(overFirst.id) != nil })
+      #expect(second.machine.channel(overFirst.id) == nil)
+
+      useSecond.record(Data())
+      let overSecond = try await transport.openChannel(
+        channelType: "http", params: nil, compressed: false,
+        onMessage: { _ in }, onClosed: { _ in })
+      #expect(await waitUntil { second.machine.channel(overSecond.id) != nil })
+      #expect(first.machine.channel(overSecond.id) == nil)
+      await firstConnection.shutdown()
+      await secondConnection.shutdown()
+    } catch {
+      await firstConnection.shutdown()
+      await secondConnection.shutdown()
+      throw error
     }
-    #expect(transport.machineDeviceId == first.machine.deviceId)
-
-    let overFirst = try await transport.openChannel(
-      channelType: "http", params: nil, compressed: false,
-      onMessage: { _ in }, onClosed: { _ in })
-    #expect(await waitUntil { first.machine.channel(overFirst.id) != nil })
-    #expect(second.machine.channel(overFirst.id) == nil)
-
-    useSecond.record(Data())
-    let overSecond = try await transport.openChannel(
-      channelType: "http", params: nil, compressed: false,
-      onMessage: { _ in }, onClosed: { _ in })
-    #expect(await waitUntil { second.machine.channel(overSecond.id) != nil })
-    #expect(first.machine.channel(overSecond.id) == nil)
   }
 }
