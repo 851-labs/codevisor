@@ -2,7 +2,10 @@ import { isRecord } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AgentRuntimeConfig } from "./agent-runtime-types.js"
-import { locateExecutableOnPath } from "./executable-locator.js"
+import {
+  locateExecutableOnPath,
+  locateHarnessBinary as locateDefinitionBinary
+} from "./executable-locator.js"
 import { harnessCatalog } from "./harness-catalog.js"
 import { makeMessagePhases, type MessagePhases } from "./message-phases.js"
 import { SKILLS_UPDATE } from "./session-skills.js"
@@ -59,13 +62,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const versions = makeVersionProber(
     config.readVersionOutput === undefined ? {} : { readVersionOutput: config.readVersionOutput }
   )
-  const locateHarnessBinary = (definition: HarnessDefinition): string | undefined => {
-    for (const name of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
-      const path = locateExecutable(name, state.currentEnv)
-      if (path !== undefined) return path
-    }
-    return undefined
-  }
+  const locateHarnessBinary = (definition: HarnessDefinition): string | undefined =>
+    locateDefinitionBinary(definition, environment)
   const locateReadyBinaries = (): ReadonlyArray<string> =>
     harnessCatalog.flatMap((definition) => {
       const path = locateHarnessBinary(definition)
