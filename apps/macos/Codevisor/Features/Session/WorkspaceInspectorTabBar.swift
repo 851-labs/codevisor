@@ -6,7 +6,9 @@ struct WorkspaceInspectorTabBar: View {
   @State private var frames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var indicator = CGRect.zero
   @State private var isMoving = false
+  @State private var moveGeneration = 0
   @GestureState private var isPressed = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let space = "WorkspaceInspectorTabBar"
 
@@ -19,19 +21,20 @@ struct WorkspaceInspectorTabBar: View {
         .offset(x: indicator.minX, y: indicator.minY)
         .opacity(indicator.isEmpty ? 0 : 1)
       labels(highlighted: false)
-      labels(highlighted: true)
         .mask(alignment: .topLeading) {
-          Capsule()
-            .frame(width: indicator.width, height: indicator.height)
-            .offset(x: indicator.minX, y: indicator.minY)
+          Rectangle()
+            .overlay(alignment: .topLeading) { indicatorShape.blendMode(.destinationOut) }
+            .compositingGroup()
         }
+      labels(highlighted: true)
+        .mask(alignment: .topLeading) { indicatorShape }
         .allowsHitTesting(false)
     }
     .coordinateSpace(.named(Self.space))
     .fixedSize()
     .contentShape(Rectangle())
     .gesture(
-      DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+      DragGesture(minimumDistance: 0, coordinateSpace: .local)
         .updating($isPressed) { _, pressed, _ in pressed = true }
         .onEnded { value in
           guard let tab = frames.first(where: { $0.value.contains(value.location) })?.key else { return }
@@ -47,6 +50,12 @@ struct WorkspaceInspectorTabBar: View {
       }
       .pickerStyle(.segmented)
     }
+  }
+
+  private var indicatorShape: some View {
+    Capsule()
+      .frame(width: indicator.width, height: indicator.height)
+      .offset(x: indicator.minX, y: indicator.minY)
   }
 
   private func labels(highlighted: Bool) -> some View {
@@ -72,10 +81,18 @@ struct WorkspaceInspectorTabBar: View {
 
   private func move(to tab: WorkspaceInspectorTab) {
     guard let target = frames[tab] else { return }
+    guard !reduceMotion else {
+      indicator = target
+      return
+    }
+    moveGeneration += 1
+    let generation = moveGeneration
     isMoving = true
     withAnimation(.smooth(duration: 0.28)) {
       indicator = target
     } completion: {
+      guard generation == moveGeneration else { return }
+      if let settled = frames[selection], settled != indicator { indicator = settled }
       withAnimation(.easeOut(duration: 0.15)) { isMoving = false }
     }
   }
