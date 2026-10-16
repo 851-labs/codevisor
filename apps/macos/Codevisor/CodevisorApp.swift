@@ -137,13 +137,9 @@ struct RootView: View {
     )
     .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
     .overlay { ErrorBannerLayer() }
-    .onGeometryChange(for: CGFloat.self) { proxy in
-      proxy.size.width
-    } action: { width in
-      panelLayout.updateWindowWidth(width)
-    }
+    .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
     .onChange(of: selection) { _, newValue in
-      panelLayout.dismissDrawer(.leading)
+      panelLayout.dismissDrawer()
       guard let store else { return }
       if case let .session(serverId, sessionId) = newValue {
         store.markOpened(sessionId, serverId: serverId)
@@ -261,9 +257,6 @@ struct RootView: View {
         width: min(270, panelLayout.windowWidth - 16)
       ) {
         SidebarView(selection: $selection, store: store, publishesSceneActions: false)
-          .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-          .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-          .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
       }
     }
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in

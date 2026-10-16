@@ -24,6 +24,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   static let presentedKey = "workspace.inspectorPresented"
 
   @Environment(AppEnvironment.self) private var environment
+  @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.workspaceInspector.preferenceKey, default: false) private var isEnabled
   @ClientPreference(Self.presentedKey, default: true) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
@@ -34,50 +35,73 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   let selection: SidebarSelection?
 
   func body(content: Content) -> some View {
-    let inspected = inspectedWorkspace
-    content.inspector(
-      isPresented: Binding(
-        get: { isEnabled && isPresented && inspected != nil },
-        set: { isPresented = $0 }
-      )
-    ) {
-      if isEnabled, let store, let inspected {
-        let workspace = inspected.workspace
-        WorkspaceInspectorView(
-          workspace: workspace,
-          project: inspected.project,
-          branch: store.gitLookups.branch(for: workspace),
-          pullRequest: store.gitLookups.pullRequest(for: workspace),
-          machineName: environment.machines.fleetMachineName(for: workspace.serverId),
-          tab: $tab,
-          media: media,
-          fileTree: fileTree,
-          activeFilePath: activeDocumentPath(in: workspace),
-          client: environment.machines.client(for: workspace.serverId),
-          onReload: { Task { await reload(workspace) } },
-          onOpen: { destination in
-            store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
-              workspaceId: workspace.id, destination: destination)
-          }
+    let inspected = isEnabled && store != nil ? inspectedWorkspace : nil
+    let showsDrawer = inspected != nil && !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
+    let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
+    content
+      .inspector(
+        isPresented: Binding(
+          get: { inspected != nil && isPresented && panelLayout.docksInspector },
+          set: { if panelLayout.docksInspector { isPresented = $0 } }
         )
-        .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
-        .task(id: RefreshKey(workspaceId: workspace.id, tab: tab, activity: activity(in: workspace))) {
-          await reload(workspace)
-        }
-        .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
-        .toolbar {
-          ToolbarSpacer(.flexible)
-          ToolbarItem {
-            Button {
-              isPresented.toggle()
-            } label: {
-              Label(isPresented ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
+      ) {
+        if let store, let inspected {
+          inspectorView(store, inspected)
+            .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+            .toolbar {
+              ToolbarSpacer(.flexible)
+              ToolbarItem {
+                Button {
+                  if panelLayout.docksInspector {
+                    isPresented.toggle()
+                  } else {
+                    panelLayout.toggleDrawer(.trailing)
+                  }
+                } label: {
+                  Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
+                }
+                .help(isVisible ? "Hide Inspector" : "Show Inspector")
+              }
             }
-            .help(isPresented ? "Hide Inspector" : "Show Inspector")
+        }
+      }
+      .overlay {
+        AdaptiveDrawerLayer(isPresented: showsDrawer, edge: .trailing, width: min(300, panelLayout.windowWidth - 16)) {
+          if let store, let inspected {
+            inspectorView(store, inspected)
           }
         }
       }
-    }
+      .task(id: inspected.flatMap { isVisible ? refreshKey(for: $0.workspace) : nil }) {
+        guard let inspected, isVisible else { return }
+        await reload(inspected.workspace)
+      }
+  }
+
+  private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
+    let workspace = inspected.workspace
+    return WorkspaceInspectorView(
+      workspace: workspace,
+      project: inspected.project,
+      branch: store.gitLookups.branch(for: workspace),
+      pullRequest: store.gitLookups.pullRequest(for: workspace),
+      machineName: environment.machines.fleetMachineName(for: workspace.serverId),
+      tab: $tab,
+      media: media,
+      fileTree: fileTree,
+      activeFilePath: activeDocumentPath(in: workspace),
+      client: environment.machines.client(for: workspace.serverId),
+      onReload: { Task { await reload(workspace) } },
+      onOpen: { destination in
+        store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
+          workspaceId: workspace.id, destination: destination)
+      }
+    )
+    .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
+  }
+
+  private func refreshKey(for workspace: Workspace) -> RefreshKey {
+    RefreshKey(workspaceId: workspace.id, tab: tab, activity: activity(in: workspace))
   }
 
   private func reload(_ workspace: Workspace) async {
