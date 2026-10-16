@@ -112,33 +112,7 @@ systemd_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g'
 }
 
-install_server() {
-  version="$1"
-  os="$2"
-
-  command -v tar >/dev/null 2>&1 || fail "tar is required"
-
-  case "$(uname -m)" in
-    x86_64 | amd64) arch="x64" ;;
-    aarch64 | arm64) arch="arm64" ;;
-    *) fail "unsupported architecture: $(uname -m) (need x86_64 or arm64)" ;;
-  esac
-
-  if [ "$(id -u)" = "0" ]; then
-    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-/opt/codevisor}}"
-    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-/usr/local/bin}}"
-  else
-    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$HOME/.codevisor/server}}"
-    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
-  fi
-  data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
-  logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
-  port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
-
-  target="$os-$arch"
-  archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"
-  archive="$tmp_dir/codevisor-server.tar.gz"
-
+download_server_archive() {
   say "Installing codevisor-server $version ($target)"
   say "Downloading $archive_url"
   download "$archive_url" "$archive"
@@ -158,6 +132,9 @@ install_server() {
     fi
   fi
 
+}
+
+activate_server_runtime() {
   say "Extracting to $install_dir"
   rm -rf "$install_dir"
   mkdir -p "$install_dir"
@@ -175,6 +152,9 @@ install_server() {
   esac
 
   mkdir -p "$data_dir" "$logs_dir"
+}
+
+configure_server_service() {
   serve_cmd="\"$(systemd_escape "$install_dir/bin/codevisor-server")\" serve --host 0.0.0.0 --port $port --auth token --db \"$(systemd_escape "$data_dir/codevisor-server.sqlite")\""
   data_environment=""
   if [ -n "${CODEVISOR_DATA_DIR:-}" ]; then
@@ -242,6 +222,9 @@ UNIT
     note "  sudo loginctl enable-linger $USER"
   fi
 
+}
+
+finish_server_onboarding() {
   if [ -n "${CODEVISOR_INVITE:-}" ]; then
     say "Joining your Codevisor account"
     invite="$CODEVISOR_INVITE"
@@ -263,6 +246,39 @@ UNIT
     note "Finish onboarding on this machine with: codevisor setup"
     note "(It signs the machine in so it appears in your Codevisor apps.)"
   fi
+}
+
+install_server() {
+  version="$1"
+  os="$2"
+
+  command -v tar >/dev/null 2>&1 || fail "tar is required"
+
+  case "$(uname -m)" in
+    x86_64 | amd64) arch="x64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    *) fail "unsupported architecture: $(uname -m) (need x86_64 or arm64)" ;;
+  esac
+
+  if [ "$(id -u)" = "0" ]; then
+    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-/opt/codevisor}}"
+    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-/usr/local/bin}}"
+  else
+    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$HOME/.codevisor/server}}"
+    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
+  fi
+  data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
+  logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
+  port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
+
+  target="$os-$arch"
+  archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"
+  archive="$tmp_dir/codevisor-server.tar.gz"
+
+  download_server_archive
+  activate_server_runtime
+  configure_server_service
+  finish_server_onboarding
 }
 
 is_apple_silicon() {
