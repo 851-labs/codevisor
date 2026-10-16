@@ -11,22 +11,6 @@ extension SessionStore {
     return Self.isInProgress(controller)
   }
 
-  func hasActiveSessions(onServer serverId: String) -> Bool {
-    _ = activityRevision
-    return controllers.values.contains { controller in
-      controller.serverSession?.serverId == serverId && Self.isActivelyWorking(controller)
-    }
-  }
-
-  func hasActiveSessions(forHarness harnessId: String, onServer serverId: String) -> Bool {
-    _ = activityRevision
-    return controllers.values.contains { controller in
-      controller.serverSession?.serverId == serverId
-        && (controller.activeHarnessId ?? controller.serverSession?.harnessId) == harnessId
-        && Self.isActivelyWorking(controller)
-    }
-  }
-
   static func isActivelyWorking(_ controller: SessionController) -> Bool {
     controller.isSending
       || controller.setupPhases.contains(where: \.isRunning)
