@@ -9,7 +9,15 @@ export interface VersionProberOptions {
 
 export interface VersionProber {
   readonly get: (path: string) => string | undefined
-  readonly probe: (paths: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) => Promise<void>
+  readonly probe: (
+    paths: ReadonlyArray<string>,
+    env?: NodeJS.ProcessEnv,
+    options?: VersionProbeOptions
+  ) => Promise<void>
+}
+
+export interface VersionProbeOptions {
+  readonly force?: boolean
 }
 
 export const binaryIdentity = (path: string): string | undefined => {
@@ -46,12 +54,14 @@ export const makeVersionProber = (options: VersionProberOptions = {}): VersionPr
   >()
   const inflight = new Map<string, Promise<void>>()
 
-  const probeOne = (path: string, env: NodeJS.ProcessEnv): Promise<void> => {
+  const probeOne = (path: string, env: NodeJS.ProcessEnv, force: boolean): Promise<void> => {
     const existing = inflight.get(path)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) {
+      return force ? existing.then(() => probeOne(path, env, true)) : existing
+    }
     const current = identity(path)
     const cached = cache.get(path)
-    if (cached !== undefined && cached.identity === current) return Promise.resolve()
+    if (!force && cached !== undefined && cached.identity === current) return Promise.resolve()
     const task = readVersionOutput(path, env)
       .then((output) => {
         cache.set(path, { identity: current, version: parseVersionOutput(output) })
@@ -68,7 +78,9 @@ export const makeVersionProber = (options: VersionProberOptions = {}): VersionPr
 
   return {
     get: (path) => cache.get(path)?.version,
-    probe: (paths, env = process.env) =>
-      Promise.all([...new Set(paths)].map((path) => probeOne(path, env))).then(() => undefined)
+    probe: (paths, env = process.env, probeOptions = {}) =>
+      Promise.all(
+        [...new Set(paths)].map((path) => probeOne(path, env, probeOptions.force === true))
+      ).then(() => undefined)
   }
 }

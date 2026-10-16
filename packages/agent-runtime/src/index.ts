@@ -21,7 +21,7 @@ export * from "./agent-runtime-types.js"
 export { harnessCatalog, OPENCODE_INSTALL_PATH } from "./harness-catalog.js"
 export { locateExecutableOnPath, locateHarnessBinary } from "./executable-locator.js"
 export { binaryIdentity, makeVersionProber } from "./version-probe.js"
-export type { VersionProber, VersionProberOptions } from "./version-probe.js"
+export type { VersionProbeOptions, VersionProber, VersionProberOptions } from "./version-probe.js"
 export { clampFailureDetail, summarizeProcessFailure } from "./process-failure.js"
 
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
@@ -126,6 +126,16 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         })
       return state.envRefresh
     }),
+    refreshHarnessVersions: (harnessIds) =>
+      adapterPromise("refreshHarnessVersions", async () => {
+        await Promise.allSettled([state.envRefresh])
+        const ids = new Set(harnessIds)
+        const paths = harnessCatalog.flatMap((definition) => {
+          const path = ids.has(definition.id) ? locateHarnessBinary(definition) : undefined
+          return path === undefined ? [] : [path]
+        })
+        await versions.probe(paths, state.currentEnv, { force: true })
+      }),
     createAgentSession: (harnessId, cwd, sink, account, toolGateway, sessionOptions) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)

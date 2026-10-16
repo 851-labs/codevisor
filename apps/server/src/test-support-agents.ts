@@ -102,6 +102,7 @@ export const makeAgents = (): AgentRuntimeService & {
     refreshEnvironment: Effect.sync(() => {
       environmentRefreshes.push(environmentRefreshes.length + 1)
     }),
+    refreshHarnessVersions: () => Effect.void,
     listAgentSessions: (harnessId) =>
       Effect.succeed(
         harnessId === "codex"

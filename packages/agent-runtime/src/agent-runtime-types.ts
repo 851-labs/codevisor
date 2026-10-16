@@ -36,6 +36,9 @@ export interface AgentRuntimeService {
   readonly catalog: ReadonlyArray<HarnessDefinition>
   readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
   readonly refreshEnvironment: Effect.Effect<void, AgentRuntimeError>
+  readonly refreshHarnessVersions: (
+    harnessIds: ReadonlyArray<string>
+  ) => Effect.Effect<void, AgentRuntimeError>
   readonly listAgentSessions: (
     harnessId: string,
     account?: HarnessAccountContext,

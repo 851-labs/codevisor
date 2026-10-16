@@ -168,6 +168,60 @@ describe("harness lifecycle install/update execution", () => {
     await settled
   })
 
+  it("verifies an update by re-probing the harness when its launcher path is unchanged", async () => {
+    const db = await makeDb()
+    const bin = makeBinDir(["npm"])
+    let installedVersion = "1.0.0"
+    let updaterFinished = false
+    const reprobed: Array<ReadonlyArray<string>> = []
+    const agents = fakeAgentRuntime({
+      catalog: [installableDefinition],
+      discoverHarnesses: Effect.sync(() => [
+        harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installedVersion)
+      ]),
+      refreshEnvironment: Effect.void,
+      refreshHarnessVersions: (harnessIds) =>
+        Effect.sync(() => {
+          reprobed.push(harnessIds)
+          if (updaterFinished && harnessIds.includes("fake-cli")) installedVersion = "2.0.0"
+        })
+    })
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell } = fakeSpawner()
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.0.0" } }),
+      home: "/Users/dev",
+      realpath: (path) => path,
+      resolveEnv: async () => ({ PATH: bin }),
+      spawnShell,
+      terminal
+    })
+
+    await lifecycle.checkForUpdates(true)
+    expect((await run(db.listHarnessUpdateStates))[0]?.info).toMatchObject({
+      installedVersion: "1.0.0",
+      updateAvailable: true
+    })
+    reprobed.length = 0
+    await lifecycle.beginUpdate("fake-cli")
+    const settled = waitForLifecycleSettle(lifecycle)
+    updaterFinished = true
+    processes[0]?.emitExit(0)
+    await settled
+
+    expect(reprobed[0]).toEqual(["fake-cli"])
+    const decorated = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installedVersion)
+    ])
+    expect(decorated[0]?.lifecycle).toBeUndefined()
+    expect((await run(db.listHarnessUpdateStates))[0]?.info).toMatchObject({
+      installedVersion: "2.0.0",
+      updateAvailable: false
+    })
+  })
+
   it("does not clear updating when a zero-exit updater has not installed the target", async () => {
     vi.useFakeTimers()
     const db = await makeDb()
