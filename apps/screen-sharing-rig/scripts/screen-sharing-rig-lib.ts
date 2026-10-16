@@ -1,5 +1,5 @@
 import { isBoolean, isNumber, isRecord, isString, optional, shape } from "./json-shape.ts"
-import { rigIdentity } from "./screen-sharing-bundle.ts"
+import { escapeXML, rigIdentity } from "./screen-sharing-bundle.ts"
 
 export const rigLaunchAgentLabel = "com.codevisor.screen-sharing-rig"
 export const rigInstallDirectory = "Applications/CodevisorRig"
@@ -58,9 +58,6 @@ export const isDeployRecord = shape<DeployRecord>({
 
 export type Command = [command: string, ...args: string[]]
 export type Plan = Command[]
-
-const xmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
-const escapeXML = (value: string) => value.replace(/[&<>"]/g, (c) => xmlEscapes[c] ?? c)
 
 export function launchAgentPlist({
   home,
