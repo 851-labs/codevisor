@@ -24,8 +24,6 @@ struct TranscriptFollowUpActivityTests {
     let firstActive = TranscriptActiveRowProjection.rows(for: .assistant(completed))
     fixture.configure(rows: firstRows, activeRows: firstActive, rowsRevision: 1, activeRevision: 1)
     try fixture.present()
-    fixture.window.orderFront(nil)
-    defer { fixture.window.orderOut(nil) }
 
     let followUp = UserMessage(text: "Follow-up message")
     var assistant = AssistantMessage(turn: AssistantTurn(isGenerating: true))
