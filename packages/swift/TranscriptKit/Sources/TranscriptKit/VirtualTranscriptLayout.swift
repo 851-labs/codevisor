@@ -123,8 +123,8 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
       viewportHeight: viewportHeight
     )
     let viewportBottom = min(totalHeight, viewportTop + max(0, viewportHeight))
-    let first = firstIndexWhoseBottomExceeds(viewportTop)
-    let end = firstIndexWhoseTopReaches(viewportBottom)
+    let first = heightIndex.firstBottomExceeding(viewportTop)
+    let end = heightIndex.firstTopReaching(viewportBottom)
     let start = max(0, first - max(0, overscanCount))
     let overscannedEnd = min(keys.count, max(first + 1, end) + max(0, overscanCount))
     return start..<overscannedEnd
@@ -146,8 +146,8 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
       totalHeight,
       viewportTop + max(0, viewportHeight) + max(0, runwayAfter)
     )
-    let first = firstIndexWhoseBottomExceeds(preparedTop)
-    let end = firstIndexWhoseTopReaches(preparedBottom)
+    let first = heightIndex.firstBottomExceeding(preparedTop)
+    let end = heightIndex.firstTopReaching(preparedBottom)
     return first..<min(keys.count, max(first + 1, end))
   }
 
@@ -158,7 +158,7 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 
   public func viewportAnchor(at viewportTop: CGFloat) -> VirtualTranscriptAnchor? {
     guard !keys.isEmpty else { return nil }
-    let index = firstIndexWhoseBottomExceeds(viewportTop)
+    let index = heightIndex.firstBottomExceeding(viewportTop)
     return VirtualTranscriptAnchor(
       key: keys[index],
       offsetFromRowTop: viewportTop - frame(at: index).minY
@@ -168,14 +168,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   public func viewportTop(restoring anchor: VirtualTranscriptAnchor) -> CGFloat? {
     guard let index = indexByKey[anchor.key] else { return nil }
     return frame(at: index).minY + anchor.offsetFromRowTop
-  }
-
-  private func firstIndexWhoseBottomExceeds(_ value: CGFloat) -> Int {
-    heightIndex.firstBottomExceeding(value)
-  }
-
-  private func firstIndexWhoseTopReaches(_ value: CGFloat) -> Int {
-    heightIndex.firstTopReaching(value)
   }
 }
 
