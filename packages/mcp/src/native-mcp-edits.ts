@@ -5,6 +5,7 @@ import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { NativeMcpRemoval, NativeMcpScan, RemoveNativeMcpResult } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type { NativeMcpRemovalRecord } from "@codevisor/db"
+import { resolveNativeConfigPath } from "@codevisor/skills"
 
 import { isNonArrayRecord } from "./mcp-guards.js"
 import { run } from "./mcp-support.js"
@@ -17,8 +18,7 @@ import {
 import {
   getNestedValue,
   NativeConfigUnsupportedError,
-  parseNativeConfig,
-  resolveNativeConfigPath
+  parseNativeConfig
 } from "./native-config-files.js"
 import type { NativeMcpEnvironment } from "./native-mcp-scan.js"
 import {

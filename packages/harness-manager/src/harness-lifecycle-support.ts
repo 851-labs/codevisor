@@ -55,8 +55,6 @@ export const upgradeCommand = (spec: HarnessInstallMethodSpec): string => {
   }
 }
 
-export const methodPrerequisite = (kind: HarnessInstallMethodSpec["kind"]): string => kind
-
 export const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): LifecycleProcess => {
   const shell = env.SHELL !== undefined && env.SHELL !== "" ? env.SHELL : "/bin/sh"
   const child = spawn(shell, ["-lc", command], {

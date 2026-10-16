@@ -19,45 +19,26 @@ import { routeParam } from "./route-params.js"
 
 const fileEditLimit = 500
 
-const workspaceRoots = (root: string): ReadonlyArray<string> => {
-  try {
-    const real = realpathSync(root)
-    return real === root ? [root] : [root, real]
-  } catch {
-    return [root]
-  }
-}
-
 const insideRoot = (path: string): string | undefined =>
   path === "" || path === ".." || path.startsWith("../") || isAbsolute(path) ? undefined : path
 
-const workspacePath = (
-  roots: ReadonlyArray<string> | undefined,
-  path: string
-): string | undefined => {
+const workspacePath = (roots: ReadonlyArray<string>, path: string): string | undefined => {
   if (!isAbsolute(path)) return insideRoot(normalize(path))
-  for (const root of roots ?? []) {
+  for (const root of roots) {
     const inside = insideRoot(relative(root, path))
     if (inside !== undefined) return inside
   }
   return undefined
 }
 
-const editsByPath = (
-  roots: ReadonlyArray<string> | undefined,
+const latestEdits = (
+  roots: ReadonlyArray<string>,
   edits: ReadonlyArray<WorkspaceFileEdit>
 ): ReadonlyMap<string, WorkspaceFileEdit> => {
   const byPath = new Map<string, WorkspaceFileEdit>()
   for (const edit of edits) {
     const path = workspacePath(roots, edit.path)
-    if (path === undefined) continue
-    const seen = byPath.get(path)
-    byPath.set(
-      path,
-      seen === undefined
-        ? { ...edit, path }
-        : { ...seen, added: seen.added + edit.added, removed: seen.removed + edit.removed }
-    )
+    if (path !== undefined && !byPath.has(path)) byPath.set(path, edit)
   }
   return byPath
 }
@@ -66,15 +47,24 @@ const workingChanges = async (
   services: CodevisorServerServices,
   serverId: string,
   workspace: Workspace
-): Promise<{ readonly directory: string; readonly changes: GitWorkingChanges } | undefined> => {
+): Promise<
+  | {
+      readonly directory: string
+      readonly roots: ReadonlyArray<string>
+      readonly changes: GitWorkingChanges
+    }
+  | undefined
+> => {
   if (workspace.isArchived) return undefined
   const checkout = await workspaceGitCheckout(services, serverId, workspace)
   if (checkout === undefined) return undefined
   try {
     const env = await (services.resolveGitEnvironment?.(checkout.directory) ??
       Promise.resolve(process.env))
+    const real = realpathSync(checkout.directory)
     return {
       directory: checkout.directory,
+      roots: real === checkout.directory ? [real] : [checkout.directory, real],
       changes: await gitWorkingChanges(checkout.directory, env)
     }
   } catch (cause) {
@@ -90,25 +80,6 @@ const modifiedAt = async (path: string): Promise<string | undefined> => {
     return undefined
   }
 }
-
-const fileChange = (
-  path: string,
-  counts: { readonly added: number; readonly removed: number },
-  uncommitted: boolean,
-  details: {
-    readonly status?: WorkspaceFileChange["status"]
-    readonly changedAt?: string | undefined
-    readonly sessionId?: string | undefined
-  }
-): WorkspaceFileChange => ({
-  path,
-  added: counts.added,
-  removed: counts.removed,
-  uncommitted,
-  ...(details.status === undefined ? {} : { status: details.status }),
-  ...(details.changedAt === undefined ? {} : { changedAt: details.changedAt }),
-  ...(details.sessionId === undefined ? {} : { sessionId: details.sessionId })
-})
 
 const newestFirst = (
   files: ReadonlyArray<WorkspaceFileChange>
@@ -126,31 +97,27 @@ export const workspaceFiles = async (
   serverId: string,
   workspace: Workspace
 ): Promise<WorkspaceFileChanges> => {
-  const roots =
-    workspace.rootDirectory === undefined ? undefined : workspaceRoots(workspace.rootDirectory)
-  const edits = editsByPath(
-    roots,
+  const working = await workingChanges(services, serverId, workspace)
+  if (working === undefined) return { files: [], truncated: false }
+  const edits = latestEdits(
+    working.roots,
     await run(services.db.listWorkspaceFileEdits(workspace.id, fileEditLimit))
   )
-  const working = await workingChanges(services, serverId, workspace)
   const files: Array<WorkspaceFileChange> = []
-  const uncommitted = new Set<string>()
-  for (const change of working?.changes.files ?? []) {
-    uncommitted.add(change.path)
+  for (const change of working.changes.files) {
     const edit = edits.get(change.path)
-    files.push(
-      fileChange(change.path, change, true, {
-        status: change.status,
-        changedAt: edit?.changedAt ?? (await modifiedAt(join(working!.directory, change.path))),
-        sessionId: edit?.sessionId
-      })
-    )
+    const changedAt = edit?.changedAt ?? (await modifiedAt(join(working.directory, change.path)))
+    files.push({
+      path: change.path,
+      added: change.added,
+      removed: change.removed,
+      status: change.status,
+      uncommitted: true,
+      ...(changedAt === undefined ? {} : { changedAt }),
+      ...(edit === undefined ? {} : { sessionId: edit.sessionId })
+    })
   }
-  for (const [path, edit] of edits) {
-    if (uncommitted.has(path)) continue
-    files.push(fileChange(path, edit, false, edit))
-  }
-  return { files: newestFirst(files), truncated: working?.changes.truncated ?? false }
+  return { files: newestFirst(files), truncated: working.changes.truncated }
 }
 
 export const routeWorkspaceFiles = async (

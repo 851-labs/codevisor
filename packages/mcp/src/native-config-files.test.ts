@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { resolveNativeConfigPath } from "@codevisor/skills"
 import { afterAll, describe, expect, it } from "vitest"
 
 import { isNonArrayRecord } from "./mcp-guards.js"
@@ -16,8 +17,7 @@ import {
   detectIndent,
   getNestedValue,
   NativeConfigUnsupportedError,
-  parseNativeConfig,
-  resolveNativeConfigPath
+  parseNativeConfig
 } from "./native-config-files.js"
 import { extractServerIdentity, normalizeNativeServer } from "./native-config-normalize.js"
 

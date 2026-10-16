@@ -167,8 +167,6 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
       "--volume",
       `${bunCache}:/codevisor-bun-cache`,
       "--volume",
-      `${bunCache}:/codevisor-bun-cache`,
-      "--volume",
       `${entryScript}:/entry.sh`,
       "--volume",
       `${nativesCheck}:/natives-check.mjs`,

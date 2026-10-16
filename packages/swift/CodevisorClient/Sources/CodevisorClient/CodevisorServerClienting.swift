@@ -232,6 +232,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func workspacePhotos(workspaceId: UUID, before: String?, limit: Int) async throws -> ServerWorkspacePhotoPage
   func workspaceLinks(workspaceId: UUID, before: String?, limit: Int) async throws -> ServerWorkspaceLinkPage
   func workspaceFiles(workspaceId: UUID) async throws -> ServerWorkspaceFileChanges
+  func linkPreview(url: URL) async throws -> ServerLinkPreview
+  func linkPreviewImage(url: URL) async throws -> Data
   func fileData(sessionId: UUID, path: String) async throws -> Data
   func fileVersion(sessionId: UUID, path: String) async throws -> String?
   func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem

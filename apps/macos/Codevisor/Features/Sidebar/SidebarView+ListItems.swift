@@ -12,20 +12,11 @@ extension SidebarView {
   }
 
   func routingSession(for item: WorkspaceSidebarItem) -> ChatSession? {
-    var fallback: ChatSession?
-    for id in item.routingChatIds {
-      guard let session = list.session(id, serverId: item.serverId) else { continue }
-      if session.origin == .codevisor || list.showsImportedSessions { return session }
-      if fallback == nil { fallback = session }
-    }
-    return fallback
+    rowContent.routingSession(for: item)
   }
 
   func listItem(for item: WorkspaceSidebarItem) -> SidebarWorkspaceListItem? {
-    guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace,
-      !workspace.isArchived
-    else { return nil }
-    return SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
+    rowContent.listItem(for: item)
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
@@ -82,10 +73,23 @@ extension SidebarView {
     }
   }
 
+  var routedWorkspace: (serverId: String, id: UUID)? {
+    switch selection {
+    case let .session(serverId, sessionId):
+      environment.workspaces.workspaceId(forSession: sessionId).map { (serverId, $0) }
+    case let .workspace(serverId, id): (serverId, id)
+    case .archivedWorkspace, .bot, .newChat, .none: nil
+    }
+  }
+
   func visibleItems(of group: SidebarWorkspaceGroup) -> [WorkspaceSidebarItem] {
-    if isShowing(group) { return group.items }
+    visible(group.items, showing: isShowing(group))
+  }
+
+  func visible(_ items: [WorkspaceSidebarItem], showing: Bool) -> [WorkspaceSidebarItem] {
+    if showing { return items }
     guard let selectedWorkspaceID else { return [] }
-    return group.items.filter { $0.id == selectedWorkspaceID }
+    return items.filter { $0.id == selectedWorkspaceID }
   }
 
   var listedWorkspaceItems: [SidebarWorkspaceListItem] {

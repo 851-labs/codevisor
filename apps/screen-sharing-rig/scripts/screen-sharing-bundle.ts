@@ -69,7 +69,7 @@ function adHocWarning(reason: string): string {
 }
 
 const xmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
-function escapeXML(value: string): string {
+export function escapeXML(value: string): string {
   return value.replace(/[&<>"]/g, (character) => xmlEscapes[character] ?? character)
 }
 

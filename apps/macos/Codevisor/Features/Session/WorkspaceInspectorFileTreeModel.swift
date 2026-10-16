@@ -24,13 +24,16 @@ final class WorkspaceInspectorFileTreeModel {
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var client: (any CodevisorServerClienting)?
 
-  var rows: [Row] {
+  var rows: [Row] { rows(showing: []) }
+
+  func rows(showing folding: some Collection<String>) -> [Row] {
     guard let root else { return [] }
+    let folding = Set(folding)
     var rows: [Row] = []
     func walk(_ directory: String, depth: Int) {
       for entry in listings[directory] ?? [] {
         rows.append(Row(entry: entry, depth: depth))
-        if entry.isDirectory, expanded.contains(entry.path) {
+        if entry.isDirectory, expanded.contains(entry.path) || folding.contains(entry.path) {
           walk(entry.path, depth: depth + 1)
         }
       }

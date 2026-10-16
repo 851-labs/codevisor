@@ -16,8 +16,8 @@ extension SidebarView {
 
   @ViewBuilder
   var botsSection: some View {
-    let bots = environment.bots.bots
-    if botsEnabled, canCreateBots || !bots.isEmpty {
+    let entries = botEntries
+    if botsEnabled, canCreateBots || !entries.isEmpty {
       SidebarSectionHeader(
         title: "Bots",
         isExpanded: botsExpanded,
@@ -25,21 +25,26 @@ extension SidebarView {
         add: SidebarSectionHeader.Add(help: "New Bot") { botEditor = .create }
       )
       let isFolding = folds.isFolding(Self.botsFoldID)
-      SidebarFoldingList(shows: botsExpanded) { progress in
-        ForEach(bots) { bot in
-          let children = botChildren(of: bot)
+      let releasing =
+        isFolding || botsExpanded
+        ? [] : Set(entries.filter { !keepsSelection($0) && isReleasing($0) }.map(\.id))
+      let rows =
+        isFolding || botsExpanded
+        ? entries : entries.filter { keepsSelection($0) || releasing.contains($0.id) }
+      SidebarFoldingList(shows: botsExpanded, isReleasing: !releasing.isEmpty) { progress in
+        ForEach(rows) { entry in
           VStack(alignment: .leading, spacing: 1) {
-            botRow(bot, hasChildren: !children.isEmpty)
-            if !children.isEmpty {
-              botChildList(children, groupID: Self.botGroupID(bot))
+            botRow(entry.bot, hasChildren: !entry.children.isEmpty)
+            if !entry.children.isEmpty {
+              botChildList(entry)
                 .padding(.leading, Self.groupIndent)
             }
           }
           .sidebarFoldingRow(
-            isFolding && bot.id != selectedBotID && !children.contains { $0.id == selectedWorkspaceID },
+            releasing.contains(entry.id) ? .releasing : isFolding && !keepsSelection(entry) ? .folding : .kept,
             progress: progress, shows: botsExpanded)
         }
-        if bots.isEmpty {
+        if entries.isEmpty, botsExpanded || isFolding {
           SidebarActionRow(
             title: "New bot",
             systemImage: "plus",
@@ -55,34 +60,60 @@ extension SidebarView {
     }
   }
 
-  var botNestedWorkspaceIDs: Set<UUID> {
+  var botEntries: [SidebarBotEntry] {
     guard botsEnabled else { return [] }
-    let bots = environment.bots.bots
-    let children = bots.flatMap { botChildren(of: $0) }
-    return Set(bots.map(\.workspaceId) + children.map(\.id))
+    return environment.bots.bots.map { bot in
+      SidebarBotEntry(
+        bot: bot,
+        children: (environment.navigationStore.workspaceEntries.botChildren[bot.id] ?? []).filter {
+          $0.serverId == bot.serverId
+        }
+      )
+    }
+  }
+
+  var botNestedWorkspaceIDs: Set<UUID> {
+    Set(botEntries.flatMap { [$0.bot.workspaceId] + $0.children.map(\.id) })
+  }
+
+  var visibleBotEntries: [SidebarBotEntry] {
+    botEntries.filter { botsExpanded || keepsSelection($0) }
+  }
+
+  func visibleBotChildren(_ entry: SidebarBotEntry) -> [WorkspaceSidebarItem] {
+    visible(entry.children, showing: showsBotChildren(entry.bot))
+  }
+
+  func isBotSelected(_ bot: Bot) -> Bool {
+    bot.id == selectedBotID || bot.workspaceId == selectedWorkspaceID
   }
 
   static func botGroupID(_ bot: Bot) -> String { "bot:\(bot.serverId)|\(bot.id.uuidString)" }
-
-  func botChildren(of bot: Bot) -> [WorkspaceSidebarItem] {
-    (environment.navigationStore.workspaceEntries.botChildren[bot.id] ?? []).filter {
-      $0.serverId == bot.serverId
-    }
-  }
 
   func botChildren(containing id: UUID) -> [WorkspaceSidebarItem]? {
     environment.navigationStore.workspaceEntries.botChildren.values.first { $0.contains { $0.id == id } }
   }
 
-  private func botChildList(_ children: [WorkspaceSidebarItem], groupID: String) -> some View {
-    let isExpanded = !collapsedGroupIDs.contains(groupID)
-    guard folds.isFolding(groupID) else {
-      let visible = isExpanded ? children : children.filter { $0.id == selectedWorkspaceID }
-      let rows = withReleasedRows(visible, from: children)
+  private func keepsSelection(_ entry: SidebarBotEntry) -> Bool {
+    isBotSelected(entry.bot) || entry.children.contains { $0.id == selectedWorkspaceID }
+  }
+
+  private func isReleasing(_ entry: SidebarBotEntry) -> Bool {
+    ([entry.bot.id, entry.bot.workspaceId] + entry.children.map(\.id)).contains(where: folds.isReleasing)
+  }
+
+  private func showsBotChildren(_ bot: Bot) -> Bool {
+    botsExpanded && !collapsedGroupIDs.contains(Self.botGroupID(bot))
+  }
+
+  private func botChildList(_ entry: SidebarBotEntry) -> some View {
+    let isExpanded = showsBotChildren(entry.bot)
+    guard folds.isFolding(Self.botGroupID(entry.bot)) || folds.isFolding(Self.botsFoldID) else {
+      let rows = withReleasedRows(visibleBotChildren(entry), from: entry.children)
       return workspaceList(rows.items, folding: [], releasing: rows.releasing, shows: isExpanded)
     }
-    let folding = Set(children.map(\.id)).subtracting([selectedWorkspaceID].compactMap { $0 })
-    return workspaceList(children, folding: folding, releasing: [], shows: isExpanded)
+    let folding = Set(entry.children.map(\.id)).subtracting([selectedWorkspaceID].compactMap { $0 })
+    return workspaceList(entry.children, folding: folding, releasing: [], shows: isExpanded)
   }
 
   private func toggleBotGroup(_ groupID: String) {
@@ -99,10 +130,10 @@ extension SidebarView {
     let groupID = Self.botGroupID(bot)
     return SidebarBotRow(
       title: bot.name,
-      systemImage: bot.symbolName,
-      isSelected: selection == .bot(serverId: bot.serverId, id: bot.id),
+      icon: SidebarBotIcon(bot: bot, store: store),
+      isSelected: isBotSelected(bot),
       isHoverEnabled: !isReordering,
-      isExpanded: hasChildren ? !collapsedGroupIDs.contains(groupID) : nil,
+      isExpanded: hasChildren && botsExpanded ? !collapsedGroupIDs.contains(groupID) : nil,
       onSelect: { selection = .bot(serverId: bot.serverId, id: bot.id) },
       onToggle: { toggleBotGroup(groupID) }
     )
@@ -112,7 +143,15 @@ extension SidebarView {
       Button("Delete Bot…", systemImage: "trash", role: .destructive) { deletingBot = bot }
     }
     .help(bot.rootPath)
+    .id(bot.id)
   }
+}
+
+struct SidebarBotEntry: Identifiable {
+  let bot: Bot
+  let children: [WorkspaceSidebarItem]
+
+  var id: UUID { bot.id }
 }
 
 struct SidebarBotsModifier: ViewModifier {

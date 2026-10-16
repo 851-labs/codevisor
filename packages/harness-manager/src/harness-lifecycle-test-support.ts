@@ -71,6 +71,7 @@ export const fakeAgentRuntime = (
   catalog: harnessCatalog,
   discoverHarnesses: Effect.die(new Error("discoverHarnesses is not stubbed")),
   refreshEnvironment: Effect.die(new Error("refreshEnvironment is not stubbed")),
+  refreshHarnessVersions: () => Effect.void,
   listAgentSessions: unstubbedEffect("listAgentSessions"),
   reconcileConfigValue: unstubbed("reconcileConfigValue"),
   readHarnessUsageLimits: unstubbedEffect("readHarnessUsageLimits"),

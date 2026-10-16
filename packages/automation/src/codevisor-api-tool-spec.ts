@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+export { jsonSchema as objectSchema } from "@codevisor/api"
+
 export type JsonSchema = Record<string, unknown>
 export type HttpMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT"
 
@@ -38,14 +40,6 @@ export const integerQuery = (name: string, description: string): QueryParameter 
   schema: { type: "integer", minimum: 0 },
   description
 })
-
-export const objectSchema = (schema: Schema.Constraint): JsonSchema => {
-  const document = Schema.toJsonSchemaDocument(schema, {
-    additionalProperties: false,
-    generateDescriptions: true
-  })
-  return { ...document.schema, $defs: document.definitions }
-}
 
 export const enabledBody = Schema.Struct({ enabled: Schema.Boolean })
 export const cloudConnectBody = Schema.Struct({

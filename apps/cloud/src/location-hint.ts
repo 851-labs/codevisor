@@ -1,3 +1,6 @@
+import type { CloudEnv } from "./env.js"
+import type { UserHub } from "./user-hub.js"
+
 interface RequestGeo {
   readonly continent?: string
   readonly latitude?: string
@@ -27,4 +30,9 @@ export const hubLocationHint = (cf: unknown): DurableObjectLocationHint | undefi
     default:
       return undefined
   }
+}
+
+export const userHub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
+  const locationHint = hubLocationHint(cf)
+  return env.USER_HUB.getByName(userId, locationHint === undefined ? undefined : { locationHint })
 }

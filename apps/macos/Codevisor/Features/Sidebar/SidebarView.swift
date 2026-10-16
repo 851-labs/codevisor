@@ -18,7 +18,7 @@ struct SidebarView: View {
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
   @State var holdsGroupToggles = false
-  @State var revealedWorkspaceID: UUID?
+  @State var revealRequest = SidebarRevealRequest()
   @State var folds = SidebarFoldState()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
@@ -75,13 +75,13 @@ struct SidebarView: View {
           workspaceGroupList(workspaceGroups)
         }
         .contextMenu { sidebarOptionsMenu }
-        .onChange(of: revealedWorkspaceID) { _, id in
-          guard let id else { return }
-          proxy.scrollTo(id)
-          revealedWorkspaceID = nil
-        }
-        .onChange(of: selectedWorkspaceID) { previous, _ in
+        .onChange(of: selectedWorkspaceID) { previous, current in
           if let previous { release(previous) }
+          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+        }
+        .onChange(of: selectedBotID) { previous, current in
+          if let previous { release(previous) }
+          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
         }
       }
       .scrollContentBackground(.hidden)
@@ -255,12 +255,25 @@ struct SidebarView: View {
   func workspaceList(
     _ items: [WorkspaceSidebarItem], folding: Set<UUID>, releasing: Set<UUID>, shows: Bool
   ) -> some View {
-    SidebarFoldingList(shows: shows, isReleasing: !releasing.isEmpty) { progress in
+    let routed = routedWorkspace
+    let pinned = Set(pinnedWorkspaceIDs)
+    let actions = rowActions
+    return SidebarFoldingList(shows: shows, isReleasing: !releasing.isEmpty) { progress in
       ForEach(items) { item in
         SidebarWorkspaceSection(
-          sidebar: self, item: item, selection: selection, grouping: grouping, rowDetails: rowDetails,
-          draggingID: draggingID
+          item: item, store: store, grouping: grouping, rowDetails: rowDetails,
+          isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
+          isPinned: pinned.contains(item.id.uuidString), isReordering: isReordering, actions: actions
         )
+        .equatable()
+        .opacity(draggingID == item.id ? 0.4 : 1)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(Self.reorderSpace))
+        } action: { frame in
+          recordWorkspaceFrame(frame, for: item.id)
+        }
+        .onDisappear { forgetWorkspaceGeometry(for: item.id) }
+        .simultaneousGesture(reorderGesture(for: item.id))
         .geometryGroup()
         .sidebarFoldingRow(
           releasing.contains(item.id) ? .releasing : folding.contains(item.id) ? .folding : .kept,
@@ -360,6 +373,16 @@ struct SidebarView: View {
     }
   }
 
+}
+
+@MainActor
+final class SidebarRevealRequest {
+  var rowID: UUID?
+
+  func take(_ id: UUID) -> Bool {
+    defer { rowID = nil }
+    return rowID == id
+  }
 }
 
 #Preview {

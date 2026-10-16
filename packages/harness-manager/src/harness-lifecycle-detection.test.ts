@@ -1,5 +1,6 @@
 import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { appBundlePath } from "./harness-lifecycle-support.js"
@@ -8,6 +9,7 @@ import {
   makeDb,
   harness,
   agentsStub,
+  fakeAgentRuntime,
   npmDefinition,
   jsonResponse
 } from "./harness-lifecycle-test-support.js"
@@ -160,6 +162,34 @@ describe("harness lifecycle update detection", () => {
 
     const full = await lifecycle.checkForUpdates()
     expect(full.map((outcome) => outcome.harnessId).toSorted()).toEqual(["fake-cli", "other-cli"])
+  })
+
+  it("re-probes installed versions so a harness that updated itself is not offered again", async () => {
+    const db = await makeDb()
+    let installedVersion = "1.0.0"
+    const lifecycle = makeHarnessLifecycleManager({
+      agents: fakeAgentRuntime({
+        catalog: [npmDefinition],
+        discoverHarnesses: Effect.sync(() => [
+          harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installedVersion)
+        ]),
+        refreshHarnessVersions: (harnessIds) =>
+          Effect.sync(() => {
+            if (harnessIds.includes("fake-cli")) installedVersion = "2.0.0"
+          })
+      }),
+      db,
+      fetchImpl: npmLatestFetch,
+      home: "/Users/dev",
+      realpath: (path) => path
+    })
+
+    const outcomes = await lifecycle.checkForUpdates(true)
+    expect(outcomes[0]?.info).toMatchObject({
+      installedVersion: "2.0.0",
+      latestVersion: "2.0.0",
+      updateAvailable: false
+    })
   })
 
   it("compares app-bundle installs against the app version via the sparkle feed", async () => {

@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises"
 import {
   adapterPromise,
   clampFailureDetail,
+  locateHarnessBinary,
   withoutEnv,
   type AgentProvider,
   type AgentSessionHandle,
@@ -104,15 +105,8 @@ export const makeMuseProvider = (
   const connector = config.connector ?? spawnMuseClient
   const hostDeadlineMs = config.hostDeadlineMs ?? 30_000
 
-  const locate = (definition: HarnessDefinition): string | undefined => {
-    for (const candidate of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
-      const located = environment.locateExecutable(candidate, environment.env)
-      if (located !== undefined) return located
-    }
-    return undefined
-  }
   const command = (definition: HarnessDefinition): string => {
-    const located = locate(definition)
+    const located = locateHarnessBinary(definition, environment)
     if (located === undefined) throw new Error("muse not found on PATH")
     return located
   }
@@ -177,7 +171,7 @@ export const makeMuseProvider = (
   return {
     id: "muse",
     readiness: (definition) =>
-      locate(definition) === undefined
+      locateHarnessBinary(definition, environment) === undefined
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>

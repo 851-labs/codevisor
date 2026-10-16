@@ -139,8 +139,7 @@ export const emitAuthoritativeDiff = (
     tool_input: unknown
     tool_response: unknown
     tool_use_id: string
-  },
-  readFile: (path: string) => string | undefined
+  }
 ): void => {
   if (!EDIT_TOOLS.has(hookInput.tool_name)) return
   const input = isRecord(hookInput.tool_input) ? hookInput.tool_input : {}
@@ -163,7 +162,7 @@ export const emitAuthoritativeDiff = (
     stats = { added, path, removed }
   }
 
-  const diffBlock = diffContentBlock(session, hookInput.tool_name, input, response, path, readFile)
+  const diffBlock = diffContentBlock(hookInput.tool_name, input, response, path)
   if (
     stats !== undefined &&
     stats.added === 0 &&
@@ -190,12 +189,10 @@ export const emitAuthoritativeDiff = (
 }
 
 const diffContentBlock = (
-  session: ClaudeSession,
   toolName: string,
   input: Record<string, unknown>,
   response: Record<string, unknown>,
-  path: string,
-  readFile: (path: string) => string | undefined
+  path: string
 ): { type: "diff"; path: string; oldText: string | null; newText: string } | undefined => {
   switch (toolName) {
     case "Edit": {
@@ -205,12 +202,7 @@ const diffContentBlock = (
     }
     case "Write": {
       const content = typeof input.content === "string" ? input.content : ""
-      const original =
-        typeof response.originalFile === "string"
-          ? response.originalFile
-          : readFile(absolutePath(session.cwd, path)) === content
-            ? null
-            : null
+      const original = typeof response.originalFile === "string" ? response.originalFile : null
       return { newText: content, oldText: original, path, type: "diff" }
     }
     default:

@@ -230,6 +230,7 @@ struct WorkspaceScreen: View {
           ReviewPaneToolbar(model: model, title: activePane.map(title(for:)) ?? "Review Changes")
         }
         if !blocksServerContent { simulatorToolbar }
+        if !blocksServerContent { screenSharingToolbar }
         WorkspaceScreenToolbar(
           isNewChatPresentation: isNewChatPresentation,
           isPromotingNewChat: isPromotingNewChat,
@@ -328,6 +329,7 @@ struct WorkspaceScreen: View {
       return custom
     }
     if let simulatorTitle { return simulatorTitle }
+    if let screenSharingTitle { return screenSharingTitle }
     return title(for: pane)
   }
 

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import {
   adapterPromise,
   clampFailureDetail,
+  locateHarnessBinary,
   withoutEnv,
   type AgentProvider,
   type AgentSessionHandle,
@@ -81,15 +82,8 @@ export const makeAntigravityProvider = (
   const catalogs = new Map<string, { at: number; models: ReadonlyArray<AgyModel> }>()
   const checkedVersions = new Map<string, Promise<void>>()
 
-  const locate = (definition: HarnessDefinition): string | undefined => {
-    for (const candidate of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
-      const located = environment.locateExecutable(candidate, environment.env)
-      if (located !== undefined) return located
-    }
-    return undefined
-  }
   const command = (definition: HarnessDefinition): string => {
-    const located = locate(definition)
+    const located = locateHarnessBinary(definition, environment)
     if (located === undefined) throw new Error("agy not found on PATH")
     return located
   }
@@ -184,7 +178,7 @@ export const makeAntigravityProvider = (
   return {
     id: "antigravity",
     readiness: (definition) =>
-      locate(definition) === undefined
+      locateHarnessBinary(definition, environment) === undefined
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>

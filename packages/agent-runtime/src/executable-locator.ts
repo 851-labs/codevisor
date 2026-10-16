@@ -1,5 +1,7 @@
 import { accessSync, constants } from "node:fs"
 
+import type { HarnessDefinition, ProviderEnvironment } from "./types.js"
+
 export const locateExecutableOnPath = (
   name: string,
   env: NodeJS.ProcessEnv
@@ -25,6 +27,17 @@ export const locateExecutableOnPath = (
     } catch {
       continue
     }
+  }
+  return undefined
+}
+
+export const locateHarnessBinary = (
+  definition: HarnessDefinition,
+  environment: ProviderEnvironment
+): string | undefined => {
+  for (const candidate of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
+    const located = environment.locateExecutable(candidate, environment.env)
+    if (located !== undefined) return located
   }
   return undefined
 }

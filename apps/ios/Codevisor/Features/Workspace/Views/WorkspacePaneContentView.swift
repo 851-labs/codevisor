@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorUI
+import ScreenSharingPane
 import SimulatorPane
 import SwiftUI
 
@@ -35,6 +36,7 @@ struct WorkspacePaneContentView: View {
   let onConvertToBrowser: () -> Void
   let onConvertToReview: () -> Void
   let onConvertToSimulator: () -> Void
+  let onConvertToScreenSharing: () -> Void
   let onConvertToPlugin: (PluginNewTabOption) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
@@ -43,6 +45,7 @@ struct WorkspacePaneContentView: View {
   let browserPaneModel: (PaneDescriptorState) -> BrowserPaneModel
   let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
   let simulatorPaneModel: (PaneDescriptorState) -> SimulatorPaneModel?
+  let screenSharingPaneModel: (PaneDescriptorState) -> ScreenSharingPaneModel?
   let onRenamePane: (PaneDescriptorState, String) -> Void
 
   var body: some View {
@@ -91,6 +94,8 @@ struct WorkspacePaneContentView: View {
         onReviewChanges: onConvertToReview,
         onNewSimulator: onConvertToSimulator,
         supportsSimulator: environment.machines.statusByMachineId[machineId]?.supportsSimulator == true,
+        onNewScreenSharing: onConvertToScreenSharing,
+        supportsScreenSharing: environment.machines.statusByMachineId[machineId]?.supportsScreenSharing == true,
         client: machineClient,
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
@@ -107,9 +112,11 @@ struct WorkspacePaneContentView: View {
         ContentUnavailableView("Simulator unavailable", systemImage: "iphone")
       }
     case .screenSharing:
-      ContentUnavailableView(
-        "Screen Sharing", systemImage: "display",
-        description: Text("Screen Sharing currently requires Codevisor on a Mac."))
+      if let model = screenSharingPaneModel(pane) {
+        ScreenSharingPaneView(model: model)
+      } else {
+        ContentUnavailableView("Desktop unavailable", systemImage: "display")
+      }
     case .document:
       if pane.documentPath != nil {
         FilePaneView(model: filePaneModel(pane))

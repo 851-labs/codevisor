@@ -131,6 +131,8 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
   const isHttp = candidate.transport === "http"
   const headers = isHttp ? stringRecord(candidate.headers) : undefined
   const env = isHttp ? undefined : stringRecord(candidate.env)
+  const oauth =
+    isHttp && candidate.authType === "oauth" ? oauthEnvelope(candidate.oauth) : undefined
   return {
     name: candidate.name,
     transport: candidate.transport,
@@ -147,9 +149,7 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
       : {}),
     ...(headers === undefined ? {} : { headers }),
     ...(env === undefined ? {} : { env }),
-    ...(isHttp && candidate.authType === "oauth" && oauthEnvelope(candidate.oauth) !== undefined
-      ? { oauth: oauthEnvelope(candidate.oauth) }
-      : {})
+    ...(oauth === undefined ? {} : { oauth })
   }
 }
 

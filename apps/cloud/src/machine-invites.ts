@@ -1,31 +1,16 @@
+import { toBase64Url } from "@codevisor/cloud-crypto"
 import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
 
 import { createAuth } from "./auth.js"
 import { verifyMachineKey } from "./credential-routes.js"
 import type { CloudEnv } from "./env.js"
-import { hubLocationHint } from "./location-hint.js"
-import type { UserHub } from "./user-hub.js"
+import { userHub } from "./location-hint.js"
+import { sha256Hex } from "./tokens.js"
 
 export const machineInviteRoutes = new Hono<{ Bindings: CloudEnv }>()
 
 export const INVITE_TTL_MS = 10 * 60 * 1000
-
-const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
-  const locationHint = hubLocationHint(cf)
-  return env.USER_HUB.getByName(userId, locationHint === undefined ? undefined : { locationHint })
-}
-
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "")
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-}
 
 const deviceHasCredential = async (
   env: CloudEnv,
@@ -57,10 +42,10 @@ machineInviteRoutes.post("/api/machine/invites", async (c) => {
   const machine = await verifyMachineKey(c.env, c.req.header("x-api-key"))
   if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
   const now = Date.now()
-  const machines = await hub(c.env, machine.userId, c.req.raw.cf).listMachines()
+  const machines = await userHub(c.env, machine.userId, c.req.raw.cf).listMachines()
   const inviterName =
     machines.find((entry) => entry.deviceId === machine.deviceId)?.name ?? "another machine"
-  const token = base64url(crypto.getRandomValues(new Uint8Array(32)))
+  const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
   const expiresAt = now + INVITE_TTL_MS
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM machine_invite WHERE user_id = ? AND expires_at <= ?").bind(
@@ -128,7 +113,7 @@ machineInviteRoutes.post(
         metadata: { deviceId: body.deviceId, publicKey: body.publicKey }
       }
     })
-    await hub(c.env, invite.user_id, c.req.raw.cf).recordMachineOrigin(body.deviceId, {
+    await userHub(c.env, invite.user_id, c.req.raw.cf).recordMachineOrigin(body.deviceId, {
       deviceId: invite.created_by_device_id,
       name: invite.created_by_name
     })

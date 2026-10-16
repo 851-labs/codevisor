@@ -97,6 +97,37 @@ describe("@codevisor/agent-runtime", () => {
     expect(after.find((harness) => harness.id === "codex")?.readiness.path).toBeUndefined()
   })
 
+  it("re-probes only the requested harnesses' binaries on a forced version refresh", async () => {
+    const versions = new Map([
+      ["/opt/tools/claude", "2.1.5"],
+      ["/opt/tools/codex", "0.40.0"]
+    ])
+    const probed: Array<string> = []
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/opt/tools" },
+      locateExecutable: (name) =>
+        name === "claude" || name === "codex" ? `/opt/tools/${name}` : undefined,
+      readVersionOutput: (path) => {
+        probed.push(path)
+        return Promise.resolve(`tool ${versions.get(path)}`)
+      }
+    })
+    const versionOf = async (id: string) =>
+      (await run(runtime.discoverHarnesses)).find((harness) => harness.id === id)?.readiness.version
+
+    await run(runtime.refreshEnvironment)
+    versions.set("/opt/tools/claude", "2.1.6")
+    versions.set("/opt/tools/codex", "0.41.0")
+    await run(runtime.refreshEnvironment)
+    expect(await versionOf("claude-code")).toBe("2.1.5")
+
+    probed.length = 0
+    await run(runtime.refreshHarnessVersions(["claude-code"]))
+    expect(probed).toEqual(["/opt/tools/claude"])
+    expect(await versionOf("claude-code")).toBe("2.1.6")
+    expect(await versionOf("codex")).toBe("0.40.0")
+  })
+
   it("refreshes the environment so readiness picks up newly installed CLIs", async () => {
     let resolveCalls = 0
     const runtime = makeAcpAgentRuntime({

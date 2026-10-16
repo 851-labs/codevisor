@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -108,6 +109,49 @@ describe("makeVersionProber", () => {
     symlinkSync(release("2.0.27"), link)
     await prober.probe([link])
     expect(prober.get(link)).toBe("2.0.27")
+  })
+
+  it("re-reads a launcher whose payload changed behind it only when forced", async () => {
+    const root = mkdtempSync(join(tmpdir(), "version-probe-"))
+    cleanups.push(() => rmSync(root, { force: true, recursive: true }))
+    const active = join(root, ".active-version")
+    const launcher = join(root, "tool")
+    writeFileSync(active, "1.4.9\n")
+    writeFileSync(launcher, `#!/bin/sh\necho "tool $(cat '${active}')"\n`)
+    chmodSync(launcher, 0o755)
+    const prober = makeVersionProber()
+    await prober.probe([launcher])
+    expect(prober.get(launcher)).toBe("1.4.9")
+
+    writeFileSync(active, "1.4.10\n")
+    await prober.probe([launcher])
+    expect(prober.get(launcher)).toBe("1.4.9")
+
+    await prober.probe([launcher], process.env, { force: true })
+    expect(prober.get(launcher)).toBe("1.4.10")
+  })
+
+  it("does not let a forced probe reuse an in-flight read that started earlier", async () => {
+    const releases: Array<(output: string) => void> = []
+    const secondRead = Promise.withResolvers<void>()
+    const prober = makeVersionProber({
+      readVersionOutput: () =>
+        new Promise((resolve) => {
+          releases.push(resolve)
+          if (releases.length === 2) secondRead.resolve()
+        }),
+      identity: () => "a"
+    })
+    const stale = prober.probe(["/bin/tool"])
+    const forced = prober.probe(["/bin/tool"], {}, { force: true })
+    expect(releases).toHaveLength(1)
+    releases[0]?.("tool 1.0.0")
+    await stale
+    expect(prober.get("/bin/tool")).toBe("1.0.0")
+    await secondRead.promise
+    releases[1]?.("tool 2.0.0")
+    await forced
+    expect(prober.get("/bin/tool")).toBe("2.0.0")
   })
 
   it("keeps default probing best effort when stat encounters a symlink loop", async () => {

@@ -154,39 +154,41 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     harnessIds: ReadonlySet<string> | undefined
   ): Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> => {
     const current = await loadStates()
+    const definitions = config.agents.catalog.filter(
+      (definition) =>
+        definition.update !== undefined &&
+        (harnessIds === undefined || harnessIds.has(definition.id))
+    )
+    await run(
+      config.agents.refreshHarnessVersions(definitions.map((definition) => definition.id))
+    ).catch(() => undefined)
     const harnesses = await run(config.agents.discoverHarnesses)
     const outcomes: Array<HarnessUpdateCheckOutcome> = []
     await Promise.all(
-      config.agents.catalog
-        .filter(
-          (definition) =>
-            definition.update !== undefined &&
-            (harnessIds === undefined || harnessIds.has(definition.id))
-        )
-        .map(async (definition) => {
-          const harness = harnesses.find((candidate) => candidate.id === definition.id)
-          if (harness === undefined) return
-          try {
-            const outcome = await checkHarness(definition, harness)
-            if (outcome === undefined) return
-            outcomes.push(outcome)
-            const previous = current.get(outcome.harnessId)
-            current.set(outcome.harnessId, outcome.info)
-            await run(
-              config.db.setHarnessUpdateState({
-                harnessId: outcome.harnessId,
-                info: outcome.info
-              })
-            ).catch(() => undefined)
-            if (meaningfullyChanged(previous, outcome.info)) {
-              emit({
-                kind: "harness.lifecycle.updated",
-                payload: { harnessId: outcome.harnessId, updateInfo: outcome.info },
-                subjectId: outcome.harnessId
-              })
-            }
-          } catch {}
-        })
+      definitions.map(async (definition) => {
+        const harness = harnesses.find((candidate) => candidate.id === definition.id)
+        if (harness === undefined) return
+        try {
+          const outcome = await checkHarness(definition, harness)
+          if (outcome === undefined) return
+          outcomes.push(outcome)
+          const previous = current.get(outcome.harnessId)
+          current.set(outcome.harnessId, outcome.info)
+          await run(
+            config.db.setHarnessUpdateState({
+              harnessId: outcome.harnessId,
+              info: outcome.info
+            })
+          ).catch(() => undefined)
+          if (meaningfullyChanged(previous, outcome.info)) {
+            emit({
+              kind: "harness.lifecycle.updated",
+              payload: { harnessId: outcome.harnessId, updateInfo: outcome.info },
+              subjectId: outcome.harnessId
+            })
+          }
+        } catch {}
+      })
     )
     return outcomes
   }
@@ -224,6 +226,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     let observedVersion: string | undefined
     while (true) {
       await run(config.agents.refreshEnvironment).catch(() => undefined)
+      await run(config.agents.refreshHarnessVersions([harnessId])).catch(() => undefined)
       const harness = (await run(config.agents.discoverHarnesses).catch(() => [])).find(
         (candidate) => candidate.id === harnessId
       )
