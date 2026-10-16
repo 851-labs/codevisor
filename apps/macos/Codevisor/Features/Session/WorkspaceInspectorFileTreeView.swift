@@ -8,8 +8,8 @@ struct WorkspaceInspectorFileTreeView: View {
   let activeFilePath: String?
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var selection: String?
+  @State private var folds = SidebarFoldState()
 
   private var rootPhase: WorkspaceInspectorMediaModel.Phase? {
     guard let root = model.root else { return .loaded }
@@ -39,23 +39,17 @@ struct WorkspaceInspectorFileTreeView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 0) {
-          ForEach(rows) { row in
-            WorkspaceInspectorFileTreeRow(
-              row: row,
-              isExpanded: model.expanded.contains(row.id),
-              isLoading: model.slow.contains(row.id),
-              isSelected: selection == row.id,
-              onActivate: {
-                selection = row.id
-                activate(row)
-              }
-            )
-            .id(row.id)
+          ForEach(model.root.flatMap { model.listings[$0] } ?? []) { entry in
+            WorkspaceInspectorFileTreeNode(
+              entry: entry, depth: 0, model: model, folds: folds, selection: selection
+            ) { row in
+              selection = row.id
+              activate(row)
+            }
           }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: rows.map(\.id))
       }
       .focusable()
       .focusEffectDisabled()
@@ -83,8 +77,12 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 
   private func setExpanded(_ path: String, _ isExpanded: Bool) {
-    withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
-      model.setExpanded(path, isExpanded)
+    let folds = folds
+    let generation = folds.begin(path)
+    model.setExpanded(path, isExpanded)
+    Task {
+      try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
+      folds.end(path, generation: generation)
     }
   }
 
@@ -130,12 +128,52 @@ struct WorkspaceInspectorFileTreeView: View {
   }
 }
 
+private struct WorkspaceInspectorFileTreeNode: View {
+  let entry: ServerFileEntry
+  let depth: Int
+  let model: WorkspaceInspectorFileTreeModel
+  let folds: SidebarFoldState
+  let selection: String?
+  let onActivate: (WorkspaceInspectorFileTreeModel.Row) -> Void
+
+  var body: some View {
+    let row = WorkspaceInspectorFileTreeModel.Row(entry: entry, depth: depth)
+    let isExpanded = model.expanded.contains(entry.path)
+    let isFolding = folds.isFolding(entry.path)
+    VStack(spacing: 0) {
+      WorkspaceInspectorFileTreeRow(
+        row: row,
+        isExpanded: isExpanded,
+        isLoading: model.slow.contains(entry.path),
+        isSelected: selection == entry.path,
+        onActivate: { onActivate(row) }
+      )
+      .id(entry.path)
+      if entry.isDirectory, isExpanded || isFolding, let children = model.listings[entry.path] {
+        SidebarFoldingList(shows: isExpanded, appearsFolded: isFolding, spacing: 0) { progress in
+          VStack(spacing: 0) {
+            ForEach(children) { child in
+              WorkspaceInspectorFileTreeNode(
+                entry: child, depth: depth + 1, model: model, folds: folds, selection: selection,
+                onActivate: onActivate
+              )
+            }
+          }
+          .sidebarFoldingRow(true, progress: progress, shows: isExpanded)
+        }
+      }
+    }
+  }
+}
+
 private struct WorkspaceInspectorFileTreeRow: View {
   let row: WorkspaceInspectorFileTreeModel.Row
   let isExpanded: Bool
   let isLoading: Bool
   let isSelected: Bool
   let onActivate: () -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let indent: CGFloat = 14
 
@@ -152,6 +190,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
             .scaleEffect(0.95)
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            .animation(Motion.listReflow(reduceMotion: reduceMotion), value: isExpanded)
         }
       }
       .frame(width: 10, height: 10)

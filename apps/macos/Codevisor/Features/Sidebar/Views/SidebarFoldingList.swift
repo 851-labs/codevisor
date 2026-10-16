@@ -86,24 +86,26 @@ nonisolated enum SidebarFoldKind: Equatable {
 struct SidebarFoldingList<Content: View>: View {
   let shows: Bool
   let isReleasing: Bool
+  let spacing: CGFloat
   let content: (SidebarFoldProgress) -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var shown: CGFloat
   @State private var released: CGFloat = 1
 
   init(
-    shows: Bool, appearsFolded: Bool = false, isReleasing: Bool = false,
+    shows: Bool, appearsFolded: Bool = false, isReleasing: Bool = false, spacing: CGFloat = 1,
     @ViewBuilder content: @escaping (SidebarFoldProgress) -> Content
   ) {
     self.shows = shows
     self.isReleasing = isReleasing
+    self.spacing = spacing
     self.content = content
     _shown = State(initialValue: shows && !appearsFolded ? 1 : 0)
   }
 
   var body: some View {
     let progress = SidebarFoldProgress(shown: shown, released: released)
-    SidebarFoldingStack(spacing: 1, progress: progress) { content(progress) }
+    SidebarFoldingStack(spacing: spacing, progress: progress) { content(progress) }
       .clipped()
       .onAppear(perform: animate)
       .onChange(of: shows) { _, _ in animate() }
