@@ -10,13 +10,17 @@ import { BrowserProxy, browserProxyTarget } from "./browser-proxy.js"
 describe("browser connection proxy", () => {
   const cleanups: (() => Promise<void> | void)[] = []
   afterEach(async () => {
-    await cleanups
-      .splice(0)
-      .toReversed()
-      .reduce(async (previous, cleanup) => {
-        await previous
+    const failures: unknown[] = []
+    for (const cleanup of cleanups.splice(0).toReversed()) {
+      try {
         await cleanup()
-      }, Promise.resolve())
+      } catch (cause) {
+        failures.push(cause)
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "Cleaning up browser proxy fixtures failed")
+    }
   })
 
   async function listen(server: Server | ReturnType<typeof createTCPServer>) {

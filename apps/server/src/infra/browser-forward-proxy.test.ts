@@ -10,7 +10,17 @@ import { BrowserProxy } from "./browser-proxy.js"
 
 const cleanups: (() => void | Promise<void>)[] = []
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).toReversed()) await cleanup()
+  const failures: unknown[] = []
+  for (const cleanup of cleanups.splice(0).toReversed()) {
+    try {
+      await cleanup()
+    } catch (cause) {
+      failures.push(cause)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Cleaning up browser proxy fixtures failed")
+  }
 })
 async function listen(server: Server) {
   server.listen(0, "127.0.0.1")
