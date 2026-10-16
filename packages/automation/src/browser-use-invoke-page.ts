@@ -13,7 +13,7 @@ import {
   numberArgument,
   stringArgument
 } from "./browser-cdp-engine.js"
-import { delay } from "./browser-cdp.js"
+import { delay, type CdpEvent } from "./browser-cdp.js"
 import { exportBrowserContent } from "./browser-content.js"
 import { readBrowserLogs } from "./browser-logs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
@@ -27,6 +27,12 @@ import {
   optionalString,
   recordOrEmpty
 } from "./unknown-values.js"
+
+const cdpEventSessionId = (event: CdpEvent): string | undefined =>
+  event.sessionId ??
+  (event.method === "Target.detachedFromTarget" && typeof event.params.sessionId === "string"
+    ? event.params.sessionId
+    : undefined)
 
 const clipboardEntries = (value: unknown) => {
   const item = expectRecord(value, "Clipboard item")
@@ -214,12 +220,7 @@ export const invokePageTools = async (
             : page.sessionId
       const matches = () =>
         active.eventLog.filter((event) => {
-          const eventSessionId =
-            event.sessionId ??
-            (event.method === "Target.detachedFromTarget" &&
-            typeof event.params.sessionId === "string"
-              ? event.params.sessionId
-              : undefined)
+          const eventSessionId = cdpEventSessionId(event)
           return (
             event.sequence > afterSequence &&
             (methods === undefined || methods.has(event.method)) &&
@@ -231,12 +232,7 @@ export const invokePageTools = async (
       while (matches().length === 0 && Date.now() < deadline) await delay(50)
       const all = matches()
       const events = all.slice(0, limit).map((event) => {
-        const eventSessionId =
-          event.sessionId ??
-          (event.method === "Target.detachedFromTarget" &&
-          typeof event.params.sessionId === "string"
-            ? event.params.sessionId
-            : undefined)
+        const eventSessionId = cdpEventSessionId(event)
         return {
           method: event.method,
           params: event.params,
