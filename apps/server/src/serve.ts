@@ -36,6 +36,7 @@ import {
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
+import { makeLinkPreviewStore } from "./infra/link-previews.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { guessMachineIcon } from "./infra/machine-icon.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
@@ -352,6 +353,7 @@ export const runServe = (
           ...(process.platform === "darwin" ? { appIcon: makeAppIconLoader() } : {}),
           ...(mcp === undefined ? {} : { mcpSources: mcp.iconSources })
         }),
+        linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machines: machineLink,
         machineEnrollment
       },
