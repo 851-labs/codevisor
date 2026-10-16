@@ -25,7 +25,7 @@ struct WorkspaceInspectorView: View {
   @Environment(\.theme) private var theme
 
   var body: some View {
-    Group {
+    ZStack {
       switch tab {
       case .info: info
       case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
@@ -36,15 +36,10 @@ struct WorkspaceInspectorView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .safeAreaInset(edge: .top, spacing: 0) {
-      Picker("Inspector Section", selection: $tab) {
-        ForEach(WorkspaceInspectorTab.allCases) { tab in
-          Text(tab.title).tag(tab)
-        }
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
+      WorkspaceInspectorTabBar(selection: $tab)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
   }
 
