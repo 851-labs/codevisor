@@ -67,6 +67,7 @@ struct ComposerCard: View {
       }
     }
     .padding(ComposerCardStyle.contentPadding)
+    .clipShape(cardStyle.shape)
     .composerGlassSurface(
       shape: cardStyle.shape,
       id: .composer,
@@ -156,6 +157,7 @@ private extension ComposerCard {
             text: $controller.composerText,
             calculatedHeight: $editorHeight,
             selection: $selection,
+            topBleed: editorTopBleed,
             onSubmit: submitOrAcceptSlash,
             onKeyCommand: handleKeyCommand,
             onPasteAttachments: handlePastedAttachments,
@@ -164,7 +166,7 @@ private extension ComposerCard {
               onTextViewReady?(textView)
             }
           )
-          .frame(height: editorHeight)
+          .frame(height: editorHeight + editorTopBleed)
           .writingToolsAffordanceVisibility(.hidden)
           .disabled(
             isAcceptingSubmission
@@ -175,10 +177,11 @@ private extension ComposerCard {
           if controller.composerText.isEmpty, !isAcceptingSubmission {
             Text("Do something")
               .foregroundStyle(.tertiary)
-              .padding(.top, 6)
+              .padding(.top, 6 + editorTopBleed)
               .allowsHitTesting(false)
           }
         }
+        .padding(.top, -editorTopBleed)
       }
 
       HStack(spacing: 10) {
@@ -221,6 +224,12 @@ private extension ComposerCard {
       }
       .font(.callout)
     }
+  }
+
+  private var editorTopBleed: CGFloat {
+    controller.isGoalEditing || !controller.composerAttachments.isEmpty
+      ? 0
+      : ComposerCardStyle.contentPadding
   }
 
   private var isQuestionResolving: Bool {

@@ -29,6 +29,7 @@ struct ChatInputEditor: NSViewRepresentable {
   var selection: Binding<NSRange>? = nil
   var minHeight: CGFloat = Self.singleLineHeight
   var maxHeight: CGFloat = 240
+  var topBleed: CGFloat = 0
   var onSubmit: () -> Void
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
   var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
@@ -38,6 +39,9 @@ struct ChatInputEditor: NSViewRepresentable {
   func makeNSView(context: Context) -> NSScrollView {
     let textView = SubmittingTextView()
     textView.delegate = context.coordinator
+    textView.onMarkedTextChange = { [weak coordinator = context.coordinator] in
+      coordinator?.markedTextDidChange()
+    }
     textView.onSubmit = { onSubmit() }
     textView.onKeyCommand = onKeyCommand
     textView.onPasteAttachments = onPasteAttachments
@@ -65,9 +69,12 @@ struct ChatInputEditor: NSViewRepresentable {
     clipView.maximumGrowingHeight = maxHeight
     scroll.contentView = clipView
     scroll.drawsBackground = false
+    scroll.automaticallyAdjustsContentInsets = false
+    scroll.contentInsets = NSEdgeInsets(top: topBleed, left: 0, bottom: 0, right: 0)
     scroll.hasVerticalScroller = false
     scroll.hasHorizontalScroller = false
     scroll.documentView = textView
+    clipView.scroll(to: NSPoint(x: 0, y: -topBleed))
     context.coordinator.textView = textView
     textView.postsFrameChangedNotifications = true
     NotificationCenter.default.addObserver(
@@ -92,10 +99,24 @@ struct ChatInputEditor: NSViewRepresentable {
     if let clipView = scrollView.contentView as? GrowingTextClipView {
       clipView.maximumGrowingHeight = maxHeight
     }
+    let previousBleed = scrollView.contentInsets.top
+    if previousBleed != topBleed {
+      let clipView = scrollView.contentView
+      let wasAtTop = clipView.bounds.minY <= -previousBleed + 0.5
+      scrollView.contentInsets = NSEdgeInsets(top: topBleed, left: 0, bottom: 0, right: 0)
+      if wasAtTop {
+        clipView.scroll(to: NSPoint(x: 0, y: -topBleed))
+        scrollView.reflectScrolledClipView(clipView)
+      }
+    }
     if textView.string != text {
+      if textView.hasMarkedText() {
+        textView.inputContext?.discardMarkedText()
+        textView.unmarkText()
+      }
       textView.string = text
     }
-    if let selection {
+    if let selection, !textView.hasMarkedText() {
       let length = (textView.string as NSString).length
       let location = min(selection.wrappedValue.location, length)
       let clamped = NSRange(
@@ -165,6 +186,13 @@ struct ChatInputEditor: NSViewRepresentable {
       parent.recalculateHeight(textView, synchronously: true)
     }
 
+    func markedTextDidChange() {
+      guard !isApplyingUpdate, let textView, parent.text != textView.string else { return }
+      recordMeasurement(textView)
+      parent.text = textView.string
+      parent.recalculateHeight(textView, synchronously: true)
+    }
+
     func textViewDidChangeSelection(_ notification: Notification) {
       guard !isApplyingUpdate, let selection = parent.selection, let textView else { return }
       let range = textView.selectedRange()
@@ -211,7 +239,7 @@ private final class GrowingTextClipView: NSClipView {
     }
     bounds.origin.y =
       documentView.isFlipped
-      ? 0
+      ? -contentInsets.top
       : max(0, documentView.frame.height - bounds.height)
     return bounds
   }
@@ -230,6 +258,7 @@ extension NSTextView {
 
 final class SubmittingTextView: NSTextView {
   var onWindowChanged: (() -> Void)?
+  var onMarkedTextChange: (() -> Void)?
   private var sentTextReveal: DispatchWorkItem?
 
   func hideSentText() {
@@ -254,6 +283,16 @@ final class SubmittingTextView: NSTextView {
   override func didChangeText() {
     super.didChangeText()
     revealSentText()
+  }
+
+  override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+    super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+    onMarkedTextChange?()
+  }
+
+  override func unmarkText() {
+    super.unmarkText()
+    onMarkedTextChange?()
   }
 
   override func viewDidMoveToWindow() {
