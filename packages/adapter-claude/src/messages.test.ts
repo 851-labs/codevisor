@@ -11,6 +11,7 @@ import {
   recordValue,
   resultMessage,
   run,
+  startTestSession,
   sdkMessage,
   streamEvent,
   turnPayloads
@@ -141,15 +142,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("tags subagent tool calls, prose and thinking with parentToolCallId", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await fake.nextPrompt()
@@ -221,15 +214,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("emits subagent prose and tools from consolidated assistant messages", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await fake.nextPrompt()
@@ -277,15 +262,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("skips consolidated subagent text when its message already streamed", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await fake.nextPrompt()
@@ -325,15 +302,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("signals thinking when a text-omitted thinking block starts", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("think, then answer"))
     await fake.nextPrompt()
@@ -381,15 +350,7 @@ describe("ClaudeProvider", () => {
   })
 
   it("drops contentless text deltas so the activity indicator survives", async () => {
-    const fake = new FakeQuery()
-    const provider = makeProvider(fake)
-    const events: Array<RuntimeEvent> = []
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      events.push(event)
-    }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const created = await createPromise
+    const { fake, events, created } = await startTestSession()
 
     const promptPromise = run(created.handle.prompt("hi"))
     await fake.nextPrompt()
