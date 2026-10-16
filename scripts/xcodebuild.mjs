@@ -4,6 +4,7 @@ import { join, resolve as resolvePath } from "node:path"
 import process from "node:process"
 
 import { developmentLayout } from "./dev-layout.mjs"
+import { waitForExit } from "./dev-shared.mjs"
 import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
 
 const nonBuildingOperations = new Set([
@@ -106,13 +107,4 @@ async function spawnXcodebuild(repoRoot, xcodeArguments, options) {
       `xcodebuild failed (${result.signal === null ? `code ${result.code ?? 1}` : `signal ${result.signal}`})`
     )
   }
-}
-
-function waitForExit(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
-  })
 }

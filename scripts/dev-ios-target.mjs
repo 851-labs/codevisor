@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
 
+import { describeExit, waitForExit } from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
@@ -158,17 +159,4 @@ function run(repoRoot, environment, command, arguments_) {
     if (result.code === 0) return
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
-}
-
-function waitForExit(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
-  })
-}
-
-function describeExit({ code, signal }) {
-  return signal === null ? `code ${code ?? 1}` : `signal ${signal}`
 }
