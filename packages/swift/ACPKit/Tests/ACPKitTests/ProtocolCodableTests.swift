@@ -160,57 +160,77 @@ struct ProtocolCodableTests {
     )
     try roundTrip(SessionUpdate.goalCleared)
     try assertWire(SessionUpdate.goalCleared, json: #"{"sessionUpdate":"goal_cleared"}"#)
-    try roundTrip(
-      SessionUpdate.question(
-        QuestionRequest(
-          questionId: "q-1",
-          message: "GitHub needs a few details.",
-          questions: [
-            QuestionSpec(
-              id: "approach",
-              header: "Approach",
-              question: "Which approach?",
-              options: [
-                QuestionOption(label: "MVP first (Recommended)", description: "Fast."),
-                QuestionOption(label: "Full design"),
-              ],
-              multiSelect: false,
-              allowsOther: true,
-              backOptionLabel: "Back",
-              presentation: .browserExtensionSetup
-            )
-          ],
-          autoResolutionMs: 60_000
-        )))
-    try roundTrip(
-      SessionUpdate.questionResolved(
-        QuestionResolution(
-          questionId: "q-1",
-          outcome: .answered,
-          questions: [QuestionSpec(id: "approach", question: "Which approach?")],
-          answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"], note: "keep it lean")]
-        )))
-    try roundTrip(
-      SessionUpdate.questionResolved(
-        QuestionResolution(
-          questionId: "q-2",
-          outcome: .cancelled,
-          questions: []
-        )))
-    try roundTrip(
-      SessionUpdate.question(
-        QuestionRequest(
-          questionId: "browser-choice",
-          questions: [
-            QuestionSpec(
-              id: "browser_preference",
-              question: "Which browser should I use?",
-              options: [QuestionOption(label: "Use Codevisor Browser")],
-              allowsOther: false,
-              presentation: .browserChoice
-            )
-          ]
-        )))
+    let question = SessionUpdate.question(
+      QuestionRequest(
+        questionId: "q-1",
+        message: "GitHub needs a few details.",
+        questions: [
+          QuestionSpec(
+            id: "approach",
+            header: "Approach",
+            question: "Which approach?",
+            options: [
+              QuestionOption(label: "MVP first (Recommended)", description: "Fast."),
+              QuestionOption(label: "Full design"),
+            ],
+            multiSelect: false,
+            allowsOther: true,
+            backOptionLabel: "Back",
+            presentation: .browserExtensionSetup
+          )
+        ],
+        autoResolutionMs: 60_000
+      ))
+    try roundTrip(question)
+    try assertWire(
+      question,
+      json:
+        #"{"sessionUpdate":"question","questionId":"q-1","message":"GitHub needs a few details.","questions":[{"id":"approach","header":"Approach","question":"Which approach?","options":[{"label":"MVP first (Recommended)","description":"Fast."},{"label":"Full design"}],"multiSelect":false,"allowsOther":true,"backOptionLabel":"Back","presentation":"browserExtensionSetup"}],"autoResolutionMs":60000}"#
+    )
+    let answeredQuestion = SessionUpdate.questionResolved(
+      QuestionResolution(
+        questionId: "q-1",
+        outcome: .answered,
+        questions: [QuestionSpec(id: "approach", question: "Which approach?")],
+        answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"], note: "keep it lean")]
+      ))
+    try roundTrip(answeredQuestion)
+    try assertWire(
+      answeredQuestion,
+      json:
+        #"{"sessionUpdate":"question_resolved","questionId":"q-1","outcome":"answered","questions":[{"id":"approach","question":"Which approach?","options":[],"allowsOther":true}],"answers":{"approach":{"answers":["MVP first"],"note":"keep it lean"}}}"#
+    )
+    let cancelledQuestion = SessionUpdate.questionResolved(
+      QuestionResolution(
+        questionId: "q-2",
+        outcome: .cancelled,
+        questions: []
+      ))
+    try roundTrip(cancelledQuestion)
+    try assertWire(
+      cancelledQuestion,
+      json:
+        #"{"sessionUpdate":"question_resolved","questionId":"q-2","outcome":"cancelled","questions":[]}"#
+    )
+    let browserChoiceQuestion = SessionUpdate.question(
+      QuestionRequest(
+        questionId: "browser-choice",
+        questions: [
+          QuestionSpec(
+            id: "browser_preference",
+            question: "Which browser should I use?",
+            options: [QuestionOption(label: "Use Codevisor Browser")],
+            allowsOther: false,
+            presentation: .browserChoice
+          )
+        ]
+      ))
+    try roundTrip(browserChoiceQuestion)
+    try assertWire(
+      browserChoiceQuestion,
+      json:
+        #"{"sessionUpdate":"question","questionId":"browser-choice","questions":[{"id":"browser_preference","question":"Which browser should I use?","options":[{"label":"Use Codevisor Browser"}],"allowsOther":false,"presentation":"browserChoice"}]}"#
+    )
   }
 
   @Test("Context compaction preserves server wire tags, statuses and omitted IDs")
