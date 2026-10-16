@@ -1,3 +1,4 @@
+import type { Project, SessionSummary } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
@@ -21,36 +22,50 @@ describe("@codevisor/db", () => {
       })
     )
 
-    expect(progress[0]?.state).toBe("running")
-    expect(progress.at(-1)).toMatchObject({ state: "completed" })
-    expect(progress.at(-1)?.completed).toBe(progress.at(-1)?.total)
-    const sqlite = new Database(filename)
     try {
-      for (const table of ["chat_items", "chat_parts", "session_events", "session_chat_state"]) {
-        expect(
-          sqlite
-            .prepare("select name from sqlite_master where type = 'table' and name = ?")
-            .get(table)
-        ).toMatchObject({ name: table })
+      expect(progress[0]?.state).toBe("running")
+      expect(progress.at(-1)).toMatchObject({ state: "completed" })
+      expect(progress.at(-1)?.completed).toBe(progress.at(-1)?.total)
+      const sqlite = new Database(filename)
+      try {
+        for (const table of ["chat_items", "chat_parts", "session_events", "session_chat_state"]) {
+          expect(
+            sqlite
+              .prepare("select name from sqlite_master where type = 'table' and name = ?")
+              .get(table)
+          ).toMatchObject({ name: table })
+        }
+      } finally {
+        sqlite.close()
       }
     } finally {
-      sqlite.close()
+      await Effect.runPromise(db.close)
     }
-    await Effect.runPromise(db.close)
   })
 
   it("adopts rows written under a former server identity", async () => {
     const filename = tempDatabase()
     const before = await run(makeDatabase({ filename, serverId: "local" }))
-    const project = await run(before.createProject({ folderPath: "/tmp/adopted-project" }))
-    await run(before.createWorktree(project.id, "sushi", "codevisor/sushi"))
-    await Effect.runPromise(before.close)
+    let project: Project
+    try {
+      project = await run(before.createProject({ folderPath: "/tmp/adopted-project" }))
+      await run(before.createWorktree(project.id, "sushi", "codevisor/sushi"))
+    } finally {
+      await Effect.runPromise(before.close)
+    }
 
     const after = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
-    const adopted = (await run(after.listProjects)).find((candidate) => candidate.id === project.id)
-    expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
-    expect(await run(after.listWorktrees(project.id))).toMatchObject([{ serverId: "stock-cloud" }])
-    await Effect.runPromise(after.close)
+    try {
+      const adopted = (await run(after.listProjects)).find(
+        (candidate) => candidate.id === project.id
+      )
+      expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
+      expect(await run(after.listWorktrees(project.id))).toMatchObject([
+        { serverId: "stock-cloud" }
+      ])
+    } finally {
+      await Effect.runPromise(after.close)
+    }
   })
 
   it("skips integrity and identity scans on an unchanged database", async () => {
@@ -61,11 +76,14 @@ describe("@codevisor/db", () => {
     const pragma = vi.spyOn(Database.prototype, "pragma")
     try {
       const next = await run(makeDatabase({ filename, serverId: "stable" }))
-      expect(pragma.mock.calls.some(([sql]) => sql === "foreign_key_check")).toBe(false)
-      expect(prepare.mock.calls.some(([sql]) => sql.includes("update events set server_id"))).toBe(
-        false
-      )
-      await run(next.close)
+      try {
+        expect(pragma.mock.calls.some(([sql]) => sql === "foreign_key_check")).toBe(false)
+        expect(
+          prepare.mock.calls.some(([sql]) => sql.includes("update events set server_id"))
+        ).toBe(false)
+      } finally {
+        await run(next.close)
+      }
     } finally {
       prepare.mockRestore()
       pragma.mockRestore()
@@ -83,8 +101,12 @@ describe("@codevisor/db", () => {
   it("drops former-identity rows that collide with current-identity twins", async () => {
     const filename = tempDatabase()
     const before = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
-    const project = await run(before.createProject({ folderPath: "/tmp/twin-project" }))
-    await Effect.runPromise(before.close)
+    let project: Project
+    try {
+      project = await run(before.createProject({ folderPath: "/tmp/twin-project" }))
+    } finally {
+      await Effect.runPromise(before.close)
+    }
 
     const sqlite = new Database(filename)
     try {
@@ -100,10 +122,15 @@ describe("@codevisor/db", () => {
     }
 
     const after = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
-    const adopted = (await run(after.listProjects)).find((candidate) => candidate.id === project.id)
-    expect(adopted?.locations).toHaveLength(1)
-    expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
-    await Effect.runPromise(after.close)
+    try {
+      const adopted = (await run(after.listProjects)).find(
+        (candidate) => candidate.id === project.id
+      )
+      expect(adopted?.locations).toHaveLength(1)
+      expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
+    } finally {
+      await Effect.runPromise(after.close)
+    }
   })
 
   it("backfills transcript pages from an older event log", async () => {
@@ -149,12 +176,18 @@ describe("@codevisor/db", () => {
   it("backfills complete legacy transcript rows and blocks a mismatched projection", async () => {
     const filename = tempDatabase()
     const initial = await run(makeDatabase({ filename, serverId: "local" }))
-    const project = await run(initial.createProject({ folderPath: "/tmp/legacy-transcript" }))
-    const session = await run(initial.createSession({ projectId: project.id, harnessId: "codex" }))
-    const conversationFallback = await run(
-      initial.createSession({ projectId: project.id, harnessId: "codex" })
-    )
-    await Effect.runPromise(initial.close)
+    let project: Project
+    let session: SessionSummary
+    let conversationFallback: SessionSummary
+    try {
+      project = await run(initial.createProject({ folderPath: "/tmp/legacy-transcript" }))
+      session = await run(initial.createSession({ projectId: project.id, harnessId: "codex" }))
+      conversationFallback = await run(
+        initial.createSession({ projectId: project.id, harnessId: "codex" })
+      )
+    } finally {
+      await Effect.runPromise(initial.close)
+    }
 
     const sqlite = new Database(filename)
     try {
@@ -254,38 +287,41 @@ describe("@codevisor/db", () => {
     }
 
     const migrated = await run(makeDatabase({ filename, serverId: "local" }))
-    const page = await run(migrated.getTranscriptPage(session.id, undefined, 8))
-    expect(page.items[0]).toMatchObject({
-      id: "legacy-assistant",
-      text: "legacy answer",
-      planDocument: "legacy plan",
-      attachments: [
-        {
-          fileId: "file-1",
-          name: "a.txt",
-          mimeType: "text/plain",
-          sizeBytes: 1,
-          kind: "file"
-        }
-      ],
-      stopDetail: "done",
-      stopReason: "end_turn",
-      turnId: "legacy-turn"
-    })
-    expect(page.items[1]).toMatchObject({
-      id: "legacy-user",
-      isGenerating: true,
-      text: "legacy question"
-    })
-    expect(
-      (await run(migrated.getSessionDetail(conversationFallback.id))).conversation[0]
-    ).toMatchObject({
-      isGenerating: true,
-      text: "conversation fallback"
-    })
-    const details = await run(migrated.getTranscriptItemDetails(session.id, "legacy-assistant"))
-    expect(details?.entries).toHaveLength(2)
-    await Effect.runPromise(migrated.close)
+    try {
+      const page = await run(migrated.getTranscriptPage(session.id, undefined, 8))
+      expect(page.items[0]).toMatchObject({
+        id: "legacy-assistant",
+        text: "legacy answer",
+        planDocument: "legacy plan",
+        attachments: [
+          {
+            fileId: "file-1",
+            name: "a.txt",
+            mimeType: "text/plain",
+            sizeBytes: 1,
+            kind: "file"
+          }
+        ],
+        stopDetail: "done",
+        stopReason: "end_turn",
+        turnId: "legacy-turn"
+      })
+      expect(page.items[1]).toMatchObject({
+        id: "legacy-user",
+        isGenerating: true,
+        text: "legacy question"
+      })
+      expect(
+        (await run(migrated.getSessionDetail(conversationFallback.id))).conversation[0]
+      ).toMatchObject({
+        isGenerating: true,
+        text: "conversation fallback"
+      })
+      const details = await run(migrated.getTranscriptItemDetails(session.id, "legacy-assistant"))
+      expect(details?.entries).toHaveLength(2)
+    } finally {
+      await Effect.runPromise(migrated.close)
+    }
 
     const corrupted = new Database(filename)
     try {
