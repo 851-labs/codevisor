@@ -1,6 +1,6 @@
 import type { McpIcon, ToolIconTheme } from "./tool-icons.js"
 
-const attribute = (tag: string, name: string): string | undefined => {
+export const htmlAttribute = (tag: string, name: string): string | undefined => {
   const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag)
   return match === null ? undefined : (match[1] ?? match[2] ?? match[3])
 }
@@ -30,9 +30,9 @@ const pageIconUrl = (href: string, pageUrl: string): URL | undefined => {
 }
 
 const pageIconSizeRank = (tag: string, url: URL, touch: boolean): number => {
-  const type = attribute(tag, "type")?.toLowerCase()
+  const type = htmlAttribute(tag, "type")?.toLowerCase()
   const svg = type === "image/svg+xml" || /\.svg(?:$|\?)/i.test(url.pathname)
-  const size = largestSize(attribute(tag, "sizes"))
+  const size = largestSize(htmlAttribute(tag, "sizes"))
   return touch
     ? 3000
     : svg || size === Number.POSITIVE_INFINITY
@@ -45,7 +45,7 @@ const pageIconSizeRank = (tag: string, url: URL, touch: boolean): number => {
 }
 
 const pageIconScheme = (tag: string): ToolIconTheme | undefined => {
-  const media = attribute(tag, "media")?.toLowerCase() ?? ""
+  const media = htmlAttribute(tag, "media")?.toLowerCase() ?? ""
   return /prefers-color-scheme\s*:\s*dark/.test(media)
     ? "dark"
     : /prefers-color-scheme\s*:\s*light/.test(media)
@@ -59,8 +59,8 @@ const appendPageIcon = (
   theme: ToolIconTheme,
   ranked: Array<RankedPageIcon>
 ): void => {
-  const rel = attribute(tag, "rel")?.toLowerCase().split(/\s+/) ?? []
-  const href = attribute(tag, "href")
+  const rel = htmlAttribute(tag, "rel")?.toLowerCase().split(/\s+/) ?? []
+  const href = htmlAttribute(tag, "href")
   if (href === undefined || rel.includes("mask-icon")) return
   const touch = rel.includes("apple-touch-icon") || rel.includes("apple-touch-icon-precomposed")
   if (!touch && !rel.includes("icon")) return

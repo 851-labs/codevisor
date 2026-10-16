@@ -20,12 +20,8 @@ struct WorkspaceInspectorLinksView: View {
       Form {
         Section {
           ForEach(model.links) { link in
-            row(
-              title: link.title ?? Self.host(link.url),
-              subtitle: link.title == nil ? Self.location(link.url) : Self.host(link.url),
-              url: link.url, destination: .link(link.url)
-            ) {
-              WorkspaceInspectorSiteIcon(url: link.url, client: client)
+            WorkspaceInspectorLinkRow(link: link, client: client) {
+              onOpen(.link(link.url))
             }
           }
           if case let .failed(message) = model.linksPhase {
@@ -49,52 +45,107 @@ struct WorkspaceInspectorLinksView: View {
       .formStyle(.grouped)
     }
   }
+}
 
-  private func row(
-    title: String, subtitle: String, url: URL, destination: WorkspaceInspectorView.Destination,
-    @ViewBuilder icon: () -> some View
-  ) -> some View {
-    Button {
-      onOpen(destination)
-    } label: {
-      HStack(spacing: 8) {
-        icon()
-          .frame(width: 16, height: 16)
-        VStack(alignment: .leading, spacing: 1) {
+@MainActor
+private final class WorkspaceInspectorLinkPreview {
+  static let cache = NSCache<NSURL, WorkspaceInspectorLinkPreview>()
+
+  let preview: ServerLinkPreview
+  let image: NSImage?
+
+  init(preview: ServerLinkPreview, image: NSImage?) {
+    self.preview = preview
+    self.image = image
+  }
+
+  static func load(_ url: URL, client: any CodevisorServerClienting) async -> WorkspaceInspectorLinkPreview? {
+    if let cached = cache.object(forKey: url as NSURL) { return cached }
+    guard let preview = try? await client.linkPreview(url: url) else { return nil }
+    let data = preview.image == nil ? nil : try? await client.linkPreviewImage(url: url)
+    guard !Task.isCancelled else { return nil }
+    let loaded = WorkspaceInspectorLinkPreview(preview: preview, image: data.flatMap(NSImage.init(data:)))
+    cache.setObject(loaded, forKey: url as NSURL)
+    return loaded
+  }
+}
+
+private struct WorkspaceInspectorLinkRow: View {
+  let link: ServerWorkspaceLink
+  let client: any CodevisorServerClienting
+  let onOpen: () -> Void
+
+  @State private var loaded: WorkspaceInspectorLinkPreview?
+
+  private var current: WorkspaceInspectorLinkPreview? {
+    loaded ?? WorkspaceInspectorLinkPreview.cache.object(forKey: link.url as NSURL)
+  }
+
+  private var title: String {
+    current?.preview.title ?? link.title ?? WorkspaceInspectorLinksView.host(link.url)
+  }
+
+  var body: some View {
+    Button(action: onOpen) {
+      HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 3) {
           Text(title)
+            .font(.subheadline.weight(.semibold))
             .lineLimit(1)
-            .truncationMode(.tail)
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+          if let description = current?.preview.description {
+            Text(description)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+          HStack(spacing: 5) {
+            WorkspaceInspectorSiteIcon(url: link.url, client: client)
+              .frame(width: 12, height: 12)
+            Text(current?.preview.siteName ?? WorkspaceInspectorLinksView.host(link.url))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+          .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+        if let image = current?.image {
+          Image(nsImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .help(url.absoluteString)
+    .help(link.url.absoluteString)
+    .accessibilityLabel(title)
+    .accessibilityValue(WorkspaceInspectorLinksView.host(link.url))
     .contextMenu {
       Button("Copy Link") {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
       }
       Button("Open in Default Browser") {
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(link.url)
       }
     }
+    .task(id: link.url) {
+      guard loaded == nil, let result = await WorkspaceInspectorLinkPreview.load(link.url, client: client) else {
+        return
+      }
+      loaded = result
+    }
   }
+}
 
-  private static func host(_ url: URL) -> String {
+extension WorkspaceInspectorLinksView {
+  fileprivate static func host(_ url: URL) -> String {
     guard let host = url.host() else { return BrowserLocation.display(url) }
     return url.port.map { "\(host):\($0)" } ?? host
-  }
-
-  private static func location(_ url: URL) -> String {
-    let path = url.path(percentEncoded: false)
-    guard path.count > 1 else { return host(url) }
-    return host(url) + (path.hasSuffix("/") ? String(path.dropLast()) : path)
   }
 }
 
