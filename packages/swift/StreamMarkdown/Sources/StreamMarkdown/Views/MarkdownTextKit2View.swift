@@ -88,6 +88,20 @@
       super.layout()
     }
 
+    override var preparedContentRect: NSRect {
+      get { bounds }
+      set { super.preparedContentRect = bounds }
+    }
+
+    func layoutViewportIfNeeded() {
+      guard let controller = textLayoutManager?.textViewportLayoutController else { return }
+      let visible = visibleRect.intersection(bounds)
+      guard !visible.isEmpty else { return }
+      if controller.viewportRange == nil || !controller.viewportBounds.contains(visible) {
+        controller.layoutViewport()
+      }
+    }
+
     func contentHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
       let width = max(1, proposedWidth)
       let containerWidth = textContainer?.size.width ?? -1

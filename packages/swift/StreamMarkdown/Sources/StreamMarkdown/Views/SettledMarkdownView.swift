@@ -92,6 +92,10 @@
       return measuredHeight
     }
 
+    public func layoutTextViewportsIfNeeded() {
+      contentViews.forEach { $0.layoutTextViewportIfNeeded() }
+    }
+
     public static func plainTextSurfaces(
       blocks: [MarkdownBlock],
       theme: MarkdownTheme
@@ -208,6 +212,7 @@
     }
     func tableBleedLimitDidChange() {}
     func contentHeight(forWidth _: CGFloat) -> CGFloat { 1 }
+    func layoutTextViewportIfNeeded() {}
   }
 
   @MainActor
@@ -237,6 +242,10 @@
 
     override func contentHeight(forWidth width: CGFloat) -> CGFloat {
       textView.contentHeight(forWidth: width)
+    }
+
+    override func layoutTextViewportIfNeeded() {
+      textView.layoutViewportIfNeeded()
     }
 
     override func layout() {

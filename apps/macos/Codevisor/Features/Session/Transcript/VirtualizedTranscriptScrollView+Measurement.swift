@@ -158,6 +158,7 @@ extension VirtualizedTranscriptScrollView {
     if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
       updateMountedRows(rangeOverride: initialRestoreRange)
     }
+    layoutMountedTextViewportsIfNeeded()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
   }
@@ -256,6 +257,15 @@ extension VirtualizedTranscriptScrollView {
       guard !Task.isCancelled else { return }
       self?.commitPendingMeasurements()
     }
+  }
+
+  func settleMountedRowHeights() {
+    for host in mountedHosts.values {
+      host.layoutSubtreeIfNeeded()
+    }
+    guard !pendingMeasuredHeights.isEmpty else { return }
+    measurementCommitTask?.cancel()
+    commitPendingMeasurements()
   }
 
   func commitPendingMeasurements() {

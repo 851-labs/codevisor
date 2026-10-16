@@ -308,6 +308,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     } else {
       layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
     }
+    layoutMountedTextViewportsIfNeeded()
   }
 
   override func scrollWheel(with event: NSEvent) {

@@ -78,6 +78,10 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     return true
   }
 
+  func layoutTextViewportsIfNeeded() {
+    markdownView.layoutTextViewportsIfNeeded()
+  }
+
   override func prepareForImmediatePresentation() {
     if !presentationReady { measureAndLayout() }
     layoutSubtreeIfNeeded()

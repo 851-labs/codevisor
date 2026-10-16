@@ -129,6 +129,7 @@ extension VirtualizedTranscriptScrollView {
       _ = activateMeasurementCacheIfNeeded()
       refreshMountedRootViews()
       rebuildDocumentGeometry()
+      if inLiveResize { settleMountedRowHeights() }
     } else {
       applyPendingInitialPositionIfPossible()
       updateMountedRows()
@@ -203,6 +204,7 @@ extension VirtualizedTranscriptScrollView {
     } else {
       updateMountedRows()
     }
+    layoutMountedTextViewportsIfNeeded()
 
     let atBottom = distance <= Self.atBottomThreshold
     let isRecentUserMovement =
