@@ -274,7 +274,11 @@ describe("pane proxy", () => {
 const openSocket = (url: string): Promise<WebSocket> =>
   new Promise((resolve, reject) => {
     const socket = new WebSocket(url)
-    cleanups.push(() => socket.close())
+    const closed = new Promise<void>((resolveClosed) => socket.once("close", () => resolveClosed()))
+    cleanups.push(() => {
+      socket.close()
+      return closed
+    })
     socket.on("open", () => resolve(socket))
     socket.on("error", reject)
   })

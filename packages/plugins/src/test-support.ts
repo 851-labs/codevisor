@@ -15,13 +15,36 @@ import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-superviso
 import { PluginsError } from "./plugins-error.js"
 import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
 
-export const cleanups: Array<() => void> = []
+export const cleanups: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) {
-    cleanup()
+afterEach(async () => {
+  const outcomes = await Promise.allSettled(
+    cleanups.splice(0).map((cleanup) => {
+      try {
+        return Promise.resolve(cleanup())
+      } catch (cause) {
+        return Promise.reject(cause)
+      }
+    })
+  )
+  const failures: Array<unknown> = []
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") {
+      failures.push(outcome.reason)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Plugin fixture cleanup failed")
   }
 })
+
+export const registerServerCleanup = (server: Server | WebSocketServer): void => {
+  const closed = new Promise<void>((resolve) => server.once("close", () => resolve()))
+  cleanups.push(() => {
+    server.close()
+    return closed
+  })
+}
 
 export const expectDefined = <Value>(value: Value | undefined): Value => {
   if (value === undefined) {
@@ -71,7 +94,6 @@ export const fakeSpawn = (options: { readonly listen?: boolean } = {}): FakeSpaw
   let count = 0
   let server: Server | undefined
   const exitListeners: Array<(message: string) => void> = []
-  cleanups.push(() => server?.close())
   return {
     simulateExit: (message) => {
       server?.close()
@@ -84,6 +106,7 @@ export const fakeSpawn = (options: { readonly listen?: boolean } = {}): FakeSpaw
       count += 1
       if (options.listen !== false) {
         server = createServer((_request, response) => response.end("ok"))
+        registerServerCleanup(server)
         server.listen(Number(spawnOptions.env["PORT"]), "127.0.0.1")
       }
       return {
@@ -199,7 +222,6 @@ export const makeFakePlugin = (): FakePlugin => {
   let spawnEnv: NodeJS.ProcessEnv = {}
   let exitListeners: Array<(message: string) => void> = []
   const requests: Array<RecordedRequest> = []
-  cleanups.push(() => server?.close())
   return {
     env: () => spawnEnv,
     requests,
@@ -286,7 +308,9 @@ export const makeFakePlugin = (): FakePlugin => {
           response.end()
         })
       })
+      registerServerCleanup(server)
       const webSocketServer = new WebSocketServer({ noServer: true })
+      registerServerCleanup(webSocketServer)
       server.on("upgrade", (request, socket, head) => {
         requests.push({
           body: "",
@@ -335,7 +359,7 @@ export const makeOuterServer = async (
       }
     })
   })
-  cleanups.push(() => server.close())
+  registerServerCleanup(server)
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const address = server.address()
   const port = typeof address === "object" && address !== null ? address.port : 0
