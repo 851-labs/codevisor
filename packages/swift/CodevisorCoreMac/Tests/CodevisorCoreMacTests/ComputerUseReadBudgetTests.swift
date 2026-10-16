@@ -52,7 +52,7 @@ struct ComputerUseReadBudgetTests {
   @Test("A request is cancelled once its client closes the connection, not while requests are queued")
   func clientDisconnect() throws {
     var pair: [Int32] = [0, 0]
-    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+    try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
     defer { Darwin.close(pair[0]) }
     let budget = ComputerUseReadBudget(
       budgetMilliseconds: nil, clientDisconnected: { [server = pair[0]] in computerUseClientDisconnected(server) })
