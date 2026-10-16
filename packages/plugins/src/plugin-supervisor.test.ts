@@ -16,7 +16,8 @@ import {
   expectPluginsError,
   fakeSpawn,
   makeDataDir,
-  plugin
+  plugin,
+  registerServerCleanup
 } from "./test-support.js"
 
 vi.mock("node:http", async (importOriginal) => {
@@ -113,7 +114,6 @@ describe("makePluginSupervisor", () => {
   it("uses the manifest HTTP health path instead of accepting a TCP listener", async () => {
     let server: Server | undefined
     const paths: Array<string> = []
-    cleanups.push(() => server?.close())
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
@@ -124,6 +124,7 @@ describe("makePluginSupervisor", () => {
           response.statusCode = 503
           response.end("not ready")
         })
+        registerServerCleanup(server)
         server.listen(Number(options.env["PORT"]), "127.0.0.1")
         return { kill: () => server?.close(), onExit: () => undefined, pid: 10 }
       }
@@ -137,7 +138,6 @@ describe("makePluginSupervisor", () => {
 
   it("accepts a successful HTTP health response", async () => {
     let server: Server | undefined
-    cleanups.push(() => server?.close())
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       spawnShell: (_command, options) => {
@@ -145,6 +145,7 @@ describe("makePluginSupervisor", () => {
           response.statusCode = 204
           response.end()
         })
+        registerServerCleanup(server)
         server.listen(Number(options.env["PORT"]), "127.0.0.1")
         return { kill: () => server?.close(), onExit: () => undefined, pid: 11 }
       }
@@ -157,7 +158,6 @@ describe("makePluginSupervisor", () => {
   it("keeps probing until an HTTP health endpoint becomes ready", async () => {
     let server: Server | undefined
     let probes = 0
-    cleanups.push(() => server?.close())
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       ...advancingClock(),
@@ -167,6 +167,7 @@ describe("makePluginSupervisor", () => {
           response.statusCode = probes === 1 ? 503 : 204
           response.end()
         })
+        registerServerCleanup(server)
         server.listen(Number(options.env["PORT"]), "127.0.0.1")
         return { kill: () => server?.close(), onExit: () => undefined, pid: 13 }
       }
@@ -334,7 +335,6 @@ describe("makePluginSupervisor", () => {
       }
     }
     let server: Server | undefined
-    cleanups.push(() => server?.close())
     const exitListeners: Array<(message: string) => void> = []
     const outputListeners: Array<(data: string) => void> = []
     const supervisor = makePluginSupervisor({
@@ -342,6 +342,7 @@ describe("makePluginSupervisor", () => {
       registerExternalTerminal,
       spawnShell: (_command, options) => {
         server = createServer((_request, response) => response.end("ok"))
+        registerServerCleanup(server)
         server.listen(Number(options.env["PORT"]), "127.0.0.1")
         return {
           kill: () => server?.close(),
