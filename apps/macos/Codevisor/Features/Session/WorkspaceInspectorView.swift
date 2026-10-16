@@ -82,17 +82,6 @@ struct WorkspaceInspectorView: View {
         }
         LabeledContent("Created", value: workspace.createdAt, format: .relative(presentation: .named))
       }
-
-      if let directory = workspace.rootDirectory {
-        Section("Location") {
-          Text(directory)
-            .font(.callout.monospaced())
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-            .lineLimit(3)
-            .truncationMode(.middle)
-        }
-      }
     }
     .formStyle(.grouped)
     .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
