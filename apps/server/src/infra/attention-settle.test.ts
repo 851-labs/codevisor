@@ -137,132 +137,159 @@ describe("@codevisor/server attention settle", () => {
 
   it("drains parked finishes on recovery after a restart", async () => {
     const { db } = await makeAttentionDb()
-    const fanout = await run(makeEventFanout)
+    try {
+      const fanout = await run(makeEventFanout)
 
-    const project = await run(db.createProject({ folderPath: "/tmp/attention-recover" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-1",
-        turnState: "started"
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        stopReason: "end_turn",
-        turnId: "turn-1",
-        turnState: "ended"
-      })
-    )
-    expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
+      const project = await run(db.createProject({ folderPath: "/tmp/attention-recover" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          turnId: "turn-1",
+          turnState: "started"
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          backgroundTasks: [
+            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+          ]
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          stopReason: "end_turn",
+          turnId: "turn-1",
+          turnState: "ended"
+        })
+      )
+      expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
-    const scheduler = makeAttentionSettleScheduler(db, fanout)
-    await scheduler.recover()
-    expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
+      const scheduler = makeAttentionSettleScheduler(db, fanout)
+      try {
+        await scheduler.recover()
+        expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
 
-    await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 1,
-      unreadCount: 1
-    })
-    scheduler.close()
-    await run(db.close)
+        await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+        await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
+        expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+          latestAttentionSequence: 1,
+          unreadCount: 1
+        })
+      } finally {
+        scheduler.close()
+      }
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("arms recovered deadlines and clears live timers on close", async () => {
     const { db } = await makeAttentionDb()
-    const fanout = await run(makeEventFanout)
+    try {
+      const fanout = await run(makeEventFanout)
 
-    const project = await run(db.createProject({ folderPath: "/tmp/attention-close" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-1",
-        turnState: "started"
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        stopReason: "end_turn",
-        turnId: "turn-1",
-        turnState: "ended"
-      })
-    )
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
+      const project = await run(db.createProject({ folderPath: "/tmp/attention-close" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          turnId: "turn-1",
+          turnState: "started"
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          backgroundTasks: [
+            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+          ]
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          stopReason: "end_turn",
+          turnId: "turn-1",
+          turnState: "ended"
+        })
+      )
+      await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+      expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
 
-    const scheduler = makeAttentionSettleScheduler(db, fanout)
-    await scheduler.recover()
-    scheduler.close()
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 0,
-      sidebarState: "inProgress"
-    })
-    await run(db.close)
+      const scheduler = makeAttentionSettleScheduler(db, fanout)
+      try {
+        await scheduler.recover()
+      } finally {
+        scheduler.close()
+      }
+      expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+        latestAttentionSequence: 0,
+        sidebarState: "inProgress"
+      })
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("re-arms migrated parked finishes with no recorded deadline", async () => {
     const { db, filename } = await makeAttentionDb()
-    const fanout = await run(makeEventFanout)
+    try {
+      const fanout = await run(makeEventFanout)
 
-    const project = await run(db.createProject({ folderPath: "/tmp/attention-migrated" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-1",
-        turnState: "started"
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        stopReason: "end_turn",
-        turnId: "turn-1",
-        turnState: "ended"
-      })
-    )
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    const sqlite = new Database(filename)
-    sqlite
-      .prepare("update session_attention set settle_due_at = null where session_id = ?")
-      .run(session.id)
-    sqlite.close()
+      const project = await run(db.createProject({ folderPath: "/tmp/attention-migrated" }))
+      const session = await run(
+        db.createSession({ projectId: project.id, harnessId: "claude-code" })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          turnId: "turn-1",
+          turnState: "started"
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          backgroundTasks: [
+            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+          ]
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          initiatedBy: "user",
+          stopReason: "end_turn",
+          turnId: "turn-1",
+          turnState: "ended"
+        })
+      )
+      await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+      const sqlite = new Database(filename)
+      try {
+        sqlite
+          .prepare("update session_attention set settle_due_at = null where session_id = ?")
+          .run(session.id)
+      } finally {
+        sqlite.close()
+      }
 
-    const scheduler = makeAttentionSettleScheduler(db, fanout)
-    await scheduler.recover()
-    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      latestAttentionSequence: 1,
-      unreadCount: 1
-    })
-    scheduler.close()
-    await run(db.close)
+      const scheduler = makeAttentionSettleScheduler(db, fanout)
+      try {
+        await scheduler.recover()
+        await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
+        expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+          latestAttentionSequence: 1,
+          unreadCount: 1
+        })
+      } finally {
+        scheduler.close()
+      }
+    } finally {
+      await run(db.close)
+    }
   })
 })
