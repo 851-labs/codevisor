@@ -47,12 +47,4 @@ final class TranscriptMarkdownHostCache {
     }
     return evicted
   }
-
-  func removeAll() -> [TranscriptMarkdownRowHost] {
-    let hosts = entries.values.map(\.host)
-    entries.removeAll(keepingCapacity: false)
-    leastRecentlyUsedKeys.removeAll(keepingCapacity: false)
-    totalHeight = 0
-    return hosts
-  }
 }
