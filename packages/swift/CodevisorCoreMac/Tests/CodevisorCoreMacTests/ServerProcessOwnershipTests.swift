@@ -42,7 +42,7 @@ struct ServerProcessOwnershipTests {
   @Test("A listener blocks replacement even after the database lease is gone")
   func portOwnership() async throws {
     let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-    #expect(descriptor >= 0)
+    try #require(descriptor >= 0)
     defer { close(descriptor) }
     var address = sockaddr_in()
     address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -53,13 +53,13 @@ struct ServerProcessOwnershipTests {
         bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
       }
     }
-    #expect(bound == 0)
-    #expect(listen(descriptor, 1) == 0)
+    try #require(bound == 0)
+    try #require(listen(descriptor, 1) == 0)
     var size = socklen_t(MemoryLayout<sockaddr_in>.size)
     let named = withUnsafeMutablePointer(to: &address) { pointer in
       pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(descriptor, $0, &size) }
     }
-    #expect(named == 0)
+    try #require(named == 0)
     let port = Int(UInt16(bigEndian: address.sin_port))
     let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
     #expect(await !ServerProcessOwnership.hasStopped(port: port, databasePath: path, previousOwner: nil))
