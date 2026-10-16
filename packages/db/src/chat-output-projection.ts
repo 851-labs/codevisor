@@ -16,6 +16,7 @@ import {
   jsonRecord,
   type JsonRecord
 } from "./event-payloads.js"
+import { recordToolFileChanges } from "./file-change-projection.js"
 import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import { nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
@@ -177,6 +178,7 @@ const projectWorkedDetail = (
     if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
     appendCompletedImage(sqlite, payload, itemId, parent)
     recordToolMedia(sqlite, event, payload, itemId)
+    recordToolFileChanges(sqlite, event, payload, itemId)
     return itemId
   }
   return undefined

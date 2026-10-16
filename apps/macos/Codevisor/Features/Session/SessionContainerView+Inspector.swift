@@ -10,6 +10,8 @@ extension SessionContainerView {
         with: PaneDescriptorState(
           id: id, kind: .browser, name: "Browser", terminalKey: id.uuidString, browserURL: url.absoluteString)
       )
+    case let .file(path):
+      _ = openFileDocument(path)
     }
   }
 

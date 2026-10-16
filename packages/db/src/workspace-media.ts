@@ -11,6 +11,14 @@ export interface WorkspaceMediaCursor {
   readonly id: string
 }
 
+export interface WorkspaceFileEdit {
+  readonly path: string
+  readonly added: number
+  readonly removed: number
+  readonly changedAt: string
+  readonly sessionId: string
+}
+
 export interface WorkspaceMessageText {
   readonly itemId: string
   readonly sessionId: string
@@ -36,6 +44,14 @@ const messageTextRows = rowReader({
   text
 })
 
+const fileEditRows = rowReader({
+  path: text,
+  added: integer,
+  removed: integer,
+  changed_at: text,
+  session_id: text
+})
+
 const cursorParameters = (before: WorkspaceMediaCursor | undefined) => ({
   beforeCreatedAt: before?.createdAt ?? null,
   beforeId: before?.id ?? null
@@ -43,7 +59,10 @@ const cursorParameters = (before: WorkspaceMediaCursor | undefined) => ({
 
 export const makeWorkspaceMediaService = (
   context: ServiceContext
-): Pick<CodevisorDatabaseService, "listWorkspacePhotos" | "listWorkspaceMessageTexts"> => {
+): Pick<
+  CodevisorDatabaseService,
+  "listWorkspacePhotos" | "listWorkspaceMessageTexts" | "listWorkspaceFileEdits"
+> => {
   const { sqlite } = context
 
   return {
@@ -127,6 +146,44 @@ export const makeWorkspaceMediaService = (
             sessionId: canonicalUuid(row.session_id),
             createdAt: row.created_at,
             text: row.text
+          }))
+      ),
+    listWorkspaceFileEdits: (workspaceId, limit) =>
+      attempt("listWorkspaceFileEdits", () =>
+        fileEditRows
+          .all(
+            sqlite
+              .prepare(
+                `with edits as (
+                   select change.path, change.added, change.removed, change.updated_at,
+                     item.session_id
+                   from sessions
+                   join chat_items item on item.session_id = sessions.id
+                   join chat_item_file_changes change on change.item_id = item.id
+                   where sessions.workspace_id = @workspaceId and change.status = 'completed'
+                 ),
+                 ranked as (
+                   select edits.*,
+                     row_number() over (partition by path order by updated_at desc) as recency,
+                     sum(added) over (partition by path) as total_added,
+                     sum(removed) over (partition by path) as total_removed
+                   from edits
+                 )
+                 select path, total_added as added, total_removed as removed,
+                   updated_at as changed_at, session_id
+                 from ranked
+                 where recency = 1
+                 order by updated_at desc, path
+                 limit @limit`
+              )
+              .all({ workspaceId: canonicalUuid(workspaceId), limit })
+          )
+          .map((row): WorkspaceFileEdit => ({
+            path: row.path,
+            added: row.added,
+            removed: row.removed,
+            changedAt: row.changed_at,
+            sessionId: canonicalUuid(row.session_id)
           }))
       )
   }

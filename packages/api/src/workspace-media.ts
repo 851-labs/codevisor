@@ -34,3 +34,23 @@ export const WorkspaceLinkPage = Schema.Struct({
   nextBefore: Schema.optional(Schema.String)
 })
 export type WorkspaceLinkPage = typeof WorkspaceLinkPage.Type
+
+export const WorkspaceFileChangeStatus = Schema.Literals(["added", "modified", "deleted"])
+export type WorkspaceFileChangeStatus = typeof WorkspaceFileChangeStatus.Type
+
+export const WorkspaceFileChange = Schema.Struct({
+  path: Schema.String,
+  added: Schema.Number,
+  removed: Schema.Number,
+  status: Schema.optional(WorkspaceFileChangeStatus),
+  uncommitted: Schema.Boolean,
+  changedAt: Schema.optional(Schema.String),
+  sessionId: Schema.optional(Schema.String)
+})
+export type WorkspaceFileChange = typeof WorkspaceFileChange.Type
+
+export const WorkspaceFileChanges = Schema.Struct({
+  files: Schema.Array(WorkspaceFileChange),
+  truncated: Schema.Boolean
+})
+export type WorkspaceFileChanges = typeof WorkspaceFileChanges.Type

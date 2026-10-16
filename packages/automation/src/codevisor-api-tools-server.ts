@@ -326,6 +326,12 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool(
+    "workspaces.files",
+    "List files changed in a workspace, newest first: files its agents edited, with summed line counts, and files left uncommitted in its checkout, with git's counts.",
+    "GET",
+    "/v1/workspaces/:workspaceId/files"
+  ),
+  apiTool(
     "workspaces.delete",
     "Delete an empty workspace identity.",
     "DELETE",
