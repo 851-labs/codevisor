@@ -33,13 +33,16 @@ const fixture = async () => {
   const branches = new Map<string, string | null>()
   const pullRequests = new Map<string, GitPullRequest | null | undefined>()
   const lookups: Array<string> = []
+  const missing = new Set<string>()
   const start = () => {
     const monitor = startWorkspaceGitMonitor({
       db,
       fanout,
       checkout: async (record) => {
         if (record.rootDirectory === "/repo/broken") throw new Error("checkout exploded")
-        return record.rootDirectory === undefined ? undefined : { directory: record.rootDirectory }
+        return record.rootDirectory === undefined || missing.has(record.rootDirectory)
+          ? undefined
+          : { directory: record.rootDirectory }
       },
       environment: async () => ({}),
       branchOf: async (directory) => branches.get(directory) ?? null,
@@ -55,7 +58,7 @@ const fixture = async () => {
   }
   const git = async (id: string) =>
     (await run(db.listWorkspaces)).find((candidate) => candidate.id === id)?.git
-  return { db, fanout, published, branches, pullRequests, lookups, workspace, start, git }
+  return { db, fanout, published, branches, pullRequests, lookups, missing, workspace, start, git }
 }
 
 it("records each workspace's branch and pull request at boot and publishes only changes", async () => {
@@ -163,6 +166,9 @@ it("re-checks a workspace's pull request when one of its chats finishes a turn",
   await attention("idle-session", "needsAttention", feature.id)
   await attention("loose-session", "inProgress")
   await attention("loose-session", "needsAttention")
+  await attention("deleted-session", "inProgress", feature.id)
+  await run(fanout.publish(await run(db.appendEvent("session.deleted", "deleted-session", {}))))
+  await attention("deleted-session", "needsAttention", feature.id)
   await monitor.settled()
   expect(await git(feature.id)).toEqual({ branch: "one", pullRequest: null })
 
@@ -205,4 +211,74 @@ it("logs a failed check and keeps checking the other workspaces", async () => {
 
   expect(await git(feature.id)).toMatchObject({ branch: "one" })
   expect(errors).toHaveBeenCalledWith(expect.stringContaining("checkout exploded"))
+})
+
+it("starts checking workspaces created after it booted with nothing to check", async () => {
+  const { db, fanout, branches, workspace, start, git } = await fixture()
+  const monitor = start()
+  await monitor.settled()
+
+  const created = await workspace("created", "/repo/created")
+  branches.set("/repo/created", "fresh")
+  await run(
+    fanout.publish(await run(db.appendEvent("workspace.updated", created.id, { id: created.id })))
+  )
+  await monitor.settled()
+
+  expect(await git(created.id)).toEqual({ branch: "fresh", pullRequest: null })
+})
+
+it("clears an active workspace's git once its checkout is gone", async () => {
+  const { branches, missing, workspace, start, git } = await fixture()
+  const feature = await workspace("feature", "/repo/feature")
+  branches.set("/repo/feature", "one")
+  const monitor = start()
+  await monitor.settled()
+
+  missing.add("/repo/feature")
+  await monitor.sweep(false)
+
+  expect(await git(feature.id)).toEqual({ branch: null, pullRequest: null })
+})
+
+it("keeps checking an archived workspace's open pull request until it closes", async () => {
+  const { db, branches, pullRequests, lookups, missing, workspace, start, git } = await fixture()
+  const archived = await workspace("archived", "/repo/archived")
+  branches.set("/repo/archived", "feature")
+  pullRequests.set("/repo/archived", pullRequest(3))
+  const monitor = start()
+  await monitor.settled()
+  await run(db.updateWorkspace(archived.id, { isArchived: true }))
+  lookups.length = 0
+
+  await monitor.sweep(false)
+  expect(lookups).toEqual([])
+  missing.add("/repo/archived")
+  await monitor.sweep(true)
+  expect(await git(archived.id)).toEqual({ branch: "feature", pullRequest: pullRequest(3) })
+  missing.delete("/repo/archived")
+
+  pullRequests.set("/repo/archived", { ...pullRequest(3), state: "merged" })
+  await monitor.sweep(true)
+  await monitor.sweep(true)
+
+  expect(await git(archived.id)).toEqual({
+    branch: "feature",
+    pullRequest: { ...pullRequest(3), state: "merged" }
+  })
+  expect(lookups).toEqual(["/repo/archived@feature"])
+})
+
+it("does no more work once closed", async () => {
+  const { branches, workspace, start, git } = await fixture()
+  const feature = await workspace("feature", "/repo/feature")
+  branches.set("/repo/feature", "one")
+  const monitor = start()
+  await monitor.settled()
+
+  await monitor.close()
+  branches.set("/repo/feature", "two")
+  await monitor.sweep(false)
+
+  expect(await git(feature.id)).toMatchObject({ branch: "one" })
 })

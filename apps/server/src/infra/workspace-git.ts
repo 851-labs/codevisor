@@ -29,6 +29,13 @@ export interface WorkspaceGitMonitor {
 
 const concurrency = 4
 
+const settledArchive = (workspace: Workspace): boolean =>
+  workspace.isArchived && workspace.git !== undefined && workspace.git.pullRequest?.state !== "open"
+
+const skips = (workspace: Workspace, pullRequests: boolean): boolean =>
+  settledArchive(workspace) ||
+  (workspace.isArchived && workspace.git !== undefined && !pullRequests)
+
 /* v8 ignore next 3 */
 const swallow = (cause: unknown): void => {
   console.error(`Workspace git sweep failed: ${failureMessage(cause)}`)
@@ -47,6 +54,7 @@ export const startWorkspaceGitMonitor = ({
   const queued = new Map<string, { workspace: Workspace | undefined; pullRequest: boolean }>()
   const working = new Set<string>()
   let draining: Promise<void> | undefined
+  let closed = false
 
   const record = async (
     workspaceId: string,
@@ -59,10 +67,11 @@ export const startWorkspaceGitMonitor = ({
   }
 
   const inspect = async (workspace: Workspace, wantsPullRequest: boolean): Promise<void> => {
-    if (workspace.isArchived && workspace.git !== undefined) return
+    if (skips(workspace, wantsPullRequest)) return
     const found = await checkout(workspace)
     if (found === undefined) {
-      if (workspace.git === undefined) await record(workspace.id, null, null)
+      if (!workspace.isArchived || workspace.git === undefined)
+        await record(workspace.id, null, null)
       return
     }
     const env = await environment(found.directory)
@@ -79,7 +88,8 @@ export const startWorkspaceGitMonitor = ({
   }
 
   const drain = (): Promise<void> => {
-    draining ??= (async () => {
+    if (draining !== undefined || queued.size === 0) return draining ?? Promise.resolve()
+    draining = (async () => {
       try {
         while (queued.size > 0) {
           const batch = [...queued].slice(0, concurrency)
@@ -89,7 +99,7 @@ export const startWorkspaceGitMonitor = ({
           await Promise.all(
             batch.map(async ([id, entry]) => {
               const workspace =
-                entry.workspace ?? workspaces.find((candidate) => candidate.id === id)
+                entry.workspace ?? workspaces.find((candidate) => candidate.id.toLowerCase() === id)
               if (workspace === undefined) return
               await inspect(workspace, entry.pullRequest).catch((cause: unknown) => {
                 console.error(`Workspace git check failed for ${id}: ${failureMessage(cause)}`)
@@ -105,6 +115,7 @@ export const startWorkspaceGitMonitor = ({
   }
 
   const enqueue = (id: string, pullRequest: boolean, workspace?: Workspace): void => {
+    if (closed) return
     const key = id.toLowerCase()
     queued.set(key, {
       workspace,
@@ -117,7 +128,7 @@ export const startWorkspaceGitMonitor = ({
   const sweep = (pullRequests: boolean): Promise<void> => {
     const pass = (async () => {
       for (const workspace of await run(db.listWorkspaces)) {
-        if (workspace.isArchived && workspace.git !== undefined) continue
+        if (skips(workspace, pullRequests)) continue
         enqueue(workspace.id, pullRequests || workspace.git === undefined, workspace)
       }
       await drain()
@@ -129,6 +140,10 @@ export const startWorkspaceGitMonitor = ({
   const unsubscribe = fanout.subscribe((event) => {
     if (event.kind === "workspace.updated") {
       enqueue(event.subjectId, field(event.payload, "git") === undefined)
+      return
+    }
+    if (event.kind === "session.deleted") {
+      working.delete(event.subjectId)
       return
     }
     if (event.kind !== "session.attention.updated") return
@@ -159,10 +174,11 @@ export const startWorkspaceGitMonitor = ({
     sweep,
     settled,
     close: async () => {
+      closed = true
       clearInterval(branchSweep)
       clearInterval(pullRequestSweep)
       unsubscribe()
-      await draining
+      await settled()
     }
   }
 }

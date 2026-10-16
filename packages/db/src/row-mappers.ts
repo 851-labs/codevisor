@@ -141,7 +141,7 @@ const parsePullRequest = (raw: string | null | undefined): GitPullRequest | null
 }
 
 const workspaceGitFromRow = (row: WorkspaceRow): WorkspaceGit | undefined =>
-  row.git_checked_at == null
+  row.git_known !== 1
     ? undefined
     : { branch: row.git_branch ?? null, pullRequest: parsePullRequest(row.git_pull_request) }
 

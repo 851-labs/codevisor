@@ -7,7 +7,7 @@ export const migrations64: ReadonlyArray<Migration> = [
     sql: `
       alter table workspaces add column git_branch text;
       alter table workspaces add column git_pull_request text;
-      alter table workspaces add column git_checked_at text;
+      alter table workspaces add column git_known integer not null default 0;
     `
   }
 ]

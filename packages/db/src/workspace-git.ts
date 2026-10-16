@@ -11,7 +11,7 @@ export const makeWorkspaceGitService = (
   return {
     setWorkspaceGit: (workspaceId, branch, pullRequest) =>
       attempt("setWorkspaceGit", () =>
-        journaled((now) => {
+        journaled(() => {
           const keepsPullRequest = pullRequest === undefined ? 1 : 0
           const serialized = pullRequest == null ? null : JSON.stringify(pullRequest)
           context.sqlite
@@ -19,9 +19,9 @@ export const makeWorkspaceGitService = (
               `update workspaces set
                    git_branch = @branch,
                    git_pull_request = case when @keeps then git_pull_request else @pullRequest end,
-                   git_checked_at = coalesce(git_checked_at, @now)
+                   git_known = 1
                  where id = @id
-                   and (git_checked_at is null
+                   and (git_known = 0
                      or git_branch is not @branch
                      or (not @keeps and git_pull_request is not @pullRequest))`
             )
@@ -29,8 +29,7 @@ export const makeWorkspaceGitService = (
               id: canonicalUuid(workspaceId),
               branch,
               keeps: keepsPullRequest,
-              pullRequest: serialized,
-              now
+              pullRequest: serialized
             })
         })
       )
