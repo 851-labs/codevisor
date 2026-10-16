@@ -151,6 +151,7 @@ export class FakeTerminal implements AgyTerminal {
   killed = false
   private dataHandler: ((data: string) => void) | undefined
   private exitHandler: ((code: number) => void) | undefined
+  private readonly exitRegistered = Promise.withResolvers<void>()
 
   write(data: string) {
     this.written.push(data)
@@ -160,6 +161,10 @@ export class FakeTerminal implements AgyTerminal {
   }
   onExit(handler: (code: number) => void) {
     this.exitHandler = handler
+    this.exitRegistered.resolve()
+  }
+  waitForExitHandler(): Promise<void> {
+    return this.exitRegistered.promise
   }
   kill() {
     this.killed = true
@@ -183,7 +188,7 @@ export const fakeTerminalSpawner = () => {
   }
   const ready = async () => {
     await spawned.promise
-    await Promise.resolve()
+    await terminal.waitForExitHandler()
   }
   return { spawn, terminal, requests, ready }
 }
