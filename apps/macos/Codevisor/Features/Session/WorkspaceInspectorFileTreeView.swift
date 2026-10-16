@@ -143,7 +143,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Group {
+      ZStack {
         if isLoading {
           ProgressView().controlSize(.mini)
         } else if entry.isDirectory {
