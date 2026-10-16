@@ -112,7 +112,10 @@ struct SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.send("finish the change")
+    let attachment = Attachment(
+      fileId: "retry-file-1", name: "note.txt", mimeType: "text/plain", sizeBytes: 17, kind: .file
+    )
+    await model.send("finish the change", attachments: [attachment])
     await settleUntil { !model.isSending }
     let original = try! #require(userMessages(model).first)
     await model.retryResponse(to: original)
@@ -127,6 +130,19 @@ struct SessionModelTests {
       client.promptedMessageIds == [
         original.id.uuidString.lowercased(),
         original.id.uuidString.lowercased(),
+      ])
+    #expect(
+      client.promptedAttachments == [
+        [
+          ServerAttachmentRef(
+            fileId: "retry-file-1", name: "note.txt", mimeType: "text/plain", sizeBytes: 17, kind: .file
+          )
+        ],
+        [
+          ServerAttachmentRef(
+            fileId: "retry-file-1", name: "note.txt", mimeType: "text/plain", sizeBytes: 17, kind: .file
+          )
+        ],
       ])
     #expect(userMessages(model).map(\.text) == ["finish the change"])
     #expect(
