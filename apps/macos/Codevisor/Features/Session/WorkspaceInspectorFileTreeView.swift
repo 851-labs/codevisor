@@ -7,15 +7,18 @@ struct WorkspaceInspectorFileTreeView: View {
   let model: WorkspaceInspectorFileTreeModel
   let onOpen: (WorkspaceInspectorView.Destination) -> Void
 
-  private var rootPhase: WorkspaceInspectorMediaModel.Phase {
+  private var rootPhase: WorkspaceInspectorMediaModel.Phase? {
     guard let root = model.root else { return .loaded }
     if let error = model.errors[root] { return .failed(error) }
-    return model.listings[root] == nil ? .loading : .loaded
+    if model.listings[root] != nil { return .loaded }
+    return model.slow.contains(root) ? .loading : nil
   }
 
   var body: some View {
     let rows = model.rows
-    if rows.isEmpty {
+    if rows.isEmpty, rootPhase == nil {
+      Color.clear
+    } else if rows.isEmpty, let rootPhase {
       WorkspaceInspectorMediaPlaceholder(
         phase: rootPhase, emptyTitle: model.root == nil ? "No Folder" : "No Files", systemImage: "folder",
         emptyDescription: model.root == nil
@@ -46,19 +49,22 @@ struct WorkspaceInspectorFileTreeView: View {
       }
     } label: {
       HStack(spacing: 4) {
-        Image(systemName: "chevron.right")
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .rotationEffect(.degrees(isExpanded ? 90 : 0))
-          .frame(width: 12)
-          .opacity(entry.isDirectory ? 1 : 0)
+        Group {
+          if model.slow.contains(entry.path) {
+            ProgressView().controlSize(.mini)
+          } else {
+            Image(systemName: "chevron.right")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .rotationEffect(.degrees(isExpanded ? 90 : 0))
+              .opacity(entry.isDirectory ? 1 : 0)
+          }
+        }
+        .frame(width: 12)
         FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
         Text(entry.name)
           .lineLimit(1)
           .truncationMode(.middle)
-        if entry.isDirectory, isExpanded, model.loading.contains(entry.path) {
-          ProgressView().controlSize(.mini)
-        }
         Spacer(minLength: 0)
       }
       .padding(.leading, CGFloat(row.depth) * 14)
