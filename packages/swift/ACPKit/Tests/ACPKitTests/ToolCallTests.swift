@@ -92,7 +92,12 @@ struct ToolCallTests {
   func cancelledStatus() throws {
     let call = ToolCall(toolCallId: "t1", title: "Edit", status: .cancelled, exitCode: 130)
     let data = try JSONEncoder().encode(call)
-    let decoded = try JSONDecoder().decode(ToolCall.self, from: data)
+    let literal = Data(
+      #"{"toolCallId":"t1","title":"Edit","status":"cancelled","exitCode":130}"#.utf8)
+    let actual = try #require(try JSONSerialization.jsonObject(with: data) as? NSDictionary)
+    let expected = try #require(try JSONSerialization.jsonObject(with: literal) as? NSDictionary)
+    #expect(actual == expected)
+    let decoded = try JSONDecoder().decode(ToolCall.self, from: literal)
     #expect(decoded.status == .cancelled)
     #expect(decoded.exitCode == 130)
     #expect(decoded.isSettled)
