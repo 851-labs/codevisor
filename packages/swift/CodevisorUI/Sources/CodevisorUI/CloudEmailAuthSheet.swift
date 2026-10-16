@@ -46,7 +46,6 @@ public struct CloudEmailAuthSheet: View {
 }
 
 struct CloudEmailAuthPage: View {
-  @Environment(\.theme) var theme
   @Bindable var model: CloudEmailAuthModel
   let step: CloudEmailAuthModel.Step
   let cancelAction: () -> Void
@@ -84,7 +83,7 @@ struct CloudEmailAuthPage: View {
   @ViewBuilder
   var statusMessages: some View {
     if let message = model.errorMessage {
-      Text(message).font(.callout).foregroundStyle(theme.statusError)
+      Text(message).font(.callout).foregroundStyle(.red)
     }
     if let notice = model.notice {
       Text(notice).font(.callout).foregroundStyle(.secondary)

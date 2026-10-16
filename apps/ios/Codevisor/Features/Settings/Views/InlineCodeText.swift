@@ -1,6 +1,5 @@
 import AuthenticationServices
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 import os

@@ -14,7 +14,6 @@ struct NotificationsSettingsView: View {
   }
 
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
   @State private var soundChoices: [SystemSoundChoice] = []
   @State private var testMessage: String?
@@ -57,7 +56,6 @@ struct NotificationsSettingsView: View {
           Button(authorizationButtonTitle) {
             handleAuthorizationButton()
           }
-          .settingsActionTint(theme)
           .disabled(!settings.notificationsEnabled || !settings.systemNotificationsEnabled)
         }
       } header: {
@@ -104,7 +102,6 @@ struct NotificationsSettingsView: View {
             soundImportTarget = nil
             showingSoundImporter = true
           }
-          .settingsActionTint(theme)
         }
       }
 
@@ -113,7 +110,6 @@ struct NotificationsSettingsView: View {
           Button("Send Test Notification") {
             Task { await sendTestNotification() }
           }
-          .settingsActionTint(theme)
           Spacer()
           if let testMessage {
             Text(testMessage)
@@ -123,7 +119,7 @@ struct NotificationsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .settingsPaneFormStyle()
     .fileImporter(
       isPresented: $showingSoundImporter,
       allowedContentTypes: [.audio]
@@ -139,7 +135,6 @@ struct NotificationsSettingsView: View {
       presenting: soundError
     ) { _ in
       Button("OK", role: .cancel) {}
-        .settingsActionTint(theme)
     } message: { error in
       Text(error.message)
     }
@@ -207,7 +202,7 @@ struct NotificationsSettingsView: View {
   ) -> some View {
     HStack(spacing: 12) {
       Text(title)
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
       Spacer(minLength: 20)
       Menu {
         let custom = customSoundChoices
@@ -234,16 +229,16 @@ struct NotificationsSettingsView: View {
       } label: {
         HStack(spacing: 10) {
           Text(soundName(for: selection.wrappedValue))
-            .foregroundStyle(theme.textPrimary)
+            .foregroundStyle(.primary)
             .lineLimit(1)
 
           ZStack {
             Circle()
-              .fill(theme.cardHoverBackground)
+              .fill(Color.secondary.opacity(0.12))
               .frame(width: 20, height: 20)
             Image(systemName: "chevron.up.chevron.down")
               .font(.system(size: Typography.IconSize.compact, weight: .semibold))
-              .foregroundStyle(theme.textPrimary)
+              .foregroundStyle(.primary)
           }
         }
         .contentShape(Rectangle())
@@ -258,11 +253,11 @@ struct NotificationsSettingsView: View {
       } label: {
         ZStack {
           Circle()
-            .strokeBorder(theme.textSecondary.opacity(0.75), lineWidth: 1)
+            .strokeBorder(Color.secondary.opacity(0.75), lineWidth: 1)
             .frame(width: 20, height: 20)
           Image(systemName: "play.fill")
             .font(.system(size: Typography.IconSize.compact, weight: .semibold))
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
         }
         .contentShape(Circle())
       }
@@ -290,7 +285,7 @@ struct NotificationsSettingsView: View {
   private func customSoundRow(_ sound: SystemSoundChoice) -> some View {
     HStack {
       Text(sound.name)
-        .foregroundStyle(theme.textPrimary)
+        .foregroundStyle(.primary)
       Spacer()
       Button {
         ChatNotificationManager.shared.playSample(at: sound.path)
@@ -298,7 +293,6 @@ struct NotificationsSettingsView: View {
         Image(systemName: "play.circle")
       }
       .buttonStyle(.borderless)
-      .settingsActionTint(theme)
       .help("Play \(sound.name)")
       .accessibilityLabel("Play \(sound.name)")
       Button {
@@ -307,7 +301,6 @@ struct NotificationsSettingsView: View {
         Image(systemName: "trash")
       }
       .buttonStyle(.borderless)
-      .settingsActionTint(theme)
       .help("Remove this sound")
       .accessibilityLabel("Remove \(sound.name)")
     }

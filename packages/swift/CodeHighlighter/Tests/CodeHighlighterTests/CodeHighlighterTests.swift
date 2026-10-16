@@ -214,12 +214,8 @@ struct CodeHighlighterTests {
   }
 
   @MainActor
-  @Test("Every bundled app theme produces useful native colors")
-  func bundledThemeCompatibility() async throws {
-    let catalog = ThemeCatalog(
-      customThemesDirectory: FileManager.default.temporaryDirectory
-        .appendingPathComponent("codevisor-highlighter-theme-tests")
-    )
+  @Test("Both bundled syntax themes produce useful native colors", arguments: [false, true])
+  func bundledThemeCompatibility(isDark: Bool) async throws {
     let highlighter = CodeHighlighter()
     let code = """
       // A representative palette sample
@@ -228,23 +224,14 @@ struct CodeHighlighterTests {
           func text() -> String { "hello \\(count)" }
       }
       """
-
-    for descriptor in catalog.availableThemes
-    where !ThemeCatalog.isSystemTheme(id: descriptor.id) {
-      let data = try catalog.loadThemeData(id: descriptor.id)
-      let json = try #require(String(data: data, encoding: .utf8))
-      let lines = try #require(
-        await highlighter.highlight(
-          code: code,
-          language: "swift",
-          themeKey: descriptor.id,
-          themeJSON: json
-        ),
-        "Theme \(descriptor.id) failed native highlighting"
-      )
-      let colors = Set(lines.flatMap { $0 }.compactMap(\.color))
-      #expect(colors.count >= 2, "Theme \(descriptor.id) produced too few syntax colors")
-    }
+    let key = SyntaxTheme.key(isDark: isDark)
+    let json = try #require(SyntaxTheme.json(isDark: isDark))
+    let lines = try #require(
+      await highlighter.highlight(code: code, language: "swift", themeKey: key, themeJSON: json),
+      "Theme \(key) failed native highlighting"
+    )
+    let colors = Set(lines.flatMap { $0 }.compactMap(\.color))
+    #expect(colors.count >= 2, "Theme \(key) produced too few syntax colors")
   }
 
   @Test("File paths map to bundled grammar names")

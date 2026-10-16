@@ -5,7 +5,6 @@ import CodevisorUI
 
 struct NativeMcpDetailSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let server: ServerNativeMcpServer
 
   var body: some View {
@@ -43,7 +42,6 @@ struct NativeMcpDetailSheet: View {
             LabeledContent("Enabled in \(server.harnessName)", value: enabled ? "Yes" : "No")
           }
         }
-        .listRowBackground(theme.formRowBackground)
         if !server.headerNames.isEmpty || !server.envNames.isEmpty {
           Section("Secrets") {
             if !server.headerNames.isEmpty {
@@ -56,7 +54,6 @@ struct NativeMcpDetailSheet: View {
               .font(.callout)
               .foregroundStyle(.secondary)
           }
-          .listRowBackground(theme.formRowBackground)
         }
         Section("Source") {
           LabeledContent("Config File") {
@@ -67,12 +64,9 @@ struct NativeMcpDetailSheet: View {
               .truncationMode(.middle)
           }
         }
-        .listRowBackground(theme.formRowBackground)
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       HStack {
         if FileManager.default.fileExists(atPath: server.configPath) {
           Button("Reveal Config in Finder") {
@@ -80,18 +74,15 @@ struct NativeMcpDetailSheet: View {
               [URL(fileURLWithPath: server.configPath)]
             )
           }
-          .settingsActionTint(theme)
         }
         Spacer()
         Button("Done") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
       }
       .padding()
       .themedSurface(.sheet)
     }
     .frame(width: 540, height: 420)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .themedSurface(.sheet)
   }
 

@@ -1,13 +1,11 @@
 import AppKit
 import SwiftUI
-import CodevisorUI
 
 struct McpScrollingTextField: NSViewRepresentable {
   @Binding var text: String
   let placeholder: String
   let isEditable: Bool
   let isSelected: Bool
-  let theme: Theme
   let onFocus: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -32,16 +30,8 @@ struct McpScrollingTextField: NSViewRepresentable {
     context.coordinator.parent = self
     textField.isEditable = isEditable
     textField.isSelectable = isEditable
-    if theme.isSystem {
-      textField.placeholderString = placeholder
-      textField.textColor = isSelected ? .alternateSelectedControlTextColor : .labelColor
-    } else {
-      textField.placeholderAttributedString = NSAttributedString(
-        string: placeholder,
-        attributes: [.foregroundColor: NSColor(theme.textTertiary)]
-      )
-      textField.textColor = NSColor(theme.textPrimary)
-    }
+    textField.placeholderString = placeholder
+    textField.textColor = isSelected ? .alternateSelectedControlTextColor : .labelColor
     if textField.currentEditor() == nil, textField.stringValue != text {
       textField.stringValue = text
     }

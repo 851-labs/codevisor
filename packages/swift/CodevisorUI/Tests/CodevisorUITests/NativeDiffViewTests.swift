@@ -56,7 +56,7 @@
         view.maximumHeight = nil
         view.scrollSync = sync
         view.setContent(
-          rows: LineDiff.rows(old: nil, new: text), highlights: [:], theme: .system,
+          rows: LineDiff.rows(old: nil, new: text), highlights: [:],
           revision: UUID().uuidString)
       }
       _ = short.fitContent(toViewportWidth: 200)
@@ -122,7 +122,7 @@
       let rows = LineDiff.rows(old: nil, new: source)
       let scrollView = NativeDiffScrollView()
       scrollView.maximumHeight = nil
-      scrollView.setContent(rows: rows, highlights: [:], theme: .system, revision: UUID().uuidString)
+      scrollView.setContent(rows: rows, highlights: [:], revision: UUID().uuidString)
       let visible = scrollView.fitContent(toViewportWidth: 500)
       scrollView.frame = CGRect(origin: .zero, size: visible)
       scrollView.layoutSubtreeIfNeeded()
@@ -167,7 +167,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: [rows[0].id: highlighted],
-        theme: .system,
         revision: UUID().uuidString
       )
 
@@ -181,7 +180,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: [:],
-        theme: .system,
         revision: UUID().uuidString
       )
       return scrollView

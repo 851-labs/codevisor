@@ -301,7 +301,6 @@ let package = Package(
         "TranscriptKit",
         "CodevisorClient",
         "CodevisorCloud",
-        "CodevisorTheming",
         .product(name: "PostHog", package: "posthog-ios"),
         "Sentry",
       ],

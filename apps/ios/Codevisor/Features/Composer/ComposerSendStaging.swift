@@ -4,7 +4,7 @@ import UIKit
 
 @MainActor
 enum ComposerSendStaging {
-  static func stage(session: ObjectIdentifier, sourceFrame: CGRect, theme: Theme) {
+  static func stage(session: ObjectIdentifier, sourceFrame: CGRect) {
     guard !sourceFrame.isEmpty, let window = UIWindow.codevisorKeyWindow,
       let editor = editor(in: window, overlapping: sourceFrame)
     else { return }
@@ -13,8 +13,7 @@ enum ComposerSendStaging {
       textView: editor,
       textRect: editor.laidOutTextRect,
       lineHeight: editor.caretRect(for: editor.beginningOfDocument).height,
-      bubble: theme.bubbleBackground,
-      theme: theme
+      bubble: Color.primary.opacity(0.08)
     )
     if TranscriptSendStaging.shared.hasStage(for: session) {
       (editor as? HeightReportingTextView)?.hideSentText()

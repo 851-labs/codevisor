@@ -44,8 +44,7 @@ public struct UserBubbleBackground: View {
     }
   #endif
 
-  public static func transcriptBackdrop(for theme: Theme) -> Color {
-    guard theme.isSystem else { return theme.windowBackground }
+  public static func transcriptBackdrop() -> Color {
     #if canImport(UIKit)
       return Color(uiColor: .systemGroupedBackground)
     #else

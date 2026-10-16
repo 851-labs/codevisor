@@ -3,7 +3,6 @@ import SwiftUI
 
 struct McpBrowserPicker: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let machineId: String
   let model: McpGlobalModel
 
@@ -40,7 +39,6 @@ struct McpBrowserPicker: View {
       }
       .controlSize(.small)
       .fixedSize()
-      .tint(theme.isSystem ? nil : theme.textPrimary)
     }
   }
 

@@ -5,7 +5,6 @@ import CodevisorUI
 struct McpServerDetailSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   @Environment(\.settingsMachineId) private var settingsMachineId
   let server: ServerMcpServer
   let didChange: () async -> Void
@@ -20,7 +19,7 @@ struct McpServerDetailSheet: View {
         Image(systemName: server.connectionState == "connected" ? "checkmark.circle.fill" : "circle")
           .foregroundStyle(
             server.connectionState == "connected"
-              ? AnyShapeStyle(theme.statusOK)
+              ? AnyShapeStyle(.green)
               : AnyShapeStyle(.secondary)
           )
           .accessibilityHidden(true)
@@ -71,7 +70,6 @@ struct McpServerDetailSheet: View {
               .foregroundStyle(.secondary)
           }
         }
-        .listRowBackground(theme.formRowBackground)
         Section("Tools") {
           if isLoadingTools {
             ProgressView().controlSize(.small)
@@ -88,32 +86,25 @@ struct McpServerDetailSheet: View {
             }
           }
         }
-        .listRowBackground(theme.formRowBackground)
-        if let errorMessage { Text(errorMessage).foregroundStyle(theme.statusError) }
+        if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       HStack {
         if server.canRemove != false {
           Button("Remove…", role: .destructive) { confirmingRemoval = true }
-            .settingsActionTint(theme)
         }
         if server.authType == "oauth" && server.connectionState == "connected" {
           Button("Sign Out") { Task { await disconnect() } }
-            .settingsActionTint(theme)
         }
         Spacer()
         Button("Done") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
       }
       .padding()
       .themedSurface(.sheet)
     }
     .frame(width: 540, height: 470)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .themedSurface(.sheet)
     .task { await loadTools() }
     .confirmationDialog(
@@ -122,9 +113,7 @@ struct McpServerDetailSheet: View {
       titleVisibility: .visible
     ) {
       Button("Remove MCP Server", role: .destructive) { Task { await remove() } }
-        .settingsActionTint(theme)
       Button("Cancel", role: .cancel) {}
-        .settingsActionTint(theme)
     } message: {
       Text("This removes its configuration and saved authorization from Codevisor.")
     }

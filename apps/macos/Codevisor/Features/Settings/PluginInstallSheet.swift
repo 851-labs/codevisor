@@ -5,7 +5,6 @@ import SwiftUI
 struct PluginInstallSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   var initialSource: String?
   let discover: (String) async throws -> ServerPluginRemoteDiscovery
   let onInstall: (String) async throws -> Void
@@ -51,17 +50,15 @@ struct PluginInstallSheet: View {
           } footer: {
             Text("A public GitHub repo, a git URL, or a path on this machine.")
           }
-          .listRowBackground(theme.formRowBackground)
         }
         if let discovery {
           discoverySections(discovery)
         }
         if let errorMessage {
-          Text(errorMessage).foregroundStyle(theme.statusError)
+          Text(errorMessage).foregroundStyle(.red)
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       .disabled(isWorking)
       if let discovery {
         PluginConsentNotice(name: discovery.name)
@@ -69,22 +66,18 @@ struct PluginInstallSheet: View {
       }
       SheetFooter {
         Button("Cancel") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
           .disabled(isWorking)
         if isWorking {
           ProgressView()
             .controlSize(.small)
-            .tint(theme.isSystem ? nil : theme.accent)
             .padding(.horizontal, 12)
         } else if discovery == nil {
           Button("Find Plugin") { Task { await find() } }
-            .settingsActionTint(theme)
             .keyboardShortcut(.defaultAction)
             .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
         } else {
           Button("Install") { Task { await runInstall() } }
-            .settingsActionTint(theme)
             .keyboardShortcut(.defaultAction)
         }
       }
@@ -111,14 +104,12 @@ struct PluginInstallSheet: View {
           .foregroundStyle(.secondary)
       }
     }
-    .listRowBackground(theme.formRowBackground)
     Section("Details") {
       LabeledContent("Source", value: source.trimmingCharacters(in: .whitespaces))
       if !discovery.panes.isEmpty {
         LabeledContent("Panes", value: discovery.panes.map(\.title).joined(separator: ", "))
       }
     }
-    .listRowBackground(theme.formRowBackground)
     if let tools = discovery.tools, !tools.isEmpty {
       Section("Agent Tools") {
         ForEach(tools) { tool in
@@ -132,7 +123,6 @@ struct PluginInstallSheet: View {
           .padding(.vertical, 1)
         }
       }
-      .listRowBackground(theme.formRowBackground)
     }
     Section {
       if let install = discovery.installCommand {
@@ -144,7 +134,6 @@ struct PluginInstallSheet: View {
     } footer: {
       Text("Installing runs these commands on this machine.")
     }
-    .listRowBackground(theme.formRowBackground)
   }
 
   private func commandRow(title: String, command: String) -> some View {

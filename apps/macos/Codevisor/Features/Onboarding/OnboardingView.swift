@@ -8,7 +8,6 @@ import CodevisorUI
 
 struct OnboardingView: View {
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.theme) var theme
 
   var onComplete: (Project?) -> Void
 

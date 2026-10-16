@@ -14,7 +14,6 @@ struct ComposerCard: View {
   var focusChatId: UUID? = nil
   var glassNamespace: Namespace.ID? = nil
 
-  @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
   @Environment(\.clientControlId) private var clientControlId
@@ -97,7 +96,7 @@ struct ComposerCard: View {
       if controller.activeQuestion != nil, isQuestionResolving {
         ZStack {
           cardStyle.shape
-            .fill(theme.windowBackground.opacity(0.72))
+            .fill(Color.windowBackgroundColor.opacity(0.72))
           HStack(spacing: 8) {
             ProgressView()
               .controlSize(.small)
@@ -431,7 +430,7 @@ private extension ComposerCard {
       guard controller.canSend, !isAppUpdateInProgress else { return }
       didAcceptSubmission = true
       if !reduceMotion, !controller.isSending {
-        sendSource.stage(controller: controller, theme: theme)
+        sendSource.stage(controller: controller)
       }
       controller.promptClientId = clientControlId?.uuidString.lowercased()
       Task {

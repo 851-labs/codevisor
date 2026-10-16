@@ -6,7 +6,6 @@ import SwiftUI
 
 struct McpSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var model = McpGlobalModel()
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live)
@@ -37,15 +36,11 @@ struct McpSettingsView: View {
           } label: {
             Label("Add MCP Server…", systemImage: "plus")
           }
-          .settingsActionTint(theme)
         }
       }
       McpOtherServersSection(isExpanded: $showsOtherServers)
     }
-    .settingsPaneFormStyle(theme)
-    .background {
-      if !theme.isSystem { theme.windowBackground }
-    }
+    .settingsPaneFormStyle()
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: mcpStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .sheet(isPresented: $showingAdd) {
@@ -87,9 +82,7 @@ struct McpSettingsView: View {
         guard let entry = pendingRemoval else { return }
         Task { await remove(entry) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        .settingsActionTint(theme)
     } message: {
       Text("It will be removed from every machine.")
     }

@@ -7,7 +7,6 @@ struct PiProviderAuthenticationView: View {
   @Environment(\.settingsMachineId) private var settingsMachineId
   @Environment(\.sharedHarnessAccounts) private var isShared
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
   var showsHeader = true
@@ -23,7 +22,6 @@ struct PiProviderAuthenticationView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SheetFooter(status: workingLabel) {
             Button("Done") { dismiss() }
-              .settingsActionTint(theme)
               .keyboardShortcut(.defaultAction)
               .disabled(workingLabel != nil)
           }

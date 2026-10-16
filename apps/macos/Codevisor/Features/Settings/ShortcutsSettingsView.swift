@@ -2,8 +2,6 @@ import CodevisorUI
 import SwiftUI
 
 struct ShortcutsSettingsView: View {
-  @Environment(\.theme) private var theme
-
   var body: some View {
     Form {
       ForEach(ShortcutCatalog.listedByCategory, id: \.category) { group in
@@ -16,14 +14,12 @@ struct ShortcutsSettingsView: View {
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .settingsPaneFormStyle()
   }
 }
 
 private struct ShortcutRow: View {
   let shortcut: ShortcutDefinition
-
-  @Environment(\.theme) private var theme
 
   var body: some View {
     LabeledContent {
@@ -36,7 +32,7 @@ private struct ShortcutRow: View {
         if let context = shortcut.context {
           Text(context)
             .font(.caption)
-            .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
+            .foregroundStyle(.secondary)
         }
       }
     }
@@ -55,13 +51,11 @@ private struct ShortcutRow: View {
 private struct ShortcutKeycapView: View {
   let display: String
 
-  @Environment(\.theme) private var theme
-
   var body: some View {
     Text(display)
       .font(.callout.weight(.medium))
       .monospacedDigit()
-      .foregroundStyle(theme.textPrimary)
+      .foregroundStyle(.primary)
       .padding(.horizontal, 6)
       .padding(.vertical, 2)
       .background(

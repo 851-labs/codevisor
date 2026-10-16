@@ -1,37 +1,24 @@
 import SwiftUI
 
-struct ReviewSurface {
-  let theme: Theme
-
-  var page: Color {
-    guard theme.isSystem else { return theme.windowBackground }
+enum ReviewSurface {
+  static var page: Color {
     #if canImport(AppKit)
-      return Color(nsColor: .textBackgroundColor)
+      Color(nsColor: .textBackgroundColor)
     #else
-      return Color(uiColor: .systemBackground)
+      Color(uiColor: .systemBackground)
     #endif
-  }
-
-  @ViewBuilder
-  var headerFill: some View {
-    ZStack {
-      page
-      if !theme.isSystem {
-        theme.cardBackgroundColor
-      }
-    }
   }
 }
 
 extension View {
-  func reviewCardHeader(isCollapsed _: Bool, theme: Theme) -> some View {
-    background { ReviewSurface(theme: theme).headerFill }
-      .overlay(alignment: .bottom) { Hairline(color: theme.border) }
+  func reviewCardHeader(isCollapsed _: Bool) -> some View {
+    background { ReviewSurface.page }
+      .overlay(alignment: .bottom) { Hairline(color: .separatorColor) }
   }
 
-  func reviewCardBody(theme: Theme) -> some View {
-    background(theme.codeBackground)
-      .background(ReviewSurface(theme: theme).page)
-      .overlay(alignment: .bottom) { Hairline(color: theme.border) }
+  func reviewCardBody() -> some View {
+    background(.quaternary.opacity(0.4))
+      .background(ReviewSurface.page)
+      .overlay(alignment: .bottom) { Hairline(color: .separatorColor) }
   }
 }

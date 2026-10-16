@@ -29,11 +29,11 @@ extension OnboardingView {
                 .fixedSize(horizontal: false, vertical: true)
             }
           } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
           }
           .padding(14)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
+          .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
           Button {
             Task { await detectHarnesses() }
           } label: {
@@ -80,7 +80,7 @@ extension OnboardingView {
         HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
     }
-    .settingsPaneFormStyle(theme)
+    .settingsPaneFormStyle()
     .frame(height: fleetListHeight)
   }
 

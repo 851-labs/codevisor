@@ -18,7 +18,6 @@ typealias AttachmentGeometryReadinessPreferenceKey = ContentLayoutReadinessPrefe
 
 struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
-  @Environment(\.theme) private var theme
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.quickLook) private var quickLook
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -87,7 +86,7 @@ struct AttachmentThumbnailView: View {
     return ZStack {
       if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
-          .fill(theme.bubbleBackground)
+          .fill(Color.primary.opacity(0.08))
       }
       if let image = image ?? attachmentImages?.memoryPreview(for: file)?.image
         ?? SentAttachmentThumbnails.image(for: file)
@@ -163,7 +162,7 @@ struct AttachmentThumbnailView: View {
       .padding(.vertical, 8)
       .frame(minHeight: 56)
       .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 200, alignment: .leading)
-      .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 8))
+      .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
       .overlay(
         RoundedRectangle(cornerRadius: 8)
           .strokeBorder(.separator, lineWidth: 1)

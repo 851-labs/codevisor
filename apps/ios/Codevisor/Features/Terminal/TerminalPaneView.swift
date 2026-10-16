@@ -1,5 +1,4 @@
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
@@ -10,13 +9,12 @@ struct TerminalPaneView: View {
 
   @StateObject private var keyController = TerminalKeyController()
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-  @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
   @State private var paneBottom: CGFloat = 0
   @State private var keyBarTop: CGFloat?
 
   private var colors: TerminalColors {
-    TerminalColors(palette: theme.palette?.terminal, colorScheme: colorScheme)
+    TerminalColors(colorScheme: colorScheme)
   }
 
   private var isRegularWidth: Bool { horizontalSizeClass == .regular }

@@ -15,7 +15,6 @@ public struct OpenFileDocumentAction: Sendable {
 
 public struct FilePaneView: View {
   @Bindable private var model: FilePaneModel
-  @Environment(\.theme) private var theme
   @Environment(\.openFileDocument) private var openFile
   @Environment(\.scenePhase) private var scenePhase
 
@@ -45,7 +44,6 @@ public struct FilePaneView: View {
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(theme.contentBackground)
     .task(id: model.path) {
       guard !model.isBrowsing else { return }
       let active = document

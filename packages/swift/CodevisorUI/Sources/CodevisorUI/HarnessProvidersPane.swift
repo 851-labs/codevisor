@@ -3,7 +3,6 @@ import SwiftUI
 
 public struct HarnessProvidersPane: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
 
   @Bindable private var accounts: HarnessProviderAccounts
@@ -140,7 +139,6 @@ public struct HarnessProvidersPane: View {
           Spacer()
         }
         .buttonStyle(.borderless)
-        .settingsActionTint(theme)
         .padding(10)
       }
       .onChange(of: accounts.configured.map(\.id)) { _, ids in
@@ -150,7 +148,7 @@ public struct HarnessProvidersPane: View {
       List {
         if let inlineError {
           Section {
-            Label(inlineError, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError)
+            Label(inlineError, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
           }
         }
         providerSection
@@ -223,13 +221,12 @@ private struct SignInRequest: Identifiable {
 }
 
 struct HarnessProviderRow: View {
-  @Environment(\.theme) private var theme
   let provider: HarnessProvider
 
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: "key.fill")
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 2) {
         Text(provider.name).foregroundStyle(Color.primary)
@@ -239,7 +236,7 @@ struct HarnessProviderRow: View {
           #else
             .font(.footnote)
           #endif
-          .foregroundStyle(theme.textSecondary)
+          .foregroundStyle(.secondary)
       }
       Spacer()
     }

@@ -55,7 +55,6 @@ extension HarnessFleet {
 
 private struct HarnessFleetRow<Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let setting: HarnessFleet.Setting
   let machines: [HarnessFleet.FleetMachine]
   let model: HarnessGlobalModel
@@ -100,7 +99,7 @@ private struct HarnessFleetRow<Icon: View>: View {
     } accessory: {
       if state.showsAccounts {
         Button("Accounts…") { onAccounts(setting, false) }
-          .harnessRowButton(theme)
+          .harnessRowButton()
       }
       if let single {
         HarnessMachineActionButton(row: single, harnessName: setting.name, actions: actions)

@@ -5,7 +5,6 @@ import TranscriptKit
 import UIKit
 
 struct UserBubbleRow: View {
-  @Environment(\.theme) private var theme
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let text: String
@@ -33,7 +32,7 @@ struct UserBubbleRow: View {
               string: text,
               attributes: [
                 .font: UIFont.preferredFont(forTextStyle: .body),
-                .foregroundColor: UIColor(theme.textPrimary),
+                .foregroundColor: UIColor(Color.primary),
               ]
             ),
             fillsWidth: false,
@@ -46,9 +45,9 @@ struct UserBubbleRow: View {
           .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
           .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
           .background {
-            UserBubbleBackground(color: theme.bubbleBackground)
+            UserBubbleBackground(color: Color.primary.opacity(0.08))
               .background(
-                UserBubbleBackground.transcriptBackdrop(for: theme),
+                UserBubbleBackground.transcriptBackdrop(),
                 in: UserBubbleBackground.shape(for: dynamicTypeSize))
           }
           .contentShape(.contextMenuPreview, UserBubbleBackground.shape(for: dynamicTypeSize))

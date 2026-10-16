@@ -18,7 +18,6 @@ struct SessionSetupView: View {
 }
 
 struct SessionSetupPhaseView: View {
-  @Environment(\.theme) private var theme
   let phase: SessionSetupPhase
   @State private var isExpanded: Bool
   @State private var hasAutoExpandedFailure: Bool
@@ -57,11 +56,11 @@ struct SessionSetupPhaseView: View {
               SelectableTextView(
                 message,
                 font: .preferredFont(forTextStyle: .callout),
-                foregroundColor: NSColor(theme.statusError),
+                foregroundColor: .systemRed,
                 fillsWidth: true
               )
             }
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
           }
           if let resource = phase.logResource {
             TranscriptBodyView(resource: resource)
@@ -122,7 +121,7 @@ struct SessionSetupPhaseView: View {
       Text(completedTitle)
     case .failed:
       Label(phase.failedTitle, systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(theme.statusWarn)
+        .foregroundStyle(.orange)
     }
   }
 

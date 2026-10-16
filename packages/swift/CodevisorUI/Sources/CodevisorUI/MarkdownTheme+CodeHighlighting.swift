@@ -1,41 +1,10 @@
 import CodeHighlighter
-import CodevisorCore
 import CodevisorTheming
 import StreamMarkdown
 import SwiftUI
 
-@MainActor
-private var highlightThemeCache: [String: (key: String, json: String)] = [:]
-
-extension ThemeManager {
-  public func highlightTheme(for scheme: ThemeDescriptor.SchemeType) -> (key: String, json: String)? {
-    let id = themeId(for: scheme)
-    let effectiveId =
-      ThemeCatalog.isSystemTheme(id: id)
-      ? (scheme == .dark ? "shiki:github-dark" : "shiki:github-light")
-      : id
-    if let cached = highlightThemeCache[effectiveId] { return cached }
-    guard
-      let data = try? catalog.loadThemeData(id: effectiveId),
-      let json = String(data: data, encoding: .utf8)
-    else { return nil }
-    let resolved = (effectiveId, json)
-    highlightThemeCache[effectiveId] = resolved
-    return resolved
-  }
-}
-
-public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) -> MarkdownTheme {
+public func makeMarkdownTheme(highlight: (key: String, json: String)?) -> MarkdownTheme {
   var markdown = MarkdownTheme.default
-  markdown.textForeground = theme.textPrimary
-  markdown.secondaryTextForeground = theme.textSecondary
-  markdown.codeForeground = theme.textPrimary
-  if let palette = theme.palette {
-    markdown.codeBackground = Color(rgba: palette.codeBackground)
-    markdown.inlineCodeBackground = Color(rgba: palette.cardHoverBackground)
-    markdown.quoteBarColor = theme.border
-    markdown.tableBorderColor = theme.separator
-  }
   if let highlight {
     markdown.codeThemeKey = highlight.key
     markdown.codeHighlighter = { request in

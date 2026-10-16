@@ -95,7 +95,7 @@ struct TranscriptContentLayoutTests {
     )
     var heights: [CGFloat] = []
     host.onHeightChange = { heights.append($0) }
-    let style = TranscriptMarkdownRowStyle(markdown: .default, appTheme: .system)
+    let style = TranscriptMarkdownRowStyle(markdown: .default)
     host.setContent(chunk, streamID: "response", style: style, linkAction: nil, knownHeight: 16)
     #expect((heights.last ?? 0) > 16)
     #expect(host.isPresentationReady)
@@ -117,7 +117,7 @@ struct TranscriptContentLayoutTests {
       var height: CGFloat = 0
       host.onHeightChange = { height = $0 }
       host.setContent(
-        chunk, streamID: "worked", style: TranscriptMarkdownRowStyle(markdown: .default, appTheme: .system),
+        chunk, streamID: "worked", style: TranscriptMarkdownRowStyle(markdown: .default),
         linkAction: nil, knownHeight: nil)
       let markdown = try #require(host.subviews.first { $0 is SettledMarkdownView })
       return (markdown.frame, height)

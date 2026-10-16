@@ -10,7 +10,6 @@ struct SimulatorManagerSheet: View {
   @State private var name = ""
   @State private var pendingDelete: ServerSimulatorDevice?
   #if os(macOS)
-    @Environment(\.theme) private var theme
   #endif
 
   private var devices: [ServerSimulatorDevice] { SimulatorFamilies.sorted(model.list?.devices ?? []) }
@@ -87,7 +86,6 @@ struct SimulatorManagerSheet: View {
             } label: {
               Label("New Simulator…", systemImage: "plus")
             }
-            .settingsActionTint(theme)
           }
           .font(.body)
         }
@@ -106,7 +104,6 @@ struct SimulatorManagerSheet: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .settingsActionTint(theme)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(deleting)

@@ -18,7 +18,6 @@ struct HarnessAuthenticationView: View {
   }
 
   @Environment(\.dismiss) var dismiss
-  @Environment(\.theme) var theme
 
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
@@ -57,7 +56,6 @@ struct HarnessAuthenticationView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SheetFooter(status: model.operation) {
             Button("Done") { dismiss() }
-              .settingsActionTint(theme)
               .keyboardShortcut(.defaultAction)
               .disabled(model.isWorking)
           }
@@ -112,9 +110,8 @@ struct HarnessAuthenticationView: View {
       if let errorMessage = model.errorMessage {
         Section {
           Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
         }
-        .listRowBackground(theme.formRowBackground)
       }
       Section {
         if !isShared, !HarnessRegistry.descriptor(for: harness.id).usesFleetAccountRows,
@@ -127,14 +124,11 @@ struct HarnessAuthenticationView: View {
           addAccountControl("Add Account")
             .buttonStyle(.plain)
             .menuStyle(.borderlessButton)
-            .settingsActionTint(theme)
             .disabled(model.isWorking)
         }
       }
-      .listRowBackground(theme.formRowBackground)
     }
     .formStyle(.grouped)
-    .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .disabled(model.isWorking)
   }
 
@@ -142,19 +136,19 @@ struct HarnessAuthenticationView: View {
   private func accountRow(_ account: ServerHarnessAccount) -> some View {
     HStack(spacing: 10) {
       Image(systemName: account.isActive ? "checkmark.circle.fill" : "circle")
-        .foregroundStyle(account.isActive ? theme.textPrimary : theme.textSecondary)
+        .foregroundStyle(account.isActive ? Color.primary : Color.secondary)
         .accessibilityLabel(account.isActive ? "Selected" : "Not selected")
       VStack(alignment: .leading, spacing: 2) {
         HStack {
           Text(account.label)
           if !isShared, account.isActive, let scope = account.selectionScope {
-            Text(scope == "machine" ? "Override" : "Shared").font(.caption).foregroundStyle(theme.textSecondary)
+            Text(scope == "machine" ? "Override" : "Shared").font(.caption).foregroundStyle(.secondary)
           }
         }
         if let status = accountStatus(account) {
           Text(status)
             .font(.callout)
-            .foregroundStyle(theme.textSecondary)
+            .foregroundStyle(.secondary)
             .lineLimit(2)
             .truncationMode(.tail)
             .help(status)
@@ -164,11 +158,9 @@ struct HarnessAuthenticationView: View {
       if account.authState == "authenticated" || account.authState == "notRequired" {
         if !account.isActive {
           Button("Use") { Task { await activate(account) } }
-            .settingsActionTint(theme)
         }
         if account.canLogout {
           Button("Sign Out") { Task { await logout(account) } }
-            .settingsActionTint(theme)
         }
       } else if account.canLogin {
         loginControl(account)
@@ -183,7 +175,6 @@ struct HarnessAuthenticationView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .settingsActionTint(theme)
         .help("More account actions")
       }
     }
@@ -198,7 +189,6 @@ struct HarnessAuthenticationView: View {
           Button(method.name) { selectLoginMethod(method, for: account) }
         }
       }
-      .settingsActionTint(theme)
     } else {
       Button(methods.first?.name ?? "Sign In") {
         if let method = methods.first {
@@ -207,7 +197,6 @@ struct HarnessAuthenticationView: View {
           Task { await login(account, methodId: nil) }
         }
       }
-      .settingsActionTint(theme)
     }
   }
 

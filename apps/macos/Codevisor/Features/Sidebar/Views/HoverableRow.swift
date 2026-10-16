@@ -1,4 +1,3 @@
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
@@ -8,7 +7,6 @@ struct HoverableRow<Content: View>: View {
   var isHoverForced = false
   @ViewBuilder var content: (_ isHovered: Bool) -> Content
   @Environment(\.controlActiveState) private var controlActiveState
-  @Environment(\.theme) private var theme
   @State private var isHovered = false
 
   var body: some View {
@@ -19,8 +17,8 @@ struct HoverableRow<Content: View>: View {
         RoundedRectangle(cornerRadius: 6)
           .fill(
             isSelected
-              ? theme.rowSelectedBackground
-              : (showsHoverBackground ? theme.rowHoverBackground : .clear))
+              ? Color.primary.opacity(0.14)
+              : (showsHoverBackground ? Color.secondary.opacity(0.12) : .clear))
       )
       .onHover { isHovered = $0 }
   }

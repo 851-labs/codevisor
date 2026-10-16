@@ -4,7 +4,6 @@ import SwiftUI
 
 struct SidebarUpdateFooter: View {
   var center: UpdateCenter
-  @Environment(\.theme) private var theme
   @Environment(\.openSettings) private var openSettings
   @Environment(\.sidebarOpenSettings) private var sidebarOpenSettings
   @State private var isHovered = false
@@ -12,7 +11,7 @@ struct SidebarUpdateFooter: View {
   var body: some View {
     if center.availableCount > 0 || center.isUpdatingAll {
       VStack(spacing: 0) {
-        Hairline(color: theme.separator)
+        Hairline(color: .separatorColor)
         Button {
           SettingsRouter.shared.showUpdates()
           if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }

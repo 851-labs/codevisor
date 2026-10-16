@@ -19,7 +19,6 @@ struct WorkspaceSplitView: View {
   var onLiveTreeChanged: ((SplitNode) -> Void)? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.theme) private var theme
   @State private var activeDividerDrag: ActiveDividerDrag?
 
   var body: some View {
@@ -58,7 +57,7 @@ struct WorkspaceSplitView: View {
 
         ForEach(snapshot.dividers) { divider in
           if !isOpeningDivider(divider) {
-            theme.separator
+            Color.separatorColor
               .frame(
                 width: divider.lineFrame.width,
                 height: divider.lineFrame.height
@@ -213,11 +212,10 @@ private struct SplitLeafView: View {
   let onClose: () -> Void
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.theme) private var theme
 
   var body: some View {
     ZStack {
-      theme.contentBackground
+      Color.clear
       if openingEdge == nil {
         leafContent
           .transition(.opacity)
@@ -261,7 +259,7 @@ private struct SplitLeafView: View {
   @ViewBuilder
   private var openingDivider: some View {
     if let openingEdge {
-      theme.separator
+      Color.separatorColor
         .frame(
           maxWidth: openingEdge == .top || openingEdge == .bottom
             ? .infinity : nil,
@@ -283,7 +281,7 @@ private struct SplitLeafView: View {
 
   private var inactiveSplitTint: some View {
     Rectangle()
-      .fill(theme.windowBackground)
+      .fill(Color.windowBackgroundColor)
       .opacity(isInactive ? 0.3 : 0)
       .allowsHitTesting(false)
       .transaction { $0.animation = nil }
@@ -303,7 +301,6 @@ private struct SplitLeafHeader: View {
   let onRename: (String) -> Void
   let onClose: () -> Void
 
-  @Environment(\.theme) private var theme
   @Environment(AppEnvironment.self) private var environment
   @State private var renameText = ""
   @State private var showingRename = false
@@ -318,7 +315,7 @@ private struct SplitLeafHeader: View {
             .font(.tabLabel(weight: .medium))
             .lineLimit(1)
             .truncationMode(.tail)
-            .foregroundStyle(theme.textPrimary)
+            .foregroundStyle(.primary)
 
           Spacer(minLength: 6)
         }
@@ -331,7 +328,6 @@ private struct SplitLeafHeader: View {
     }
     .padding(.horizontal, 8)
     .frame(height: 28)
-    .background(theme.contentBackground)
     .overlay(alignment: .bottom) { Divider() }
     .alert(renameAlertTitle, isPresented: $showingRename) {
       TextField("Name", text: $renameText)
@@ -389,16 +385,12 @@ private struct SplitLeafHeader: View {
   private var leadingIcon: some View {
     if pane?.kind == .subagent {
       HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: iconName)
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 18)
     } else if let session = chatSession {
-      ChatSessionLeadingIcon(
-        session: session,
-        store: sessionStore,
-        activityColor: theme.textSecondary
-      )
+      ChatSessionLeadingIcon(session: session, store: sessionStore)
     } else if let status = pane?.terminalAgentStatus {
-      AgentStatusIndicator(status: status, activityColor: theme.textSecondary)
+      AgentStatusIndicator(status: status)
         .frame(width: 18)
     } else if pane?.kind == .plugin,
       let pluginId = pane?.pluginId,
@@ -412,11 +404,11 @@ private struct SplitLeafHeader: View {
         cacheNamespace: pluginIconCacheNamespace
       )
       .frame(width: 18, height: 11)
-      .foregroundStyle(theme.textSecondary)
+      .foregroundStyle(.secondary)
     } else {
       Image(systemName: iconName)
         .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 18)
     }
   }
@@ -458,7 +450,7 @@ private struct SplitLeafHeader: View {
     } label: {
       Image(systemName: "ellipsis")
         .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(theme.textSecondary)
+        .foregroundStyle(.secondary)
         .frame(width: 24, height: 22)
         .contentShape(Rectangle())
     }

@@ -73,7 +73,6 @@ final class AppleSimulatorPane: Pane {
 
 private struct AppleSimulatorPaneView: View {
   let pane: AppleSimulatorPane
-  @Environment(\.theme) private var theme
   @State private var mount = UUID()
 
   var body: some View {
@@ -86,7 +85,6 @@ private struct AppleSimulatorPaneView: View {
           description: Text("Open this pane in a workspace connected to a Mac with Xcode."))
       }
     }
-    .background(theme.paneBackground)
     .onAppear { pane.mounted(mount) }
     .onDisappear { pane.unmounted(mount) }
     .simultaneousGesture(

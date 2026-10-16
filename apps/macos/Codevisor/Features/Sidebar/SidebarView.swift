@@ -1,13 +1,11 @@
 import SwiftUI
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import os
 
 struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @Environment(\.theme) private var theme
   @Environment(\.openSettings) private var openSettings
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
@@ -246,27 +244,17 @@ struct SidebarView: View {
     .animation(folding.isEmpty ? Motion.listReflow(reduceMotion: reduceMotion) : nil, value: items.map(\.id))
   }
 
-  @ViewBuilder
-  private var sidebarBackground: some View {
-    if theme.isSystem {
-      vibrantContent
-    } else {
-      vibrantContent.themedSurface(.sidebar)
-    }
-  }
-
   private var vibrantContent: some View {
     let open = openSettings
     return SidebarVibrancyHost {
       sidebarContent
         .environment(environment)
-        .environment(\.theme, theme)
         .environment(\.sidebarOpenSettings, SidebarOpenSettingsAction { open() })
     }
   }
 
   private var sidebarInteractionView: some View {
-    sidebarBackground
+    vibrantContent
       .contentShape(Rectangle())
       .sheet(isPresented: $showingAddProject) {
         NewProjectSheet(serverId: environment.defaultComposerServerId) { project in

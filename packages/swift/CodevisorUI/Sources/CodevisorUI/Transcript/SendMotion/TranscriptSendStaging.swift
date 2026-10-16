@@ -93,8 +93,7 @@ public final class TranscriptSendStaging {
     textView: TranscriptSendPlatformView,
     textRect: CGRect,
     lineHeight: CGFloat,
-    bubble: Color,
-    theme: Theme
+    bubble: Color
   ) {
     cancel(session: session)
     guard let window = textView.window,
@@ -111,7 +110,7 @@ public final class TranscriptSendStaging {
       frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect),
       cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: textView)))
     pill.setFill(
-      backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(for: theme), in: textView),
+      backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(), in: textView),
       tint: Self.resolved(bubble, in: textView))
     glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
     pill.addSubview(glyphs)

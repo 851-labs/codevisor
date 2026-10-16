@@ -4,7 +4,6 @@ import SwiftUI
 
 struct McpOtherServersSection: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Binding var isExpanded: Bool
   @State private var scans: [String: ServerNativeMcpScan] = [:]
   @State private var expandedMachines: Set<String> = []
@@ -55,7 +54,6 @@ struct McpOtherServersSection: View {
                   .font(.callout).foregroundStyle(.secondary)
                 Button("Undo") { Task { await undoRemoval(record) } }
                   .buttonStyle(.borderless)
-                  .settingsActionTint(theme)
                   .controlSize(.small)
               }
               .padding(.leading, 17).padding(.top, 6)
@@ -79,9 +77,7 @@ struct McpOtherServersSection: View {
         guard let request = pendingRemoval else { return }
         Task { await removeNative(request) }
       }
-      .settingsActionTint(theme)
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        .settingsActionTint(theme)
     }
   }
 
@@ -131,7 +127,7 @@ struct McpOtherServersSection: View {
     SettingsDisclosureRow(isExpanded: expansion(machine.id)) {
       Image(systemName: "desktopcomputer").frame(width: 16)
       Text(machine.name)
-        .foregroundStyle(theme.isSystem ? Color.primary : theme.textPrimary)
+        .foregroundStyle(.primary)
     } content: {
       ForEach(candidates) { candidate in
         McpImportCandidateRow(

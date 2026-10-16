@@ -17,7 +17,6 @@ extension PreviewFile {
 
 struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
-  @Environment(\.theme) private var theme
   @Environment(\.quickLook) private var quickLook
   @Environment(\.attachmentImages) private var attachmentImages
   let file: PreviewFile
@@ -92,7 +91,7 @@ struct AttachmentThumbnailView: View {
     return ZStack {
       if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
-          .fill(theme.bubbleBackground)
+          .fill(Color.primary.opacity(0.08))
       }
       if let image = image ?? attachmentImages?.memoryPreview(for: file)?.image
         ?? SentAttachmentThumbnails.image(for: file)
@@ -177,7 +176,6 @@ private struct AttachmentThumbnailLoadID: Hashable {
 }
 
 struct AttachmentFileChip: View {
-  @Environment(\.theme) private var theme
   let name: String
   var isLoading = false
   var onTap: (() -> Void)? = nil
@@ -194,7 +192,7 @@ struct AttachmentFileChip: View {
     .padding(.horizontal, 10)
     .frame(height: 56)
     .frame(maxWidth: 200)
-    .background(RoundedRectangle(cornerRadius: 8).fill(theme.bubbleBackground))
+    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08)))
     .overlay(
       RoundedRectangle(cornerRadius: 8)
         .strokeBorder(.separator, lineWidth: 1)
@@ -305,14 +303,12 @@ extension View {
 }
 
 struct DropToAttachOverlay: View {
-  @Environment(\.theme) private var theme
-
   var body: some View {
     ZStack {
-      theme.windowBackground.opacity(0.92)
+      Color.windowBackgroundColor.opacity(0.92)
       RoundedRectangle(cornerRadius: 16)
         .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-        .foregroundStyle(theme.accent.opacity(0.8))
+        .foregroundStyle(Color.accentColor.opacity(0.8))
         .padding(16)
       VStack(spacing: 10) {
         Image(systemName: "paperclip")

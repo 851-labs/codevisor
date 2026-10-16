@@ -29,7 +29,6 @@
 
       scrollView.setContent(
         text: "first\nsecond\nthird",
-        theme: .system,
         followsTail: true
       )
 
@@ -41,12 +40,12 @@
     @Test("A shell call reads as a terminal: its command's line, then the output streaming under it")
     func echoesCommand() {
       let scrollView = NativePlainOutputScrollView()
-      scrollView.setContent(text: "", command: "cat notes.txt", theme: .system, followsTail: true)
+      scrollView.setContent(text: "", command: "cat notes.txt", followsTail: true)
       #expect(scrollView.outputTextView.string == "cat notes.txt")
 
       let storage = scrollView.outputTextView.textStorage
-      scrollView.setContent(text: "hello", command: "cat notes.txt", theme: .system, followsTail: true)
-      scrollView.setContent(text: "hello\nworld", command: "cat notes.txt", theme: .system, followsTail: true)
+      scrollView.setContent(text: "hello", command: "cat notes.txt", followsTail: true)
+      scrollView.setContent(text: "hello\nworld", command: "cat notes.txt", followsTail: true)
       #expect(scrollView.outputTextView.textStorage === storage)
       #expect(scrollView.outputTextView.string == "cat notes.txt\nhello\nworld")
 
@@ -57,7 +56,7 @@
       #expect(
         color(at: ("cat notes.txt\nhello\n" as NSString).length) == color(at: ("cat notes.txt\n" as NSString).length))
 
-      scrollView.setContent(text: "hello\nworld", command: "cat other.txt", theme: .system, followsTail: true)
+      scrollView.setContent(text: "hello\nworld", command: "cat other.txt", followsTail: true)
       #expect(scrollView.outputTextView.string == "cat other.txt\nhello\nworld")
     }
 
@@ -116,7 +115,7 @@
 
     private func makeScrollView(text: String) -> NativePlainOutputScrollView {
       let scrollView = NativePlainOutputScrollView()
-      scrollView.setContent(text: text, theme: .system, followsTail: false)
+      scrollView.setContent(text: text, followsTail: false)
       return scrollView
     }
 

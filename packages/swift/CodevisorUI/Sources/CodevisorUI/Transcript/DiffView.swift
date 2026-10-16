@@ -146,7 +146,6 @@ public struct DiffView: View {
   let path: String
   let oldText: String?
   let newText: String
-  @Environment(\.theme) private var theme
   @Environment(\.codeHighlightTheme) private var highlightTheme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
@@ -197,10 +196,10 @@ public struct DiffView: View {
       }
     }
     .modifier(DiffViewportWidthReader(width: $viewportWidth))
-    .background(theme.codeBackground)
+    .background(.quaternary.opacity(0.4))
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
+      RoundedRectangle(cornerRadius: 8).strokeBorder(Color.separatorColor, lineWidth: 1)
     }
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .task(id: highlightKey) { await refreshRowsAndHighlight() }
@@ -232,7 +231,6 @@ public struct DiffView: View {
       NativeDiffView(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: "\(highlightKey)|\(highlights.count)"
       )
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,7 +238,6 @@ public struct DiffView: View {
       IOSNativeDiffView(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: "\(highlightKey)|\(highlights.count)"
       )
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -330,9 +327,9 @@ public struct DiffView: View {
 
   private func lineNumberColor(for kind: LineDiff.Row.Kind) -> Color {
     switch kind {
-    case .context: theme.diffLineNumberFg
-    case .added: theme.diffAddedFg
-    case .removed: theme.diffRemovedFg
+    case .context: .tertiaryLabelColor
+    case .added: .green
+    case .removed: .red
     }
   }
 
@@ -343,14 +340,14 @@ public struct DiffView: View {
     ) -> AttributedString {
       guard let highlighted = highlights[row.id], !row.text.isEmpty else {
         var plain = AttributedString(row.text.isEmpty ? " " : row.text)
-        plain.foregroundColor = theme.textPrimary
+        plain.foregroundColor = Color.primary
         return plain
       }
       var result = AttributedString()
       for run in highlighted.runs {
         var piece = AttributedString(highlighted[run.range])
         if piece.foregroundColor == nil {
-          piece.foregroundColor = theme.textPrimary
+          piece.foregroundColor = Color.primary
         }
         result += piece
       }
@@ -369,7 +366,7 @@ public struct DiffView: View {
           string: row.text.isEmpty ? " " : row.text,
           attributes: [
             .font: font,
-            .foregroundColor: OSColor(theme.textPrimary),
+            .foregroundColor: OSColor(Color.primary),
           ]
         )
       }
@@ -381,7 +378,7 @@ public struct DiffView: View {
             attributes: [
               .font: font,
               .foregroundColor: run.foregroundColor.map { OSColor($0) }
-                ?? OSColor(theme.textPrimary),
+                ?? OSColor(Color.primary),
             ]
           )
         )
@@ -469,16 +466,16 @@ public struct DiffView: View {
   private func tint(for kind: LineDiff.Row.Kind) -> Color {
     switch kind {
     case .context: .clear
-    case .added: theme.diffAddedFg
-    case .removed: theme.diffRemovedFg
+    case .added: .green
+    case .removed: .red
     }
   }
 
   private func background(for kind: LineDiff.Row.Kind) -> Color {
     switch kind {
     case .context: .clear
-    case .added: theme.diffAddedBg
-    case .removed: theme.diffRemovedBg
+    case .added: .green.opacity(0.12)
+    case .removed: .red.opacity(0.12)
     }
   }
 }

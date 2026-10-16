@@ -2,7 +2,6 @@ import CodevisorUI
 import SwiftUI
 
 struct ComposerSubmitButton: View {
-  @Environment(\.theme) private var theme
   let systemImage: String
   let isEnabled: Bool
   let help: String
@@ -38,7 +37,7 @@ struct ComposerSubmitButton: View {
         .background(
           Circle().fill(
             isEnabled
-              ? AnyShapeStyle(theme.accent.opacity(isHovered ? 1 : 0.9))
+              ? AnyShapeStyle(Color.accentColor.opacity(isHovered ? 1 : 0.9))
               : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )

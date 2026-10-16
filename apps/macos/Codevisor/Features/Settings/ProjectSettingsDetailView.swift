@@ -5,7 +5,6 @@ import SwiftUI
 
 struct ProjectSettingsDetailView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let groupId: ProjectGroup.ID
   @State private var branches = ProjectBaseBranchModel()
   @State private var confirmingDelete = false
@@ -28,11 +27,10 @@ struct ProjectSettingsDetailView: View {
           Text("This project may have been removed.")
         } actions: {
           Button("Back to Projects") { SettingsRouter.shared.panePath = [] }
-            .settingsActionTint(theme)
         }
       }
     }
-    .settingsPaneFormStyle(theme)
+    .settingsPaneFormStyle()
     .navigationTitle(group?.name ?? "Project")
     .task(id: branchSources) { await loadBranches() }
     .confirmationDialog(
@@ -107,7 +105,7 @@ struct ProjectSettingsDetailView: View {
           confirmingDelete = true
         } label: {
           Text("Delete…")
-            .foregroundStyle(theme.statusError)
+            .foregroundStyle(.red)
         }
         .help("Delete this project from Codevisor")
       }

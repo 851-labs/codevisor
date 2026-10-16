@@ -13,7 +13,7 @@ extension ChatScreen {
 
   var transcriptSurface: some View {
     ZStack {
-      theme.contentBackground
+      Color.clear
       if isTranscriptMounted {
         ActiveTranscriptProjectionScope(
           controller: controller,
@@ -77,7 +77,6 @@ extension ChatScreen {
                         openDocument: openFileDocument)
                     }
                     .markdownImageActions(transcriptImageActions)
-                    .environment(\.theme, theme)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
                     .environment(\.openSubagent, openSubagent)
@@ -152,17 +151,11 @@ extension ChatScreen {
   }
 
   var transcriptMarkdownTheme: MarkdownTheme {
-    makeMarkdownTheme(
-      theme: theme,
-      highlight: codeHighlightTheme.map { ($0.key, $0.json) }
-    )
+    makeMarkdownTheme(highlight: codeHighlightTheme.map { ($0.key, $0.json) })
   }
 
   var transcriptMarkdownRowStyle: TranscriptMarkdownRowStyle {
-    TranscriptMarkdownRowStyle(
-      markdown: transcriptMarkdownTheme,
-      appTheme: theme
-    )
+    TranscriptMarkdownRowStyle(markdown: transcriptMarkdownTheme)
   }
 
   var transcriptLayoutFingerprint: Int {

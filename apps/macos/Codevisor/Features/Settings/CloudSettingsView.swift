@@ -4,7 +4,6 @@ import SwiftUI
 
 struct CloudSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @State private var showsServer = false
   @State private var showsConnections = false
   @State private var showsEmailSignIn = false
@@ -18,7 +17,7 @@ struct CloudSettingsView: View {
         signInWithEmail: { showsEmailSignIn = true }
       )
     }
-    .settingsPaneFormStyle(theme)
+    .settingsPaneFormStyle()
     .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
     .sheet(isPresented: $showsServer) {
       NavigationStack {

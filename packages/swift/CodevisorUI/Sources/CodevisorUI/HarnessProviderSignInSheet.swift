@@ -10,7 +10,6 @@ import SwiftUI
 struct HarnessProviderSignInSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
-  @Environment(\.theme) private var theme
 
   @State private var draft: HarnessProviderSignInDraft
   private let configuredIds: Set<String>
@@ -59,12 +58,10 @@ struct HarnessProviderSignInSheet: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SheetFooter(status: draft.status) {
           Button("Cancel", role: .cancel) { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
           .disabled(draft.isWorking)
           if let actionTitle = draft.actionTitle {
             Button(actionTitle) { submit() }
-            .settingsActionTint(theme)
             .keyboardShortcut(.defaultAction)
             .disabled(!draft.canSubmit)
           }
@@ -104,7 +101,7 @@ struct HarnessProviderSignInSheet: View {
               Text(provider.name)
               Spacer()
               if configuredIds.contains(provider.id) {
-                Text("Signed In").foregroundStyle(theme.textSecondary)
+                Text("Signed In").foregroundStyle(.secondary)
               }
             }
             .tag(provider.id)
@@ -114,7 +111,7 @@ struct HarnessProviderSignInSheet: View {
             Divider()
             VStack(alignment: .leading, spacing: 12) {
               if let error = draft.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError)
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
               }
               authentication
             }
@@ -148,7 +145,7 @@ struct HarnessProviderSignInSheet: View {
   private var errorSection: some View {
     if let error = draft.errorMessage {
       Section {
-        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError)
+        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
       }
     }
   }
@@ -179,7 +176,7 @@ struct HarnessProviderSignInSheet: View {
   @ViewBuilder
   private func progress(_ signIn: HarnessProviderSignIn) -> some View {
     if let instructions = signIn.instructions {
-      Text(instructions).foregroundStyle(theme.textSecondary)
+      Text(instructions).foregroundStyle(.secondary)
     }
     if let code = signIn.userCode {
       LabeledContent("Code") {
@@ -193,9 +190,6 @@ struct HarnessProviderSignInSheet: View {
     }
     if let page = signIn.url.flatMap(URL.init(string:)) {
       Button("Open Sign-In Page") { openURL(page) }
-        #if os(macOS)
-          .settingsActionTint(theme)
-        #endif
     }
     if signIn.state == .waiting, let prompt = signIn.prompt {
       field(prompt, text: $draft.answer)

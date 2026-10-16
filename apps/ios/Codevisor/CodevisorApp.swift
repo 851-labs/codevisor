@@ -1,5 +1,4 @@
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import Combine
 import Network
@@ -49,7 +48,6 @@ struct CodevisorApp: App {
       HomeView(initialRoute: initialRoute)
         .modifier(ThemedRoot())
         .environment(environment)
-        .preferredColorScheme(colorScheme(for: environment))
         .task { await bootstrap(environment: environment) }
         .onChange(of: scenePhase, initial: true) { _, phase in
           environment.attentionCoordinator.setApplicationActive(
@@ -70,14 +68,6 @@ struct CodevisorApp: App {
     } else {
       CodevisorStartupSplashView()
         .task { await startEnvironmentIfNeeded() }
-    }
-  }
-
-  private func colorScheme(for environment: AppEnvironment) -> ColorScheme? {
-    switch environment.settings.settings.themeMode {
-    case .light: .light
-    case .dark: .dark
-    case .system: nil
     }
   }
 

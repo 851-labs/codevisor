@@ -44,7 +44,6 @@ public extension FleetMachineRow where Trailing == EmptyView {
 }
 
 public struct FleetStatusMark: View {
-  @Environment(\.theme) private var theme
   private let status: FleetRowStatus
   private let details: FleetBlockedMachine?
   @State private var presented: FleetBlockedMachine?
@@ -57,7 +56,7 @@ public struct FleetStatusMark: View {
   public var body: some View {
     switch status.emphasis {
     case .ready:
-      mark("checkmark.circle.fill", theme.statusOK)
+      mark("checkmark.circle.fill", .green)
     case .busy:
       ProgressView().controlSize(.small)
         .help(status.label)
@@ -67,17 +66,17 @@ public struct FleetStatusMark: View {
           presented = details
         } label: {
           Image(systemName: "exclamationmark.circle.fill")
-            .foregroundStyle(theme.statusWarn)
+            .foregroundStyle(.orange)
         }
         .buttonStyle(.plain)
         .help(helpText)
         .accessibilityLabel("\(status.label). Show details")
         .fleetBlockedDetails(item: $presented)
       } else {
-        mark("exclamationmark.circle.fill", theme.statusWarn)
+        mark("exclamationmark.circle.fill", .orange)
       }
     case .quiet:
-      mark("circle.fill", theme.textTertiary.opacity(0.5))
+      mark("circle.fill", Color.tertiaryLabelColor.opacity(0.5))
     }
   }
 

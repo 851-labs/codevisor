@@ -1,7 +1,6 @@
 #if canImport(AppKit)
   import AppKit
   import CodeHighlighter
-  import CodevisorTheming
   import SwiftUI
 
   typealias NativeFileEditor = MacFileEditor
@@ -30,10 +29,15 @@
       textView.minSize = .zero
       textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
       textView.setAccessibilityLabel("File editor")
+      textView.drawsBackground = false
+      textView.backgroundColor = .clear
+      textView.insertionPointColor = .labelColor
       container.hasVerticalScroller = true
       container.hasHorizontalScroller = true
       container.autohidesScrollers = true
       container.borderType = .noBorder
+      container.drawsBackground = false
+      container.backgroundColor = .clear
       container.automaticallyAdjustsContentInsets = false
       container.documentView = textView
       container.gutter.textView = textView
@@ -47,16 +51,10 @@
     var selection: NSRange { textView.selectedRange() }
     func connect(_ storage: FileEditorStorage) { textView.delegate = storage }
 
-    func update(theme: Theme, session: FileEditorSession) {
+    func update(session: FileEditorSession) {
       textView.isEditable = session.document.isEditable
       container.gutter.isHidden = !session.showsLineNumbers
       container.gutter.update()
-      let paintsBackground = !theme.isSystem
-      textView.drawsBackground = paintsBackground
-      container.drawsBackground = paintsBackground
-      textView.backgroundColor = paintsBackground ? NSColor(theme.windowBackground) : .clear
-      container.backgroundColor = textView.backgroundColor
-      textView.insertionPointColor = NSColor(theme.textPrimary)
       let wraps = session.wrapsLines
       textView.isHorizontallyResizable = !wraps
       textView.autoresizingMask = wraps ? [.width] : []
@@ -114,10 +112,9 @@
 
   struct NativeFileSourceEditor: NSViewRepresentable {
     let storage: FileEditorStorage
-    let theme: Theme
     let highlight: CodeHighlightTheme?
     func makeNSView(context: Context) -> NSScrollView { storage.native.container }
-    func updateNSView(_ view: NSScrollView, context: Context) { storage.update(theme: theme, highlight: highlight) }
+    func updateNSView(_ view: NSScrollView, context: Context) { storage.update(highlight: highlight) }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
       CGSize(width: proposal.width ?? 600, height: proposal.height ?? 400)
     }

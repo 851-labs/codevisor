@@ -35,33 +35,12 @@ public struct WebPaneThemeTokens: Equatable, Sendable {
     self.background = background
   }
 
-  public init(palette: DerivedPalette?, isDark: Bool) {
-    let mode = (palette?.isDark ?? isDark) ? "dark" : "light"
-    guard let palette else {
-      self.init(
-        mode: mode,
-        variables: Self.systemVariables(isDark: isDark),
-        background: isDark ? RGBA(r: 30, g: 30, b: 30) : RGBA(r: 255, g: 255, b: 255)
-      )
-      return
-    }
-    var variables = Self.fontVariables
-    variables["--codevisor-bg"] = Self.css(palette.windowBackground)
-    variables["--codevisor-bg-elevated"] = Self.css(palette.cardBackground)
-    variables["--codevisor-fg"] = Self.css(palette.textPrimary)
-    variables["--codevisor-fg-secondary"] = Self.css(palette.textSecondary)
-    variables["--codevisor-fg-tertiary"] = Self.css(palette.textTertiary)
-    variables["--codevisor-border"] = Self.css(palette.border)
-    variables["--codevisor-separator"] = Self.css(palette.separator)
-    variables["--codevisor-accent"] = Self.css(palette.accent)
-    variables["--codevisor-status-ok"] = Self.css(palette.statusOK)
-    variables["--codevisor-status-warn"] = Self.css(palette.statusWarn)
-    variables["--codevisor-status-error"] = Self.css(palette.statusError)
-    variables["--codevisor-diff-added"] = Self.css(palette.diffAddedFg)
-    variables["--codevisor-diff-removed"] = Self.css(palette.diffRemovedFg)
-    variables["--codevisor-diff-added-bg"] = Self.css(palette.diffAddedBg)
-    variables["--codevisor-diff-removed-bg"] = Self.css(palette.diffRemovedBg)
-    self.init(mode: mode, variables: variables, background: palette.windowBackground)
+  public init(isDark: Bool) {
+    self.init(
+      mode: isDark ? "dark" : "light",
+      variables: Self.systemVariables(isDark: isDark),
+      background: isDark ? RGBA(r: 30, g: 30, b: 30) : RGBA(r: 255, g: 255, b: 255)
+    )
   }
 
   private static let fontVariables: [String: String] = [
@@ -95,15 +74,6 @@ public struct WebPaneThemeTokens: Equatable, Sendable {
     return variables
   }
 
-  private static func css(_ color: RGBA) -> String {
-    let r = Int(color.r.rounded())
-    let g = Int(color.g.rounded())
-    let b = Int(color.b.rounded())
-    if color.a >= 1 {
-      return "rgb(\(r), \(g), \(b))"
-    }
-    return "rgba(\(r), \(g), \(b), \(String(format: "%g", color.a)))"
-  }
 }
 
 private struct WebPaneOrigin: Equatable {

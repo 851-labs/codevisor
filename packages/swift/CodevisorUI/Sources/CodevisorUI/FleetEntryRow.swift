@@ -6,7 +6,6 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
   public static var minContentHeight: CGFloat { FleetRowMetrics.minContentHeight }
   public static var iconColumnWidth: CGFloat { FleetRowMetrics.iconColumnWidth }
 
-  @Environment(\.theme) private var theme
   private let name: String
   private let caption: String?
   private let isBusy: Bool
@@ -45,7 +44,7 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(name).lineLimit(1)
         if let caption {
-          Text(caption).font(.caption).foregroundStyle(theme.textSecondary).lineLimit(2)
+          Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }
       }
       .layoutPriority(1)
@@ -111,9 +110,8 @@ public enum FleetRowMetrics {
 
 public extension View {
   @ViewBuilder
-  func fleetRowButton(_ theme: Theme) -> some View {
+  func fleetRowButton() -> some View {
     let styled = buttonStyle(.bordered)
-      .tint(theme.isSystem ? nil : theme.textPrimary)
       .fixedSize()
     #if os(iOS)
       styled.controlSize(.small)

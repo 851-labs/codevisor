@@ -1,4 +1,3 @@
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
@@ -6,7 +5,6 @@ struct SidebarRowHoverModifier: ViewModifier {
   var isSelected = false
   var isEnabled = true
   @Environment(\.controlActiveState) private var controlActiveState
-  @Environment(\.theme) private var theme
   @State private var isHovered = false
 
   func body(content: Content) -> some View {
@@ -16,8 +14,8 @@ struct SidebarRowHoverModifier: ViewModifier {
         RoundedRectangle(cornerRadius: 6)
           .fill(
             isSelected
-              ? theme.rowSelectedBackground
-              : (showsHover ? theme.rowHoverBackground : .clear))
+              ? Color.primary.opacity(0.14)
+              : (showsHover ? Color.secondary.opacity(0.12) : .clear))
       )
       .onHover { isHovered = $0 }
   }

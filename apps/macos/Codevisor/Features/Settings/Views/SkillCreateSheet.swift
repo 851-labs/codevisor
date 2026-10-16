@@ -4,7 +4,6 @@ import SwiftUI
 
 struct SkillCreateSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let onCreate: (String, String, String?) async throws -> Void
   @State private var name = ""
   @State private var skillDescription = ""
@@ -25,7 +24,6 @@ struct SkillCreateSheet: View {
           )
           .lineLimit(1...3)
         }
-        .listRowBackground(theme.formRowBackground)
         Section("Content") {
           TextEditor(text: $pastedContent)
             .font(.body.monospaced())
@@ -33,24 +31,19 @@ struct SkillCreateSheet: View {
             .scrollContentBackground(.hidden)
             .accessibilityLabel("Skill content")
         }
-        .listRowBackground(theme.formRowBackground)
         if let errorMessage {
-          Text(errorMessage).foregroundStyle(theme.statusError)
+          Text(errorMessage).foregroundStyle(.red)
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
         Button(isSaving ? "Creating…" : "Create") {
           Task { await save() }
         }
-        .settingsActionTint(theme)
         .keyboardShortcut(.defaultAction)
         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
       }
@@ -76,7 +69,6 @@ struct SkillCreateSheet: View {
 
 struct SkillRemoteImportSheet: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
   let discover: (String) async throws -> [ServerRemoteSkillCandidate]
   let onImport: (String, [String]?) async throws -> Void
   @State private var source = ""
@@ -114,7 +106,6 @@ struct SkillRemoteImportSheet: View {
           .onSubmit { Task { await find() } }
           .disabled(candidates != nil)
         }
-        .listRowBackground(theme.formRowBackground)
         if let candidates {
           Section {
             ForEach(candidates) { candidate in
@@ -129,41 +120,34 @@ struct SkillRemoteImportSheet: View {
                 if selection.count == selectable.count {
                   Button("Deselect All") { selection = [] }
                     .buttonStyle(.borderless)
-                    .settingsActionTint(theme)
                 } else {
                   Button("Select All") {
                     selection = Set(selectable.map(\.directoryName))
                   }
                   .buttonStyle(.borderless)
-                  .settingsActionTint(theme)
                 }
               }
             }
           }
-          .listRowBackground(theme.formRowBackground)
         }
         if let errorMessage {
-          Text(errorMessage).foregroundStyle(theme.statusError)
+          Text(errorMessage).foregroundStyle(.red)
         }
       }
       .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       SheetFooter {
         Button("Cancel") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
         if candidates == nil {
           Button(isWorking ? "Finding…" : "Find Skills") {
             Task { await find() }
           }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
           .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
         } else {
           Button(isWorking ? "Importing…" : importLabel) {
             Task { await runImport() }
           }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
           .disabled(selection.isEmpty || isWorking)
         }

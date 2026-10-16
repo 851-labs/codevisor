@@ -5,7 +5,6 @@ import CodevisorUI
 import SwiftUI
 
 struct BrowserExtensionQuestionContent: View {
-  @Environment(\.theme) private var theme
   @Bindable var controller: SessionController
   let question: QuestionSpec
   let canInstallLocally: Bool
@@ -112,7 +111,7 @@ struct BrowserExtensionQuestionContent: View {
       .padding(.vertical, 14)
       .background(
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(theme.cardQuietBackground)
+          .fill(Color.secondary.opacity(0.08))
       )
 
       HStack(spacing: 8) {
@@ -170,7 +169,7 @@ struct BrowserExtensionQuestionContent: View {
     .padding(.vertical, 10)
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(theme.cardQuietBackground)
+        .fill(Color.secondary.opacity(0.08))
     )
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Open Chrome’s Extensions page")
@@ -199,7 +198,7 @@ struct BrowserExtensionQuestionContent: View {
     .padding(.vertical, 10)
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(theme.cardQuietBackground)
+        .fill(Color.secondary.opacity(0.08))
     )
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Drag Codevisor into the Chrome Extensions page")
@@ -245,7 +244,7 @@ struct BrowserExtensionQuestionContent: View {
       )
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .strokeBorder(theme.border.opacity(0.7), lineWidth: 0.5)
+          .strokeBorder(Color.separatorColor.opacity(0.7), lineWidth: 0.5)
       )
       .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .onHover { isFileHovered = $0 }
@@ -311,7 +310,7 @@ struct BrowserExtensionQuestionContent: View {
 
   private var extensionFileBackground: some ShapeStyle {
     if isFileHovered {
-      return AnyShapeStyle(theme.cardHoverBackground)
+      return AnyShapeStyle(Color.secondary.opacity(0.12))
     }
     return AnyShapeStyle(Color.clear)
   }

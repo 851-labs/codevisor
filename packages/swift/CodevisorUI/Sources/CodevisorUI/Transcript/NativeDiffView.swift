@@ -7,7 +7,6 @@
   struct NativeDiffView: NSViewRepresentable {
     let rows: [LineDiff.Row]
     let highlights: [Int: AttributedString]
-    let theme: Theme
     let revision: String
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
     var lineNumberDigits = 2
@@ -21,7 +20,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: revision
       )
       return scrollView
@@ -34,7 +32,6 @@
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
-        theme: theme,
         revision: revision
       )
     }
@@ -58,7 +55,6 @@
     private let codeMask = CALayer()
     private(set) var contentFittingSize = CGSize(width: 1, height: 1)
     private var renderedRevision: String?
-    private var renderedTheme: Theme?
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
     var lineNumberDigits = 2
     var scrollSync: DiffScrollSync? {
@@ -136,12 +132,10 @@
     func setContent(
       rows: [LineDiff.Row],
       highlights: [Int: AttributedString],
-      theme: Theme,
       revision: String
     ) {
-      guard renderedRevision != revision || renderedTheme != theme else { return }
+      guard renderedRevision != revision else { return }
       renderedRevision = revision
-      renderedTheme = theme
 
       let metrics = NativeDiffMetrics(rows: rows, minimumDigits: lineNumberDigits)
       let text = Self.attributedText(
@@ -149,9 +143,9 @@
         highlights: highlights,
         font: metrics.font,
         rowHeight: metrics.rowHeight,
-        foreground: NSColor(theme.textPrimary)
+        foreground: .labelColor
       )
-      let colors = NativeDiffColors(theme: theme)
+      let colors = NativeDiffColors()
       diffTextView.setContent(
         text,
         rows: rows,
@@ -326,7 +320,7 @@
   final class NativeDiffTextView: TranscriptSelectableTextView {
     private var rows: [LineDiff.Row] = []
     private var metrics = NativeDiffMetrics(rows: [])
-    private var colors = NativeDiffColors(theme: .system)
+    private var colors = NativeDiffColors()
 
     func setContent(
       _ text: NSAttributedString,
@@ -470,21 +464,12 @@
   }
 
   struct NativeDiffColors {
-    let lineNumber: NSColor
-    let addedForeground: NSColor
-    let removedForeground: NSColor
-    let addedBackground: NSColor
-    let removedBackground: NSColor
-    let gutterBackground: NSColor
-
-    init(theme: Theme) {
-      lineNumber = NSColor(theme.diffLineNumberFg)
-      addedForeground = NSColor(theme.diffAddedFg)
-      removedForeground = NSColor(theme.diffRemovedFg)
-      addedBackground = NSColor(theme.diffAddedBg)
-      removedBackground = NSColor(theme.diffRemovedBg)
-      gutterBackground = NSColor(theme.diffLineNumberFg).withAlphaComponent(0.08)
-    }
+    let lineNumber = NSColor.tertiaryLabelColor
+    let addedForeground = NSColor(Color.green)
+    let removedForeground = NSColor(Color.red)
+    let addedBackground = NSColor(Color.green.opacity(0.12))
+    let removedBackground = NSColor(Color.red.opacity(0.12))
+    let gutterBackground = NSColor.tertiaryLabelColor.withAlphaComponent(0.08)
   }
   extension NativeDiffScrollView: DiffScrollSyncMember {
     func applySyncedOffset(_ offset: CGFloat) {

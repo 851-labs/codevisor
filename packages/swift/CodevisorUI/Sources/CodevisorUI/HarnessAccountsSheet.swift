@@ -46,7 +46,6 @@ public struct HarnessMachineSignInAction: Sendable {
 
 public struct HarnessAccountsSheet<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   @Environment(\.dismiss) private var dismiss
   let harnessId: String
   let harnessName: String
@@ -98,7 +97,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SheetFooter(status: operation) {
           Button("Done") { dismiss() }
-          .settingsActionTint(theme)
           .keyboardShortcut(.defaultAction)
           .disabled(isWorking)
         }
@@ -196,7 +194,6 @@ public struct HarnessAccountsSheet<Editor: View>: View {
 
 struct HarnessAccountMachinePicker<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.theme) private var theme
   let harnessId: String
   let editor: (CodevisorMachine, ServerHarness) -> Editor
   @State private var harnesses: [String: ServerHarness] = [:]
@@ -240,7 +237,7 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
     HStack {
       Label(machine.name, systemImage: machine.icon.systemImage)
       Spacer()
-      Text(status(machine)).foregroundStyle(theme.textSecondary)
+      Text(status(machine)).foregroundStyle(.secondary)
     }
   }
 

@@ -6,7 +6,6 @@ import SwiftUI
 
 struct TranscriptItemsView: View {
   let items: [WorkedItem]
-  @Environment(\.theme) private var theme
   let turnID: UUID
   let isTurnActive: Bool
   let animationPresentation: StreamingTextAnimationPresentation
@@ -19,7 +18,7 @@ struct TranscriptItemsView: View {
         StreamingMarkdownView(
           markdown,
           isComplete: !isTurnActive,
-          foregroundColor: theme.textPrimary,
+          foregroundColor: .primary,
           streamID: TranscriptStreamingTextIdentity.main(turnID: turnID, entryID: entryID),
           animationPresentation: animationPresentation,
           animationEnabled: animationEnabled

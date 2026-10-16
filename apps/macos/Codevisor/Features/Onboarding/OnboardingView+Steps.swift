@@ -94,7 +94,7 @@ extension OnboardingView {
       .frame(maxWidth: 420, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
-          .fill(theme.cardBackground)
+          .fill(Color.cardBackgroundColor)
       )
       .padding(.top, 24)
 
@@ -162,7 +162,7 @@ extension OnboardingView {
             if let lastError = environment.cloud.lastError {
               Text(lastError)
                 .font(.callout)
-                .foregroundStyle(theme.statusWarn)
+                .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
             }
           }
@@ -193,7 +193,7 @@ extension OnboardingView {
             .frame(maxWidth: 420, alignment: .leading)
             .background(
               RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(theme.cardBackground)
+                .fill(Color.cardBackgroundColor)
             )
             Button("Use a Different Account…") {
               environment.cloud.signOut()
