@@ -36,7 +36,7 @@ struct SessionConfigTests {
     #expect(option.currentName == "zzz")
   }
 
-  @Test("Round-trips a config option and the set request/response")
+  @Test("Encodes and decodes a config option with literal wire fields")
   func roundTrip() throws {
     let option = SessionConfigOption(
       id: "reasoning", name: "Reasoning", description: "effort", category: "thought_level",
@@ -47,7 +47,13 @@ struct SessionConfigTests {
       ]
     )
     let data = try JSONEncoder().encode(option)
-    #expect(try JSONDecoder().decode(SessionConfigOption.self, from: data) == option)
+    let literal = Data(
+      #"{"id":"reasoning","name":"Reasoning","description":"effort","category":"thought_level","currentValue":"high","options":[{"value":"low","name":"low"},{"value":"high","name":"high"}]}"#
+        .utf8)
+    let actual = try #require(try JSONSerialization.jsonObject(with: data) as? NSDictionary)
+    let expected = try #require(try JSONSerialization.jsonObject(with: literal) as? NSDictionary)
+    #expect(actual == expected)
+    #expect(try JSONDecoder().decode(SessionConfigOption.self, from: literal) == option)
   }
 
   @Test("config_option_update session update round-trips")
@@ -58,7 +64,13 @@ struct SessionConfigTests {
         options: [SessionConfigSelectOption(value: "a", name: "A")])
     ])
     let data = try JSONEncoder().encode(update)
-    #expect(try JSONDecoder().decode(SessionUpdate.self, from: data) == update)
+    let literal = Data(
+      #"{"sessionUpdate":"config_option_update","configOptions":[{"id":"model","name":"Model","currentValue":"a","options":[{"value":"a","name":"A"}]}]}"#
+        .utf8)
+    let actual = try #require(try JSONSerialization.jsonObject(with: data) as? NSDictionary)
+    let expected = try #require(try JSONSerialization.jsonObject(with: literal) as? NSDictionary)
+    #expect(actual == expected)
+    #expect(try JSONDecoder().decode(SessionUpdate.self, from: literal) == update)
   }
 
   @Test("usage_update session update decodes cost + context tokens")
@@ -78,7 +90,9 @@ struct SessionConfigTests {
     #expect(usage.totalTokens == 12_345)
     #expect(usage.cost == SessionCost(amount: 0.0123, currency: "USD", kind: .reported))
     let data = try JSONEncoder().encode(update)
-    #expect(try JSONDecoder().decode(SessionUpdate.self, from: data) == update)
+    let actual = try #require(try JSONSerialization.jsonObject(with: data) as? NSDictionary)
+    let expected = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+    #expect(actual == expected)
   }
 
   @Test("usage_update tolerates a missing cost")
