@@ -153,7 +153,7 @@ struct NewChatView: View {
         Spacer()
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
     .onGeometryChange(for: CGRect.self) {
       $0.frame(in: .global)
     } action: { frame in
