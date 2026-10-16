@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, photos, links, sourceControl, files
+  case info, photos, links, sourceControl, files, filesV2
 
   var id: Self { self }
 
@@ -14,6 +14,7 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
     case .links: "Links"
     case .sourceControl: "Source Control"
     case .files: "Files"
+    case .filesV2: "Files v2"
     }
   }
 }
@@ -61,7 +62,7 @@ final class WorkspaceInspectorMediaModel {
     case .photos: await loadPhotos(before: nil)
     case .links: await loadLinks(before: nil)
     case .sourceControl: await loadChanges()
-    case .files: break
+    case .files, .filesV2: break
     }
   }
 

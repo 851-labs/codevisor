@@ -81,9 +81,18 @@ private struct WorkspaceInspectorFileTreeRows: View {
   }
 
   private func label(_ entry: ServerFileEntry) -> some View {
+    WorkspaceInspectorFileTreeLabel(entry: entry, isLoading: model.slow.contains(entry.path))
+  }
+}
+
+struct WorkspaceInspectorFileTreeLabel: View {
+  let entry: ServerFileEntry
+  let isLoading: Bool
+
+  var body: some View {
     HStack(spacing: 6) {
       Group {
-        if model.slow.contains(entry.path) {
+        if isLoading {
           ProgressView().controlSize(.mini)
         } else {
           FileIcon(path: entry.path, isDirectory: entry.isDirectory, size: 16)
