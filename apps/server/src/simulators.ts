@@ -123,6 +123,13 @@ const requireUDID = (udid: string): string => {
   return udid.toUpperCase()
 }
 
+const requireSimulatorName = (name: string): string => {
+  const trimmed = name.trim()
+  if (trimmed.length === 0 || trimmed.length > 120)
+    throw new SimulatorRequestError(400, "Choose a name for the simulator")
+  return trimmed
+}
+
 export const makeSimulators = (
   environment: SimulatorEnvironment,
   nativeHost: () => boolean = () => true
@@ -312,9 +319,7 @@ export const makeSimulators = (
     },
 
     create: async (name, deviceType, runtime) => {
-      const trimmed = name.trim()
-      if (trimmed.length === 0 || trimmed.length > 120)
-        throw new SimulatorRequestError(400, "Choose a name for the simulator")
+      const trimmed = requireSimulatorName(name)
       if (!identifierPattern.test(deviceType) || !identifierPattern.test(runtime))
         throw new SimulatorRequestError(400, "Invalid device type or runtime")
       const created = (await simctl(["create", trimmed, deviceType, runtime], 60_000))
@@ -326,9 +331,7 @@ export const makeSimulators = (
 
     rename: async (udid, name) => {
       const device = await requireDevice(udid)
-      const trimmed = name.trim()
-      if (trimmed.length === 0 || trimmed.length > 120)
-        throw new SimulatorRequestError(400, "Choose a name for the simulator")
+      const trimmed = requireSimulatorName(name)
       await simctl(["rename", device.udid, trimmed])
     },
 
