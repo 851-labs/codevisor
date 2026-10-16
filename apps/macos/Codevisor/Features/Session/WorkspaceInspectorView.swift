@@ -46,10 +46,10 @@ struct WorkspaceInspectorView: View {
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.width
-        } action: {
-          tabBarWidth = $0
+        } action: { width in
+          tabBarWidth = width
+          Task { proxy.scrollTo(tab, anchor: .center) }
         }
-        .onAppear { proxy.scrollTo(tab, anchor: .center) }
         .onChange(of: tab) { _, selected in
           withAnimation(.smooth(duration: 0.28)) { proxy.scrollTo(selected, anchor: .center) }
         }

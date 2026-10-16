@@ -26,11 +26,14 @@ struct WorkspaceInspectorFileTreeView: View {
         onRetry: { Task { await model.refresh() } }
       )
     } else {
-      List(rows) { row in
-        self.row(row)
-          .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+      Form {
+        Section {
+          ForEach(rows) { row in
+            self.row(row)
+          }
+        }
       }
-      .listStyle(.sidebar)
+      .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     }
   }
