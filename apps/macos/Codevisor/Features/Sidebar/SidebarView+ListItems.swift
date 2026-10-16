@@ -83,9 +83,13 @@ extension SidebarView {
   }
 
   func visibleItems(of group: SidebarWorkspaceGroup) -> [WorkspaceSidebarItem] {
-    if isShowing(group) { return group.items }
+    visible(group.items, showing: isShowing(group))
+  }
+
+  func visible(_ items: [WorkspaceSidebarItem], showing: Bool) -> [WorkspaceSidebarItem] {
+    if showing { return items }
     guard let selectedWorkspaceID else { return [] }
-    return group.items.filter { $0.id == selectedWorkspaceID }
+    return items.filter { $0.id == selectedWorkspaceID }
   }
 
   var listedWorkspaceItems: [SidebarWorkspaceListItem] {

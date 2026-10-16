@@ -79,6 +79,10 @@ struct SidebarView: View {
           if let previous { release(previous) }
           if let current, revealRequest.take(current) { proxy.scrollTo(current) }
         }
+        .onChange(of: selectedBotID) { previous, current in
+          if let previous { release(previous) }
+          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+        }
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
@@ -373,11 +377,11 @@ struct SidebarView: View {
 
 @MainActor
 final class SidebarRevealRequest {
-  var workspaceID: UUID?
+  var rowID: UUID?
 
   func take(_ id: UUID) -> Bool {
-    defer { workspaceID = nil }
-    return workspaceID == id
+    defer { rowID = nil }
+    return rowID == id
   }
 }
 

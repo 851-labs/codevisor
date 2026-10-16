@@ -97,37 +97,6 @@ extension SidebarView {
       ))
   }
 
-  func stepWorkspace(_ offset: Int) {
-    let items = listedWorkspaceItems
-    let archived = listedArchivedWorkspaces
-    let current: Int? =
-      if isNewChatSelected {
-        0
-      } else if let index = items.firstIndex(where: { routesSelectedSession($0.workspace) }) {
-        index + 1
-      } else if case let .archivedWorkspace(serverId, id) = selection,
-        let index = archived.firstIndex(where: { $0.serverId == serverId && $0.id == id })
-      {
-        items.count + 1 + index
-      } else {
-        nil
-      }
-    guard let current else { return }
-    let target = current + offset
-    guard target != current, (0...items.count + archived.count).contains(target) else { return }
-    if target == 0 {
-      selection = .newChat(nil)
-    } else if target <= items.count {
-      let item = items[target - 1]
-      revealRequest.workspaceID = item.workspace.id
-      activateWorkspace(item)
-    } else {
-      let workspace = archived[target - items.count - 1]
-      revealRequest.workspaceID = workspace.id
-      selection = .archivedWorkspace(serverId: workspace.serverId, id: workspace.id)
-    }
-  }
-
   func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
     list.routableChat(in: tab, serverId: serverId)
   }
