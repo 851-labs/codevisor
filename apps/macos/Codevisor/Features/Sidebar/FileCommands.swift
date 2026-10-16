@@ -72,12 +72,6 @@ struct FileCommands: Commands {
       CloseTabMenuItems()
       ArchiveWorkspaceMenuItem()
     }
-    CommandGroup(after: .newItem) {
-      if let file {
-        Button("Open File…") { file.openExplorer() }
-          .keyboardShortcut("o", modifiers: .command)
-      }
-    }
     CommandGroup(replacing: .saveItem) {
       if let file, !file.isBrowsing {
         Button("Save") { Task { await file.document.save() } }

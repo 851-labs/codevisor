@@ -12,14 +12,12 @@ public struct FilePaneToolbar: ToolbarContent {
   public var body: some ToolbarContent {
     #if canImport(AppKit)
       ToolbarItem(id: "file.title", placement: .navigation) {
-        Group {
-          if model.isBrowsing {
-            Text(model.title).font(.headline)
-          } else {
-            FilePaneTitleButton(model: model)
-          }
-        }
-        .padding(.leading, 12)
+        Text(model.title)
+          .font(.headline)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .frame(maxWidth: 260, alignment: .leading)
+          .padding(.leading, 12)
       }
       .sharedBackgroundVisibility(.hidden)
       ToolbarSpacer(.flexible)
@@ -50,34 +48,27 @@ public struct FilePaneToolbar: ToolbarContent {
   }
 }
 
-private struct FilePaneTitleButton: View {
-  @Bindable var model: FilePaneModel
+#if !canImport(AppKit)
+  private struct FilePaneTitleButton: View {
+    let model: FilePaneModel
 
-  var body: some View {
-    Button {
-      model.openExplorer()
-    } label: {
-      HStack(spacing: 6) {
-        Text(model.title).font(.headline).lineLimit(1).truncationMode(.middle)
-        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-      }
-      #if canImport(AppKit)
-        .frame(maxWidth: 260, alignment: .leading)
-      #else
+    var body: some View {
+      Button {
+        model.openExplorer()
+      } label: {
+        HStack(spacing: 6) {
+          Text(model.title).font(.headline).lineLimit(1).truncationMode(.middle)
+          Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+        }
         .frame(maxWidth: 260)
-      #endif
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("\(model.title), Open File")
-    .help("Open File")
-    #if canImport(AppKit)
-      .popover(isPresented: $model.showsExplorer, arrowEdge: .bottom) {
-        MacFileOpenPopover(model: model)
+        .contentShape(Rectangle())
       }
-    #endif
+      .buttonStyle(.plain)
+      .accessibilityLabel("\(model.title), Open File")
+      .help("Open File")
+    }
   }
-}
+#endif
 
 private struct FilePaneActions: View {
   @Bindable var model: FilePaneModel
@@ -93,8 +84,10 @@ private struct FilePaneActions: View {
 
   var body: some View {
     Menu {
-      Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
-        .keyboardShortcut("o", modifiers: .command)
+      #if !canImport(AppKit)
+        Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
+          .keyboardShortcut("o", modifiers: .command)
+      #endif
       if model.document.isMarkdown {
         Button(
           model.editor.preview ? "Show Editor" : "Show Preview",
