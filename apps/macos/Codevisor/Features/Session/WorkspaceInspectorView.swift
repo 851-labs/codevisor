@@ -42,7 +42,7 @@ struct WorkspaceInspectorView: View {
   private var info: some View {
     Form {
       if let pullRequest {
-        Section {
+        Section("Pull Request") {
           row(.pullRequest(pullRequest.url)) {
             Label {
               Text("PR #\(pullRequest.number): \(pullRequest.title)")
