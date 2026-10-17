@@ -171,26 +171,11 @@ struct PaneTabIcon: View {
       )
       .frame(width: 12, height: 12)
     } else if kind == .subagent {
-      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: systemImage)
+      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: kind.tabFallbackSymbolName)
     } else if kind == .document, let documentPath {
       FileIcon(path: documentPath, size: 14)
     } else {
-      Image(systemName: systemImage)
-    }
-  }
-
-  private var systemImage: String {
-    switch kind {
-    case .chat: "text.bubble"
-    case .terminal: "terminal"
-    case .newTab: "square.dashed"
-    case .plugin: "puzzlepiece.extension"
-    case .document: "text.document"
-    case .browser: "globe"
-    case .screenSharing: "display"
-    case .simulator: "iphone"
-    case .subagent: "wand.and.sparkles"
-    case .review: "plusminus"
+      Image(systemName: kind.tabFallbackSymbolName)
     }
   }
 

@@ -119,30 +119,15 @@ struct SidebarWorkspaceTabRow: View {
       .frame(width: 14, height: 14)
       .frame(width: 18)
     } else if kind == .subagent {
-      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: iconName)
+      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: kind.tabFallbackSymbolName)
         .frame(width: 18)
         .foregroundStyle(.secondary)
     } else if kind == .document {
       FileIcon(path: title, size: 16).frame(width: 18)
     } else {
-      Image(systemName: iconName)
+      Image(systemName: kind.tabFallbackSymbolName)
         .frame(width: 18)
         .foregroundStyle(.secondary)
-    }
-  }
-
-  private var iconName: String {
-    switch kind {
-    case .chat: "text.bubble"
-    case .terminal: "terminal"
-    case .newTab: "square.dashed"
-    case .plugin: "puzzlepiece.extension"
-    case .document: "text.document"
-    case .browser: "globe"
-    case .screenSharing: "display"
-    case .simulator: "iphone"
-    case .subagent: "wand.and.sparkles"
-    case .review: "plusminus"
     }
   }
 
