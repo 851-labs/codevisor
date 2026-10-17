@@ -33,7 +33,7 @@ struct WorkspaceInspectorPhotosView: View {
             }
           }
         }
-        .padding(12)
+        .padding(10)
       }
     }
   }

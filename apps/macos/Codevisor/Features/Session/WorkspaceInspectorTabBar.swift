@@ -11,7 +11,7 @@ struct WorkspaceInspectorTabBar: View {
   @GestureState private var isPressed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  static let scrollMargin: CGFloat = 12
+  static let scrollMargin: CGFloat = 10
   private static let space = "WorkspaceInspectorTabBar"
 
   var body: some View {
