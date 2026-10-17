@@ -63,7 +63,7 @@ extension WorkspaceScreen {
   func persistCompactPaneState(_ state: PaneGroupState) {
     guard let current = resolvedWorkspace else { return }
     var workspace = current
-    Self.applyCompactPaneState(state, to: &workspace)
+    PaneLayoutProjection.apply(state, to: &workspace)
     guard workspace != current else { return }
     environment.workspaces.save(workspace)
   }
@@ -89,7 +89,7 @@ extension WorkspaceScreen {
 
   func synchronizePaneStateFromWorkspace() {
     guard let workspace = resolvedWorkspace else { return }
-    let shared = Self.compactPaneState(from: workspace)
+    let shared = PaneLayoutProjection.flatten(workspace)
     guard !shared.panes.isEmpty else {
       guard !panes.panes.isEmpty else { return }
       let empty = PaneGroupState()
@@ -101,7 +101,7 @@ extension WorkspaceScreen {
     var state = panes
     let localIds = Set(state.panes.map(\.id))
     for candidate in shared.panes where !localIds.contains(candidate.id) {
-      guard let local = state.panes.first(where: { Self.sameResource(candidate, $0) }) else { continue }
+      guard let local = state.panes.first(where: { PaneLayoutProjection.sameResource(candidate, $0) }) else { continue }
       let identity = paneViewIdentities[local.id] ?? local.id
       if paneViewIdentities[candidate.id] != identity { paneViewIdentities[candidate.id] = identity }
     }
@@ -110,23 +110,5 @@ extension WorkspaceScreen {
     state.selectedPaneId = shared.selectedPaneId
     paneState = state
     persistCompactPaneState(state)
-  }
-
-  private static func sameResource(
-    _ lhs: PaneDescriptorState,
-    _ rhs: PaneDescriptorState
-  ) -> Bool {
-    guard lhs.kind == rhs.kind else { return false }
-    switch lhs.kind {
-    case .chat:
-      return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
-    case .terminal:
-      return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
-    case .subagent:
-      return lhs.ownerChatSessionId == rhs.ownerChatSessionId
-        && lhs.subagentToolCallId != nil && lhs.subagentToolCallId == rhs.subagentToolCallId
-    case .newTab, .plugin, .document, .browser, .screenSharing, .review, .simulator:
-      return false
-    }
   }
 }

@@ -119,7 +119,7 @@ extension HomeView {
   }
 
   private func closePane(_ paneId: UUID, in workspace: Workspace) {
-    var state = WorkspaceScreen.compactPaneState(from: workspace)
+    var state = PaneLayoutProjection.flatten(workspace)
     if let closed = state.panes.first(where: { $0.id == paneId }), closed.kind == .terminal {
       TerminalSessionCache.shared.remove(terminalKey: closed.terminalKey)
     }
@@ -132,7 +132,7 @@ extension HomeView {
       guard state.closePane(id: paneId) != nil else { return }
     }
     var updated = workspace
-    WorkspaceScreen.applyCompactPaneState(state, to: &updated)
+    PaneLayoutProjection.apply(state, to: &updated)
     environment.workspaces.save(updated)
     environment.workspaceSync.deletePane(
       id: paneId,
@@ -144,9 +144,9 @@ extension HomeView {
 
   private func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
     guard var workspace = environment.workspaces.workspace(id: ref.id) else { return }
-    var state = WorkspaceScreen.compactPaneState(from: workspace)
+    var state = PaneLayoutProjection.flatten(workspace)
     let pane = state.addNewTabPane()
-    WorkspaceScreen.applyCompactPaneState(state, to: &workspace)
+    PaneLayoutProjection.apply(state, to: &workspace)
     withSidebarReflow { environment.workspaces.save(workspace) }
     environment.workspaceSync.publishPane(
       pane,

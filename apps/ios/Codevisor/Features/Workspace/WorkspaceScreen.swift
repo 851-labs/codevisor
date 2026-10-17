@@ -81,7 +81,7 @@ struct WorkspaceScreen: View {
   var panes: PaneGroupState {
     if let paneState { return paneState }
     if let workspace = resolvedWorkspace {
-      return Self.compactPaneState(from: workspace)
+      return PaneLayoutProjection.flatten(workspace)
     }
     if let paneStorageId {
       return WorkspacePaneStore.shared.state(

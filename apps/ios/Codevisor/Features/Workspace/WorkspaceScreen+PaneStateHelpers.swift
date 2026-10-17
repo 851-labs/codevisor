@@ -4,17 +4,6 @@ import UIKit
 import SwiftUI
 
 extension WorkspaceScreen {
-  static func applyCompactPaneState(
-    _ state: PaneGroupState,
-    to workspace: inout Workspace
-  ) {
-    PaneLayoutProjection.apply(state, to: &workspace)
-  }
-
-  static func compactPaneState(from workspace: Workspace) -> PaneGroupState {
-    PaneLayoutProjection.flatten(workspace)
-  }
-
   nonisolated static func diagnosticID(_ id: UUID) -> String {
     String(id.uuidString.prefix(8))
   }

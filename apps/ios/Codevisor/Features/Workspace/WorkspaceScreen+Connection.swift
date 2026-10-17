@@ -26,7 +26,7 @@ extension WorkspaceScreen {
     if paneState == nil, let paneStorageId {
       var explicitlyOpenedPane: PaneDescriptorState?
       var state =
-        resolvedWorkspace.map(Self.compactPaneState(from:))
+        resolvedWorkspace.map(PaneLayoutProjection.flatten)
         ?? WorkspacePaneStore.shared.state(
           for: paneStorageId,
           legacySessionIds: legacyPaneSessionIds
@@ -161,7 +161,7 @@ extension WorkspaceScreen {
       state.panes[index].chatSessionId = session.id
     }
     var paneWorkspace = workspace
-    Self.applyCompactPaneState(state, to: &paneWorkspace)
+    PaneLayoutProjection.apply(state, to: &paneWorkspace)
     environment.workspaces.save(paneWorkspace)
     if isNewChatPresentation {
       onDraftStarted?(session.id)
