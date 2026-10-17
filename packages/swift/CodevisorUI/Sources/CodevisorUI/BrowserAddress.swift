@@ -2,10 +2,6 @@ import Foundation
 import Network
 
 enum BrowserAddress {
-  static func display(_ url: URL) -> String {
-    BrowserLocation.display(url)
-  }
-
   static func proxied(_ url: URL) -> URL? {
     guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true),
       let rawHost = components.host?.lowercased()
