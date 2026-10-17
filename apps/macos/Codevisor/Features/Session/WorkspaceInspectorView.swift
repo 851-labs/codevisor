@@ -21,7 +21,17 @@ struct WorkspaceInspectorView: View {
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
+  private struct TabViewport: Equatable {
+    var offset: CGFloat = 0
+    var width: CGFloat = 0
+    var contentWidth: CGFloat = 0
+  }
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tabBarWidth: CGFloat = 0
+  @State private var tabScroll = ScrollPosition(edge: .leading)
+  @State private var tabViewport = TabViewport()
+  @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
 
   var body: some View {
@@ -38,24 +48,46 @@ struct WorkspaceInspectorView: View {
     .scrollEdgeEffectStyle(.soft, for: .top)
     .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
     .safeAreaBar(edge: .top, spacing: 0) {
-      ScrollViewReader { proxy in
-        ScrollView(.horizontal, showsIndicators: false) {
-          WorkspaceInspectorTabBar(selection: $tab)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minWidth: tabBarWidth)
-        }
-        .scrollBounceBehavior(.always, axes: .horizontal)
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.width
-        } action: { width in
-          tabBarWidth = width
-          Task { proxy.scrollTo(tab) }
-        }
-        .onChange(of: tab) { _, selected in
-          withAnimation(.smooth(duration: 0.28)) { proxy.scrollTo(selected) }
-        }
+      ScrollView(.horizontal, showsIndicators: false) {
+        WorkspaceInspectorTabBar(selection: $tab) { tabFrames = $0 }
+          .padding(.horizontal, WorkspaceInspectorTabBar.scrollMargin)
+          .padding(.vertical, 8)
+          .frame(minWidth: tabBarWidth)
       }
+      .scrollPosition($tabScroll)
+      .scrollBounceBehavior(.always, axes: .horizontal)
+      .onScrollGeometryChange(for: TabViewport.self) { geometry in
+        TabViewport(
+          offset: geometry.contentOffset.x, width: geometry.containerSize.width,
+          contentWidth: geometry.contentSize.width)
+      } action: { _, viewport in
+        tabViewport = viewport
+      }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        tabBarWidth = width
+        Task { revealTab(tab, animated: false) }
+      }
+      .onChange(of: tab) { _, selected in revealTab(selected, animated: true) }
+    }
+  }
+
+  private func revealTab(_ tab: WorkspaceInspectorTab, animated: Bool) {
+    guard let frame = tabFrames[tab], tabViewport.width > 0 else { return }
+    let leading = frame.minX
+    let trailing = frame.maxX + 2 * WorkspaceInspectorTabBar.scrollMargin
+    let target: CGFloat
+    if leading < tabViewport.offset {
+      target = leading
+    } else if trailing > tabViewport.offset + tabViewport.width {
+      target = trailing - tabViewport.width
+    } else {
+      return
+    }
+    let clamped = min(max(target, 0), max(tabViewport.contentWidth - tabViewport.width, 0))
+    withAnimation(animated && !reduceMotion ? .smooth(duration: 0.28) : nil) {
+      tabScroll.scrollTo(x: clamped)
     }
   }
 
