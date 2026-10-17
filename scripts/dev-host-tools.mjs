@@ -73,7 +73,7 @@ export async function readCloudDevVariables(repoRoot, capture) {
   return {}
 }
 
-export async function createDevelopmentAppIcon(repoRoot, developmentIconColor) {
+export async function createDevelopmentAppIcon(repoRoot, developmentIconColor, platform = "macos") {
   const templateDirectory = join(
     repoRoot,
     "apps",
@@ -85,7 +85,7 @@ export async function createDevelopmentAppIcon(repoRoot, developmentIconColor) {
   const generatedDirectory = join(
     repoRoot,
     "apps",
-    "macos",
+    platform,
     "Codevisor",
     "Resources",
     "AppIconDevGenerated.icon"

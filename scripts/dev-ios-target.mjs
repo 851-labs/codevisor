@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process"
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
 
+import { createDevelopmentAppIcon } from "./dev-host-tools.mjs"
 import { describeExit, waitForExit } from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
@@ -21,7 +22,11 @@ export async function buildIOSDevelopmentApp({
   didSelectSimulator?.(simulator)
   console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 
-  const generatedIconDirectory = await createDevelopmentAppIcon(repoRoot, developmentIconColor)
+  const generatedIconDirectory = await createDevelopmentAppIcon(
+    repoRoot,
+    developmentIconColor,
+    "ios"
+  )
   try {
     await runXcodebuild(
       repoRoot,
@@ -117,35 +122,6 @@ export async function terminateIOSDevelopmentApp(target) {
       stdio: "ignore"
     })
   )
-}
-
-async function createDevelopmentAppIcon(repoRoot, developmentIconColor) {
-  const templateDirectory = join(
-    repoRoot,
-    "apps",
-    "macos",
-    "Codevisor",
-    "Resources",
-    "AppIconDev.icon"
-  )
-  const generatedDirectory = join(
-    repoRoot,
-    "apps",
-    "ios",
-    "Codevisor",
-    "Resources",
-    "AppIconDevGenerated.icon"
-  )
-  await rm(generatedDirectory, { recursive: true, force: true })
-  await mkdir(join(generatedDirectory, "Assets"), { recursive: true })
-  const manifest = JSON.parse(await readFile(join(templateDirectory, "icon.json"), "utf8"))
-  manifest.fill = { "automatic-gradient": developmentIconColor.composer }
-  await writeFile(join(generatedDirectory, "icon.json"), `${JSON.stringify(manifest, null, 2)}\n`)
-  await cp(
-    join(templateDirectory, "Assets", "icon-v2.svg"),
-    join(generatedDirectory, "Assets", "icon-v2.svg")
-  )
-  return generatedDirectory
 }
 
 function run(repoRoot, environment, command, arguments_) {
