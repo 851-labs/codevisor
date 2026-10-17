@@ -35,9 +35,8 @@ public enum SidebarPreferenceKey {
   public static let machineOrder = "sidebar.machineOrder"
   public static let projectOrder = "sidebar.projectOrder"
 
-  public static let synced: Set<String> = [
-    SidebarGrouping.preferenceKey, SidebarRowDetail.preferenceKey, pinnedWorkspaces, machineOrder, projectOrder,
-  ]
+  public static let synced = Set(
+    [SidebarGrouping.preferenceKey, pinnedWorkspaces, machineOrder, projectOrder] + SidebarRowDetail.preferenceKeys)
 }
 
 public let sidebarArchivedPageSize = 10
@@ -185,17 +184,20 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
 
 public enum SidebarRowSubtitle {
   public static func make(
-    details: [SidebarRowDetail], projectName: String?, branch: String?, groupNamesProject: Bool
+    details: [SidebarRowDetail], title: String, projectName: String?, branch: String?, worktreeName: String?,
+    groupNamesProject: Bool
   ) -> String? {
-    let parts = SidebarRowDetail.subtitleDetails.compactMap { detail -> String? in
-      guard details.contains(detail) else { return nil }
+    var parts: [String] = []
+    for detail in SidebarRowDetail.subtitleDetails where details.contains(detail) {
       let part: String? =
         switch detail {
         case .project: groupNamesProject ? nil : projectName
         case .branch: branch
+        case .worktree: worktreeName == title ? nil : worktreeName
         default: nil
         }
-      return part?.isEmpty == false ? part : nil
+      guard let part, !part.isEmpty, !parts.contains(part) else { continue }
+      parts.append(part)
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }

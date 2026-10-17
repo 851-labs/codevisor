@@ -4,8 +4,6 @@ import SwiftUI
 
 struct HomeSidebarOptionsMenu: View {
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
-  @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
-  private var rowDetails: [SidebarRowDetail]
 
   var body: some View {
     Menu {
@@ -44,10 +42,8 @@ struct HomeSidebarOptionsMenu: View {
 
   private func binding(_ detail: SidebarRowDetail) -> Binding<Bool> {
     Binding(
-      get: { rowDetails.contains(detail) },
-      set: { isOn in
-        rowDetails = SidebarRowDetail.allCases.filter { $0 == detail ? isOn : rowDetails.contains($0) }
-      }
+      get: { ClientPreferences.shared.isSidebarRowDetailShown(detail) },
+      set: { ClientPreferences.shared.setSidebarRowDetail(detail, shown: $0) }
     )
   }
 }

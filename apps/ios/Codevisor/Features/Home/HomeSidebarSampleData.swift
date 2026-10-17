@@ -17,8 +17,8 @@
       guard !didResetPreferences, ProcessInfo.processInfo.environment["CODEVISOR_SIDEBAR_SAMPLE_RESET"] == "1"
       else { return }
       didResetPreferences = true
-      for key in [
-        SidebarGrouping.preferenceKey, SidebarGrouping.collapsedPreferenceKey, SidebarRowDetail.preferenceKey,
+      for key in SidebarRowDetail.preferenceKeys + [
+        SidebarGrouping.preferenceKey, SidebarGrouping.collapsedPreferenceKey,
         SidebarPreferenceKey.pinnedWorkspaces, SidebarPreferenceKey.machineOrder, SidebarPreferenceKey.projectOrder,
         SidebarPreferenceKey.pinnedExpanded,
         SidebarPreferenceKey.listExpanded,
@@ -114,8 +114,10 @@
         var workspace = entry.workspace
         workspace.subtitle = SidebarRowSubtitle.make(
           details: details,
+          title: workspace.name,
           projectName: projects.first { $0.id == entry.projectId }?.name,
           branch: entry.branch,
+          worktreeName: nil,
           groupNamesProject: preferences.grouping == .project && underHeading
         )
         workspace.machine =

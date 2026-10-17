@@ -33,11 +33,10 @@ struct SidebarView: View {
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) var machineOrder: [String]
   @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) var projectOrder: [String]
-  @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
-  var rowDetails: [SidebarRowDetail]
   @State var dragGeometry = SidebarDragGeometryStore()
 
   var list: ProjectListModel { environment.projectList }
+  var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { drag != nil || groupDrag != nil }
 
   var isNewChatSelected: Bool {
@@ -137,10 +136,8 @@ struct SidebarView: View {
 
   private func rowDetailBinding(_ detail: SidebarRowDetail) -> Binding<Bool> {
     Binding(
-      get: { rowDetails.contains(detail) },
-      set: { isOn in
-        rowDetails = SidebarRowDetail.allCases.filter { $0 == detail ? isOn : rowDetails.contains($0) }
-      }
+      get: { ClientPreferences.shared.isSidebarRowDetailShown(detail) },
+      set: { ClientPreferences.shared.setSidebarRowDetail(detail, shown: $0) }
     )
   }
 
