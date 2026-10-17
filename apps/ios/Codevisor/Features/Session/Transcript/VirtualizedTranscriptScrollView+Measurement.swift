@@ -160,7 +160,11 @@ extension VirtualizedTranscriptScrollView {
       if !initialPositionApplied {
         applyPendingInitialPositionIfPossible()
       } else if let anchor = disclosureViewportAnchor {
-        setViewportTop(anchor.viewportTop)
+        if let row = anchor.row, let index = virtualLayout.indexByKey[row.key] {
+          setViewportTop(transcriptRowsOrigin + virtualLayout.frame(at: index).minY - row.viewportOffset)
+        } else {
+          setViewportTop(anchor.viewportTop)
+        }
       } else if let resolvedDistance = plan.resolvedDistanceFromBottom(
         newLayout: virtualLayout,
         previousLayout: previousLayout
@@ -177,6 +181,7 @@ extension VirtualizedTranscriptScrollView {
     }
     updateMountedRows(rangeOverride: initialRestoreRange)
     updateInitialPresentationReadiness()
+    updateCollapsibleEarlierHistory()
   }
 
   func runwayAdjustedLayout(_ layout: VirtualTranscriptLayout) -> VirtualTranscriptLayout {

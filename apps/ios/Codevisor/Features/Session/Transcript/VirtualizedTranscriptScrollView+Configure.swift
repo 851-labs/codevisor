@@ -50,6 +50,7 @@ extension VirtualizedTranscriptScrollView {
     if sessionController !== newSessionController {
       unregisterPresentationFrameDriver()
       sessionController = newSessionController
+      collapsibleEarlierHistorySection = nil
       historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
       deferredActivePlaceholderKey = nil
     }
@@ -58,6 +59,7 @@ extension VirtualizedTranscriptScrollView {
     markdownImageActions = callbacks.markdownImageActions
     self.onViewportChange = onViewportChange
     self.onBottomStateChange = onBottomStateChange
+    onEarlierHistoryCollapseChange = callbacks.onEarlierHistoryCollapseChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
     self.onOlderHistoryPresented = onOlderHistoryPresented

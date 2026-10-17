@@ -203,12 +203,13 @@ extension VirtualizedTranscriptScrollView {
     change()
   }
 
-  func beginDisclosureViewportAnchor() {
+  func beginDisclosureViewportAnchor(row: (key: String, viewportOffset: CGFloat)? = nil) {
     guard initialPositionApplied else { return }
     disclosureAnchorReleaseTask?.cancel()
     let anchor = TranscriptDisclosureViewportAnchor(
       id: UUID(),
-      viewportTop: contentView.bounds.minY
+      viewportTop: contentView.bounds.minY,
+      row: row
     )
     disclosureViewportAnchor = anchor
     disclosureAnchorReleaseTask = Task { @MainActor [weak self] in

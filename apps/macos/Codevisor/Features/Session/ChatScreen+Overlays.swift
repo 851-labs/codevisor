@@ -62,20 +62,56 @@ extension ChatScreen {
   var bottomChromeOverlay: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       ZStack(alignment: .bottom) {
-        if !isAtBottom {
-          scrollToBottomButton
-            .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
-            .glassEffectID(
-              ComposerGlassElement.scrollToBottom.rawValue,
-              in: composerGlassNamespace
-            )
-            .glassEffectTransition(.matchedGeometry)
+        if !isAtBottom || earlierHistoryCollapse != nil {
+          HStack(spacing: ComposerGlassStyle.clusterSpacing) {
+            if let earlierHistoryCollapse {
+              collapseStepsButton(earlierHistoryCollapse)
+                .glassEffectID(
+                  ComposerGlassElement.collapseSteps.rawValue,
+                  in: composerGlassNamespace
+                )
+                .glassEffectTransition(.matchedGeometry)
+            }
+            if !isAtBottom {
+              scrollToBottomButton
+                .glassEffectID(
+                  ComposerGlassElement.scrollToBottom.rawValue,
+                  in: composerGlassNamespace
+                )
+                .glassEffectTransition(.matchedGeometry)
+            }
+          }
+          .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
         }
         if !isReadOnly {
           composerOverlay
         }
       }
     }
+  }
+
+  func collapseStepsButton(_ collapse: TranscriptEarlierHistoryCollapse) -> some View {
+    Button {
+      collapse {
+        controller.disclosure.setExpanded(
+          collapse.section.kind.earlierHistoryDisclosureKey(messageID: collapse.section.messageID),
+          false
+        )
+      }
+    } label: {
+      Label {
+        Text("Collapse steps")
+          .font(.system(size: 12, weight: .medium))
+      } icon: {
+        Image(systemName: "arrow.down.and.line.horizontal.and.arrow.up")
+          .font(.system(size: 12, weight: .semibold))
+      }
+      .foregroundStyle(.secondary)
+    }
+    .buttonStyle(.glass)
+    .buttonBorderShape(.capsule)
+    .controlSize(.large)
+    .help("Collapse earlier steps")
   }
 
   var scrollToBottomButton: some View {

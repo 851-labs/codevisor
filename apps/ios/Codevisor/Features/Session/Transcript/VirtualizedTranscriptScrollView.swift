@@ -66,10 +66,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   struct DisclosureViewportAnchor {
     let id: UUID
     let viewportTop: CGFloat
+    var row: (key: String, viewportOffset: CGFloat)?
   }
 
   var disclosureViewportAnchor: DisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
+  var collapsibleEarlierHistorySection: TranscriptWorkedSectionIdentity?
 
   var pendingInitialState: SessionScrollState?
   var isAwaitingWarmProjection = false
@@ -111,6 +113,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
   var onViewportChange: ((SessionScrollState) -> Void)?
   var onBottomStateChange: ((Bool) -> Void)?
+  var onEarlierHistoryCollapseChange: ((TranscriptEarlierHistoryCollapse?) -> Void)?
   var onFollowStateChange: ((Bool) -> Void)?
   var onNearTop: (() -> Bool)?
   var onOlderHistoryPresented: ((UInt64) -> Void)?
@@ -301,6 +304,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     sendTransitions.advance()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
+    updateCollapsibleEarlierHistory()
   }
 
   var effectiveRowWidth: CGFloat {

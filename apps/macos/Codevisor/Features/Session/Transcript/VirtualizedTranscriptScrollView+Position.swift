@@ -220,6 +220,7 @@ extension VirtualizedTranscriptScrollView {
       onFollowStateChange?(true)
     }
     publishCurrentViewportGeometry()
+    updateCollapsibleEarlierHistory()
 
     if !isApplyingPosition, isHandlingUserInput || isLiveScrolling {
       lockedRestoreDistance = nil

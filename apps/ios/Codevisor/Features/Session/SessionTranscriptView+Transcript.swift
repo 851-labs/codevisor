@@ -134,6 +134,11 @@ extension SessionTranscriptView {
               await Task.yield()
               sendAnimationsStarted &+= 1
             }
+          },
+          onEarlierHistoryCollapseChange: { collapse in
+            DispatchQueue.main.async {
+              if earlierHistoryCollapse != collapse { earlierHistoryCollapse = collapse }
+            }
           }
         )
       )

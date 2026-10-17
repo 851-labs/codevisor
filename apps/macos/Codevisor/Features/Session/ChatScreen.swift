@@ -23,6 +23,7 @@ struct ChatScreen: View {
   let presentationSurface: TranscriptPresentationSurface
   let isReadOnly: Bool
   @State var isAtBottom: Bool
+  @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
   @State var composerHeight: CGFloat
   @State var isQueueExpanded: Bool
@@ -90,6 +91,7 @@ struct ChatScreen: View {
       .overlay { livePreviewPiPOverlay }
       .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
+      .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true

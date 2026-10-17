@@ -72,6 +72,7 @@ extension VirtualizedTranscriptScrollView {
       emitViewportSnapshot()
     }
     checkForHistoryPrefetch()
+    updateCollapsibleEarlierHistory()
   }
 
   func scrollViewDidEndDragging(

@@ -384,7 +384,7 @@ extension TranscriptWorkedSectionKind {
     }
   }
 
-  func earlierHistoryDisclosureKey(messageID: UUID) -> TranscriptDisclosureStore.Key {
+  public func earlierHistoryDisclosureKey(messageID: UUID) -> TranscriptDisclosureStore.Key {
     switch self {
     case .planning: .turnEarlierHistory(messageID)
     case .implementation: .turnImplementationEarlierHistory(messageID)

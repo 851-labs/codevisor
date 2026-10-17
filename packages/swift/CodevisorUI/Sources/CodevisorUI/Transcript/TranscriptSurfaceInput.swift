@@ -120,6 +120,7 @@ public struct TranscriptSurfaceCallbacks {
   public var openMarkdownLink: (@MainActor (URL) -> Bool)?
   public var markdownImageActions: MarkdownImageActions?
   public var onSendAnimationStarted: @MainActor (UserSendAnimationRequest) -> Void
+  public var onEarlierHistoryCollapseChange: @MainActor (TranscriptEarlierHistoryCollapse?) -> Void
 
   public init(
     claimSendAnimation: @escaping @MainActor (UserSendAnimationRequest) -> Bool,
@@ -133,7 +134,8 @@ public struct TranscriptSurfaceCallbacks {
     markdownImageLoader: MarkdownImageLoader? = nil,
     openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
     markdownImageActions: MarkdownImageActions? = nil,
-    onSendAnimationStarted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in }
+    onSendAnimationStarted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
+    onEarlierHistoryCollapseChange: @escaping @MainActor (TranscriptEarlierHistoryCollapse?) -> Void = { _ in }
   ) {
     self.claimSendAnimation = claimSendAnimation
     self.rowContent = rowContent
@@ -147,6 +149,7 @@ public struct TranscriptSurfaceCallbacks {
     self.openMarkdownLink = openMarkdownLink
     self.markdownImageActions = markdownImageActions
     self.onSendAnimationStarted = onSendAnimationStarted
+    self.onEarlierHistoryCollapseChange = onEarlierHistoryCollapseChange
   }
 }
 

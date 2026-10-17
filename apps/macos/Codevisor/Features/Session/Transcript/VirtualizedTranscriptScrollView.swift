@@ -88,6 +88,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var isAwaitingWarmProjection = false
   var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
+  var collapsibleEarlierHistorySection: TranscriptWorkedSectionIdentity?
 
   var pendingInitialState: SessionScrollState?
   var hasOlderHistory = false
@@ -121,6 +122,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
   var onViewportChange: ((SessionScrollState) -> Void)?
   var onBottomStateChange: ((Bool) -> Void)?
+  var onEarlierHistoryCollapseChange: ((TranscriptEarlierHistoryCollapse?) -> Void)?
   var onFollowStateChange: ((Bool) -> Void)?
   var onNearTop: (() -> Bool)?
   var onInitialPresentationReady: (() -> Void)?
@@ -309,6 +311,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
     }
     layoutMountedTextViewportsIfNeeded()
+    updateCollapsibleEarlierHistory()
   }
 
   override func scrollWheel(with event: NSEvent) {

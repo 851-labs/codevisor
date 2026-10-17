@@ -44,6 +44,7 @@ struct SessionTranscriptView: View {
   @State var composerAccessoryHeight: CGFloat = 0
   @State var followsLatest = true
   @State var isAtBottom = true
+  @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var availableHeight: CGFloat = 600
   @State var transcriptWindowBottom: CGFloat = 0
   @State var chatAreaWindowBottom: CGFloat = 0
@@ -452,21 +453,6 @@ extension SessionTranscriptView {
     let belowComposer = max(0, transcriptWindowBottom - chatAreaWindowBottom)
     return composerHeight + Self.composerBottomMargin + belowComposer
   }
-
-  var scrollToBottomButton: some View {
-    Button {
-      followsLatest = true
-      scrollCommand.token &+= 1
-    } label: {
-      Image(systemName: "arrow.down")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.secondary)
-    }
-    .buttonStyle(.glass)
-    .buttonBorderShape(.circle)
-    .controlSize(.large)
-    .accessibilityLabel("Scroll to bottom")
-  }
 }
 
 extension SessionTranscriptView {
@@ -475,33 +461,25 @@ extension SessionTranscriptView {
       composerCluster
         .frame(maxWidth: VirtualizedTranscriptScrollView.maxRowWidth)
         .overlay(alignment: .topTrailing) {
-          if showsScrollToBottom {
-            scrollToBottomButton
-              .offset(y: -52)
-              .glassEffectID(
-                ComposerGlassElement.scrollToBottom.rawValue,
-                in: composerGlassNamespace
-              )
-              .glassEffectTransition(.materialize)
-              .transition(.opacity)
+          GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+            transcriptScrollControls
           }
+          .offset(y: -52)
         }
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleEarlierHistoryCollapse)
     .padding(.horizontal, 10)
     .padding(.bottom, Self.composerBottomMargin)
   }
 
   var readOnlyScrollControl: some View {
-    GlassEffectContainer {
-      if showsScrollToBottom {
-        scrollToBottomButton
-          .glassEffectTransition(.materialize)
-          .transition(.opacity)
-      }
+    GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+      transcriptScrollControls
     }
     .frame(maxWidth: .infinity, alignment: .trailing)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleEarlierHistoryCollapse)
     .padding(.horizontal, 16)
     .padding(.bottom, Self.composerBottomMargin + 10)
   }

@@ -11,6 +11,7 @@ public enum ComposerGlassElement: String, Hashable {
   case queue
   case commandPalette
   case scrollToBottom
+  case collapseSteps
   case newChatConfiguration
 }
 

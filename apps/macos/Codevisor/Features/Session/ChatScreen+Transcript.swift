@@ -119,7 +119,12 @@ extension ChatScreen {
                   url, quickLook: quickLook, attachmentImages: attachmentImages,
                   openDocument: openFileDocument)
               },
-              markdownImageActions: transcriptImageActions
+              markdownImageActions: transcriptImageActions,
+              onEarlierHistoryCollapseChange: { collapse in
+                DispatchQueue.main.async {
+                  if earlierHistoryCollapse != collapse { earlierHistoryCollapse = collapse }
+                }
+              }
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,
             onInitialPresentationReady: {
