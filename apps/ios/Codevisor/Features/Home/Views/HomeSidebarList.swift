@@ -51,14 +51,14 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedIDs: [String]
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) private var machineOrder: [String]
   @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) private var projectOrder: [String]
-  @ClientPreference(SidebarRowDetail.preferenceKey, default: SidebarRowDetail.defaults)
-  private var rowDetails: [SidebarRowDetail]
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) private var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) private var listExpanded
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) private var archivedExpanded
   @ClientPreference(Self.expandedWorkspacesKey, default: []) private var expandedWorkspaceIDs: [String]
   @State private var archivedLimit = sidebarArchivedPageSize
   @State private var pendingSelection: UUID?
+
+  private var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
 
   private var preferences: HomeSidebarPreferences {
     HomeSidebarPreferences(

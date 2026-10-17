@@ -118,10 +118,12 @@ struct SidebarRowContent {
   func subtitle(for workspace: Workspace, isPinned: Bool) -> String? {
     SidebarRowSubtitle.make(
       details: rowDetails,
+      title: workspace.name,
       projectName: ProjectGroup.grouping(list.projects).first {
         $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
       }?.name,
       branch: store?.gitLookups.branch(for: workspace),
+      worktreeName: workspace.worktreeName,
       groupNamesProject: grouping == .project && isUnderGroupHeading(workspace, isPinned: isPinned)
     )
   }

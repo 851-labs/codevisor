@@ -62,8 +62,10 @@ struct HomeSidebarContentBuilder {
       anchorSessionId: item.routingChatIds.first { session($0, serverId: item.serverId) != nil },
       subtitle: SidebarRowSubtitle.make(
         details: details,
+        title: workspace.name,
         projectName: projectName,
         branch: gitLookups.branch(for: workspace),
+        worktreeName: workspace.worktreeName,
         groupNamesProject: preferences.grouping == .project && underHeading
       ),
       machine: details.contains(.machine) && !(preferences.grouping == .machine && underHeading)

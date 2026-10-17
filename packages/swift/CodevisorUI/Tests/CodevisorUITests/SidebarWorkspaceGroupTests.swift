@@ -84,13 +84,42 @@ struct SidebarWorkspaceGroupTests {
   @Test func subtitleDropsTheProjectAGroupHeadingAlreadyNames() {
     let details = SidebarRowDetail.defaults
     #expect(
-      SidebarRowSubtitle.make(details: details, projectName: "api", branch: "main", groupNamesProject: false)
+      SidebarRowSubtitle.make(
+        details: details, title: "Fix login", projectName: "api", branch: "main", worktreeName: nil,
+        groupNamesProject: false)
         == "api · main")
     #expect(
-      SidebarRowSubtitle.make(details: details, projectName: "api", branch: "main", groupNamesProject: true)
+      SidebarRowSubtitle.make(
+        details: details, title: "Fix login", projectName: "api", branch: "main", worktreeName: nil,
+        groupNamesProject: true)
         == "main")
     #expect(
-      SidebarRowSubtitle.make(details: [.machine], projectName: "api", branch: "main", groupNamesProject: false)
+      SidebarRowSubtitle.make(
+        details: [.machine], title: "Fix login", projectName: "api", branch: "main", worktreeName: nil,
+        groupNamesProject: false)
         == nil)
+    #expect(
+      SidebarRowSubtitle.make(
+        details: [.branch, .worktree], title: "Fix login", projectName: "api", branch: "main",
+        worktreeName: "emmer", groupNamesProject: false)
+        == "main · emmer")
+  }
+
+  @Test func subtitleDropsAWorktreeTheTitleAlreadyNames() {
+    #expect(
+      SidebarRowSubtitle.make(
+        details: [.branch, .worktree], title: "emmer", projectName: "api", branch: "codevisor/emmer",
+        worktreeName: "emmer", groupNamesProject: false)
+        == "codevisor/emmer")
+  }
+
+  @MainActor @Test func rowDetailsKeepTheLegacyListUntilEachDetailIsSetOnItsOwn() {
+    let preferences = ClientPreferences()
+    #expect(preferences.sidebarRowDetails == [.pullRequest, .machine, .project, .branch])
+    preferences.set([SidebarRowDetail.project], forKey: SidebarRowDetail.legacyPreferenceKey)
+    #expect(preferences.sidebarRowDetails == [.project])
+    preferences.setSidebarRowDetail(.project, shown: false)
+    preferences.setSidebarRowDetail(.worktree, shown: true)
+    #expect(preferences.sidebarRowDetails == [.worktree])
   }
 }
