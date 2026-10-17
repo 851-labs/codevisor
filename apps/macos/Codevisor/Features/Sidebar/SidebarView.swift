@@ -51,7 +51,24 @@ struct SidebarView: View {
   }
 
   private var sidebarContent: some View {
-    VStack(spacing: 0) {
+    ScrollViewReader { proxy in
+      ScrollView {
+        workspaceGroupList(workspaceGroups)
+      }
+      .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+      .contextMenu { sidebarOptionsMenu }
+      .onChange(of: selectedWorkspaceID) { previous, current in
+        if let previous { release(previous) }
+        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+      }
+      .onChange(of: selectedBotID) { previous, current in
+        if let previous { release(previous) }
+        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+      }
+    }
+    .scrollContentBackground(.hidden)
+    .scrollBounceBehavior(.basedOnSize)
+    .safeAreaBar(edge: .top, spacing: 0) {
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -68,26 +85,12 @@ struct SidebarView: View {
       }
       .padding(.horizontal, 10)
       .padding(.top, 8)
-
-      ScrollViewReader { proxy in
-        ScrollView {
-          workspaceGroupList(workspaceGroups)
-        }
-        .contextMenu { sidebarOptionsMenu }
-        .onChange(of: selectedWorkspaceID) { previous, current in
-          if let previous { release(previous) }
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
-        .onChange(of: selectedBotID) { previous, current in
-          if let previous { release(previous) }
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
+    }
+    .safeAreaBar(edge: .bottom, spacing: 0) {
+      VStack(spacing: 0) {
+        SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+        SidebarUpdateFooter(center: environment.updateCenter)
       }
-      .scrollContentBackground(.hidden)
-      .scrollBounceBehavior(.basedOnSize)
-
-      SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
-      SidebarUpdateFooter(center: environment.updateCenter)
     }
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
