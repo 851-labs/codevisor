@@ -10,7 +10,7 @@ struct SidebarWorkspaceHeader: View {
 
   @State private var isHovered = false
 
-  static let horizontalPadding: CGFloat = 10
+  static let horizontalPadding: CGFloat = 12
   static let topPadding: CGFloat = 12
   static let bottomPadding: CGFloat = 4
 

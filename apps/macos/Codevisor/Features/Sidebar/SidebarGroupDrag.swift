@@ -111,7 +111,7 @@ extension SidebarView {
             .lineLimit(1)
           Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .frame(width: frame.width, height: frame.height)
         .background {
           RoundedRectangle(cornerRadius: 6)

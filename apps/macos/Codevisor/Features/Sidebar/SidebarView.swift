@@ -66,7 +66,7 @@ struct SidebarView: View {
           selection = .newChat(nil)
         }
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 10)
       .padding(.top, 8)
 
       ScrollViewReader { proxy in
@@ -191,7 +191,7 @@ struct SidebarView: View {
       }
       archivedSection
     }
-    .padding(.horizontal, 8)
+    .padding(.horizontal, 10)
     .padding(.bottom, 8)
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
     .onChange(of: rest.map(\.id)) { _, ids in endGroupDrag(ifMissingFrom: ids) }

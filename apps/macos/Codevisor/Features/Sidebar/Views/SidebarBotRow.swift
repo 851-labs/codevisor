@@ -38,7 +38,7 @@ struct SidebarBotRow: View {
         .truncationMode(.middle)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 8)
+    .padding(.horizontal, 10)
     .padding(.vertical, 6)
     .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(Rectangle())

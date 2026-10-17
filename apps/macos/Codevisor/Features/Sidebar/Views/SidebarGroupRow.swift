@@ -51,7 +51,7 @@ struct SidebarGroupRow: View {
           .accessibilityHidden(true)
         }
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
       .foregroundStyle(.primary)
     }
