@@ -347,7 +347,7 @@ public struct BrowserPaneView: View {
   }
 
   private var displayAddress: String {
-    model.url.map(BrowserAddress.display) ?? "Search or enter website address"
+    model.url.map(BrowserLocation.display) ?? "Search or enter website address"
   }
 
   private var isEditingAddress: Bool { addressFocused || navigationAddressEditing }
@@ -392,7 +392,7 @@ public struct BrowserPaneView: View {
     var body: some View {
       HStack(spacing: 0) {
         ZStack {
-          Text(model.url.map(BrowserAddress.display) ?? "Search or enter website address")
+          Text(model.url.map(BrowserLocation.display) ?? "Search or enter website address")
             .font(.body.weight(.medium))
             .foregroundStyle(model.url == nil ? .secondary : .primary)
             .lineLimit(1)

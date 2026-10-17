@@ -18,7 +18,7 @@ struct BrowserNavigationTests {
   ])
   func shortenedAddressPreservesOrigin(input: String, expected: String) throws {
     let url = try #require(URL(string: input))
-    #expect(BrowserAddress.display(url) == expected)
+    #expect(BrowserLocation.display(url) == expected)
     #expect(url.absoluteString == input)
   }
 
