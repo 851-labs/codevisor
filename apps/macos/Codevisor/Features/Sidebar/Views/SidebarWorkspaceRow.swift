@@ -79,7 +79,7 @@ struct SidebarWorkspaceRow: View {
           hoverAction
         }
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }

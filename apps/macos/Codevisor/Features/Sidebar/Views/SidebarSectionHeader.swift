@@ -51,7 +51,7 @@ struct SidebarSectionHeader: View {
       .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
     .foregroundStyle(.secondary)
-    .padding(.horizontal, 10)
+    .padding(.horizontal, 12)
     .padding(.top, 12)
     .padding(.bottom, 4)
     .contentShape(Rectangle())

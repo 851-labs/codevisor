@@ -121,7 +121,7 @@ extension SidebarView {
         store: store
       )
       .padding(.vertical, 5)
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 10)
     }
   }
 }

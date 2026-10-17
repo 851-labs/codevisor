@@ -65,7 +65,7 @@ struct SidebarWorkspaceTabRow: View {
           .frame(width: 24, height: 14, alignment: .trailing)
         }
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
       .foregroundStyle(.primary)
