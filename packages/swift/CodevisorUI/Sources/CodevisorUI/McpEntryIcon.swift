@@ -1,10 +1,13 @@
-import CodevisorUI
 import SwiftUI
 
-struct McpEntryIcon: View {
-  let entry: McpFleetEntry
+public struct McpEntryIcon: View {
+  private let entry: McpFleetEntry
 
-  var body: some View {
+  public init(entry: McpFleetEntry) {
+    self.entry = entry
+  }
+
+  public var body: some View {
     if entry.kind == "codevisor" {
       Image("CodevisorMark")
         .resizable()
