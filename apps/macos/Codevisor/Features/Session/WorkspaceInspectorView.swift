@@ -41,7 +41,7 @@ struct WorkspaceInspectorView: View {
       ScrollViewReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
           WorkspaceInspectorTabBar(selection: $tab)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, WorkspaceInspectorTabBar.scrollMargin)
             .padding(.vertical, 8)
             .frame(minWidth: tabBarWidth)
         }

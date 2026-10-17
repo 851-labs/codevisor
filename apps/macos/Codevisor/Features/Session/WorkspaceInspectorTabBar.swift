@@ -10,6 +10,7 @@ struct WorkspaceInspectorTabBar: View {
   @GestureState private var isPressed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  static let scrollMargin: CGFloat = 12
   private static let space = "WorkspaceInspectorTabBar"
 
   var body: some View {
@@ -116,6 +117,14 @@ struct WorkspaceInspectorTabBar: View {
 extension View {
   @ViewBuilder
   fileprivate func scrollAnchor(_ tab: WorkspaceInspectorTab?) -> some View {
-    if let tab { id(tab) } else { self }
+    if let tab {
+      background {
+        Color.clear
+          .id(tab)
+          .padding(.horizontal, -WorkspaceInspectorTabBar.scrollMargin)
+      }
+    } else {
+      self
+    }
   }
 }
