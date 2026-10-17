@@ -10,37 +10,34 @@ struct SidebarUpdateFooter: View {
 
   var body: some View {
     if center.availableCount > 0 || center.isUpdatingAll {
-      VStack(spacing: 0) {
-        Hairline(color: .separatorColor)
-        Button {
-          SettingsRouter.shared.showUpdates()
-          if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }
-        } label: {
-          HStack(spacing: 6) {
-            if center.isUpdatingAll {
-              ProgressView()
-                .controlSize(.mini)
-              Text("Updating…")
-            } else {
-              Image(systemName: "arrow.down.circle")
-              Text(
-                center.availableCount == 1
-                  ? "1 update available"
-                  : "\(center.availableCount) updates available"
-              )
-            }
-            Spacer(minLength: 0)
+      Button {
+        SettingsRouter.shared.showUpdates()
+        if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }
+      } label: {
+        HStack(spacing: 6) {
+          if center.isUpdatingAll {
+            ProgressView()
+              .controlSize(.mini)
+            Text("Updating…")
+          } else {
+            Image(systemName: "arrow.down.circle")
+            Text(
+              center.availableCount == 1
+                ? "1 update available"
+                : "\(center.availableCount) updates available"
+            )
           }
-          .font(.callout)
-          .foregroundStyle(isHovered ? .primary : .secondary)
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .contentShape(Rectangle())
+          Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .accessibilityLabel("Updates available. Opens Settings › Updates.")
+        .font(.callout)
+        .foregroundStyle(isHovered ? .primary : .secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
+      .onHover { isHovered = $0 }
+      .accessibilityLabel("Updates available. Opens Settings › Updates.")
       .transition(.move(edge: .bottom).combined(with: .opacity))
     }
   }

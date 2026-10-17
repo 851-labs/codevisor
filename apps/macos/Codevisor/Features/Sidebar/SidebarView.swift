@@ -34,6 +34,7 @@ struct SidebarView: View {
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) var machineOrder: [String]
   @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) var projectOrder: [String]
   @State var dragGeometry = SidebarDragGeometryStore()
+  @State private var scrollFade = SidebarScrollFade()
 
   var list: ProjectListModel { environment.projectList }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
@@ -51,7 +52,26 @@ struct SidebarView: View {
   }
 
   private var sidebarContent: some View {
-    VStack(spacing: 0) {
+    ScrollViewReader { proxy in
+      ScrollView {
+        workspaceGroupList(workspaceGroups)
+      }
+      .contentMargins(.top, scrollFade.top)
+      .contentMargins(.bottom, scrollFade.bottom)
+      .mask { SidebarScrollFadeMask(fade: scrollFade) }
+      .contextMenu { sidebarOptionsMenu }
+      .onChange(of: selectedWorkspaceID) { previous, current in
+        if let previous { release(previous) }
+        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+      }
+      .onChange(of: selectedBotID) { previous, current in
+        if let previous { release(previous) }
+        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+      }
+    }
+    .scrollContentBackground(.hidden)
+    .scrollBounceBehavior(.basedOnSize)
+    .overlay(alignment: .top) {
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -68,26 +88,22 @@ struct SidebarView: View {
       }
       .padding(.horizontal, 10)
       .padding(.top, 8)
-
-      ScrollViewReader { proxy in
-        ScrollView {
-          workspaceGroupList(workspaceGroups)
-        }
-        .contextMenu { sidebarOptionsMenu }
-        .onChange(of: selectedWorkspaceID) { previous, current in
-          if let previous { release(previous) }
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
-        .onChange(of: selectedBotID) { previous, current in
-          if let previous { release(previous) }
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        scrollFade.top = $0
       }
-      .scrollContentBackground(.hidden)
-      .scrollBounceBehavior(.basedOnSize)
-
-      SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
-      SidebarUpdateFooter(center: environment.updateCenter)
+    }
+    .overlay(alignment: .bottom) {
+      VStack(spacing: 0) {
+        SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+        SidebarUpdateFooter(center: environment.updateCenter)
+      }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        scrollFade.bottom = $0
+      }
     }
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
