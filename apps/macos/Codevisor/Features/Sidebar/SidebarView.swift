@@ -34,7 +34,6 @@ struct SidebarView: View {
   @ClientPreference(SidebarPreferenceKey.machineOrder, default: []) var machineOrder: [String]
   @ClientPreference(SidebarPreferenceKey.projectOrder, default: []) var projectOrder: [String]
   @State var dragGeometry = SidebarDragGeometryStore()
-  @State private var scrollFade = SidebarScrollFade()
 
   var list: ProjectListModel { environment.projectList }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
@@ -56,9 +55,7 @@ struct SidebarView: View {
       ScrollView {
         workspaceGroupList(workspaceGroups)
       }
-      .contentMargins(.top, scrollFade.top)
-      .contentMargins(.bottom, scrollFade.bottom)
-      .mask { SidebarScrollFadeMask(fade: scrollFade) }
+      .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
       .contextMenu { sidebarOptionsMenu }
       .onChange(of: selectedWorkspaceID) { previous, current in
         if let previous { release(previous) }
@@ -71,7 +68,7 @@ struct SidebarView: View {
     }
     .scrollContentBackground(.hidden)
     .scrollBounceBehavior(.basedOnSize)
-    .overlay(alignment: .top) {
+    .safeAreaBar(edge: .top, spacing: 0) {
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -88,21 +85,11 @@ struct SidebarView: View {
       }
       .padding(.horizontal, 10)
       .padding(.top, 8)
-      .onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: {
-        scrollFade.top = $0
-      }
     }
-    .overlay(alignment: .bottom) {
+    .safeAreaBar(edge: .bottom, spacing: 0) {
       VStack(spacing: 0) {
         SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
         SidebarUpdateFooter(center: environment.updateCenter)
-      }
-      .onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: {
-        scrollFade.bottom = $0
       }
     }
     .coordinateSpace(.named(Self.reorderSpace))
