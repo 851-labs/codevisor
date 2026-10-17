@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkspaceInspectorTabBar: View {
   @Binding var selection: WorkspaceInspectorTab
+  var onTabFrames: (([WorkspaceInspectorTab: CGRect]) -> Void)?
 
   @State private var frames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var indicator = CGRect.zero
@@ -48,6 +49,7 @@ struct WorkspaceInspectorTabBar: View {
     .onKeyPress(.leftArrow) { step(-1) }
     .onKeyPress(.rightArrow) { step(1) }
     .onChange(of: selection) { _, tab in move(to: tab) }
+    .onChange(of: frames, initial: true) { _, frames in onTabFrames?(frames) }
     .accessibilityRepresentation {
       Picker("Inspector Section", selection: $selection) {
         ForEach(WorkspaceInspectorTab.allCases) { tab in
@@ -74,7 +76,6 @@ struct WorkspaceInspectorTabBar: View {
           .frame(width: highlighted ? frames[tab]?.width : nil, height: highlighted ? frames[tab]?.height : nil)
           .padding(.horizontal, highlighted ? 0 : 10)
           .padding(.vertical, highlighted ? 0 : 6.5)
-          .scrollAnchor(highlighted ? nil : tab)
           .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.space))
           } action: { frame in
@@ -110,21 +111,6 @@ struct WorkspaceInspectorTabBar: View {
       guard generation == moveGeneration else { return }
       if let settled = frames[selection], settled != indicator { indicator = settled }
       withAnimation(.easeOut(duration: 0.15)) { isMoving = false }
-    }
-  }
-}
-
-extension View {
-  @ViewBuilder
-  fileprivate func scrollAnchor(_ tab: WorkspaceInspectorTab?) -> some View {
-    if let tab {
-      background {
-        Color.clear
-          .id(tab)
-          .padding(.horizontal, -WorkspaceInspectorTabBar.scrollMargin)
-      }
-    } else {
-      self
     }
   }
 }
