@@ -1,13 +1,20 @@
+#if canImport(AppKit)
+  import AppKit
+#elseif canImport(UIKit)
+  import UIKit
+#endif
 import CodevisorCore
-import CodevisorUI
 import StreamMarkdown
 import SwiftUI
-import UIKit
 
-struct SessionSetupView: View {
-  let phases: [SessionSetupPhase]
+public struct SessionSetupView: View {
+  private let phases: [SessionSetupPhase]
 
-  var body: some View {
+  public init(phases: [SessionSetupPhase]) {
+    self.phases = phases
+  }
+
+  public var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       ForEach(phases) { phase in
         SessionSetupPhaseView(phase: phase)
@@ -53,16 +60,25 @@ private struct SessionSetupPhaseView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
               Image(systemName: "exclamationmark.triangle.fill")
                 .font(.callout)
-              SelectableTextView(
-                attributedText: NSAttributedString(
-                  string: message,
-                  attributes: [
-                    .font: UIFont.preferredFont(forTextStyle: .callout),
-                    .foregroundColor: UIColor(Color.red),
-                  ]
-                ),
-                fillsWidth: true
-              )
+              #if canImport(AppKit)
+                SelectableTextView(
+                  message,
+                  font: .preferredFont(forTextStyle: .callout),
+                  foregroundColor: .systemRed,
+                  fillsWidth: true
+                )
+              #elseif canImport(UIKit)
+                SelectableTextView(
+                  attributedText: NSAttributedString(
+                    string: message,
+                    attributes: [
+                      .font: UIFont.preferredFont(forTextStyle: .callout),
+                      .foregroundColor: UIColor(Color.red),
+                    ]
+                  ),
+                  fillsWidth: true
+                )
+              #endif
             }
             .foregroundStyle(.red)
           }
