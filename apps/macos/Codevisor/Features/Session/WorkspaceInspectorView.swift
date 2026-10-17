@@ -35,8 +35,9 @@ struct WorkspaceInspectorView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .scrollEdgeEffectStyle(.soft, for: .top)
     .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
-    .safeAreaInset(edge: .top, spacing: 0) {
+    .safeAreaBar(edge: .top, spacing: 0) {
       ScrollViewReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
           WorkspaceInspectorTabBar(selection: $tab)
