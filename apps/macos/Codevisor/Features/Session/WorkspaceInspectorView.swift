@@ -45,7 +45,7 @@ struct WorkspaceInspectorView: View {
             .padding(.vertical, 8)
             .frame(minWidth: tabBarWidth)
         }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollBounceBehavior(.always, axes: .horizontal)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.width
         } action: { width in
