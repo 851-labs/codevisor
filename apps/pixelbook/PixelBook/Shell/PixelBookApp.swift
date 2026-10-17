@@ -6,7 +6,7 @@ struct PixelBookApp: App {
     WindowGroup("PixelBook") {
       PixelBookRootView()
     }
-    .defaultSize(width: 1040, height: 720)
+    .defaultSize(width: WindowFrameGuard.defaultSize.width, height: WindowFrameGuard.defaultSize.height)
     .commands { PixelBookCommands() }
   }
 }
