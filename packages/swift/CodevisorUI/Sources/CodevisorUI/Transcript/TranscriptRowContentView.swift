@@ -30,7 +30,7 @@ public struct TranscriptRowLeaves {
       _ presentation: AssistantTurnPresentation
     ) -> AnyView
   public var userMessage: (_ message: UserMessage) -> AnyView
-  public var botMessage: (_ message: TranscriptBotMessage, _ isGroupTail: Bool) -> AnyView
+  public var botMessage: (_ message: TranscriptBotMessage) -> AnyView
   public var workedItem:
     (
       _ item: WorkedItem,
@@ -50,7 +50,7 @@ public struct TranscriptRowLeaves {
       @escaping (ConversationItem, Bool, String?, GoalActivity?, SessionController) -> AnyView,
     assistantTurn: @escaping (AssistantMessage, Bool, String?, AssistantTurnPresentation) -> AnyView,
     userMessage: @escaping (UserMessage) -> AnyView,
-    botMessage: @escaping (TranscriptBotMessage, Bool) -> AnyView,
+    botMessage: @escaping (TranscriptBotMessage) -> AnyView,
     workedItem:
       @escaping (WorkedItem, AssistantTurn, UUID, Bool, StreamingTextAnimationPresentation, Bool) -> AnyView,
     attachmentThumbnail: @escaping (PreviewFile) -> AnyView,
@@ -131,11 +131,11 @@ public struct TranscriptRowContentView: View {
       }
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
-    case let .botMessage(message, isGroupTail):
+    case let .botMessage(message, _):
       if message.sender == .notice {
         TranscriptBotNoticeRow(text: message.text)
       } else {
-        leaves.botMessage(message, isGroupTail)
+        leaves.botMessage(message)
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)

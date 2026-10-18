@@ -45,14 +45,13 @@ struct UserMessageView: View {
 
 struct BotMessageView: View {
   let message: TranscriptBotMessage
-  let showsCopyButton: Bool
 
   var body: some View {
     MessageBubbleView(
       side: .leading,
       text: message.text,
       attachments: message.attachments,
-      showsCopyButton: showsCopyButton
+      showsCopyButton: false
     ) {
       StreamingMarkdownView(message.text)
         .frame(maxWidth: Self.naturalWidth(of: message.text), alignment: .leading)
