@@ -125,40 +125,16 @@ extension SessionController {
     let availableIds = Set(capabilities.map(\.harness.id))
     if let intent = automaticSelectionIntent,
       let capability = capabilities.first(where: { $0.harness.id == intent.harnessId }),
-      canCarry(intent, to: capability)
+      intent.canCarry(to: capability)
     {
-      selectedHarnessId = intent.harnessId
-      var carried = intent.configValues
-      if let modelValue = intent.modelValue,
-        let model = Self.modelOption(in: capability.configOptions)
-      {
-        carried[model.id] = modelValue
-      }
-      pendingConfiguration.replaceValues(carried, for: intent.harnessId)
-      seedRememberedConfig()
-      automaticSelectionNeedsResolution = true
+      carrySelection(intent, to: capability)
       return
     }
 
     if let intent = automaticSelectionIntent {
       clearAutomaticSelection()
       if availableIds.contains(intent.harnessId), let modelValue = intent.modelValue {
-        selectedHarnessId = intent.harnessId
-        let destinationOptions =
-          capabilities.first { $0.harness.id == intent.harnessId }?.configOptions ?? []
-        pendingConfiguration.replaceValues(
-          intent.configValues.filter { configId, value in
-            guard let option = destinationOptions.first(where: { $0.id == configId }) else {
-              return false
-            }
-            return !Self.isModelOption(option) && option.options.contains { $0.value == value }
-          }, for: intent.harnessId)
-        markDraftModel(
-          modelValue,
-          name: intent.modelName ?? modelValue,
-          harnessId: intent.harnessId,
-          checking: true
-        )
+        stageUnavailableSelection(intent, modelValue: modelValue, capabilities: capabilities)
         return
       }
       pendingConfiguration.replaceValues(nil, for: intent.harnessId)
@@ -171,6 +147,35 @@ extension SessionController {
       return
     }
     applyDestinationMachineDefaults(availableHarnessIds: availableIds)
+  }
+
+  private func carrySelection(
+    _ intent: ComposerSelectionIntent,
+    to capability: ServerHarnessCapability
+  ) {
+    selectedHarnessId = intent.harnessId
+    let carried = intent.carriedConfigValues(to: capability)
+    pendingConfiguration.replaceValues(carried, for: intent.harnessId)
+    seedRememberedConfig()
+    automaticSelectionNeedsResolution = true
+  }
+
+  private func stageUnavailableSelection(
+    _ intent: ComposerSelectionIntent,
+    modelValue: String,
+    capabilities: [ServerHarnessCapability]
+  ) {
+    selectedHarnessId = intent.harnessId
+    let destinationOptions =
+      capabilities.first { $0.harness.id == intent.harnessId }?.configOptions ?? []
+    pendingConfiguration.replaceValues(
+      intent.compatibleConfigValues(in: destinationOptions), for: intent.harnessId)
+    markDraftModel(
+      modelValue,
+      name: intent.modelName ?? modelValue,
+      harnessId: intent.harnessId,
+      checking: true
+    )
   }
 
   func applyDestinationMachineDefaults(availableHarnessIds: Set<String>? = nil) {
@@ -187,15 +192,6 @@ extension SessionController {
   func clearAutomaticSelection() {
     automaticSelectionIntent = nil
     automaticSelectionNeedsResolution = false
-  }
-
-  private func canCarry(
-    _ intent: ComposerSelectionIntent,
-    to capability: ServerHarnessCapability
-  ) -> Bool {
-    guard let modelValue = intent.modelValue else { return true }
-    guard let model = Self.modelOption(in: capability.configOptions) else { return false }
-    return model.options.contains { $0.value == modelValue }
   }
 
   static func modelOption(in options: [SessionConfigOption]) -> SessionConfigOption? {
