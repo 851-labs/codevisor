@@ -111,4 +111,30 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     let suffix = name.dropFirst("Terminal".count)
     return suffix.isEmpty || (suffix.hasPrefix(" ") && Int(suffix.dropFirst()) != nil)
   }
+
+  public var terminalAgentStatus: AgentPaneStatus? {
+    guard kind == .terminal else { return nil }
+    switch terminalActivity {
+    case .working: return .working
+    case .done: return .unread
+    case .blocked: return .actionRequired
+    case .error: return .error
+    case .idle, nil: return nil
+    }
+  }
+}
+
+public enum TerminalActivity: String, Codable, Sendable {
+  case working
+  case idle
+  case done
+  case blocked
+  case error
+}
+
+public enum AgentPaneStatus: Sendable, Equatable {
+  case working
+  case unread
+  case actionRequired
+  case error
 }
