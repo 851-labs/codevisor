@@ -17,58 +17,42 @@ struct WorkspaceInspectorContextSection: View {
   var body: some View {
     if let context {
       Section("Context") {
-        WorkspaceInspectorContextBreakdown(context: context)
+        WorkspaceInspectorContextOverview(
+          used: context.totalTokens,
+          size: context.maxTokens,
+          segments: active(in: context).filter { !$0.isFreeSpace }.map { ($0.tint, $0.tokens) }
+        )
+        ForEach(active(in: context) + context.categories.filter { $0.isDeferred == true }, id: \.name) {
+          category in
+          WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
+        }
         if !context.mcpTools.isEmpty {
           WorkspaceInspectorContextTools(tools: context.mcpTools)
         }
       }
     } else if let used = usage?.used, let size = usage?.size, size > 0 {
       Section("Context") {
-        VStack(alignment: .leading, spacing: 10) {
-          WorkspaceInspectorContextSummary(used: Double(used), size: Double(size))
-          WorkspaceInspectorContextBar(segments: [], used: Double(used), size: Double(size))
-        }
-        .padding(.vertical, 4)
+        WorkspaceInspectorContextOverview(used: Double(used), size: Double(size), segments: [])
       }
     }
   }
-}
 
-private struct WorkspaceInspectorContextBreakdown: View {
-  let context: ServerSessionContext
-
-  private var active: [ServerSessionContext.Category] {
+  private func active(in context: ServerSessionContext) -> [ServerSessionContext.Category] {
     context.categories
       .filter { $0.isDeferred != true }
       .sorted { ($0.rank, -$0.tokens) < ($1.rank, -$1.tokens) }
   }
+}
 
-  private var deferred: [ServerSessionContext.Category] {
-    context.categories.filter { $0.isDeferred == true }
-  }
+private struct WorkspaceInspectorContextOverview: View {
+  let used: Double
+  let size: Double
+  let segments: [(Color, Double)]
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      WorkspaceInspectorContextSummary(used: context.totalTokens, size: context.maxTokens)
-      WorkspaceInspectorContextBar(
-        segments: active.filter { !$0.isFreeSpace }.map { ($0.tint, $0.tokens) },
-        used: context.totalTokens,
-        size: context.maxTokens
-      )
-      VStack(spacing: 6) {
-        ForEach(active, id: \.name) { category in
-          WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
-        }
-      }
-      .padding(.top, 2)
-      if !deferred.isEmpty {
-        VStack(spacing: 6) {
-          ForEach(deferred, id: \.name) { category in
-            WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
-          }
-        }
-        .padding(.top, 6)
-      }
+      WorkspaceInspectorContextSummary(used: used, size: size)
+      WorkspaceInspectorContextBar(segments: segments, used: used, size: size)
     }
     .padding(.vertical, 4)
   }
