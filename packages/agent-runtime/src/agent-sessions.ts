@@ -247,6 +247,30 @@ const walkCodexSessionFiles = async (
   }
 }
 
+const codexUserTitle = (payload: unknown): string | undefined => {
+  if (isRecord(payload) && payload.type === "user_message" && typeof payload.message === "string") {
+    return truncatedTitle(payload.message)
+  }
+  return undefined
+}
+
+const parseCodexSessionHead = (head: string): { meta: unknown; title: string | undefined } => {
+  let meta: unknown
+  let title: string | undefined
+  for (const line of head.split("\n")) {
+    const entry = parseJsonLine(line)
+    if (entry === undefined) continue
+    if (meta === undefined && entry.type === "session_meta") {
+      meta = entry.payload
+    }
+    if (title === undefined) {
+      title = codexUserTitle(entry.payload)
+    }
+    if (meta !== undefined && title !== undefined) break
+  }
+  return { meta, title }
+}
+
 export const listCodexAgentSessions = async (
   options: AgentSessionScanOptions = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
@@ -263,26 +287,7 @@ export const listCodexAgentSessions = async (
   for (const [index, candidate] of newest.entries()) {
     const head = heads[index]
     if (head === undefined) continue
-    let meta: unknown
-    let title: string | undefined
-    for (const line of head.split("\n")) {
-      const entry = parseJsonLine(line)
-      if (entry === undefined) continue
-      if (meta === undefined && entry.type === "session_meta") {
-        meta = entry.payload
-      }
-      if (title === undefined) {
-        const payload = entry.payload
-        if (
-          isRecord(payload) &&
-          payload.type === "user_message" &&
-          typeof payload.message === "string"
-        ) {
-          title = truncatedTitle(payload.message)
-        }
-      }
-      if (meta !== undefined && title !== undefined) break
-    }
+    const { meta, title } = parseCodexSessionHead(head)
     if (!isRecord(meta) || typeof meta.id !== "string" || typeof meta.cwd !== "string") continue
     if (!(await fs.directoryExists(meta.cwd))) continue
     sessions.push({
