@@ -40,6 +40,34 @@ export const loginScript = String.raw`
     }
     showError(failure.message);
   };
+  const resetCredentials = () => {
+    form.querySelectorAll("[aria-invalid]").forEach(input => input.removeAttribute("aria-invalid"));
+    password.value = "";
+    password.type = "password";
+    code.value = "";
+    el("show-password").textContent = "Show";
+    el("show-password").setAttribute("aria-label", "Show password");
+    el("show-password").setAttribute("aria-pressed", "false");
+  };
+  const configurePassword = (signingIn) => {
+    password.autocomplete = signingIn ? "current-password" : "new-password";
+    if (signingIn) {
+      password.removeAttribute("minlength");
+      password.removeAttribute("maxlength");
+      password.removeAttribute("aria-describedby");
+    } else {
+      password.minLength = 8;
+      password.maxLength = 128;
+      password.setAttribute("aria-describedby", "password-hint");
+    }
+  };
+  const configureBackNavigation = (verifying, resetting, needsCode) => {
+    const back = el("auth-back-link");
+    const backStep = verifying ? verificationOrigin : resetting ? "forgot-password" : "sign-in";
+    back.dataset.step = backStep;
+    back.textContent = needsCode ? "Use a different email" : "Back to sign in";
+    back.href = "/login?" + new URLSearchParams({ redirect, step: backStep });
+  };
   const render = (next, focus = true) => {
     step = next;
     const signingIn = step === "sign-in";
@@ -50,13 +78,7 @@ export const loginScript = String.raw`
     const needsEmail = signingIn || signingUp || step === "forgot-password";
     const needsPassword = signingIn || signingUp || resetting;
     const needsCode = verifying || resetting;
-    form.querySelectorAll("[aria-invalid]").forEach(input => input.removeAttribute("aria-invalid"));
-    password.value = "";
-    password.type = "password";
-    code.value = "";
-    el("show-password").textContent = "Show";
-    el("show-password").setAttribute("aria-label", "Show password");
-    el("show-password").setAttribute("aria-pressed", "false");
+    resetCredentials();
     el("auth-title").textContent = screens[step][0];
     document.title = screens[step][0] + " · " + root.dataset.instance;
     el("auth-subtitle").textContent = screens[step][1];
@@ -84,22 +106,9 @@ export const loginScript = String.raw`
     password.required = needsPassword;
     code.disabled = !needsCode;
     code.required = needsCode;
-    password.autocomplete = signingIn ? "current-password" : "new-password";
-    if (signingIn) {
-      password.removeAttribute("minlength");
-      password.removeAttribute("maxlength");
-      password.removeAttribute("aria-describedby");
-    } else {
-      password.minLength = 8;
-      password.maxLength = 128;
-      password.setAttribute("aria-describedby", "password-hint");
-    }
+    configurePassword(signingIn);
     el("password-label").textContent = resetting ? "New password" : "Password";
-    const back = el("auth-back-link");
-    const backStep = verifying ? verificationOrigin : resetting ? "forgot-password" : "sign-in";
-    back.dataset.step = backStep;
-    back.textContent = needsCode ? "Use a different email" : "Back to sign in";
-    back.href = "/login?" + new URLSearchParams({ redirect, step: backStep });
+    configureBackNavigation(verifying, resetting, needsCode);
     if (focus) el("auth-title").focus();
   };
   const navigate = (next, replace = false) => {
