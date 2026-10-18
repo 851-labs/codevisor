@@ -100,6 +100,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
+    let chatSessionId = focusedChatSessionId(in: workspace)
     return WorkspaceInspectorView(
       workspace: workspace,
       project: inspected.project,
@@ -114,6 +115,11 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       media: media,
       fileTree: fileTree,
       activeFilePath: activeDocumentPath(in: workspace),
+      chatSessionId: chatSessionId,
+      chatUsage: chatSessionId.flatMap {
+        store.controllers[SessionStore.SessionKey(serverId: workspace.serverId, sessionId: $0)]?.model?.usage
+      },
+      activity: activity(in: workspace),
       client: environment.machines.client(for: workspace.serverId),
       onReload: { Task { await reload(inspected) } },
       onOpen: { destination in
@@ -178,6 +184,17 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       pane.kind == .document
     else { return nil }
     return pane.documentPath
+  }
+
+  private func focusedChatSessionId(in workspace: Workspace) -> UUID? {
+    if let tab = workspace.selectedCenterTab,
+      let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
+      pane.kind == .chat,
+      let sessionId = pane.chatSessionId
+    {
+      return sessionId
+    }
+    return workspace.allPanes.first { $0.kind == .chat && $0.chatSessionId != nil }?.chatSessionId
   }
 
   private func activity(in workspace: Workspace) -> Date? {

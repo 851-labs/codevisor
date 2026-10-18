@@ -137,6 +137,7 @@ export const endpoints = [
   "POST /v1/sessions/wait",
   "GET /v1/sessions/:id",
   "GET /v1/sessions/:id/usage-limits",
+  "GET /v1/sessions/:id/context",
   "GET /v1/sessions/:id/branch-diff",
   "PATCH /v1/sessions/:id",
   "POST /v1/sessions/:id/read",

@@ -87,6 +87,7 @@ export const fakeAgentRuntime = (
   setGoal: unstubbedEffect("setGoal"),
   clearGoal: unstubbedEffect("clearGoal"),
   answerQuestion: unstubbedEffect("answerQuestion"),
+  readSessionContext: unstubbedEffect("readSessionContext"),
   probeHarnessAuth: unstubbedEffect("probeHarnessAuth"),
   authenticateHarness: unstubbedEffect("authenticateHarness"),
   logoutHarness: unstubbedEffect("logoutHarness"),

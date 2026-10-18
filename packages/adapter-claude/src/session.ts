@@ -48,6 +48,7 @@ export type ClaudeQuery = AsyncIterable<SDKMessage> &
   Pick<
     Query,
     | "applyFlagSettings"
+    | "getContextUsage"
     | "interrupt"
     | "setModel"
     | "setPermissionMode"

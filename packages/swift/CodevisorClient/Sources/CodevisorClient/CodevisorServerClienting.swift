@@ -171,6 +171,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func listSessions() async throws -> [ServerSession]
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
+  func sessionContext(id: UUID) async throws -> ServerSessionContext?
   func openSession(
     _ session: ChatSession,
     project: Project?,

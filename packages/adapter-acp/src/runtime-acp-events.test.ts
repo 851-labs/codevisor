@@ -309,6 +309,7 @@ describe("@codevisor/agent-runtime", () => {
     await expect(
       run(runtime.answerQuestion(sessionId, "q-1", { outcome: "cancelled" }))
     ).rejects.toThrow("Questions are not supported by this harness")
+    await expect(run(runtime.readSessionContext(sessionId))).resolves.toBeUndefined()
   })
 
   it("preserves optional question and goal methods through the generic ACP provider", async () => {

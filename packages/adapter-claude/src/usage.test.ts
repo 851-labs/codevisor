@@ -1,3 +1,4 @@
+import type { SDKControlGetContextUsageResponse } from "@anthropic-ai/claude-agent-sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -14,7 +15,7 @@ import {
   run,
   sdkMessage
 } from "./test-support.js"
-import { CLAUDE_OAUTH_USAGE_URL, claudeUsageLimitsFrom } from "./usage.js"
+import { CLAUDE_OAUTH_USAGE_URL, claudeSessionContextFrom, claudeUsageLimitsFrom } from "./usage.js"
 
 describe("Claude account usage", () => {
   it("normalizes the SDK's structured plan windows", () => {
@@ -120,9 +121,69 @@ describe("Claude account usage for token-only accounts", () => {
   })
 })
 
+const contextUsage = (
+  overrides: Partial<SDKControlGetContextUsageResponse>
+): SDKControlGetContextUsageResponse => ({
+  agents: [],
+  apiUsage: null,
+  categories: [],
+  gridRows: [],
+  isAutoCompactEnabled: true,
+  maxTokens: 1_000_000,
+  mcpTools: [],
+  memoryFiles: [],
+  model: "claude-opus-5-5",
+  percentage: 0,
+  rawMaxTokens: 1_000_000,
+  totalTokens: 0,
+  ...overrides
+})
+
 describe("ClaudeProvider", () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it("reads the live context breakdown by category", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
+    fake.push(initMessage("sdk-session-1", "claude-sonnet-4-6"))
+    const created = await createPromise
+    await expect(run(created.handle.readContext!)).rejects.toThrow(
+      "Claude context usage is unavailable"
+    )
+
+    fake.contextUsage = contextUsage({
+      categories: [
+        { color: "permission", name: "Messages", tokens: 219_800 },
+        { color: "inactive", isDeferred: true, name: "MCP tools (deferred)", tokens: 247_700 }
+      ],
+      mcpTools: [
+        { isLoaded: true, name: "mcp__linear__list_issues", serverName: "linear", tokens: 900 },
+        { name: "mcp__notion__search", serverName: "notion", tokens: 600 }
+      ],
+      totalTokens: 268_200
+    })
+
+    await expect(run(created.handle.readContext!)).resolves.toEqual({
+      categories: [
+        { color: "permission", name: "Messages", tokens: 219_800 },
+        { color: "inactive", isDeferred: true, name: "MCP tools (deferred)", tokens: 247_700 }
+      ],
+      maxTokens: 1_000_000,
+      mcpTools: [
+        { isLoaded: true, name: "mcp__linear__list_issues", serverName: "linear", tokens: 900 },
+        { name: "mcp__notion__search", serverName: "notion", tokens: 600 }
+      ],
+      model: "claude-opus-5-5",
+      totalTokens: 268_200
+    })
+  })
+
+  it("leaves out an empty context model", () => {
+    const context = claudeSessionContextFrom(contextUsage({ maxTokens: 200_000, model: "" }))
+    expect(context).toEqual({ categories: [], maxTokens: 200_000, mcpTools: [], totalTokens: 0 })
   })
 
   it("reports context occupancy from the latest top-level Claude request", async () => {

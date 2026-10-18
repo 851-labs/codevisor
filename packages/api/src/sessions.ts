@@ -57,6 +57,31 @@ export const HarnessUsageLimits = Schema.Struct({
 })
 export type HarnessUsageLimits = typeof HarnessUsageLimits.Type
 
+export const SessionContextCategory = Schema.Struct({
+  name: Schema.String,
+  tokens: Schema.Number,
+  color: Schema.optional(Schema.String),
+  isDeferred: Schema.optional(Schema.Boolean)
+})
+export type SessionContextCategory = typeof SessionContextCategory.Type
+
+export const SessionContextTool = Schema.Struct({
+  name: Schema.String,
+  serverName: Schema.String,
+  tokens: Schema.Number,
+  isLoaded: Schema.optional(Schema.Boolean)
+})
+export type SessionContextTool = typeof SessionContextTool.Type
+
+export const SessionContext = Schema.Struct({
+  model: Schema.optional(Schema.String),
+  totalTokens: Schema.Number,
+  maxTokens: Schema.Number,
+  categories: Schema.Array(SessionContextCategory),
+  mcpTools: Schema.Array(SessionContextTool)
+})
+export type SessionContext = typeof SessionContext.Type
+
 export const BranchDiffTotals = Schema.Struct({
   added: Schema.Number,
   removed: Schema.Number

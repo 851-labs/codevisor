@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorClient
 import CodevisorCore
 import CodevisorUI
@@ -20,6 +21,9 @@ struct WorkspaceInspectorView: View {
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
   let activeFilePath: String?
+  let chatSessionId: UUID?
+  let chatUsage: SessionUsage?
+  let activity: Date?
   let client: any CodevisorServerClienting
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -36,6 +40,7 @@ struct WorkspaceInspectorView: View {
   @State private var tabViewport = TabViewport()
   @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
+  @State private var chatContext: (sessionId: UUID, context: ServerSessionContext)?
 
   var body: some View {
     ZStack {
@@ -153,8 +158,24 @@ struct WorkspaceInspectorView: View {
       if let usageChat, let limits = usage.limits(for: usageChat) {
         WorkspaceInspectorUsageSection(limits: limits)
       }
+
+      if let chatSessionId {
+        WorkspaceInspectorContextSection(
+          context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage)
+      }
     }
     .formStyle(.grouped)
+    .task(
+      id: chatSessionId.map {
+        WorkspaceInspectorContextSection.LoadKey(sessionId: $0, usage: chatUsage, activity: activity)
+      }
+    ) {
+      guard let chatSessionId,
+        let context = try? await client.sessionContext(id: chatSessionId),
+        !Task.isCancelled
+      else { return }
+      chatContext = (chatSessionId, context)
+    }
   }
 
   private func row(_ destination: Destination, @ViewBuilder label: () -> some View) -> some View {
