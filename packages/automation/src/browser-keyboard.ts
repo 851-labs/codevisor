@@ -3,8 +3,20 @@ import { browserKeyDescription } from "./browser-key-description.js"
 
 export { browserKeyDescription } from "./browser-key-description.js"
 
-export const modifierKeyMask = (key: string): number =>
-  key === "Alt" ? 1 : key === "Control" ? 2 : key === "Meta" ? 4 : key === "Shift" ? 8 : 0
+export const modifierKeyMask = (key: string): number => {
+  switch (key) {
+    case "Alt":
+      return 1
+    case "Control":
+      return 2
+    case "Meta":
+      return 4
+    case "Shift":
+      return 8
+    default:
+      return 0
+  }
+}
 
 export const heldKeyDescription = (
   value: string,
@@ -25,6 +37,16 @@ export const heldKeyDescription = (
   }
 }
 
+const keyEventParameters = (
+  type: "keyDown" | "keyUp",
+  rest: Omit<ReturnType<typeof browserKeyDescription>, "text">,
+  text: string | undefined
+): Record<string, unknown> => {
+  if (type === "keyUp") return { type: "keyUp", ...rest }
+  if (text === undefined) return { type: "rawKeyDown", ...rest }
+  return { type: "keyDown", ...rest, text }
+}
+
 export const dispatchKeyEvent = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -34,11 +56,7 @@ export const dispatchKeyEvent = async (
   const { text, ...rest } = key
   await runtime.connection.send(
     "Input.dispatchKeyEvent",
-    type === "keyUp"
-      ? { type: "keyUp", ...rest }
-      : text === undefined
-        ? { type: "rawKeyDown", ...rest }
-        : { type: "keyDown", ...rest, text },
+    keyEventParameters(type, rest, text),
     page.sessionId
   )
 }
