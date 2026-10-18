@@ -62,6 +62,30 @@ function swiftStatus(result) {
   return result.status ?? 1
 }
 
+function testBundlePaths(packagePath, products) {
+  return JSON.parse(
+    execFileSync("swift", ["package", "dump-package", "--package-path", packagePath], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024
+    })
+  )
+    .targets.filter((target) => target.type === "test")
+    .map(({ name }) => join(products, `${name}.xctest/Contents/MacOS/${name}`))
+}
+
+function testBundleEnvironment(products) {
+  const platform = join(
+    execFileSync("xcode-select", ["-p"], { encoding: "utf8" }).trim(),
+    "Platforms/MacOSX.platform/Developer"
+  )
+  return {
+    ...process.env,
+    DYLD_FRAMEWORK_PATH: `${platform}/Library/Frameworks:${platform}/Library/PrivateFrameworks`,
+    DYLD_LIBRARY_PATH: `${products}:${platform}/usr/lib`
+  }
+}
+
 export async function runTestBundles(packagePath, selection, run = spawnSync) {
   const fallback = () =>
     swiftStatus(
@@ -75,25 +99,9 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
   )
   const helper = join(toolchain, "libexec/swift/pm/swiftpm-testing-helper")
   const products = join(repoRoot, packagePath, ".build/out/Products/Debug")
-  const bundles = JSON.parse(
-    execFileSync("swift", ["package", "dump-package", "--package-path", packagePath], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024
-    })
-  )
-    .targets.filter((target) => target.type === "test")
-    .map(({ name }) => join(products, `${name}.xctest/Contents/MacOS/${name}`))
+  const bundles = testBundlePaths(packagePath, products)
   if (!existsSync(helper) || !bundles.every((bundle) => existsSync(bundle))) return fallback()
-  const platform = join(
-    execFileSync("xcode-select", ["-p"], { encoding: "utf8" }).trim(),
-    "Platforms/MacOSX.platform/Developer"
-  )
-  const environment = {
-    ...process.env,
-    DYLD_FRAMEWORK_PATH: `${platform}/Library/Frameworks:${platform}/Library/PrivateFrameworks`,
-    DYLD_LIBRARY_PATH: `${products}:${platform}/usr/lib`
-  }
+  const environment = testBundleEnvironment(products)
   const pending = [...bundles]
   let status = 0
   const worker = async () => {
@@ -114,7 +122,9 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
       )
       process.stdout.write(result.output)
       if (result.code !== 0 || !/Test run with \d+ tests?/.test(result.output)) {
-        console.error(`swift:test: ${bundle} failed or did not run (exit ${result.code})`)
+        console.error(
+          `swift:test: ${bundle} failed or did not run (exit ${result.code}${result.signal ? `, signal ${result.signal}` : ""})`
+        )
         status = 1
       }
     }
@@ -132,7 +142,7 @@ function runBundle(helper, bundle, args, env) {
     child.stdout.on("data", (chunk) => (output += chunk))
     child.stderr.on("data", (chunk) => (output += chunk))
     child.once("error", (error) => resolveBundle({ code: 1, output: `${error.message}\n` }))
-    child.once("close", (code) => resolveBundle({ code, output }))
+    child.once("close", (code, signal) => resolveBundle({ code, output, signal }))
   })
 }
 
