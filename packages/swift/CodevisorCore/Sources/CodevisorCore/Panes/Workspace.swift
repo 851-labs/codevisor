@@ -237,4 +237,191 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var hasRealPanes: Bool {
     allPanes.contains { !$0.kind.isDeviceLocal }
   }
+
+  public mutating func pruneClosedCenterTab(_ tabId: UUID) {
+    guard let index = centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
+    let oldLeaves = centerTabs[index].root.allGroups.map(\.id)
+    let oldActiveLeaf = centerTabs[index].activeLeafId
+    if let root = centerTabs[index].root.prunedEmptyGroups {
+      centerTabs[index].root = root
+      if root.group(id: oldActiveLeaf) == nil {
+        let survivors = root.allGroups.map(\.id)
+        let oldIndex = oldLeaves.firstIndex(of: oldActiveLeaf) ?? 0
+        centerTabs[index].activeLeafId = survivors[min(oldIndex, survivors.count - 1)]
+      }
+    } else {
+      centerTabs.remove(at: index)
+    }
+    if centerTabs.isEmpty {
+      let replacement = WorkspaceTab.placeholder()
+      centerTabs = [replacement]
+      selectedCenterTabId = replacement.id
+    } else if !centerTabs.contains(where: { $0.id == selectedCenterTabId }) {
+      selectedCenterTabId = Self.replacementTab(afterRemovingAt: index, from: centerTabs).id
+    }
+  }
+
+  mutating func selectReplacementForClosedTab(_ closedTabId: UUID, previousTabs: [WorkspaceTab]) {
+    guard !centerTabs.isEmpty, !centerTabs.contains(where: { $0.id == closedTabId }),
+      let oldIndex = previousTabs.firstIndex(where: { $0.id == closedTabId })
+    else { return }
+    let tabs = centerTabs
+    let index =
+      previousTabs[(oldIndex + 1)...].lazy
+      .compactMap { next in tabs.firstIndex(where: { $0.id == next.id }) }
+      .first ?? tabs.count
+    selectedCenterTabId = Self.replacementTab(afterRemovingAt: index, from: tabs).id
+  }
+
+  static func replacementTab(
+    afterRemovingAt index: Int, from tabs: [WorkspaceTab]
+  ) -> WorkspaceTab {
+    index > 0 ? tabs[index - 1] : tabs[0]
+  }
+
+  public func selectionRoute(
+    activatedChatSessionId: UUID?,
+    routingSessionId: UUID?,
+    selectionAlreadyRoutesWorkspace: Bool
+  ) -> WorkspaceSelectionRoute? {
+    if let activatedChatSessionId {
+      return .session(serverId: serverId, id: activatedChatSessionId)
+    }
+    if selectionAlreadyRoutesWorkspace { return nil }
+    if let routingSessionId {
+      return .session(serverId: serverId, id: routingSessionId)
+    }
+    return .workspace(serverId: serverId, id: id)
+  }
+
+  @discardableResult
+  public mutating func selectDestination(_ destination: WorkspaceDestination) -> Bool {
+    let tabIndex: Int
+    let leafId: UUID
+    switch destination {
+    case let .tab(id):
+      guard let index = centerTabs.firstIndex(where: { $0.id == id }),
+        let active = centerTabs[index].resolvedActiveLeafId(preferred: nil)
+      else { return false }
+      tabIndex = index
+      leafId = active
+    case let .leaf(id):
+      guard let index = centerTabs.firstIndex(where: { $0.root.group(id: id) != nil }) else {
+        return false
+      }
+      tabIndex = index
+      leafId = id
+    case let .chat(id):
+      guard let index = centerTabs.firstIndex(where: { $0.root.groupId(containingChat: id) != nil }),
+        let leaf = centerTabs[index].root.groupId(containingChat: id)
+      else { return false }
+      tabIndex = index
+      leafId = leaf
+      centerTabs[index].root = centerTabs[index].root.updatingGroup(id: leaf) { state in
+        var state = state
+        if let pane = state.panes.first(where: { $0.kind == .chat && $0.chatSessionId == id }) {
+          state.selectPane(id: pane.id)
+        }
+        return state
+      }
+    case let .pane(id):
+      guard
+        let index = centerTabs.firstIndex(where: { tab in
+          tab.root.allGroups.contains { $0.state.panes.contains { $0.id == id } }
+        }),
+        let leaf = centerTabs[index].root.allGroups.first(where: {
+          $0.state.panes.contains { $0.id == id }
+        })
+      else { return false }
+      tabIndex = index
+      leafId = leaf.id
+      centerTabs[index].root = centerTabs[index].root.updatingGroup(id: leaf.id) { state in
+        var state = state
+        state.selectPane(id: id)
+        return state
+      }
+    }
+    centerTabs[tabIndex].activeLeafId = leafId
+    selectedCenterTabId = centerTabs[tabIndex].id
+    return true
+  }
+
+  public mutating func insertBrowserPane(
+    _ pane: PaneDescriptorState, from sourcePaneId: UUID, destination: BrowserLinkDestination
+  ) -> (tabId: UUID, leafId: UUID)? {
+    guard pane.kind == .browser else { return nil }
+    return insertPane(pane, besidePane: sourcePaneId, destination: destination)
+  }
+
+  public mutating func insertPane(
+    _ pane: PaneDescriptorState, besidePane sourcePaneId: UUID, destination: BrowserLinkDestination
+  ) -> (tabId: UUID, leafId: UUID)? {
+    guard let index = centerTabs.firstIndex(where: { $0.root.groupId(containingPane: sourcePaneId) != nil }),
+      let sourceLeaf = centerTabs[index].root.groupId(containingPane: sourcePaneId),
+      !centerTabs.contains(where: { $0.root.groupId(containingPane: pane.id) != nil })
+    else { return nil }
+    let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id)
+    if case let .split(edge) = destination {
+      let leafId = UUID()
+      centerTabs[index].root = centerTabs[index].root.splitting(
+        groupId: sourceLeaf, edge: edge, newGroupId: leafId, newGroupState: state)
+      centerTabs[index].activeLeafId = leafId
+      return (centerTabs[index].id, leafId)
+    }
+    let tab = WorkspaceTab(root: .leaf(state))
+    centerTabs.insert(tab, at: index + 1)
+    return (tab.id, tab.activeLeafId)
+  }
+
+  @discardableResult
+  public mutating func pruneOrphanedSubagentPanes() -> [PaneDescriptorState] {
+    let chats = Set(chatSessionIds)
+    let orphans = allPanes.filter { pane in
+      pane.kind == .subagent && !(pane.ownerChatSessionId.map(chats.contains) ?? false)
+    }
+    guard !orphans.isEmpty else { return [] }
+    for orphan in orphans {
+      WorkspaceSyncModel.removePane(id: orphan.id, from: &self)
+    }
+    WorkspaceSyncModel.pruneEmptyCenterTabs(in: &self)
+    WorkspaceSyncModel.ensureUsableLayout(&self)
+    return orphans
+  }
+
+  public mutating func replacePane(
+    id: UUID, with pane: PaneDescriptorState
+  ) -> (tabId: UUID, leafId: UUID)? {
+    guard !centerTabs.contains(where: { $0.root.groupId(containingPane: pane.id) != nil }),
+      let index = centerTabs.firstIndex(where: { $0.root.groupId(containingPane: id) != nil }),
+      let leafId = centerTabs[index].root.groupId(containingPane: id)
+    else { return nil }
+    centerTabs[index].root = centerTabs[index].root.updatingGroup(id: leafId) { state in
+      var state = state
+      guard let position = state.panes.firstIndex(where: { $0.id == id }) else { return state }
+      state.panes[position] = pane
+      state.selectedPaneId = pane.id
+      return state
+    }
+    centerTabs[index].activeLeafId = leafId
+    return (centerTabs[index].id, leafId)
+  }
+}
+
+public enum WorkspaceDestination: Hashable, Sendable {
+  case tab(UUID)
+  case leaf(UUID)
+  case chat(UUID)
+  case pane(UUID)
+}
+
+public enum WorkspaceSelectionRoute: Hashable, Sendable {
+  case session(serverId: String, id: UUID)
+  case workspace(serverId: String, id: UUID)
+}
+
+public enum BrowserLinkDestination: Equatable, Sendable {
+  case backgroundTab
+  case foregroundTab
+  case window
+  case split(SplitEdge)
 }
