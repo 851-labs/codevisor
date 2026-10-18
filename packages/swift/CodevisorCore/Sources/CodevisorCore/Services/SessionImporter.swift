@@ -9,6 +9,20 @@ public struct ImportedSession: Sendable, Equatable {
     self.harnessId = harnessId
     self.info = info
   }
+
+  @MainActor
+  func chatSession(projectId: UUID, serverId: String, timestamp: Date?) -> ChatSession {
+    ChatSession(
+      projectId: projectId,
+      serverId: serverId,
+      harnessId: harnessId,
+      agentSessionId: info.sessionId,
+      title: info.title ?? "Session",
+      origin: .imported,
+      createdAt: timestamp ?? Date(),
+      updatedAt: timestamp
+    )
+  }
 }
 
 public struct SessionImporter: Sendable {
