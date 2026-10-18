@@ -124,7 +124,7 @@ struct WorkspaceInspectorView: View {
         }
       }
 
-      Section("Details") {
+      Section {
         LabeledContent("Project", value: project.name)
         if let branch {
           LabeledContent("Branch", value: branch)
@@ -136,11 +136,12 @@ struct WorkspaceInspectorView: View {
           LabeledContent("Machine", value: machineName)
         }
         LabeledContent("Created", value: workspace.createdAt, format: .relative(presentation: .named))
-      }
-
-      if showsBotTranscript {
-        Section {
+      } header: {
+        Text("Details")
+      } footer: {
+        if showsBotTranscript {
           Button("Show Full Transcript") { onOpen(.botTranscript) }
+            .foregroundStyle(.primary)
             .help("Show everything the bot did, including its tool calls and the messages it received")
             .accessibilityIdentifier("bot.showFullTranscript")
         }
