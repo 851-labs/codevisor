@@ -147,18 +147,18 @@ enum TranscriptMarkdownChunkProjection {
     }
 
     for (ordinal, block) in blocks.enumerated() {
-      if isTextBlock(block) {
+      if TranscriptMarkdownStructuralFragments.isTextBlock(block) {
         if shouldStartNewTextChunk(existing: textBlocks, appending: block) {
           flushTextBlocks()
         }
         if textBlocks.isEmpty { textStart = ordinal }
         textBlocks.append(block)
       } else if case let .blockQuote(quotedBlocks) = block,
-        requiresStructuralFragmentation(quotedBlocks)
+        TranscriptMarkdownStructuralFragments.requiresFragmentation(quotedBlocks)
       {
         flushTextBlocks()
         chunks.append(
-          contentsOf: structuralFragments(
+          contentsOf: TranscriptMarkdownStructuralFragments.chunks(
             from: quotedBlocks,
             ordinal: ordinal,
             quoteDepth: 1,
@@ -166,11 +166,11 @@ enum TranscriptMarkdownChunkProjection {
           )
         )
       } else if case let .list(list) = block,
-        requiresStructuralFragmentation(list.items.flatMap(\.blocks))
+        TranscriptMarkdownStructuralFragments.requiresFragmentation(list.items.flatMap(\.blocks))
       {
         flushTextBlocks()
         chunks.append(
-          contentsOf: structuralFragments(
+          contentsOf: TranscriptMarkdownStructuralFragments.chunks(
             from: [block],
             ordinal: ordinal,
             quoteDepth: 0,
@@ -242,214 +242,4 @@ enum TranscriptMarkdownChunkProjection {
     return nextHeight > maximumEstimatedTextChunkHeight
   }
 
-  private struct FragmentDraft {
-    let path: String
-    var blocks: [MarkdownBlock]
-    let quoteDepth: Int
-    let listDepth: Int
-    var listMarkers: [MarkdownFragmentLayout.ListMarker]
-    let listItemPath: [String]
-  }
-
-  private static func structuralFragments(
-    from blocks: [MarkdownBlock],
-    ordinal: Int,
-    quoteDepth: Int,
-    path: String
-  ) -> [Chunk] {
-    var drafts: [FragmentDraft] = []
-    append(
-      blocks,
-      quoteDepth: quoteDepth,
-      listItemPath: [],
-      path: path,
-      to: &drafts
-    )
-    let grouped = groupAdjacentTextDrafts(drafts)
-    return grouped.enumerated().map { index, draft in
-      let spacing = trailingSpacing(
-        after: index,
-        in: grouped
-      )
-      return Chunk(
-        firstOrdinal: ordinal,
-        blocks: draft.blocks,
-        fragment: MarkdownFragmentLayout(
-          identity: draft.path,
-          quoteDepth: draft.quoteDepth,
-          listDepth: draft.listDepth,
-          listMarkers: draft.listMarkers,
-          trailingSpacing: spacing,
-          isFirstInSourceBlock: index == 0,
-          isLastInSourceBlock: index == grouped.count - 1
-        )
-      )
-    }
-  }
-
-  private static func append(
-    _ blocks: [MarkdownBlock],
-    quoteDepth: Int,
-    listItemPath: [String],
-    path: String,
-    to drafts: inout [FragmentDraft]
-  ) {
-    for (index, block) in blocks.enumerated() {
-      append(
-        block,
-        quoteDepth: quoteDepth,
-        listItemPath: listItemPath,
-        path: "\(path).b\(index)",
-        to: &drafts
-      )
-    }
-  }
-
-  private static func append(
-    _ block: MarkdownBlock,
-    quoteDepth: Int,
-    listItemPath: [String],
-    path: String,
-    to drafts: inout [FragmentDraft]
-  ) {
-    switch block {
-    case let .blockQuote(blocks) where requiresStructuralFragmentation(blocks):
-      append(
-        blocks,
-        quoteDepth: quoteDepth + 1,
-        listItemPath: listItemPath,
-        path: "\(path).q",
-        to: &drafts
-      )
-
-    case let .list(list) where requiresStructuralFragmentation(list.items.flatMap(\.blocks)):
-      append(
-        list,
-        quoteDepth: quoteDepth,
-        listItemPath: listItemPath,
-        path: "\(path).l",
-        to: &drafts
-      )
-
-    default:
-      drafts.append(
-        FragmentDraft(
-          path: path,
-          blocks: [block],
-          quoteDepth: quoteDepth,
-          listDepth: listItemPath.count,
-          listMarkers: [],
-          listItemPath: listItemPath
-        )
-      )
-    }
-  }
-
-  private static func append(
-    _ list: MarkdownList,
-    quoteDepth: Int,
-    listItemPath: [String],
-    path: String,
-    to drafts: inout [FragmentDraft]
-  ) {
-    for (index, item) in list.items.enumerated() {
-      let itemComponent = "\(path).i\(index)"
-      let nestedItemPath = listItemPath + [itemComponent]
-      let firstDraft = drafts.count
-      append(
-        item.blocks,
-        quoteDepth: quoteDepth,
-        listItemPath: nestedItemPath,
-        path: itemComponent,
-        to: &drafts
-      )
-      if firstDraft == drafts.count {
-        drafts.append(
-          FragmentDraft(
-            path: "\(itemComponent).empty",
-            blocks: [.paragraph(MarkdownText(""))],
-            quoteDepth: quoteDepth,
-            listDepth: nestedItemPath.count,
-            listMarkers: [],
-            listItemPath: nestedItemPath
-          )
-        )
-      }
-      drafts[firstDraft].listMarkers.append(
-        MarkdownFragmentLayout.ListMarker(
-          depth: nestedItemPath.count,
-          text: list.marker(for: item, at: index, depth: nestedItemPath.count - 1)
-        )
-      )
-      drafts[firstDraft].listMarkers.sort { $0.depth < $1.depth }
-    }
-  }
-
-  private static func groupAdjacentTextDrafts(
-    _ drafts: [FragmentDraft]
-  ) -> [FragmentDraft] {
-    var result: [FragmentDraft] = []
-    for draft in drafts {
-      if var previous = result.last,
-        previous.blocks.count + draft.blocks.count <= maximumTextBlocksPerChunk,
-        estimatedHeight(for: previous.blocks + draft.blocks)
-          <= maximumEstimatedTextChunkHeight,
-        previous.blocks.allSatisfy(isTextBlock),
-        draft.blocks.allSatisfy(isTextBlock),
-        draft.listMarkers.isEmpty,
-        previous.quoteDepth == draft.quoteDepth,
-        previous.listDepth == draft.listDepth,
-        previous.listItemPath == draft.listItemPath
-      {
-        previous.blocks.append(contentsOf: draft.blocks)
-        result[result.count - 1] = previous
-      } else {
-        result.append(draft)
-      }
-    }
-    return result
-  }
-
-  private static func trailingSpacing(
-    after index: Int,
-    in drafts: [FragmentDraft]
-  ) -> MarkdownFragmentLayout.TrailingSpacing {
-    guard drafts.indices.contains(index + 1) else { return .none }
-    let current = drafts[index]
-    let next = drafts[index + 1]
-    if !current.listItemPath.isEmpty, !next.listItemPath.isEmpty {
-      return .listItem
-    }
-    return .block(after: current.blocks[current.blocks.count - 1].role, before: next.blocks[0].role)
-  }
-
-  private static func requiresStructuralFragmentation(_ blocks: [MarkdownBlock]) -> Bool {
-    blocks.contains(where: requiresStructuralFragmentation)
-  }
-
-  private static func requiresStructuralFragmentation(_ block: MarkdownBlock) -> Bool {
-    switch block {
-    case .codeBlock, .table, .thematicBreak:
-      true
-    case let .list(list):
-      requiresStructuralFragmentation(list.items.flatMap(\.blocks))
-    case let .blockQuote(blocks):
-      requiresStructuralFragmentation(blocks)
-    case .heading, .paragraph, .bulletList, .orderedList:
-      false
-    }
-  }
-
-  private static func isTextBlock(_ block: MarkdownBlock) -> Bool {
-    switch block {
-    case .heading, .paragraph, .bulletList, .orderedList:
-      true
-    case let .list(list):
-      !requiresStructuralFragmentation(list.items.flatMap(\.blocks))
-    case let .blockQuote(blocks):
-      !requiresStructuralFragmentation(blocks)
-    case .codeBlock, .table, .thematicBreak:
-      false
-    }
-  }
 }
