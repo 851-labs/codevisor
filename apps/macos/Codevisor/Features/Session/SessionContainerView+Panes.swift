@@ -79,6 +79,20 @@ extension SessionContainerView {
             environment: environment
           ))
       }
+      if descriptor.kind == .transcript {
+        return AnyView(
+          BotTranscriptPaneContentView(
+            descriptor: descriptor,
+            focus: sessionFocus,
+            hostWorkspace: workspace,
+            store: store,
+            environment: environment
+          ))
+      }
+      if descriptor.kind == .chat, let sessionId = descriptor.chatSessionId, let bot = botChat(sessionId) {
+        return AnyView(
+          BotConversationView(bot: bot, client: environment.machines.client(for: workspace.serverId)))
+      }
       if descriptor.kind == .newTab {
         return AnyView(
           NewTabPageView(

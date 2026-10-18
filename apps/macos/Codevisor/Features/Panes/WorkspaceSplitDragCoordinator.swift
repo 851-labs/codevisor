@@ -242,6 +242,7 @@ struct WorkspaceSplitDragGhost: View {
     case .simulator: "iphone"
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
+    case .transcript: "text.page"
     }
   }
 

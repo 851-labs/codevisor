@@ -106,6 +106,11 @@ public final class BotConversationModel {
     await deliver(message)
   }
 
+  public func upload(_ url: URL) async throws -> ServerAttachmentRef {
+    let metadata = AttachmentFileStager.metadata(for: url)
+    return try await client.uploadFile(name: metadata.name, mimeType: metadata.mimeType, fileURL: url).attachmentRef
+  }
+
   private func deliver(_ message: ServerBotMessage) async {
     do {
       _ = try await client.promptSession(

@@ -11,8 +11,9 @@ public enum PaneKind: String, Codable, Sendable {
   case subagent
   case review
   case simulator
+  case transcript
 
-  public var isDeviceLocal: Bool { self == .newTab || self == .subagent }
+  public var isDeviceLocal: Bool { self == .newTab || self == .subagent || self == .transcript }
 }
 
 public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {

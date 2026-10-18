@@ -139,7 +139,7 @@ final class PaneGroupModel: Identifiable {
         self?.renamePane(id: descriptor.id, to: title)
       }
       pane = plugin
-    case .chat, .newTab, .subagent:
+    case .chat, .newTab, .subagent, .transcript:
       let chat = ChatPane(id: descriptor.id)
       wireChatHost(chat, paneId: descriptor.id)
       pane = chat
@@ -244,7 +244,7 @@ final class PaneGroupModel: Identifiable {
           self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
-      case .subagent:
+      case .subagent, .transcript:
         self.requestBackgroundFocus?()
       case .terminal, .plugin, .document, .browser, .screenSharing, .review, .simulator:
         break

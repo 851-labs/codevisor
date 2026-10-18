@@ -191,6 +191,7 @@ struct PaneTabIcon: View {
     case .simulator: "iphone"
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
+    case .transcript: "text.page"
     }
   }
 
@@ -206,6 +207,7 @@ struct PaneTabIcon: View {
     case .simulator: "Simulator"
     case .subagent: "Subagent"
     case .review: "Review"
+    case .transcript: "Full transcript"
     }
   }
 }

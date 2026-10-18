@@ -31,6 +31,10 @@ extension WorkspaceSyncModel {
       paneType = "subagent"
       resourceKind = nil
       resourceId = nil
+    case .transcript:
+      paneType = "transcript"
+      resourceKind = nil
+      resourceId = nil
     case .browser:
       paneType = "browser"
       resourceKind = nil

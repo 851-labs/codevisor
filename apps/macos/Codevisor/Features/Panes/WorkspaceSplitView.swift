@@ -348,6 +348,7 @@ private struct SplitLeafHeader: View {
     case .simulator: "iphone"
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
+    case .transcript: "text.page"
     case .newTab, .none: "square.dashed"
     }
   }
@@ -417,7 +418,8 @@ private struct SplitLeafHeader: View {
     switch pane?.kind {
     case .chat: "Rename Chat"
     case .terminal: "Rename Terminal"
-    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .review, .simulator, .none: "Rename Pane"
+    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .review, .simulator, .transcript, .none:
+      "Rename Pane"
     }
   }
 

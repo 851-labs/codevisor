@@ -99,6 +99,12 @@ extension SessionContainerView {
       return PaneDescriptorState(
         id: paneId, kind: .subagent, name: closed.name, terminalKey: paneId.uuidString,
         ownerChatSessionId: closed.ownerChatSessionId, subagentToolCallId: closed.subagentToolCallId)
+    case .transcript:
+      guard let owner = closed.ownerChatSessionId, selectedWorkspace.pane(containingChat: owner) != nil
+      else { return nil }
+      return PaneDescriptorState(
+        id: paneId, kind: .transcript, name: closed.name, terminalKey: paneId.uuidString,
+        ownerChatSessionId: owner)
     case .newTab:
       return nil
     }

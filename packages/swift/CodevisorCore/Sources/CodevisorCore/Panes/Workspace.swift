@@ -377,7 +377,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public mutating func pruneOrphanedSubagentPanes() -> [PaneDescriptorState] {
     let chats = Set(chatSessionIds)
     let orphans = allPanes.filter { pane in
-      pane.kind == .subagent && !(pane.ownerChatSessionId.map(chats.contains) ?? false)
+      (pane.kind == .subagent || pane.kind == .transcript) && !(pane.ownerChatSessionId.map(chats.contains) ?? false)
     }
     guard !orphans.isEmpty else { return [] }
     for orphan in orphans {

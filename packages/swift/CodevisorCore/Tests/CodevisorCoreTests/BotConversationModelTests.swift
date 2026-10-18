@@ -42,9 +42,11 @@ struct BotConversationModelTests {
     #expect(model.pending.map(\.id) == [sent.messageId])
     #expect(model.isWorking)
 
-    try await model.apply(messageEvent(ServerBotMessage(
-      id: sent.messageId, sessionId: sessionId.uuidString.lowercased(), sequence: 2, sender: .user,
-      text: "ship it", createdAt: "2026-10-18T12:00:01.000Z")))
+    try await model.apply(
+      messageEvent(
+        ServerBotMessage(
+          id: sent.messageId, sessionId: sessionId.uuidString.lowercased(), sequence: 2, sender: .user,
+          text: "ship it", createdAt: "2026-10-18T12:00:01.000Z")))
     try await model.apply(messageEvent(message("on it", 3)))
 
     #expect(model.pending.isEmpty)
@@ -98,7 +100,9 @@ struct BotConversationModelTests {
 
 @Suite("BotConversationLayout")
 struct BotConversationLayoutTests {
-  private func message(_ id: String, _ sender: ServerBotMessageSender, _ createdAt: String) -> (
+  private func message(
+    _ id: String, _ sender: ServerBotMessageSender, _ createdAt: String
+  ) -> (
     message: ServerBotMessage, delivery: BotMessageDelivery
   ) {
     (ServerBotMessage(id: id, sessionId: "s", sequence: 0, sender: sender, text: id, createdAt: createdAt), .delivered)
@@ -171,15 +175,21 @@ final class BotConversationFakeClient: CodevisorServerClienting, @unchecked Send
   }
   func capabilities(cwd: String) async throws -> ServerCapabilities { throw CodevisorServerClientError.invalidResponse }
   func deleteProject(id: UUID) async throws {}
-  func navigationSnapshot() async throws -> ServerNavigationSnapshot { throw CodevisorServerClientError.invalidResponse }
-  func upsertSession(_ session: ChatSession) async throws -> ServerSession { throw CodevisorServerClientError.invalidResponse }
+  func navigationSnapshot() async throws -> ServerNavigationSnapshot {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+    throw CodevisorServerClientError.invalidResponse
+  }
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
     try await promptSession(id: id, text: text, attachments: [], messageId: nil, clientId: nil)
   }
   func listHarnesses() async throws -> [ServerHarness] { [] }
   func listProjects() async throws -> [ServerProject] { [] }
   func listSessions() async throws -> [ServerSession] { [] }
-  func upsertProject(_ project: Project) async throws -> ServerProject { throw CodevisorServerClientError.invalidResponse }
+  func upsertProject(_ project: Project) async throws -> ServerProject {
+    throw CodevisorServerClientError.invalidResponse
+  }
   func updateSession(_ session: ChatSession) async throws -> ServerSession {
     throw CodevisorServerClientError.invalidResponse
   }
