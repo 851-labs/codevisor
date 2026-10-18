@@ -25,30 +25,32 @@ export const exportBrowserContent = async (
   if (!isContentFormat(format))
     throw new Error("Content export format must be markdown, html, or pdf")
   const [extension, mimeType] = contentTypes[format]
-  const bytes =
-    format === "pdf"
-      ? Buffer.from(
-          (
-            await runtime.connection.send<{ data: string }>(
-              "Page.printToPDF",
-              { printBackground: true },
-              page.sessionId
-            )
-          ).data,
-          "base64"
+  let bytes: Buffer
+  if (format === "pdf") {
+    bytes = Buffer.from(
+      (
+        await runtime.connection.send<{ data: string }>(
+          "Page.printToPDF",
+          { printBackground: true },
+          page.sessionId
         )
-      : Buffer.from(
-          expectString(
-            await evaluate(
-              runtime,
-              page,
-              format === "html"
-                ? "document.documentElement.outerHTML"
-                : "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
-            ),
-            "Page export"
-          )
-        )
+      ).data,
+      "base64"
+    )
+  } else {
+    bytes = Buffer.from(
+      expectString(
+        await evaluate(
+          runtime,
+          page,
+          format === "html"
+            ? "document.documentElement.outerHTML"
+            : "'# ' + document.title + '\\n\\nSource: ' + location.href + '\\n\\n' + document.body.innerText"
+        ),
+        "Page export"
+      )
+    )
+  }
   if (bytes.length > 20 * 1024 * 1024)
     throw new Error("Page export exceeds the 20 MB attachment limit")
   const name = `page-${randomUUID()}.${extension}`
