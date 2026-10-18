@@ -144,6 +144,7 @@ struct WorkspaceInspectorView: View {
             .foregroundStyle(.primary)
             .help("Show everything the bot did, including its tool calls and the messages it received")
             .accessibilityIdentifier("bot.showFullTranscript")
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
       }
     }
