@@ -1,3 +1,4 @@
+import type { SessionMode } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -56,13 +57,17 @@ describe("Cursor ACP configuration", () => {
           { name: "Off", value: "false" },
           { name: "On", value: "true" }
         ]
-      }
+      },
+      { id: "fast", name: "Fast", description: "", currentValue: "true", options: [] }
     ])
 
     expect(options.map(({ category, id }) => ({ category, id }))).toEqual([
       { category: "model", id: "model" },
+      { category: "speed", id: "speed" },
       { category: "speed", id: "speed" }
     ])
+    expect(options[1]).not.toHaveProperty("description")
+    expect(options[2]).toMatchObject({ description: "", currentValue: "fast" })
     expect(options[1]).toMatchObject({
       currentValue: "standard",
       options: [
@@ -73,24 +78,30 @@ describe("Cursor ACP configuration", () => {
   })
 
   it("maps Cursor's agent mode onto full access", () => {
-    expect(
-      cursorSessionMetadata({
-        sessionId: "session-1",
-        configOptions: [],
-        modes: {
-          currentModeId: "agent",
-          availableModes: [
-            { id: "agent", name: "Agent" },
-            { id: "plan", name: "Plan", canonicalId: "plan" }
-          ]
-        }
-      }).modes
-    ).toEqual({
+    const customMode: SessionMode = { id: "custom", name: "Custom", canonicalId: "ask" }
+    const metadata = cursorSessionMetadata({
+      sessionId: "session-1",
+      configOptions: [],
+      modes: {
+        currentModeId: "agent",
+        availableModes: [
+          { id: "agent", name: "Agent" },
+          { id: "plan", name: "Plan", canonicalId: "plan" },
+          customMode
+        ]
+      }
+    })
+    expect(metadata.modes).toEqual({
       currentModeId: "agent",
       availableModes: [
         { id: "agent", name: "Agent", canonicalId: "fullAccess" },
-        { id: "plan", name: "Plan", canonicalId: "plan" }
+        { id: "plan", name: "Plan", canonicalId: "plan" },
+        { id: "custom", name: "Custom", canonicalId: "ask" }
       ]
     })
+    expect(metadata.modes?.availableModes[2]).toBe(customMode)
+    expect(cursorSessionMetadata({ sessionId: "session-2", configOptions: [] })).not.toHaveProperty(
+      "modes"
+    )
   })
 })

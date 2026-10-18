@@ -29,11 +29,14 @@ export const normalizeCursorConfigOptions = (
   options.flatMap((option) => {
     if (option.id === "context") return []
     if (option.id !== "fast") return [option]
+    const speed: { id: string; name: string; description?: string } = {
+      id: "speed",
+      name: "Speed"
+    }
+    if (option.description !== undefined) speed.description = option.description
     return [
       {
-        id: "speed",
-        name: "Speed",
-        ...(option.description === undefined ? {} : { description: option.description }),
+        ...speed,
         category: "speed",
         currentValue: option.currentValue === "true" ? "fast" : "standard",
         options: [
@@ -60,18 +63,23 @@ const cursorCanonicalMode = (id: string): CanonicalModeId | undefined => {
   }
 }
 
-export const cursorSessionMetadata = (metadata: AgentSessionMetadata): AgentSessionMetadata => ({
-  ...metadata,
-  configOptions: normalizeCursorConfigOptions(metadata.configOptions),
-  ...(metadata.modes === undefined
-    ? {}
-    : {
-        modes: {
-          ...metadata.modes,
-          availableModes: metadata.modes.availableModes.map((mode) => {
-            const canonicalId = cursorCanonicalMode(mode.id)
-            return canonicalId === undefined ? mode : { ...mode, canonicalId }
-          })
-        }
-      })
-})
+const cursorSessionModes = (metadata: AgentSessionMetadata): AgentSessionMetadata["modes"] => {
+  if (metadata.modes === undefined) return undefined
+  return {
+    ...metadata.modes,
+    availableModes: metadata.modes.availableModes.map((mode) => {
+      const canonicalId = cursorCanonicalMode(mode.id)
+      return canonicalId === undefined ? mode : { ...mode, canonicalId }
+    })
+  }
+}
+
+export const cursorSessionMetadata = (metadata: AgentSessionMetadata): AgentSessionMetadata => {
+  const normalized = {
+    ...metadata,
+    configOptions: normalizeCursorConfigOptions(metadata.configOptions)
+  }
+  const modes = cursorSessionModes(metadata)
+  if (modes !== undefined) normalized.modes = modes
+  return normalized
+}
