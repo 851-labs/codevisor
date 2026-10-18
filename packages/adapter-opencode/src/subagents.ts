@@ -58,9 +58,8 @@ export class OpenCodeSubagents {
       return this.childStatus(rootSessionId, childId, parentSessionId, title, update.status)
     }
     const inner = record(update.update)
-    return update.type === "update" && inner !== undefined
-      ? this.childEvents(rootSessionId, childId, parentSessionId, title, inner)
-      : []
+    if (update.type !== "update" || inner === undefined) return []
+    return this.childEvents(rootSessionId, childId, parentSessionId, title, inner)
   }
 
   private childStatus(
@@ -74,14 +73,7 @@ export class OpenCodeSubagents {
       const call = this.adoptChild(childId, parentSessionId, title)
       return call === undefined ? [] : [this.event(rootSessionId, this.taskUpdate(call))]
     }
-    const settled =
-      status === "completed"
-        ? "completed"
-        : status === "failed"
-          ? "failed"
-          : status === "interrupted"
-            ? "cancelled"
-            : undefined
+    const settled = childTerminalStatus(status)
     const callId = this.children.get(childId)
     if (settled === undefined || callId === undefined) return []
     return [
@@ -104,15 +96,7 @@ export class OpenCodeSubagents {
     const callId =
       this.children.get(childId) ?? this.adoptChild(childId, parentSessionId, title)?.id
     if (callId === undefined) return []
-    const meta = { ...record(update._meta) }
-    delete meta[CHILD_SESSION_META]
-    const inner: JsonRecord = { ...update, _meta: meta }
-    if (Object.keys(meta).length === 0) delete inner._meta
-    const prefix = title === undefined ? undefined : `${title}: `
-    const innerTitle = string(inner.title)
-    if (prefix !== undefined && innerTitle?.startsWith(prefix)) {
-      inner.title = innerTitle.slice(prefix.length)
-    }
+    const inner = childThreadUpdate(update, title)
     return [
       this.event(rootSessionId, { ...this.mapUpdate(childId, inner), parentToolCallId: callId })
     ]
@@ -205,6 +189,32 @@ export class OpenCodeSubagents {
   private event(sessionId: string, update: JsonRecord): RuntimeEvent {
     return runtimeEventFromNotification({ sessionId, update })
   }
+}
+
+const childTerminalStatus = (status: unknown): string | undefined => {
+  switch (status) {
+    case "completed":
+      return "completed"
+    case "failed":
+      return "failed"
+    case "interrupted":
+      return "cancelled"
+    default:
+      return undefined
+  }
+}
+
+const childThreadUpdate = (update: JsonRecord, title: string | undefined): JsonRecord => {
+  const meta = { ...record(update._meta) }
+  delete meta[CHILD_SESSION_META]
+  const inner: JsonRecord = { ...update, _meta: meta }
+  if (Object.keys(meta).length === 0) delete inner._meta
+  const prefix = title === undefined ? undefined : `${title}: `
+  const innerTitle = string(inner.title)
+  if (prefix !== undefined && innerTitle?.startsWith(prefix)) {
+    inner.title = innerTitle.slice(prefix.length)
+  }
+  return inner
 }
 
 const isSubagentCall = (update: JsonRecord): boolean => {
