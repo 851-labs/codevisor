@@ -16,10 +16,12 @@ export const resolveSessionAccount = async (
   readonly accountContext: HarnessAccountContext | undefined
   readonly harnessAccountId: string | undefined
 }> => {
-  const accountContext =
-    payload.harnessAccountId === undefined
-      ? await services.auth?.activeAccountContext(payload.harnessId)
-      : await services.auth?.accountContext(payload.harnessAccountId)
+  let accountContext: HarnessAccountContext | undefined
+  if (payload.harnessAccountId === undefined) {
+    accountContext = await services.auth?.activeAccountContext(payload.harnessId)
+  } else {
+    accountContext = await services.auth?.accountContext(payload.harnessAccountId)
+  }
   /* v8 ignore next */
   if (
     services.auth !== undefined &&
@@ -63,19 +65,20 @@ export const startSessionAgent = async (
 ): Promise<string> => {
   const sink = sessionEventSink(services, fanout, serverId, sessionId)
   const toolGateway = await services.mcp?.issueGateway(sessionId, project.id, sink)
-  return payload.deferAgentSession === true
-    ? ""
-    : (payload.agentSessionId ??
-        (await run(
-          services.agents.createAgentSession(
-            payload.harnessId,
-            cwd,
-            sink,
-            accountContext,
-            toolGateway,
-            payload.configSelections === undefined
-              ? undefined
-              : { configSelections: payload.configSelections }
-          )
-        )))
+  if (payload.deferAgentSession === true) return ""
+  return (
+    payload.agentSessionId ??
+    (await run(
+      services.agents.createAgentSession(
+        payload.harnessId,
+        cwd,
+        sink,
+        accountContext,
+        toolGateway,
+        payload.configSelections === undefined
+          ? undefined
+          : { configSelections: payload.configSelections }
+      )
+    ))
+  )
 }
