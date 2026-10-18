@@ -48,6 +48,23 @@ describe("bot conversations", () => {
     ).toHaveLength(2)
   })
 
+  it("keeps the bot's name when its harness titles the chat", async () => {
+    const { running, bot } = await startBot()
+    await prompt(running, bot.sessionId, "hello")
+    await waitFor(() => running.agents.prompts.length === 1)
+    const agentSessionId = running.agents.prompts[0]![0]
+
+    await running.agents.emit(agentSessionId, {
+      kind: "session.updated",
+      subjectId: agentSessionId,
+      payload: { sessionUpdate: "session_info_update", title: "Repo contents" }
+    })
+
+    expect((await run(running.services.db.getSessionSummary(bot.sessionId))).title).toBe(
+      "Release Helper"
+    )
+  })
+
   it("lets only the bot's own chat send messages, with files attached by path", async () => {
     const { running, bot } = await startBot()
     const file = join(bot.rootPath, "notes.txt")

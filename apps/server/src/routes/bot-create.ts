@@ -34,7 +34,7 @@ import {
 } from "../server-context.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
 import { availableWorktreeName, slugifyWorktreeName } from "./project-worktree-create.js"
-import { createSessionIfMissing } from "./session-workspace.js"
+import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
 
 interface BotSource {
   readonly project: Project
@@ -312,6 +312,7 @@ export const createBot = async (
       workspaceId,
       title: name
     })
+    await applySessionUpdate(services, fanout, session.id, { title: name, titleIntent: "rename" })
     created.session = session
     const bot = await run(
       services.db.createBot({

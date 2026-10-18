@@ -40,7 +40,6 @@ struct BotConversationModelTests {
     let sent = try #require(client.prompts.first)
     #expect(sent.text == "ship it")
     #expect(model.pending.map(\.id) == [sent.messageId])
-    #expect(model.isWorking)
 
     try await model.apply(
       messageEvent(

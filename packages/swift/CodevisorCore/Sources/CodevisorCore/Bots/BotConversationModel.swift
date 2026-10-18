@@ -120,7 +120,6 @@ public final class BotConversationModel {
         messageId: message.id,
         clientId: nil
       )
-      isWorking = true
     } catch {
       if pending.contains(where: { $0.id == message.id }) {
         failedIds.insert(message.id)
