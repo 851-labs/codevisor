@@ -86,27 +86,31 @@ export const refreshHarnessReadiness = async (
         const desired = harness.desiredEnabled ?? harness.enabled
         const phase = harness.lifecycle?.phase
         const refusal = blockedById.get(harness.id)
-        const state: HarnessReadinessRow["state"] =
-          phase === "failed" || (refusal !== undefined && refusal !== "Sign in required")
-            ? "blocked"
-            : phase === "installing" || phase === "uninstalling"
-              ? phase
-              : !desired
-                ? "disabled"
-                : !installed
-                  ? "notInstalled"
-                  : authed
-                    ? "ready"
-                    : "signInRequired"
-        const reason =
-          state === "blocked"
-            ? (refusal ?? harness.lifecycle?.error)
-            : state === "notInstalled"
-              ? harness.readiness.detail
-              : state === "signInRequired" &&
-                  (harness.auth?.state === "error" || harness.auth?.state === "unavailable")
-                ? harness.auth.detail
-                : undefined
+        let state: HarnessReadinessRow["state"]
+        if (phase === "failed" || (refusal !== undefined && refusal !== "Sign in required")) {
+          state = "blocked"
+        } else if (phase === "installing" || phase === "uninstalling") {
+          state = phase
+        } else if (!desired) {
+          state = "disabled"
+        } else if (!installed) {
+          state = "notInstalled"
+        } else if (authed) {
+          state = "ready"
+        } else {
+          state = "signInRequired"
+        }
+        let reason: HarnessReadinessRow["reason"]
+        if (state === "blocked") {
+          reason = refusal ?? harness.lifecycle?.error
+        } else if (state === "notInstalled") {
+          reason = harness.readiness.detail
+        } else if (
+          state === "signInRequired" &&
+          (harness.auth?.state === "error" || harness.auth?.state === "unavailable")
+        ) {
+          reason = harness.auth.detail
+        }
         const version = installed ? harness.readiness.version : undefined
         return {
           id: harness.id,
