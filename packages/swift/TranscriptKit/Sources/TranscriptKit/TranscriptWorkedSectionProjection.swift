@@ -53,7 +53,7 @@ enum TranscriptWorkedSectionProjection {
           lifecycle: lifecycle
         ),
         estimatedHeight: 18,
-        measurementRevision: TranscriptAssistantRowProjection.measurementRevision(
+        measurementRevision: TranscriptMessageRowMetrics.measurementRevision(
           for: .assistant(message),
           waitingOnBackgroundTask: nil
         ),
@@ -190,7 +190,7 @@ enum TranscriptWorkedSectionProjection {
           lifecycle: lifecycle
         ),
         estimatedHeight: estimatedHeight,
-        measurementRevision: TranscriptAssistantRowProjection.measurementRevision(
+        measurementRevision: TranscriptMessageRowMetrics.measurementRevision(
           for: .assistant(message),
           waitingOnBackgroundTask: nil
         ),
