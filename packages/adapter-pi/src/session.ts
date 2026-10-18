@@ -50,38 +50,44 @@ export interface PiSession {
 const piModel = (value: unknown): PiModel | undefined => {
   const model = record(value)
   if (typeof model.id !== "string" || typeof model.provider !== "string") return undefined
-  return {
-    id: model.id,
-    provider: model.provider,
-    ...(typeof model.name === "string" ? { name: model.name } : {}),
-    ...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
-    ...(typeof model.reasoning === "boolean" ? { reasoning: model.reasoning } : {})
-  }
+  const parsed: {
+    id: string
+    provider: string
+    name?: string
+    contextWindow?: number
+    reasoning?: boolean
+  } = { id: model.id, provider: model.provider }
+  if (typeof model.name === "string") parsed.name = model.name
+  if (typeof model.contextWindow === "number") parsed.contextWindow = model.contextWindow
+  if (typeof model.reasoning === "boolean") parsed.reasoning = model.reasoning
+  return parsed
 }
 
 const SKILL_PREFIX = "skill:"
 
+const piSkill = (entry: unknown): Array<SessionSkill> => {
+  const command = record(entry)
+  if (command.source !== "skill" || typeof command.name !== "string") return []
+  if (!command.name.startsWith(SKILL_PREFIX)) return []
+
+  let description = ""
+  if (typeof command.description === "string") description = command.description.trim()
+  let source: SessionSkill["source"]
+  if (command.location === "user" || command.location === "project") source = command.location
+
+  return [
+    {
+      invocation: `/${command.name}`,
+      name: command.name.slice(SKILL_PREFIX.length),
+      ...(description === "" ? {} : { description }),
+      ...(source === undefined ? {} : { source })
+    }
+  ]
+}
+
 export const piSkills = (response: unknown): SessionSkills => {
   const commands = record(response).commands
-  return sessionSkills(
-    (Array.isArray(commands) ? commands : []).flatMap((entry): Array<SessionSkill> => {
-      const command = record(entry)
-      if (command.source !== "skill" || typeof command.name !== "string") return []
-      if (!command.name.startsWith(SKILL_PREFIX)) return []
-      const description = typeof command.description === "string" ? command.description.trim() : ""
-      const source =
-        command.location === "user" || command.location === "project" ? command.location : undefined
-      return [
-        {
-          invocation: `/${command.name}`,
-          name: command.name.slice(SKILL_PREFIX.length),
-          ...(description === "" ? {} : { description }),
-          ...(source === undefined ? {} : { source })
-        }
-      ]
-    }),
-    "/"
-  )
+  return sessionSkills((Array.isArray(commands) ? commands : []).flatMap(piSkill), "/")
 }
 
 export const piPrompt = (input: PromptInput): Record<string, unknown> => {
