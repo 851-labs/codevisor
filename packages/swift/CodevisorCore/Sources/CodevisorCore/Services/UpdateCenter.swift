@@ -95,39 +95,7 @@ public final class UpdateCenter {
       guard let connection = machines.connectionsById[machine.id],
         connection.updateInfo != nil || connection.dataUpgradeProgress != nil
       else { return nil }
-      let info = connection.updateInfo
-      let migration = connection.updatePhase == .idle ? connection.dataUpgradeProgress : nil
-      let phase: UpdateComponent.Phase =
-        switch connection.updatePhase {
-        case .idle:
-          if let migration {
-            migration.error.map(UpdateComponent.Phase.failed) ?? .updating
-          } else {
-            .idle
-          }
-        case .updating: .updating
-        case let .failed(message): .failed(message)
-        }
-      return UpdateComponent(
-        id: "server:\(machine.id)",
-        kind: .server,
-        machineId: machine.id,
-        machineName: machine.name,
-        subjectId: "",
-        title: "Codevisor",
-        installedVersion: info.map {
-          AppUpdateModel.displayedVersion(
-            $0.currentVersion,
-            buildNumber: $0.currentBuildNumber,
-            usesAlphaChannel: $0.channel == "alpha"
-          )
-        },
-        latestVersion: info?.latestVersion,
-        updateAvailable: info?.updateAvailable ?? false,
-        phase: phase,
-        statusMessage: phase == .updating ? (migration?.name ?? connection.updateStatusMessage) : nil,
-        progress: phase == .updating ? (migration?.fractionCompleted ?? connection.updateProgress) : nil
-      )
+      return UpdateComponent.server(machine: machine, connection: connection)
     }
   }
 
@@ -171,12 +139,12 @@ public final class UpdateCenter {
 
   private func harnessPhase(_ harness: ServerHarness, id: String, lifecyclePhase: String?) -> UpdateComponent.Phase {
     switch lifecyclePhase {
-    case "installing", "updating", "pendingUpdate": .updating
+    case "installing", "updating", "pendingUpdate": return .updating
     case "failed":
-      transientPhases[id]
-        ?? (dismissedHarnessFailures[id] == harness.lifecycle
-          ? .idle : .failed(harness.lifecycle?.error ?? "The update failed."))
-    default: transientPhases[id] ?? .idle
+      if let phase = transientPhases[id] { return phase }
+      if dismissedHarnessFailures[id] == harness.lifecycle { return .idle }
+      return .failed(harness.lifecycle?.error ?? "The update failed.")
+    default: return transientPhases[id] ?? .idle
     }
   }
 
