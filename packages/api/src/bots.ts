@@ -21,6 +21,7 @@ export const Bot = Schema.Struct({
   workspaceId: Schema.String,
   rootPath: Schema.String,
   projects: Schema.Array(BotProject),
+  conversational: Schema.Boolean,
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })
@@ -32,7 +33,8 @@ export const CreateBotRequest = Schema.Struct({
   symbolName: Schema.String,
   harnessId: Schema.String,
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  projectIds: Schema.Array(Schema.String)
+  projectIds: Schema.Array(Schema.String),
+  conversational: Schema.optional(Schema.Boolean)
 })
 export type CreateBotRequest = typeof CreateBotRequest.Type
 

@@ -35,12 +35,14 @@ const turnFor = (services: CodevisorServerServices, sessionId: string): BotTurn 
   return turn
 }
 
-export const botForSession = async (
+export const conversationalBotForSession = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<Bot | undefined> => {
   const bot = await run(services.db.findBotOwning({ sessionId })).catch(() => undefined)
-  return bot !== undefined && bot.sessionId.toLowerCase() === sessionId.toLowerCase()
+  return bot !== undefined &&
+    bot.conversational &&
+    bot.sessionId.toLowerCase() === sessionId.toLowerCase()
     ? bot
     : undefined
 }

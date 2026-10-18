@@ -27,7 +27,7 @@ const providers = {
 }
 
 describe("Codevisor built-in tools", () => {
-  it("offers messages.send and its skill only to a bot's own session", async () => {
+  it("offers messages.send and its skill only to a conversational bot's own session", async () => {
     const { db, manager } = await testManager(providers)
     manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-bot-home" }))
@@ -46,6 +46,7 @@ describe("Codevisor built-in tools", () => {
         projectId: project.id,
         sessionId: "chat-bot",
         workspaceId: "ws-bot",
+        conversational: true,
         projects: []
       })
     )

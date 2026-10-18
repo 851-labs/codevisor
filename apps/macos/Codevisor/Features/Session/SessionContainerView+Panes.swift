@@ -112,7 +112,7 @@ extension SessionContainerView {
           project: project,
           store: store,
           environment: environment,
-          presentsBotConversation: descriptor.chatSessionId.flatMap(botChat) != nil
+          presentsBotConversation: descriptor.chatSessionId.flatMap(botChat)?.isConversational == true
         ))
     }
   }

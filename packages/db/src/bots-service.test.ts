@@ -44,6 +44,7 @@ const seedBot = async (db: CodevisorDatabaseService) => {
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
+      conversational: true,
       projects: [
         { projectId: web.id, folderName: "web", branch: "codevisor/bot-helper" },
         { projectId: api.id, folderName: "api", branch: "codevisor/bot-helper" }
@@ -65,6 +66,7 @@ describe("bots service", () => {
       name: "Helper",
       symbolName: "sparkles",
       harnessId: "codex",
+      conversational: true,
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",

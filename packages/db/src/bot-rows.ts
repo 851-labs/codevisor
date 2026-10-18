@@ -14,6 +14,7 @@ export interface BotRow {
   readonly session_id: string
   readonly workspace_id: string
   readonly harness_id: string
+  readonly conversational: number
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -36,6 +37,7 @@ export const botRows = rowReader<BotRow>({
   session_id: text,
   workspace_id: text,
   harness_id: text,
+  conversational: integer,
   created_at: text,
   updated_at: nullable(text)
 })
@@ -88,6 +90,7 @@ export interface CreateBotRecord {
   readonly projectId: string
   readonly sessionId: string
   readonly workspaceId: string
+  readonly conversational?: boolean
   readonly projects: ReadonlyArray<{
     readonly projectId: string
     readonly folderName: string

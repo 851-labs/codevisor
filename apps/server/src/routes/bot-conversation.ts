@@ -17,7 +17,7 @@ import {
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { captureAssistantFile } from "./assistant-files.js"
-import { botForSession, postBotMessage, takeBotTurn } from "./bot-turns.js"
+import { conversationalBotForSession, postBotMessage, takeBotTurn } from "./bot-turns.js"
 import { drainPromptQueue, hasLiveTurn } from "./prompt-queue.js"
 
 const PAGE_LIMIT = 50
@@ -28,8 +28,8 @@ const requireBotSession = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<void> => {
-  if ((await botForSession(services, sessionId)) === undefined) {
-    throw new HttpFailure(403, "Only a Codevisor bot's own chat can send messages to the user")
+  if ((await conversationalBotForSession(services, sessionId)) === undefined) {
+    throw new HttpFailure(403, "Only a conversational bot's own chat can send messages to the user")
   }
 }
 
@@ -171,7 +171,11 @@ const reportChildTurn = async (
 ): Promise<void> => {
   const child = await run(services.db.getSessionSummary(childId))
   const parentId = child.parentSessionId
-  if (parentId === undefined || (await botForSession(services, parentId)) === undefined) return
+  if (
+    parentId === undefined ||
+    (await conversationalBotForSession(services, parentId)) === undefined
+  )
+    return
   const final = await finalAssistantText(services, childId)
   const report = childReport(
     child.id,
@@ -196,7 +200,7 @@ export const makeBotConversationListener =
       const message = typeof payload.message === "string" ? payload.message : undefined
       void (async () => {
         if (message === undefined) return
-        if ((await botForSession(services, event.subjectId)) === undefined) return
+        if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
         takeBotTurn(services, event.subjectId)
         await postBotMessage(services, fanout, event.subjectId, {
           sender: "notice",
@@ -208,7 +212,7 @@ export const makeBotConversationListener =
     if (event.kind !== "session.updated" || payload.turnState !== "ended") return
     const turn = takeBotTurn(services, event.subjectId)
     void (async () => {
-      if ((await botForSession(services, event.subjectId)) !== undefined) {
+      if ((await conversationalBotForSession(services, event.subjectId)) !== undefined) {
         await settleBotTurn(services, fanout, event.subjectId, turn, payload)
         return
       }

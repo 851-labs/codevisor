@@ -18,6 +18,7 @@ struct BotEditorSheet: View {
   @State private var serverId: String
   @State private var projectIds: [UUID] = []
   @State private var models: BotModelSelection?
+  @State private var isConversational = true
   @State private var isSaving = false
   @State private var didSave = false
   @State private var botId = UUID()
@@ -85,6 +86,7 @@ struct BotEditorSheet: View {
       projectsSection
       if editedBot == nil {
         modelSection
+        conversationSection
       }
       if let errorMessage {
         Section {
@@ -188,6 +190,16 @@ struct BotEditorSheet: View {
           .accessibilityLabel("Add Project")
         }
       }
+    }
+  }
+
+  private var conversationSection: some View {
+    Section {
+      Toggle("Conversation mode", isOn: $isConversational)
+    } footer: {
+      Text(
+        "Chat with the bot like a messaging app. You see only the messages it sends you, you can message it while it works, and it tells you when its agents finish."
+      )
     }
   }
 
@@ -296,7 +308,8 @@ struct BotEditorSheet: View {
         configSelections: models.configSelections,
         projectIds: selectedProjects.map {
           $0.id.uuidString.lowercased()
-        }
+        },
+        conversational: isConversational
       )
       let bot = try await environment.bots.create(request, on: serverId)
       didSave = true

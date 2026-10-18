@@ -92,7 +92,7 @@ struct SessionContainerView: View {
             AppleSimulatorPane.saveScreenshot(data, deviceName: name)
           }
         }
-        if let bot = activeBotChat {
+        if let bot = activeBotChat, bot.isConversational {
           ToolbarItem {
             BotTranscriptToolbarButton { openBotTranscript(bot) }
           }

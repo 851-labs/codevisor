@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
@@ -24,13 +24,19 @@ const prompt = (running: Running, sessionId: string, text: string, messageId?: s
 const startBot = async () => {
   const running = await setUp()
   await running.addProject("api-project", "api")
-  const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+  const bot = decodeBot(
+    (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
+  )
   return { running, bot }
 }
 
 describe("bot conversations", () => {
   it("records the user's message at once and falls back to the final reply when nothing was sent", async () => {
     const { running, bot } = await startBot()
+    expect(bot.conversational).toBe(true)
+    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
+      "`codevisor.messages.send`"
+    )
 
     await prompt(running, bot.sessionId, "hello", "client-1")
 
@@ -117,6 +123,28 @@ describe("bot conversations", () => {
     await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
     expect(running.agents.prompts).toHaveLength(1)
     expect(await transcript(running, bot.sessionId)).toHaveLength(2)
+  })
+
+  it("leaves a bot without conversation mode on the transcript and queue", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+
+    await prompt(running, bot.sessionId, "prompt until cancelled")
+    await waitFor(() => running.agents.prompts.length === 1)
+    await prompt(running, bot.sessionId, "also do this")
+    const sent = await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
+      body: JSON.stringify({ text: "hi" }),
+      method: "POST"
+    })
+
+    expect(bot.conversational).toBe(false)
+    expect(sent.status).toBe(403)
+    await waitFor(
+      async () => (await run(running.services.db.listPromptQueue(bot.sessionId))).length === 1
+    )
+    expect(running.agents.steers).toEqual([])
+    expect(await transcript(running, bot.sessionId)).toEqual([])
   })
 
   it("tells the bot when an agent it started finishes, without showing the user", async () => {

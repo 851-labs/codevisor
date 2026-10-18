@@ -21,8 +21,8 @@ const legacy = [
 ].join("\n")
 
 describe("bot instructions", () => {
-  it("teach an existing bot to message the user and wait for agent events, once", () => {
-    const upgraded = upgradeBotInstructions(legacy, "claude-code")
+  it("teach a conversational bot to message the user and wait for agent events, once", () => {
+    const upgraded = upgradeBotInstructions(legacy, "claude-code", true)
 
     expect(upgraded.indexOf("## Talking to the user")).toBeLessThan(
       upgraded.indexOf("## Repositories")
@@ -32,6 +32,17 @@ describe("bot instructions", () => {
     )
     expect(upgraded).toContain("4. End your turn.")
     expect(upgraded).not.toContain("sessions.wait")
-    expect(upgradeBotInstructions(upgraded, "claude-code")).toBe(upgraded)
+    expect(upgradeBotInstructions(upgraded, "claude-code", true)).toBe(upgraded)
+  })
+
+  it("keep a bot without conversation mode on its transcript and sessions.wait", () => {
+    const conversational = upgradeBotInstructions(legacy, "codex", true)
+
+    const plain = upgradeBotInstructions(conversational, "codex", false)
+
+    expect(plain).not.toContain("## Talking to the user")
+    expect(plain).toContain("4. `sessions.wait` or `sessions.get` to follow up")
+    expect(plain).toContain('harnessId: "codex"')
+    expect(upgradeBotInstructions(legacy, "codex", false)).toBe(plain)
   })
 })

@@ -25,6 +25,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var workspaceId: String
   public var rootPath: String
   public var projects: [ServerBotProject]
+  public var conversational: Bool?
   public var createdAt: String
   public var updatedAt: String?
 
@@ -39,6 +40,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     workspaceId: String,
     rootPath: String,
     projects: [ServerBotProject],
+    conversational: Bool? = nil,
     createdAt: String,
     updatedAt: String? = nil
   ) {
@@ -52,6 +54,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.workspaceId = workspaceId
     self.rootPath = rootPath
     self.projects = projects
+    self.conversational = conversational
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -64,6 +67,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   public var harnessId: String
   public var configSelections: [String: String]?
   public var projectIds: [String]
+  public var conversational: Bool?
 
   public init(
     id: String? = nil,
@@ -71,7 +75,8 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     symbolName: String,
     harnessId: String,
     configSelections: [String: String]? = nil,
-    projectIds: [String]
+    projectIds: [String],
+    conversational: Bool? = nil
   ) {
     self.id = id
     self.name = name
@@ -79,6 +84,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     self.harnessId = harnessId
     self.configSelections = configSelections
     self.projectIds = projectIds
+    self.conversational = conversational
   }
 }
 

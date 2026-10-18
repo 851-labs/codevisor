@@ -122,7 +122,11 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const isBotSession = async (sessionId: string | undefined): Promise<boolean> => {
     if (sessionId === undefined) return false
     const bot = await run(config.db.findBotOwning({ sessionId })).catch(() => undefined)
-    return bot !== undefined && bot.sessionId.toLowerCase() === sessionId.toLowerCase()
+    return (
+      bot !== undefined &&
+      bot.conversational &&
+      bot.sessionId.toLowerCase() === sessionId.toLowerCase()
+    )
   }
 
   const providerTools = async (

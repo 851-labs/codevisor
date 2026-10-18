@@ -30,7 +30,7 @@ import type {
   RouteState
 } from "../server-context.js"
 import { routeBotConversation } from "./bot-conversation.js"
-import { botForSession, postBotMessage } from "./bot-turns.js"
+import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { routeParam } from "./route-params.js"
 import { applySessionConfigPick } from "./session-config.js"
@@ -153,7 +153,7 @@ export const routeSessionActions = async (
         payload.clientId
       )
     )
-    if ((await botForSession(services, promptSessionId)) !== undefined) {
+    if ((await conversationalBotForSession(services, promptSessionId)) !== undefined) {
       await postBotMessage(services, fanout, promptSessionId, {
         id: queueItem.id,
         sender: "user",

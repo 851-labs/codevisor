@@ -17,7 +17,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { botForSession, noteBotPrompt } from "./bot-turns.js"
+import { conversationalBotForSession, noteBotPrompt } from "./bot-turns.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
@@ -250,7 +250,8 @@ const steerPendingPrompts = async (
   sessionId: string
 ): Promise<void> => {
   const steer = services.agents.steer
-  if (steer === undefined || (await botForSession(services, sessionId)) === undefined) return
+  if (steer === undefined || (await conversationalBotForSession(services, sessionId)) === undefined)
+    return
   while (true) {
     const item = await run(services.db.claimPromptQueueItem(sessionId))
     if (item === undefined) return

@@ -44,7 +44,7 @@ describe("bot routes", () => {
     expect(instructions).toContain(`\`api/\`: api (from \`${apiFolder}\``)
     expect(instructions).toContain("projectId `api-project`")
     expect(instructions).toContain("## Delegating work")
-    expect(instructions).toContain("`codevisor.messages.send`")
+    expect(instructions).not.toContain("`codevisor.messages.send`")
     expect(instructions).toContain('harnessId: "codex"')
     expect(existsSync(join(root, "CLAUDE.md"))).toBe(false)
 
