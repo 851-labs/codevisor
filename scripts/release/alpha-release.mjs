@@ -150,6 +150,37 @@ async function summarize(message) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `${message}\n`)
 }
 
+function downloadAlphaProvenance(publishedTag, runId, directory) {
+  if (
+    publishedTag &&
+    succeeds("gh", [
+      "release",
+      "download",
+      publishedTag,
+      "--pattern",
+      PROVENANCE_ASSET,
+      "--dir",
+      directory
+    ])
+  )
+    return true
+  return succeeds("gh", [
+    "run",
+    "download",
+    runId,
+    "--name",
+    PROVENANCE_ARTIFACT,
+    "--dir",
+    directory
+  ])
+}
+
+function assertAlphaTagIdentity(tags, identity) {
+  const tagCommit = tags.get(identity.tag)
+  if (tagCommit && tagCommit !== identity.source_sha)
+    throw new Error(`${identity.tag} points to ${tagCommit}, not ${identity.source_sha}.`)
+}
+
 async function next(repository) {
   const [latest] = JSON.parse(
     run("gh", [
@@ -168,18 +199,7 @@ async function next(repository) {
   const publishedTag = [...tags.keys()].find((name) => ALPHA_TAG.exec(name)?.[2] === build)
   const directory = await mkdtemp(join(tmpdir(), "codevisor-alpha-"))
   try {
-    const found =
-      (publishedTag &&
-        succeeds("gh", [
-          "release",
-          "download",
-          publishedTag,
-          "--pattern",
-          PROVENANCE_ASSET,
-          "--dir",
-          directory
-        ])) ||
-      succeeds("gh", ["run", "download", runId, "--name", PROVENANCE_ARTIFACT, "--dir", directory])
+    const found = downloadAlphaProvenance(publishedTag, runId, directory)
     if (!found) {
       await summarize(`Build run ${runId} was never published and its artifacts expired.`)
       return writeOutputs(nothing)
@@ -189,9 +209,7 @@ async function next(repository) {
       await summarize(`Stable v${identity.version} exists; Alpha ${identity.tag} is not published.`)
       return writeOutputs(nothing)
     }
-    const tagCommit = tags.get(identity.tag)
-    if (tagCommit && tagCommit !== identity.source_sha)
-      throw new Error(`${identity.tag} points to ${tagCommit}, not ${identity.source_sha}.`)
+    assertAlphaTagIdentity(tags, identity)
     const pending = pendingPublication(releaseView(identity.tag), identity)
     if (!pending.macos && !pending.ios) {
       await summarize(`Newest Alpha ${identity.tag} is already published.`)
