@@ -234,6 +234,34 @@ struct ComposerSelectionIntent: Equatable {
   var modelName: String? = nil
 
   @MainActor
+  func canCarry(to capability: ServerHarnessCapability) -> Bool {
+    guard let modelValue else { return true }
+    guard let model = SessionController.modelOption(in: capability.configOptions) else { return false }
+    return model.options.contains { $0.value == modelValue }
+  }
+
+  @MainActor
+  func carriedConfigValues(to capability: ServerHarnessCapability) -> [String: String] {
+    var carried = configValues
+    if let modelValue,
+      let model = SessionController.modelOption(in: capability.configOptions)
+    {
+      carried[model.id] = modelValue
+    }
+    return carried
+  }
+
+  @MainActor
+  func compatibleConfigValues(in destinationOptions: [SessionConfigOption]) -> [String: String] {
+    configValues.filter { configId, value in
+      guard let option = destinationOptions.first(where: { $0.id == configId }) else {
+        return false
+      }
+      return !SessionController.isModelOption(option) && option.options.contains { $0.value == value }
+    }
+  }
+
+  @MainActor
   func resolveRememberedOptions(
     in options: inout [SessionConfigOption],
     resolvedModel: SessionConfigOption,
