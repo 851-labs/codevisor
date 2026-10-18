@@ -306,13 +306,7 @@ extension SessionController {
       let currentModel = Self.modelOption(in: currentOptions),
       currentModel.options.contains(where: { $0.value == modelValue })
     else {
-      clearAutomaticSelection()
-      markDraftModel(
-        modelValue,
-        name: intent.modelName ?? modelValue,
-        harnessId: intent.harnessId,
-        checking: false
-      )
+      rejectRetargetedComposerSelection(intent, modelValue: modelValue)
       return
     }
 
@@ -355,34 +349,17 @@ extension SessionController {
         capability.unappliedConfigSelections?[resolvedModel.id] == nil
         && resolvedModel.options.contains { $0.value == resolvedModelValue }
       guard modelWasApplied else {
-        clearAutomaticSelection()
-        markDraftModel(
-          modelValue,
-          name: intent.modelName ?? modelValue,
-          harnessId: intent.harnessId,
-          checking: false
-        )
+        rejectRetargetedComposerSelection(intent, modelValue: modelValue)
         return
       }
 
       var options = capability.configOptions
-      var resolvedValues: [String: String] = [:]
-      for index in options.indices
-      where Self.rememberedConfigCategories.contains(options[index].category ?? "") {
-        let option = options[index]
-        let carriedValue =
-          option.id == resolvedModel.id ? resolvedModelValue : intent.configValues[option.id]
-        let acceptedCarriedValue =
-          option.currentValue == carriedValue ? carriedValue : nil
-        let value = [acceptedCarriedValue, destinationValues[option.id], option.currentValue]
-          .compactMap { $0 }
-          .first { candidate in
-            option.options.contains { $0.value == candidate }
-          }
-        guard let value else { continue }
-        options[index].currentValue = value
-        resolvedValues[option.id] = value
-      }
+      let resolvedValues = intent.resolveRememberedOptions(
+        in: &options,
+        resolvedModel: resolvedModel,
+        resolvedModelValue: resolvedModelValue,
+        destinationValues: destinationValues
+      )
       configOptionsByHarness[intent.harnessId] = options
       pendingConfiguration.replaceValues(resolvedValues, for: intent.harnessId)
       automaticSelectionIntent = ComposerSelectionIntent(
@@ -394,6 +371,16 @@ extension SessionController {
       automaticSelectionNeedsResolution = false
     } catch {
     }
+  }
+
+  private func rejectRetargetedComposerSelection(_ intent: ComposerSelectionIntent, modelValue: String) {
+    clearAutomaticSelection()
+    markDraftModel(
+      modelValue,
+      name: intent.modelName ?? modelValue,
+      harnessId: intent.harnessId,
+      checking: false
+    )
   }
 
   func resolveAutomaticSelectionIfNeeded() async {
