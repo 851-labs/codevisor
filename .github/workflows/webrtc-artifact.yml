@@ -2,6 +2,11 @@ name: Native WebRTC Artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Publish the build to R2 as this version (152.0.0-codevisor.N); leave empty to only build
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -44,3 +49,21 @@ jobs:
             tmp/webrtc-source/*/artifacts/revisions.txt
             tmp/webrtc-source/*/artifacts/*-gn-args.txt
             tmp/webrtc-source/*/artifacts/notices-*/LICENSE.md
+
+  publish:
+    needs: build
+    if: inputs.version != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-webrtc-candidate
+          path: dist/webrtc
+      - name: Publish to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          VERSION: ${{ inputs.version }}
+        run: scripts/release/publish-webrtc.sh "$VERSION" dist/webrtc
