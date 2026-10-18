@@ -6,6 +6,7 @@ describe("CodexProvider", () => {
   it("keeps last-turn and cumulative usage distinct and omits nonfinite counters", async () => {
     const { client, created, events } = await setup()
     try {
+      await expect(run(created!.handle.readContext!)).resolves.toBeUndefined()
       client.emit("thread/tokenUsage/updated", {
         threadId: "thread-new",
         tokenUsage: {
@@ -60,6 +61,12 @@ describe("CodexProvider", () => {
           subjectId: "thread-new"
         }
       ])
+      await expect(run(created!.handle.readContext!)).resolves.toEqual({
+        categories: [{ name: "Free space", tokens: 249 }],
+        maxTokens: 256,
+        mcpTools: [],
+        totalTokens: 7
+      })
     } finally {
       await run(created!.handle.close)
     }

@@ -200,7 +200,10 @@ extension ServerSessionContext.Category {
   fileprivate var tint: Color {
     if isDeferred == true { return Color.secondary.opacity(0.35) }
     switch name {
-    case "Messages": return .blue
+    case "Messages", "Input": return .blue
+    case "Cached input": return .teal
+    case "Output": return .green
+    case "Reasoning": return .indigo
     case "System tools": return .orange
     case "MCP tools": return .green
     case "System prompt": return .yellow

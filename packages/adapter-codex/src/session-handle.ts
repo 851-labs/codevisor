@@ -1,5 +1,6 @@
 import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
 
 import { codexInput } from "./attachments.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
@@ -150,5 +151,6 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     await emitGoalCleared(session)
   }),
   answerQuestion: (questionId, answer) =>
-    adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer))
+    adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer)),
+  readContext: Effect.sync(() => session.latestContext)
 })

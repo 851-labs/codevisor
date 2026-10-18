@@ -158,7 +158,7 @@ export interface AgentSessionHandle {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
-  readonly readContext?: Effect.Effect<SessionContext, AgentRuntimeError>
+  readonly readContext?: Effect.Effect<SessionContext | undefined, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }
 
