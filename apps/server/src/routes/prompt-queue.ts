@@ -138,13 +138,13 @@ export const drainPromptQueue = async (
     return
   }
   if (routeState.activePromptSessions.has(sessionId)) {
-    await steerQueuedPrompts(services, fanout, serverId, sessionId)
+    await steerQueuedPrompts(services, fanout, routeState, serverId, sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
   if (routeState.activeTurnSessions.has(sessionId)) {
     routeState.turnHeldSessions.add(sessionId)
-    await steerQueuedPrompts(services, fanout, serverId, sessionId)
+    await steerQueuedPrompts(services, fanout, routeState, serverId, sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
@@ -227,12 +227,13 @@ const steerChains = new Map<string, Promise<void>>()
 const steerQueuedPrompts = (
   services: CodevisorServerServices,
   fanout: EventFanout,
+  routeState: RouteState,
   serverId: string,
   sessionId: string
 ): Promise<void> => {
   const previous = steerChains.get(sessionId) ?? Promise.resolve()
   const next = previous
-    .then(() => steerPendingPrompts(services, fanout, serverId, sessionId))
+    .then(() => steerPendingPrompts(services, fanout, routeState, serverId, sessionId))
     .catch(swallowError)
   steerChains.set(sessionId, next)
   void next.finally(() => {
@@ -244,6 +245,7 @@ const steerQueuedPrompts = (
 const steerPendingPrompts = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
+  routeState: RouteState,
   serverId: string,
   sessionId: string
 ): Promise<void> => {
@@ -259,6 +261,9 @@ const steerPendingPrompts = async (
     })().catch(() => false)
     if (!steered) {
       await run(services.db.releasePromptQueueItem(sessionId, item.id))
+      if (!hasLiveTurn(routeState, sessionId)) {
+        void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
+      }
       return
     }
     noteBotPrompt(services, sessionId, item.origin)
