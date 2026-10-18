@@ -32,6 +32,24 @@ export interface TerminalTitles {
   readonly subscribe: (listener: TerminalTitleListener) => () => void
 }
 
+const observeTitleStatus = (
+  terminal: RunningTerminal,
+  state: TitleState,
+  data: string
+): TerminalTitleStatus => {
+  state.prompt.observe(data)
+  for (const event of state.scanner.scan(data)) {
+    if (event.type === "query") {
+      terminal.process.write(`\u001b]7501;${PROGRAM_STATUS_QUERY_REPLY}${event.terminator}`)
+    } else {
+      state.records.apply(event)
+    }
+  }
+  const title =
+    state.prompt.running() === false ? NO_TITLE : terminalTitleStatus(terminal.screen.title())
+  return { title: title.title, activity: state.records.summary() ?? title.activity }
+}
+
 export const makeTerminalTitles = (): TerminalTitles => {
   const states = new WeakMap<RunningTerminal, TitleState>()
   const listeners = new Set<TerminalTitleListener>()
@@ -53,17 +71,7 @@ export const makeTerminalTitles = (): TerminalTitles => {
         records: makeProgramStatusRecords()
       }
       states.set(terminal, state)
-      state.prompt.observe(data)
-      for (const event of state.scanner.scan(data)) {
-        if (event.type === "query") {
-          terminal.process.write(`\u001b]7501;${PROGRAM_STATUS_QUERY_REPLY}${event.terminator}`)
-        } else {
-          state.records.apply(event)
-        }
-      }
-      const title =
-        state.prompt.running() === false ? NO_TITLE : terminalTitleStatus(terminal.screen.title())
-      const status = { title: title.title, activity: state.records.summary() ?? title.activity }
+      const status = observeTitleStatus(terminal, state, data)
       if (same(status, state.current)) return
       state.current = status
       clearTimeout(state.timer)
