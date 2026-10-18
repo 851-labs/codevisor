@@ -97,6 +97,16 @@ const validateSvg = (pluginId: string, data: Uint8Array): void => {
   validateSvgResources(pluginId, source)
 }
 
+const assembleIconBody = (chunks: ReadonlyArray<Uint8Array>, byteLength: number): Uint8Array => {
+  const data = new Uint8Array(byteLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    data.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return data
+}
+
 const readBoundedBody = async (pluginId: string, response: Response): Promise<Uint8Array> => {
   const reader = response.body?.getReader()
   if (reader === undefined) {
@@ -119,13 +129,7 @@ const readBoundedBody = async (pluginId: string, response: Response): Promise<Ui
     }
     chunks.push(result.value)
   }
-  const data = new Uint8Array(byteLength)
-  let offset = 0
-  for (const chunk of chunks) {
-    data.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return data
+  return assembleIconBody(chunks, byteLength)
 }
 
 const normalizeIcon = async (
@@ -155,6 +159,30 @@ const normalizeIcon = async (
       }`
     )
   }
+}
+
+const acceptIconResponse = (
+  plugin: InstalledPlugin,
+  response: Response
+): PluginIconSourceContentType => {
+  if (!response.ok) {
+    throw new PluginsError("invalid", `Plugin ${plugin.id} icon failed (HTTP ${response.status})`)
+  }
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim()
+  if (!isSourceContentType(contentType)) {
+    throw new PluginsError(
+      "invalid",
+      `Plugin ${plugin.id} icon must be SVG, PNG, or WebP (received ${contentType ?? "no Content-Type"})`
+    )
+  }
+  const declaredLength = Number(response.headers.get("content-length"))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PLUGIN_ICON_BYTES) {
+    throw new PluginsError(
+      "invalid",
+      `Plugin ${plugin.id} icon exceeds ${MAX_PLUGIN_ICON_BYTES} bytes`
+    )
+  }
+  return contentType
 }
 
 export const fetchPluginIcon = async (
@@ -192,23 +220,7 @@ export const fetchPluginIcon = async (
     )
   }
   options.noteSuccess()
-  if (!response.ok) {
-    throw new PluginsError("invalid", `Plugin ${plugin.id} icon failed (HTTP ${response.status})`)
-  }
-  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim()
-  if (!isSourceContentType(contentType)) {
-    throw new PluginsError(
-      "invalid",
-      `Plugin ${plugin.id} icon must be SVG, PNG, or WebP (received ${contentType ?? "no Content-Type"})`
-    )
-  }
-  const declaredLength = Number(response.headers.get("content-length"))
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_PLUGIN_ICON_BYTES) {
-    throw new PluginsError(
-      "invalid",
-      `Plugin ${plugin.id} icon exceeds ${MAX_PLUGIN_ICON_BYTES} bytes`
-    )
-  }
+  const contentType = acceptIconResponse(plugin, response)
   const data = await readBoundedBody(plugin.id, response)
   return normalizeIcon(plugin.id, contentType, data)
 }
