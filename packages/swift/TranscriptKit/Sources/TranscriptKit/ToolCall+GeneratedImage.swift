@@ -15,16 +15,3 @@ extension ToolCall {
     return Attachment(fileId: fileId, name: name, mimeType: mimeType, sizeBytes: Int(sizeBytes), kind: .image)
   }
 }
-
-extension AssistantTurn {
-  public var generatedImageActivity: [ToolCall] {
-    toolCalls.filter { $0.kind == .imageGeneration && $0.generatedImageAttachment == nil }
-  }
-
-  mutating func receiveGeneratedImage(_ call: ToolCall) {
-    guard call.parentToolCallId == nil, let image = call.generatedImageAttachment,
-      !attachments.contains(where: { $0.fileId == image.fileId })
-    else { return }
-    attachments.append(image)
-  }
-}
