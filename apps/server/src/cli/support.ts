@@ -1,4 +1,5 @@
 import { field, recordField, stringField } from "../unknown-values.js"
+import { harnessSummaries, printRunningStatus, printUnavailableStatus } from "./status-output.js"
 
 export interface ExecResult {
   readonly code: number
@@ -235,37 +236,6 @@ export const restartCommand = async (
   return startCommand(deps, options)
 }
 
-interface HarnessSummary {
-  readonly id: string
-  readonly state: string
-  readonly detail?: string
-  readonly version?: string
-  readonly path?: string
-}
-
-const harnessSummaries = (body: unknown): ReadonlyArray<HarnessSummary> => {
-  if (!Array.isArray(body)) return []
-  return body.flatMap((entry) => {
-    const id = stringField(entry, "id")
-    if (id === undefined) return []
-    const readiness = field(entry, "readiness")
-    const detail = stringField(readiness, "detail")
-    const version = stringField(readiness, "version")
-    const path = stringField(readiness, "path")
-    return [
-      {
-        id,
-        state: stringField(readiness, "state") ?? "unknown",
-        ...(detail === undefined ? {} : { detail }),
-        ...(version === undefined ? {} : { version }),
-        ...(path === undefined ? {} : { path })
-      }
-    ]
-  })
-}
-
-const reported = (value: unknown): string => (typeof value === "string" ? value : "unknown")
-
 export interface StatusOptions extends CommandOptions {
   readonly json?: boolean | undefined
 }
@@ -277,51 +247,13 @@ export const statusCommand = async (
   const port = await resolvePort(deps, options.port)
   const info = await deps.fetchJson(`${baseUrl(port)}/v1/info`)
   if (info === undefined || info.status !== 200) {
-    if (options.json === true) {
-      deps.log(
-        JSON.stringify({ running: false, port, installedVersion: deps.installedVersion() ?? null })
-      )
-    } else {
-      deps.log(`Codevisor server is not running on port ${port}`)
-      const installed = deps.installedVersion()
-      if (installed !== undefined) deps.log(`Installed version: ${installed}`)
-      deps.log("Start it with: codevisor start")
-    }
+    printUnavailableStatus(deps, options, port)
     return 1
   }
 
   const manifest = recordField(info, "body")
   const harnesses = harnessSummaries((await deps.fetchJson(`${baseUrl(port)}/v1/harnesses`))?.body)
-  if (options.json === true) {
-    deps.log(
-      JSON.stringify({
-        running: true,
-        port,
-        name: manifest.name,
-        version: manifest.version,
-        serverId: manifest.id,
-        machineId: manifest.machineId,
-        platform: manifest.platform,
-        arch: manifest.arch,
-        hostname: manifest.hostname,
-        harnesses
-      })
-    )
-    return 0
-  }
-  deps.log(`Codevisor server ${String(manifest.version)} is running on port ${port}`)
-  deps.log(`  name:      ${String(manifest.name)}`)
-  deps.log(`  machine:   ${reported(manifest.hostname)} (${reported(manifest.machineId)})`)
-  deps.log(`  platform:  ${String(manifest.platform)}/${reported(manifest.arch)}`)
-  if (harnesses.length > 0) {
-    deps.log("  harnesses:")
-    for (const harness of harnesses) {
-      const version = harness.version === undefined ? "" : ` ${harness.version}`
-      const location = harness.path === undefined ? "" : ` (${harness.path})`
-      const detail = harness.detail === undefined ? "" : ` — ${harness.detail}`
-      deps.log(`    ${harness.id}: ${harness.state}${version}${location}${detail}`)
-    }
-  }
+  printRunningStatus(deps, options, port, manifest, harnesses)
   return 0
 }
 
