@@ -115,24 +115,7 @@ public final class AttachmentImageStore {
         let data = try await fetchPreview(source)
         guard data.count <= 1024 * 1024 else { return nil }
         return await Task.detached(priority: .userInitiated) {
-          guard
-            let source = CGImageSourceCreateWithData(
-              data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-            let pixels = CGImageSourceCreateThumbnailAtIndex(
-              source, 0,
-              [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 480,
-              ] as CFDictionary)
-          else { return nil as AttachmentPreviewImage? }
-          #if canImport(AppKit)
-            let image = NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height))
-          #else
-            let image = UIImage(cgImage: pixels)
-          #endif
-          return AttachmentPreviewImage(
-            image: image, aspectRatio: CGFloat(pixels.width) / CGFloat(pixels.height), version: resolvedVersion)
+          AttachmentPreviewCodec.preview(data: data, version: resolvedVersion)
         }.value
       } catch { return nil }
     }
@@ -146,11 +129,7 @@ public final class AttachmentImageStore {
       if let encoded = await Task.detached(
         priority: .utility,
         operation: { () -> Data? in
-          #if canImport(AppKit)
-            return pngData(for: loaded.image)
-          #elseif canImport(UIKit)
-            return loaded.image.pngData()
-          #endif
+          return AttachmentPreviewCodec.pngData(for: loaded.image)
         }
       ).value {
         await Self.disk.store(
@@ -348,16 +327,6 @@ private actor AttachmentPreviewDiskCache {
   }
 }
 
-#if canImport(AppKit)
-  private nonisolated func pngData(for image: NSImage) -> Data? {
-    guard let tiff = image.tiffRepresentation,
-      let representation = NSBitmapImageRep(data: tiff)
-    else { return nil }
-    return representation.representation(using: .png, properties: [:])
-  }
-
-#endif
-
 public nonisolated func attachmentPreviewImage(
   fileURL: URL,
   isVideo: Bool,
@@ -374,7 +343,7 @@ public nonisolated func attachmentPreviewImage(
       frame = try? await generator.image(at: .zero)
     }
     guard let frame else { return nil }
-    return osImage(frame.image)
+    return AttachmentPreviewCodec.osImage(frame.image)
   }
   if isPDF {
     #if canImport(AppKit)
@@ -395,13 +364,5 @@ public nonisolated func attachmentPreviewImage(
         kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
       ] as CFDictionary)
   else { return nil }
-  return osImage(image)
-}
-
-private nonisolated func osImage(_ image: CGImage) -> OSImage {
-  #if canImport(AppKit)
-    NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-  #else
-    UIImage(cgImage: image)
-  #endif
+  return AttachmentPreviewCodec.osImage(image)
 }
