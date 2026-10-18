@@ -5,7 +5,7 @@ import { handleSystemMessage } from "./background-tasks.js"
 import { acceptForkedCommandMessage, startForkedCommand } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
-import type { ClaudeSession } from "./session.js"
+import type { ClaudeSession, ClaudeTaskToolUse } from "./session.js"
 import { attachSkillText, skillResultMeta } from "./skill-tool.js"
 import { handleStreamEvent } from "./stream-events.js"
 import {
@@ -41,48 +41,7 @@ export const handleMessage = (
       if (message.isSynthetic === true && attachSkillText(session, content)) break
       for (const block of content) {
         if (isRecord(block) && block.type === "tool_result") {
-          const toolUseId = block.tool_use_id
-          session.openToolCalls.delete(toolUseId)
-          const accumulator = session.accumulators.get(toolUseId)
-          const taskToolUse = session.taskToolUses.get(toolUseId)
-          session.taskToolUses.delete(toolUseId)
-          if (taskToolUse !== undefined) {
-            if (block.is_error !== true) {
-              const changed =
-                taskToolUse.name === "TaskCreate"
-                  ? applyTaskCreate(
-                      session.tasks,
-                      taskIdFromCreateResult(block.content),
-                      taskToolUse.input
-                    )
-                  : taskToolUse.name === "TaskUpdate"
-                    ? applyTaskUpdate(session.tasks, taskToolUse.input)
-                    : false
-              if (changed) emitTaskPlanUpdate(session)
-            }
-            continue
-          }
-          if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) continue
-          emitSubagentReport(session, toolUseId, message.tool_use_result)
-          const doneTitle =
-            accumulator !== undefined && accumulator.titledPath !== undefined
-              ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
-              : undefined
-          const sources = block.is_error === true ? [] : webSearchSources(block.content)
-          const skill = skillResultMeta(session, toolUseId, block.is_error === true)
-          void session.emit({
-            kind: "session.output",
-            payload: {
-              rawOutput: block.content,
-              sessionUpdate: "tool_call_update",
-              status: block.is_error === true ? "failed" : "completed",
-              toolCallId: toolUseId,
-              ...(doneTitle === undefined ? {} : { title: doneTitle }),
-              ...(sources.length === 0 ? {} : { content: sourcesContent(sources) }),
-              ...skill
-            },
-            subjectId: session.key
-          })
+          handleToolResult(session, message, block)
         }
       }
       break
@@ -104,6 +63,68 @@ export const handleMessage = (
     default:
       break
   }
+}
+
+type UserMessage = Extract<SDKMessage, { type: "user" }>
+type ToolResult = Extract<
+  Exclude<UserMessage["message"]["content"], string>[number],
+  { type: "tool_result" }
+>
+
+const handleToolResult = (
+  session: ClaudeSession,
+  message: UserMessage,
+  block: ToolResult
+): void => {
+  const toolUseId = block.tool_use_id
+  session.openToolCalls.delete(toolUseId)
+  const accumulator = session.accumulators.get(toolUseId)
+  const taskToolUse = session.taskToolUses.get(toolUseId)
+  session.taskToolUses.delete(toolUseId)
+  if (taskToolUse !== undefined) {
+    applyTaskToolResult(session, taskToolUse, block)
+    return
+  }
+  if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) return
+  emitSubagentReport(session, toolUseId, message.tool_use_result)
+  const doneTitle =
+    accumulator !== undefined && accumulator.titledPath !== undefined
+      ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
+      : undefined
+  const sources = block.is_error === true ? [] : webSearchSources(block.content)
+  const skill = skillResultMeta(session, toolUseId, block.is_error === true)
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      rawOutput: block.content,
+      sessionUpdate: "tool_call_update",
+      status: block.is_error === true ? "failed" : "completed",
+      toolCallId: toolUseId,
+      ...(doneTitle === undefined ? {} : { title: doneTitle }),
+      ...(sources.length === 0 ? {} : { content: sourcesContent(sources) }),
+      ...skill
+    },
+    subjectId: session.key
+  })
+}
+
+const applyTaskToolResult = (
+  session: ClaudeSession,
+  taskToolUse: ClaudeTaskToolUse,
+  block: ToolResult
+): void => {
+  if (block.is_error === true) return
+  let changed = false
+  if (taskToolUse.name === "TaskCreate") {
+    changed = applyTaskCreate(
+      session.tasks,
+      taskIdFromCreateResult(block.content),
+      taskToolUse.input
+    )
+  } else if (taskToolUse.name === "TaskUpdate") {
+    changed = applyTaskUpdate(session.tasks, taskToolUse.input)
+  }
+  if (changed) emitTaskPlanUpdate(session)
 }
 
 const emitSubagentReport = (session: ClaudeSession, toolUseId: string, result: unknown): void => {
