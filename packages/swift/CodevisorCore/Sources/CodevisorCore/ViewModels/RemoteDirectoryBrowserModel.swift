@@ -60,11 +60,7 @@ public final class RemoteDirectoryBrowserModel {
     } catch {
       guard generation == requestGeneration else { return }
       columns[0].isLoading = false
-      columns[0].errorMessage = Self.guidance(
-        code: serverErrorCode(error),
-        fallback: serverErrorMessage(error),
-        machineName: machineName
-      )
+      columns[0].errorMessage = listingErrorMessage(error)
     }
   }
 
@@ -78,11 +74,7 @@ public final class RemoteDirectoryBrowserModel {
     }
     generation += 1
     let requestGeneration = generation
-    columns[index].selectedEntryPath = entryPath
-    columns.removeSubrange((index + 1)...)
-    var child = Column(path: entryPath)
-    child.isLoading = true
-    columns.append(child)
+    stageSelectedChild(entryPath, after: index)
     do {
       let listing = try await fetch(path: entryPath, showHidden: showHidden)
       guard generation == requestGeneration else { return }
@@ -90,11 +82,7 @@ public final class RemoteDirectoryBrowserModel {
     } catch {
       guard generation == requestGeneration else { return }
       columns[columns.count - 1].isLoading = false
-      columns[columns.count - 1].errorMessage = Self.guidance(
-        code: serverErrorCode(error),
-        fallback: serverErrorMessage(error),
-        machineName: machineName
-      )
+      columns[columns.count - 1].errorMessage = listingErrorMessage(error)
     }
   }
 
@@ -135,11 +123,7 @@ public final class RemoteDirectoryBrowserModel {
       return true
     } catch {
       guard generation == requestGeneration else { return false }
-      goToError = Self.guidance(
-        code: serverErrorCode(error),
-        fallback: serverErrorMessage(error),
-        machineName: machineName
-      )
+      goToError = listingErrorMessage(error)
       return false
     }
   }
@@ -158,11 +142,7 @@ public final class RemoteDirectoryBrowserModel {
 
     generation += 1
     let requestGeneration = generation
-    columns[parentIndex].selectedEntryPath = path
-    columns.removeSubrange((parentIndex + 1)...)
-    var child = Column(path: path)
-    child.isLoading = true
-    columns.append(child)
+    stageSelectedChild(path, after: parentIndex)
 
     do {
       let parentListing = try await fetch(path: parentPath, showHidden: showHidden)
@@ -181,11 +161,7 @@ public final class RemoteDirectoryBrowserModel {
     } catch {
       guard generation == requestGeneration else { return }
       columns[parentIndex + 1].isLoading = false
-      columns[parentIndex + 1].errorMessage = Self.guidance(
-        code: serverErrorCode(error),
-        fallback: serverErrorMessage(error),
-        machineName: machineName
-      )
+      columns[parentIndex + 1].errorMessage = listingErrorMessage(error)
     }
   }
 
@@ -219,6 +195,22 @@ public final class RemoteDirectoryBrowserModel {
     if !reloaded.isEmpty {
       columns = reloaded
     }
+  }
+
+  private func stageSelectedChild(_ path: String, after index: Int) {
+    columns[index].selectedEntryPath = path
+    columns.removeSubrange((index + 1)...)
+    var child = Column(path: path)
+    child.isLoading = true
+    columns.append(child)
+  }
+
+  private func listingErrorMessage(_ error: any Error) -> String {
+    Self.guidance(
+      code: serverErrorCode(error),
+      fallback: serverErrorMessage(error),
+      machineName: machineName
+    )
   }
 
   private func resolvedColumn(for listing: ServerFsListing) -> Column {
