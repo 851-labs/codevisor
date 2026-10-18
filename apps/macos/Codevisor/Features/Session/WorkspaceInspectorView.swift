@@ -139,12 +139,10 @@ struct WorkspaceInspectorView: View {
       }
 
       if showsBotTranscript {
-        Section("Bot") {
-          row(.botTranscript) {
-            Label("Full Transcript", systemImage: "text.page")
-          }
-          .help("Open everything the bot did, including its tool calls and the messages it received")
-          .accessibilityIdentifier("bot.showFullTranscript")
+        Section {
+          Button("Show Full Transcript") { onOpen(.botTranscript) }
+            .help("Show everything the bot did, including its tool calls and the messages it received")
+            .accessibilityIdentifier("bot.showFullTranscript")
         }
       }
     }
