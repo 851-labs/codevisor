@@ -27,6 +27,52 @@ const catalogMetadata = z.object({
   panes: z.array(z.object({ type: z.string().max(120), title: z.string().max(120) })).max(32),
   tools: z.array(z.object({ name: z.string().max(120), description: z.string().max(1000) })).max(64)
 })
+interface ConsentRequest extends Record<string, unknown> {
+  pluginId: string
+  consentKey: string
+  noticeVersion: 1
+}
+
+const isConsentRequest = (body: Record<string, unknown>): body is ConsentRequest => {
+  if (
+    typeof body.pluginId !== "string" ||
+    !pluginIdPattern.test(body.pluginId) ||
+    typeof body.consentKey !== "string" ||
+    !/^[a-f0-9]{64}$/.test(body.consentKey) ||
+    body.noticeVersion !== 1
+  ) {
+    return false
+  }
+  return true
+}
+
+interface ReportRequest extends Record<string, unknown> {
+  id: string
+  pluginId: string
+  pluginName: string
+  reason: string
+  details: string
+}
+
+const isReportRequest = (body: Record<string, unknown>): body is ReportRequest => {
+  if (
+    typeof body.id !== "string" ||
+    !/^[a-f0-9-]{36}$/i.test(body.id) ||
+    typeof body.pluginId !== "string" ||
+    !pluginIdPattern.test(body.pluginId) ||
+    typeof body.pluginName !== "string" ||
+    body.pluginName.length < 1 ||
+    body.pluginName.length > 120 ||
+    typeof body.reason !== "string" ||
+    !reportReasons.has(body.reason) ||
+    typeof body.details !== "string" ||
+    body.details.length > 2000
+  ) {
+    return false
+  }
+  return true
+}
+
 export const pluginModeration = new Hono<ModerationEnv>()
 
 pluginModeration.use("/api/plugins/*", bodyLimit({ maxSize: 8192 }))
@@ -74,15 +120,9 @@ pluginModeration.get("/api/plugins/preferences", async (c) => {
 pluginModeration.post("/api/plugins/consent", async (c) => {
   const body = await readBody(c.req.raw)
   const metadata = catalogMetadata.safeParse(body.metadata)
-  if (
-    typeof body.pluginId !== "string" ||
-    !pluginIdPattern.test(body.pluginId) ||
-    typeof body.consentKey !== "string" ||
-    !/^[a-f0-9]{64}$/.test(body.consentKey) ||
-    body.noticeVersion !== 1 ||
-    !metadata.success
-  )
+  if (!isConsentRequest(body) || !metadata.success) {
     return c.json({ error: "invalid consent" }, 400)
+  }
   await c.env.DB.prepare(
     "INSERT INTO plugin_consents (user_id, plugin_id, consent_key, notice_version, created_at, metadata) VALUES (?, ?, ?, 1, ?, ?) ON CONFLICT(user_id, plugin_id, consent_key) DO UPDATE SET notice_version = 1, created_at = excluded.created_at, metadata = excluded.metadata"
   )
@@ -135,29 +175,15 @@ pluginModeration.delete("/api/plugins/publishers/:publisher", async (c) => {
 
 pluginModeration.post("/api/plugins/reports", async (c) => {
   const body = await readBody(c.req.raw)
-  if (
-    typeof body.id !== "string" ||
-    !/^[a-f0-9-]{36}$/i.test(body.id) ||
-    typeof body.pluginId !== "string" ||
-    !pluginIdPattern.test(body.pluginId) ||
-    typeof body.pluginName !== "string" ||
-    body.pluginName.length < 1 ||
-    body.pluginName.length > 120 ||
-    typeof body.reason !== "string" ||
-    !reportReasons.has(body.reason) ||
-    typeof body.details !== "string" ||
-    body.details.length > 2000
-  ) {
-    return c.json({ error: "invalid report" }, 400)
-  }
+  if (!isReportRequest(body)) return c.json({ error: "invalid report" }, 400)
   const userId = c.get("userId")
   const existing = await c.env.DB.prepare("SELECT user_id FROM plugin_reports WHERE id = ?")
     .bind(body.id)
     .first<{ user_id: string }>()
-  if (existing)
-    return existing.user_id === userId
-      ? c.json({ ok: true })
-      : c.json({ error: "invalid report id" }, 409)
+  if (existing) {
+    if (existing.user_id === userId) return c.json({ ok: true })
+    return c.json({ error: "invalid report id" }, 409)
+  }
   const inserted = await c.env.DB.prepare(
     "INSERT INTO plugin_reports (id, user_id, plugin_id, plugin_name, reason, details, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT count(*) FROM plugin_reports WHERE user_id = ? AND created_at > ?) < 20"
   )
