@@ -51,9 +51,14 @@ extension ChatScreen {
         focusChatId: controller.serverSession?.id,
         glassNamespace: composerGlassNamespace
       )
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        composerCardHeight = $0
+      }
     }
-    .padding(.horizontal, 24)
-    .frame(maxWidth: 880)
+    .padding(.horizontal, Self.composerHorizontalPadding)
+    .frame(maxWidth: Self.composerMaxWidth)
     .padding(.bottom, Self.composerBottomMargin)
     .padding(.top, 24)
     .frame(maxWidth: .infinity)

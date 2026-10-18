@@ -7,6 +7,8 @@ import TranscriptKit
 
 struct ChatScreen: View {
   static let composerBottomMargin: CGFloat = 16
+  static let composerHorizontalPadding: CGFloat = 24
+  static let composerMaxWidth: CGFloat = 880
 
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -26,6 +28,7 @@ struct ChatScreen: View {
   @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
   @State var composerHeight: CGFloat
+  @State var composerCardHeight: CGFloat = 0
   @State var isQueueExpanded: Bool
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
@@ -40,6 +43,7 @@ struct ChatScreen: View {
     TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
   @State var presentationVisibilityOwner = UUID()
   @Namespace var composerGlassNamespace
+  var composerCardStyle = ComposerCardStyle()
 
   private struct ContentLoadingIdentity: Equatable {
     let controller: ObjectIdentifier
@@ -85,6 +89,7 @@ struct ChatScreen: View {
         presentationSurface.isQueueExpanded = isExpanded
       }
       .overlay { initialLoadingOverlay }
+      .overlay(alignment: .bottom) { composerScrim }
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)

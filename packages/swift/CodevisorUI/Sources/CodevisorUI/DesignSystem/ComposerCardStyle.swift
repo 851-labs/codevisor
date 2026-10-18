@@ -13,13 +13,17 @@ public struct ComposerCardStyle: DynamicProperty {
 
   public init() {}
 
+  public var cornerRadius: CGFloat {
+    actionRadius + Self.contentPadding
+  }
+
   public var shape: ConcentricRectangle {
     insetShape(by: 0)
   }
 
   public func insetShape(by inset: CGFloat) -> ConcentricRectangle {
     ConcentricRectangle(
-      corners: .concentric(minimum: .fixed(max(0, actionRadius + Self.contentPadding - inset))),
+      corners: .concentric(minimum: .fixed(max(0, cornerRadius - inset))),
       isUniform: true
     )
   }
