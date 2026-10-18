@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { AttachmentRef } from "./sessions.js"
+
 export const BotProject = Schema.Struct({
   projectId: Schema.String,
   folderName: Schema.String,
@@ -39,3 +41,41 @@ export const UpdateBotRequest = Schema.Struct({
   symbolName: Schema.optional(Schema.String)
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
+
+export const BotMessageSender = Schema.Literals(["user", "bot", "notice"])
+export type BotMessageSender = typeof BotMessageSender.Type
+
+export const BotMessage = Schema.Struct({
+  id: Schema.String,
+  sessionId: Schema.String,
+  sequence: Schema.Number,
+  sender: BotMessageSender,
+  text: Schema.String,
+  attachments: Schema.optional(Schema.Array(AttachmentRef)),
+  createdAt: Schema.String
+})
+export type BotMessage = typeof BotMessage.Type
+
+export const BotConversationPage = Schema.Struct({
+  messages: Schema.Array(BotMessage),
+  hasMore: Schema.Boolean,
+  working: Schema.Boolean
+})
+export type BotConversationPage = typeof BotConversationPage.Type
+
+export const BotMessageAttachmentInput = Schema.Struct({
+  path: Schema.String,
+  name: Schema.optional(Schema.String)
+})
+export type BotMessageAttachmentInput = typeof BotMessageAttachmentInput.Type
+
+export const SendBotMessageRequest = Schema.Struct({
+  text: Schema.String,
+  attachments: Schema.optional(Schema.Array(BotMessageAttachmentInput))
+})
+export type SendBotMessageRequest = typeof SendBotMessageRequest.Type
+
+export const BotMessageEventPayload = Schema.Struct({
+  message: BotMessage
+})
+export type BotMessageEventPayload = typeof BotMessageEventPayload.Type

@@ -34,6 +34,7 @@ export const EventKind = Schema.Literals([
   "update.changed",
   "mcp.updated",
   "bot.updated",
+  "bot.message",
   "sync.changed"
 ])
 export type EventKind = typeof EventKind.Type
