@@ -199,30 +199,43 @@ const toEntry = (
   manifest: PluginManifest,
   repo: GitHubSearchRepo,
   commit: string
-): PluginIndexEntry => ({
-  commit,
-  id: manifest.id,
-  name: manifest.name,
-  url: `https://www.codevisor.dev/plugins/${manifest.id}`,
-  ...(manifest.ageRating === undefined ? {} : { ageRating: manifest.ageRating }),
-  version: manifest.version,
-  protocolVersion: manifest.protocolVersion,
-  ...(manifest.description !== undefined ? { description: manifest.description } : {}),
-  ...(manifest.iconPath !== undefined ? { iconPath: manifest.iconPath } : {}),
-  panes: manifest.panes,
-  ...(manifest.tools !== undefined ? { tools: manifest.tools } : {}),
-  ...(manifest.platforms !== undefined ? { platforms: manifest.platforms } : {}),
-  ...(manifest.protocolVersion === 1 || manifest.minCodevisorVersion === undefined
-    ? {}
-    : { minCodevisorVersion: manifest.minCodevisorVersion }),
-  ...(manifest.protocolVersion === 1 || manifest.requirements === undefined
-    ? {}
-    : { requirements: manifest.requirements }),
-  repo: repo.full_name,
-  ...(repo.owner?.avatar_url !== undefined ? { ownerAvatarUrl: repo.owner.avatar_url } : {}),
-  stars: repo.stargazers_count,
-  pushedAt: repo.pushed_at
-})
+): PluginIndexEntry => {
+  const identity: Pick<PluginIndexEntry, "commit" | "id" | "name" | "url" | "ageRating"> = {
+    commit,
+    id: manifest.id,
+    name: manifest.name,
+    url: `https://www.codevisor.dev/plugins/${manifest.id}`
+  }
+  if (manifest.ageRating !== undefined) identity.ageRating = manifest.ageRating
+
+  const metadata: Pick<
+    PluginIndexEntry,
+    "version" | "protocolVersion" | "description" | "iconPath"
+  > = {
+    version: manifest.version,
+    protocolVersion: manifest.protocolVersion
+  }
+  if (manifest.description !== undefined) metadata.description = manifest.description
+  if (manifest.iconPath !== undefined) metadata.iconPath = manifest.iconPath
+
+  const entry: Omit<PluginIndexEntry, "repo" | "stars" | "pushedAt"> = {
+    ...identity,
+    ...metadata,
+    panes: manifest.panes
+  }
+  if (manifest.tools !== undefined) entry.tools = manifest.tools
+  if (manifest.platforms !== undefined) entry.platforms = manifest.platforms
+  if (manifest.protocolVersion !== 1 && manifest.minCodevisorVersion !== undefined) {
+    entry.minCodevisorVersion = manifest.minCodevisorVersion
+  }
+  if (manifest.protocolVersion !== 1 && manifest.requirements !== undefined) {
+    entry.requirements = manifest.requirements
+  }
+
+  const repository: Pick<PluginIndexEntry, "repo" | "ownerAvatarUrl"> = { repo: repo.full_name }
+  if (repo.owner?.avatar_url !== undefined) repository.ownerAvatarUrl = repo.owner.avatar_url
+  return { ...entry, ...repository, stars: repo.stargazers_count, pushedAt: repo.pushed_at }
+}
 
 const writeIndex = async (kv: KVNamespace, index: PluginIndex): Promise<void> => {
   const alive = new Set(index.entries.map((entry) => pluginEntryKey(entry.id)))
@@ -241,6 +254,22 @@ const writeIndex = async (kv: KVNamespace, index: PluginIndex): Promise<void> =>
     }
     cursor = page.list_complete ? undefined : page.cursor
   } while (cursor !== undefined)
+}
+
+const claimPluginId = (
+  manifest: PluginManifest,
+  repo: GitHubSearchRepo,
+  claimed: Map<string, string>
+): PluginIndexRejection | undefined => {
+  const previous = claimed.get(manifest.id)
+  if (previous !== undefined) {
+    return {
+      repo: repo.full_name,
+      reason: `plugin id "${manifest.id}" already indexed from ${previous}`
+    }
+  }
+  claimed.set(manifest.id, repo.full_name)
+  return undefined
 }
 
 export const refreshPluginIndex = async (env: CloudEnv): Promise<PluginRefreshSummary> => {
@@ -287,15 +316,11 @@ export const refreshPluginIndex = async (env: CloudEnv): Promise<PluginRefreshSu
       rejected.push({ repo: repo.full_name, reason: validated.reason })
       continue
     }
-    const previous = claimed.get(validated.manifest.id)
-    if (previous !== undefined) {
-      rejected.push({
-        repo: repo.full_name,
-        reason: `plugin id "${validated.manifest.id}" already indexed from ${previous}`
-      })
+    const duplicate = claimPluginId(validated.manifest, repo, claimed)
+    if (duplicate !== undefined) {
+      rejected.push(duplicate)
       continue
     }
-    claimed.set(validated.manifest.id, repo.full_name)
     entries.push(toEntry(validated.manifest, repo, commit))
   }
   entries.sort((a, b) => b.stars - a.stars || a.id.localeCompare(b.id))
