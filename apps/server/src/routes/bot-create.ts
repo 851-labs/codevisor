@@ -143,11 +143,18 @@ const BOT_MESSAGING_SECTION: ReadonlyArray<string> = [
 
 const LEGACY_FOLLOW_UP_STEP = "4. `sessions.wait` or `sessions.get` to follow up"
 
+const LEGACY_CREATE_STEP = "2. `sessions.create({ projectId, worktreeName, title })`"
+
+const createStep = (harnessId: string): string =>
+  `2. \`sessions.create({ projectId, worktreeName, harnessId: "${harnessId}", title })\``
+
 const BOT_FOLLOW_UP_STEP =
   "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result"
 
-export const upgradeBotInstructions = (text: string): string => {
-  const followUp = text.replace(LEGACY_FOLLOW_UP_STEP, BOT_FOLLOW_UP_STEP)
+export const upgradeBotInstructions = (text: string, harnessId: string): string => {
+  const followUp = text
+    .replace(LEGACY_FOLLOW_UP_STEP, BOT_FOLLOW_UP_STEP)
+    .replace(LEGACY_CREATE_STEP, createStep(harnessId))
   if (followUp.includes(BOT_MESSAGING_SECTION[0]!)) return followUp
   const section = BOT_MESSAGING_SECTION.join("\n") + "\n"
   const repositories = followUp.indexOf("## Repositories")
@@ -163,13 +170,17 @@ export const upgradeAllBotInstructions = async (
     const path = join(bot.rootPath, "AGENTS.md")
     try {
       const current = readFileSync(path, "utf8")
-      const upgraded = upgradeBotInstructions(current)
+      const upgraded = upgradeBotInstructions(current, bot.harnessId)
       if (upgraded !== current) writeFileSync(path, upgraded)
     } catch {}
   }
 }
 
-export const botInstructions = (name: string, checkouts: ReadonlyArray<BotCheckout>): string =>
+export const botInstructions = (
+  name: string,
+  harnessId: string,
+  checkouts: ReadonlyArray<BotCheckout>
+): string =>
   [
     `# ${name}`,
     "",
@@ -193,7 +204,7 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     "not a project you can branch from.",
     "",
     "1. `worktrees.create({ projectId })`",
-    "2. `sessions.create({ projectId, worktreeName, title })`",
+    createStep(harnessId),
     "3. `sessions.prompt({ sessionId, text })`",
     BOT_FOLLOW_UP_STEP,
     "",
@@ -202,8 +213,13 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     ""
   ].join("\n")
 
-const writeInstructions = (slug: string, name: string, checkouts: ReadonlyArray<BotCheckout>) => {
-  writeFileSync(join(botPath(slug), "AGENTS.md"), botInstructions(name, checkouts))
+const writeInstructions = (
+  slug: string,
+  name: string,
+  harnessId: string,
+  checkouts: ReadonlyArray<BotCheckout>
+) => {
+  writeFileSync(join(botPath(slug), "AGENTS.md"), botInstructions(name, harnessId, checkouts))
 }
 
 interface CreatedBotResources {
@@ -276,7 +292,7 @@ export const createBot = async (
     for (const source of sources) {
       created.checkouts.push(await checkOut(services, slug, source, folders))
     }
-    writeInstructions(slug, name, created.checkouts)
+    writeInstructions(slug, name, payload.harnessId, created.checkouts)
     const home = await run(services.db.createProject({ folderPath: botPath(slug), name }))
     created.homeProjectId = home.id
     await appendAndPublish(
