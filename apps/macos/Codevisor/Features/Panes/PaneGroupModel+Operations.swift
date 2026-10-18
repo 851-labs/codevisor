@@ -21,12 +21,6 @@ extension PaneGroupModel {
     onPaneChanged?(state.panes[index])
   }
 
-  func unbindChatPane(paneId: UUID) {
-    state.unbindChatPane(paneId: paneId)
-    persist()
-    if let pane = state.panes.first(where: { $0.id == paneId }) { onPaneChanged?(pane) }
-  }
-
   func resetChatPaneToPlaceholder(id: UUID) {
     guard let pane = state.resetChatPaneToPlaceholder(id: id) else { return }
     persist()
