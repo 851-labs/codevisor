@@ -7,12 +7,23 @@ struct HomeSidebarContentBuilder {
   let environment: AppEnvironment
   let gitLookups: SidebarGitLookups
 
-  var listedItems: [WorkspaceSidebarItem] { known(environment.navigationStore.workspaceEntries.sidebar) }
-  var archivedItems: [WorkspaceSidebarItem] { known(environment.navigationStore.workspaceEntries.archived) }
+  var botEntries: [BotSidebarEntry] {
+    environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
+  }
+
+  var listedItems: [WorkspaceSidebarItem] {
+    let nested = Set(botEntries.flatMap(\.workspaceIDs))
+    return known(environment.navigationStore.workspaceEntries.sidebar).filter { !nested.contains($0.id) }
+  }
+
+  var archivedItems: [WorkspaceSidebarItem] {
+    let homes = Set(botEntries.map(\.bot.workspaceId))
+    return known(environment.navigationStore.workspaceEntries.archived).filter { !homes.contains($0.id) }
+  }
 
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
-    return HomeSidebarContent.make(
+    var content = HomeSidebarContent.make(
       listed: listedItems,
       archived: archivedItems,
       preferences: preferences,
@@ -28,6 +39,23 @@ struct HomeSidebarContentBuilder {
         workspace, item: item, preferences: preferences, projectGroups: projectGroups,
         underHeading: placement == .list)
     }
+    content.canCreateBots = !environment.bots.botMachines.isEmpty
+    content.bots = botEntries.map { entry in
+      HomeSidebarBot(
+        bot: entry.bot,
+        status: environment.projectList.session(entry.bot.sessionId, serverId: entry.bot.serverId)
+          .map(status(for:)) ?? .idle,
+        machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: entry.bot.serverId) : nil,
+        children: entry.children.compactMap { item in
+          guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace else {
+            return nil
+          }
+          return sidebarWorkspace(
+            workspace, item: item, preferences: preferences, projectGroups: projectGroups, underHeading: false)
+        }
+      )
+    }
+    return content
   }
 
   private func known(_ items: [WorkspaceSidebarItem]) -> [WorkspaceSidebarItem] {

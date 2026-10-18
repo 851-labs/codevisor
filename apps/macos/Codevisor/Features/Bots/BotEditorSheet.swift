@@ -9,86 +9,41 @@ struct BotEditorSheet: View {
     let value: String
   }
 
-  @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  let target: BotEditorTarget
+  @State private var editor: BotEditorModel
   let onSaved: (Bot) -> Void
-  @State private var name: String
-  @State private var symbolName: String
-  @State private var serverId: String
-  @State private var projectIds: [UUID] = []
-  @State private var models: BotModelSelection?
-  @State private var isConversational = true
-  @State private var isSaving = false
-  @State private var didSave = false
-  @State private var botId = UUID()
-  @State private var errorMessage: String?
 
-  init(target: BotEditorTarget, defaultServerId: String, onSaved: @escaping (Bot) -> Void) {
-    self.target = target
+  init(target: BotEditorTarget, environment: AppEnvironment, onSaved: @escaping (Bot) -> Void) {
     self.onSaved = onSaved
-    switch target {
-    case .create:
-      _name = State(initialValue: "")
-      _symbolName = State(initialValue: BotIcon.fallback.systemImage)
-      _serverId = State(initialValue: defaultServerId)
-    case let .edit(bot):
-      _name = State(initialValue: bot.name)
-      _symbolName = State(initialValue: bot.symbolName)
-      _serverId = State(initialValue: bot.serverId)
-    }
-  }
-
-  private var editedBot: Bot? {
-    if case let .edit(bot) = target { return bot }
-    return nil
-  }
-
-  private var trimmedName: String {
-    name.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var machines: [CodevisorMachine] {
-    environment.bots.botMachines
-  }
-
-  private var eligibleProjects: [Project] {
-    environment.projectList.fleetActiveProjects.filter {
-      $0.serverId == serverId && !$0.isScratch && $0.isGitRepository
-    }
-  }
-
-  private var canSave: Bool {
-    guard !trimmedName.isEmpty, !isSaving, !didSave else { return false }
-    if editedBot != nil { return true }
-    return !selectedProjects.isEmpty && models?.harnessId != nil && models?.isResolving == false
+    _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
 
   var body: some View {
+    @Bindable var editor = editor
     Form {
       Section { header }
       Section {
-        TextField("Name", text: $name, prompt: Text("Bot name"))
-        Picker("Icon", selection: $symbolName) {
+        TextField("Name", text: $editor.name, prompt: Text("Bot name"))
+        Picker("Icon", selection: $editor.symbolName) {
           ForEach(BotIcon.choices) { choice in
             Label(choice.title, systemImage: choice.systemImage).tag(choice.systemImage)
           }
         }
         .pickerStyle(.menu)
-        Picker("Machine", selection: $serverId) {
-          ForEach(machines) { machine in
+        Picker("Machine", selection: $editor.serverId) {
+          ForEach(editor.machines) { machine in
             Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
           }
         }
         .pickerStyle(.menu)
-        .disabled(editedBot != nil)
+        .disabled(editor.editedBot != nil)
       }
       projectsSection
-      if editedBot == nil {
+      if editor.editedBot == nil {
         modelSection
         conversationSection
       }
-      if let errorMessage {
+      if let errorMessage = editor.errorMessage {
         Section {
           Text(errorMessage)
             .foregroundStyle(.red)
@@ -100,15 +55,14 @@ struct BotEditorSheet: View {
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
         Button("Cancel") { dismiss() }
-          .disabled(isSaving)
+          .disabled(editor.isSaving)
       }
       ToolbarItem(placement: .confirmationAction) {
-        Button(editedBot == nil ? "Create" : "Save") { Task { await save() } }
-          .disabled(!canSave)
+        Button(editor.editedBot == nil ? "Create" : "Save") { Task { await save() } }
+          .disabled(!editor.canSave)
       }
     }
-    .task(id: serverId) { await loadModels() }
-    .onChange(of: serverId) { projectIds = [] }
+    .task(id: editor.serverId) { await editor.loadModels() }
     .frame(width: 460)
     .frame(maxHeight: 640)
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
@@ -116,7 +70,7 @@ struct BotEditorSheet: View {
 
   private var header: some View {
     HStack(spacing: 12) {
-      Image(systemName: symbolName)
+      Image(systemName: editor.symbolName)
         .font(.system(size: 20))
         .symbolRenderingMode(.monochrome)
         .foregroundStyle(.white)
@@ -125,7 +79,7 @@ struct BotEditorSheet: View {
         .contentTransition(.symbolEffect(.replace))
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
-        Text(trimmedName.isEmpty ? "New Bot" : trimmedName)
+        Text(editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName)
           .font(.headline)
           .lineLimit(1)
         Text(subtitle)
@@ -134,7 +88,7 @@ struct BotEditorSheet: View {
           .lineLimit(1)
       }
       Spacer(minLength: 0)
-      if isSaving {
+      if editor.isSaving {
         ProgressView().controlSize(.small)
       }
     }
@@ -142,16 +96,15 @@ struct BotEditorSheet: View {
   }
 
   private var subtitle: String {
-    if isSaving, editedBot == nil { return "Creating worktrees…" }
-    let machine = environment.machines.fleetMachineName(for: serverId) ?? "No machine"
-    let count = editedBot?.record.projects.count ?? projectIds.count
-    return count == 1 ? "\(machine) · 1 project" : "\(machine) · \(count) projects"
+    if editor.isSaving, editor.editedBot == nil { return "Creating worktrees…" }
+    let count = editor.projectCount
+    return count == 1 ? "\(editor.machineName) · 1 project" : "\(editor.machineName) · \(count) projects"
   }
 
   @ViewBuilder
   private var projectsSection: some View {
     Section("Projects") {
-      if let bot = editedBot {
+      if let bot = editor.editedBot {
         ForEach(bot.record.projects, id: \.projectId) { project in
           LabeledContent {
             Text(project.branch).foregroundStyle(.secondary)
@@ -159,16 +112,16 @@ struct BotEditorSheet: View {
             Label(project.folderName, systemImage: EntitySystemSymbol.projectList)
           }
         }
-      } else if eligibleProjects.isEmpty {
+      } else if editor.eligibleProjects.isEmpty {
         Text("This machine has no git projects yet.")
           .foregroundStyle(.secondary)
       } else {
-        ForEach(selectedProjects) { project in
+        ForEach(editor.selectedProjects) { project in
           HStack {
             Label(project.name, systemImage: EntitySystemSymbol.projectList)
             Spacer()
             Button("Remove \(project.name)", systemImage: "minus.circle.fill") {
-              projectIds.removeAll { $0 == project.id }
+              editor.removeProject(project.id)
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
@@ -176,11 +129,11 @@ struct BotEditorSheet: View {
             .help("Remove \(project.name)")
           }
         }
-        if !addableProjects.isEmpty {
+        if !editor.addableProjects.isEmpty {
           Picker(selection: addProjectSelection) {
             Text("Add Project").tag(UUID?.none)
             Divider()
-            ForEach(addableProjects) { project in
+            ForEach(editor.addableProjects) { project in
               Text(project.name).tag(Optional(project.id))
             }
           } label: {
@@ -195,7 +148,7 @@ struct BotEditorSheet: View {
 
   private var conversationSection: some View {
     Section {
-      Toggle("Conversation mode", isOn: $isConversational)
+      Toggle("Conversation mode", isOn: $editor.isConversational)
     } footer: {
       Text(
         "Chat with the bot like a messaging app. You see only the messages it sends you, you can message it while it works, and it tells you when its agents finish."
@@ -203,27 +156,19 @@ struct BotEditorSheet: View {
     }
   }
 
-  private var selectedProjects: [Project] {
-    projectIds.compactMap { id in eligibleProjects.first { $0.id == id } }
-  }
-
   private var addProjectSelection: Binding<UUID?> {
     Binding(
       get: { nil },
       set: { id in
-        if let id { projectIds.append(id) }
+        if let id { editor.addProject(id) }
       }
     )
-  }
-
-  private var addableProjects: [Project] {
-    eligibleProjects.filter { !projectIds.contains($0.id) }
   }
 
   @ViewBuilder
   private var modelSection: some View {
     Section("Model") {
-      if let models, !models.harnesses.isEmpty {
+      if let models = editor.models, !models.harnesses.isEmpty {
         Picker("Model", selection: modelBinding(models)) {
           ForEach(models.harnesses) { harness in
             Section(harness.name) {
@@ -242,7 +187,7 @@ struct BotEditorSheet: View {
           }
           .pickerStyle(.menu)
         }
-      } else if models == nil {
+      } else if editor.models == nil {
         ProgressView().controlSize(.small)
       } else {
         Text("No signed-in harnesses on this machine.")
@@ -272,51 +217,9 @@ struct BotEditorSheet: View {
     )
   }
 
-  private func loadModels() async {
-    guard editedBot == nil else { return }
-    models = nil
-    await environment.warmHarnessCapabilities(for: serverId)
-    let selection = BotModelSelection(
-      serverId: serverId,
-      client: environment.machines.client(for: serverId),
-      configCache: environment.configCache,
-      composerDefaults: environment.composerDefaults
-    )
-    models = selection
-    await selection.seedDefaults()
-  }
-
   private func save() async {
-    guard canSave else { return }
-    isSaving = true
-    errorMessage = nil
-    defer { isSaving = false }
-    do {
-      if let bot = editedBot {
-        try await environment.bots.update(
-          bot, ServerUpdateBotRequest(name: trimmedName, symbolName: symbolName))
-        didSave = true
-        dismiss()
-        return
-      }
-      guard let models, let harnessId = models.harnessId else { return }
-      let request = ServerCreateBotRequest(
-        id: botId.uuidString.lowercased(),
-        name: trimmedName,
-        symbolName: symbolName,
-        harnessId: harnessId,
-        configSelections: models.configSelections,
-        projectIds: selectedProjects.map {
-          $0.id.uuidString.lowercased()
-        },
-        conversational: isConversational
-      )
-      let bot = try await environment.bots.create(request, on: serverId)
-      didSave = true
-      dismiss()
-      onSaved(bot)
-    } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
-    }
+    guard await editor.save() else { return }
+    dismiss()
+    if let bot = editor.createdBot { onSaved(bot) }
   }
 }

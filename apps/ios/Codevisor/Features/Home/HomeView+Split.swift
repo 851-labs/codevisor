@@ -70,7 +70,16 @@ extension HomeView {
     }
   }
 
+  @ViewBuilder
   func detailScreen(for route: HomeRoute) -> some View {
+    if case let .bot(serverId, botId) = route {
+      BotConversationScreen(serverId: serverId, botId: botId, onDeleted: closeBot)
+    } else {
+      workspaceDetailScreen(for: route)
+    }
+  }
+
+  private func workspaceDetailScreen(for route: HomeRoute) -> some View {
     let parameters = HomeDetailParameters(route: route, projectList: projectList)
     return WorkspaceScreen(
       sessionId: parameters.sessionId,
@@ -137,6 +146,9 @@ struct HomeDetailParameters {
         .flatMap { session in
           ChatControllerCache.shared.existingController(sessionId: session.id, serverId: serverId)
         }
+      isDraft = false
+    case let .bot(serverId, _):
+      self.serverId = serverId
       isDraft = false
     }
   }

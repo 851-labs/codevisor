@@ -17,6 +17,10 @@ struct HomeSidebarActions {
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   var openWorkspaceInNewWindow: ((HomeSidebarWorkspace) -> Void)?
+  var openBot: (Bot) -> Void = { _ in }
+  var newBot: () -> Void = {}
+  var editBot: (Bot) -> Void = { _ in }
+  var deleteBot: (Bot) -> Void = { _ in }
   var didSelectInSplit: () -> Void = {}
   var refresh: () async -> Void = {}
 }
@@ -30,9 +34,9 @@ final class HomeSidebarActionHandler {
   }
 }
 
-struct HomeSidebarSelection: Equatable {
-  let workspaceId: UUID
-  let paneId: UUID?
+enum HomeSidebarSelection: Equatable {
+  case workspace(UUID, paneId: UUID?)
+  case bot(UUID)
 }
 
 struct HomeSidebarList: View {
@@ -54,6 +58,7 @@ struct HomeSidebarList: View {
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) private var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) private var listExpanded
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) private var archivedExpanded
+  @ClientPreference(SidebarPreferenceKey.botsExpanded, default: true) private var botsExpanded
   @ClientPreference(Self.expandedWorkspacesKey, default: []) private var expandedWorkspaceIDs: [String]
   @State private var archivedLimit = sidebarArchivedPageSize
   @State private var pendingSelection: UUID?
@@ -100,7 +105,8 @@ struct HomeSidebarList: View {
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
-    var shown = pinnedExpanded ? content.pinned : []
+    var shown = botsExpanded ? content.bots.flatMap(\.children) : []
+    if pinnedExpanded { shown += content.pinned }
     if listExpanded {
       for group in content.groups where group.heading == nil || !collapsedGroupIDs.contains(group.id) {
         shown += group.workspaces
@@ -125,6 +131,19 @@ struct HomeSidebarList: View {
 
   @ViewBuilder
   private func sections(_ content: HomeSidebarContent) -> some View {
+    if content.showsBots {
+      Section("Bots", isExpanded: animated($botsExpanded)) {
+        ForEach(content.bots) { bot in
+          botRow(bot)
+        }
+        if content.canCreateBots {
+          Button(action: actions.actions.newBot) {
+            Label("New Bot…", systemImage: "plus")
+          }
+          .accessibilityIdentifier("sidebar.newBot")
+        }
+      }
+    }
     if !content.pinned.isEmpty {
       Section("Pinned", isExpanded: animated($pinnedExpanded)) {
         workspaceRows(content.pinned)
@@ -197,6 +216,24 @@ struct HomeSidebarList: View {
     }
   }
 
+  @ViewBuilder
+  private func botRow(_ bot: HomeSidebarBot) -> some View {
+    let row = HomeSidebarBotRowView(bot: bot, actions: actions, isSelectionRow: isSelectable)
+      .equatable()
+      .tag(bot.id)
+    if bot.children.isEmpty {
+      row
+    } else {
+      DisclosureGroup(isExpanded: workspaceExpansion(bot.id)) {
+        ForEach(bot.children) { workspace in
+          workspaceRow(workspace)
+        }
+      } label: {
+        row
+      }
+    }
+  }
+
   private func tabRows(_ workspace: HomeSidebarWorkspace) -> some View {
     let ref = workspace.workspace
     return ForEach(workspace.rows) { row in
@@ -244,13 +281,19 @@ struct HomeSidebarList: View {
   }
 
   private func selectedRowID(_ content: HomeSidebarContent) -> UUID? {
-    guard let selected else { return nil }
-    if let paneId = selected.paneId, content.workspace(selected.workspaceId)?.listsTabs == true,
-      expandedWorkspaceIDs.contains(selected.workspaceId.uuidString), content.row(paneId) != nil
-    {
-      return paneId
+    switch selected {
+    case nil:
+      return nil
+    case let .bot(botId):
+      return botId
+    case let .workspace(workspaceId, paneId):
+      if let paneId, content.workspace(workspaceId)?.listsTabs == true,
+        expandedWorkspaceIDs.contains(workspaceId.uuidString), content.row(paneId) != nil
+      {
+        return paneId
+      }
+      return workspaceId
     }
-    return selected.workspaceId
   }
 
   private func selection(_ content: HomeSidebarContent) -> Binding<UUID?> {
@@ -258,7 +301,10 @@ struct HomeSidebarList: View {
       get: { pendingSelection ?? selectedRowID(content) },
       set: { id in
         guard let id else { return }
-        if let (row, workspace) = content.row(id) {
+        if let bot = content.bot(id) {
+          pendingSelection = id
+          actions.actions.openBot(bot.bot)
+        } else if let (row, workspace) = content.row(id) {
           pendingSelection = id
           actions.actions.open(row, workspace.workspace)
         } else if let workspace = content.workspace(id) {

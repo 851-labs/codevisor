@@ -7,6 +7,7 @@ import UIKit
 struct UserBubbleRow: View {
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.userBubbleStyle) private var style
   let text: String
   let attachments: [Attachment]
   @State private var isSelecting = false
@@ -32,7 +33,7 @@ struct UserBubbleRow: View {
               string: text,
               attributes: [
                 .font: UIFont.preferredFont(forTextStyle: .body),
-                .foregroundColor: UIColor(Color.primary),
+                .foregroundColor: UIColor(style.text),
               ]
             ),
             fillsWidth: false,
@@ -45,7 +46,7 @@ struct UserBubbleRow: View {
           .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
           .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
           .background {
-            UserBubbleBackground(color: Color.bubbleBackground)
+            UserBubbleBackground(color: style.fill)
               .background(
                 UserBubbleBackground.transcriptBackdrop(),
                 in: UserBubbleBackground.shape(for: dynamicTypeSize))

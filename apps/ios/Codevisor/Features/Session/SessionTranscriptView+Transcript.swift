@@ -51,7 +51,7 @@ extension SessionTranscriptView {
           projectionRevision: projectedRowsVersion,
           initialState: controller.scrollState,
           followsLatest: followsLatest,
-          hasOlderHistory: controller.hasOlderHistory,
+          hasOlderHistory: controller.hasOlderPresentedHistory,
           showsOlderHistoryLoadingIndicator: presentationRole == .foreground
             && olderHistoryPresentation.isPresented,
           olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
@@ -87,6 +87,7 @@ extension SessionTranscriptView {
               .markdownImageActions(transcriptImageActions)
               .environment(\.transcriptDisclosure, disclosure)
               .environment(\.transcriptController, controller)
+              .environment(\.userBubbleStyle, userBubbleStyle)
               .environment(
                 \.streamingTextAnimationVisibility,
                 textAnimationVisibility
@@ -155,7 +156,8 @@ extension SessionTranscriptView {
       key: controller.transcriptProjectionKey,
       options: .init(
         includesConnectingRow: true,
-        bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom
+        bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom,
+        presentsBotConversation: controller.presentsBotConversation
       )
     )
   }
@@ -166,17 +168,17 @@ extension SessionTranscriptView {
 
   @discardableResult
   func requestOlderHistoryLoad() -> Bool {
-    guard historyLoadTask == nil, controller.hasOlderHistory,
-      !controller.isLoadingOlderHistory
+    guard historyLoadTask == nil, controller.hasOlderPresentedHistory,
+      !controller.isLoadingOlderPresentedHistory
     else { return false }
     guard
       let token = olderHistoryPresentation.begin(
-        hasOlderHistory: controller.hasOlderHistory
+        hasOlderHistory: controller.hasOlderPresentedHistory
       )
     else { return false }
     historyLoadTask = Task { @MainActor in
       defer { historyLoadTask = nil }
-      let insertedItemCount = await controller.loadOlderHistory()
+      let insertedItemCount = await controller.loadOlderPresentedHistory()
       guard !Task.isCancelled else {
         olderHistoryPresentation.cancel(token: token)
         return

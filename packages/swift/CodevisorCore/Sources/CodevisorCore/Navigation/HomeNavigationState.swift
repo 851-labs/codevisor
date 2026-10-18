@@ -8,6 +8,7 @@ public enum HomeLayoutMode: Equatable, Sendable {
 public enum HomeDetailIdentity: Hashable, Sendable {
   case draft(UUID)
   case workspace(UUID)
+  case bot(UUID)
 }
 
 public struct HomeLayoutTransition: Equatable, Sendable {
@@ -34,7 +35,7 @@ public struct HomeNavigationState: Equatable, Sendable {
   public var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .workspace: false
+    case .workspace, .bot: false
     }
   }
 
@@ -43,6 +44,7 @@ public struct HomeNavigationState: Equatable, Sendable {
     case .none: "home"
     case .newChat: "new_chat"
     case .workspace: "workspace"
+    case .bot: "bot"
     }
   }
 
@@ -106,6 +108,8 @@ public struct HomeNavigationState: Equatable, Sendable {
         return .draft(draftGeneration)
       }
       return .workspace(workspaceId)
+    case let .bot(_, botId):
+      return .bot(botId)
     }
   }
 

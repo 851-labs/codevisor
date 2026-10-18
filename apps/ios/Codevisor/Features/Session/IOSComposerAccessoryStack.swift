@@ -25,11 +25,15 @@ struct IOSComposerAccessoryStack: View {
     guard !isComposerExpanded else { return false }
     return controller.visibleTodos != nil
       || visibleGoal != nil
-      || !controller.queuedPrompts.isEmpty
+      || showsQueue
       || (controller.configurationValidationError == nil
         && controller.configurationAdjustmentMessage != nil)
       || controller.modelFallbackMessage != nil
       || controller.modelUnavailableMessage != nil
+  }
+
+  private var showsQueue: Bool {
+    !controller.presentsBotConversation && !controller.queuedPrompts.isEmpty
   }
 
   private var hasVisibleAccessory: Bool {
@@ -58,7 +62,7 @@ struct IOSComposerAccessoryStack: View {
           .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
 
-        if !controller.queuedPrompts.isEmpty {
+        if showsQueue {
           IOSPromptQueueAccessory(
             controller: controller,
             glassNamespace: glassNamespace,

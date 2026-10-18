@@ -33,18 +33,19 @@ struct HomeSidebarLiveList: View {
   }
 
   private func selected(_ navigation: HomeNavigationState) -> HomeSidebarSelection? {
+    if case let .bot(_, botId) = navigation.selection { return .bot(botId) }
     guard let presented = navigation.presentedWorkspace else { return nil }
     let workspace = environment.navigationStore.workspaceEntries.entry(presented.workspaceId).workspace
     if let tab = workspace?.selectedCenterTab,
       let paneId = tab.root.group(id: tab.activeLeafId)?.selectedPaneId
     {
-      return HomeSidebarSelection(workspaceId: presented.workspaceId, paneId: paneId)
+      return .workspace(presented.workspaceId, paneId: paneId)
     }
     let paneId = navigation.selectedPaneId { chatId in
       workspace?.centerTabs.lazy
         .flatMap { $0.root.allGroups.flatMap(\.state.panes) }
         .first { $0.chatSessionId == chatId }?.id
     }
-    return HomeSidebarSelection(workspaceId: presented.workspaceId, paneId: paneId)
+    return .workspace(presented.workspaceId, paneId: paneId)
   }
 }

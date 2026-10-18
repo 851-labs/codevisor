@@ -73,6 +73,8 @@ extension HomeView {
       )
     case let .newChat(serverId):
       draftDestination(serverId: serverId)
+    case let .bot(serverId, botId):
+      BotConversationScreen(serverId: serverId, botId: botId, onDeleted: closeBot)
     }
   }
 }

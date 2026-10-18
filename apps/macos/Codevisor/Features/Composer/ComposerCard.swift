@@ -175,7 +175,7 @@ private extension ComposerCard {
           )
 
           if controller.composerText.isEmpty, !isAcceptingSubmission {
-            Text("Do something")
+            Text(controller.composerPlaceholder)
               .foregroundStyle(.tertiary)
               .padding(.top, 6 + editorTopBleed)
               .allowsHitTesting(false)

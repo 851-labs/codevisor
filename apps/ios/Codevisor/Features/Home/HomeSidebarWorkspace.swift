@@ -92,18 +92,29 @@ struct HomeSidebarContent: Equatable {
   var groups: [Group] = []
   var archived: [HomeSidebarWorkspace] = []
   var archivedCount = 0
+  var bots: [HomeSidebarBot] = []
+  var canCreateBots = false
+
+  var showsBots: Bool { !bots.isEmpty || canCreateBots }
 
   var layout: [UUID] {
-    (pinned + groups.flatMap(\.workspaces) + archived).map(\.id)
+    bots.flatMap { [$0.id] + $0.children.map(\.id) } + (pinned + groups.flatMap(\.workspaces) + archived).map(\.id)
+  }
+
+  private var openWorkspaces: [HomeSidebarWorkspace] {
+    bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)
+  }
+
+  func bot(_ id: UUID) -> HomeSidebarBot? {
+    bots.first { $0.id == id }
   }
 
   func workspace(_ id: UUID) -> HomeSidebarWorkspace? {
-    pinned.first { $0.id == id }
-      ?? groups.lazy.flatMap(\.workspaces).first { $0.id == id }
+    openWorkspaces.first { $0.id == id }
   }
 
   func row(_ id: UUID) -> (HomeSidebarTabRow, HomeSidebarWorkspace)? {
-    for workspace in pinned + groups.flatMap(\.workspaces) {
+    for workspace in openWorkspaces {
       if let row = workspace.rows.first(where: { $0.id == id }) { return (row, workspace) }
     }
     return nil

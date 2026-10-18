@@ -79,7 +79,7 @@ extension ComposerBar {
           Text(preview)
             .foregroundStyle(.primary)
         } else {
-          Text("Do something")
+          Text(controller.composerPlaceholder)
             .foregroundStyle(.tertiary)
         }
       }

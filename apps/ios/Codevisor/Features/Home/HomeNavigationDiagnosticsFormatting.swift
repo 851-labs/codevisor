@@ -22,6 +22,8 @@ func navigationPathSummary(_ routes: [HomeRoute]) -> String {
         let workspace = navigationShortID(workspaceId)
         let anchor = anchorSessionId.map(navigationShortID) ?? "nil"
         return "workspace(\(serverId)/\(workspace)/\(anchor)/\(preferred)/\(pane)/\(leaf))"
+      case let .bot(serverId, botId):
+        return "bot(\(serverId)/\(navigationShortID(botId)))"
       }
     }.joined(separator: ",") + "]"
 }

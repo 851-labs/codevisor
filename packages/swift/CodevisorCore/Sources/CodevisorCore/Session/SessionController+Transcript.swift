@@ -56,6 +56,23 @@ extension SessionController {
   public func loadOlderBotMessages() async -> Int {
     await model?.loadOlderBotMessages() ?? 0
   }
+
+  public var composerPlaceholder: String {
+    presentsBotConversation ? "Message" : "Do something"
+  }
+
+  public var hasOlderPresentedHistory: Bool {
+    presentsBotConversation ? hasOlderBotMessages : hasOlderHistory
+  }
+
+  public var isLoadingOlderPresentedHistory: Bool {
+    presentsBotConversation ? isLoadingOlderBotMessages : isLoadingOlderHistory
+  }
+
+  @discardableResult
+  public func loadOlderPresentedHistory() async -> Int {
+    presentsBotConversation ? await loadOlderBotMessages() : await loadOlderHistory()
+  }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
   public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }

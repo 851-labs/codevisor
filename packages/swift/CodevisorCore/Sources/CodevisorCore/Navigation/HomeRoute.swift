@@ -12,6 +12,8 @@ public enum HomeRoute: Hashable, Sendable {
     preferredLeafId: UUID? = nil
   )
 
+  case bot(serverId: String, botId: UUID)
+
   public var isNewChat: Bool {
     if case .newChat = self { return true }
     return false

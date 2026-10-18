@@ -24,6 +24,10 @@ extension HomeView {
           onRenameTab: { renameSidebarTab($0, to: $1) }
         )
       )
+      .botManagement(
+        editing: $botEditor, deleting: $deletingBot,
+        onCreated: { openBot($0) }, onDeleted: { closeBot($0) }
+      )
       .sheet(item: $presentedSettingsDestination, onDismiss: { clientPresentationCompletion.complete("settings") }) {
         destination in
         SettingsSheet(initialDestination: destination, onSectionChange: { clientSettingsSection = $0 })

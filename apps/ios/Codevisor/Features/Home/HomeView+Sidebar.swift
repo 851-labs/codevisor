@@ -53,6 +53,10 @@ extension HomeView {
               serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: workspace.anchorSessionId,
               chatSessionId: workspace.primaryRow?.chatSessionId, paneId: workspace.primaryRow?.id))
         } : nil,
+      openBot: { bot in openBot(bot) },
+      newBot: { botEditor = .create },
+      editBot: { bot in botEditor = .edit(bot) },
+      deleteBot: { bot in deletingBot = bot },
       didSelectInSplit: { dismissOverlaySidebarAfterSelection() },
       refresh: { await refreshNavigation() }
     )
