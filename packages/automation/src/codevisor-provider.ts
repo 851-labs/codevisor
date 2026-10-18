@@ -20,6 +20,8 @@ import {
   type UnknownRecord
 } from "./unknown-values.js"
 
+export { CODEVISOR_BOT_TOOL_NAMES } from "./codevisor-api-tools.js"
+
 const pathParameterNames = (path: string): ReadonlyArray<string> =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
 

@@ -5,6 +5,7 @@ import {
   OpenSessionRequest,
   PromptRequest,
   ReorderQueuedPromptsRequest,
+  SendBotMessageRequest,
   SetConfigRequest,
   SetGoalRequest,
   SetModeRequest,
@@ -153,6 +154,13 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     {
       body: PromptRequest
     }
+  ),
+  apiTool(
+    "messages.send",
+    "Send a chat message to the user. As a Codevisor bot this is the only way the user sees anything you write. text is markdown (bold, italics, inline code, links, lists, code blocks); attachments are absolute paths of files on this machine to send with it.",
+    "POST",
+    "/v1/sessions/:id/messages",
+    { body: SendBotMessageRequest }
   ),
   apiTool(
     "sessions.wait",

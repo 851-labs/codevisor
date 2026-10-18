@@ -88,6 +88,10 @@ const CAPABILITY_SKILLS: ReadonlyArray<{ readonly gate: string; readonly line: s
   {
     gate: "codevisor",
     line: "- Codevisor: read `codevisor`, then `codevisor-agents`, `codevisor-machines`, or `codevisor-clients`."
+  },
+  {
+    gate: "bot",
+    line: "- Talking to the user (you are a bot; they only see what you send): read `codevisor-messages`."
   }
 ]
 
