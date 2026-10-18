@@ -229,6 +229,51 @@ describe("refreshPluginIndex", () => {
     )
   })
 
+  it.each([
+    { protocolVersion: 1, run: { command: "bun run start" } },
+    { protocolVersion: 2, run: { argv: ["node", "server.js"] } }
+  ])(
+    "publishes optional index metadata for protocol v$protocolVersion",
+    async ({ protocolVersion, run }) => {
+      const stub = githubStub([
+        {
+          owner: "octocat",
+          name: "notes",
+          manifest: JSON.stringify(
+            manifest({
+              protocolVersion,
+              run,
+              ageRating: 13,
+              iconPath: "/icon.svg",
+              platforms: ["darwin", "linux"],
+              minCodevisorVersion: "1.4.0",
+              requirements: { executables: [{ name: "node", installHint: "Install Node.js" }] }
+            })
+          )
+        }
+      ])
+      const summary = await refreshPluginIndex({ ...env, GITHUB_FETCH: stub.fetch })
+      expect(summary).toMatchObject({ indexed: 1, rejected: 0 })
+      const entry = (await readIndex()).entries[0]
+      expect(entry).toMatchObject({
+        id: "octocat.notes",
+        protocolVersion,
+        ageRating: 13,
+        iconPath: "/icon.svg",
+        platforms: ["darwin", "linux"]
+      })
+      if (protocolVersion === 1) {
+        expect(entry).not.toHaveProperty("minCodevisorVersion")
+        expect(entry).not.toHaveProperty("requirements")
+      } else {
+        expect(entry).toMatchObject({
+          minCodevisorVersion: "1.4.0",
+          requirements: { executables: [{ name: "node", installHint: "Install Node.js" }] }
+        })
+      }
+    }
+  )
+
   it("rejects a repo when its exact default-branch commit cannot be resolved", async () => {
     const stub = githubStub([
       { owner: "octocat", name: "notes", commit: 503, manifest: JSON.stringify(manifest()) }
