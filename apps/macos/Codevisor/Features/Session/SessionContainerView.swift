@@ -92,11 +92,6 @@ struct SessionContainerView: View {
             AppleSimulatorPane.saveScreenshot(data, deviceName: name)
           }
         }
-        if let bot = activeBotChat, bot.isConversational {
-          ToolbarItem {
-            BotTranscriptToolbarButton { openBotTranscript(bot) }
-          }
-        }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(\.filePane, activeFileModel)

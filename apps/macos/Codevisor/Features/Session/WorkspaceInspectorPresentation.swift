@@ -27,6 +27,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(Self.presentedKey, default: true) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
+  @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
@@ -85,6 +86,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       branch: store.gitLookups.branch(for: workspace),
       pullRequest: store.gitLookups.pullRequest(for: workspace),
       machineName: environment.machines.fleetMachineName(for: workspace.serverId),
+      showsBotTranscript: botsEnabled
+        && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
       tab: $tab,
       media: media,
       fileTree: fileTree,

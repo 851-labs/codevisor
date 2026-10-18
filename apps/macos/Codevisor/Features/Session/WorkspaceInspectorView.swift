@@ -5,7 +5,7 @@ import SwiftUI
 
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
-    case pullRequest(URL), link(URL), file(String), previewFile(String)
+    case pullRequest(URL), link(URL), file(String), previewFile(String), botTranscript
   }
 
   let workspace: Workspace
@@ -13,6 +13,7 @@ struct WorkspaceInspectorView: View {
   let branch: String?
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
+  let showsBotTranscript: Bool
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
@@ -135,6 +136,16 @@ struct WorkspaceInspectorView: View {
           LabeledContent("Machine", value: machineName)
         }
         LabeledContent("Created", value: workspace.createdAt, format: .relative(presentation: .named))
+      }
+
+      if showsBotTranscript {
+        Section("Bot") {
+          row(.botTranscript) {
+            Label("Full Transcript", systemImage: "text.page")
+          }
+          .help("Open everything the bot did, including its tool calls and the messages it received")
+          .accessibilityIdentifier("bot.showFullTranscript")
+        }
       }
     }
     .formStyle(.grouped)

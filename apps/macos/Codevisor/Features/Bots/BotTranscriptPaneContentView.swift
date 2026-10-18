@@ -40,13 +40,6 @@ struct BotTranscriptPaneContentView: View {
 }
 
 extension SessionContainerView {
-  var activeBotChat: Bot? {
-    guard let descriptor = activePaneDescriptor, descriptor.kind == .chat,
-      let sessionId = descriptor.chatSessionId
-    else { return nil }
-    return botChat(sessionId)
-  }
-
   func botChat(_ sessionId: UUID) -> Bot? {
     guard botsEnabled else { return nil }
     return environment.bots.bot(forSession: sessionId, serverId: selectedWorkspace.serverId)
@@ -73,17 +66,5 @@ extension SessionContainerView {
     store.reconcileMountedPaneGroups(in: workspace)
     store.selectDestination(.tab(inserted.tabId), in: workspace.id)
     focusSelectedCenterPane()
-  }
-}
-
-struct BotTranscriptToolbarButton: View {
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      Label("Show Full Transcript", systemImage: "text.page")
-    }
-    .help("Show Full Transcript")
-    .accessibilityIdentifier("bot.showFullTranscript")
   }
 }
