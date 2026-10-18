@@ -187,4 +187,203 @@ public struct AssistantTurn: Sendable, Equatable {
       return textPhases[id] != .commentary
     }
   }
+
+  var isSplitByPlan: Bool {
+    planBoundary != nil || planDocument?.isEmpty == false
+  }
+
+  public func defersWorkedSection(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard hasDeferredWorkedDetails else { return false }
+    switch kind {
+    case .planning: return true
+    case .implementation: return planResumedAt != nil
+    }
+  }
+
+  public func isWorkedSectionLive(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard isGenerating, !finalTextIsAsserted else { return false }
+    switch kind {
+    case .planning: return !isSplitByPlan
+    case .implementation: return true
+    }
+  }
+
+  public func workedSectionStart(_ kind: TranscriptWorkedSectionKind) -> Date? {
+    switch kind {
+    case .planning: startedAt
+    case .implementation: planResumedAt ?? planProposedAt
+    }
+  }
+
+  public func workedSectionDuration(_ kind: TranscriptWorkedSectionKind) -> TimeInterval? {
+    let end: Date? =
+      switch kind {
+      case .planning:
+        !isSplitByPlan
+          ? endedAt
+          : planProposedAt ?? (planResumedAt == nil && workedItemsAfterPlan.isEmpty ? endedAt : nil)
+      case .implementation: endedAt
+      }
+    guard let start = workedSectionStart(kind), let end else { return nil }
+    return max(0, end.timeIntervalSince(start))
+  }
+
+  public func workedSectionTitle(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
+    if workedSectionTicks(kind) {
+      let start = workedSectionStart(kind) ?? now
+      return "Working for \(Self.formatWorkedDuration(now.timeIntervalSince(start)))"
+    }
+    guard let duration = workedSectionDuration(kind) else {
+      return isSplitByPlan ? "Worked" : "Worked for a moment"
+    }
+    guard duration >= 1 else { return "Worked for a moment" }
+    return "Worked for \(Self.formatWorkedDuration(duration))"
+  }
+
+  public func workedSectionTicks(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard isGenerating else { return false }
+    switch kind {
+    case .planning: return !isSplitByPlan
+    case .implementation: return true
+    }
+  }
+
+  public func showsLiveWorkedHeader(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    isWorkedSectionLive(kind) && (isThinking || hasProviderContent)
+  }
+
+  public func showsWorkedHeaderWithoutWork(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard hasProviderContent || (isGenerating && isThinking) else { return false }
+    switch kind {
+    case .planning: return !isSplitByPlan
+    case .implementation: return planResumedAt != nil
+    }
+  }
+
+  public var hasProviderContent: Bool {
+    entries.contains { entry in
+      if case .contextCompaction = entry { return false }
+      return !entry.isBlankText
+    }
+  }
+
+  public func showsWorkedThinkingLine(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    isGenerating && isThinking && showsLiveWorkedHeader(kind)
+  }
+
+  public func workedSectionElapsed(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
+    Self.formatWorkedDuration(now.timeIntervalSince(workedSectionStart(kind) ?? now))
+  }
+
+  public static func formatWorkedDuration(_ interval: TimeInterval) -> String {
+    let seconds = max(0, Int(interval.rounded(.down)))
+    return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+  }
+
+  public func isUnstartedSubagent(_ call: ToolCall) -> Bool {
+    call.kind == .agent && call.rawInput == nil && subagents[call.toolCallId]?.entries.isEmpty != false
+  }
+
+  public var isStartingSubagent: Bool {
+    isGenerating && toolCalls.contains { !$0.isSettled && isUnstartedSubagent($0) }
+  }
+
+  public var awaitedAgentCalls: [ToolCall] {
+    guard isGenerating else { return [] }
+    var awaited: [ToolCall] = []
+    for entry in entries.reversed() {
+      if case .contextCompaction = entry { continue }
+      if entry.isBlankText { continue }
+      guard case let .tool(call) = entry, call.kind == .agent else { break }
+      if !call.isSettled, !isUnstartedSubagent(call) { awaited.append(call) }
+    }
+    return awaited.reversed()
+  }
+
+  public var workedItems: [WorkedItem] {
+    groupedItems(workedEntries)
+  }
+
+  public var workedItemsBeforePlan: [WorkedItem] {
+    guard let boundary = planBoundary else { return workedItems }
+    return groupedItems(workedSlice(0..<min(boundary, entries.count)))
+  }
+
+  public var workedItemsAfterPlan: [WorkedItem] {
+    guard let boundary = planBoundary else { return [] }
+    return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
+  }
+
+  private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
+    let finalIndex = finalTextIndex
+    return range.compactMap { index in
+      if index == finalIndex { return nil }
+      if case let .tool(call) = entries[index], call.kind == .imageGeneration { return nil }
+      return entries[index]
+    }
+  }
+
+  private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
+    var items: [WorkedItem] = []
+    var group: [ToolCall] = []
+    var groupHasUnsettledCall = false
+    var agents: [ToolCall] = []
+
+    func flushAgents() {
+      guard let first = agents.first else { return }
+      items.append(.subagents(id: first.toolCallId, calls: agents))
+      agents = []
+    }
+
+    func flushGroup() {
+      guard !group.isEmpty else { return }
+      items.append(
+        .toolGroup(
+          ToolCallGroup(
+            calls: group,
+            hasUnsettledCall: groupHasUnsettledCall
+          )))
+      group = []
+      groupHasUnsettledCall = false
+    }
+
+    func flush() {
+      flushAgents()
+      flushGroup()
+    }
+
+    for entry in source {
+      switch entry {
+      case let .text(id, markdown):
+        guard !entry.isBlankText else { continue }
+        flush()
+        items.append(.text(id: id, markdown: markdown))
+      case let .tool(call) where isUnstartedSubagent(call):
+        continue
+      case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
+        flushGroup()
+        agents.append(call)
+      case let .tool(call):
+        flushAgents()
+        if callsAfterReasoning.contains(call.toolCallId) { flushGroup() }
+        group.append(call)
+        groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
+      case .contextCompaction:
+        continue
+      }
+    }
+    flush()
+    return items
+  }
+
+  public var generatedImageActivity: [ToolCall] {
+    toolCalls.filter { $0.kind == .imageGeneration && $0.generatedImageAttachment == nil }
+  }
+
+  mutating func receiveGeneratedImage(_ call: ToolCall) {
+    guard call.parentToolCallId == nil, let image = call.generatedImageAttachment,
+      !attachments.contains(where: { $0.fileId == image.fileId })
+    else { return }
+    attachments.append(image)
+  }
 }
