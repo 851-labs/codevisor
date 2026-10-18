@@ -152,10 +152,21 @@ describe("Browser tab cleanup", () => {
     value(await provider.invoke(context, "use_backend", { backend: "managed" }))
     expect(await tabs()).toEqual([])
 
-    const opened = tabsIn(
-      await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` })
-    )
+    const opened = tabsIn(await provider.invoke(context, "tabs", { action: "new" }))
     const openerId = expectString(opened.find((tab) => tab.selected === true)?.id, "Selected tab")
+    const navigation = expectRecord(
+      value(await provider.invoke(context, "playwright.armNavigation", {})),
+      "Navigation baseline"
+    )
+    value(await provider.invoke(context, "navigate", { url: `${origin}/` }))
+    value(
+      await provider.invoke(context, "playwright.waitForNavigation", {
+        afterSequence: navigation.afterSequence,
+        frameId: navigation.frameId,
+        url: `${origin}/`,
+        waitUntil: "domcontentloaded"
+      })
+    )
     const popup = cdp.event("Target.targetCreated", (params) => {
       const info = recordOrUndefined(params.targetInfo)
       return info?.type === "page" && info.openerId === openerId
