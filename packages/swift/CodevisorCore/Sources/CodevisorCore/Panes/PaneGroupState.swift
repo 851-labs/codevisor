@@ -253,4 +253,41 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     selectedPaneId = id
   }
 
+  static func pluginPane(
+    id: UUID,
+    name: String?,
+    pluginId: String?,
+    pluginPaneType: String?
+  ) -> PaneDescriptorState? {
+    guard let pluginId, !pluginId.isEmpty, let pluginPaneType, !pluginPaneType.isEmpty
+    else { return nil }
+    return PaneDescriptorState(
+      id: id,
+      kind: .plugin,
+      name: name ?? "Plugin",
+      terminalKey: id.uuidString,
+      pluginId: pluginId,
+      pluginPaneType: pluginPaneType
+    )
+  }
+
+  public func pane(steppingFrom paneId: UUID, by offset: Int) -> PaneDescriptorState? {
+    guard let index = panes.firstIndex(where: { $0.id == paneId }),
+      let target = Self.wrappedIndex(index, by: offset, count: panes.count)
+    else { return nil }
+    return panes[target]
+  }
+
+  private static func wrappedIndex(_ index: Int, by offset: Int, count: Int) -> Int? {
+    guard count > 1 else { return nil }
+    return ((index + offset) % count + count) % count
+  }
+}
+
+struct LenientPaneDescriptorState: Decodable {
+  let pane: PaneDescriptorState?
+
+  init(from decoder: Decoder) throws {
+    pane = try? PaneDescriptorState(from: decoder)
+  }
 }
