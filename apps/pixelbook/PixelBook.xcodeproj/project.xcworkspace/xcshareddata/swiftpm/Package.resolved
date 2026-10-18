@@ -1,5 +1,5 @@
 {
-  "originHash" : "66041b4796396f81eecd25181ce30ebd49ac9aaa8d253b7787b12af3a5ce9860",
+  "originHash" : "3fa2da04ecaf964b8a1bba0abafa8d026ab3f4569644463d452175251a55efa1",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -134,15 +134,6 @@
       "state" : {
         "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
         "version" : "604.0.0"
-      }
-    },
-    {
-      "identity" : "webrtc",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/851-labs/webrtc.git",
-      "state" : {
-        "revision" : "c9d45927ea35ae3d83011f67fa1f06e61b5e5e2c",
-        "version" : "152.0.0-codevisor.1"
       }
     }
   ],
