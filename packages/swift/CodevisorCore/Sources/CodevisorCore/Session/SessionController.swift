@@ -232,6 +232,44 @@ struct ComposerSelectionIntent: Equatable {
   let configValues: [String: String]
   let modelValue: String?
   var modelName: String? = nil
+
+  @MainActor
+  func resolveRememberedOptions(
+    in options: inout [SessionConfigOption],
+    resolvedModel: SessionConfigOption,
+    resolvedModelValue: String,
+    destinationValues: [String: String]
+  ) -> [String: String] {
+    var resolvedValues: [String: String] = [:]
+    for index in options.indices
+    where SessionController.rememberedConfigCategories.contains(options[index].category ?? "") {
+      let option = options[index]
+      let carriedValue =
+        option.id == resolvedModel.id ? resolvedModelValue : configValues[option.id]
+      let value = preferredValue(
+        for: option,
+        carriedValue: carriedValue,
+        destinationValues: destinationValues
+      )
+      guard let value else { continue }
+      options[index].currentValue = value
+      resolvedValues[option.id] = value
+    }
+    return resolvedValues
+  }
+
+  private func preferredValue(
+    for option: SessionConfigOption,
+    carriedValue: String?,
+    destinationValues: [String: String]
+  ) -> String? {
+    let acceptedCarriedValue = option.currentValue == carriedValue ? carriedValue : nil
+    return [acceptedCarriedValue, destinationValues[option.id], option.currentValue]
+      .compactMap { $0 }
+      .first { candidate in
+        option.options.contains { $0.value == candidate }
+      }
+  }
 }
 
 public struct PendingModelPick: Equatable, Sendable {
