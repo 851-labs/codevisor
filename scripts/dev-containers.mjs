@@ -62,6 +62,30 @@ export async function resolveContainerEngine(preference) {
 
 const WORKTREE_LABEL = "dev.codevisor.worktree"
 
+const parseContainerEntries = (raw) => {
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : [parsed]
+  } catch {
+    return raw
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line))
+  }
+}
+
+const staleContainerId = (entry, worktreeHash) => {
+  const labels = entry.configuration?.labels ?? entry.Labels ?? {}
+  const matches =
+    typeof labels === "string"
+      ? labels.split(",").some((label) => label === `${WORKTREE_LABEL}=${worktreeHash}`)
+      : labels[WORKTREE_LABEL] === worktreeHash
+  if (!matches) return undefined
+  const id = entry.configuration?.id ?? entry.ID ?? entry.Names
+  if (typeof id !== "string" || id.length === 0) return undefined
+  return id
+}
+
 export async function sweepStaleContainers(
   engine,
   worktreeHash,
@@ -74,25 +98,9 @@ export async function sweepStaleContainers(
       : ["ps", "--all", "--format", "{{json .}}"]
   )
   if (raw === undefined) return
-  let entries = []
-  try {
-    const parsed = JSON.parse(raw)
-    entries = Array.isArray(parsed) ? parsed : [parsed]
-  } catch {
-    entries = raw
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line))
-  }
-  for (const entry of entries) {
-    const labels = entry.configuration?.labels ?? entry.Labels ?? {}
-    const matches =
-      typeof labels === "string"
-        ? labels.split(",").some((label) => label === `${WORKTREE_LABEL}=${worktreeHash}`)
-        : labels[WORKTREE_LABEL] === worktreeHash
-    if (!matches) continue
-    const id = entry.configuration?.id ?? entry.ID ?? entry.Names
-    if (typeof id !== "string" || id.length === 0) continue
+  for (const entry of parseContainerEntries(raw)) {
+    const id = staleContainerId(entry, worktreeHash)
+    if (id === undefined) continue
     await runEngine(engine === "apple" ? "container" : "docker", ["rm", "--force", id])
   }
 }
