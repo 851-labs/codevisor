@@ -21,6 +21,12 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: true
+          set-safe-directory: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .node-version
       - name: Read pinned tools
         id: tools
         run: |
@@ -49,6 +55,9 @@ jobs:
             tmp/webrtc-source/*/artifacts/revisions.txt
             tmp/webrtc-source/*/artifacts/*-gn-args.txt
             tmp/webrtc-source/*/artifacts/notices-*/LICENSE.md
+      - name: Clean persistent runner workspace
+        if: always()
+        run: rm -rf tmp/webrtc-source
 
   publish:
     needs: build
