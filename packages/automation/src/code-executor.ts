@@ -185,6 +185,28 @@ const readTarget = (value: unknown): CodeToolTarget | undefined => {
     : { machine, ...flags }
 }
 
+const resolveToolInvocation = (
+  context: QuickJSContext,
+  deferred: QuickJSDeferredPromise,
+  value: unknown,
+  path: string
+): void => {
+  try {
+    const serialized = serializeJson(value, `Tool result for ${path}`)
+    if (serialized === undefined) {
+      deferred.resolve()
+      return
+    }
+    const valueHandle = context.newString(serialized)
+    deferred.resolve(valueHandle)
+    valueHandle.dispose()
+  } catch (cause) {
+    const errorHandle = context.newError(toErrorMessage(cause))
+    deferred.reject(errorHandle)
+    errorHandle.dispose()
+  }
+}
+
 const createToolBridge = (
   context: QuickJSContext,
   toolInvoker: CodeToolInvoker,
@@ -207,20 +229,7 @@ const createToolBridge = (
       .then(
         (value) => {
           if (!deferred.alive) return
-          try {
-            const serialized = serializeJson(value, `Tool result for ${path}`)
-            if (serialized === undefined) {
-              deferred.resolve()
-              return
-            }
-            const valueHandle = context.newString(serialized)
-            deferred.resolve(valueHandle)
-            valueHandle.dispose()
-          } catch (cause) {
-            const errorHandle = context.newError(toErrorMessage(cause))
-            deferred.reject(errorHandle)
-            errorHandle.dispose()
-          }
+          resolveToolInvocation(context, deferred, value, path)
         },
         (cause) => {
           if (!deferred.alive) return
