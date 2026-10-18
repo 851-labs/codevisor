@@ -180,6 +180,17 @@ function strip(binary) {
   }
 }
 
+function linkIOSHostToolsWithAppleLinker() {
+  const file = join(source, "build/toolchain/mac/BUILD.gn")
+  const text = readFileSync(file, "utf8")
+  const lld = "        use_lld = true\n"
+  const appleLinker = "        use_lld = false\n"
+  if (text.includes(appleLinker) && !text.includes(lld)) return
+  if (text.split(lld).length !== 2)
+    throw new Error(`Expected one forced lld for iOS host tools in ${file}`)
+  writeFileSync(file, text.replace(lld, appleLinker))
+}
+
 function build() {
   if (process.platform !== "darwin") throw new Error("The WebRTC artifact requires macOS")
   const xcode = run("xcodebuild", ["-version"], repoRoot, true)
@@ -218,6 +229,7 @@ function build() {
       `src@${lock.sourceRevision}`
     ])
     run("gclient", ["runhooks"])
+    linkIOSHostToolsWithAppleLinker()
     mkdirSync(output)
     writeFileSync(
       join(output, "revisions.txt"),
