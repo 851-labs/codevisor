@@ -49,8 +49,8 @@ extension ChatScreen {
               projectionRevision: projectedRowsVersion,
               initialState: controller.scrollState,
               followsLatest: autoFollow,
-              hasOlderHistory: controller.hasOlderHistory,
-              showsOlderHistoryLoadingIndicator: controller.isLoadingOlderHistory,
+              hasOlderHistory: hasOlderHistory,
+              showsOlderHistoryLoadingIndicator: isLoadingOlderHistory,
               isLoadingInitialHistory: controller.isLoadingInitialHistory,
               isPreparingInitialProjection: isPreparingTranscript,
               isActiveProjectionPending: isActiveProjectionPending,
@@ -143,14 +143,24 @@ extension ChatScreen {
     }
   }
 
+  var hasOlderHistory: Bool {
+    presentsBotConversation ? controller.hasOlderBotMessages : controller.hasOlderHistory
+  }
+
+  var isLoadingOlderHistory: Bool {
+    presentsBotConversation ? controller.isLoadingOlderBotMessages : controller.isLoadingOlderHistory
+  }
+
   @discardableResult
   func requestOlderHistoryLoad() -> Bool {
-    guard historyLoadTask == nil, controller.hasOlderHistory,
-      !controller.isLoadingOlderHistory
-    else { return false }
+    guard historyLoadTask == nil, hasOlderHistory, !isLoadingOlderHistory else { return false }
     historyLoadTask = Task { @MainActor in
       defer { historyLoadTask = nil }
-      await controller.loadOlderHistory()
+      if presentsBotConversation {
+        await controller.loadOlderBotMessages()
+      } else {
+        await controller.loadOlderHistory()
+      }
     }
     return true
   }
@@ -175,7 +185,8 @@ extension ChatScreen {
       key: controller.transcriptProjectionKey,
       options: .init(
         includesConnectingRow: false,
-        bottomSpacerHeight: composerHeight + 24
+        bottomSpacerHeight: composerHeight + 24,
+        presentsBotConversation: presentsBotConversation
       )
     )
   }

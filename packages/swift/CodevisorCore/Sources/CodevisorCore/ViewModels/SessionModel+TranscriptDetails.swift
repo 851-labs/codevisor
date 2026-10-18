@@ -78,7 +78,7 @@ extension SessionModel {
       case .assistantItemStarted:
         break
       case .synchronization, .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
-        .planApprovalRequired, .updateGate, .modelFallback:
+        .planApprovalRequired, .updateGate, .modelFallback, .botMessage:
         break
       }
     }

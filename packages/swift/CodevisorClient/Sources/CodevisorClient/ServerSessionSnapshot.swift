@@ -60,6 +60,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
   case runtimeState(SessionRuntimeState)
   case planApprovalRequired(Bool)
   case modelFallback(SessionModelFallback)
+  case botMessage(ServerBotMessage)
 }
 
 public enum SessionStreamSynchronization: String, Equatable, Sendable {

@@ -20,6 +20,7 @@ public struct TranscriptProjectionInput: Sendable {
   public let sessionErrorMessage: String?
   public let status: ConnectionStatus
   public let activityMessage: String?
+  public let botConversation: TranscriptBotConversation?
 
   public init(
     settledConversation: [ConversationItem],
@@ -32,7 +33,8 @@ public struct TranscriptProjectionInput: Sendable {
     serverWaitMessage: String?,
     sessionErrorMessage: String?,
     status: ConnectionStatus,
-    activityMessage: String? = nil
+    activityMessage: String? = nil,
+    botConversation: TranscriptBotConversation? = nil
   ) {
     self.settledConversation = settledConversation
     self.pendingUserMessage = pendingUserMessage
@@ -45,5 +47,6 @@ public struct TranscriptProjectionInput: Sendable {
     self.sessionErrorMessage = sessionErrorMessage
     self.status = status
     self.activityMessage = activityMessage
+    self.botConversation = botConversation
   }
 }

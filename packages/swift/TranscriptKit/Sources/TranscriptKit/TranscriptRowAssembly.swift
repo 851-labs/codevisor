@@ -6,6 +6,13 @@ enum TranscriptRowAssembly {
     _ input: TranscriptProjectionInput,
     options: TranscriptProjectionOptions
   ) throws -> [TranscriptPresentationRow] {
+    if options.presentsBotConversation {
+      return try TranscriptBotRowAssembly.assemble(
+        input.botConversation ?? TranscriptBotConversation(messages: [], isWorking: false),
+        input: input,
+        options: options
+      )
+    }
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(input.settledConversation.count + 6)
     let settled = input.settledConversation

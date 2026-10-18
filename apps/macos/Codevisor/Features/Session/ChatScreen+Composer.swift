@@ -31,7 +31,7 @@ extension ChatScreen {
           )
         }
       }
-      if !controller.queuedPrompts.isEmpty {
+      if !presentsBotConversation, !controller.queuedPrompts.isEmpty {
         PromptQueueView(
           controller: controller,
           isExpanded: $isQueueExpanded,
@@ -114,7 +114,7 @@ extension ChatScreen {
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
         && (controller.goal ?? controller.draftGoal) != nil,
-      hasQueuedPrompts: !controller.queuedPrompts.isEmpty
+      hasQueuedPrompts: !presentsBotConversation && !controller.queuedPrompts.isEmpty
     )
   }
 }

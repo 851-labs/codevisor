@@ -66,3 +66,47 @@ struct UserBubbleRow: View {
     }
   }
 }
+
+struct BotBubbleRow: View {
+  @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  let message: TranscriptBotMessage
+
+  var body: some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 8) {
+        if !message.attachments.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+              ForEach(message.attachments) { attachment in
+                AttachmentThumbnailView(attachment: attachment)
+              }
+            }
+          }
+          .scrollBounceBehavior(.basedOnSize)
+        }
+        if !message.text.isEmpty {
+          StreamingMarkdownView(message.text)
+            .environment(
+              \.streamMarkdownTextLayoutWidth,
+              rowLayoutWidth.map { max(1, $0 - 64) }
+            )
+            .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
+            .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
+            .background {
+              UserBubbleBackground(color: Color.bubbleBackground)
+                .background(
+                  UserBubbleBackground.transcriptBackdrop(),
+                  in: UserBubbleBackground.shape(for: dynamicTypeSize))
+            }
+            .contextMenu {
+              Button("Copy", systemImage: "doc.on.doc") {
+                PlatformPasteboard.copy(message.text)
+              }
+            }
+        }
+      }
+      Spacer(minLength: 40)
+    }
+  }
+}

@@ -29,7 +29,7 @@ extension SessionController {
   }
 
   public func connectIfNeeded() async {
-    guard hasSentFirst || hasExistingAgentSession else { return }
+    guard hasSentFirst || hasExistingAgentSession || presentsBotConversation else { return }
     if connectionAttempt.isRunning {
       await connectionAttempt.waitForCompletion()
       return

@@ -219,6 +219,8 @@ extension SessionModel {
       onPlanApprovalChanged?(required)
     case let .modelFallback(fallback):
       modelFallback = fallback
+    case let .botMessage(message):
+      upsertBotMessage(message)
     }
   }
 
@@ -331,7 +333,7 @@ extension SessionModel {
     case .retrying, .userMessage, .assistantItemStarted, .assistantFinalized:
       return true
     case .synchronization, .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
-      .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
+      .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback, .botMessage:
       return false
     }
   }

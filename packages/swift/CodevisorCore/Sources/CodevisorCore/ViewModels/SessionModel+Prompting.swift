@@ -24,11 +24,16 @@ extension SessionModel {
     harnessAuthenticationErrorMessage = nil
 
     if isSending {
-      await enqueueWhileSending(trimmed, attachments: message.attachments)
+      if presentsBotConversation {
+        await sendToWorkingBot(message)
+      } else {
+        await enqueueWhileSending(trimmed, attachments: message.attachments)
+      }
       return
     }
 
     settleActiveItem()
+    if presentsBotConversation { unsentBotMessages.append(message) }
     appendSettled(.user(message))
     pendingOptimisticUserMessageIDs.insert(message.id)
     startActiveBubble(startedAt: startedAt)
@@ -335,6 +340,9 @@ extension SessionModel {
     guard state != .cursor else { return }
     streamSynchronization = state
     streamReconnectNotice.update(isActive: state == .reconnecting)
+    if state == .caughtUp, presentsBotConversation {
+      Task { await refreshBotConversation() }
+    }
     if state != .reconnecting {
       clearConnectionRecoveryPresentation()
     } else {

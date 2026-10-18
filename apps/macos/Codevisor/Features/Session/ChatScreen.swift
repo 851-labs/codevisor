@@ -24,6 +24,7 @@ struct ChatScreen: View {
   let focus: TerminalFocusController
   let presentationSurface: TranscriptPresentationSurface
   let isReadOnly: Bool
+  let presentsBotConversation: Bool
   @State var isAtBottom: Bool
   @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
@@ -62,12 +63,14 @@ struct ChatScreen: View {
     controller: SessionController,
     focus: TerminalFocusController,
     presentationSurface: TranscriptPresentationSurface,
-    isReadOnly: Bool = false
+    isReadOnly: Bool = false,
+    presentsBotConversation: Bool = false
   ) {
     self.controller = controller
     self.focus = focus
     self.presentationSurface = presentationSurface
     self.isReadOnly = isReadOnly
+    self.presentsBotConversation = presentsBotConversation
     let isWarm = presentationSurface.isWarm
     _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
     _autoFollow = State(
@@ -125,6 +128,7 @@ struct ChatScreen: View {
         isTranscriptMounted = true
       }
       .task(id: contentLoadingIdentity) {
+        if presentsBotConversation { controller.presentBotConversation() }
         guard isTranscriptMounted, !isReadOnly else { return }
         if controller.resumeAgentSessionId?.isEmpty == false {
           async let capabilities: Void = controller.prepareExistingSessionCapabilities()

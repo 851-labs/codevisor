@@ -57,6 +57,8 @@ enum ServerSessionEventDecoder {
       ]
     case "session.queue.updated":
       return [.queueUpdated(promptQueue(from: event.payload))]
+    case "bot.message":
+      return botMessage(from: event.payload).map { [.botMessage($0)] } ?? []
     case "session.updateGate.updated":
       return [
         .updateGate(
@@ -89,6 +91,11 @@ enum ServerSessionEventDecoder {
     default:
       return []
     }
+  }
+
+  private static func botMessage(from payload: JSONValue) -> ServerBotMessage? {
+    guard let message = payload["message"], let data = try? JSONEncoder().encode(message) else { return nil }
+    return try? JSONDecoder().decode(ServerBotMessage.self, from: data)
   }
 
   private static func updatedSessionEvents(from payload: JSONValue) -> [ServerSessionStreamEvent] {

@@ -89,10 +89,6 @@ extension SessionContainerView {
             environment: environment
           ))
       }
-      if descriptor.kind == .chat, let sessionId = descriptor.chatSessionId, let bot = botChat(sessionId) {
-        return AnyView(
-          BotConversationView(bot: bot, client: environment.machines.client(for: workspace.serverId)))
-      }
       if descriptor.kind == .newTab {
         return AnyView(
           NewTabPageView(
@@ -115,7 +111,8 @@ extension SessionContainerView {
           hostWorkspace: workspace,
           project: project,
           store: store,
-          environment: environment
+          environment: environment,
+          presentsBotConversation: descriptor.chatSessionId.flatMap(botChat) != nil
         ))
     }
   }
