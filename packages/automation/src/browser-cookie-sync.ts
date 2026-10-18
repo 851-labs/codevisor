@@ -25,16 +25,17 @@ const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {
     typeof raw.domain !== "string"
   )
     return undefined
-  return {
+  const cookie = {
     name: raw.name,
     value: raw.value,
     domain: raw.domain,
     path: typeof raw.path === "string" ? raw.path : "/",
     secure: raw.secure === true,
     httpOnly: raw.httpOnly === true,
-    sameSite: cookieSameSite(raw.sameSite),
-    ...(typeof raw.expires === "number" && raw.expires > 0 ? { expires: raw.expires } : {})
+    sameSite: cookieSameSite(raw.sameSite)
   }
+  if (typeof raw.expires === "number" && raw.expires > 0) return { ...cookie, expires: raw.expires }
+  return cookie
 }
 const equal = (a: BrowserCookie | undefined | null, b: BrowserCookie | undefined | null) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
@@ -62,6 +63,22 @@ const adoptNormalizedImports = (
     if (cookie) baseline.set(key, cookie)
     else baseline.delete(key)
   }
+}
+
+const cdpCookie = (
+  cookie: BrowserCookie,
+  rest: Omit<BrowserCookie, "sameSite" | "domain">,
+  domain: string,
+  sameSite: BrowserCookie["sameSite"],
+  deleted: boolean
+): Record<string, unknown> => {
+  const projected: Record<string, unknown> = { ...rest }
+  if (domain.startsWith(".")) projected.domain = domain
+  else projected.url = `${cookie.secure ? "https" : "http"}://${domain}${cookie.path}`
+  if (sameSite !== "unspecified")
+    projected.sameSite = sameSite[0]!.toUpperCase() + sameSite.slice(1)
+  if (deleted) projected.expires = 1
+  return projected
 }
 
 export const synchronizeManagedCookies = async (
@@ -93,18 +110,7 @@ export const synchronizeManagedCookies = async (
     const { sameSite, domain, ...rest } = cookie
     return connection
       .send("Storage.setCookies", {
-        cookies: [
-          {
-            ...rest,
-            ...(domain.startsWith(".")
-              ? { domain }
-              : { url: `${cookie.secure ? "https" : "http"}://${domain}${cookie.path}` }),
-            ...(sameSite === "unspecified"
-              ? {}
-              : { sameSite: sameSite[0]!.toUpperCase() + sameSite.slice(1) }),
-            ...(deleted ? { expires: 1 } : {})
-          }
-        ]
+        cookies: [cdpCookie(cookie, rest, domain, sameSite, deleted)]
       })
       .then(
         () => true,
