@@ -5,6 +5,7 @@ import type { AttachmentRef, BotConversationPage, EventEnvelope } from "@codevis
 import { SendBotMessageRequest } from "@codevisor/api"
 
 import {
+  failureMessage,
   HttpFailure,
   matchRoute,
   readSchema,
@@ -87,10 +88,7 @@ export const routeBotConversation = async (
         const file = await captureAssistantFile(services, { path: input.path }, attachments)
         attachments.push(input.name === undefined ? file : { ...file, name: input.name })
       } catch (cause) {
-        throw new HttpFailure(
-          422,
-          `Could not attach ${input.path}: ${cause instanceof Error ? cause.message : String(cause)}`
-        )
+        throw new HttpFailure(422, `Could not attach ${input.path}: ${failureMessage(cause)}`)
       }
     }
     const message = await postBotMessage(services, fanout, messagesSessionId, {
@@ -211,9 +209,8 @@ export const makeBotConversationListener =
   (event: EventEnvelope): void => {
     const payload = isRecord(event.payload) ? event.payload : {}
     if (event.kind === "session.error") {
-      const message = typeof payload.message === "string" ? payload.message : undefined
+      const message = String(payload.message)
       void (async () => {
-        if (message === undefined) return
         if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
         takeBotTurn(services, event.subjectId)
         await postBotMessage(services, fanout, event.subjectId, {

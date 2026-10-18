@@ -197,8 +197,7 @@ const sessionCreatePayload = (
 const sessionPromptPayload = (
   payload: Readonly<Record<string, unknown>>,
   context: AutomationProviderContext
-): Readonly<Record<string, unknown>> =>
-  context.sessionId === undefined ? payload : { ...payload, fromSessionId: context.sessionId }
+): Readonly<Record<string, unknown>> => ({ ...payload, fromSessionId: context.sessionId })
 
 const invokeApiTool = async (
   getBaseUrl: () => string,

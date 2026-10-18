@@ -39,7 +39,7 @@ export const conversationalBotForSession = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<Bot | undefined> => {
-  const bot = await run(services.db.findBotOwning({ sessionId })).catch(() => undefined)
+  const bot = await run(services.db.findBotOwning({ sessionId }))
   return bot !== undefined &&
     bot.conversational &&
     bot.sessionId.toLowerCase() === sessionId.toLowerCase()

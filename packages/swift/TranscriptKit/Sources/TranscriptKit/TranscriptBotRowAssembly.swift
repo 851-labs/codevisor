@@ -36,7 +36,7 @@ enum TranscriptBotRowAssembly {
           id: .message(pending.id),
           content: .optimistic(pending),
           estimatedHeight: 44,
-          measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(for: pending),
+          measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(for: pending),
           spacingAfter: groupTailSpacing
         ))
     }
@@ -67,7 +67,7 @@ enum TranscriptBotRowAssembly {
         id: .message(id),
         content: .message(.user(user), waitingOnBackgroundTask: nil),
         estimatedHeight: estimatedHeight(for: message),
-        measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(for: user),
+        measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(for: user),
         spacingAfter: spacing
       )
     }

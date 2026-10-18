@@ -1,6 +1,10 @@
+import { readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
 
-import { upgradeBotInstructions } from "./bot-create.js"
+import { upgradeAllBotInstructions, upgradeBotInstructions } from "./bot-create.js"
+import { createBot, decodeBot, setUp } from "./bot-test-support.js"
 
 const legacy = [
   "# Helper",
@@ -44,5 +48,33 @@ describe("bot instructions", () => {
     expect(plain).toContain("4. `sessions.wait` or `sessions.get` to follow up")
     expect(plain).toContain('harnessId: "codex"')
     expect(upgradeBotInstructions(legacy, "codex", false)).toBe(plain)
+  })
+
+  it("upgrade every bot's instructions on startup, skipping bots whose file is gone", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    await running.addProject("web-project", "web")
+    const chatty = decodeBot(
+      (
+        await createBot(running, {
+          name: "Chatty",
+          projectIds: ["api-project"],
+          conversational: true
+        })
+      ).body
+    )
+    const missing = decodeBot(
+      (await createBot(running, { name: "Missing", projectIds: ["web-project"] })).body
+    )
+    const instructions = join(chatty.rootPath, "AGENTS.md")
+    writeFileSync(instructions, "# Chatty\n\nYou are a long-lived Codevisor bot.\n")
+    rmSync(join(missing.rootPath, "AGENTS.md"))
+
+    await upgradeAllBotInstructions(running.services)
+    const upgraded = readFileSync(instructions, "utf8")
+    await upgradeAllBotInstructions(running.services)
+
+    expect(upgraded).toMatch(/You are a long-lived Codevisor bot\.\n\n## Talking to the user/)
+    expect(readFileSync(instructions, "utf8")).toBe(upgraded)
   })
 })
