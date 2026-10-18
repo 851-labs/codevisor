@@ -53,11 +53,12 @@ const parseTextMatcher = (input: unknown, label: string): BrowserTextMatcher => 
 const validateLocatorDescriptor = (locator: Readonly<Record<string, unknown>>): void => {
   const modes = ["ref", "css", "role", "label", "placeholder", "text", "testId"].filter((key) => {
     const candidate = locator[key]
-    return typeof candidate === "string"
-      ? candidate.length > 0
-      : ["label", "placeholder", "text"].includes(key) &&
-          candidate !== null &&
-          typeof candidate === "object"
+    if (typeof candidate === "string") return candidate.length > 0
+    return (
+      ["label", "placeholder", "text"].includes(key) &&
+      candidate !== null &&
+      typeof candidate === "object"
+    )
   })
   if (modes.length !== 1) {
     throw new Error(
@@ -89,26 +90,23 @@ const parseLocatorFilters = (
   locator: Readonly<Record<string, unknown>>,
   depth: number
 ): BrowserLocator["filters"] => {
-  let filters: BrowserLocator["filters"]
-  if (locator.filters !== undefined) {
-    if (!isPlainRecord(locator.filters)) throw new Error("locator.filters must be an object")
-    const input = locator.filters
-    if (input.visible !== undefined && typeof input.visible !== "boolean") {
-      throw new Error("locator.filters.visible must be a boolean")
-    }
-    filters = {
-      ...(input.has === undefined ? {} : { has: parseLocator(input.has, depth + 1) }),
-      ...(input.hasNot === undefined ? {} : { hasNot: parseLocator(input.hasNot, depth + 1) }),
-      ...(input.hasText === undefined
-        ? {}
-        : { hasText: parseTextMatcher(input.hasText, "locator.filters.hasText") }),
-      ...(input.hasNotText === undefined
-        ? {}
-        : { hasNotText: parseTextMatcher(input.hasNotText, "locator.filters.hasNotText") }),
-      ...(typeof input.visible === "boolean" ? { visible: input.visible } : {})
-    }
+  if (locator.filters === undefined) return undefined
+  if (!isPlainRecord(locator.filters)) throw new Error("locator.filters must be an object")
+  const input = locator.filters
+  if (input.visible !== undefined && typeof input.visible !== "boolean") {
+    throw new Error("locator.filters.visible must be a boolean")
   }
-  return filters
+  return {
+    ...(input.has === undefined ? {} : { has: parseLocator(input.has, depth + 1) }),
+    ...(input.hasNot === undefined ? {} : { hasNot: parseLocator(input.hasNot, depth + 1) }),
+    ...(input.hasText === undefined
+      ? {}
+      : { hasText: parseTextMatcher(input.hasText, "locator.filters.hasText") }),
+    ...(input.hasNotText === undefined
+      ? {}
+      : { hasNotText: parseTextMatcher(input.hasNotText, "locator.filters.hasNotText") }),
+    ...(typeof input.visible === "boolean" ? { visible: input.visible } : {})
+  }
 }
 
 export const parseLocator = (locator: unknown, depth = 0): BrowserLocator => {
