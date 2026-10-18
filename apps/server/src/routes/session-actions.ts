@@ -29,7 +29,7 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
-import { routeBotConversation } from "./bot-conversation.js"
+import { agentMessageEvent, routeBotConversation } from "./bot-conversation.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { routeParam } from "./route-params.js"
@@ -144,16 +144,24 @@ export const routeSessionActions = async (
     if (actionKey !== undefined) {
       routeState.pendingPromptActions.add(actionKey)
     }
+    const toBot = (await conversationalBotForSession(services, promptSessionId)) !== undefined
+    const agentSessionId =
+      toBot && payload.fromSessionId?.toLowerCase() !== promptSessionId.toLowerCase()
+        ? payload.fromSessionId
+        : undefined
     const queueItem = await run(
       services.db.createPromptQueueItem(
         promptSessionId,
-        payload.text,
+        agentSessionId === undefined
+          ? payload.text
+          : await agentMessageEvent(services, agentSessionId, payload.text),
         attachments,
         payload.messageId,
-        payload.clientId
+        payload.clientId,
+        agentSessionId === undefined ? "user" : "system"
       )
     )
-    if ((await conversationalBotForSession(services, promptSessionId)) !== undefined) {
+    if (toBot && agentSessionId === undefined) {
       await postBotMessage(services, fanout, promptSessionId, {
         id: queueItem.id,
         sender: "user",

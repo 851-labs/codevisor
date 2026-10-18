@@ -194,6 +194,12 @@ const sessionCreatePayload = (
   ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
 })
 
+const sessionPromptPayload = (
+  payload: Readonly<Record<string, unknown>>,
+  context: AutomationProviderContext
+): Readonly<Record<string, unknown>> =>
+  context.sessionId === undefined ? payload : { ...payload, fromSessionId: context.sessionId }
+
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,
@@ -255,7 +261,9 @@ const invokeApiTool = async (
         ? args.body
         : spec.name === "sessions.create"
           ? sessionCreatePayload(fields(), context)
-          : fields()
+          : spec.name === "sessions.prompt"
+            ? sessionPromptPayload(fields(), context)
+            : fields()
     )
     headers.set("content-type", "application/json")
   }

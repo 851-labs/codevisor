@@ -242,6 +242,27 @@ describe("Codevisor MCP provider", () => {
     )
   })
 
+  it("signs prompts with the calling session so a bot can tell agents from its user", async () => {
+    const requests: Array<{ url: URL; init: RequestInit }> = []
+    stubFetch((url, init) => {
+      requests.push({ url, init })
+      return jsonResponse({ accepted: true })
+    })
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token"
+    )
+
+    await provider.invoke({ sessionId: "agent" }, "sessions.prompt", {
+      sessionId: "bot",
+      text: "done",
+      fromSessionId: "someone-else"
+    })
+
+    expect(requests[0]!.url.pathname).toBe("/v1/sessions/bot/prompt")
+    expect(requestJson(requests[0]!.init)).toEqual({ text: "done", fromSessionId: "agent" })
+  })
+
   it("gates consent-marked tools on an explicit confirm argument", async () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {

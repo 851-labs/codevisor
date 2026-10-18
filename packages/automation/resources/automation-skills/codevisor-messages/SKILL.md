@@ -50,4 +50,6 @@ Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-e
 </codevisor-event>
 ```
 
+Messages another agent sends you with `sessions.prompt` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`.
+
 Use them instead of waiting. After you start or prompt an agent, end your turn rather than blocking on `sessions.wait`; the event arrives when the agent is done, so you stay free to answer the user in the meantime. To dig deeper, read the agent's transcript with `sessions.get`.

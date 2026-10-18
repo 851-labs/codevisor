@@ -147,6 +147,41 @@ describe("bot conversations", () => {
     expect(await transcript(running, bot.sessionId)).toEqual([])
   })
 
+  it("hands the bot a message from another agent without showing it in the conversation", async () => {
+    const { running, bot } = await startBot()
+    const agent = decode(SessionSummary)(
+      (
+        await jsonRequest(running.server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "api-project",
+            harnessId: "codex",
+            title: "Fix login"
+          }),
+          method: "POST"
+        })
+      ).body
+    )
+
+    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+      body: JSON.stringify({ text: "login is fixed", fromSessionId: agent.id }),
+      method: "POST"
+    })
+
+    await waitFor(() =>
+      running.agents.prompts.some(
+        ([, input]) => typeof input === "string" && input.includes("login is fixed")
+      )
+    )
+    const delivered = running.agents.prompts.find(
+      ([, input]) => typeof input === "string" && input.includes("login is fixed")
+    )?.[1]
+    expect(delivered).toBe(
+      `<codevisor-event type="session.message" from="${agent.id}" title="Fix login">\nlogin is fixed\n</codevisor-event>`
+    )
+    await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
+    expect(await transcript(running, bot.sessionId)).toEqual([])
+  })
+
   it("tells the bot when an agent it started finishes, without showing the user", async () => {
     const { running, bot } = await startBot()
     const child = await jsonRequest(running.server, "/v1/sessions", {

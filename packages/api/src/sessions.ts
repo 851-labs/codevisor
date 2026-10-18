@@ -339,7 +339,8 @@ export const PromptRequest = Schema.Struct({
   clientActionId: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   messageId: Schema.optional(Schema.String),
-  clientId: Schema.optional(Schema.String)
+  clientId: Schema.optional(Schema.String),
+  fromSessionId: Schema.optional(Schema.String)
 })
 export type PromptRequest = typeof PromptRequest.Type
 

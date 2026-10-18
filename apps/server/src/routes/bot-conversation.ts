@@ -136,6 +136,20 @@ const childReport = (
   ].join("\n")
 }
 
+export const agentMessageEvent = async (
+  services: CodevisorServerServices,
+  fromSessionId: string,
+  text: string
+): Promise<string> => {
+  const sender = await run(services.db.getSessionSummary(fromSessionId)).catch(() => undefined)
+  const title = sender === undefined ? "" : ` title="${attribute(sender.title)}"`
+  return [
+    `<codevisor-event type="session.message" from="${attribute(fromSessionId)}"${title}>`,
+    text,
+    "</codevisor-event>"
+  ].join("\n")
+}
+
 const settleBotTurn = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
