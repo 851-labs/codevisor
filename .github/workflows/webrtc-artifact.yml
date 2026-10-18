@@ -32,6 +32,9 @@ jobs:
         run: |
           node -e 'const p=JSON.parse(require("fs").readFileSync("scripts/webrtc-build.lock.json")); console.log("python="+p.pythonVersion); console.log("xcode="+p.xcodeVersion)' >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        env:
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/uv-python
+          UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
         with:
           python-version: ${{ steps.tools.outputs.python }}
           activate-environment: true
