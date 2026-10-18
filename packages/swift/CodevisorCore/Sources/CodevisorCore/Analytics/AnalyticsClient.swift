@@ -149,10 +149,8 @@ public final class AnalyticsClient {
       "release"
     #endif
   }
-}
 
-public extension AnalyticsClient {
-  static func tokenBucket(_ value: UInt64?) -> String? {
+  public static func tokenBucket(_ value: UInt64?) -> String? {
     guard let value else { return nil }
     return switch value {
     case 0: "0"

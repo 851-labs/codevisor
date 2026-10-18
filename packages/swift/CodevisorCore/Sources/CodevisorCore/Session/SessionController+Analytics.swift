@@ -74,16 +74,7 @@ extension SessionController {
     )
 
     if let cost = currentUsage?.cost {
-      let previousCost = previousUsage?.cost
-      let amount =
-        previousCost?.currency == cost.currency
-        ? max(0, cost.amount - (previousCost?.amount ?? 0))
-        : cost.amount
-      properties["cost"] = .double(amount)
-      properties["cost_currency"] = .string(cost.currency)
-      if let kind = cost.kind?.rawValue {
-        properties["cost_kind"] = .string(kind)
-      }
+      addTurnCost(cost, previous: previousUsage?.cost, to: &properties)
     }
 
     if model.errorMessage != nil {
@@ -119,6 +110,24 @@ extension SessionController {
       properties["mode"] = .string(mode)
     }
     return properties
+  }
+
+  private func addTurnCost(
+    _ cost: SessionCost,
+    previous: SessionCost?,
+    to properties: inout [String: AnalyticsPropertyValue]
+  ) {
+    let amount: Double
+    if previous?.currency == cost.currency {
+      amount = max(0, cost.amount - (previous?.amount ?? 0))
+    } else {
+      amount = cost.amount
+    }
+    properties["cost"] = .double(amount)
+    properties["cost_currency"] = .string(cost.currency)
+    if let kind = cost.kind?.rawValue {
+      properties["cost_kind"] = .string(kind)
+    }
   }
 
   private func addTokenBucket(
