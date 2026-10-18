@@ -438,7 +438,7 @@ private extension ComposerCard {
     } else {
       guard controller.canSend, !isAppUpdateInProgress else { return }
       didAcceptSubmission = true
-      if !reduceMotion, !controller.isSending {
+      if !reduceMotion, !controller.isSending || controller.presentsBotConversation {
         sendSource.stage(controller: controller)
       }
       controller.promptClientId = clientControlId?.uuidString.lowercased()

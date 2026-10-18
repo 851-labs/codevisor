@@ -81,6 +81,7 @@ extension ChatScreen {
                     .environment(\.openFileDocument, openFileDocument)
                     .environment(\.openSubagent, openSubagent)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
+                    .environment(\.userBubbleStyle, presentsBotConversation ? .accent : .standard)
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
                     .environment(

@@ -29,14 +29,15 @@ struct ConversationItemView: View {
 }
 
 struct UserMessageView: View {
+  @Environment(\.userBubbleStyle) private var style
   let message: UserMessage
 
   var body: some View {
-    MessageBubbleView(side: .trailing, text: message.text, attachments: message.attachments) {
+    MessageBubbleView(side: .trailing, text: message.text, attachments: message.attachments, fill: style.fill) {
       SelectableTextView(
         message.text,
         font: .preferredFont(forTextStyle: .body),
-        foregroundColor: NSColor(Color.primary)
+        foregroundColor: NSColor(style.text)
       )
     }
   }
@@ -90,6 +91,7 @@ struct MessageBubbleView<Content: View>: View {
   let side: Side
   let text: String
   let attachments: [Attachment]
+  var fill = Color.bubbleBackground
   var showsCopyButton = true
   @ViewBuilder let content: () -> Content
   @State private var isHovered = false
@@ -113,7 +115,7 @@ struct MessageBubbleView<Content: View>: View {
             )
             .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
             .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
-            .background { UserBubbleBackground(color: Color.bubbleBackground) }
+            .background { UserBubbleBackground(color: fill) }
           if showsCopyButton {
             MessageCopyButton(text: text, help: "Copy message", isRevealed: isHovered)
               .opacity(isHovered ? 1 : 0)
