@@ -3,9 +3,10 @@ import SwiftUI
 
 struct WorkspaceInspectorUsageSection: View {
   let limits: ServerHarnessUsageLimits
+  @Binding var isExpanded: Bool
 
   var body: some View {
-    Section("Usage") {
+    Section("Usage", isExpanded: $isExpanded) {
       if let account = limits.accountEmail ?? limits.accountLabel {
         HStack(spacing: 12) {
           Text("Account")

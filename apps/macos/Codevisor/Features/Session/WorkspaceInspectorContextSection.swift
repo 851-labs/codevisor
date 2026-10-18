@@ -13,10 +13,11 @@ struct WorkspaceInspectorContextSection: View {
 
   let context: ServerSessionContext?
   let usage: SessionUsage?
+  @Binding var isExpanded: Bool
 
   var body: some View {
     if let context {
-      Section("Context") {
+      Section("Context", isExpanded: $isExpanded) {
         WorkspaceInspectorContextOverview(
           used: context.totalTokens,
           size: context.maxTokens,
@@ -31,7 +32,7 @@ struct WorkspaceInspectorContextSection: View {
         }
       }
     } else if let used = usage?.used, let size = usage?.size, size > 0 {
-      Section("Context") {
+      Section("Context", isExpanded: $isExpanded) {
         WorkspaceInspectorContextOverview(used: Double(used), size: Double(size), segments: [])
       }
     }
