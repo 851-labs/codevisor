@@ -27,97 +27,11 @@ struct NotificationsSettingsView: View {
 
   var body: some View {
     Form {
-      Section {
-        Toggle(isOn: notificationsEnabled) {
-          VStack(alignment: .leading, spacing: 3) {
-            Text("Chat notifications")
-            Text("Get notified when a chat finishes or needs your input.")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-        }
-        .toggleStyle(.switch)
-      }
-
-      Section {
-        Toggle("Show notifications when Codevisor isn't active", isOn: systemNotificationsEnabled)
-          .toggleStyle(.switch)
-          .controlSize(.small)
-          .disabled(!settings.notificationsEnabled)
-
-        HStack {
-          VStack(alignment: .leading, spacing: 3) {
-            Text("System notifications")
-            Text(authorizationDescription)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-          Spacer()
-          Button(authorizationButtonTitle) {
-            handleAuthorizationButton()
-          }
-          .disabled(!settings.notificationsEnabled || !settings.systemNotificationsEnabled)
-        }
-      } header: {
-        Text("Delivery")
-      }
-
-      Section {
-        Toggle("Play sounds", isOn: soundsEnabled)
-          .toggleStyle(.switch)
-          .controlSize(.small)
-          .disabled(!settings.notificationsEnabled)
-
-        soundRow(
-          title: "Chat finished",
-          selection: chatFinishedSound,
-          kind: .finished
-        )
-        .disabled(!settings.notificationsEnabled || !settings.notificationSoundsEnabled)
-
-        soundRow(
-          title: "Action required",
-          selection: actionRequiredSound,
-          kind: .actionRequired
-        )
-        .disabled(!settings.notificationsEnabled || !settings.notificationSoundsEnabled)
-      } header: {
-        Text("Sounds")
-      }
-
-      Section {
-        if customSoundChoices.isEmpty {
-          Text("No custom sounds")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(customSoundChoices) { sound in
-            customSoundRow(sound)
-          }
-        }
-      } header: {
-        Text("Custom Sounds")
-      } footer: {
-        SettingsListActions {
-          Button("Add Sound…") {
-            soundImportTarget = nil
-            showingSoundImporter = true
-          }
-        }
-      }
-
-      Section("Test") {
-        HStack {
-          Button("Send Test Notification") {
-            Task { await sendTestNotification() }
-          }
-          Spacer()
-          if let testMessage {
-            Text(testMessage)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-        }
-      }
+      notificationsSection
+      deliverySection
+      soundsSection
+      customSoundsSection
+      testSection
     }
     .formStyle(.grouped)
     .fileImporter(
@@ -141,6 +55,108 @@ struct NotificationsSettingsView: View {
     .task {
       refreshSoundChoices()
       await refreshAuthorizationStatus()
+    }
+  }
+
+  private var notificationsSection: some View {
+    Section {
+      Toggle(isOn: notificationsEnabled) {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Chat notifications")
+          Text("Get notified when a chat finishes or needs your input.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .toggleStyle(.switch)
+    }
+  }
+
+  private var deliverySection: some View {
+    Section {
+      Toggle("Show notifications when Codevisor isn't active", isOn: systemNotificationsEnabled)
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .disabled(!settings.notificationsEnabled)
+
+      HStack {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("System notifications")
+          Text(authorizationDescription)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button(authorizationButtonTitle) {
+          handleAuthorizationButton()
+        }
+        .disabled(!settings.notificationsEnabled || !settings.systemNotificationsEnabled)
+      }
+    } header: {
+      Text("Delivery")
+    }
+  }
+
+  private var soundsSection: some View {
+    Section {
+      Toggle("Play sounds", isOn: soundsEnabled)
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .disabled(!settings.notificationsEnabled)
+
+      soundRow(
+        title: "Chat finished",
+        selection: chatFinishedSound,
+        kind: .finished
+      )
+      .disabled(!settings.notificationsEnabled || !settings.notificationSoundsEnabled)
+
+      soundRow(
+        title: "Action required",
+        selection: actionRequiredSound,
+        kind: .actionRequired
+      )
+      .disabled(!settings.notificationsEnabled || !settings.notificationSoundsEnabled)
+    } header: {
+      Text("Sounds")
+    }
+  }
+
+  private var customSoundsSection: some View {
+    Section {
+      if customSoundChoices.isEmpty {
+        Text("No custom sounds")
+          .foregroundStyle(.secondary)
+      } else {
+        ForEach(customSoundChoices) { sound in
+          customSoundRow(sound)
+        }
+      }
+    } header: {
+      Text("Custom Sounds")
+    } footer: {
+      SettingsListActions {
+        Button("Add Sound…") {
+          soundImportTarget = nil
+          showingSoundImporter = true
+        }
+      }
+    }
+  }
+
+  private var testSection: some View {
+    Section("Test") {
+      HStack {
+        Button("Send Test Notification") {
+          Task { await sendTestNotification() }
+        }
+        Spacer()
+        if let testMessage {
+          Text(testMessage)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
     }
   }
 
