@@ -15,7 +15,7 @@
     "rtc_enable_objc_symbol_export=true",
     "enable_stripping=false",
     "enable_dsyms=true",
-    "use_lld=true",
+    "use_lld=false",
     "rtc_ios_use_opengl_rendering=true",
     "rtc_system_openh264=true",
     "rtc_use_h265=true"
