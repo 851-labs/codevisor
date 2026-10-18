@@ -185,7 +185,9 @@ struct WorkspaceInspectorView: View {
     Binding(
       get: { !collapsedSections.contains(section) },
       set: { expanded in
-        collapsedSections = collapsedSections.filter { $0 != section } + (expanded ? [] : [section])
+        withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+          collapsedSections = collapsedSections.filter { $0 != section } + (expanded ? [] : [section])
+        }
       }
     )
   }
