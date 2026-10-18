@@ -34,8 +34,27 @@ describe("Browser Use direct CDP engine", () => {
         response.end("download fixture")
         return
       }
+      if (request.url === "/page-assets/theme.css") {
+        response.writeHead(200, { "content-type": "text/css" })
+        response.end("")
+        return
+      }
+      if (request.url === "/?page-asset-image" || request.url === "/page-assets/pixel.svg") {
+        response.writeHead(200, { "content-type": "image/svg+xml" })
+        response.end('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>')
+        return
+      }
       response.writeHead(200, { "content-type": "text/html" })
       response.end(`<!doctype html><title>CDP fixture</title>
+        <script>
+          // Keep the asset inventory in DOM order, independent of resource completion/favicon timing.
+          performance.setResourceTimingBufferSize(0);
+          performance.clearResourceTimings();
+        </script>
+        <link rel="stylesheet" href="/page-assets/theme.css">
+        <img src="/?page-asset-image" alt="" hidden>
+        <img src="/page-assets/pixel.svg" alt="" hidden>
+        <svg width="1" height="1" aria-hidden="true"></svg>
         <button onclick="document.querySelector('#count').textContent = '1'">Increment</button>
         <button id="dialog-button" onclick="confirm('confirm click fixture')">Dialog</button>
         <a id="download-link" href="/fixture.txt" download>Download</a>
@@ -230,6 +249,41 @@ describe("Browser Use direct CDP engine", () => {
 
       const assets = await provider.invoke(context, "pageAssets.list", {})
       expect(assets.isError).not.toBe(true)
+      if (assets.content[0]?.type !== "text") throw new Error("Missing asset inventory")
+      expect(JSON.parse(assets.content[0].text)).toMatchObject({
+        pageUrl: `http://127.0.0.1:${address.port}/`,
+        assets: [
+          {
+            id: "a1",
+            url: `http://127.0.0.1:${address.port}/page-assets/theme.css`,
+            kind: "stylesheet",
+            name: "theme.css",
+            sources: [{ kind: "resource" }]
+          },
+          {
+            id: "a2",
+            url: `http://127.0.0.1:${address.port}/?page-asset-image`,
+            kind: "image",
+            name: "asset-2",
+            sources: [{ kind: "resource" }]
+          },
+          {
+            id: "a3",
+            url: `http://127.0.0.1:${address.port}/page-assets/pixel.svg`,
+            kind: "image",
+            name: "pixel.svg",
+            sources: [{ kind: "resource" }]
+          }
+        ],
+        inlineSvgs: [
+          {
+            id: "s1",
+            markup: '<svg width="1" height="1" aria-hidden="true"></svg>',
+            name: "inline-1.svg"
+          }
+        ],
+        summary: { byKind: { stylesheet: 1, image: 2 }, inlineSvgCount: 1 }
+      })
 
       const uploadPath = join(directory, "fixture.txt")
       writeFileSync(uploadPath, "browser upload fixture")

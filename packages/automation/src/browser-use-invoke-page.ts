@@ -16,7 +16,11 @@ import {
 import { delay, type CdpEvent } from "./browser-cdp.js"
 import { exportBrowserContent } from "./browser-content.js"
 import { readBrowserLogs } from "./browser-logs.js"
-import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import type {
+  BrowserAssetInventory,
+  BrowserToolInvocation,
+  BrowserToolSessionState
+} from "./browser-use-invoke-types.js"
 import {
   expectArray,
   expectRecord,
@@ -60,6 +64,42 @@ const pageAssetInventory = (value: unknown) => {
       markup: expectString(expectRecord(raw, "Inline SVG").markup, "Inline SVG markup")
     }))
   }
+}
+
+const pageAssetName = (asset: { readonly url: string }, index: number): string => {
+  try {
+    return basename(new URL(asset.url).pathname) || `asset-${index + 1}`
+  } catch {
+    return `asset-${index + 1}`
+  }
+}
+
+const normalizePageAssetInventory = (
+  inventory: ReturnType<typeof pageAssetInventory>
+): BrowserAssetInventory => {
+  return {
+    pageUrl: inventory.pageUrl,
+    assets: inventory.assets.map((asset, index) => ({
+      id: `a${index + 1}`,
+      ...asset,
+      name: pageAssetName(asset, index),
+      sources: [{ kind: "resource" }]
+    })),
+    inlineSvgs: inventory.inlineSvgs.map((asset, index) => ({
+      id: `s${index + 1}`,
+      ...asset,
+      name: `inline-${index + 1}.svg`
+    }))
+  }
+}
+
+const pageAssetCountsByKind = (inventory: BrowserAssetInventory) => {
+  return Object.fromEntries(
+    [...new Set(inventory.assets.map((asset) => asset.kind))].map((kind) => [
+      kind,
+      inventory.assets.filter((asset) => asset.kind === kind).length
+    ])
+  )
 }
 
 export const invokePageTools = async (
@@ -266,33 +306,9 @@ export const invokePageTools = async (
         )
       )
       const id = randomUUID()
-      const normalized = {
-        pageUrl: inventory.pageUrl,
-        assets: inventory.assets.map((asset, index) => ({
-          id: `a${index + 1}`,
-          ...asset,
-          name: (() => {
-            try {
-              return basename(new URL(asset.url).pathname) || `asset-${index + 1}`
-            } catch {
-              return `asset-${index + 1}`
-            }
-          })(),
-          sources: [{ kind: "resource" }]
-        })),
-        inlineSvgs: inventory.inlineSvgs.map((asset, index) => ({
-          id: `s${index + 1}`,
-          ...asset,
-          name: `inline-${index + 1}.svg`
-        }))
-      }
+      const normalized = normalizePageAssetInventory(inventory)
       assetInventories.set(id, normalized)
-      const byKind = Object.fromEntries(
-        [...new Set(normalized.assets.map((asset) => asset.kind))].map((kind) => [
-          kind,
-          normalized.assets.filter((asset) => asset.kind === kind).length
-        ])
-      )
+      const byKind = pageAssetCountsByKind(normalized)
       return jsonResult({
         id,
         ...normalized,
