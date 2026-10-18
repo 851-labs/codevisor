@@ -16,4 +16,8 @@ public extension CodevisorServerClienting {
   func deleteBot(id: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
+
+  func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage {
+    throw CodevisorServerClientError.invalidResponse
+  }
 }
