@@ -6,8 +6,9 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { accountInspection, cancelMuseLogin, logoutMuse, startMuseLogin } from "./auth.js"
 import { MuseExitedError } from "./client.js"
-import { makeMuseProvider, museUsageLimits } from "./provider.js"
+import { makeMuseProvider } from "./provider.js"
 import { definition, environment, FakeMuseClient, run, session, setup } from "./test-support.js"
+import { museUsageLimits, observeMuseUsageLimits } from "./usage.js"
 
 describe("Muse provider", () => {
   it("is ready when muse is installed, including the installer's own directory", () => {
@@ -320,5 +321,19 @@ describe("Muse sign-in", () => {
     } finally {
       environment.env.HOME = original
     }
+  })
+
+  it("stays quiet when Muse has no plan usage to report", async () => {
+    const emitted: Array<unknown> = []
+    const emit = async (event: unknown) => void emitted.push(event)
+
+    await observeMuseUsageLimits({ request: async () => ({}) }, "s-1", emit)
+    await observeMuseUsageLimits(
+      { request: () => Promise.reject(new Error("not ready")) },
+      "s-1",
+      emit
+    )
+
+    expect(emitted).toEqual([])
   })
 })

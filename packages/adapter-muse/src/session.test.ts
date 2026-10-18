@@ -1,7 +1,9 @@
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { MuseRequestError } from "./client.js"
 import { record } from "./protocol.js"
+import { startMuseChat } from "./session.js"
 import {
   FakeMuseClient,
   payloads,
@@ -101,6 +103,48 @@ describe("Muse chat", () => {
     await expect(
       start({ resume: "gone", toolGateway: { name: "g", url: "u", bearerToken: "b" } }, failing)
     ).rejects.toThrow("pipe closed")
+  })
+
+  it("reports the account's plan usage from its own host after each reply", async () => {
+    const client = new FakeMuseClient()
+    client.replies["usage/read"] = {
+      usage: {
+        window: { usedPercent: 22, windowDurationMins: 300, resetsAtMs: 1_792_900_800_000 },
+        weekly: { usedPercent: 7, resetsAtMs: 1_792_368_000_000 },
+        tier: "27681631238169137",
+        observedAtMs: 1_792_363_304_112
+      }
+    }
+    const usage = Promise.withResolvers<RuntimeEvent>()
+    const chat = await startMuseChat(
+      client,
+      async (event) => {
+        if (record(event.payload).sessionUpdate === "usage_limits_update") usage.resolve(event)
+      },
+      { cwd: "/repo" }
+    )
+    const { finished, turnId } = await send(chat, client, "Fix the bug")
+    client.emit("turn/completed", { turnId, terminal: "completed" })
+    await finished
+
+    expect(await usage.promise).toMatchObject({
+      subjectId: SESSION,
+      payload: {
+        partial: false,
+        limits: {
+          state: "available",
+          windows: [
+            {
+              id: "window",
+              label: "5-hour limit",
+              usedPercent: 22,
+              resetsAt: "2026-10-25T04:00:00.000Z"
+            },
+            { id: "weekly", label: "Weekly limit", usedPercent: 7 }
+          ]
+        }
+      }
+    })
   })
 
   it("runs a prompt from turn/start to turn/completed", async () => {

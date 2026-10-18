@@ -7,6 +7,7 @@ import type { AgentProvider, ProviderEnvironment } from "@codevisor/agent-runtim
 
 import { makeGrokBuildExtension } from "./extension.js"
 import { withGrokSkillsDisabled } from "./skills.js"
+import { readGrokUsageLimits } from "./usage.js"
 
 export interface GrokBuildProviderConfig {
   readonly connector?: AcpConnector
@@ -20,5 +21,6 @@ export const makeGrokBuildProvider = (
     connector:
       config.connector ?? makeStdioAcpConnectorWithOptions({ extension: makeGrokBuildExtension }),
     providerId: "grok-build",
-    launchEnv: (env, launch) => withGrokSkillsDisabled(env, launch)
+    launchEnv: (env, launch) => withGrokSkillsDisabled(env, launch),
+    readUsageLimits: readGrokUsageLimits
   })

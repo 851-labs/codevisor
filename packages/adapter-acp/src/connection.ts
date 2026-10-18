@@ -83,6 +83,10 @@ export interface AcpAgentConnection {
   >
   readonly authenticate: (methodId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly logout: Effect.Effect<void, AgentRuntimeError>
+  readonly extRequest?: (
+    method: string,
+    params: Record<string, unknown>
+  ) => Effect.Effect<unknown, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
   readonly agentInfo?: {
     readonly name?: string

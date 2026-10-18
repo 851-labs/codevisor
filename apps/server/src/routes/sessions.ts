@@ -9,6 +9,7 @@ import {
 } from "@codevisor/api"
 import { gitBranchDiffTotals } from "@codevisor/worktrees"
 
+import { usageLimitsKey } from "../infra/usage-limits-cache.js"
 import {
   appendAndPublish,
   getProjectOrFail,
@@ -129,10 +130,13 @@ export const routeSessions = async (
       session.harnessAccountId === undefined
         ? await services.auth?.activeAccountContext(session.harnessId)
         : await services.auth?.accountContext(session.harnessAccountId)
-    const limits = await run(
-      services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext)
-    )
     const accountId = session.harnessAccountId ?? accountContext?.id
+    const readLimits = () =>
+      run(services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext))
+    const limits = await (services.usageLimits?.read(
+      usageLimitsKey(session.harnessId, accountId),
+      readLimits
+    ) ?? readLimits())
     const accounts = await services.auth?.accounts(session.harnessId)
     const account = accounts?.find((candidate) => candidate.id === accountId)
     writeJson(response, 200, {

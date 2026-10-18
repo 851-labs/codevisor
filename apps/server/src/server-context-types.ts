@@ -20,6 +20,7 @@ import type { SessionActivityController } from "./infra/active-work-sleep-inhibi
 import type { BrowserProxy } from "./infra/browser-proxy.js"
 import type { ClientControlBroker } from "./infra/client-control.js"
 import type { SharedAccounts } from "./infra/shared-accounts.js"
+import type { UsageLimitsCache } from "./infra/usage-limits-cache.js"
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { Simulators } from "./simulators.js"
 
@@ -130,6 +131,7 @@ export interface CodevisorServerServices {
   readonly linkPreviews?: import("./infra/link-previews.js").LinkPreviewStore
   readonly machines?: import("./infra/machine-link.js").MachineLink
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
+  readonly usageLimits?: UsageLimitsCache
 }
 
 export interface RunningCodevisorServer {

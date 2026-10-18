@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 
+import { usageLimitsObserved } from "@codevisor/agent-runtime"
+
 import { handleCollabItem, handleSubAgentActivity } from "./collab.js"
 import { fileChangeStats, fileChangeTitle, planStatus } from "./diff-presentation.js"
 import { codexErrorDetails, codexRetryStatus, codexSignedOutDetail } from "./errors.js"
@@ -9,6 +11,7 @@ import { emitItemLifecycle } from "./items.js"
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
+import { codexUsageLimitsFrom } from "./usage.js"
 
 export const codexThreadTitle = (thread: Record<string, unknown>): string | undefined => {
   for (const value of [thread.name, thread.preview]) {
@@ -311,6 +314,12 @@ export const handleNotification = (
     }
     case "thread/tokenUsage/updated": {
       emitTokenUsageUpdate(session, payload)
+      break
+    }
+    case "account/rateLimits/updated": {
+      const snapshot = isRecord(payload.rateLimits) ? payload.rateLimits : {}
+      if (typeof snapshot.limitId === "string" && snapshot.limitId !== "codex") break
+      void session.emit(usageLimitsObserved(session.key, codexUsageLimitsFrom(payload), true))
       break
     }
     case "thread/name/updated": {

@@ -14,6 +14,8 @@ struct WorkspaceInspectorView: View {
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
   let showsBotTranscript: Bool
+  let usageChat: ChatSession?
+  let usage: WorkspaceInspectorUsageModel
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
@@ -146,6 +148,10 @@ struct WorkspaceInspectorView: View {
             .accessibilityIdentifier("bot.showFullTranscript")
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
+      }
+
+      if let usageChat, let limits = usage.limits(for: usageChat) {
+        WorkspaceInspectorUsageSection(limits: limits)
       }
     }
     .formStyle(.grouped)

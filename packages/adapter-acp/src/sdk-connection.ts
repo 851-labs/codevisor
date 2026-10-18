@@ -152,6 +152,8 @@ export const sdkConnection = (
       adapterPromise("authenticate", async () => {
         await connection.agent.request(acp.methods.agent.authenticate, { methodId })
       }),
+    extRequest: (method, params) =>
+      adapterPromise("extRequest", () => connection.agent.request(method, params)),
     logout: adapterPromise("logout", async () => {
       if (!auth.canLogout) throw new Error("ACP agent did not advertise logout support")
       await connection.agent.request(acp.methods.agent.logout, {})
