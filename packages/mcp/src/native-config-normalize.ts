@@ -145,19 +145,21 @@ export const extractServerIdentity = (raw: Record<string, unknown>): string => {
     : nativeCommandIdentity(command, rawArgs)
 }
 
-const nativeIdentityCommand = (raw: Record<string, unknown>): string | undefined =>
-  typeof raw["command"] === "string"
-    ? raw["command"]
-    : typeof raw["cmd"] === "string"
-      ? raw["cmd"]
-      : undefined
+const nativeIdentityCommand = (raw: Record<string, unknown>): string | undefined => {
+  if (typeof raw["command"] === "string") return raw["command"]
+  if (typeof raw["cmd"] === "string") return raw["cmd"]
+  return undefined
+}
 
-const nativeIdentityArguments = (raw: Record<string, unknown>): ReadonlyArray<string> =>
-  Array.isArray(raw["args"])
-    ? raw["args"].filter((item): item is string => typeof item === "string")
-    : Array.isArray(raw["command"])
-      ? raw["command"].slice(1).filter((item): item is string => typeof item === "string")
-      : []
+const nativeIdentityArguments = (raw: Record<string, unknown>): ReadonlyArray<string> => {
+  if (Array.isArray(raw["args"])) {
+    return raw["args"].filter((item): item is string => typeof item === "string")
+  }
+  if (Array.isArray(raw["command"])) {
+    return raw["command"].slice(1).filter((item): item is string => typeof item === "string")
+  }
+  return []
+}
 
 const nativeArrayCommandIdentity = (raw: Record<string, unknown>): string => {
   if (Array.isArray(raw["command"])) {
