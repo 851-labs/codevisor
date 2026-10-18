@@ -63,30 +63,7 @@ public enum ComputerUseLivePreviewLayout {
     case (false, false): return .bottomTrailing
     }
   }
-}
 
-public enum ComputerUseLivePreviewResizeHandle: CaseIterable, Equatable, Sendable {
-  case top, bottom, leading, trailing
-  case topLeading, topTrailing, bottomLeading, bottomTrailing
-
-  public var horizontal: CGFloat {
-    switch self {
-    case .leading, .topLeading, .bottomLeading: -1
-    case .trailing, .topTrailing, .bottomTrailing: 1
-    case .top, .bottom: 0
-    }
-  }
-
-  public var vertical: CGFloat {
-    switch self {
-    case .top, .topLeading, .topTrailing: -1
-    case .bottom, .bottomLeading, .bottomTrailing: 1
-    case .leading, .trailing: 0
-    }
-  }
-}
-
-extension ComputerUseLivePreviewLayout {
   public static let minimumShortSide: CGFloat = 120
   public static let minimumLongSide: CGFloat = 200
   public static let maximumWidthFraction: CGFloat = 0.6
@@ -144,9 +121,7 @@ extension ComputerUseLivePreviewLayout {
     let width = max(1, startSize.width + widthDelta)
     return width * (width / aspect)
   }
-}
 
-extension ComputerUseLivePreviewLayout {
   public static let minimumCursorScale: CGFloat = 0.5
   public static let maximumCursorScale: CGFloat = 1
 
@@ -155,5 +130,61 @@ extension ComputerUseLivePreviewLayout {
       return maximumCursorScale
     }
     return min(maximumCursorScale, max(minimumCursorScale, cardWidth / windowWidth))
+  }
+
+  public static let fallbackCornerRadius: CGFloat = 12
+
+  public static func cardCornerRadius(radiusFraction: CGFloat?, cardSize: CGSize) -> CGFloat {
+    let ceiling = max(0, min(cardSize.width, cardSize.height) / 4)
+    guard let radiusFraction, radiusFraction.isFinite, radiusFraction >= 0 else {
+      return min(fallbackCornerRadius, ceiling)
+    }
+    return min(radiusFraction * cardSize.width, ceiling)
+  }
+
+  public static func surfaceFrame(frameSize: CGSize?, content: CGRect?, cardSize: CGSize) -> CGRect {
+    let fill = CGRect(origin: .zero, size: cardSize)
+    guard let frameSize, frameSize.width > 0, frameSize.height > 0 else { return fill }
+    var window = CGRect(x: 0, y: 0, width: 1, height: 1)
+    if let content, content.width > 0.5, content.height > 0.5, content.minX >= 0, content.minY >= 0,
+      content.maxX <= 1.0001, content.maxY <= 1.0001
+    {
+      window = content
+    }
+    let windowWidth = frameSize.width * window.width
+    let windowHeight = frameSize.height * window.height
+    let scale = max(cardSize.width / windowWidth, cardSize.height / windowHeight)
+    guard scale.isFinite, scale > 0 else { return fill }
+    let width = frameSize.width * scale
+    let height = frameSize.height * scale
+    let excessX = windowWidth * scale - cardSize.width
+    let excessY = windowHeight * scale - cardSize.height
+    return CGRect(
+      x: -window.minX * width - excessX / 2,
+      y: -window.minY * height - excessY / 2,
+      width: width,
+      height: height
+    )
+  }
+}
+
+public enum ComputerUseLivePreviewResizeHandle: CaseIterable, Equatable, Sendable {
+  case top, bottom, leading, trailing
+  case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+  public var horizontal: CGFloat {
+    switch self {
+    case .leading, .topLeading, .bottomLeading: -1
+    case .trailing, .topTrailing, .bottomTrailing: 1
+    case .top, .bottom: 0
+    }
+  }
+
+  public var vertical: CGFloat {
+    switch self {
+    case .top, .topLeading, .topTrailing: -1
+    case .bottom, .bottomLeading, .bottomTrailing: 1
+    case .leading, .trailing: 0
+    }
   }
 }
