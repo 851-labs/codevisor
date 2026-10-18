@@ -121,6 +121,22 @@ public final class AppEnvironment {
     cloud.directPaths.onPipeUp = { [weak self] deviceId in
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }
+    wireCloudRefreshAndAdoption()
+    projectList.showsImportedSessions = settings.importExternalSessions
+    machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
+    reportReleaseChannel(alpha: settings.alphaUpdatesEnabled)
+    wireHarnessAndConfigurationSync()
+    applyBootSyncState()
+    wireResourceChangeCallbacks()
+    backfillComposerDefaultsFromPersistedState()
+    if self.composerDefaults.lastNewWorkspaceServerId == nil,
+      machines.machine(for: machines.selectedMachineId) != nil
+    {
+      self.composerDefaults.rememberNewWorkspaceServer(serverId: machines.selectedMachineId)
+    }
+  }
+
+  private func wireCloudRefreshAndAdoption() {
     cloud.onMachinesRefreshed = { [weak self] in
       if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
@@ -136,9 +152,9 @@ public final class AppEnvironment {
         self.composerDefaults.rememberNewWorkspaceServer(serverId: cloudId)
       }
     }
-    projectList.showsImportedSessions = settings.importExternalSessions
-    machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
-    reportReleaseChannel(alpha: settings.alphaUpdatesEnabled)
+  }
+
+  private func wireHarnessAndConfigurationSync() {
     machines.onHarnessLifecycleChanged = { [weak self] in self?.noteHarnessLifecycle(onServer: $0) }
     machines.onHarnessAuthChanged = { [weak self] in self?.harnessCatalogDidChange(onServer: $0) }
     machines.onSyncChanged = { [weak self] in
@@ -151,7 +167,9 @@ public final class AppEnvironment {
     }
     machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
     machines.onSessionStateChanged = { [weak self] in self?.onSessionStateChanged?($0, $1) }
-    applyBootSyncState()
+  }
+
+  private func wireResourceChangeCallbacks() {
     machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
     machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
     machines.onBotsChanged = { [weak self] serverId in
@@ -159,12 +177,6 @@ public final class AppEnvironment {
       Task { await bots.refresh(serverId: serverId) }
     }
     machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
-    backfillComposerDefaultsFromPersistedState()
-    if self.composerDefaults.lastNewWorkspaceServerId == nil,
-      machines.machine(for: machines.selectedMachineId) != nil
-    {
-      self.composerDefaults.rememberNewWorkspaceServer(serverId: machines.selectedMachineId)
-    }
   }
 
   private func backfillComposerDefaultsFromPersistedState() {
