@@ -40,6 +40,36 @@ type Destination = { machineId: string }
 const sameDestination = (a: Destination | undefined, b: Destination): boolean =>
   a !== undefined && a.machineId === b.machineId
 
+const openerDestination = (
+  hub: RelayHubPort,
+  machineId: string,
+  openerMachineId: string | undefined
+): Destination | undefined => {
+  if (!hub.isKnownMachine(machineId)) return undefined
+  if (openerMachineId !== undefined) {
+    if (machineId === openerMachineId || !hub.acceptsMachinePeers(machineId)) return undefined
+  }
+  return { machineId }
+}
+
+const openerRelayHeader = (
+  opener: AppRelayOpener,
+  frame: RelayFrameHeader,
+  openerMachineId: string | undefined
+): HubToMachineRelayHeader => {
+  const header: HubToMachineRelayHeader = { peerId: opener.connectionId, frame }
+  if (frame.t === "open" && opener.publicKey !== undefined) {
+    header.peerPublicKey = opener.publicKey
+  }
+  if (frame.t === "open" && opener.deviceId !== undefined) {
+    header.peerDeviceId = opener.deviceId
+  }
+  if (frame.t === "open" && openerMachineId !== undefined) {
+    header.peerKind = "machine"
+  }
+  return header
+}
+
 export const routeAppRelay = (
   hub: RelayHubPort,
   socket: WebSocket,
@@ -87,12 +117,7 @@ const openerRouter = (
     batch = []
   }
   const push = (machineId: string, frame: RelayFrameHeader, payload: Uint8Array): void => {
-    const destination: Destination | undefined =
-      hub.isKnownMachine(machineId) &&
-      (openerMachineId === undefined ||
-        (machineId !== openerMachineId && hub.acceptsMachinePeers(machineId)))
-        ? { machineId }
-        : undefined
+    const destination = openerDestination(hub, machineId, openerMachineId)
     if (destination === undefined) {
       hub.error(socket, "unknown-machine", "no such machine on this account", {
         machineId,
@@ -105,19 +130,7 @@ const openerRouter = (
       target = destination
     }
     batch.push({
-      header: {
-        peerId: opener.connectionId,
-        frame,
-        ...(frame.t === "open" && opener.publicKey !== undefined
-          ? { peerPublicKey: opener.publicKey }
-          : {}),
-        ...(frame.t === "open" && opener.deviceId !== undefined
-          ? { peerDeviceId: opener.deviceId }
-          : {}),
-        ...(frame.t === "open" && openerMachineId !== undefined
-          ? { peerKind: "machine" as const }
-          : {})
-      },
+      header: openerRelayHeader(opener, frame, openerMachineId),
       payload
     })
   }
