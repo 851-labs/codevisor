@@ -7,6 +7,10 @@ on:
         description: Publish the build to R2 as this version (152.0.0-codevisor.N); leave empty to only build
         required: false
         type: string
+      candidate-run:
+        description: Publish the candidate from this earlier run instead of building (needs a version)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -17,6 +21,7 @@ concurrency:
 
 jobs:
   build:
+    if: inputs.candidate-run == ''
     runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     timeout-minutes: 240
     steps:
@@ -64,18 +69,30 @@ jobs:
 
   publish:
     needs: build
-    if: inputs.version != ''
+    if: >-
+      always() && inputs.version != '' &&
+      (needs.build.result == 'success' || (inputs.candidate-run != '' && needs.build.result == 'skipped'))
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - if: inputs.candidate-run == ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: native-webrtc-candidate
           path: dist/webrtc
+      - name: Download the earlier candidate
+        if: inputs.candidate-run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate-run }}
+        run: gh run download "$CANDIDATE_RUN" --name native-webrtc-candidate --dir dist/webrtc
       - name: Publish to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
           VERSION: ${{ inputs.version }}
-        run: scripts/release/publish-webrtc.sh "$VERSION" dist/webrtc
+        run: scripts/release/publish-webrtc.sh "$VERSION" "$(dirname dist/webrtc/*/artifacts/manifest.json)"
