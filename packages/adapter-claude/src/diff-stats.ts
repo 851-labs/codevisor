@@ -132,6 +132,39 @@ export const authoritativeStatsFromInput = (
   }
 }
 
+const structuredPatchStats = (
+  response: Record<string, unknown>,
+  path: string
+): DiffStat | undefined => {
+  if (!Array.isArray(response.structuredPatch)) return undefined
+  let added = 0
+  let removed = 0
+  for (const hunk of response.structuredPatch) {
+    if (!isRecord(hunk) || !Array.isArray(hunk.lines)) continue
+    for (const line of hunk.lines) {
+      if (typeof line !== "string") continue
+      if (line.startsWith("+")) added += 1
+      else if (line.startsWith("-")) removed += 1
+    }
+  }
+  return { added, path, removed }
+}
+
+const authoritativeDiffPayload = (
+  toolCallId: string,
+  stats: DiffStat | undefined,
+  diffBlock: ReturnType<typeof diffContentBlock>,
+  path: string
+): Record<string, unknown> => {
+  const payload: Record<string, unknown> = { sessionUpdate: "tool_call_update", toolCallId }
+  if (stats !== undefined) payload.diffStats = [stats]
+  if (diffBlock !== undefined) payload.content = [diffBlock]
+  if (stats === undefined && diffBlock !== undefined) {
+    payload.diffStats = [diffStatsFromTexts(path, diffBlock.oldText, diffBlock.newText)]
+  }
+  return payload
+}
+
 export const emitAuthoritativeDiff = (
   session: ClaudeSession,
   hookInput: {
@@ -147,20 +180,7 @@ export const emitAuthoritativeDiff = (
   if (path === undefined) return
 
   const response = isRecord(hookInput.tool_response) ? hookInput.tool_response : {}
-  let stats: DiffStat | undefined
-  if (Array.isArray(response.structuredPatch)) {
-    let added = 0
-    let removed = 0
-    for (const hunk of response.structuredPatch) {
-      if (!isRecord(hunk) || !Array.isArray(hunk.lines)) continue
-      for (const line of hunk.lines) {
-        if (typeof line !== "string") continue
-        if (line.startsWith("+")) added += 1
-        else if (line.startsWith("-")) removed += 1
-      }
-    }
-    stats = { added, path, removed }
-  }
+  let stats = structuredPatchStats(response, path)
 
   const diffBlock = diffContentBlock(hookInput.tool_name, input, response, path)
   if (
@@ -175,15 +195,7 @@ export const emitAuthoritativeDiff = (
   if (stats === undefined && diffBlock === undefined) return
   void session.emit({
     kind: "session.output",
-    payload: {
-      sessionUpdate: "tool_call_update",
-      toolCallId: hookInput.tool_use_id,
-      ...(stats === undefined ? {} : { diffStats: [stats] }),
-      ...(diffBlock === undefined ? {} : { content: [diffBlock] }),
-      ...(stats === undefined && diffBlock !== undefined
-        ? { diffStats: [diffStatsFromTexts(path, diffBlock.oldText, diffBlock.newText)] }
-        : {})
-    },
+    payload: authoritativeDiffPayload(hookInput.tool_use_id, stats, diffBlock, path),
     subjectId: session.key
   })
 }
