@@ -248,6 +248,9 @@ export const TranscriptBodyPage = Schema.Struct({
 })
 export type TranscriptBodyPage = typeof TranscriptBodyPage.Type
 
+export const PromptOrigin = Schema.Literals(["user", "system"])
+export type PromptOrigin = typeof PromptOrigin.Type
+
 export const PromptQueueItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -255,7 +258,8 @@ export const PromptQueueItem = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
-  clientId: Schema.optional(Schema.String)
+  clientId: Schema.optional(Schema.String),
+  origin: Schema.optional(PromptOrigin)
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
 

@@ -14,7 +14,9 @@ const botSelect = `
   from bots join sessions on sessions.id = bots.session_id
 `
 
-export const makeBotsService = (context: ServiceContext): BotsService => {
+export const makeBotsService = (
+  context: ServiceContext
+): Omit<BotsService, "appendBotMessage" | "listBotMessages"> => {
   const { sqlite, config } = context
 
   const botFromRow = (row: BotRow): Bot => {

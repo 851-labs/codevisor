@@ -62,6 +62,7 @@ export interface PromptQueueRow {
   readonly state: "pending" | "processing"
   readonly position: number
   readonly client_id?: string | null
+  readonly origin?: string | null
 }
 
 export const sessionRows = rowReader<SessionRow>({
@@ -122,5 +123,6 @@ export const promptQueueRows = rowReader<PromptQueueRow>({
   attachments: nullable(text),
   state: literal("pending", "processing"),
   position: integer,
-  client_id: optional(nullable(text))
+  client_id: optional(nullable(text)),
+  origin: optional(nullable(text))
 })

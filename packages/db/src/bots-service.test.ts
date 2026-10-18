@@ -171,4 +171,32 @@ describe("bot workspaces", () => {
     expect(workspaces.find((workspace) => workspace.id === "ws-child")?.botId).toBeUndefined()
     expect(await run(db.listBotWorkspaces("bot-helper"))).toEqual([])
   })
+
+  it("keeps a bot conversation in send order and pages older messages", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    await seedBot(db)
+
+    const first = await run(
+      db.appendBotMessage("chat-helper", { id: "m-1", sender: "user", text: "hi" })
+    )
+    const replay = await run(
+      db.appendBotMessage("chat-helper", { id: "m-1", sender: "user", text: "hi again" })
+    )
+    await run(db.appendBotMessage("chat-helper", { sender: "bot", text: "hello" }))
+    await run(db.appendBotMessage("chat-helper", { sender: "notice", text: "rate limited" }))
+
+    expect(first.created).toBe(true)
+    expect(replay).toEqual({ message: first.message, created: false })
+    const latest = await run(db.listBotMessages("chat-helper", undefined, 2))
+    expect(latest.hasMore).toBe(true)
+    expect(
+      latest.messages.map((message) => [message.sequence, message.sender, message.text])
+    ).toEqual([
+      [2, "bot", "hello"],
+      [3, "notice", "rate limited"]
+    ])
+    const older = await run(db.listBotMessages("chat-helper", 2, 2))
+    expect(older).toEqual({ messages: [first.message], hasMore: false })
+  })
 })
