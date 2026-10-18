@@ -76,6 +76,21 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
       })
       return pending
     }),
+  steer: (input) =>
+    adapterPromise("steer", async () => {
+      const turnId = session.activeTurnId
+      if (turnId === undefined || session.interruptRequested) return false
+      try {
+        await session.client.request("turn/steer", {
+          expectedTurnId: turnId,
+          input: codexInput(normalizePromptInput(input), session.skills),
+          threadId: session.threadId
+        })
+        return true
+      } catch {
+        return false
+      }
+    }),
   setConfigOption: (configId, value) =>
     adapterPromise("setConfigOption", async () => {
       if (configId === "model") {

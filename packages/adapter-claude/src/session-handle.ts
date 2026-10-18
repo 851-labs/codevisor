@@ -132,6 +132,26 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       })
       return pending.promise
     }),
+  steer: (input) =>
+    adapterPromise("steer", async () => {
+      if (
+        !session.turnActive ||
+        session.retired ||
+        session.streamEnded ||
+        session.interruptRequested ||
+        session.cancelInFlight !== undefined
+      ) {
+        return false
+      }
+      session.input.push({
+        message: { content: claudeContent(normalizePromptInput(input)), role: "user" },
+        parent_tool_use_id: null,
+        priority: "next",
+        session_id: session.sdkSessionId,
+        type: "user"
+      })
+      return true
+    }),
   setConfigOption: (configId, value) =>
     adapterPromise("setConfigOption", async () => {
       if (configId === "model") {

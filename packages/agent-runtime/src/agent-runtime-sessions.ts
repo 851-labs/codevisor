@@ -17,6 +17,7 @@ export type AgentSessionOperations = Pick<
   | "setConfigOption"
   | "setGoal"
   | "setMode"
+  | "steer"
 >
 
 export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSessionOperations => {
@@ -27,6 +28,11 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
         return yield* session.handle.prompt(input)
+      }),
+    steer: (sessionId, input) =>
+      Effect.suspend(() => {
+        const steer = sessions.get(sessionId)?.handle.steer
+        return steer === undefined ? Effect.succeed(false) : steer(input)
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", () =>

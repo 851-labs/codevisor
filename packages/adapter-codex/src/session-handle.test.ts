@@ -164,6 +164,34 @@ describe("CodexProvider", () => {
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
   })
 
+  it("steers the active turn by id and declines once it has ended", async () => {
+    const { client, created, nextEvent } = await setup()
+    const steer = created!.handle.steer
+    if (steer === undefined) throw new Error("Codex sessions steer")
+    await expect(run(steer("too early"))).resolves.toBe(false)
+
+    const turnRequested = client.nextRequest("turn/start")
+    const promptPromise = run(created!.handle.prompt("long work"))
+    await turnRequested
+    const started = nextEvent(
+      (event) => event.kind === "session.updated" && payloadField(event, "turnState") === "started"
+    )
+    client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-4" } })
+    await started
+
+    await expect(run(steer("and this"))).resolves.toBe(true)
+    expect(client.requests.at(-1)).toMatchObject({
+      method: "turn/steer",
+      params: { expectedTurnId: "turn-4", threadId: "thread-new" }
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-4", status: "completed" }
+    })
+    await promptPromise
+    await expect(run(steer("late"))).resolves.toBe(false)
+  })
+
   it("applies model/effort overrides as sticky turn/start params", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setConfigOption("effort", "high"))

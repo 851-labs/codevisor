@@ -61,6 +61,29 @@ describe("ClaudeProvider", () => {
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
   })
 
+  it("steers a running turn at the next opportunity and declines when no turn is running", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
+    fake.push(initMessage())
+    const created = await createPromise
+    const steer = created.handle.steer
+    if (steer === undefined) throw new Error("Claude sessions steer")
+
+    await expect(run(steer("too early"))).resolves.toBe(false)
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    await expect(run(steer("also this"))).resolves.toBe(true)
+    await fake.nextPrompt()
+    expect(fake.userMessages.at(-1)).toMatchObject({
+      message: { content: [{ text: "also this", type: "text" }], role: "user" },
+      priority: "next"
+    })
+    fake.push(resultMessage("success"))
+    await expect(promptPromise).resolves.toMatchObject({ stopReason: "end_turn" })
+    await expect(run(steer("after"))).resolves.toBe(false)
+  })
+
   it("force-ends and retires when interrupt is acknowledged without a terminal result", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
