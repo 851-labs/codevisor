@@ -81,7 +81,7 @@ export const makeBotMessagesService = (
             .all(sessionId, before ?? Number.MAX_SAFE_INTEGER, limit + 1)
         )
         return {
-          messages: rows.slice(0, limit).reverse().map(botMessageFromRow),
+          messages: rows.slice(0, limit).toReversed().map(botMessageFromRow),
           hasMore: rows.length > limit
         }
       })

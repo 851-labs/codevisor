@@ -64,6 +64,7 @@ export { fileMetadataRows, fileStorageRows, fileStorageState } from "./file-stor
 export type {
   BotRow,
   BotProjectRow,
+  AppendBotMessageRecord,
   BotOwnerQuery,
   BotsService,
   CreateBotRecord,

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { basename, join } from "node:path"
 
@@ -132,6 +132,43 @@ const checkOut = async (
   return checkout
 }
 
+const BOT_MESSAGING_SECTION: ReadonlyArray<string> = [
+  "## Talking to the user",
+  "",
+  "The user chats with you like iMessage and only sees the messages you send with",
+  "`codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not",
+  "even your final reply. Read the `codevisor-messages` skill before your first reply.",
+  ""
+]
+
+const LEGACY_FOLLOW_UP_STEP = "4. `sessions.wait` or `sessions.get` to follow up"
+
+const BOT_FOLLOW_UP_STEP =
+  "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result"
+
+export const upgradeBotInstructions = (text: string): string => {
+  const followUp = text.replace(LEGACY_FOLLOW_UP_STEP, BOT_FOLLOW_UP_STEP)
+  if (followUp.includes(BOT_MESSAGING_SECTION[0]!)) return followUp
+  const section = BOT_MESSAGING_SECTION.join("\n") + "\n"
+  const repositories = followUp.indexOf("## Repositories")
+  return repositories === -1
+    ? `${followUp.trimEnd()}\n\n${section}`
+    : followUp.slice(0, repositories) + section + followUp.slice(repositories)
+}
+
+export const upgradeAllBotInstructions = async (
+  services: CodevisorServerServices
+): Promise<void> => {
+  for (const bot of await run(services.db.listBots)) {
+    const path = join(bot.rootPath, "AGENTS.md")
+    try {
+      const current = readFileSync(path, "utf8")
+      const upgraded = upgradeBotInstructions(current)
+      if (upgraded !== current) writeFileSync(path, upgraded)
+    } catch {}
+  }
+}
+
 export const botInstructions = (name: string, checkouts: ReadonlyArray<BotCheckout>): string =>
   [
     `# ${name}`,
@@ -140,6 +177,7 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     "Plan the work, hand it to sub-agents, and follow up on their results. Don't change code",
     "yourself; read the folders below to understand the code and decide what to delegate.",
     "",
+    ...BOT_MESSAGING_SECTION,
     "## Repositories",
     "",
     ...checkouts.map(
@@ -157,7 +195,7 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     "1. `worktrees.create({ projectId })`",
     "2. `sessions.create({ projectId, worktreeName, title })`",
     "3. `sessions.prompt({ sessionId, text })`",
-    "4. `sessions.wait` or `sessions.get` to follow up",
+    BOT_FOLLOW_UP_STEP,
     "",
     "Workspaces your sub-agents work in, and any they create, are listed under this bot in the",
     "Codevisor sidebar.",

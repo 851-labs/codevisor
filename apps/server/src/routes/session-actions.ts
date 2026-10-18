@@ -29,6 +29,8 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { routeBotConversation } from "./bot-conversation.js"
+import { botForSession, postBotMessage } from "./bot-turns.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { routeParam } from "./route-params.js"
 import { applySessionConfigPick } from "./session-config.js"
@@ -62,6 +64,10 @@ export const routeSessionActions = async (
     request.method === "GET" &&
     (await routeSessionTranscript(services, routeState, request, response, url))
   ) {
+    return true
+  }
+
+  if (await routeBotConversation(services, fanout, routeState, request, response, url)) {
     return true
   }
 
@@ -147,6 +153,14 @@ export const routeSessionActions = async (
         payload.clientId
       )
     )
+    if ((await botForSession(services, promptSessionId)) !== undefined) {
+      await postBotMessage(services, fanout, promptSessionId, {
+        id: queueItem.id,
+        sender: "user",
+        text: payload.text,
+        ...(attachments.length === 0 ? {} : { attachments })
+      })
+    }
     const result: PromptAcceptedResponse = {
       accepted: true,
       sessionId: promptSessionId,

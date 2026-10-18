@@ -22,6 +22,8 @@ import {
   makeRestartCoordinator
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
+import { makeBotConversationListener } from "./routes/bot-conversation.js"
+import { upgradeAllBotInstructions } from "./routes/bot-create.js"
 import { handleUpgrade } from "./routes/events.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import {
@@ -99,6 +101,10 @@ export const makeCodevisorServerApp = (
   const unsubscribeTurns = fanout.subscribe(
     makeTurnDispatchListener(services, fanout, routeState, config.id)
   )
+  const unsubscribeBotConversations = fanout.subscribe(
+    makeBotConversationListener(services, fanout, routeState, config.id)
+  )
+  void upgradeAllBotInstructions(services).catch(swallowError)
   /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)
@@ -262,6 +268,7 @@ export const makeCodevisorServerApp = (
       restart.close()
       attentionSettle.close()
       unsubscribeTurns()
+      unsubscribeBotConversations()
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
       config.sessionActivity?.stop()
