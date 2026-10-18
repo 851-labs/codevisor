@@ -52,6 +52,29 @@ export const taskIdFromCreateResult = (content: unknown): string | undefined => 
   return undefined
 }
 
+const taskEntry = (
+  input: Record<string, unknown>,
+  subject: string,
+  status: ClaudeTaskEntry["status"],
+  existing?: ClaudeTaskEntry
+): ClaudeTaskEntry => {
+  const next: { -readonly [Key in keyof ClaudeTaskEntry]: ClaudeTaskEntry[Key] } = {
+    subject,
+    status
+  }
+  if (typeof input.activeForm === "string") {
+    next.activeForm = input.activeForm
+  } else if (existing?.activeForm !== undefined) {
+    next.activeForm = existing.activeForm
+  }
+  if (typeof input.description === "string") {
+    next.description = input.description
+  } else if (existing?.description !== undefined) {
+    next.description = existing.description
+  }
+  return next
+}
+
 export const applyTaskCreate = (
   tasks: ClaudeTaskState,
   taskId: string | undefined,
@@ -59,12 +82,7 @@ export const applyTaskCreate = (
 ): boolean => {
   if (taskId === undefined || !isRecord(input) || typeof input.subject !== "string") return false
   if (tasks.has(taskId)) return false
-  tasks.set(taskId, {
-    subject: input.subject,
-    status: "pending",
-    ...(typeof input.activeForm === "string" ? { activeForm: input.activeForm } : {}),
-    ...(typeof input.description === "string" ? { description: input.description } : {})
-  })
+  tasks.set(taskId, taskEntry(input, input.subject, "pending"))
   return true
 }
 
@@ -79,20 +97,7 @@ export const applyTaskUpdate = (tasks: ClaudeTaskState, input: unknown): boolean
     input.status === "pending" || input.status === "in_progress" || input.status === "completed"
       ? input.status
       : (existing?.status ?? "pending")
-  const next: ClaudeTaskEntry = {
-    subject,
-    status,
-    ...(typeof input.activeForm === "string"
-      ? { activeForm: input.activeForm }
-      : existing?.activeForm === undefined
-        ? {}
-        : { activeForm: existing.activeForm }),
-    ...(typeof input.description === "string"
-      ? { description: input.description }
-      : existing?.description === undefined
-        ? {}
-        : { description: existing.description })
-  }
+  const next = taskEntry(input, subject, status, existing)
   if (
     existing?.subject === next.subject &&
     existing.status === next.status &&
