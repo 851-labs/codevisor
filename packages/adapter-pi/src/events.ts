@@ -96,6 +96,26 @@ const updated = (payload: Record<string, unknown>): MappedEvent => ({
   payload
 })
 
+const toolCompletion = (
+  id: string,
+  result: Record<string, unknown>,
+  failed: boolean,
+  change: ReturnType<typeof fileChange>
+): ReadonlyArray<MappedEvent> => {
+  const structured = record(result.structuredContent)
+  return [
+    output({
+      sessionUpdate: "tool_call_update",
+      toolCallId: id,
+      status: failed ? "failed" : "completed",
+      content: [...textContent(resultText(result)), ...("content" in change ? change.content : [])],
+      ...("diffStats" in change ? { diffStats: change.diffStats } : {}),
+      ...(typeof structured.exit_code === "number" ? { exitCode: structured.exit_code } : {}),
+      rawOutput: result.details ?? result.structuredContent ?? null
+    })
+  ]
+}
+
 export interface PiEventMapper {
   readonly map: (event: Record<string, unknown>) => ReadonlyArray<MappedEvent>
   readonly outcome: () => PiAssistantOutcome | undefined
@@ -124,39 +144,36 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
     const index = finite(update.contentIndex)
     switch (update.type) {
       case "text_delta":
-        return text(update.delta) === undefined
-          ? []
-          : [
-              output({
-                sessionUpdate: "agent_message_chunk",
-                messageId: `${message}:${index}`,
-                content: { type: "text", text: update.delta }
-              })
-            ]
+        if (text(update.delta) === undefined) return []
+        return [
+          output({
+            sessionUpdate: "agent_message_chunk",
+            messageId: `${message}:${index}`,
+            content: { type: "text", text: update.delta }
+          })
+        ]
       case "thinking_start":
         return [
           output({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "" } })
         ]
       case "thinking_delta":
-        return text(update.delta) === undefined
-          ? []
-          : [
-              output({
-                sessionUpdate: "agent_thought_chunk",
-                content: { type: "text", text: update.delta }
-              })
-            ]
+        if (text(update.delta) === undefined) return []
+        return [
+          output({
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: update.delta }
+          })
+        ]
       case "toolcall_start":
-        return typeof update.id === "string"
-          ? [
-              output({
-                sessionUpdate: "tool_call",
-                status: "pending",
-                rawInput: {},
-                ...tool(update.id, String(update.toolName), {})
-              })
-            ]
-          : []
+        if (typeof update.id !== "string") return []
+        return [
+          output({
+            sessionUpdate: "tool_call",
+            status: "pending",
+            rawInput: {},
+            ...tool(update.id, String(update.toolName), {})
+          })
+        ]
       case "toolcall_end": {
         const call = record(update.toolCall)
         if (typeof call.id !== "string") return []
@@ -246,21 +263,7 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
         const result = record(event.result)
         const failed = event.isError === true
         const change = failed ? {} : fileChange(known.name, known.args, result)
-        const structured = record(result.structuredContent)
-        return [
-          output({
-            sessionUpdate: "tool_call_update",
-            toolCallId: id,
-            status: failed ? "failed" : "completed",
-            content: [
-              ...textContent(resultText(result)),
-              ...("content" in change ? change.content : [])
-            ],
-            ...("diffStats" in change ? { diffStats: change.diffStats } : {}),
-            ...(typeof structured.exit_code === "number" ? { exitCode: structured.exit_code } : {}),
-            rawOutput: result.details ?? result.structuredContent ?? null
-          })
-        ]
+        return toolCompletion(id, result, failed, change)
       }
       case "session_info_changed":
         return typeof event.name === "string"
