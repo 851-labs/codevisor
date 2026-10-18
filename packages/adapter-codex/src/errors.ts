@@ -21,16 +21,21 @@ const codexErrorSignal = (
   return { kind: variant?.[0], statusCode }
 }
 
+const codexErrorMessage = (
+  error: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  fallback: string
+): string => {
+  if (typeof error.message === "string") return error.message
+  if (typeof payload.message === "string") return payload.message
+  return fallback
+}
+
 export const codexErrorDetails = (
   payload: Record<string, unknown>
 ): { message: string; retryable: boolean; stopKind?: TurnStopKind } => {
   const error = isRecord(payload.error) ? payload.error : payload
-  const message =
-    typeof error.message === "string"
-      ? error.message
-      : typeof payload.message === "string"
-        ? payload.message
-        : "Codex error"
+  const message = codexErrorMessage(error, payload, "Codex error")
   const info = error.codexErrorInfo
   const signal = codexErrorSignal(info)
   if (signal.kind === "unauthorized" || signal.statusCode === 401) {
@@ -61,14 +66,34 @@ export const codexErrorDetails = (
   }
 }
 
+const codexRetryMessage = (
+  signal: ReturnType<typeof codexErrorSignal>,
+  serializedInfo: string,
+  rawMessage: string
+): string => {
+  if (signal.kind === "usageLimitExceeded") return "Codex usage limit reached"
+  if (
+    signal.kind === "serverOverloaded" ||
+    signal.statusCode === 503 ||
+    /serverOverloaded/i.test(serializedInfo) ||
+    /\b(overload(?:ed)?|server (?:is )?busy|503)\b/i.test(rawMessage)
+  ) {
+    return "Codex is overloaded, retrying"
+  }
+  if (
+    signal.kind === "rateLimitExceeded" ||
+    signal.statusCode === 429 ||
+    /rateLimitExceeded/i.test(serializedInfo) ||
+    /\b(rate.?limit|429)\b/i.test(rawMessage)
+  ) {
+    return "Codex is temporarily rate limited, retrying"
+  }
+  return "Codex connection was interrupted, retrying"
+}
+
 export const codexRetryStatus = (payload: Record<string, unknown>) => {
   const error = isRecord(payload.error) ? payload.error : payload
-  const rawMessage =
-    typeof error.message === "string"
-      ? error.message
-      : typeof payload.message === "string"
-        ? payload.message
-        : ""
+  const rawMessage = codexErrorMessage(error, payload, "")
   const signal = codexErrorSignal(error.codexErrorInfo)
   const serializedInfo = (() => {
     try {
@@ -78,20 +103,7 @@ export const codexRetryStatus = (payload: Record<string, unknown>) => {
     }
   })()
   const progress = /(?:reconnecting|retrying)[^\d]*(\d+)\s*\/\s*(\d+)/i.exec(rawMessage)
-  const message =
-    signal.kind === "usageLimitExceeded"
-      ? "Codex usage limit reached"
-      : signal.kind === "serverOverloaded" ||
-          signal.statusCode === 503 ||
-          /serverOverloaded/i.test(serializedInfo) ||
-          /\b(overload(?:ed)?|server (?:is )?busy|503)\b/i.test(rawMessage)
-        ? "Codex is overloaded, retrying"
-        : signal.kind === "rateLimitExceeded" ||
-            signal.statusCode === 429 ||
-            /rateLimitExceeded/i.test(serializedInfo) ||
-            /\b(rate.?limit|429)\b/i.test(rawMessage)
-          ? "Codex is temporarily rate limited, retrying"
-          : "Codex connection was interrupted, retrying"
+  const message = codexRetryMessage(signal, serializedInfo, rawMessage)
   return {
     ...(progress?.[1] === undefined ? {} : { attempt: Number(progress[1]) }),
     message,

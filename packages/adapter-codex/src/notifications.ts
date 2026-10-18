@@ -52,6 +52,15 @@ const refreshCodexSessionTitle = async (session: CodexSession): Promise<void> =>
   } catch {}
 }
 
+const optionalNumericField = (
+  source: Record<string, unknown>,
+  sourceKey: string,
+  field: string
+): Record<string, number | undefined> => {
+  if (finiteNumber(source[sourceKey]) === undefined) return {}
+  return { [field]: finiteNumber(source[sourceKey]) }
+}
+
 const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unknown>): void => {
   const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
   const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
@@ -60,27 +69,13 @@ const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unk
     kind: "session.updated",
     payload: {
       sessionUpdate: "usage_update",
-      ...(finiteNumber(last.totalTokens) === undefined
-        ? {}
-        : { used: finiteNumber(last.totalTokens) }),
-      ...(finiteNumber(tokenUsage.modelContextWindow) === undefined
-        ? {}
-        : { size: finiteNumber(tokenUsage.modelContextWindow) }),
-      ...(finiteNumber(total.inputTokens) === undefined
-        ? {}
-        : { inputTokens: finiteNumber(total.inputTokens) }),
-      ...(finiteNumber(total.cachedInputTokens) === undefined
-        ? {}
-        : { cachedInputTokens: finiteNumber(total.cachedInputTokens) }),
-      ...(finiteNumber(total.outputTokens) === undefined
-        ? {}
-        : { outputTokens: finiteNumber(total.outputTokens) }),
-      ...(finiteNumber(total.reasoningOutputTokens) === undefined
-        ? {}
-        : { reasoningOutputTokens: finiteNumber(total.reasoningOutputTokens) }),
-      ...(finiteNumber(total.totalTokens) === undefined
-        ? {}
-        : { totalTokens: finiteNumber(total.totalTokens) })
+      ...optionalNumericField(last, "totalTokens", "used"),
+      ...optionalNumericField(tokenUsage, "modelContextWindow", "size"),
+      ...optionalNumericField(total, "inputTokens", "inputTokens"),
+      ...optionalNumericField(total, "cachedInputTokens", "cachedInputTokens"),
+      ...optionalNumericField(total, "outputTokens", "outputTokens"),
+      ...optionalNumericField(total, "reasoningOutputTokens", "reasoningOutputTokens"),
+      ...optionalNumericField(total, "totalTokens", "totalTokens")
     },
     subjectId: session.key
   })
