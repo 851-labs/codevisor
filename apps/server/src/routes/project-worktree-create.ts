@@ -65,12 +65,14 @@ export const createProjectWorktree = async (
     environment
   )
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const name =
-      config.worktreeNameStyle === "development"
-        ? availableDevelopmentWorktreeName(existing)
-        : requested === undefined
-          ? availableProductionWorktreeName(existing)
-          : availableWorktreeName(requested, existing)
+    let name: string
+    if (config.worktreeNameStyle === "development") {
+      name = availableDevelopmentWorktreeName(existing)
+    } else if (requested === undefined) {
+      name = availableProductionWorktreeName(existing)
+    } else {
+      name = availableWorktreeName(requested, existing)
+    }
     const branch = `codevisor/${name}`
     let worktree: Worktree
     try {
@@ -175,12 +177,13 @@ export const availableWorktreeName = (base: string, existing: ReadonlySet<string
 }
 
 /* v8 ignore start */
-const isWorktreeNameCollision = (cause: unknown): boolean =>
-  cause instanceof DatabaseError &&
-  cause.operation === "createWorktree" &&
-  cause.message.includes(
+const isWorktreeNameCollision = (cause: unknown): boolean => {
+  if (!(cause instanceof DatabaseError)) return false
+  if (cause.operation !== "createWorktree") return false
+  return cause.message.includes(
     "UNIQUE constraint failed: worktrees.project_id, worktrees.server_id, worktrees.name"
   )
+}
 /* v8 ignore stop */
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
