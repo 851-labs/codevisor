@@ -10,16 +10,16 @@ export const terminalTitleStatus = (raw: string): TerminalTitleStatus => {
   const trimmed = raw.trim()
   const [first = ""] = trimmed
   const rest = trimmed.slice(first.length)
-  const stripped =
-    (isBraille(first) || ACTIVITY_GLYPHS.has(first)) && (rest === "" || /^\s/u.test(rest))
-      ? rest.trim()
-      : trimmed
-  return {
-    title: stripped === "" ? undefined : stripped,
-    activity: WORKING.some((pattern) => pattern.test(raw))
-      ? "working"
-      : IDLE.test(raw)
-        ? "idle"
-        : undefined
+  let stripped = trimmed
+  if ((isBraille(first) || ACTIVITY_GLYPHS.has(first)) && (rest === "" || /^\s/u.test(rest))) {
+    stripped = rest.trim()
   }
+  const title = stripped === "" ? undefined : stripped
+  let activity: TerminalTitleStatus["activity"] = undefined
+  if (WORKING.some((pattern) => pattern.test(raw))) {
+    activity = "working"
+  } else if (IDLE.test(raw)) {
+    activity = "idle"
+  }
+  return { title, activity }
 }
