@@ -29,6 +29,50 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public var notes: String?
 
   @MainActor
+  static func server(machine: CodevisorMachine, connection: MachineConnection) -> UpdateComponent {
+    let info = connection.updateInfo
+    let migration = connection.updatePhase == .idle ? connection.dataUpgradeProgress : nil
+    let phase = serverPhase(connection, migration: migration)
+    return UpdateComponent(
+      id: "server:\(machine.id)",
+      kind: .server,
+      machineId: machine.id,
+      machineName: machine.name,
+      subjectId: "",
+      title: "Codevisor",
+      installedVersion: info.map {
+        AppUpdateModel.displayedVersion(
+          $0.currentVersion,
+          buildNumber: $0.currentBuildNumber,
+          usesAlphaChannel: $0.channel == "alpha"
+        )
+      },
+      latestVersion: info?.latestVersion,
+      updateAvailable: info?.updateAvailable ?? false,
+      phase: phase,
+      statusMessage: phase == .updating ? (migration?.name ?? connection.updateStatusMessage) : nil,
+      progress: phase == .updating ? (migration?.fractionCompleted ?? connection.updateProgress) : nil
+    )
+  }
+
+  @MainActor
+  private static func serverPhase(
+    _ connection: MachineConnection,
+    migration: ServerMigrationProgress?
+  ) -> Phase {
+    switch connection.updatePhase {
+    case .idle:
+      if let migration {
+        migration.error.map(UpdateComponent.Phase.failed) ?? .updating
+      } else {
+        .idle
+      }
+    case .updating: .updating
+    case let .failed(message): .failed(message)
+    }
+  }
+
+  @MainActor
   static func harnessStatusMessage(_ harness: ServerHarness, lifecyclePhase: String?) -> String? {
     switch lifecyclePhase {
     case "pendingUpdate": "Waiting for chats to finish…"
