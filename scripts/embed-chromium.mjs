@@ -21,6 +21,31 @@ const framework = join(frameworks, name)
 await mkdir(frameworks, { recursive: true })
 const signing = env.EXPANDED_CODE_SIGN_IDENTITY || "-"
 
+function plistStringEntries(strings) {
+  return Object.entries(strings)
+    .map(
+      ([key, value]) =>
+        `<key>${key}</key><string>${value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`
+    )
+    .join("")
+}
+
+function devToolsResourceIndex(resourceHeader) {
+  const devToolsSection = resourceHeader
+    .split("// From devtools_resources.h:")[1]
+    ?.split("// From ")[0]
+  if (!devToolsSection) throw new Error("CEF SDK is missing its DevTools resource index")
+  const devToolsResources = Object.fromEntries(
+    [...devToolsSection.matchAll(/^#define (\w+) (\d+)$/gm)].map(([, resourceName, id]) => [
+      resourceName,
+      Number(id)
+    ])
+  )
+  if (!devToolsResources.ENTRYPOINTS_DEVTOOLS_APP_DEVTOOLS_APP_JS)
+    throw new Error("CEF SDK is missing the inspector frontend")
+  return devToolsResources
+}
+
 async function* files(directory, relative = "") {
   for (const entry of await readdir(join(directory, relative), { withFileTypes: true })) {
     const path = join(relative, entry.name)
@@ -166,16 +191,7 @@ for (const suffix of chromiumHelperSuffixes) {
   }
   await writeFile(
     join(contents, "Info.plist"),
-    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>${Object.entries(
-      strings
-    )
-      .map(
-        ([key, value]) =>
-          `<key>${key}</key><string>${value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`
-      )
-      .join(
-        ""
-      )}<key>LSUIElement</key><true/><key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict></dict></plist>`
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>${plistStringEntries(strings)}<key>LSUIElement</key><true/><key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict></dict></plist>`
   )
 }
 const resources = join(env.TARGET_BUILD_DIR, env.UNLOCALIZED_RESOURCES_FOLDER_PATH)
@@ -184,18 +200,7 @@ const resourceHeader = await readFile(
   join(source, architectures[0], "sdk/include/cef_pack_resources.h"),
   "utf8"
 )
-const devToolsSection = resourceHeader
-  .split("// From devtools_resources.h:")[1]
-  ?.split("// From ")[0]
-if (!devToolsSection) throw new Error("CEF SDK is missing its DevTools resource index")
-const devToolsResources = Object.fromEntries(
-  [...devToolsSection.matchAll(/^#define (\w+) (\d+)$/gm)].map(([, resourceName, id]) => [
-    resourceName,
-    Number(id)
-  ])
-)
-if (!devToolsResources.ENTRYPOINTS_DEVTOOLS_APP_DEVTOOLS_APP_JS)
-  throw new Error("CEF SDK is missing the inspector frontend")
+const devToolsResources = devToolsResourceIndex(resourceHeader)
 await writeFile(
   join(resources, "Chromium-DevTools-resources.json"),
   JSON.stringify(devToolsResources)
