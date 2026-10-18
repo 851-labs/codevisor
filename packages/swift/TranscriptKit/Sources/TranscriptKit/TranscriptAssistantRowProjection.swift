@@ -53,16 +53,9 @@ enum TranscriptAssistantRowProjection {
     to rows: inout [TranscriptPresentationRow]
   ) {
     guard case let .assistant(original) = item else {
-      rows.append(
-        .init(
-          id: .message(item.id),
-          content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
-          estimatedHeight: estimatedHeight(for: item),
-          measurementRevision: measurementRevision(
-            for: item,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-          )
-        ))
+      appendMessage(
+        messageID: item.id, item: item, waitingOnBackgroundTask: waitingOnBackgroundTask, to: &rows
+      )
       return
     }
 
@@ -81,19 +74,29 @@ enum TranscriptAssistantRowProjection {
         lifecycle: .settled,
         to: &rows
       )
-    } else if hasStopDetailWithoutAnswer(original) {
-    } else {
-      rows.append(
-        .init(
-          id: .message(item.id),
-          content: .message(presented, waitingOnBackgroundTask: waitingOnBackgroundTask),
-          estimatedHeight: estimatedHeight(for: presented),
-          measurementRevision: measurementRevision(
-            for: presented,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-          )
-        ))
+    } else if !hasStopDetailWithoutAnswer(original) {
+      appendMessage(
+        messageID: item.id, item: presented, waitingOnBackgroundTask: waitingOnBackgroundTask, to: &rows
+      )
     }
+  }
+
+  private static func appendMessage(
+    messageID: UUID,
+    item: ConversationItem,
+    waitingOnBackgroundTask: String?,
+    to rows: inout [TranscriptPresentationRow]
+  ) {
+    rows.append(
+      .init(
+        id: .message(messageID),
+        content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
+        estimatedHeight: estimatedHeight(for: item),
+        measurementRevision: measurementRevision(
+          for: item,
+          waitingOnBackgroundTask: waitingOnBackgroundTask
+        )
+      ))
   }
 
   @discardableResult
