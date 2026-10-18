@@ -8,12 +8,14 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func messageMenu(forRowKey key: String) -> NSMenu? {
-    guard let text = messageText(forRowKey: key), !text.isEmpty else { return nil }
+    guard let (id, text) = message(forRowKey: key), !text.isEmpty else { return nil }
     let menu = NSMenu()
     let copyItem = NSMenuItem(title: "Copy", action: #selector(copyMessage(_:)), keyEquivalent: "")
     copyItem.target = self
+    copyItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
     copyItem.representedObject = text
     menu.addItem(copyItem)
+    TranscriptMessageMenuHighlight.shared.highlight(id, whileShowing: menu)
     return menu
   }
 
@@ -36,11 +38,11 @@ extension VirtualizedTranscriptScrollView {
     return nil
   }
 
-  private func messageText(forRowKey key: String) -> String? {
+  private func message(forRowKey key: String) -> (id: String, text: String)? {
     switch rowByKey[key]?.content {
-    case let .message(.user(message), _): message.text
-    case let .optimistic(message): message.text
-    case let .botMessage(message, _) where message.sender != .notice: message.text
+    case let .message(.user(message), _): (message.id.uuidString, message.text)
+    case let .optimistic(message): (message.id.uuidString, message.text)
+    case let .botMessage(message, _) where message.sender != .notice: (message.id, message.text)
     default: nil
     }
   }

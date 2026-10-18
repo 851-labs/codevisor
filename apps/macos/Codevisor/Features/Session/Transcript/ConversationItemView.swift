@@ -33,7 +33,13 @@ struct UserMessageView: View {
   let message: UserMessage
 
   var body: some View {
-    MessageBubbleView(side: .trailing, text: message.text, attachments: message.attachments, fill: style.fill) {
+    MessageBubbleView(
+      messageID: message.id.uuidString,
+      side: .trailing,
+      text: message.text,
+      attachments: message.attachments,
+      fill: style.fill
+    ) {
       SelectableTextView(
         message.text,
         font: .preferredFont(forTextStyle: .body),
@@ -48,6 +54,7 @@ struct BotMessageView: View {
 
   var body: some View {
     MessageBubbleView(
+      messageID: message.id,
       side: .leading,
       text: message.text,
       attachments: message.attachments
@@ -86,11 +93,17 @@ struct MessageBubbleView<Content: View>: View {
   }
 
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  let messageID: String
   let side: Side
   let text: String
   let attachments: [Attachment]
   var fill = Color.bubbleBackground
   @ViewBuilder let content: () -> Content
+
+  private var isMenuTarget: Bool {
+    TranscriptMessageMenuHighlight.shared.messageID == messageID
+  }
 
   var body: some View {
     HStack {
@@ -111,7 +124,14 @@ struct MessageBubbleView<Content: View>: View {
             )
             .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
             .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
-            .background { UserBubbleBackground(color: fill) }
+            .background {
+              UserBubbleBackground(color: fill)
+                .overlay {
+                  UserBubbleBackground.shape(for: dynamicTypeSize)
+                    .fill(Color.black.opacity(isMenuTarget ? 0.14 : 0))
+                }
+                .animation(.easeOut(duration: 0.15), value: isMenuTarget)
+            }
         }
       }
       if side == .leading { Spacer(minLength: 40) }
