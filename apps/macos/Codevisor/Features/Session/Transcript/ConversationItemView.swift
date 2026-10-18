@@ -50,8 +50,7 @@ struct BotMessageView: View {
     MessageBubbleView(
       side: .leading,
       text: message.text,
-      attachments: message.attachments,
-      showsCopyButton: false
+      attachments: message.attachments
     ) {
       StreamingMarkdownView(message.text)
         .frame(maxWidth: Self.naturalWidth(of: message.text), alignment: .leading)
@@ -91,9 +90,7 @@ struct MessageBubbleView<Content: View>: View {
   let text: String
   let attachments: [Attachment]
   var fill = Color.bubbleBackground
-  var showsCopyButton = true
   @ViewBuilder let content: () -> Content
-  @State private var isHovered = false
 
   var body: some View {
     HStack {
@@ -115,15 +112,10 @@ struct MessageBubbleView<Content: View>: View {
             .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
             .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
             .background { UserBubbleBackground(color: fill) }
-          if showsCopyButton {
-            MessageCopyButton(text: text, help: "Copy message", isRevealed: isHovered)
-              .opacity(isHovered ? 1 : 0)
-          }
         }
       }
       if side == .leading { Spacer(minLength: 40) }
     }
-    .hoverTracking($isHovered, respectsSuspension: false)
     .accessibilityElement(children: .contain)
     .accessibilityActions {
       if !text.isEmpty {
