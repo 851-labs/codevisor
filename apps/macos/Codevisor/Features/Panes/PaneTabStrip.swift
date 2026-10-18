@@ -351,9 +351,7 @@ struct PaneTabStrip: View {
     scrollOffset = min(max(min(scrollOffset, stripMaxScroll) - delta, 0), stripMaxScroll)
     return nil
   }
-}
 
-extension PaneTabStrip {
   static func stripSlots(
     count: Int,
     slotWidth: CGFloat,

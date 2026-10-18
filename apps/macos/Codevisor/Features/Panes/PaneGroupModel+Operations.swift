@@ -4,33 +4,6 @@ import SwiftUI
 import CodevisorCore
 
 extension PaneGroupModel {
-  @discardableResult
-  func addTerminalPane() -> (any Pane)? {
-    guard let sessionId else { return nil }
-    let previouslySelected = selectedPane
-    let descriptor = state.addTerminalPane(sessionId: sessionId)
-    persist()
-    onPaneChanged?(descriptor)
-    onActivated?()
-    previouslySelected?.visibilityChanged(false)
-    let added = pane(for: descriptor)
-    added.visibilityChanged(true)
-    return added
-  }
-
-  @discardableResult
-  func addChatPane() -> any Pane {
-    let previouslySelected = selectedPane
-    let descriptor = state.addChatPane()
-    persist()
-    onPaneChanged?(descriptor)
-    onActivated?()
-    previouslySelected?.visibilityChanged(false)
-    let added = pane(for: descriptor)
-    added.visibilityChanged(true)
-    return added
-  }
-
   func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
     state.assignChatSession(paneId: paneId, sessionId: sessionId, name: name)
     persist()
