@@ -379,7 +379,8 @@ struct SessionTranscriptView: View {
             ComposerSendStaging.stage(
               session: ObjectIdentifier(controller),
               sourceFrame: sendAnimationSourceFrame ?? .zero,
-              style: userBubbleStyle
+              style: userBubbleStyle,
+              followsComposer: !preservesComposerFocusOnSend
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)

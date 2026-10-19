@@ -99,7 +99,8 @@ public final class TranscriptSendStaging {
     textRect: CGRect,
     lineHeight: CGFloat,
     bubble: Color,
-    revealsBubbleInFlight: Bool = false
+    revealsBubbleInFlight: Bool = false,
+    followsComposer: Bool = true
   ) {
     cancel(session: session)
     guard let window = textView.window,
@@ -145,7 +146,7 @@ public final class TranscriptSendStaging {
       beginMorph(stage, toward: found.0, provider: found.1, in: overlay)
     } else {
       #if canImport(UIKit)
-        if let container = textView.superview {
+        if followsComposer, let container = textView.superview {
           stage.board(TranscriptSendCarrier(content: container, overlay: overlay))
         }
       #endif
