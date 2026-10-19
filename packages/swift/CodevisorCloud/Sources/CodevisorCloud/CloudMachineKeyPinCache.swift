@@ -43,6 +43,31 @@ final class CloudMachineKeyPinCache {
     if pins == nil { pins = loaded }
   }
 
+  func reconcile(_ machines: [CloudMachine]) throws -> Set<String> {
+    guard var pins = pins else { throw CancellationError() }
+    var changed = Set<String>()
+    var dirty = false
+    for machine in machines {
+      guard let pinned = pins[machine.deviceId] else {
+        pins[machine.deviceId] = machine.publicKey
+        dirty = true
+        continue
+      }
+      if pinned != machine.publicKey {
+        changed.insert(machine.deviceId)
+      }
+    }
+    if dirty {
+      try save(pins)
+    }
+    return changed
+  }
+
+  func verifiedKey(for machine: CloudMachine) -> String? {
+    guard let pinned = pins?[machine.deviceId] else { return nil }
+    return pinned == machine.publicKey ? machine.publicKey : nil
+  }
+
   func save(_ pins: [String: String]) throws {
     try store.savePinnedMachineKeys(pins)
     invalidate()
