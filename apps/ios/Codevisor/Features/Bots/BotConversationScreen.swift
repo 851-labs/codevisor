@@ -50,7 +50,8 @@ struct BotConversationScreen: View {
         presentationSurface: TranscriptPresentationSurfaceCache.shared.surface(
           for: .init(paneID: bot.id, isNewChat: false, windowID: windowID),
           controller: controller
-        )
+        ),
+        preservesComposerFocusOnSend: true
       )
       .id(bot.sessionId)
     } else if bot == nil {
