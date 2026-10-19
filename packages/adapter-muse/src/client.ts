@@ -131,26 +131,31 @@ export const wireMuseClient = (transport: NdjsonTransport): MuseClient => {
   const fail = (id: unknown, code: number, message: string) =>
     transport.send({ jsonrpc: "2.0", id, error: { code, message, data: { kind: "internal" } } })
 
+  const handleResponse = (id: unknown, message: Record<string, unknown>): void => {
+    if (typeof id !== "number") return
+    const entry = pending.get(id)
+    if (entry === undefined) return
+    pending.delete(id)
+    if (message.error === undefined || message.error === null) {
+      entry.resolve(message.result)
+      return
+    }
+    const error = record(message.error)
+    entry.reject(
+      new MuseRequestError(
+        text(error.message) ?? "Muse rejected the request",
+        typeof error.code === "number" ? error.code : undefined,
+        text(record(error.data).kind)
+      )
+    )
+    return
+  }
+
   const handle = (message: Record<string, unknown>): void => {
     const id = message.id
     const method = message.method
     if (typeof method !== "string") {
-      if (typeof id !== "number") return
-      const entry = pending.get(id)
-      if (entry === undefined) return
-      pending.delete(id)
-      if (message.error === undefined || message.error === null) {
-        entry.resolve(message.result)
-        return
-      }
-      const error = record(message.error)
-      entry.reject(
-        new MuseRequestError(
-          text(error.message) ?? "Muse rejected the request",
-          typeof error.code === "number" ? error.code : undefined,
-          text(record(error.data).kind)
-        )
-      )
+      handleResponse(id, message)
       return
     }
     try {
