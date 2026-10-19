@@ -14,6 +14,7 @@ struct WorkspaceInspectorView: View {
   let branch: String?
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
+  let machineSymbol: String?
   let showsBotTranscript: Bool
   let usageChat: ChatSession?
   let usage: WorkspaceInspectorUsageModel
@@ -133,17 +134,19 @@ struct WorkspaceInspectorView: View {
       }
 
       Section("Details", isExpanded: expansion("Details")) {
-        LabeledContent("Project", value: project.name)
+        detail("Project", systemImage: "folder", value: project.name)
         if let branch {
-          LabeledContent("Branch", value: branch)
+          detail("Branch", systemImage: "arrow.triangle.branch", value: branch)
         }
         if let worktree = workspace.worktreeName {
-          LabeledContent("Worktree", value: worktree)
+          detail("Worktree", systemImage: "tree", value: worktree)
         }
         if let machineName {
-          LabeledContent("Machine", value: machineName)
+          detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
         }
-        LabeledContent("Created", value: workspace.createdAt, format: .relative(presentation: .named))
+        detail(
+          "Created", systemImage: "clock",
+          value: "Created \(workspace.createdAt.formatted(.relative(presentation: .named)))")
       }
 
       if showsBotTranscript {
@@ -179,6 +182,21 @@ struct WorkspaceInspectorView: View {
       else { return }
       chatContext = (chatSessionId, context)
     }
+  }
+
+  private func detail(_ title: String, systemImage: String, value: String) -> some View {
+    Label {
+      Text(value)
+        .textSelection(.enabled)
+    } icon: {
+      Image(systemName: systemImage)
+        .foregroundStyle(.secondary)
+        .frame(width: 20)
+    }
+    .help(title)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(value)
   }
 
   private func expansion(_ section: String) -> Binding<Bool> {

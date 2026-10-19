@@ -107,6 +107,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       branch: store.gitLookups.branch(for: workspace),
       pullRequest: store.gitLookups.pullRequest(for: workspace),
       machineName: environment.machines.fleetMachineName(for: workspace.serverId),
+      machineSymbol: environment.machines.machine(for: workspace.serverId)?.icon.systemImage,
       showsBotTranscript: botsEnabled
         && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
       usageChat: inspected.chat,
