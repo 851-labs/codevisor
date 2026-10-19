@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
+import { rmdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { isAbsolute, relative, resolve } from "node:path"
@@ -6,18 +6,10 @@ import { isAbsolute, relative, resolve } from "node:path"
 import type { Project } from "@codevisor/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
-  CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema
 } from "@codevisor/api"
-import {
-  isScratchFolder,
-  scratchWorkspacePath,
-  scratchWorkspacesRoot,
-  worktreesRoot
-} from "@codevisor/db"
+import { isScratchFolder, worktreesRoot } from "@codevisor/db"
 import { isGitWorkTree, listProjectGitBranches, trashDirectory } from "@codevisor/worktrees"
-import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
-import { availableProductionWorktreeName } from "@codevisor/worktrees"
 
 import {
   appendAndPublish,
@@ -42,6 +34,7 @@ import { routeProjectFromGit } from "./project-clone.js"
 import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
 import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
+import { createScratchProject } from "./project-scratch.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
 
 export { probeProject } from "./project-probe.js"
@@ -136,72 +129,6 @@ const createProject = async (
     services.db.createProject({
       ...payload,
       ...(repoUrl === undefined ? {} : { repoUrl })
-    })
-  )
-  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-  writeJson(response, 201, await probeProject(serverId, project))
-  return true
-}
-
-const allocateScratchWorkspaceFolder = (config: CodevisorServerConfig): string => {
-  mkdirSync(scratchWorkspacesRoot(), { recursive: true })
-  const taken = new Set(readdirSync(scratchWorkspacesRoot()))
-  let name: string | undefined
-  for (let attempt = 0; attempt < 100 && name === undefined; attempt += 1) {
-    const candidate =
-      config.worktreeNameStyle === "development"
-        ? availableDevelopmentWorktreeName(taken)
-        : availableProductionWorktreeName(taken)
-    try {
-      mkdirSync(scratchWorkspacePath(candidate))
-      name = candidate
-    } catch {
-      /* v8 ignore next */
-      taken.add(candidate)
-    }
-  }
-  /* v8 ignore next 3 */
-  if (name === undefined) {
-    throw new HttpFailure(500, "Could not allocate a scratch workspace folder")
-  }
-  return name
-}
-
-const writeExistingScratchProject = async (
-  services: CodevisorServerServices,
-  serverId: string,
-  requestedId: string,
-  response: ServerResponse
-): Promise<boolean> => {
-  const existing = (await run(services.db.listProjects)).find(
-    (candidate) => candidate.id.toLowerCase() === requestedId.toLowerCase()
-  )
-  if (existing !== undefined) {
-    writeJson(response, 200, await probeProject(serverId, existing))
-    return true
-  }
-  return false
-}
-
-const createScratchProject = async (
-  services: CodevisorServerServices,
-  config: CodevisorServerConfig,
-  fanout: EventFanout,
-  serverId: string,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<boolean> => {
-  const payload = await readSchema(request, CreateScratchProjectRequestSchema)
-  const requestedId = payload.id
-  if (requestedId !== undefined) {
-    if (await writeExistingScratchProject(services, serverId, requestedId, response)) return true
-  }
-  const name = allocateScratchWorkspaceFolder(config)
-  const project = await run(
-    services.db.createProject({
-      ...(payload.id === undefined ? {} : { id: payload.id }),
-      folderPath: scratchWorkspacePath(name),
-      name
     })
   )
   await appendAndPublish(services.db, fanout, "project.created", project.id, project)
