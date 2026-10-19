@@ -31,6 +31,7 @@ struct ScreenSharingWireFormatTests {
     return [
       .read(id: id),
       .begin(id: id, bytes: ScreenSharingClipboardMessage.maximumTextBytes),
+      .begin(id: id, bytes: ScreenSharingClipboardMessage.maximumContentBytes, richContent: true),
       .chunk(id: id, index: 31, data: payload),
       .ack(id: id, nextIndex: 0),
       .end(id: id),
@@ -101,10 +102,29 @@ struct ScreenSharingWireFormatTests {
       try ScreenSharingControlMessage.decode(Data(repeating: 0x20, count: 4097))
     }
 
-    let chunk = ScreenSharingClipboardMessage.chunk(id: UUID(), index: 0, data: Data(repeating: 255, count: 4096))
+    let chunk = ScreenSharingClipboardMessage.chunk(
+      id: UUID(), index: 0, data: Data(repeating: 255, count: ScreenSharingClipboardMessage.maximumBytes))
     expectInvalid("Clipboard message is too large.") { try chunk.encoded() }
     expectInvalid("Clipboard message is too large.") {
-      try ScreenSharingClipboardMessage.decode(Data(repeating: 0x20, count: 4097))
+      try ScreenSharingClipboardMessage.decode(
+        Data(repeating: 0x20, count: ScreenSharingClipboardMessage.maximumBytes + 1))
+    }
+  }
+
+  @Test func plainTextMessagesKeepTheShapeHostsThatPredateRichContentDecode() throws {
+    let begin = try Self.tree(ScreenSharingClipboardMessage.begin(id: UUID(), bytes: 5).encoded())
+    let body = try #require((begin["message"] as? [String: Any])?["begin"] as? [String: Any])
+    #expect(Set(body.keys) == ["id", "bytes"])
+    let viewer = try Self.tree(ScreenSharingClipboardSharingMessage.viewer(sharing: true).encoded())
+    let sharing = try #require((viewer["message"] as? [String: Any])?["viewer"] as? [String: Any])
+    #expect(Set(sharing.keys) == ["sharing"])
+  }
+
+  @Test func clipboardSharingMessagesSurviveTheirEnvelope() throws {
+    for message: ScreenSharingClipboardSharingMessage in [
+      .viewer(sharing: false), .viewer(sharing: true, richContent: true), .host(richContent: true),
+    ] {
+      #expect(try ScreenSharingClipboardSharingMessage.decode(message.encoded()) == message)
     }
   }
 

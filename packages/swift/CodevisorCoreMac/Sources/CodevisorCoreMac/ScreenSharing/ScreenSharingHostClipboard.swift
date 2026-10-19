@@ -18,7 +18,7 @@ final class ScreenSharingHostClipboard {
     let transfer = ScreenSharingClipboardTransfer(
       send: { [weak channel] in channel?.send($0) ?? false },
       canReceiveUnsolicited: canReceiveUnsolicited,
-      read: { try pasteboard.read() },
+      read: { try pasteboard.read(richContent: $0) },
       write: {
         try pasteboard.write($0)
         sync.wrote($0)
@@ -34,14 +34,24 @@ final class ScreenSharingHostClipboard {
     }
   }
 
-  func setSharing(_ sharing: Bool) {
+  func receive(_ message: ScreenSharingClipboardSharingMessage) -> ScreenSharingClipboardSharingMessage? {
+    guard case .viewer(let sharing, let richContent) = message else { return nil }
+    setSharing(sharing)
+    guard richContent == true, !transfer.richContent else { return nil }
+    transfer.richContent = true
+    return .host(richContent: true)
+  }
+
+  private func setSharing(_ sharing: Bool) {
     if sharing, !self.sharing { sync.reset(synced: pasteboard.changeCount) }
     self.sharing = sharing
   }
 
   func poll() {
-    guard sharing, !transfer.isBusy, let text = sync.changedText() else { return }
-    transfer.sendText(text)
+    guard sharing, !transfer.isBusy, let content = sync.changedContent(richContent: transfer.richContent) else {
+      return
+    }
+    transfer.sendContent(content)
   }
 
   func tick() { transfer.tick() }

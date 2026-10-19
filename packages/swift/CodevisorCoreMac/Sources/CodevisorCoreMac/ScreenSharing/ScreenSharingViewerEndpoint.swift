@@ -132,6 +132,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
           return window.isKeyWindow && window.firstResponder === view
         })
     }
+    session.onRichClipboardSupported = { [weak clipboard] in clipboard?.hostAcceptsRichContent() }
     channel?.onMessage = { [weak self] in self?.emit(.message($0)) }
     channel?.onAvailabilityChanged = { [weak self] in self?.emit(.availability($0)) }
     forwarder.onLost = { [weak self] reason in

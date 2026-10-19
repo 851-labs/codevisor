@@ -107,15 +107,51 @@ struct ScreenSharingSharedClipboardTests {
     fixture.hop.drainAll()
     #expect(fixture.text(fixture.local) == "here" && fixture.text(fixture.host) == "there")
 
-    fixture.viewer.getRemoteText()
+    fixture.viewer.getRemoteClipboard()
     fixture.hop.drainAll()
     #expect(fixture.text(fixture.local) == "there")
-    #expect(fixture.viewer.message == "Remote text copied to this Mac’s clipboard.")
+    #expect(fixture.viewer.message == "Remote clipboard copied to this Mac.")
     fixture.copy("here again", to: fixture.local)
-    fixture.viewer.sendLocalText()
+    fixture.viewer.sendLocalClipboard()
     fixture.hop.drainAll()
     #expect(fixture.text(fixture.host) == "here again")
     #expect(!fixture.viewer.busy)
+  }
+
+  @Test func anImageCopiedOnEitherMacIsPastableOnTheOther() {
+    let fixture = SharedClipboardFixture()
+    fixture.viewer.sharing = true
+    fixture.viewer.setControlling(true)
+    let screenshot = Data((0..<300_000).map { UInt8(truncatingIfNeeded: $0 &* 13) })
+    fixture.copy(png: screenshot, text: "Screenshot", to: fixture.local)
+    fixture.viewer.poll()
+    fixture.hop.drainAll()
+    #expect(fixture.host.data(forType: .png) == screenshot)
+    #expect(fixture.text(fixture.host) == "Screenshot")
+
+    let remote = Data(screenshot.reversed())
+    fixture.copy(png: remote, text: nil, to: fixture.host)
+    fixture.hostClipboard.poll()
+    fixture.hop.drainAll()
+    #expect(fixture.local.data(forType: .png) == remote)
+    #expect(fixture.text(fixture.local) == nil)
+  }
+
+  @Test func aHostThatPredatesRichContentStillReceivesTheText() {
+    let fixture = SharedClipboardFixture(hostRichContent: false)
+    fixture.viewer.sharing = true
+    fixture.viewer.setControlling(true)
+    fixture.copy(png: Data([1, 2, 3]), text: "caption", to: fixture.local)
+    fixture.viewer.poll()
+    fixture.hop.drainAll()
+    #expect(fixture.text(fixture.host) == "caption")
+    #expect(fixture.host.data(forType: .png) == nil)
+
+    let host = fixture.host.changeCount
+    fixture.copy(png: Data([4, 5, 6]), text: nil, to: fixture.local)
+    fixture.viewer.poll()
+    fixture.hop.drainAll()
+    #expect(fixture.host.changeCount == host)
   }
 }
 
@@ -131,7 +167,7 @@ private final class SharedClipboardFixture {
   private let channels:
     (ScreenSharingLocalChannel<ScreenSharingClipboardMessage>, ScreenSharingLocalChannel<ScreenSharingClipboardMessage>)
 
-  init(onePasteboard: Bool = false) {
+  init(onePasteboard: Bool = false, hostRichContent: Bool = true) {
     local = NSPasteboard(name: .init("screen-sharing-test-\(UUID())"))
     host = onePasteboard ? local : NSPasteboard(name: .init("screen-sharing-test-\(UUID())"))
     channels = ScreenSharingLocalChannel.pair(hop: hop.schedule)
@@ -139,8 +175,12 @@ private final class SharedClipboardFixture {
       channel: channels.1, pasteboard: .init(host), canReceiveUnsolicited: { true })
     self.hostClipboard = hostClipboard
     viewer = ScreenSharingViewerClipboard(
-      channel: channels.0, pasteboard: .init(local), setHostSharing: { hostClipboard.setSharing($0) },
+      channel: channels.0, pasteboard: .init(local),
+      setHostSharing: { _ = hostClipboard.receive(.viewer(sharing: $0, richContent: hostRichContent ? true : nil)) },
       hasKeyboardFocus: { [focus] in focus.on })
+    if hostRichContent, hostClipboard.receive(.viewer(sharing: false, richContent: true)) == .host(richContent: true) {
+      viewer.hostAcceptsRichContent()
+    }
   }
 
   isolated deinit {
@@ -151,6 +191,14 @@ private final class SharedClipboardFixture {
   func copy(_ text: String, to pasteboard: NSPasteboard) {
     pasteboard.clearContents()
     pasteboard.setString(text, forType: .string)
+  }
+
+  func copy(png: Data, text: String?, to pasteboard: NSPasteboard) {
+    let item = NSPasteboardItem()
+    item.setData(png, forType: .png)
+    if let text { item.setString(text, forType: .string) }
+    pasteboard.clearContents()
+    pasteboard.writeObjects([item])
   }
 
   func text(_ pasteboard: NSPasteboard) -> String? { pasteboard.string(forType: .string) }

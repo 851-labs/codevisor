@@ -47,8 +47,13 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       self.videoFormatChannel.send(.viewer(highDynamicRange: viewerHighDynamicRange))
     }
     clipboardSharingChannel.onAvailabilityChanged = { [weak self] available in
-      guard available, let self, self.clipboardSharing else { return }
-      self.clipboardSharingChannel.send(.viewer(sharing: true))
+      guard available, let self else { return }
+      self.clipboardSharingChannel.send(.viewer(sharing: self.clipboardSharing, richContent: true))
+    }
+    clipboardSharingChannel.onMessage = { [weak self] message in
+      guard case .host(richContent: true) = message, let self, !self.richClipboard else { return }
+      self.richClipboard = true
+      self.onRichClipboardSupported?()
     }
     audioChannel.deliverOffMain { [audioSink] message in
       guard case .packet(let packet) = message else { return false }
@@ -131,11 +136,15 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   }
 
   private var clipboardSharing = false
+  private var richClipboard = false
+  public var onRichClipboardSupported: (() -> Void)? {
+    didSet { if richClipboard { onRichClipboardSupported?() } }
+  }
 
   public func setClipboardSharing(_ enabled: Bool) {
     guard enabled != clipboardSharing else { return }
     clipboardSharing = enabled
-    clipboardSharingChannel.send(.viewer(sharing: enabled))
+    clipboardSharingChannel.send(.viewer(sharing: enabled, richContent: true))
   }
 
   public var supportsAudio: Bool { true }

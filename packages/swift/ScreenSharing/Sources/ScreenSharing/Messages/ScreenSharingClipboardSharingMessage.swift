@@ -1,7 +1,8 @@
 import Foundation
 
 public enum ScreenSharingClipboardSharingMessage: Codable, Sendable, Equatable {
-  case viewer(sharing: Bool)
+  case viewer(sharing: Bool, richContent: Bool? = nil)
+  case host(richContent: Bool)
 
   public static let maximumBytes = 1024
 

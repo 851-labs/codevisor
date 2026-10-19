@@ -279,7 +279,7 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
       connection: connection, id: 0, label: "codevisor.control.v1",
       encode: { try $0.encoded() }, decode: ScreenSharingControlMessage.decode)
     clipboardChannel = try ScreenSharingClipboardChannel(
-      connection: connection, id: 2, label: "codevisor.clipboard.v1",
+      connection: connection, id: 2, label: "codevisor.clipboard.v1", limits: .clipboard,
       encode: { try $0.encoded() }, decode: ScreenSharingClipboardMessage.decode)
     videoRefresh = try ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>(
       connection: connection, id: 4, label: "codevisor.video-refresh.v1",

@@ -43,6 +43,7 @@ public protocol ScreenSharingViewingSession: AnyObject {
   var supportsHighDynamicRange: Bool { get }
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)? { get set }
   func setClipboardSharing(_ enabled: Bool)
+  var onRichClipboardSupported: (() -> Void)? { get set }
 }
 
 extension ScreenSharingViewingSession {
@@ -69,6 +70,11 @@ extension ScreenSharingViewingSession {
   }
 
   public var onResizeSupportChanged: ((Bool) -> Void)? {
+    get { nil }
+    set {}
+  }
+
+  public var onRichClipboardSupported: (() -> Void)? {
     get { nil }
     set {}
   }

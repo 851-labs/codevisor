@@ -142,16 +142,16 @@ import Testing
 
     let hostTransfer = ScreenSharingClipboardTransfer(
       send: { hostChannel.send($0) }, now: elapsed, canReceiveUnsolicited: { true },
-      read: { hostText }, write: { hostText = $0 })
+      read: { _ in .init(text: hostText) }, write: { hostText = $0.text ?? "" })
     let viewerTransfer = ScreenSharingClipboardTransfer(
       send: { viewerChannel.send($0) }, now: elapsed, canReceiveUnsolicited: { false },
-      read: { viewerText }, write: { viewerText = $0 })
+      read: { _ in .init(text: viewerText) }, write: { viewerText = $0.text ?? "" })
     viewerTransfer.onFinished = { viewerResults.append($0) }
     hostChannel.onMessage = { hostTransfer.receive($0) }
     viewerChannel.onMessage = { viewerTransfer.receive($0) }
 
     let text = String(repeating: "é👩🏽‍💻日本語\n", count: 400)
-    viewerTransfer.sendText(text)
+    viewerTransfer.sendContent(.init(text: text))
     #expect(viewerTransfer.isBusy)
     hop.drainAll()
     #expect(hostText == text)
@@ -159,7 +159,7 @@ import Testing
     #expect(!viewerTransfer.isBusy && !hostTransfer.isBusy)
 
     viewerChannel.onMessage = { _ in }
-    viewerTransfer.requestText()
+    viewerTransfer.requestContent()
     hop.drainAll()
     clock.advance(by: .milliseconds(9999))
     viewerTransfer.tick()

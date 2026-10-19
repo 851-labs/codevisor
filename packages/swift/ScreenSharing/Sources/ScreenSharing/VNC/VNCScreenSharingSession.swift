@@ -63,6 +63,11 @@
       emulator = VNCHostEmulator(translator: translator, leaseChannel: leaseChannel) { continuation.yield($0) }
       metrics.label("decoder", "RFB")
       metrics.label("videoSize", "\(parameters.width) × \(parameters.height)")
+      emulator.onRichClipboardSupported = { [weak self] in
+        guard let self else { return }
+        self.richClipboard = true
+        self.onRichClipboardSupported?()
+      }
       metrics.label("serverName", parameters.name)
       let publisher = publisher
       let frames = frames
@@ -187,6 +192,10 @@
     }
 
     public func setClipboardSharing(_ enabled: Bool) { emulator.sharing = enabled }
+    private var richClipboard = false
+    public var onRichClipboardSupported: (() -> Void)? {
+      didSet { if richClipboard { onRichClipboardSupported?() } }
+    }
 
     private func resized(width: Int, height: Int) {
       desktopSize = (width, height)
