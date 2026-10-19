@@ -144,9 +144,6 @@ struct WorkspaceInspectorView: View {
         if let machineName {
           detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
         }
-        detail(
-          "Created", systemImage: "clock",
-          value: "Created \(workspace.createdAt.formatted(.relative(presentation: .named)))")
       }
 
       if showsBotTranscript {
