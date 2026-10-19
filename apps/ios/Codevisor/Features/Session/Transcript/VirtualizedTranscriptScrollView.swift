@@ -110,6 +110,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var isHoldingForKeyboardDrag = false
   var lastStableScrollState: SessionScrollState?
   var appliedTopContentInset: CGFloat = 0
+  var topContentClearance: CGFloat = 0
 
   var onViewportChange: ((SessionScrollState) -> Void)?
   var onBottomStateChange: ((Bool) -> Void)?

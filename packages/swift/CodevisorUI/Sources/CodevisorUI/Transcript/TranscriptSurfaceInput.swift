@@ -48,6 +48,7 @@ public struct TranscriptSurfaceInput {
   public var allowsLiveTextAnimation: Bool
   public var reduceMotion: Bool
   public var scrollIndicatorBottomInset: CGFloat
+  public var topContentClearance: CGFloat
 
   public init(
     sessionController: SessionController,
@@ -75,7 +76,8 @@ public struct TranscriptSurfaceInput {
     textAnimationRegistry: StreamingTextAnimationRegistry,
     allowsLiveTextAnimation: Bool = true,
     reduceMotion: Bool,
-    scrollIndicatorBottomInset: CGFloat = 0
+    scrollIndicatorBottomInset: CGFloat = 0,
+    topContentClearance: CGFloat = 0
   ) {
     self.sessionController = sessionController
     self.rows = rows
@@ -103,6 +105,7 @@ public struct TranscriptSurfaceInput {
     self.allowsLiveTextAnimation = allowsLiveTextAnimation
     self.reduceMotion = reduceMotion
     self.scrollIndicatorBottomInset = scrollIndicatorBottomInset
+    self.topContentClearance = topContentClearance
   }
 }
 

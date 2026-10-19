@@ -92,6 +92,8 @@ extension VirtualizedTranscriptScrollView {
     olderHistoryPresentationTarget = newOlderHistoryPresentationTarget
     reduceMotion = newReduceMotion
     updateBottomScrollIndicatorInsetIfNeeded(newScrollIndicatorBottomInset)
+    topContentClearance = input.topContentClearance
+    updateTopContentInsetIfNeeded()
     sendAnimationSourceFrame = newSendAnimationSourceFrame
     sendTransitions.session = sessionController.map(ObjectIdentifier.init)
     sendTransitions.reduceMotion = newReduceMotion

@@ -27,6 +27,7 @@ struct SessionTranscriptView: View {
   var onSendAnimationStarted: ((UserSendAnimationRequest) -> Void)? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   var preservesComposerFocusOnSend = false
+  var topContentClearance: CGFloat = 0
   var layoutNamespaceToken: UUID? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var composerTextEditorHandoffID: UUID? = nil

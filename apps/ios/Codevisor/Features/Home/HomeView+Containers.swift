@@ -50,6 +50,7 @@ extension HomeView {
           newChatSheet(flow)
         }
     }
+    .environment(\.hostedBotHeaderHeight, botHeaderHeight)
     .overlay(alignment: .top) { stackBotHeader }
   }
 
@@ -60,6 +61,11 @@ extension HomeView {
         let bot = environment.bots.bot(serverId: serverId, id: botId)
       {
         BotConversationHeader(bot: bot) { botEditor = .edit(bot) }
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            botHeaderHeight = $0
+          }
           .transition(.opacity)
       }
     }

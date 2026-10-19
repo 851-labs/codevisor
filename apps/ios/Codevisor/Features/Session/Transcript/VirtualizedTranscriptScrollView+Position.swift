@@ -118,7 +118,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func updateTopContentInsetIfNeeded() {
-    let topInset = max(0, safeAreaInsets.top)
+    let safeTop = max(0, safeAreaInsets.top)
+    let topInset = safeTop + max(0, topContentClearance)
     guard abs(appliedTopContentInset - topInset) > 0.5 else { return }
     let preservedDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
     appliedTopContentInset = topInset
@@ -127,7 +128,7 @@ extension VirtualizedTranscriptScrollView {
       inset.top = topInset
       contentInset = inset
       var indicatorInset = verticalScrollIndicatorInsets
-      indicatorInset.top = topInset
+      indicatorInset.top = safeTop
       verticalScrollIndicatorInsets = indicatorInset
     }
     if let preservedDistance, !isNativeScrollInteractionActive {

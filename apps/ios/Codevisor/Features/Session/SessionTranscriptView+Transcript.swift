@@ -68,7 +68,8 @@ extension SessionTranscriptView {
           textAnimationRegistry: textAnimationRegistry,
           allowsLiveTextAnimation: textAnimationVisibility.isVisible,
           reduceMotion: reduceMotion,
-          scrollIndicatorBottomInset: transcriptBottomObstruction + 6
+          scrollIndicatorBottomInset: transcriptBottomObstruction + 6,
+          topContentClearance: topContentClearance
         ),
         callbacks: TranscriptSurfaceCallbacks(
           claimSendAnimation: { request in
