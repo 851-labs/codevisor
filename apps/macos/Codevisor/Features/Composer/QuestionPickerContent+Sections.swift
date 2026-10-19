@@ -41,7 +41,9 @@ extension QuestionPickerContent {
           isSelected: selections[question.id, default: []].contains(option.label)
         )
       }
-      if question.allowsOther {
+      if question.allowsOther, isOtherSelected(question) {
+        otherAnswerRow(question)
+      } else if question.allowsOther {
         optionRow(
           question,
           index: question.options.count,
@@ -75,10 +77,8 @@ extension QuestionPickerContent {
       Button {
         highlighted = index
         activate(question, index: index)
-        if index >= question.options.count,
-          selections[question.id, default: []].contains(Self.otherToken)
-        {
-          focusNotes()
+        if index >= question.options.count, isOtherSelected(question) {
+          anchor.focusesNotesWhenReady = true
         } else {
           focusPicker()
         }
@@ -143,9 +143,61 @@ extension QuestionPickerContent {
     )
   }
 
-  func notesEditor(_ question: QuestionSpec) -> some View {
-    let isOtherSelected = selections[question.id, default: []].contains(Self.otherToken)
-    return ZStack(alignment: .topLeading) {
+  private func otherAnswerRow(_ question: QuestionSpec) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Button {
+        highlighted = question.options.count
+        activate(question, index: question.options.count)
+        focusPicker()
+      } label: {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(Color.accentColor)
+          .padding(.top, 7)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Other")
+      .accessibilityAddTraits(.isSelected)
+      notesEditor(question, placeholder: "Type your answer")
+        .accessibilityLabel("Your answer")
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 1)
+    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
+    .overlay(
+      RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+    )
+    .contentShape(RoundedRectangle(cornerRadius: 6))
+    .onTapGesture { focusNotes() }
+  }
+
+  func noteField(_ question: QuestionSpec) -> some View {
+    notesEditor(question, placeholder: "Add a note for the agent")
+      .accessibilityLabel("Note")
+      .padding(.horizontal, 10)
+      .padding(.vertical, 4)
+      .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
+  }
+
+  private func addNoteButton(_ question: QuestionSpec) -> some View {
+    Button {
+      revealNote(question)
+    } label: {
+      Label("Add note", systemImage: "text.bubble")
+        .font(.callout.weight(.medium))
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .background(Capsule().fill(Color.secondary.opacity(0.16)))
+        .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(.secondary)
+    .help("Add a note for the agent")
+  }
+
+  private func notesEditor(_ question: QuestionSpec, placeholder: String) -> some View {
+    ZStack(alignment: .topLeading) {
       ChatInputEditor(
         text: notesBinding(question),
         calculatedHeight: $notesHeight,
@@ -159,32 +211,23 @@ extension QuestionPickerContent {
           }
           return false
         },
-        onTextViewReady: { textView in
-          anchor.notesEditor = textView
-        }
+        onTextViewReady: { attachNotesEditor($0) }
       )
       .frame(height: notesHeight)
       if (notes[question.id] ?? "").isEmpty {
-        Text(isOtherSelected ? "Type your answer (required)" : "Add a note (optional)")
+        Text(placeholder)
           .foregroundStyle(.tertiary)
           .padding(.top, 6)
           .allowsHitTesting(false)
       }
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 2)
-    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(
-          isOtherSelected ? Color.accentColor : Color.separatorColor,
-          lineWidth: 1
-        )
-    )
   }
 
   func footer(_ question: QuestionSpec) -> some View {
     HStack(spacing: 8) {
+      if showsAddNoteButton(question) {
+        addNoteButton(question)
+      }
       Spacer()
       HStack(spacing: 4) {
         if let backOptionLabel = question.backOptionLabel {

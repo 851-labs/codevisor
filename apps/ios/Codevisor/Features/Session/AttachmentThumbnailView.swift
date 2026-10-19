@@ -107,6 +107,9 @@ struct AttachmentThumbnailView: View {
           .strokeBorder(.separator, lineWidth: 1)
       }
     }
+    .transcriptSendAttachmentTarget(
+      id: inline ? nil : sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(uiColor: .separator)
+    )
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { preview() }
     .accessibilityElement(children: .ignore)
@@ -123,6 +126,11 @@ struct AttachmentThumbnailView: View {
       maximumSize: CGSize(width: 280, height: 280),
       fallbackAspectRatio: fallbackAspectRatio
     )
+  }
+
+  private var sentFileID: String? {
+    guard case let .attachment(fileId) = file.source else { return nil }
+    return fileId
   }
 
   private var fallbackAspectRatio: CGFloat {

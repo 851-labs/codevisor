@@ -380,7 +380,8 @@ struct SessionTranscriptView: View {
               session: ObjectIdentifier(controller),
               sourceFrame: sendAnimationSourceFrame ?? .zero,
               style: userBubbleStyle,
-              followsComposer: !preservesComposerFocusOnSend
+              followsComposer: !preservesComposerFocusOnSend,
+              attachmentIDs: controller.composerAttachments.compactMap(\.uploadedFileID)
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)

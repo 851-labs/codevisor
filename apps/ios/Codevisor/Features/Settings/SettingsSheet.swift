@@ -40,7 +40,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "general", "updates", "agents", "mcps",
+    "root", "account", "machines", "projects", "updates", "agents", "mcps",
     "skills", "plugins",
   ]
 
@@ -152,9 +152,6 @@ struct SettingsSheet: View {
       }
     }
     Section {
-      NavigationLink(value: SettingsDestination.section("general")) {
-        sectionLabel("Privacy & Data", icon: .general)
-      }
       NavigationLink(value: SettingsDestination.section("updates")) {
         sectionLabel("Updates", icon: .updates)
           .badge(environment.updateCenter.availableCount)
@@ -244,10 +241,9 @@ struct SettingsSheet: View {
   @ViewBuilder
   private func clientSection(_ section: String) -> some View {
     switch section {
-    case "account": CloudAccountScreen()
+    case "account": CloudAccountScreen(dismissSettings: { dismiss() })
     case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
-    case "general": GeneralSettingsScreen(dismissSettings: { dismiss() })
     case "agents": HarnessesSettingsScreen()
     case "mcps": McpSettingsScreen()
     case "skills": SkillsSettingsScreen()
