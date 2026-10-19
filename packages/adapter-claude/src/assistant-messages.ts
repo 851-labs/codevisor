@@ -4,16 +4,13 @@ import { authoritativeStatsFromInput } from "./diff-stats.js"
 import { settleForkedCommands } from "./forked-commands.js"
 import { isRecord, recordOf } from "./internal.js"
 import { HIDDEN_TOOLS, PLAN_TOOLS, TASK_TOOLS } from "./message-tool-policy.js"
+import { claudeContextUsageFromAssistant } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { SKILL_TOOL, skillCallMeta } from "./skill-tool.js"
 import { emitPlanUpdate } from "./tasks.js"
 import { toolKind, toolTitle } from "./tool-presentation.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
-import {
-  claudeContextUsageFromAssistant,
-  detectApiErrorMessage,
-  detectUsageLimitMessage
-} from "./usage.js"
+import { detectApiErrorMessage, detectUsageLimitMessage } from "./usage.js"
 
 type AssistantMessage = Extract<SDKMessage, { type: "assistant" }>
 
