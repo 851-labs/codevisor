@@ -87,17 +87,7 @@ export const makeSharedProviderAccounts = (options: {
         previous.organizationId === bundle.organizationId &&
         (previous.subject === bundle.subject ||
           (previous.subject.startsWith("grant:") && bundle.subject.startsWith("grant:")))
-      if (sameSource && previous.credential) {
-        const active = [await store.get(slot), await store.get(slot, true)].some(
-          (record) => record?.credential.id === previous.credential!.id
-        )
-        if (active && bundle.ownership === "external")
-          await options.vault.publishExternal(previous.credential, {
-            ...bundle,
-            subject: previous.subject
-          })
-        await store.setLocal(sourceKey, { ...previous, fingerprint })
-      } else {
+      if (!sameSource || !previous.credential) {
         await store.save({ ...bundle, harnessId: harness }, profile, false, false)
         const record = await store.get(slot)
         await store.setLocal(sourceKey, {
@@ -106,7 +96,21 @@ export const makeSharedProviderAccounts = (options: {
           ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
           ...(record?.subject === bundle.subject ? { credential: record.credential } : {})
         })
+        continue
       }
+      let active = false
+      for (const record of [await store.get(slot), await store.get(slot, true)]) {
+        if (record?.credential.id === previous.credential.id) {
+          active = true
+          break
+        }
+      }
+      if (active && bundle.ownership === "external")
+        await options.vault.publishExternal(previous.credential, {
+          ...bundle,
+          subject: previous.subject
+        })
+      await store.setLocal(sourceKey, { ...previous, fingerprint })
     }
   }
   let reconciling: Promise<void> | undefined
@@ -141,11 +145,13 @@ export const makeSharedProviderAccounts = (options: {
       const row = await store.get(slot, shared)
       const global = await store.get(slot, true)
       const { email: _email, detail: _detail, authMethod: _method, ...base } = account
-      const selectionScope =
+      let selectionScope: HarnessAccount["selectionScope"] = "machine"
+      if (
         shared ||
         (row?.credential.id === global?.credential.id && (await store.local(slot)) !== false)
-          ? ("shared" as const)
-          : ("machine" as const)
+      ) {
+        selectionScope = "shared"
+      }
       const unsigned: HarnessAccount = {
         ...base,
         label: "Grok",
@@ -204,39 +210,37 @@ export const makeSharedProviderAccounts = (options: {
       await store.save({ ...bundle, harnessId: harness }, profile, true, shared)
       const global = await store.get(providerSlot(harness, profile, provider), true)
       if (
-        global?.subject === bundle.subject &&
-        global.organizationId === bundle.organizationId &&
-        harness !== "grok-build"
-      ) {
-        const namespace = "harness-credentials"
-        const entries = await Effect.runPromise(db.getSyncEntries(namespace))
-        const key =
-          harness === "pi"
-            ? "pi-auth"
-            : profile === "default"
-              ? "opencode-auth"
-              : `opencode-profile:${profile}`
-        const saved = entries.find((entry) => entry.key === key && !entry.deleted)
-        if (typeof saved?.value === "string") {
-          const document: unknown = JSON.parse(saved.value)
-          if (isRecord(document) && document[provider] !== undefined) {
-            const { [provider]: _removed, ...remaining } = document
-            await Effect.runPromise(
-              db.mergeSyncEntries(namespace, [
-                {
-                  key,
-                  value: JSON.stringify(remaining),
-                  timestamp: nextSyncTimestamp(
-                    options.serverId,
-                    latestSyncTimestamp(entries),
-                    Date.now()
-                  )
-                }
-              ])
-            )
-          }
-        }
+        !(
+          global?.subject === bundle.subject &&
+          global.organizationId === bundle.organizationId &&
+          harness !== "grok-build"
+        )
+      )
+        return true
+      const namespace = "harness-credentials"
+      const entries = await Effect.runPromise(db.getSyncEntries(namespace))
+      let key: string
+      if (harness === "pi") {
+        key = "pi-auth"
+      } else if (profile === "default") {
+        key = "opencode-auth"
+      } else {
+        key = `opencode-profile:${profile}`
       }
+      const saved = entries.find((entry) => entry.key === key && !entry.deleted)
+      if (typeof saved?.value !== "string") return true
+      const document: unknown = JSON.parse(saved.value)
+      if (!isRecord(document) || document[provider] === undefined) return true
+      const { [provider]: _removed, ...remaining } = document
+      await Effect.runPromise(
+        db.mergeSyncEntries(namespace, [
+          {
+            key,
+            value: JSON.stringify(remaining),
+            timestamp: nextSyncTimestamp(options.serverId, latestSyncTimestamp(entries), Date.now())
+          }
+        ])
+      )
       return true
     },
     configured: async (harness: ProviderOAuthHarness, id: string, shared = false) => {
