@@ -12,13 +12,38 @@ struct ComputerUsePermissionRowsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: embedded ? 0 : 12) {
-      if embedded {
-        rows
-      } else {
-        rows
-          .padding(.horizontal, 14)
-          .padding(.vertical, 4)
-          .background(RoundedRectangle(cornerRadius: 12).fill(Color.cardBackgroundColor))
+      PermissionCard(embedded: embedded) {
+        PermissionRow(
+          symbol: "accessibility",
+          title: "Accessibility",
+          subtitle: "Reads on-screen text and controls",
+          grantedLabel: model.isAccessibilityGranted ? "Granted" : nil,
+          embedded: embedded
+        ) {
+          PermissionActionButton("Allow…") { model.requestAccessibility() }
+        }
+        Divider()
+        PermissionRow(
+          symbol: "rectangle.dashed.badge.record",
+          title: "Screen Recording",
+          subtitle: "Sees app windows",
+          grantedLabel: model.isScreenRecordingGranted ? "Granted" : nil,
+          embedded: embedded
+        ) {
+          PermissionActionButton("Allow…") { model.requestScreenRecording() }
+        }
+        if includesFullDiskAccess {
+          Divider()
+          PermissionRow(
+            symbol: "internaldrive",
+            title: "Full Disk Access",
+            subtitle: "Accesses protected files",
+            grantedLabel: model.isFullDiskAccessGranted ? "Granted" : nil,
+            embedded: embedded
+          ) {
+            PermissionActionButton("Allow…") { model.requestFullDiskAccess() }
+          }
+        }
       }
 
       if model.screenRecordingGrantedThisRun {
@@ -35,79 +60,6 @@ struct ComputerUsePermissionRowsView: View {
     .onChange(of: controlActiveState) { _, _ in
       model.refresh()
     }
-  }
-
-  private var rows: some View {
-    VStack(spacing: 0) {
-      permissionRow(
-        symbol: "accessibility",
-        title: "Accessibility",
-        subtitle: "Reads on-screen text and controls",
-        granted: model.isAccessibilityGranted
-      ) {
-        model.requestAccessibility()
-      }
-      Divider()
-      permissionRow(
-        symbol: "rectangle.dashed.badge.record",
-        title: "Screen Recording",
-        subtitle: "Sees app windows",
-        granted: model.isScreenRecordingGranted
-      ) {
-        model.requestScreenRecording()
-      }
-      if includesFullDiskAccess {
-        Divider()
-        permissionRow(
-          symbol: "internaldrive",
-          title: "Full Disk Access",
-          subtitle: "Accesses protected files",
-          granted: model.isFullDiskAccessGranted
-        ) {
-          model.requestFullDiskAccess()
-        }
-      }
-    }
-  }
-
-  private func permissionRow(
-    symbol: String,
-    title: String,
-    subtitle: String,
-    granted: Bool,
-    action: @escaping () -> Void
-  ) -> some View {
-    HStack(spacing: 12) {
-      Image(systemName: symbol)
-        .font(.system(size: embedded ? 14 : 18, weight: .medium))
-        .symbolRenderingMode(.hierarchical)
-        .frame(width: embedded ? 26 : 34, height: embedded ? 26 : 34)
-        .background(RoundedRectangle(cornerRadius: embedded ? 6 : 8).fill(Color.secondary.opacity(0.12)))
-        .accessibilityHidden(true)
-
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .fontWeight(.medium)
-        Text(subtitle)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-
-      if granted {
-        Label("Granted", systemImage: "checkmark.circle.fill")
-          .font(.callout.weight(.medium))
-          .foregroundStyle(.green)
-          .labelStyle(.titleAndIcon)
-          .transition(.opacity.combined(with: .scale(scale: 0.9)))
-      } else {
-        Button("Allow…", action: action)
-          .controlSize(embedded ? .small : .regular)
-      }
-    }
-    .padding(.vertical, embedded ? 7 : 10)
-    .animation(.smooth(duration: 0.25), value: granted)
   }
 
   private var relaunchNudge: some View {
