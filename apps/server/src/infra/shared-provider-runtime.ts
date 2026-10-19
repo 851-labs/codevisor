@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
-import { mkdir, readFile, symlink, writeFile, chmod } from "node:fs/promises"
+import { mkdir, symlink, writeFile, chmod } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { dirname, join, isAbsolute, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import {
@@ -10,7 +10,6 @@ import {
   piAuthExtension,
   providerCredential,
   providerTokenEndpoint,
-  providerOAuthSupported,
   SharedCredentialError,
   type SharedCredentialVault,
   type ProviderOAuthHarness
@@ -19,22 +18,18 @@ import { Schema } from "effect"
 
 import { errorCode, field, isRecord } from "../unknown-values.js"
 import {
+  prepareProviderAuthDocument,
+  readProviderDocument,
+  resolvePiResourcePaths
+} from "./shared-provider-documents.js"
+import {
   makeOpenCode2Deps,
   makeOpenCode2Materializer,
   type OpenCode2Deps
 } from "./shared-provider-opencode2.js"
 import { providerDigest, providerSlot, type SharedProviderStore } from "./shared-provider-store.js"
 
-export const readProviderDocument = async (path: string): Promise<Record<string, unknown>> => {
-  try {
-    const value: unknown = JSON.parse(await readFile(path, "utf8"))
-    if (!isRecord(value)) throw new Error("Invalid credential file")
-    return { ...value }
-  } catch (cause) {
-    if (errorCode(cause) === "ENOENT") return {}
-    throw new Error("Saved provider credentials could not be read", { cause })
-  }
-}
+export { readProviderDocument } from "./shared-provider-documents.js"
 
 const Capability = Schema.Struct({
   capability: Schema.String,
@@ -197,26 +192,7 @@ export const makeSharedProviderRuntime = (options: {
       providers: {}
     }
     const auth = await readProviderDocument(nativePath)
-    if (harness !== "grok-build") {
-      for (const [id, value] of Object.entries(auth)) {
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          (value as { type?: unknown }).type === "oauth" &&
-          !providerOAuthSupported(harness, id)
-        )
-          throw new Error(`${id} uses local OAuth. Use a separate profile for shared accounts.`)
-      }
-    }
-    for (const id of known) {
-      const value = auth[id]
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        (value as { type?: unknown }).type === "oauth"
-      )
-        delete auth[id]
-    }
+    prepareProviderAuthDocument(harness, auth, known)
     if (harness === "opencode" && ((await openCode2.majorVersion(env)) ?? 1) >= 2)
       return materializeOpenCode2(profile, root, base, env, rows, auth)
     let grokApiKey: string | undefined
@@ -247,14 +223,7 @@ export const makeSharedProviderRuntime = (options: {
         await linkResource(join(source, name), join(root, name))
       }
       const settings = await readProviderDocument(join(source, "settings.json"))
-      for (const key of ["extensions", "skills", "prompts", "themes"]) {
-        if (Array.isArray(settings[key]))
-          settings[key] = settings[key].map((value) =>
-            typeof value === "string" && !isAbsolute(value) && !value.startsWith("~")
-              ? resolve(source, value)
-              : value
-          )
-      }
+      resolvePiResourcePaths(settings, source)
       const extensions = Array.isArray(settings.extensions) ? settings.extensions : []
       await atomicWriteJson(join(root, "settings.json"), {
         ...settings,
