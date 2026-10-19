@@ -102,7 +102,7 @@ struct HomeSidebarContent: Equatable {
   }
 
   private var openWorkspaces: [HomeSidebarWorkspace] {
-    bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)
+    bots.compactMap(\.home) + bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)
   }
 
   func bot(_ id: UUID) -> HomeSidebarBot? {

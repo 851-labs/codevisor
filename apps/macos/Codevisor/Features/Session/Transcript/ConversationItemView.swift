@@ -60,29 +60,8 @@ struct BotMessageView: View {
       attachments: message.attachments
     ) {
       StreamingMarkdownView(message.text)
-        .frame(maxWidth: Self.naturalWidth(of: message.text), alignment: .leading)
+        .frame(maxWidth: TranscriptBotMessageWidth.natural(of: message.text), alignment: .leading)
     }
-  }
-
-  static func naturalWidth(of markdown: String) -> CGFloat {
-    let body = NSFont.preferredFont(forTextStyle: .body)
-    let code = NSFont.monospacedSystemFont(ofSize: body.pointSize * 0.9, weight: .regular)
-    var inFence = false
-    var widest: CGFloat = 0
-    for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix("```") {
-        inFence.toggle()
-        continue
-      }
-      let font = inFence ? code : body
-      let indent: CGFloat =
-        !inFence && trimmed.range(of: #"^([-*+]|\d+[.)])\s"#, options: .regularExpression) != nil ? 24 : 0
-      let width = (String(line) as NSString).size(withAttributes: [.font: font]).width
-      let codeSpans = inFence ? 0 : CGFloat(line.filter { $0 == "`" }.count / 2)
-      widest = max(widest, ceil(width + indent + codeSpans * 14 + (inFence ? 24 : 4)))
-    }
-    return max(widest, 1)
   }
 }
 

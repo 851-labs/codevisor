@@ -221,10 +221,17 @@ struct HomeSidebarList: View {
     let row = HomeSidebarBotRowView(bot: bot, actions: actions, isSelectionRow: isSelectable)
       .equatable()
       .tag(bot.id)
-    if bot.children.isEmpty {
+    if !bot.hasNestedRows {
       row
     } else {
       DisclosureGroup(isExpanded: workspaceExpansion(bot.id)) {
+        if let home = bot.home {
+          ForEach(bot.tabs) { tab in
+            HomeSidebarTabRowView(row: tab, workspace: home.workspace, actions: actions, isSelectionRow: isSelectable)
+              .equatable()
+              .tag(tab.id)
+          }
+        }
         ForEach(bot.children) { workspace in
           workspaceRow(workspace)
         }

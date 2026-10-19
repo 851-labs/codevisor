@@ -49,16 +49,22 @@ struct HomeSidebarContentBuilder {
         status: environment.projectList.session(entry.bot.sessionId, serverId: entry.bot.serverId)
           .map(status(for:)) ?? .idle,
         machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: entry.bot.serverId) : nil,
-        children: entry.children.compactMap { item in
-          guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace else {
-            return nil
-          }
-          return sidebarWorkspace(
-            workspace, item: item, preferences: preferences, projectGroups: projectGroups, underHeading: false)
+        home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == entry.bot.workspaceId }
+          .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
+        children: entry.children.compactMap {
+          botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
         }
       )
     }
     return content
+  }
+
+  private func botSidebarWorkspace(
+    _ item: WorkspaceSidebarItem, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
+  ) -> HomeSidebarWorkspace? {
+    guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace else { return nil }
+    return sidebarWorkspace(
+      workspace, item: item, preferences: preferences, projectGroups: projectGroups, underHeading: false)
   }
 
   private func known(_ items: [WorkspaceSidebarItem]) -> [WorkspaceSidebarItem] {

@@ -11,6 +11,11 @@ extension HomeView {
     }
   }
 
+  func openNewTab(forBot bot: Bot) {
+    addSidebarTab(
+      in: HomeSidebarWorkspaceRef(id: bot.workspaceId, serverId: bot.serverId, anchorSessionId: bot.sessionId))
+  }
+
   func closeBot(_ bot: Bot) {
     let route = HomeRoute.bot(serverId: bot.serverId, botId: bot.id)
     guard path.contains(route) else { return }

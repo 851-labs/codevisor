@@ -29,7 +29,7 @@ struct HomeSidebarBotRowView: View, Equatable {
         HomeSidebarSymbol(name: machine.systemImage)
           .imageScale(.small)
       }
-      if bot.children.isEmpty {
+      if !bot.hasNestedRows {
         Image(systemName: "chevron.forward")
           .font(.footnote.weight(.semibold))
           .foregroundStyle(.tertiary)

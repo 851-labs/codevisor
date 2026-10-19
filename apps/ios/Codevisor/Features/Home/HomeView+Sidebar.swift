@@ -146,7 +146,7 @@ extension HomeView {
     )
   }
 
-  private func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
+  func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
     guard var workspace = environment.workspaces.workspace(id: ref.id) else { return }
     var state = WorkspaceScreen.compactPaneState(from: workspace)
     let pane = state.addNewTabPane()

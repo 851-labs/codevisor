@@ -8,6 +8,7 @@ struct BotConversationScreen: View {
   let serverId: String
   let botId: UUID
   let onDeleted: (Bot) -> Void
+  let onNewTab: (Bot) -> Void
   @State private var controller: SessionController?
   @State private var editing: BotEditorTarget?
   @State private var deleting: Bot?
@@ -26,6 +27,13 @@ struct BotConversationScreen: View {
         if let bot {
           ToolbarItem(placement: .principal) {
             BotConversationHeader(bot: bot) { editing = .edit(bot) }
+          }
+          ToolbarItem(placement: .topBarTrailing) {
+            Button {
+              onNewTab(bot)
+            } label: {
+              Label("New tab", systemImage: "plus.square.on.square")
+            }
           }
         }
       }

@@ -88,6 +88,7 @@ struct BotBubbleRow: View {
         }
         if !message.text.isEmpty {
           StreamingMarkdownView(message.text)
+            .frame(maxWidth: TranscriptBotMessageWidth.natural(of: message.text), alignment: .leading)
             .environment(
               \.streamMarkdownTextLayoutWidth,
               rowLayoutWidth.map { max(1, $0 - 64) }
