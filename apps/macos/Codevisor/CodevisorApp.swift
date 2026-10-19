@@ -201,7 +201,7 @@ struct RootView: View {
             await environment.appUpdate.installUpdateUnattended()
           }
         }
-        await environment.cloud.bootstrap()
+        await environment.bootstrapCloud()
       }
     }
     .modifier(UpdateCenterUpkeep())

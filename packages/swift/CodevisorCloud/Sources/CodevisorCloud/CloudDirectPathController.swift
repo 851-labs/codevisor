@@ -25,6 +25,7 @@ public final class CloudDirectPathController {
   public private(set) var paths: [String: CloudTunnelPath] = [:]
   public private(set) var dialing: Set<String> = []
   public private(set) var lastReachable: [String: Date] = [:]
+  public private(set) var allowsDirectPaths = true
   @ObservationIgnored private var pathReaders: [String: @Sendable () -> CloudTunnelPath?] = [:]
   @ObservationIgnored var pathRefresh: Task<Void, Never>?
   static let pathRefreshInterval: Duration = .seconds(5)
@@ -198,6 +199,18 @@ public final class CloudDirectPathController {
   public func networkChanged() {
     let tunnel = tunnel
     Task { await tunnel.networkChanged() }
+    rebuiltSinceLastPipe = false
+    for deviceId in known.keys.sorted() {
+      discardPipe(deviceId)
+      startProbe(deviceId)
+    }
+  }
+
+  public func setAllowsDirectPaths(_ allowed: Bool) {
+    guard allowed != allowsDirectPaths else { return }
+    allowsDirectPaths = allowed
+    let tunnel = tunnel
+    endpointRebuild = Task { await tunnel.setAllowsDirectPaths(allowed) }
     rebuiltSinceLastPipe = false
     for deviceId in known.keys.sorted() {
       discardPipe(deviceId)

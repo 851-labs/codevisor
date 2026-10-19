@@ -70,4 +70,26 @@ struct CloudTunnelRaceTests {
     await endpoint.shutdown()
     #expect(relays.value == [["https://relay.test"], ["https://relay.test"]])
   }
+
+  @Test("Turning direct paths off or on rebinds with the matching path policy, and repeats bind nothing")
+  func directPathsRebind() async {
+    let binds = TestSignal()
+    let policies = LockIsolated<[String]>([])
+    let endpoint = CloudTunnelEndpoint(
+      credentialStore: InMemoryCloudCredentialStore(),
+      bindEndpoint: { config in
+        policies.withValue { $0.append(config.pathPolicy) }
+        binds.signal()
+        throw URLError(.cannotConnectToHost)
+      })
+    await endpoint.setAllowsDirectPaths(false)
+    await endpoint.configure(.init(relays: [.init(url: "https://relay.test")], enabled: true))
+    await binds.wait(for: 1)
+    await endpoint.setAllowsDirectPaths(false)
+    await endpoint.setAllowsDirectPaths(true)
+    await binds.wait(for: 2)
+    await endpoint.setAllowsDirectPaths(true)
+    await endpoint.shutdown()
+    #expect(policies.value == ["relay-only", "auto"])
+  }
 }

@@ -65,6 +65,7 @@ public actor CloudTunnelEndpoint {
   private var generation: UInt64 = 0
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   private let firstConfigWait: Duration
+  private var allowsDirectPaths = true
 
   public init(
     credentialStore: any CloudCredentialStore,
@@ -114,6 +115,14 @@ public actor CloudTunnelEndpoint {
   public func rebuild() {
     guard let config, config.enabled else { return }
     Log.cloud.notice("Rebuilding the tunnel endpoint")
+    replaceBinding(with: config)
+  }
+
+  public func setAllowsDirectPaths(_ allowed: Bool) {
+    guard allowed != allowsDirectPaths else { return }
+    allowsDirectPaths = allowed
+    guard let config, config.enabled else { return }
+    Log.cloud.notice("Rebinding the tunnel endpoint with direct paths \(allowed ? "allowed" : "off", privacy: .public)")
     replaceBinding(with: config)
   }
 
@@ -177,7 +186,7 @@ public actor CloudTunnelEndpoint {
       secretKeyHex: secretKeyHex,
       relays: config.relays.map { NetRelay(url: $0.url, quicPort: $0.quicPort.map { UInt16(clamping: $0) }) },
       trustAnchorsPem: trustAnchorsPem,
-      pathPolicy: "auto",
+      pathPolicy: allowsDirectPaths ? "auto" : "relay-only",
       alpns: [Self.channelsALPN]
     )
   }

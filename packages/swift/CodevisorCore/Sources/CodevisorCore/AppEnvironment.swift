@@ -121,6 +121,7 @@ public final class AppEnvironment {
     cloud.directPaths.onPipeUp = { [weak self] deviceId in
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }
+    applyLaunchLocalNetworkAccess()
     wireCloudRefreshAndAdoption()
     projectList.showsImportedSessions = settings.importExternalSessions
     machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
@@ -248,6 +249,7 @@ public final class AppEnvironment {
         "Failed to clear client SQLite data: \(String(describing: error), privacy: .public)"
       )
     }
+    setLocalNetworkAccess(.unasked)
     settings.reset()
     appUpdate.setAllowsAlphaUpdates(settings.alphaUpdatesEnabled)
     projectList.showsImportedSessions = settings.importExternalSessions

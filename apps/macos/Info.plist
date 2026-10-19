@@ -19,6 +19,8 @@
 	</dict>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Codevisor uses window sharing to show which apps Computer Use can see and control.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect directly to your machines running Codevisor on your local network.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Websites opened in Codevisor use Bluetooth to connect to nearby devices and security keys with your permission.</string>
 	<key>CodevisorPostHogProjectToken</key>
