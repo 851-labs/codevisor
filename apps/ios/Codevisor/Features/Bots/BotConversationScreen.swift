@@ -7,11 +7,10 @@ struct BotConversationScreen: View {
   @Environment(\.windowID) private var windowID
   let serverId: String
   let botId: UUID
-  let onDeleted: (Bot) -> Void
+  var showsHeader = true
+  let onOpenDetails: (Bot) -> Void
   let onNewTab: (Bot) -> Void
   @State private var controller: SessionController?
-  @State private var editing: BotEditorTarget?
-  @State private var deleting: Bot?
 
   private var bot: Bot? { environment.bots.bot(serverId: serverId, id: botId) }
 
@@ -21,12 +20,15 @@ struct BotConversationScreen: View {
 
   var body: some View {
     content
-      .navigationTitle(bot?.name ?? "Bot")
+      .navigationTitle(showsHeader ? bot?.name ?? "Bot" : "")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if let bot {
-          ToolbarItem(placement: .principal) {
-            BotConversationHeader(bot: bot) { editing = .edit(bot) }
+          if showsHeader {
+            ToolbarItem(placement: .principal) {
+              BotConversationHeader(bot: bot) { onOpenDetails(bot) }
+                .frame(height: BotConversationHeader.barHeight, alignment: .top)
+            }
           }
           ToolbarItem(placement: .topBarTrailing) {
             Button {
@@ -37,7 +39,6 @@ struct BotConversationScreen: View {
           }
         }
       }
-      .botManagement(editing: $editing, deleting: $deleting, onDeleted: onDeleted)
       .task(id: session?.id) { await connect() }
   }
 
@@ -81,38 +82,5 @@ struct BotConversationScreen: View {
       controller.applyComposerDefaults()
     }
     await controller.connectIfNeeded()
-  }
-}
-
-private struct BotConversationHeader: View {
-  let bot: Bot
-  let onOpenDetails: () -> Void
-  @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 56
-
-  var body: some View {
-    Button(action: onOpenDetails) {
-      VStack(spacing: -8) {
-        BotAvatar(symbolName: bot.symbolName, size: avatarSize)
-          .zIndex(1)
-        HStack(spacing: 3) {
-          Text(bot.name)
-            .font(.headline)
-            .lineLimit(1)
-          Image(systemName: "chevron.forward")
-            .font(.footnote.weight(.bold))
-            .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .glassEffect(.regular.interactive(), in: .capsule)
-      }
-      .frame(height: avatarSize, alignment: .top)
-    }
-    .buttonStyle(.plain)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(bot.name)
-    .accessibilityHint("Shows bot details")
-    .accessibilityAddTraits(.isButton)
-    .accessibilityIdentifier("bot.header")
   }
 }
