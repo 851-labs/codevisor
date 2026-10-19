@@ -8,18 +8,27 @@ final class ProbeClipboardCheck {
   private let viewerChannel: ScreenSharingClipboardChannel
   private let localText = String(repeating: "Codevisor café 👩🏽‍💻 日本語\n", count: 1000)
   private let remoteText = String(repeating: "Remote ✓ Ελληνικά 한국어\n", count: 1000)
-  private var hostText = ""
-  private var viewerText = ""
+  private let richContent = ScreenSharingClipboardContent(items: [
+    [
+      .init(
+        type: "public.png",
+        data: Data((0..<2 * 1024 * 1024).map { UInt8(truncatingIfNeeded: $0 &* 2_654_435_761 >> 7) })),
+      .init(type: ScreenSharingClipboardContent.textType, data: Data("Screenshot".utf8)),
+    ],
+    [.init(type: "public.html", data: Data("<b>rich</b>".utf8))],
+  ])
+  private var hostContent = ScreenSharingClipboardContent(items: [])
+  private var viewerContent = ScreenSharingClipboardContent(items: [])
   private var stage = 0
   private var completion: CheckedContinuation<Void, any Error>?
   private var timeout: Task<Void, Never>?
   private lazy var host = ScreenSharingClipboardTransfer(
     send: { [weak self] in self?.hostChannel.send($0) ?? false },
-    canReceiveUnsolicited: { true }, read: { [unowned self] in hostText },
-    write: { [unowned self] in hostText = $0 })
+    canReceiveUnsolicited: { true }, read: { [unowned self] _ in hostContent },
+    write: { [unowned self] in hostContent = $0 })
   private lazy var viewer = ScreenSharingClipboardTransfer(
     send: { [weak self] in self?.viewerChannel.send($0) ?? false },
-    read: { [unowned self] in localText }, write: { [unowned self] in viewerText = $0 })
+    read: { [unowned self] _ in .init(text: localText) }, write: { [unowned self] in viewerContent = $0 })
 
   init(host: ScreenSharingClipboardChannel, viewer: ScreenSharingClipboardChannel) {
     hostChannel = host; viewerChannel = viewer
@@ -48,14 +57,18 @@ final class ProbeClipboardCheck {
   }
   private func startIfReady() {
     guard stage == 0, hostChannel.isAvailable, viewerChannel.isAvailable else { return }
-    stage = 1; viewer.sendText(localText)
+    stage = 1; viewer.sendContent(.init(text: localText))
   }
   private func transferred(error: String?) {
     guard error == nil else { finish(false); return }
-    if stage == 1, hostText == localText {
-      stage = 2; hostText = remoteText; viewer.requestText()
-    } else {
-      finish(stage == 2 && viewerText == remoteText)
+    switch stage {
+    case 1 where hostContent.text == localText:
+      stage = 2; hostContent = .init(text: remoteText); viewer.requestContent()
+    case 2 where viewerContent.text == remoteText:
+      stage = 3; host.richContent = true; viewer.richContent = true
+      viewer.sendContent(richContent)
+    default:
+      finish(stage == 3 && hostContent == richContent)
     }
   }
   private func finish(_ passed: Bool) {

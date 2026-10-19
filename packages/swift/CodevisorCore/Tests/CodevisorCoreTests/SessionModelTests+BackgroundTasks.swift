@@ -244,6 +244,53 @@ extension SessionModelTests {
       ])
   }
 
+  @Test("A background agent still running after reopening the chat is named by its spawn, not its placeholder")
+  func waitingAgentNamedAfterReopen() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let itemId = UUID()
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [transcriptStateItem(id: itemId, sessionId: sessionId, hasDetails: true)], hasMore: false,
+      eventCursor: 5,
+      backgroundTasks: [
+        BackgroundTaskInfo(
+          id: "bg-1", description: "Reading Measurement.swift", status: "running", taskType: "subagent",
+          toolUseId: "task-1")
+      ])
+    client.transcriptDetailsByItem[itemId.uuidString] = ServerTranscriptItemDetails(
+      itemId: itemId.uuidString, revision: 1, eventCursor: 5,
+      entries: [
+        .init(
+          key: "tool:task-1", position: 1, revision: 1,
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("task-1"),
+            "title": .string("Agent: Map the chat UI"), "kind": .string("agent"), "status": .string("in_progress"),
+            "rawInput": .object(["description": .string("Map the chat UI")]),
+          ]))
+      ])
+
+    await model(client, sessionId: sessionId) { model in
+      await model.loadHistoryForInitialDisplay()
+      client.emit(
+        ServerEventEnvelope(
+          id: 6, serverId: "local", kind: "session.output",
+          subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:06.000Z",
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("sub-1"), "title": .string("Read"),
+            "status": .string("in_progress"), "parentToolCallId": .string("task-1"),
+            "chatItemId": .string(itemId.uuidString),
+          ])))
+      await settleUntil { model.waitingSubagentCalls.first?.rawInput != nil }
+
+      #expect(model.waitingSubagentCalls.map(\.agentName) == ["Map the chat UI"])
+      guard case let .assistant(message) = model.conversation.last else {
+        Issue.record("expected assistant")
+        return
+      }
+      #expect(message.turn.subagents["task-1"]?.entries.map(\.id) == ["tool:sub-1"])
+    }
+  }
+
   @Test("History replay rebuilds nested subagent transcripts and the last background snapshot wins")
   func historyReplaysNestingAndBackgroundTasks() async {
     let sessionId = UUID()

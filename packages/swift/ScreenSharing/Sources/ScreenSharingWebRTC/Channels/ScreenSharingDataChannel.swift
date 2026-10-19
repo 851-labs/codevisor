@@ -243,6 +243,8 @@ public struct ScreenSharingChannelLimits: Sendable, Equatable {
     messageBytes: ScreenSharingControlMessage.maximumBytes, drainBytes: 64 * 1024, bufferedBytes: 16 * 1024)
   public static let cursor = Self(
     messageBytes: ScreenSharingCursorMessage.maximumBytes, drainBytes: 256 * 1024, bufferedBytes: 128 * 1024)
+  public static let clipboard = Self(
+    messageBytes: ScreenSharingClipboardMessage.maximumBytes, drainBytes: 1024 * 1024, bufferedBytes: 1024 * 1024)
 }
 
 struct ScreenSharingControlInbox {

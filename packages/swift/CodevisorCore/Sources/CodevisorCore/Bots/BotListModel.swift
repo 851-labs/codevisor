@@ -30,6 +30,10 @@ public final class BotListModel {
     machines.statusByMachineId[serverId]?.supportsBots == true
   }
 
+  public func supportsProjectChanges(on serverId: String) -> Bool {
+    machines.statusByMachineId[serverId]?.supportsBotProjectChanges == true
+  }
+
   private var machineIdsByServer: [String] {
     var seen = Set<String>()
     return machines.allMachines.map(\.id).filter { machineId in
@@ -76,6 +80,18 @@ public final class BotListModel {
   public func update(_ bot: Bot, _ request: ServerUpdateBotRequest) async throws {
     let record = try await machines.client(for: bot.serverId)
       .updateBot(id: bot.record.id, request)
+    store(record, on: bot.serverId)
+  }
+
+  public func addProject(_ projectId: UUID, to bot: Bot) async throws {
+    let record = try await machines.client(for: bot.serverId)
+      .addBotProject(botId: bot.record.id, projectId: projectId.uuidString.lowercased())
+    store(record, on: bot.serverId)
+  }
+
+  public func removeProject(_ projectId: UUID, from bot: Bot) async throws {
+    let record = try await machines.client(for: bot.serverId)
+      .removeBotProject(botId: bot.record.id, projectId: projectId.uuidString.lowercased())
     store(record, on: bot.serverId)
   }
 

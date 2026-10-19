@@ -215,9 +215,9 @@ final class ScreenSharingHostService {
       channel: session.peer.clipboardChannel,
       canReceiveUnsolicited: { [weak session] in session?.state == "viewing" && session?.stopping == false })
     session.clipboard = clipboard
-    session.peer.clipboardSharingChannel.onMessage = { [weak clipboard] message in
-      guard case .viewer(let sharing) = message else { return }
-      clipboard?.setSharing(sharing)
+    session.peer.clipboardSharingChannel.onMessage = { [weak clipboard, weak session] message in
+      guard let reply = clipboard?.receive(message) else { return }
+      session?.peer.clipboardSharingChannel.send(reply)
     }
     session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(

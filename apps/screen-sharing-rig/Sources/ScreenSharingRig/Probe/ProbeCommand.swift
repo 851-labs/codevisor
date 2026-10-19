@@ -395,8 +395,10 @@ import ScreenSharingDiagnostics
         senderMetrics.label("controlChannel", "ordered input and release verified")
         print("Control channel: eight input events and release acknowledged; no OS input posted.")
         try await ProbeClipboardCheck(host: sender.clipboardChannel, viewer: receiver.clipboardChannel).run()
-        senderMetrics.label("clipboardChannel", "bidirectional chunked Unicode transfer verified")
-        print("Clipboard channel: bidirectional Unicode transfer verified; no system clipboard accessed.")
+        senderMetrics.label("clipboardChannel", "bidirectional chunked Unicode and rich content transfer verified")
+        print(
+          "Clipboard channel: bidirectional Unicode and 2 MiB rich content transfer verified; no system clipboard accessed."
+        )
       }
       if options.checkQuality { try await checkQuality() }
       try await measure()

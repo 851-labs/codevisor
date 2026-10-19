@@ -56,8 +56,8 @@ struct RFBExtendedClipboardTests {
       session = VNCScreenSharingSession(client: client, parameters: outcome.parameters)
       let channel = try #require(session.clipboard)
       transfer = ScreenSharingClipboardTransfer(
-        send: { channel.send($0) }, read: { RFBExtendedClipboardTests.text },
-        write: { [unowned self] in self.received.append($0) })
+        send: { channel.send($0) }, read: { _ in .init(text: RFBExtendedClipboardTests.text) },
+        write: { [unowned self] in self.received.append($0.text ?? "") })
       transfer.onFinished = { [unowned self] in self.finished.append($0) }
       channel.onMessage = { [unowned self] in self.transfer.receive($0) }
     }
@@ -74,7 +74,7 @@ struct RFBExtendedClipboardTests {
       await awaitPolled {
         viewer.server.received.contains { if case .extendedClipboard(.caps) = $0 { true } else { false } }
       })
-    viewer.transfer.sendText(Self.text)
+    viewer.transfer.sendContent(.init(text: Self.text))
     #expect(await awaitPolled { viewer.server.clipboardTextsReceived == [Self.text] })
     #expect(
       !viewer.server.received.contains { if case .clientCutText = $0 { true } else { false } }, "No Latin-1 copy.")
@@ -90,7 +90,7 @@ struct RFBExtendedClipboardTests {
     viewer.server.setClipboard(Self.text)
     #expect(
       await awaitPolled { viewer.session.metrics.snapshot().counters["vncExtendedClipboardMessages", default: 0] >= 3 })
-    viewer.transfer.requestText()
+    viewer.transfer.requestContent()
     #expect(await awaitPolled { viewer.received == [Self.text] })
   }
 
@@ -98,7 +98,7 @@ struct RFBExtendedClipboardTests {
     let viewer = try await Viewer(extended: false)
     defer { viewer.stop() }
     #expect(await awaitPolled { viewer.server.isRequestPending })
-    viewer.transfer.sendText("plain")
+    viewer.transfer.sendContent(.init(text: "plain"))
     #expect(await awaitPolled { viewer.server.received.contains(.clientCutText("plain")) })
   }
 }

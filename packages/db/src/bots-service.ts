@@ -121,6 +121,37 @@ export const makeBotsService = (
           )
         return requireBot(current.id)
       }),
+    addBotProject: (id, record) =>
+      attempt("addBotProject", () => {
+        const current = requireBot(id)
+        sqlite
+          .prepare(
+            `insert into bot_projects (bot_id, project_id, folder_name, branch, position)
+             select ?, ?, ?, ?, coalesce(max(position), -1) + 1 from bot_projects where bot_id = ?`
+          )
+          .run(
+            current.id,
+            canonicalUuid(record.projectId),
+            record.folderName,
+            record.branch,
+            current.id
+          )
+        sqlite
+          .prepare("update bots set updated_at = ? where id = ?")
+          .run(isoTimestamp(), current.id)
+        return requireBot(current.id)
+      }),
+    removeBotProject: (id, projectId) =>
+      attempt("removeBotProject", () => {
+        const current = requireBot(id)
+        sqlite
+          .prepare("delete from bot_projects where bot_id = ? and project_id = ? collate nocase")
+          .run(current.id, canonicalUuid(projectId))
+        sqlite
+          .prepare("update bots set updated_at = ? where id = ?")
+          .run(isoTimestamp(), current.id)
+        return requireBot(current.id)
+      }),
     deleteBot: (id) =>
       attempt("deleteBot", () => {
         sqlite.prepare("delete from bots where id = ?").run(canonicalUuid(id))

@@ -164,7 +164,7 @@ struct BotEditorView: View {
 
   @ViewBuilder
   private var projectsSection: some View {
-    if let bot = editor.editedBot {
+    if let bot = editor.editedBot, !editor.canChangeProjects {
       Section("Projects") {
         ForEach(bot.record.projects, id: \.projectId) { project in
           LabeledContent {
@@ -172,18 +172,28 @@ struct BotEditorView: View {
               .foregroundStyle(.secondary)
               .lineLimit(1)
           } label: {
-            Label(project.folderName, systemImage: EntitySystemSymbol.projectList)
+            projectLabel(project.folderName)
           }
         }
       }
     } else {
-      Section {
+      Section("Projects") {
         ForEach(editor.selectedProjects) { project in
-          Label(project.name, systemImage: EntitySystemSymbol.projectList)
+          LabeledContent {
+            if editor.changingProjectIds.contains(project.id) {
+              ProgressView()
+            }
+          } label: {
+            projectLabel(project.name)
+          }
+          .deleteDisabled(!editor.canRemoveProject(project.id))
         }
         .onDelete { offsets in
-          for project in offsets.map({ editor.selectedProjects[$0] }) {
-            editor.removeProject(project.id)
+          let projects = offsets.map { editor.selectedProjects[$0] }
+          Task {
+            for project in projects {
+              await editor.removeProject(project.id)
+            }
           }
         }
         if editor.eligibleProjects.isEmpty {
@@ -192,18 +202,23 @@ struct BotEditorView: View {
         } else if !editor.addableProjects.isEmpty {
           Menu {
             ForEach(editor.addableProjects) { project in
-              Button(project.name) { editor.addProject(project.id) }
+              Button(project.name) { Task { await editor.addProject(project.id) } }
             }
           } label: {
             Label("Add Project", systemImage: "plus.circle.fill")
           }
           .accessibilityIdentifier("botEditor.addProject")
         }
-      } header: {
-        Text("Projects")
-      } footer: {
-        Text("The bot works in its own worktree of each project.")
       }
+    }
+  }
+
+  private func projectLabel(_ name: String) -> some View {
+    Label {
+      Text(name)
+    } icon: {
+      Image(systemName: EntitySystemSymbol.project)
+        .foregroundStyle(.secondary)
     }
   }
 

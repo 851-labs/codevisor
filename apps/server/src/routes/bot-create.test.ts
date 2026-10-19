@@ -3,7 +3,11 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { upgradeAllBotInstructions, upgradeBotInstructions } from "./bot-instructions.js"
+import {
+  replaceRepositories,
+  upgradeAllBotInstructions,
+  upgradeBotInstructions
+} from "./bot-instructions.js"
 import { createBot, decodeBot, setUp } from "./bot-test-support.js"
 
 const legacy = [
@@ -48,6 +52,28 @@ describe("bot instructions", () => {
     expect(plain).toContain("4. `sessions.wait` or `sessions.get` to follow up")
     expect(plain).toContain('harnessId: "codex"')
     expect(upgradeBotInstructions(legacy, "codex", false)).toBe(plain)
+  })
+
+  it("rewrite only the repository list, adding it before delegation when it is missing", () => {
+    const web = { folderName: "web", name: "web", repoDir: "/src/web", projectId: "web-project" }
+    const listed = [
+      "## Repositories",
+      "",
+      "- `web/`: web (from `/src/web`, projectId `web-project`)",
+      ""
+    ].join("\n")
+
+    const replaced = replaceRepositories(legacy, [web])
+    const inserted = replaceRepositories(
+      legacy.replace("## Repositories\n\n- `api/`: api\n\n", ""),
+      [web]
+    )
+
+    expect(replaced).toContain(`You are a long-lived Codevisor bot.\n\n${listed}`)
+    expect(replaced).not.toContain("- `api/`: api")
+    expect(replaced).toMatch(/`bot\.projects_remove\(\{ projectId \}\)`\.\n\n## Delegating work\n/)
+    expect(inserted).toBe(replaced)
+    expect(replaceRepositories(replaced, [web])).toBe(replaced)
   })
 
   it("upgrade every bot's instructions on startup, skipping bots whose file is gone", async () => {

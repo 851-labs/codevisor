@@ -2,38 +2,44 @@ import Foundation
 
 @MainActor
 public final class ScreenSharingClipboardTransfer {
+  public typealias Content = ScreenSharingClipboardContent
   public var onFinished: ((String?) -> Void)?
+  public var richContent = false
   public var isBusy: Bool { outgoing != nil || incoming != nil || requested != nil }
   private let send: (ScreenSharingClipboardMessage) -> Bool
   private let now: () -> TimeInterval
   private let canReceiveUnsolicited: () -> Bool
-  private let read: () throws -> String
-  private let write: (String) throws -> Void
+  private let read: (Bool) throws -> Content
+  private let write: (Content) throws -> Void
   private var requested: UUID?
   private var outgoing: Outgoing?
   private var incoming: Incoming?
   private var deadline: TimeInterval = 0
-  private struct Outgoing { let id: UUID; let data: Data; var nextIndex = 0; var awaitingEnd = false }
-  private struct Incoming { let id: UUID; let count: Int; var data = Data(); var nextIndex = 0 }
+  private struct Outgoing {
+    let id: UUID; let data: Data; let chunkBytes: Int; let window: Int
+    var sent = 0; var acknowledged = 0; var awaitingEnd = false
+    var chunks: Int { (data.count + chunkBytes - 1) / chunkBytes }
+  }
+  private struct Incoming { let id: UUID; let count: Int; let richContent: Bool; var data = Data(); var nextIndex = 0 }
 
   public init(
     send: @escaping (ScreenSharingClipboardMessage) -> Bool,
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
     canReceiveUnsolicited: @escaping () -> Bool = { false },
-    read: @escaping () throws -> String, write: @escaping (String) throws -> Void
+    read: @escaping (_ richContent: Bool) throws -> Content, write: @escaping (Content) throws -> Void
   ) {
     self.send = send; self.now = now; self.canReceiveUnsolicited = canReceiveUnsolicited
     self.read = read; self.write = write
   }
 
-  public func requestText() {
+  public func requestContent() {
     guard !isBusy else { return }
-    let id = UUID(); requested = id; deadline = now() + 10
+    let id = UUID(); requested = id; extendDeadline()
     transmit(.read(id: id))
   }
-  public func sendText(_ text: String) {
+  public func sendContent(_ content: Content) {
     guard !isBusy else { return }
-    start(text, id: UUID())
+    start(content, id: UUID())
   }
   public func tick() {
     if isBusy, now() >= deadline { cancel(reason: "Clipboard transfer timed out. Try again.") }
@@ -50,45 +56,57 @@ public final class ScreenSharingClipboardTransfer {
     switch message {
     case .read(let id):
       guard !isBusy, canReceiveUnsolicited() else { reject(id, "Clipboard is unavailable or busy."); return }
-      do { start(try read(), id: id) } catch { reject(id, error.localizedDescription) }
-    case .begin(let id, let count):
+      do { start(try read(richContent), id: id) } catch { reject(id, error.localizedDescription) }
+    case .begin(let id, let count, let rich):
+      let richContent = rich == true
+      let limit =
+        richContent ? ScreenSharingClipboardMessage.maximumContentBytes : ScreenSharingClipboardMessage.maximumTextBytes
       guard outgoing == nil, incoming == nil,
         requested == id || (requested == nil && canReceiveUnsolicited()),
-        (0...ScreenSharingClipboardMessage.maximumTextBytes).contains(count)
+        (0...limit).contains(count)
       else { reject(id, "Clipboard transfer was not requested or is too large."); return }
-      incoming = Incoming(id: id, count: count); deadline = now() + 10
+      incoming = Incoming(id: id, count: count, richContent: richContent); extendDeadline()
       transmit(.ack(id: id, nextIndex: 0))
     case .chunk(let id, let index, let data):
       guard var current = incoming, current.id == id else { return }
-      guard index == current.nextIndex, !data.isEmpty, data.count <= ScreenSharingClipboardMessage.chunkBytes,
+      let chunkBytes =
+        current.richContent ? ScreenSharingClipboardMessage.richChunkBytes : ScreenSharingClipboardMessage.chunkBytes
+      guard index == current.nextIndex, !data.isEmpty, data.count <= chunkBytes,
         current.data.count + data.count <= current.count
       else { rejectCurrent(id, "Invalid clipboard chunk."); return }
-      current.data.append(data); current.nextIndex += 1; incoming = current
+      current.data.append(data); current.nextIndex += 1; incoming = current; extendDeadline()
       transmit(.ack(id: id, nextIndex: current.nextIndex))
     case .ack(let id, let index):
       guard var current = outgoing, current.id == id, !current.awaitingEnd else { return }
-      guard index == current.nextIndex else { cancel(reason: "Invalid clipboard acknowledgment."); return }
-      let offset = index * ScreenSharingClipboardMessage.chunkBytes
-      if offset >= current.data.count {
+      guard index == current.acknowledged, index <= current.sent else {
+        cancel(reason: "Invalid clipboard acknowledgment."); return
+      }
+      current.acknowledged += 1; outgoing = current; extendDeadline()
+      if index == current.chunks {
         current.awaitingEnd = true; outgoing = current
         transmit(.end(id: id))
-      } else {
-        let end = min(current.data.count, offset + ScreenSharingClipboardMessage.chunkBytes)
-        current.nextIndex += 1; outgoing = current
-        transmit(.chunk(id: id, index: index, data: current.data.subdata(in: offset..<end)))
+        return
+      }
+      while current.sent < current.chunks, current.sent - index < current.window {
+        let offset = current.sent * current.chunkBytes
+        let end = min(current.data.count, offset + current.chunkBytes)
+        let chunk = ScreenSharingClipboardMessage.chunk(
+          id: id, index: current.sent, data: current.data.subdata(in: offset..<end))
+        current.sent += 1; outgoing = current
+        guard transmit(chunk) else { return }
       }
     case .end(let id):
       guard let current = incoming, current.id == id else { return }
       guard requested == id || canReceiveUnsolicited() else {
         rejectCurrent(id, "Clipboard transfer is no longer authorized."); return
       }
-      guard current.data.count == current.count, let text = String(data: current.data, encoding: .utf8) else {
-        rejectCurrent(id, "Clipboard data was incomplete or not valid text."); return
+      guard current.data.count == current.count, let content = Self.content(current) else {
+        rejectCurrent(id, "Clipboard data was incomplete or not valid."); return
       }
       do {
-        try write(text)
-        finish(nil)
+        try write(content)
         _ = send(.result(id: id, error: nil))
+        finish(nil)
       } catch { rejectCurrent(id, error.localizedDescription) }
     case .result(let id, let error):
       guard outgoing?.id == id || requested == id else { return }
@@ -101,18 +119,41 @@ public final class ScreenSharingClipboardTransfer {
     }
   }
 
-  private func start(_ text: String, id: UUID) {
-    let data = Data(text.utf8)
-    guard data.count <= ScreenSharingClipboardMessage.maximumTextBytes else {
-      reject(id, "Clipboard text must be 64 KiB or smaller."); onFinished?("Clipboard text must be 64 KiB or smaller.");
-      return
+  private static func content(_ incoming: Incoming) -> Content? {
+    if incoming.richContent { return try? Content.unarchived(incoming.data) }
+    return String(data: incoming.data, encoding: .utf8).map(Content.init(text:))
+  }
+
+  private func start(_ content: Content, id: UUID) {
+    let data: Data
+    if richContent {
+      guard content.byteCount <= ScreenSharingClipboardMessage.maximumContentBytes,
+        let archive = try? content.archived(),
+        archive.count <= ScreenSharingClipboardMessage.maximumContentBytes
+      else { refuse(id, "The clipboard must be 32 MB or smaller."); return }
+      data = archive
+    } else {
+      guard let text = content.text else { refuse(id, "The clipboard does not contain plain text."); return }
+      data = Data(text.utf8)
+      guard data.count <= ScreenSharingClipboardMessage.maximumTextBytes else {
+        refuse(id, "Clipboard text must be 64 KiB or smaller."); return
+      }
     }
-    outgoing = Outgoing(id: id, data: data); deadline = now() + 10
-    transmit(.begin(id: id, bytes: data.count))
+    outgoing = Outgoing(
+      id: id, data: data,
+      chunkBytes: richContent ? ScreenSharingClipboardMessage.richChunkBytes : ScreenSharingClipboardMessage.chunkBytes,
+      window: richContent ? ScreenSharingClipboardMessage.richWindow : 1)
+    extendDeadline()
+    transmit(.begin(id: id, bytes: data.count, richContent: richContent ? true : nil))
   }
-  private func transmit(_ message: ScreenSharingClipboardMessage) {
-    if !send(message) { finish("The clipboard channel is unavailable. Reconnect and try again.") }
+  private func extendDeadline() { deadline = now() + 10 }
+  @discardableResult
+  private func transmit(_ message: ScreenSharingClipboardMessage) -> Bool {
+    if send(message) { return true }
+    finish("The clipboard channel is unavailable. Reconnect and try again.")
+    return false
   }
+  private func refuse(_ id: UUID, _ error: String) { reject(id, error); onFinished?(error) }
   private func reject(_ id: UUID, _ error: String) { _ = send(.result(id: id, error: String(error.prefix(256)))) }
   private func rejectCurrent(_ id: UUID, _ error: String) {
     finish(error); reject(id, error)

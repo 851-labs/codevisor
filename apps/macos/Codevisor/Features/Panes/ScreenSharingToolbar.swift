@@ -35,15 +35,15 @@ struct ScreenSharingToolbar: ToolbarContent {
           .disabled(clipboard == nil)
           Divider()
           Group {
-            Button("Send Clipboard") { clipboard?.sendLocalText() }
-            Button("Get Clipboard") { clipboard?.getRemoteText() }
+            Button("Send Clipboard") { clipboard?.sendLocalClipboard() }
+            Button("Get Clipboard") { clipboard?.getRemoteClipboard() }
           }
           .disabled(clipboard?.available != true || clipboard?.busy == true || clipboard?.sharing == true)
         } label: {
           Image(systemName: "doc.on.clipboard")
         }
         .accessibilityLabel("Clipboard")
-        .help("Share plain text between clipboards")
+        .help("Share the clipboard with this machine")
       }
     }
     ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {

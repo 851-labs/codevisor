@@ -4,8 +4,8 @@ import ScreenSharing
 final class ScreenSharingClipboardSync {
   private let pasteboard: ScreenSharingPasteboard
   private var synced: Int?
-  private var sending: (count: Int, text: String)?
-  private var shared: String?
+  private var sending: (count: Int, content: ScreenSharingClipboardContent)?
+  private var shared: ScreenSharingClipboardContent?
   var isSending: Bool { sending != nil }
 
   init(pasteboard: ScreenSharingPasteboard, synced: Int?) {
@@ -19,27 +19,28 @@ final class ScreenSharingClipboardSync {
     shared = nil
   }
 
-  func changedText() -> String? {
+  func changedContent(richContent: Bool) -> ScreenSharingClipboardContent? {
     let count = pasteboard.changeCount
     guard sending == nil, count != synced else { return nil }
-    guard !pasteboard.isPrivate, let text = try? pasteboard.read(), text != shared else {
+    guard !pasteboard.isPrivate, let content = try? pasteboard.read(richContent: richContent), content != shared
+    else {
       synced = count
       return nil
     }
-    sending = (count, text)
-    return text
+    sending = (count, content)
+    return content
   }
 
   func sent(succeeded: Bool) {
     if let sending {
       synced = sending.count
-      if succeeded { shared = sending.text }
+      if succeeded { shared = sending.content }
     }
     sending = nil
   }
 
-  func wrote(_ text: String) {
+  func wrote(_ content: ScreenSharingClipboardContent) {
     synced = pasteboard.changeCount
-    shared = text
+    shared = content
   }
 }

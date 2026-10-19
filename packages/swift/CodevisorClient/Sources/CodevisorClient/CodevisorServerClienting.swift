@@ -116,6 +116,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func listBots() async throws -> [ServerBot]
   func createBot(_ request: ServerCreateBotRequest) async throws -> ServerBot
   func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot
+  func addBotProject(botId: String, projectId: String) async throws -> ServerBot
+  func removeBotProject(botId: String, projectId: String) async throws -> ServerBot
   func deleteBot(id: String) async throws
   func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage
   func listPlugins() async throws -> [ServerPluginSummary]

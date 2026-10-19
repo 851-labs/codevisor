@@ -1,8 +1,11 @@
 import AppKit
+import ImageIO
 import ScreenSharing
+import UniformTypeIdentifiers
 
 @MainActor
 final class ScreenSharingPasteboard {
+  typealias Content = ScreenSharingClipboardContent
   private let pasteboard: NSPasteboard
   var changeCount: Int { pasteboard.changeCount }
   init(_ pasteboard: NSPasteboard = .general) { self.pasteboard = pasteboard }
@@ -14,7 +17,34 @@ final class ScreenSharingPasteboard {
     return pasteboard.types?.contains(where: marked.contains) ?? false
   }
 
-  func read() throws -> String {
+  func read(richContent: Bool) throws -> Content {
+    guard richContent else { return Content(text: try readText()) }
+    var remaining = ScreenSharingClipboardMessage.maximumContentBytes
+    var skipped = false
+    let items = (pasteboard.pasteboardItems ?? []).compactMap { item -> [Content.Representation]? in
+      let portable = item.types.contains(.tiff) && !item.types.contains(.png)
+      let representations = item.types.filter(Self.shareable).compactMap { type -> Content.Representation? in
+        guard var data = item.data(forType: type) else { return nil }
+        var type = type
+        if portable, type == .tiff, let png = Self.png(fromTIFF: data) {
+          (type, data) = (.png, png)
+        }
+        guard data.count <= remaining else {
+          skipped = true
+          return nil
+        }
+        remaining -= data.count
+        return Content.Representation(type: type.rawValue, data: data)
+      }
+      return representations.isEmpty ? nil : representations
+    }
+    guard !items.isEmpty else {
+      throw ClipboardError(skipped ? "The clipboard must be 32 MB or smaller." : "The clipboard is empty.")
+    }
+    return Content(items: items)
+  }
+
+  func readText() throws -> String {
     guard let text = pasteboard.string(forType: .string) else {
       throw ClipboardError("The clipboard does not contain plain text.")
     }
@@ -23,15 +53,47 @@ final class ScreenSharingPasteboard {
     }
     return text
   }
-  func write(_ text: String, expectedChangeCount: Int? = nil) throws {
+
+  func write(_ content: Content, expectedChangeCount: Int? = nil) throws {
     if let expectedChangeCount, expectedChangeCount != pasteboard.changeCount {
       throw ClipboardError("The local clipboard changed during transfer. Get the remote clipboard again.")
     }
-    let item = NSPasteboardItem()
-    guard item.setString(text, forType: .string) else { throw ClipboardError("Cannot prepare clipboard text.") }
+    let items = try content.items.compactMap { representations -> NSPasteboardItem? in
+      let item = NSPasteboardItem()
+      for representation in representations {
+        let type = NSPasteboard.PasteboardType(representation.type)
+        guard Self.shareable(type) else { continue }
+        guard item.setData(representation.data, forType: type) else {
+          throw ClipboardError("Cannot prepare the clipboard.")
+        }
+      }
+      return item.types.isEmpty ? nil : item
+    }
+    guard !items.isEmpty else { throw ClipboardError("The clipboard is empty.") }
     pasteboard.clearContents()
-    guard pasteboard.writeObjects([item]) else { throw ClipboardError("Cannot write clipboard text.") }
+    guard pasteboard.writeObjects(items) else { throw ClipboardError("Cannot write the clipboard.") }
   }
+
+  private static func png(fromTIFF tiff: Data) -> Data? {
+    guard let source = CGImageSourceCreateWithData(tiff as CFData, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { return nil }
+    let png = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(png, UTType.png.identifier as CFString, 1, nil) else {
+      return nil
+    }
+    CGImageDestinationAddImage(destination, image, CGImageSourceCopyPropertiesAtIndex(source, 0, nil))
+    return CGImageDestinationFinalize(destination) ? png as Data : nil
+  }
+
+  private static func shareable(_ type: NSPasteboard.PasteboardType) -> Bool {
+    let raw = type.rawValue
+    guard !raw.hasPrefix("com.apple.pasteboard.promised-"), !raw.hasPrefix("org.nspasteboard."),
+      raw != "com.apple.NSFilePromiseItemMetaData", raw != NSPasteboard.PasteboardType.fileURL.rawValue
+    else { return false }
+    return UTType(raw)?.conforms(to: .fileURL) != true
+  }
+
   struct ClipboardError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }

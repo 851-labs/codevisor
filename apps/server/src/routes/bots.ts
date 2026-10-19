@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import type { Bot } from "@codevisor/api"
 import { UpdateBotRequest as UpdateBotRequestSchema } from "@codevisor/api"
-import { removeArchivedWorktreeFiles, trashDirectory } from "@codevisor/worktrees"
+import { trashDirectory } from "@codevisor/worktrees"
 
 import {
   appendAndPublish,
@@ -10,7 +10,6 @@ import {
   archiveJobs,
   captureWorkspaceRuntime,
   HttpFailure,
-  localLocationOrFail,
   matchRoute,
   readSchema,
   retireWorkspaceRuntime,
@@ -25,6 +24,7 @@ import {
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
 import { renameInstructions } from "./bot-instructions.js"
+import { removeBotCheckout, routeBotProjects } from "./bot-projects.js"
 import { applySessionUpdate } from "./session-workspace.js"
 
 const getBotOrFail = async (services: CodevisorServerServices, id: string): Promise<Bot> => {
@@ -59,27 +59,6 @@ const updateBot = async (
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
   return true
-}
-
-const removeBotCheckout = async (
-  services: CodevisorServerServices,
-  serverId: string,
-  bot: Bot,
-  checkout: Bot["projects"][number]
-): Promise<void> => {
-  const project = (await run(services.db.listProjects)).find(
-    (candidate) => candidate.id === checkout.projectId
-  )
-  /* v8 ignore next */
-  if (project === undefined) return
-  const repoDir = localLocationOrFail(serverId, project).folderPath
-  const env = await (services.resolveGitEnvironment?.(repoDir) ?? Promise.resolve(process.env))
-  const trashed = await removeArchivedWorktreeFiles(repoDir, checkout.path, checkout.branch, {
-    trashRoot: worktreeTrashRoot(),
-    worktreeId: `bot-${bot.id}-${checkout.folderName}`,
-    env
-  })
-  archiveJobs(services).track(trashed.purged)
 }
 
 const removeBotCheckouts = async (
@@ -143,6 +122,9 @@ export const routeBots = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  if (await routeBotProjects(services, config, fanout, routeState, request, response, url)) {
+    return true
+  }
   if (url.pathname === "/v1/bots") {
     if (request.method === "GET") {
       writeJson(response, 200, await run(services.db.listBots))

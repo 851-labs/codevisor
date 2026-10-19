@@ -36,11 +36,11 @@ public final class ScreenSharingViewerClipboard {
     transfer = ScreenSharingClipboardTransfer(
       send: { [weak channel] in channel?.send($0) ?? false },
       canReceiveUnsolicited: { [weak self] in self?.sharingActive ?? false },
-      read: { try pasteboard.read() },
-      write: { [weak self] text in
+      read: { try pasteboard.read(richContent: $0) },
+      write: { [weak self] content in
         guard let self else { return }
-        try pasteboard.write(text, expectedChangeCount: self.expectedChangeCount)
-        sync.wrote(text)
+        try pasteboard.write(content, expectedChangeCount: self.expectedChangeCount)
+        sync.wrote(content)
       })
     transfer.onFinished = { [weak self] error in
       guard let self, let operation = self.operation else { return }
@@ -52,8 +52,7 @@ public final class ScreenSharingViewerClipboard {
       case .send, .get:
         self.busy = false
         self.message =
-          error
-          ?? (operation == .get ? "Remote text copied to this Mac’s clipboard." : "Text sent to the host’s clipboard.")
+          error ?? (operation == .get ? "Remote clipboard copied to this Mac." : "Clipboard sent to the host.")
       }
     }
     channel.onMessage = { [weak self, weak channel] message in
@@ -76,27 +75,34 @@ public final class ScreenSharingViewerClipboard {
     available = channel.isAvailable
   }
 
-  public func sendLocalText() {
+  public func sendLocalClipboard() {
     guard available, !busy else { return }
     guard !transfer.isBusy else {
       message = "The clipboard is busy. Try again."
       return
     }
     do {
-      let text = try pasteboard.read()
-      busy = true; operation = .send; message = "Sending clipboard text…"
-      transfer.sendText(text)
+      let content = try pasteboard.read(richContent: transfer.richContent)
+      busy = true; operation = .send; message = "Sending clipboard…"
+      transfer.sendContent(content)
     } catch { message = error.localizedDescription }
   }
-  public func getRemoteText() {
+  public func getRemoteClipboard() {
     guard available, !busy else { return }
     guard !transfer.isBusy else {
       message = "The clipboard is busy. Try again."
       return
     }
-    busy = true; operation = .get; message = "Receiving clipboard text…"
+    busy = true; operation = .get; message = "Receiving clipboard…"
     expectedChangeCount = pasteboard.changeCount
-    transfer.requestText()
+    transfer.requestContent()
+  }
+
+  func hostAcceptsRichContent() {
+    guard !transfer.richContent else { return }
+    transfer.richContent = true
+    sync.reset(synced: nil)
+    poll()
   }
 
   func setControlling(_ controlling: Bool) {
@@ -107,9 +113,11 @@ public final class ScreenSharingViewerClipboard {
   }
 
   func poll() {
-    guard sharingActive, available, !transfer.isBusy, hasKeyboardFocus(), let text = sync.changedText() else { return }
+    guard sharingActive, available, !transfer.isBusy, hasKeyboardFocus(),
+      let content = sync.changedContent(richContent: transfer.richContent)
+    else { return }
     operation = .share
-    transfer.sendText(text)
+    transfer.sendContent(content)
   }
 
   private func sharingChanged() {

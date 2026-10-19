@@ -1,10 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
+import type { Bot } from "@codevisor/api"
 import { botPath } from "@codevisor/db"
 
 import { run, type CodevisorServerServices } from "../server-context.js"
-import type { BotCheckout } from "./bot-create.js"
+
+export interface BotRepository {
+  readonly folderName: string
+  readonly name: string
+  readonly repoDir: string
+  readonly projectId: string
+}
 
 const BOT_MESSAGING_SECTION: ReadonlyArray<string> = [
   "## Talking to the user",
@@ -24,6 +31,62 @@ const createStep = (harnessId: string): string =>
 
 const EVENT_FOLLOW_UP_STEP =
   "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result"
+
+const REPOSITORIES_HEADING = "## Repositories"
+
+const repositoriesSection = (repositories: ReadonlyArray<BotRepository>): ReadonlyArray<string> => [
+  REPOSITORIES_HEADING,
+  "",
+  ...repositories.map(
+    (repository) =>
+      `- \`${repository.folderName}/\`: ${repository.name} ` +
+      `(from \`${repository.repoDir}\`, projectId \`${repository.projectId}\`)`
+  ),
+  "",
+  "When a task needs a repository that isn't listed, add it with",
+  "`bot.projects_add({ projectId })`, using a projectId from `projects.list`. Remove one you no",
+  "longer need with `bot.projects_remove({ projectId })`.",
+  ""
+]
+
+export const replaceRepositories = (
+  text: string,
+  repositories: ReadonlyArray<BotRepository>
+): string => {
+  const section = `${repositoriesSection(repositories).join("\n").trimEnd()}\n`
+  const start = text.indexOf(`${REPOSITORIES_HEADING}\n`)
+  if (start !== -1) {
+    const next = text.indexOf("\n## ", start + REPOSITORIES_HEADING.length)
+    return text.slice(0, start) + section + (next === -1 ? "" : `\n${text.slice(next + 1)}`)
+  }
+  const delegating = text.indexOf("## Delegating work")
+  return delegating === -1
+    ? `${text.trimEnd()}\n\n${section}`
+    : `${text.slice(0, delegating)}${section}\n${text.slice(delegating)}`
+}
+
+export const botRepositories = async (
+  services: CodevisorServerServices,
+  bot: Bot
+): Promise<ReadonlyArray<BotRepository>> => {
+  const projects = await run(services.db.listProjects)
+  return bot.projects.flatMap((checkout) => {
+    const project = projects.find(
+      (candidate) => candidate.id.toLowerCase() === checkout.projectId.toLowerCase()
+    )
+    const location = project?.locations.find((candidate) => candidate.serverId === bot.serverId)
+    /* v8 ignore next */
+    if (project === undefined || location === undefined) return []
+    return [
+      {
+        folderName: checkout.folderName,
+        name: project.name,
+        repoDir: location.folderPath,
+        projectId: project.id
+      }
+    ]
+  })
+}
 
 const messagingSection = (conversational: boolean): ReadonlyArray<string> =>
   conversational ? BOT_MESSAGING_SECTION : []
@@ -58,17 +121,33 @@ export const upgradeAllBotInstructions = async (
     const path = join(bot.rootPath, "AGENTS.md")
     try {
       const current = readFileSync(path, "utf8")
-      const upgraded = upgradeBotInstructions(current, bot.harnessId, bot.conversational)
+      const upgraded = replaceRepositories(
+        upgradeBotInstructions(current, bot.harnessId, bot.conversational),
+        await botRepositories(services, bot)
+      )
       if (upgraded !== current) writeFileSync(path, upgraded)
     } catch {}
   }
+}
+
+export const syncBotRepositories = async (
+  services: CodevisorServerServices,
+  bot: Bot
+): Promise<void> => {
+  const path = join(bot.rootPath, "AGENTS.md")
+  try {
+    writeFileSync(
+      path,
+      replaceRepositories(readFileSync(path, "utf8"), await botRepositories(services, bot))
+    )
+  } catch {}
 }
 
 export const botInstructions = (
   name: string,
   harnessId: string,
   conversational: boolean,
-  checkouts: ReadonlyArray<BotCheckout>
+  repositories: ReadonlyArray<BotRepository>
 ): string =>
   [
     `# ${name}`,
@@ -78,14 +157,7 @@ export const botInstructions = (
     "yourself; read the folders below to understand the code and decide what to delegate.",
     "",
     ...messagingSection(conversational),
-    "## Repositories",
-    "",
-    ...checkouts.map(
-      (checkout) =>
-        `- \`${checkout.folderName}/\`: ${checkout.source.project.name} ` +
-        `(from \`${checkout.source.repoDir}\`, projectId \`${checkout.source.project.id}\`)`
-    ),
-    "",
+    ...repositoriesSection(repositories),
     "## Delegating work",
     "",
     "Give each task to a sub-agent in a workspace of its own with the Codevisor MCP, on an",
@@ -107,11 +179,11 @@ export const writeInstructions = (
   name: string,
   harnessId: string,
   conversational: boolean,
-  checkouts: ReadonlyArray<BotCheckout>
+  repositories: ReadonlyArray<BotRepository>
 ) => {
   writeFileSync(
     join(botPath(slug), "AGENTS.md"),
-    botInstructions(name, harnessId, conversational, checkouts)
+    botInstructions(name, harnessId, conversational, repositories)
   )
 }
 

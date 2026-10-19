@@ -1,4 +1,5 @@
 import {
+  AddBotProjectRequest,
   CancelRequest,
   CreateSessionRequest,
   MarkSessionReadRequest,
@@ -161,6 +162,19 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "POST",
     "/v1/sessions/:id/messages",
     { body: SendBotMessageRequest }
+  ),
+  apiTool(
+    "bot.projects_add",
+    "Add a Codevisor project to this bot when a task needs a repository it doesn't have. Codevisor checks the repository out read-only into the bot's folder and lists it in AGENTS.md. Get projectIds from projects.list. Returns the bot with all its projects.",
+    "POST",
+    "/v1/sessions/:id/bot/projects",
+    { body: AddBotProjectRequest }
+  ),
+  apiTool(
+    "bot.projects_remove",
+    "Remove a project from this bot and delete its checkout from the bot's folder. A bot keeps at least one project. Returns the bot with its remaining projects.",
+    "DELETE",
+    "/v1/sessions/:id/bot/projects/:projectId"
   ),
   apiTool(
     "sessions.wait",

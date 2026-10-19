@@ -22,6 +22,8 @@ fi
 # editor, which apps/screen-sharing-rig/scripts/vnc-desktop-shortcuts.sh checks ⌘C/⌘V in (851-2335).
 command -v xdotool >/dev/null || apt-get install -y -q xdotool >/dev/null
 command -v mousepad >/dev/null || apt-get install -y -q mousepad >/dev/null
+command -v xclip >/dev/null || apt-get install -y -q xclip >/dev/null
+command -v python3 >/dev/null || apt-get install -y -q python3 >/dev/null
 mkdir -p ~/.vnc
 cat > ~/.vnc/xstartup <<'XS'
 #!/bin/sh

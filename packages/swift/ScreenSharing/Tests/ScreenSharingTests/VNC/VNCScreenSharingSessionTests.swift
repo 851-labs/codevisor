@@ -160,8 +160,8 @@ struct VNCScreenSharingSessionTests {
     let channel = try #require(harness.session.clipboard)
     let written = ScreenSharingMessageLog<String>()
     let viewer = ScreenSharingClipboardTransfer(
-      send: { channel.send($0) }, canReceiveUnsolicited: { true }, read: { "from viewer" },
-      write: { written.append($0) })
+      send: { channel.send($0) }, canReceiveUnsolicited: { true }, read: { _ in .init(text: "from viewer") },
+      write: { written.append($0.text ?? "") })
     let finished = ScreenSharingMessageLog<String?>()
     viewer.onFinished = { finished.append($0) }
     channel.onMessage = { viewer.receive($0) }
@@ -172,7 +172,7 @@ struct VNCScreenSharingSessionTests {
     harness.server.sendCutText("after")
     #expect(await awaitPolled { written.messages == ["after"] })
 
-    viewer.sendText("from viewer")
+    viewer.sendContent(.init(text: "from viewer"))
     #expect(await awaitPolled { harness.server.received.contains(.clientCutText("from viewer")) })
     harness.server.sendCutText("from viewer")
     harness.server.sendCutText("next")

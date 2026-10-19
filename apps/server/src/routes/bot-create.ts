@@ -32,7 +32,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
-import { writeInstructions } from "./bot-instructions.js"
+import { writeInstructions, type BotRepository } from "./bot-instructions.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
 import { availableWorktreeName, slugifyWorktreeName } from "./project-worktree-create.js"
 import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
@@ -50,7 +50,7 @@ export interface BotCheckout {
   readonly env: NodeJS.ProcessEnv
 }
 
-const resolveSources = async (
+export const resolveSources = async (
   services: CodevisorServerServices,
   serverId: string,
   projectIds: ReadonlyArray<string>
@@ -97,7 +97,7 @@ const allocateBotFolder = async (
   }
 }
 
-const checkOut = async (
+export const checkOut = async (
   services: CodevisorServerServices,
   slug: string,
   source: BotSource,
@@ -132,6 +132,13 @@ const checkOut = async (
   }
   return checkout
 }
+
+export const checkoutRepository = (checkout: BotCheckout): BotRepository => ({
+  folderName: checkout.folderName,
+  name: checkout.source.project.name,
+  repoDir: checkout.source.repoDir,
+  projectId: checkout.source.project.id
+})
 
 interface CreatedBotResources {
   readonly slug: string
@@ -204,7 +211,13 @@ export const createBot = async (
       created.checkouts.push(await checkOut(services, slug, source, folders))
     }
     const conversational = payload.conversational === true
-    writeInstructions(slug, name, payload.harnessId, conversational, created.checkouts)
+    writeInstructions(
+      slug,
+      name,
+      payload.harnessId,
+      conversational,
+      created.checkouts.map(checkoutRepository)
+    )
     const home = await run(services.db.createProject({ folderPath: botPath(slug), name }))
     created.homeProjectId = home.id
     await appendAndPublish(

@@ -103,13 +103,13 @@ struct BotEditorSheet: View {
 
   @ViewBuilder
   private var projectsSection: some View {
-    Section("Projects") {
-      if let bot = editor.editedBot {
+    Section {
+      if let bot = editor.editedBot, !editor.canChangeProjects {
         ForEach(bot.record.projects, id: \.projectId) { project in
           LabeledContent {
             Text(project.branch).foregroundStyle(.secondary)
           } label: {
-            Label(project.folderName, systemImage: EntitySystemSymbol.projectList)
+            Label(project.folderName, systemImage: EntitySystemSymbol.project)
           }
         }
       } else if editor.eligibleProjects.isEmpty {
@@ -117,31 +117,43 @@ struct BotEditorSheet: View {
           .foregroundStyle(.secondary)
       } else {
         ForEach(editor.selectedProjects) { project in
-          HStack {
-            Label(project.name, systemImage: EntitySystemSymbol.projectList)
-            Spacer()
-            Button("Remove \(project.name)", systemImage: "minus.circle.fill") {
-              editor.removeProject(project.id)
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Remove \(project.name)")
-          }
+          projectRow(project)
         }
-        if !editor.addableProjects.isEmpty {
-          Picker(selection: addProjectSelection) {
-            Text("Add Project").tag(UUID?.none)
-            Divider()
+      }
+    } header: {
+      Text("Projects")
+    } footer: {
+      if editor.canChangeProjects, !editor.addableProjects.isEmpty {
+        HStack {
+          Spacer()
+          Menu("Add Project") {
             ForEach(editor.addableProjects) { project in
-              Text(project.name).tag(Optional(project.id))
+              Button(project.name) { Task { await editor.addProject(project.id) } }
             }
-          } label: {
-            Text("Add Project").hidden()
           }
-          .pickerStyle(.menu)
-          .accessibilityLabel("Add Project")
+          .fixedSize()
         }
+      }
+    }
+  }
+
+  private func projectRow(_ project: Project) -> some View {
+    HStack {
+      Label(project.name, systemImage: EntitySystemSymbol.project)
+      Spacer()
+      if editor.changingProjectIds.contains(project.id) {
+        ProgressView().controlSize(.small)
+      } else {
+        Button("Remove") {
+          Task { await editor.removeProject(project.id) }
+        }
+        .controlSize(.small)
+        .disabled(!editor.canRemoveProject(project.id))
+        .help(
+          editor.canRemoveProject(project.id)
+            ? "Remove \(project.name) from this bot" : "A bot needs at least one project"
+        )
+        .accessibilityLabel("Remove \(project.name)")
       }
     }
   }
@@ -154,15 +166,6 @@ struct BotEditorSheet: View {
         "Chat with the bot like a messaging app. You see only the messages it sends you, you can message it while it works, and it tells you when its agents finish."
       )
     }
-  }
-
-  private var addProjectSelection: Binding<UUID?> {
-    Binding(
-      get: { nil },
-      set: { id in
-        if let id { editor.addProject(id) }
-      }
-    )
   }
 
   @ViewBuilder

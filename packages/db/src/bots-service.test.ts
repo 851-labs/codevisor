@@ -117,6 +117,37 @@ describe("bots service", () => {
     await expect(run(db.updateBot("missing", { name: "Nope" }))).rejects.toThrow(/Bot not found/)
   })
 
+  it("appends a project after the bot's others and frees one it removes", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { api, web } = await seedBot(db)
+    const docs = await run(db.createProject({ folderPath: "/tmp/bots-docs", name: "docs" }))
+
+    const added = await run(
+      db.addBotProject("bot-helper", {
+        projectId: docs.id,
+        folderName: "docs",
+        branch: "codevisor/bot-helper"
+      })
+    )
+    const removed = await run(db.removeBotProject("bot-helper", api.id.toUpperCase()))
+
+    expect(added.projects.map((project) => project.folderName)).toEqual(["web", "api", "docs"])
+    expect(removed.projects.map((project) => project.projectId)).toEqual([web.id, docs.id])
+    expect(removed.updatedAt).toBeDefined()
+    expect((await run(db.findBotOwning({ projectId: api.id })))?.id).toBeUndefined()
+    await run(db.deleteProject(api.id))
+    await expect(
+      run(
+        db.addBotProject("bot-helper", {
+          projectId: web.id,
+          folderName: "web-2",
+          branch: "codevisor/bot-helper"
+        })
+      )
+    ).rejects.toThrow(/UNIQUE/)
+  })
+
   it("keeps a bot's projects from being deleted until the bot is gone", async () => {
     useWorktreesRoot()
     const db = await openDatabase()

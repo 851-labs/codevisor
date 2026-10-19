@@ -9,6 +9,8 @@ import { WebSocket } from "ws"
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-filter.js"
 import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
+import { type DesktopClipboard, VNCClipboardBridge } from "./vnc-clipboard-bridge.js"
+import { systemX11Commands, x11DesktopClipboard } from "./vnc-clipboard-x11.js"
 import { type VNCControlArbiter, vncControlArbiter } from "./vnc-control.js"
 
 export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
@@ -53,6 +55,13 @@ export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | un
 }
 
 export const vncDisplayId = (config: ScreenSharingVNCConfig): string => `vnc:${config.port}`
+
+export const vncDesktopClipboard = (
+  config: ScreenSharingVNCConfig
+): DesktopClipboard | undefined =>
+  config.desktop === "xfce" && config.port > 5900 && config.port < 6000
+    ? x11DesktopClipboard(systemX11Commands(config.port - 5900))
+    : undefined
 
 const vncReply = (status: string, message?: string): ScreenSharingReply => ({
   version: 1,
@@ -131,7 +140,8 @@ export const spliceVNCSocket = (
   webSocketServer: VNCUpgrader,
   dial: (port: number) => Socket = (port) => connect({ host: "127.0.0.1", port }),
   arbiter: VNCControlArbiter = vncControlArbiter(config.port),
-  highWater = 4 * 1024 * 1024
+  highWater = 4 * 1024 * 1024,
+  desktopClipboard: DesktopClipboard | undefined = vncDesktopClipboard(config)
 ): void => {
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined) {
     refuse(socket, "403 Forbidden")
@@ -143,7 +153,13 @@ export const spliceVNCSocket = (
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
     const upstream = dial(config.port)
-    const id = arbiter.join((text) => webSocket.send(text, {}, () => undefined))
+    const sendText = (text: string) => webSocket.send(text, {}, () => undefined)
+    const id = arbiter.join(sendText)
+    const clipboard =
+      desktopClipboard === undefined
+        ? undefined
+        : new VNCClipboardBridge(desktopClipboard, sendText, () => arbiter.mayControl(id))
+    clipboard?.start().catch(() => clipboard.close())
     const filter = new RFBClientStreamFilter()
     const allow = (kind: RFBClientMessageKind) =>
       kind === "input" || kind === "clipboard"
@@ -153,7 +169,8 @@ export const spliceVNCSocket = (
           : true
     webSocket.on("message", (bytes: Buffer, isBinary) => {
       if (!isBinary) {
-        arbiter.receive(id, bytes.toString("utf8"))
+        const text = bytes.toString("utf8")
+        if (clipboard?.receive(text) !== true) arbiter.receive(id, text)
         return
       }
       const forward = filter.push(bytes, allow)
@@ -171,6 +188,7 @@ export const spliceVNCSocket = (
     })
     webSocket.once("error", () => upstream.destroy())
     webSocket.once("close", () => {
+      clipboard?.close()
       arbiter.leave(id)
       upstream.destroy()
     })
