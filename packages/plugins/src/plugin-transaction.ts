@@ -87,6 +87,13 @@ const isPluginTransactionJournal = (value: unknown): value is PluginTransactionJ
 const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
+const installCandidate = (paths: PluginTransactionPaths, hadExisting: boolean): void => {
+  if (hadExisting) {
+    renameSync(paths.destination, paths.codeBackup)
+  }
+  renameSync(paths.candidate, paths.destination)
+}
+
 export const makePluginTransactionEngine = (
   deps: PluginTransactionDeps
 ): PluginTransactionEngine => {
@@ -184,46 +191,42 @@ export const makePluginTransactionEngine = (
     if (!(await exists(transactionPaths.journal))) {
       await rm(transactionPaths.candidate, { force: true, recursive: true })
       await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
-      if (await exists(transactionPaths.codeBackup)) {
-        if (await exists(transactionPaths.destination)) {
-          await rm(transactionPaths.knownGoodCode, { force: true, recursive: true })
-          await rename(transactionPaths.codeBackup, transactionPaths.knownGoodCode)
+      const backups: ReadonlyArray<readonly [string, string, string]> = [
+        [transactionPaths.codeBackup, transactionPaths.destination, transactionPaths.knownGoodCode],
+        [transactionPaths.dataBackup, transactionPaths.data, transactionPaths.knownGoodData]
+      ]
+      for (const [backup, destination, knownGood] of backups) {
+        if (!(await exists(backup))) continue
+        if (await exists(destination)) {
+          await rm(knownGood, { force: true, recursive: true })
+          await rename(backup, knownGood)
         } else {
-          await rename(transactionPaths.codeBackup, transactionPaths.destination)
-        }
-      }
-      if (await exists(transactionPaths.dataBackup)) {
-        if (await exists(transactionPaths.data)) {
-          await rm(transactionPaths.knownGoodData, { force: true, recursive: true })
-          await rename(transactionPaths.dataBackup, transactionPaths.knownGoodData)
-        } else {
-          await rename(transactionPaths.dataBackup, transactionPaths.data)
+          await rename(backup, destination)
         }
       }
       return
     }
     const journal = await readJournal(pluginId)
-    if (journal?.phase === "verified") {
+    if (journal === undefined) {
+      deps.stop(pluginId)
+      if (await exists(transactionPaths.codeBackup)) {
+        await rm(transactionPaths.destination, { force: true, recursive: true })
+        await rename(transactionPaths.codeBackup, transactionPaths.destination)
+      }
+      if (await exists(transactionPaths.dataBackup)) {
+        await rm(transactionPaths.data, { force: true, recursive: true })
+        await rename(transactionPaths.dataBackup, transactionPaths.data)
+      }
+      await rm(transactionPaths.candidate, { force: true, recursive: true })
+      await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
+      await rm(transactionPaths.journal, { force: true })
+      return
+    }
+    if (journal.phase === "verified") {
       await promoteKnownGood(journal)
       return
     }
-    if (journal !== undefined) {
-      await restore(journal, false)
-      return
-    }
-
-    deps.stop(pluginId)
-    if (await exists(transactionPaths.codeBackup)) {
-      await rm(transactionPaths.destination, { force: true, recursive: true })
-      await rename(transactionPaths.codeBackup, transactionPaths.destination)
-    }
-    if (await exists(transactionPaths.dataBackup)) {
-      await rm(transactionPaths.data, { force: true, recursive: true })
-      await rename(transactionPaths.dataBackup, transactionPaths.data)
-    }
-    await rm(transactionPaths.candidate, { force: true, recursive: true })
-    await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
-    await rm(transactionPaths.journal, { force: true })
+    await restore(journal, false)
   }
 
   const withLock = async <Value>(
@@ -283,10 +286,7 @@ export const makePluginTransactionEngine = (
       journal = { ...journal, phase: "codeBackedUp" }
       await writeJournal(journal)
 
-      if (hadExisting) {
-        renameSync(transactionPaths.destination, transactionPaths.codeBackup)
-      }
-      renameSync(transactionPaths.candidate, transactionPaths.destination)
+      installCandidate(transactionPaths, hadExisting)
       journal = { ...journal, phase: "candidateInstalled" }
       await writeJournal(journal)
       await deps.verifyInstalled(pluginId)
