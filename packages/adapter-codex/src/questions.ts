@@ -244,7 +244,42 @@ const questionSpecsFrom = (value: unknown): Array<QuestionSpec> => {
   })
 }
 
-const emitQuestionResolved = (
+export const askAsyncQuestions = (session: CodexSession, itemId: string, value: unknown): void => {
+  const asked = asyncQuestionSpecsFrom(itemId, value)
+  if (asked.length === 0) return
+  const questionId = session.asyncQuestion?.questionId ?? itemId
+  const questions = [...(session.asyncQuestion?.questions ?? []), ...asked]
+  session.asyncQuestion = { questionId, questions }
+  void session.emit({
+    kind: "session.output",
+    payload: { questionId, questions, sessionUpdate: "question" },
+    subjectId: session.key
+  })
+}
+
+const asyncQuestionSpecsFrom = (itemId: string, value: unknown): Array<QuestionSpec> => {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry: unknown, index) => {
+    if (!isRecord(entry) || typeof entry.title !== "string" || entry.title.trim().length === 0) {
+      return []
+    }
+    const options = Array.isArray(entry.options)
+      ? entry.options.flatMap((option: unknown) =>
+          typeof option === "string" && option.trim().length > 0 ? [{ label: option }] : []
+        )
+      : []
+    return [
+      {
+        allowsOther: true,
+        id: JSON.stringify(["request_user_input_async", itemId, index]),
+        options,
+        question: entry.title
+      }
+    ]
+  })
+}
+
+export const emitQuestionResolved = (
   session: CodexSession,
   questionId: string,
   outcome: "answered" | "cancelled" | "autoResolved",
@@ -293,10 +328,18 @@ const dismissPendingQuestion = (pending: PendingCodexQuestion, reason: string): 
 }
 
 export const cancelPendingQuestions = (session: CodexSession): void => {
+  dismissAsyncQuestion(session)
   for (const [questionId, pending] of Array.from(session.pendingQuestions)) {
     session.pendingQuestions.delete(questionId)
     if (pending.timer !== undefined) clearTimeout(pending.timer)
     dismissPendingQuestion(pending, "Question cancelled with the turn")
     void emitQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
   }
+}
+
+export const dismissAsyncQuestion = (session: CodexSession): void => {
+  const asked = session.asyncQuestion
+  if (asked === undefined) return
+  session.asyncQuestion = undefined
+  void emitQuestionResolved(session, asked.questionId, "cancelled", asked.questions, undefined)
 }

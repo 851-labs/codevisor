@@ -23,6 +23,11 @@ export interface PendingCodexQuestion {
   readonly cancelResponse?: unknown
 }
 
+export interface AsyncCodexQuestion {
+  readonly questionId: string
+  readonly questions: ReadonlyArray<QuestionSpec>
+}
+
 export interface CodexSession {
   readonly key: string
   readonly threadId: string
@@ -30,6 +35,7 @@ export interface CodexSession {
   readonly emit: RuntimeEmit
   readonly cwd: string
   activeTurnId: string | undefined
+  heldTurnId: string | undefined
   pendingTurnError: { message: string; retryable: boolean; stopKind?: TurnStopKind } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
@@ -52,5 +58,6 @@ export interface CodexSession {
   lastGoalEmitAtMs: number
   pendingGoalSnapshot: SessionGoal | undefined
   readonly pendingQuestions: Map<string, PendingCodexQuestion>
+  asyncQuestion: AsyncCodexQuestion | undefined
   latestContext: SessionContext | undefined
 }

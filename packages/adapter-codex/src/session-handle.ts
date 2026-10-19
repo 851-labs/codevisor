@@ -2,24 +2,22 @@ import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
+import { answerQuestion, cancelHeldTurn, continueHeldTurn } from "./async-replies.js"
 import { codexInput } from "./attachments.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
 import { isRecord } from "./internal.js"
-import {
-  CODEX_FAST_TIER,
-  CODEX_MODES,
-  CODEX_STANDARD_TIER,
-  configOptionsFor,
-  currentCodexModelFor,
-  effectiveSpeed
-} from "./models.js"
-import { answerCodexQuestion, cancelPendingQuestions } from "./questions.js"
+import { CODEX_MODES, configOptionsFor, currentCodexModelFor } from "./models.js"
+import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import { startCodexTurn } from "./turn-start.js"
 
 export const handleFor = (session: CodexSession): AgentSessionHandle => ({
   cancel: adapterPromise("cancel", async () => {
     const turnId = session.activeTurnId
-    if (turnId === undefined) return { runtimeState: "reusable" as const }
+    if (turnId === undefined) {
+      cancelHeldTurn(session)
+      return { runtimeState: "reusable" as const }
+    }
     session.interruptRequested = true
     cancelPendingQuestions(session)
     try {
@@ -44,47 +42,19 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
       const pending = new Promise<{ stopReason: string }>((resolve) => {
         session.pendingPrompt = { resolve }
       })
-      const mode = CODEX_MODES.find((candidate) => candidate.id === session.currentModeId)
-      const speed = effectiveSpeed(session)
-      if (mode?.collaboration === "plan") session.collaborationEngaged = true
-      const collaborationMode =
-        session.currentModel.length > 0 &&
-        (mode?.collaboration !== undefined || session.collaborationEngaged)
-          ? {
-              collaborationMode: {
-                mode: mode?.collaboration ?? "default",
-                settings: {
-                  developer_instructions: null,
-                  model: session.currentModel,
-                  reasoning_effort: session.currentEffort ?? null
-                }
-              }
-            }
-          : {}
-      await session.client.request("turn/start", {
-        input: codexInput(normalizePromptInput(input), session.skills),
-        threadId: session.threadId,
-        ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
-        ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),
-        ...(session.reasoningSummariesRejected === true ? {} : { summary: "auto" }),
-        ...(speed === undefined
-          ? {}
-          : { serviceTier: speed === "fast" ? CODEX_FAST_TIER : CODEX_STANDARD_TIER }),
-        ...(mode === undefined
-          ? {}
-          : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy }),
-        ...collaborationMode
-      })
+      await startCodexTurn(session, codexInput(normalizePromptInput(input), session.skills))
       return pending
     }),
   steer: (input) =>
     adapterPromise("steer", async () => {
       const turnId = session.activeTurnId
-      if (turnId === undefined || session.interruptRequested) return false
+      if (session.interruptRequested) return false
+      const items = codexInput(normalizePromptInput(input), session.skills)
+      if (turnId === undefined) return continueHeldTurn(session, items)
       try {
         await session.client.request("turn/steer", {
           expectedTurnId: turnId,
-          input: codexInput(normalizePromptInput(input), session.skills),
+          input: items,
           threadId: session.threadId
         })
         return true
@@ -151,6 +121,6 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     await emitGoalCleared(session)
   }),
   answerQuestion: (questionId, answer) =>
-    adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer)),
+    adapterPromise("answerQuestion", () => answerQuestion(session, questionId, answer)),
   readContext: Effect.sync(() => session.latestContext)
 })

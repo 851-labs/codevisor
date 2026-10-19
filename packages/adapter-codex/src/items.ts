@@ -8,6 +8,7 @@ import {
   patchStatus
 } from "./diff-presentation.js"
 import { firstLine } from "./internal.js"
+import { askAsyncQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 
 export const wirePhase = (raw: unknown): "commentary" | "final" | undefined =>
@@ -88,6 +89,7 @@ export const emitItemLifecycle = (
       break
     }
     case "agentMessage": {
+      if (!started && item.delivery === "async") emitAsyncMessage(session, item, itemId, event)
       applyMessagePhase(session, item, itemId, started, event)
       break
     }
@@ -241,6 +243,28 @@ function emitMcpItem(
       })
     )
   }
+}
+
+function emitAsyncMessage(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  event: ItemEvent
+): void {
+  if (Array.isArray(item.questions) && item.questions.length > 0) {
+    askAsyncQuestions(session, itemId, item.questions)
+    return
+  }
+  if (typeof item.text !== "string" || item.text.length === 0) return
+  const phase = wirePhase(item.phase)
+  void session.emit(
+    event({
+      content: { text: item.text, type: "text" },
+      messageId: itemId,
+      sessionUpdate: "agent_message_chunk",
+      ...(phase === undefined ? {} : { phase })
+    })
+  )
 }
 
 function applyMessagePhase(

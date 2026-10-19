@@ -34,13 +34,11 @@ describe("CodexProvider", () => {
         "unified-computer-use@openai-bundled": { enabled: false }
       },
       skills: expectedNativeCodexSkills,
-      features: {
-        browser_use: false,
-        browser_use_external: false,
-        browser_use_full_cdp_access: false,
-        computer_use: false,
-        in_app_browser: false
-      },
+      "features.browser_use": false,
+      "features.browser_use_external": false,
+      "features.browser_use_full_cdp_access": false,
+      "features.computer_use": false,
+      "features.in_app_browser": false,
       mcp_servers: {
         node_repl: {
           enabled: false
