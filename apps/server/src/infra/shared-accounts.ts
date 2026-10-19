@@ -21,8 +21,17 @@ import type {
 import { Effect } from "effect"
 
 import { sharedAccountContext } from "./shared-account-context.js"
+import { machineLoginReplacesDeadGrant } from "./shared-account-dead-grants.js"
 import { SharedAccountLocalState } from "./shared-account-local-state.js"
-import { discoverNativeAccount, sharedAccountVault } from "./shared-account-storage.js"
+import {
+  makeClaudeProfileLogins,
+  type ForgetProfileLogin
+} from "./shared-account-profile-logins.js"
+import {
+  discoverNativeAccount,
+  forgetNativeProfileLogin,
+  sharedAccountVault
+} from "./shared-account-storage.js"
 import {
   makeSharedAccountStore,
   sharedAccountLabel,
@@ -49,6 +58,7 @@ export const makeSharedAccounts = (options: {
   readonly vault?: SharedCredentialVault
   readonly environment?: () => Promise<NodeJS.ProcessEnv>
   readonly discover?: typeof discoverNativeAccount
+  readonly forgetProfileLogin?: ForgetProfileLogin
   readonly openCode2?: OpenCode2Deps
 }) => {
   const { db, auth, dataDir, serverId } = options
@@ -63,6 +73,13 @@ export const makeSharedAccounts = (options: {
   })
   const discover = options.discover ?? discoverNativeAccount
   const localState = new SharedAccountLocalState(db, serverId)
+  const profileLogins = makeClaudeProfileLogins({
+    db,
+    dataDir,
+    localState,
+    environment,
+    forget: options.forgetProfileLogin ?? forgetNativeProfileLogin
+  })
   let reconciling: Promise<void> | undefined
   const resolve = async (id: string) => store.get(await localState.resolveAlias(id))
   const token = async (id: string, rejected?: string) => {
@@ -125,6 +142,10 @@ export const makeSharedAccounts = (options: {
     )
     const tombstone = (await store.entries()).some((entry) => entry.key === id && entry.deleted)
     if (tombstone && !explicit) return undefined
+    if (!explicit && (await machineLoginReplacesDeadGrant(vault, bundle, previous))) {
+      console.error(`Using this machine's ${bundle.harnessId} login: the synced sign-in expired`)
+      explicit = true
+    }
     if (previous?.credential && !explicit) {
       if (bundle.ownership === "external") await vault.publishExternal(previous.credential, bundle)
     } else {
@@ -172,6 +193,7 @@ export const makeSharedAccounts = (options: {
     if (!bundle || (!bundle.refreshToken && !FILE_GRANTS.has(bundle.harnessId)))
       throw new Error("Sign-in could not be saved. Try signing in again.")
     const account = (await importBundle(bundle, id, true, row.label))!
+    if (bundle.harnessId === "claude-code") await profileLogins.afterCapture(row)
     if (
       target !== account.id &&
       target.startsWith("shared-") &&
@@ -227,6 +249,7 @@ export const makeSharedAccounts = (options: {
           if (existing) await importBundle(existing, row.id, false, row.label)
         }
       } catch {}
+      await profileLogins.sweepOnce()
       for (const account of await store.accounts()) await saveLocal(account)
       for (const harnessId of ["claude-code", "codex", "muse-code", "antigravity"])
         await applySelection(harnessId)
@@ -405,6 +428,7 @@ export const makeSharedAccounts = (options: {
         return undefined
       }
       const bundle = await token(id)
+      if (account.harnessId === "claude-code") await profileLogins.beforeSession(account.id)
       return sharedAccountContext(
         {
           dataDir,

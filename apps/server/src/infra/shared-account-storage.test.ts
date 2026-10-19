@@ -5,7 +5,11 @@ import { join } from "node:path"
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
 import { afterEach, expect, it, vi } from "vitest"
 
-import { sharedAccountVault, discoverNativeAccount } from "./shared-account-storage.js"
+import {
+  discoverNativeAccount,
+  forgetNativeProfileLogin,
+  sharedAccountVault
+} from "./shared-account-storage.js"
 const execute = vi.hoisted(() =>
   vi.fn(
     (
@@ -116,3 +120,23 @@ it.each(["darwin", "linux"])(
     }
   }
 )
+
+it("forgets a Claude profile login through the machine's Keychain", async () => {
+  Object.defineProperty(process, "platform", { value: "darwin" })
+  execute.mockImplementationOnce((_cmd, _args, _options, callback) => callback(null, "", ""))
+  const path = await directory()
+
+  expect(await forgetNativeProfileLogin(path, { USER: "fixture" })).toBe(true)
+  expect(execute).toHaveBeenCalledExactlyOnceWith(
+    "/usr/bin/security",
+    [
+      "delete-generic-password",
+      "-s",
+      expect.stringMatching(/^Claude Code-credentials-/),
+      "-a",
+      "fixture"
+    ],
+    expect.objectContaining({ encoding: "utf8" }),
+    expect.any(Function)
+  )
+})

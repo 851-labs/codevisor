@@ -46,6 +46,7 @@ export const fleet = () => {
       rm(dataDir, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 })
     )
     let bundle = initial
+    const forgetProfileLogin = vi.fn(async (_directory: string) => false)
     const receipts = new Map<string, { operationId: string; sealed: string }>()
     const vault = makeSharedCredentialVault({
       coordinate: async (key, command) => {
@@ -121,6 +122,7 @@ export const fleet = () => {
         if (!isDefault && !managed) return undefined
         return bundle
       },
+      forgetProfileLogin,
       ...overrides
     }
     const shared = makeSharedAccounts(options)
@@ -132,6 +134,7 @@ export const fleet = () => {
       auth,
       dataDir,
       db: services.db,
+      forgetProfileLogin,
       setBundle: (next: SharedTokenBundle | undefined) => {
         bundle = next
       }

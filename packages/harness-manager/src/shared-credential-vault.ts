@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:
 
 import type { CoordinatedCredential } from "@codevisor/api"
 
+import { refreshFailedLine, refreshSucceededLine } from "./shared-credential-refresh-log.js"
 import {
   SharedCredentialError,
   isSharedTokenBundle,
@@ -50,6 +51,7 @@ export interface SharedCredentialVaultConfig {
   readonly wait?: () => Promise<void>
   readonly readCached?: (id: string) => Promise<CoordinatedCredential | undefined>
   readonly revalidateAfterMs?: number
+  readonly log?: (line: string) => void
   readonly receipt: {
     read(id: string): Promise<{ operationId: string; sealed: string } | undefined>
     write(id: string, value: { operationId: string; sealed: string }): Promise<void>
@@ -74,6 +76,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
   const elapsed = config.elapsed ?? (() => performance.now())
   const wait = config.wait ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 150)))
   const revalidateAfterMs = config.revalidateAfterMs ?? REVALIDATE_AFTER_MS
+  const log = config.log ?? (() => {})
   const flights = new Map<string, Promise<SharedTokenBundle>>()
   const cached = new Map<
     string,
@@ -112,6 +115,16 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       throw new SharedCredentialError("reauthenticate")
     await removeReceipt(reference.id)
     remember(reference, committed.credential)
+  }
+  const rotate = async (reference: SharedCredentialReference, bundle: SharedTokenBundle) => {
+    try {
+      const next = await config.rotate(bundle)
+      log(refreshSucceededLine(reference, bundle, next))
+      return next
+    } catch (cause) {
+      log(refreshFailedLine(reference, bundle, cause))
+      throw new SharedCredentialError("reauthenticate")
+    }
   }
   const serves = (bundle: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
     bundle.expiresAt > now() + minimumValidityMs(bundle.harnessId) &&
@@ -174,9 +187,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       }
       const started = await config.coordinate(reference.id, { action: "start", operationId })
       if (started.status !== "acquired") throw new SharedCredentialError("reauthenticate")
-      const rotated = await config.rotate(bundle).catch(() => {
-        throw new SharedCredentialError("reauthenticate")
-      })
+      const rotated = await rotate(reference, bundle)
       if (hasDifferentCredentialAccount(rotated, bundle)) {
         throw new SharedCredentialError("reauthenticate")
       }

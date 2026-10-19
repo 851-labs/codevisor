@@ -77,3 +77,12 @@ export class SharedCredentialError extends Error {
     )
   }
 }
+
+export class OAuthRefreshRejected extends SharedCredentialError {
+  constructor(
+    readonly status: number,
+    readonly code: string | undefined
+  ) {
+    super("reauthenticate")
+  }
+}

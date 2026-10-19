@@ -5,6 +5,7 @@ import { promisify } from "node:util"
 
 import {
   atomicWriteJson,
+  forgetClaudeProfileLogin,
   makeSharedCredentialVault,
   readNativeOAuth,
   refreshSharedOAuth
@@ -24,6 +25,7 @@ export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordin
     coordinate: provided ?? coordinator,
     ...(provided ? {} : { readCached: coordinator.cached }),
     rotate: refreshSharedOAuth,
+    log: (line) => console.error(line),
     receipt: {
       read: async (id) => {
         try {
@@ -63,5 +65,13 @@ export const discoverNativeAccount = (
     isDefault,
     ownership: managed ? "managed" : "external",
     env,
+    exec: (command, args, options) => exec(command, [...args], { ...options, encoding: "utf8" })
+  })
+
+export const forgetNativeProfileLogin = (directory: string, env: NodeJS.ProcessEnv) =>
+  forgetClaudeProfileLogin({
+    directory,
+    env,
+    platform: process.platform,
     exec: (command, args, options) => exec(command, [...args], { ...options, encoding: "utf8" })
   })

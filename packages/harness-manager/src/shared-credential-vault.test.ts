@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from "vitest"
 
-import type { SharedTokenBundle, CredentialCoordinator } from "./shared-credential-types.js"
+import { fingerprint } from "./shared-credential-refresh-log.js"
+import {
+  OAuthRefreshRejected,
+  SharedCredentialError,
+  type SharedTokenBundle,
+  type CredentialCoordinator
+} from "./shared-credential-types.js"
 import { fixture, gate, original, refreshed } from "./shared-credential-vault-test-support.js"
 import {
   makeSharedCredentialVault,
+  type SharedCredentialVaultConfig,
   openSharedCredential,
   sealSharedCredential
 } from "./shared-credential-vault.js"
+
+const { refreshToken: _rotatedRefreshToken, ...withoutRefreshToken } = refreshed
 
 describe("encrypted shared credential vault", () => {
   it("authenticates the credential id and rejects modified ciphertext and wrong keys", () => {
@@ -67,6 +76,40 @@ describe("encrypted shared credential vault", () => {
       expect(f.receipts.size).toBe(0)
     }
   )
+
+  it.each<[string, SharedCredentialVaultConfig["rotate"]]>([
+    [`rotated, next=${fingerprint("new-refresh")}`, async () => refreshed],
+    ["rotated, next=none", async () => withoutRefreshToken],
+    [
+      "rejected HTTP 400 invalid_grant",
+      async () => Promise.reject(new OAuthRefreshRejected(400, "invalid_grant"))
+    ],
+    [
+      "rejected HTTP 503 without an error code",
+      async () => Promise.reject(new OAuthRefreshRejected(503, undefined))
+    ],
+    [
+      "failed (reauthenticate)",
+      async () => Promise.reject(new SharedCredentialError("reauthenticate"))
+    ],
+    ["network failure (TypeError)", async () => Promise.reject(new TypeError("fetch failed"))],
+    ["network failure (unknown)", async () => Promise.reject("socket hang up")]
+  ])("logs a refresh that %s with fingerprints instead of tokens", async (outcome, rotate) => {
+    const lines: string[] = []
+    const f = fixture()
+    const vault = makeSharedCredentialVault({
+      ...f.config,
+      rotate,
+      log: (line) => lines.push(line)
+    })
+
+    await vault.token(await vault.create(original)).catch(() => undefined)
+
+    const presented = `presented=${fingerprint("old-refresh")}`
+    expect(lines).toEqual([expect.stringMatching(/^Shared credential refresh codex login=\w{8} /)])
+    expect(lines[0]?.endsWith(`${presented}: ${outcome}`)).toBe(true)
+    expect(lines[0]).not.toMatch(/old-refresh|new-refresh|old-access|new-access/)
+  })
 
   it("recovers a lost commit response without replaying the provider exchange", async () => {
     const f = fixture()

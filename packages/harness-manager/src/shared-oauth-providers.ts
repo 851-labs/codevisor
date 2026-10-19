@@ -3,10 +3,12 @@ import { readFile, realpath } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
 import { antigravityAuthPath, parseAntigravityAuth } from "./antigravity-credentials.js"
+import { claudeKeychainService } from "./claude-profile-login.js"
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 import { errnoCode, recordOrEmpty } from "./json-values.js"
 import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
 import {
+  OAuthRefreshRejected,
   SharedCredentialError,
   type SharedOAuthHarness,
   type SharedTokenBundle
@@ -23,6 +25,10 @@ const claims = (token: string): Record<string, unknown> => {
   } catch {
     return {}
   }
+}
+const refreshRejection = async (response: Response): Promise<OAuthRefreshRejected> => {
+  const body = recordOrEmpty(await response.json().catch(() => undefined))
+  return new OAuthRefreshRejected(response.status, string(body.error))
 }
 const jsonFile = async (path: string): Promise<Record<string, unknown> | undefined> => {
   try {
@@ -146,7 +152,7 @@ export const readNativeOAuth = async (options: {
     const service =
       harnessId === "codex"
         ? "Codex Auth"
-        : `Claude Code-credentials${options.isDefault && !options.env.CLAUDE_CONFIG_DIR ? "" : `-${createHash("sha256").update(resolve(directory).normalize("NFC")).digest("hex").slice(0, 8)}`}`
+        : claudeKeychainService(directory, options.isDefault && !options.env.CLAUDE_CONFIG_DIR)
     const account =
       harnessId === "codex"
         ? `cli|${createHash("sha256").update(canonical).digest("hex").slice(0, 16)}`
@@ -197,7 +203,7 @@ export const refreshSharedOAuth = async (
       signal: AbortSignal.timeout(15_000)
     }
   )
-  if (!response.ok) throw new SharedCredentialError("reauthenticate")
+  if (!response.ok) throw await refreshRejection(response)
   const value = recordOrEmpty(await response.json())
   const accessToken = string(value.access_token)
   const refreshToken = string(value.refresh_token) ?? bundle.refreshToken
