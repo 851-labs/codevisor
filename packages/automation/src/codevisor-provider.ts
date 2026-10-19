@@ -7,49 +7,11 @@ import { Schema } from "effect"
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
-import {
-  CODEVISOR_API_TOOLS,
-  type CodevisorApiToolSpec,
-  type JsonSchema
-} from "./codevisor-api-tools.js"
-import {
-  isRecord,
-  isStringArray,
-  recordOrEmpty,
-  recordOrUndefined,
-  type UnknownRecord
-} from "./unknown-values.js"
+import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
+import { pathArgumentName, pathParameterNames, toolInputSchema } from "./codevisor-tool-schema.js"
+import { isRecord, recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 
 export { CODEVISOR_BOT_TOOL_NAMES } from "./codevisor-api-tools.js"
-
-const pathParameterNames = (path: string): ReadonlyArray<string> =>
-  [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
-
-const idArgumentNames = {
-  projects: "projectId",
-  workspaces: "workspaceId",
-  sessions: "sessionId",
-  mcps: "mcpId",
-  harnesses: "harnessId",
-  "native-mcps": "removalId",
-  files: "fileId"
-} as const
-
-const isIdResource = (segment: string | undefined): segment is keyof typeof idArgumentNames =>
-  segment !== undefined && Object.hasOwn(idArgumentNames, segment)
-
-const pathArgumentName = (spec: CodevisorApiToolSpec, parameterName: string): string => {
-  const resource = spec.path.split("/")[2]
-  if (parameterName !== "id" || !isIdResource(resource)) return parameterName
-  return idArgumentNames[resource]
-}
-
-const schemaProperties = (schema: JsonSchema): Record<string, object> =>
-  Object.fromEntries(
-    Object.entries(recordOrEmpty(schema.properties)).filter(
-      (entry): entry is [string, UnknownRecord] => isRecord(entry[1])
-    )
-  )
 
 const contextDefault = (
   spec: CodevisorApiToolSpec,
@@ -63,79 +25,6 @@ const contextDefault = (
     return context.projectId
   }
   return undefined
-}
-
-const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"] => {
-  const properties: Record<string, object> = {}
-  const required = new Set<string>()
-  let definitions: unknown
-
-  for (const parameterName of pathParameterNames(spec.path)) {
-    const argumentName = pathArgumentName(spec, parameterName)
-    properties[argumentName] = {
-      type: "string",
-      description:
-        parameterName === "id" && spec.path.startsWith("/v1/sessions/:id")
-          ? "Session id. Defaults to the calling session."
-          : parameterName === "id" && spec.path.startsWith("/v1/projects/:id")
-            ? "Project id. Defaults to the calling project."
-            : undefined
-    }
-    if (
-      !(
-        parameterName === "sessionId" ||
-        (parameterName === "id" &&
-          (spec.path.startsWith("/v1/sessions/:id") || spec.path.startsWith("/v1/projects/:id")))
-      )
-    ) {
-      required.add(argumentName)
-    }
-  }
-
-  for (const parameter of spec.query ?? []) {
-    properties[parameter.name] = {
-      ...parameter.schema,
-      ...(parameter.description === undefined ? {} : { description: parameter.description })
-    }
-  }
-
-  if (spec.name === "files.upload") {
-    properties.dataBase64 = {
-      type: "string",
-      description: "File bytes encoded as base64."
-    }
-    required.add("dataBase64")
-  } else if (spec.body !== undefined) {
-    const schema = jsonSchema(spec.body)
-    if (spec.wrappedBody === true) {
-      properties.body = schema
-      required.add("body")
-    } else {
-      Object.assign(properties, schemaProperties(schema))
-      for (const name of isStringArray(schema.required) ? schema.required : []) {
-        if (!(spec.name === "sessions.create" && name === "projectId")) required.add(name)
-      }
-      definitions = schema.$defs
-    }
-  }
-
-  if (spec.confirm === true) {
-    properties.confirm = {
-      type: "boolean",
-      description:
-        "Must only be set true after showing the user exactly what this call will do " +
-        "(the discovered manifest and verbatim commands) and receiving their explicit approval."
-    }
-    required.add("confirm")
-  }
-
-  return {
-    type: "object",
-    properties,
-    ...(required.size === 0 ? {} : { required: [...required] }),
-    additionalProperties: false,
-    ...(definitions === undefined ? {} : { $defs: definitions })
-  }
 }
 
 const tools: ReadonlyArray<Tool> = [
@@ -249,21 +138,20 @@ const invokeApiTool = async (
     )
     url.searchParams.delete("mimeType")
   } else if (spec.body !== undefined) {
-    const fields = (): Readonly<Record<string, unknown>> =>
-      Object.fromEntries(
+    const bodyPayload = (): unknown => {
+      if (spec.wrappedBody === true) return args.body
+      const createsSession = spec.name === "sessions.create"
+      const promptsSession = !createsSession && spec.name === "sessions.prompt"
+      const payload = Object.fromEntries(
         bodyPropertyNames(spec.body!)
           .filter((name) => args[name] !== undefined)
           .map((name) => [name, args[name]])
       )
-    body = JSON.stringify(
-      spec.wrappedBody === true
-        ? args.body
-        : spec.name === "sessions.create"
-          ? sessionCreatePayload(fields(), context)
-          : spec.name === "sessions.prompt"
-            ? sessionPromptPayload(fields(), context)
-            : fields()
-    )
+      if (createsSession) return sessionCreatePayload(payload, context)
+      if (promptsSession) return sessionPromptPayload(payload, context)
+      return payload
+    }
+    body = JSON.stringify(bodyPayload())
     headers.set("content-type", "application/json")
   }
 
