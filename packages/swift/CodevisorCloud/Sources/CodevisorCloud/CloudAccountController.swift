@@ -443,22 +443,7 @@ public final class CloudAccountController {
 
 extension CloudAccountController {
   func reconcileMachineKeyPins(_ machines: [CloudMachine]) throws {
-    guard var pins = machineKeyPins.pins else { throw CancellationError() }
-    var changed = Set<String>()
-    var dirty = false
-    for machine in machines {
-      if let pinned = pins[machine.deviceId] {
-        if pinned != machine.publicKey {
-          changed.insert(machine.deviceId)
-        }
-      } else {
-        pins[machine.deviceId] = machine.publicKey
-        dirty = true
-      }
-    }
-    if dirty {
-      try machineKeyPins.save(pins)
-    }
+    let changed = try machineKeyPins.reconcile(machines)
     for deviceId in changed.subtracting(machinesWithChangedKeys) {
       Log.cloud.error(
         "Machine \(deviceId, privacy: .public) presented a key that conflicts with its pin; refusing relay channels until the user re-trusts it"
@@ -470,8 +455,7 @@ extension CloudAccountController {
   }
 
   func verifiedMachineKey(for machine: CloudMachine) -> String? {
-    guard let pinned = machineKeyPins.pins?[machine.deviceId] else { return nil }
-    return pinned == machine.publicKey ? machine.publicKey : nil
+    machineKeyPins.verifiedKey(for: machine)
   }
 
   public func trustChangedMachineKey(deviceId: String) {
