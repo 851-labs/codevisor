@@ -13,6 +13,14 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func addBotProject(botId: String, projectId: String) async throws -> ServerBot {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func removeBotProject(botId: String, projectId: String) async throws -> ServerBot {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func deleteBot(id: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }

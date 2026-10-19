@@ -50,6 +50,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsLivePreview: Bool { features.contains("live-preview-v1") }
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
   public var supportsBots: Bool { features.contains("bots-v1") }
+  public var supportsBotProjectChanges: Bool { features.contains("bot-projects-v1") }
 }
 
 public func codevisorMachineIsThisMac(

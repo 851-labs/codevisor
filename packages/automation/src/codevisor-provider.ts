@@ -11,7 +11,10 @@ import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-
 import { pathArgumentName, pathParameterNames, toolInputSchema } from "./codevisor-tool-schema.js"
 import { isRecord, recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 
-export { CODEVISOR_BOT_TOOL_NAMES } from "./codevisor-api-tools.js"
+export {
+  CODEVISOR_BOT_TOOL_NAMES,
+  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
+} from "./codevisor-api-tools.js"
 
 const contextDefault = (
   spec: CodevisorApiToolSpec,

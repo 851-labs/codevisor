@@ -82,6 +82,12 @@ export const botProjectRows = rowReader<BotProjectRow>({
   position: integer
 })
 
+export interface BotProjectRecord {
+  readonly projectId: string
+  readonly folderName: string
+  readonly branch: string
+}
+
 export interface CreateBotRecord {
   readonly id: string
   readonly name: string
@@ -91,11 +97,7 @@ export interface CreateBotRecord {
   readonly sessionId: string
   readonly workspaceId: string
   readonly conversational?: boolean
-  readonly projects: ReadonlyArray<{
-    readonly projectId: string
-    readonly folderName: string
-    readonly branch: string
-  }>
+  readonly projects: ReadonlyArray<BotProjectRecord>
 }
 
 export interface UpdateBotRecord {
@@ -115,6 +117,11 @@ export interface BotsService {
   readonly getBot: (id: string) => Effect.Effect<Bot | undefined, DatabaseError>
   readonly updateBot: (id: string, record: UpdateBotRecord) => Effect.Effect<Bot, DatabaseError>
   readonly deleteBot: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly addBotProject: (
+    id: string,
+    record: BotProjectRecord
+  ) => Effect.Effect<Bot, DatabaseError>
+  readonly removeBotProject: (id: string, projectId: string) => Effect.Effect<Bot, DatabaseError>
   readonly findBotOwning: (query: BotOwnerQuery) => Effect.Effect<Bot | undefined, DatabaseError>
   readonly listBotWorkspaces: (
     botId: string

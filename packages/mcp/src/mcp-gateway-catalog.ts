@@ -1,4 +1,8 @@
-import { CODEVISOR_BOT_TOOL_NAMES, type AutomationToolProvider } from "@codevisor/automation"
+import {
+  CODEVISOR_BOT_TOOL_NAMES,
+  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
+  type AutomationToolProvider
+} from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import { automationSkills } from "./mcp-automation-builtins.js"
@@ -119,23 +123,31 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     )
   ]
 
-  const isBotSession = async (sessionId: string | undefined): Promise<boolean> => {
-    if (sessionId === undefined) return false
+  const botChatKind = async (
+    sessionId: string | undefined
+  ): Promise<"conversational" | "plain" | undefined> => {
+    if (sessionId === undefined) return undefined
     const bot = await run(config.db.findBotOwning({ sessionId })).catch(() => undefined)
-    return (
-      bot !== undefined &&
-      bot.conversational &&
-      bot.sessionId.toLowerCase() === sessionId.toLowerCase()
-    )
+    if (bot === undefined || bot.sessionId.toLowerCase() !== sessionId.toLowerCase()) {
+      return undefined
+    }
+    return bot.conversational ? "conversational" : "plain"
+  }
+
+  const hiddenCodevisorTools = async (sessionId: string): Promise<ReadonlySet<string>> => {
+    const kind = await botChatKind(sessionId)
+    if (kind === "conversational") return new Set()
+    return kind === "plain" ? CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES : CODEVISOR_BOT_TOOL_NAMES
   }
 
   const providerTools = async (
     provider: AutomationToolProvider,
     sessionId: string | undefined
-  ): Promise<ReadonlyArray<Tool>> =>
-    provider.id !== "codevisor" || sessionId === undefined || (await isBotSession(sessionId))
-      ? provider.tools
-      : provider.tools.filter((tool) => !CODEVISOR_BOT_TOOL_NAMES.has(tool.name))
+  ): Promise<ReadonlyArray<Tool>> => {
+    if (provider.id !== "codevisor" || sessionId === undefined) return provider.tools
+    const hidden = await hiddenCodevisorTools(sessionId)
+    return provider.tools.filter((tool) => !hidden.has(tool.name))
+  }
 
   const sessionSkills = async (
     projectId?: string,
@@ -144,7 +156,9 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const enabledIds = new Set(
       (await enabledServers(projectId, sessionId)).map((server) => server.id)
     )
-    if (enabledIds.has("codevisor") && (await isBotSession(sessionId))) enabledIds.add("bot")
+    if (enabledIds.has("codevisor") && (await botChatKind(sessionId)) === "conversational") {
+      enabledIds.add("bot")
+    }
     return skillEntries(
       builtinSkills,
       { enabledIds, pluginTools: await listPluginTools() },

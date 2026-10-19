@@ -88,6 +88,14 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   }
 }
 
+public struct ServerAddBotProjectRequest: Encodable, Equatable, Sendable {
+  public var projectId: String
+
+  public init(projectId: String) {
+    self.projectId = projectId
+  }
+}
+
 public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var name: String?
   public var symbolName: String?

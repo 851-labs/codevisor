@@ -202,6 +202,7 @@ export const handleRequest = async (
           "session-event-stream-v1",
           "transcript-pagination-v1",
           "bots-v1",
+          "bot-projects-v1",
           ...(services.plugins === undefined ? [] : ["plugins-v1"]),
           ...((await simulatorsAvailable(config)) ? ["simulator-v1"] : [])
         ],

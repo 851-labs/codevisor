@@ -44,6 +44,11 @@ export const UpdateBotRequest = Schema.Struct({
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
 
+export const AddBotProjectRequest = Schema.Struct({
+  projectId: Schema.String
+})
+export type AddBotProjectRequest = typeof AddBotProjectRequest.Type
+
 export const BotMessageSender = Schema.Literals(["user", "bot", "notice"])
 export type BotMessageSender = typeof BotMessageSender.Type
 

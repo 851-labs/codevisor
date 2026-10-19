@@ -66,6 +66,7 @@ export type {
   BotProjectRow,
   AppendBotMessageRecord,
   BotOwnerQuery,
+  BotProjectRecord,
   BotsService,
   CreateBotRecord,
   UpdateBotRecord

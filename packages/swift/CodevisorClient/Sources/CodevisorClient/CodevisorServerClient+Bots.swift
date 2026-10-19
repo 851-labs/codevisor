@@ -13,6 +13,22 @@ extension CodevisorServerClient {
     try await send("/v1/bots/\(pathComponent(id))", method: "PATCH", body: request)
   }
 
+  public func addBotProject(botId: String, projectId: String) async throws -> ServerBot {
+    try await send(
+      "/v1/bots/\(pathComponent(botId))/projects",
+      method: "POST",
+      body: ServerAddBotProjectRequest(projectId: projectId)
+    )
+  }
+
+  public func removeBotProject(botId: String, projectId: String) async throws -> ServerBot {
+    try await send(
+      "/v1/bots/\(pathComponent(botId))/projects/\(pathComponent(projectId))",
+      method: "DELETE",
+      body: Optional<EmptyBody>.none
+    )
+  }
+
   public func deleteBot(id: String) async throws {
     try await sendNoResponse("/v1/bots/\(pathComponent(id))", method: "DELETE")
   }
