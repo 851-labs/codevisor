@@ -47,9 +47,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - name: Verify the published Alpha
         id: alpha
         env:
@@ -86,9 +84,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.metadata.outputs.source_sha }}
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -110,9 +106,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - name: Download the published Alpha's artifacts
         env:
           ALPHA_TAG: ${{ needs.metadata.outputs.alpha_tag }}

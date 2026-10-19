@@ -1,0 +1,13 @@
+name: Set up Node
+description: >-
+  Installs the Node version pinned in .node-version and points node-gyp at that
+  install's headers, so native dependencies such as node-pty build without
+  downloading headers from nodejs.org.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      with:
+        node-version-file: .node-version
+    - shell: bash
+      run: echo "npm_config_nodedir=$(dirname "$(dirname "$(command -v node)")")" >> "$GITHUB_ENV"

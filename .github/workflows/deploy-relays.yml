@@ -28,9 +28,7 @@ jobs:
       image: ${{ steps.plan.outputs.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - run: node apps/relay/gen-fly.mjs --check
       - id: plan
         run: node apps/relay/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
@@ -41,9 +39,7 @@ jobs:
     environment: relays-production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
@@ -80,9 +76,7 @@ jobs:
         relay: ${{ fromJSON(needs.plan.outputs.relays) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
       - run: node apps/relay/provision.mjs "${{ matrix.relay }}"
         env:

@@ -36,9 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - id: alpha
         run: node scripts/release/alpha-release.mjs next
 
@@ -94,9 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - name: Collect the release artifacts
         run: |
           for name in codevisor-macos codevisor-server-linux-x64 codevisor-server-linux-arm64 \
@@ -163,9 +159,7 @@ jobs:
           set-safe-directory: false
       - name: Select full Xcode
         run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json

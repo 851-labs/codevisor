@@ -29,9 +29,7 @@ jobs:
         with:
           clean: true
           set-safe-directory: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version-file: .node-version
+      - uses: ./.github/actions/setup-node
       - name: Read pinned tools
         id: tools
         run: |
