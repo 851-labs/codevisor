@@ -46,9 +46,11 @@ extension HomeView {
       .fullScreenCover(isPresented: showsOnboarding) {
         onboardingStart = .welcome
       } content: {
-        OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
-          .interactiveDismissDisabled(!hasAIDataSharingConsent || needsLocalNetworkStep)
-          .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: true))
+        OnboardingView(
+          start: hasRemoteMachines || onboardingDismissed || needsLocalNetworkStep ? .connect : onboardingStart
+        )
+        .interactiveDismissDisabled(!hasAIDataSharingConsent || needsLocalNetworkStep)
+        .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: true))
       }
       .modifier(
         HomeExternalRouting(
