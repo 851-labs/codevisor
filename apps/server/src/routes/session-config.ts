@@ -6,8 +6,9 @@ import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { run } from "../server-context.js"
 import { field } from "../unknown-values.js"
 import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
+import { configRestorePriority } from "./session-config-restore.js"
 import { withSessionMutation } from "./session-operations.js"
-import { configRestorePriority, loadAgentSessionFor } from "./session-workspace.js"
+import { loadAgentSessionFor } from "./session-workspace.js"
 
 export interface SessionConfigPickResult {
   readonly configId: string
