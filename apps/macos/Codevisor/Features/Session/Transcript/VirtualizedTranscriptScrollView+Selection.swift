@@ -125,7 +125,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   private func updateSelectionFocus(toWindowPoint windowPoint: NSPoint) {
     guard var selection = textSelection.selection else { return }
     var documentPoint = transcriptDocumentView.convert(windowPoint, from: nil)
-    let visible = contentView.bounds
+    let visible = unobstructedViewport
     documentPoint.y = min(max(documentPoint.y, visible.minY), max(visible.minY, visible.maxY - 1))
     guard let point = selectionPoint(atDocumentPoint: documentPoint) else { return }
 
@@ -402,7 +402,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       return
     }
     let documentPoint = transcriptDocumentView.convert(windowPoint, from: nil)
-    let visible = contentView.bounds
+    let visible = unobstructedViewport
     let overshoot: CGFloat
     if documentPoint.y < visible.minY {
       overshoot = documentPoint.y - visible.minY

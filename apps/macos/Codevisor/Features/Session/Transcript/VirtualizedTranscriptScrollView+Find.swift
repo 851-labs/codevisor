@@ -187,10 +187,9 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
   }
 
   private func unobstructedFindRegion() -> CGRect {
-    let visible = contentView.bounds
-    let composer = rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]?.estimatedHeight ?? 0
+    let visible = unobstructedViewport
     let top = visible.minY + Self.findBarClearance
-    let bottom = max(top + 1, visible.maxY - composer)
+    let bottom = max(top + 1, visible.maxY)
     return CGRect(x: visible.minX, y: top, width: visible.width, height: bottom - top)
   }
 

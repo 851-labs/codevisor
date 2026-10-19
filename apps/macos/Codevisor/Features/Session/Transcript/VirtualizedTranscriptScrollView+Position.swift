@@ -63,6 +63,13 @@ extension VirtualizedTranscriptScrollView {
     max(0, transcriptDocumentView.frame.height - contentView.bounds.maxY)
   }
 
+  var unobstructedViewport: CGRect {
+    var viewport = contentView.bounds
+    let covered = rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]?.estimatedHeight ?? 0
+    viewport.size.height = max(1, viewport.height - covered)
+    return viewport
+  }
+
   func currentViewportAnchor() -> VirtualTranscriptAnchor? {
     virtualLayout.viewportAnchor(
       at: contentView.bounds.minY - transcriptRowsOrigin

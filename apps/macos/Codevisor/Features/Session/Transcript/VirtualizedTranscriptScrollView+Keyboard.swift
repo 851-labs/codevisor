@@ -11,8 +11,7 @@ extension VirtualizedTranscriptScrollView {
     let top = contentView.bounds.minY
     let maximum = max(0, transcriptDocumentView.frame.height - contentView.bounds.height)
     let line = max(1, verticalLineScroll)
-    let coveredHeight = rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]?.estimatedHeight ?? 0
-    let page = max(line, contentView.bounds.height - coveredHeight - verticalPageScroll)
+    let page = max(line, unobstructedViewport.height - verticalPageScroll)
     let requestedTop: CGFloat
     switch event.specialKey {
     case .home: requestedTop = 0
