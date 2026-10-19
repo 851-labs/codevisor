@@ -41,7 +41,7 @@ enum TranscriptBotRowAssembly {
         ))
     }
     if conversation.isWorking {
-      rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 36))
+      rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 38))
     }
     if let message = input.activityMessage {
       rows.append(

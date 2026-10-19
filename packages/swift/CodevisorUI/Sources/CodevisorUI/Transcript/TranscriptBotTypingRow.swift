@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct TranscriptBotTypingRow: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   public init() {}
 
@@ -13,13 +14,13 @@ public struct TranscriptBotTypingRow: View {
           ForEach(0..<3, id: \.self) { index in
             Circle()
               .fill(Color.secondary)
-              .frame(width: 7, height: 7)
+              .frame(width: 8, height: 8)
               .opacity(reduceMotion ? 0.6 : 0.35 + 0.65 * Self.pulse(phase: phase, index: index))
           }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(Capsule(style: .continuous).fill(Color.bubbleBackground))
+        .frame(height: UserBubbleBackground.cornerRadius(for: dynamicTypeSize) * 2)
+        .background(UserBubbleBackground.shape(for: dynamicTypeSize).fill(Color.bubbleBackground))
       }
       Spacer(minLength: 0)
     }
