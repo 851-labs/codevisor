@@ -34,8 +34,8 @@ public struct ToolCallRow: View {
   public var body: some View {
     let totals = counterTotals
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: ToolIconMetrics.spacing) {
-        ToolCallIconView(icon: call.icon)
+      HStack(alignment: .firstTextBaseline, spacing: ToolIconMetrics.spacing) {
+        ToolIconSlot { ToolCallIconView(icon: call.icon) }
         rowLabel(totals: totals)
       }
       .contentShape(Rectangle())
@@ -63,7 +63,7 @@ public struct ToolCallRow: View {
   }
 
   private func rowLabel(totals: LineDiff.Totals?) -> some View {
-    HStack(spacing: 6) {
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
       Text(call.displayTitle(diffTotals: totals))
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
         .truncationMode(.tail)
@@ -73,7 +73,9 @@ public struct ToolCallRow: View {
         DiffCounter(totals: totals)
       }
       if hasDetails {
-        TranscriptDisclosureChevron(expanded: isExpanded)
+        TextLineSlot(width: TranscriptDisclosureChevron.side) {
+          TranscriptDisclosureChevron(expanded: isExpanded)
+        }
       }
       Spacer(minLength: 0)
     }

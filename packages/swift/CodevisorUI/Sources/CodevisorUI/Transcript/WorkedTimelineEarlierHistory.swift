@@ -19,8 +19,7 @@ struct WorkedTimelineEarlierHistory: View {
         onHeaderHover: { isHovering = $0 },
         onHeaderTap: reveal
       ) {
-        Image(systemName: "ellipsis")
-          .font(.caption)
+        ToolIconGlyph(symbol: "ellipsis")
           .foregroundStyle(isHovering ? .primary : .secondary)
       } line: {
         Text(count == 1 ? "Show 1 earlier step" : "Show \(count) earlier steps")

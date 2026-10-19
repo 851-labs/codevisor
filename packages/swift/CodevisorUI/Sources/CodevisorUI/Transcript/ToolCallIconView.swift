@@ -3,55 +3,12 @@ import CryptoKit
 import ImageIO
 import SwiftUI
 
-enum ToolIconMetrics {
-  static var font: Font {
-    #if os(iOS)
-      .subheadline
-    #else
-      .callout
-    #endif
-  }
-
-  static var columnWidth: CGFloat {
-    #if os(iOS)
-      18
-    #else
-      16
-    #endif
-  }
-
-  static var spacing: CGFloat {
-    #if os(iOS)
-      6
-    #else
-      8
-    #endif
-  }
-
-  static var artworkSide: CGFloat {
-    #if os(iOS)
-      15
-    #else
-      14
-    #endif
-  }
-
-  static var markSide: CGFloat {
-    #if os(iOS)
-      13
-    #else
-      12
-    #endif
-  }
-
-  static var labelInset: CGFloat { columnWidth + spacing }
-}
-
 public struct ToolCallIconView: View {
   let icon: ToolCallIcon
 
   @Environment(\.transcriptController) private var controller
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.toolIconSide) private var side
 
   public init(icon: ToolCallIcon) {
     self.icon = icon
@@ -65,27 +22,15 @@ public struct ToolCallIconView: View {
             namespace: $0.toolIconCacheNamespace, artwork: artwork, dark: colorScheme == .dark)
         }
       },
-      side: ToolIconMetrics.artworkSide,
+      side: icon.artwork.map { ToolIconKind(artwork: $0).size(in: side) } ?? side,
       fetch: { [weak controller] request in
         guard let controller else { throw SessionControllerError.serverUnavailable }
         return try await controller.toolIconData(request)
       }
     ) {
-      Group {
-        if icon.symbol == ToolCallIcon.codevisorMark {
-          Image("CodevisorMark", bundle: .module)
-            .renderingMode(.template)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: ToolIconMetrics.markSide, height: ToolIconMetrics.markSide)
-        } else {
-          Image(systemName: icon.symbol)
-            .font(ToolIconMetrics.font)
-        }
-      }
-      .foregroundStyle(.secondary)
+      ToolIconGlyph(symbol: icon.symbol)
+        .foregroundStyle(.secondary)
     }
-    .frame(width: ToolIconMetrics.columnWidth)
     .accessibilityHidden(true)
   }
 }

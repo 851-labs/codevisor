@@ -12,9 +12,9 @@ struct WorkedTimelineRail<Node: View, Line: View, Expanded: View>: View {
   @ViewBuilder let expanded: () -> Expanded
 
   private let lineHeight: CGFloat = 18
-  private let nodeWidth: CGFloat = 18
+  private let nodeWidth = ToolIconMetrics.columnWidth
   private let verticalPadding = TranscriptTimelineMarks.linePadding
-  private let railGap = ToolIconMetrics.artworkSide / 2 + TranscriptTimelineMarks.nodeClearance
+  private let railGap = ToolIconMetrics.side / 2 + TranscriptTimelineMarks.nodeClearance
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -44,10 +44,7 @@ struct WorkedTimelineRail<Node: View, Line: View, Expanded: View>: View {
   @ViewBuilder
   private var header: some View {
     let row = HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(" ")
-        .hidden()
-        .frame(width: nodeWidth)
-        .overlay { node() }
+      ToolIconSlot(icon: node)
       line()
         .frame(minHeight: lineHeight, alignment: .topLeading)
     }
@@ -123,8 +120,7 @@ struct WorkedTimelineNode: View {
           ToolCallIconView(icon: latest.icon)
         }
       case .subagents:
-        Image(systemName: "wand.and.sparkles")
-          .font(.caption)
+        ToolIconGlyph(symbol: "wand.and.sparkles")
           .foregroundStyle(.secondary)
       }
     }
