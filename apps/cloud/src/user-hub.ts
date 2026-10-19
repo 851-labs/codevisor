@@ -172,39 +172,38 @@ export class UserHub extends DurableObject<CloudEnv> {
       socket.send(encodeCloudFrame({ t: "pong" }))
       return
     }
-    if (frame.t === "hello") {
-      if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
-        this.#net.error(socket, "unsupported-protocol", "update Codevisor to use this relay")
-        socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
-        return
-      }
-      const { token, resumed } = await this.#adoptSession(attachment, "app", frame)
-      if (this.#accountDeleted) return
-      attachment.deviceId = frame.device.deviceId
-      attachment.publicKey = frame.device.publicKey
-      const tunnel = hubTunnel.appHello(this.ctx.storage.sql, this.#net, this.env, frame.device)
-      this.#supersedeConnection(attachment.connectionId, socket)
-      attachment.helloDone = true
-      socket.serializeAttachment(attachment)
-      if (
-        !this.#net.send(
-          socket,
-          encodeCloudFrame({
-            t: "welcome",
-            protocol: CLOUD_PROTOCOL_VERSION,
-            connectionId: attachment.connectionId,
-            machines: this.listMachines(),
-            resume: token,
-            ...(resumed ? { resumed: true } : {}),
-            ...tunnel
-          })
-        )
-      ) {
-        this.#retireUndeliverable(socket)
-        return
-      }
-      if (resumed) this.#replayBuffers(socket, attachment.connectionId)
+    if (frame.t !== "hello") return
+    if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
+      this.#net.error(socket, "unsupported-protocol", "update Codevisor to use this relay")
+      socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
+      return
     }
+    const { token, resumed } = await this.#adoptSession(attachment, "app", frame)
+    if (this.#accountDeleted) return
+    attachment.deviceId = frame.device.deviceId
+    attachment.publicKey = frame.device.publicKey
+    const tunnel = hubTunnel.appHello(this.ctx.storage.sql, this.#net, this.env, frame.device)
+    this.#supersedeConnection(attachment.connectionId, socket)
+    attachment.helloDone = true
+    socket.serializeAttachment(attachment)
+    if (
+      !this.#net.send(
+        socket,
+        encodeCloudFrame({
+          t: "welcome",
+          protocol: CLOUD_PROTOCOL_VERSION,
+          connectionId: attachment.connectionId,
+          machines: this.listMachines(),
+          resume: token,
+          ...(resumed ? { resumed: true } : {}),
+          ...tunnel
+        })
+      )
+    ) {
+      this.#retireUndeliverable(socket)
+      return
+    }
+    if (resumed) this.#replayBuffers(socket, attachment.connectionId)
   }
 
   async #onMachineFrame(
@@ -220,68 +219,71 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (frame.t === "tunnel-addr") {
       return hubTunnel.addr(this.ctx.storage.sql, this.#net, attachment, frame.tunnel)
     }
-    if (frame.t === "hello") {
-      if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
-        this.#net.error(
-          socket,
-          "unsupported-protocol",
-          "update the Codevisor server to use this relay"
-        )
-        socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
-        return
-      }
-      const deviceId = attachment.deviceId!
-      const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
-      if (this.#accountDeleted) return
-      attachment.peerAware = frame.features?.includes(MACHINE_PEERS_FEATURE) === true
-      const scope = hubTunnel.machineScope(this.env, frame.device)
-      const sql = this.ctx.storage.sql
-      attachment.machineGeneration = registerMachine(
-        sql,
-        deviceId,
-        scope.device,
-        attachment.peerAware
+    if (frame.t !== "hello") return
+    if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
+      this.#net.error(
+        socket,
+        "unsupported-protocol",
+        "update the Codevisor server to use this relay"
       )
-      attachment.tunnel = scope.tunnelMachine
-      attachment.publicKey = frame.device.publicKey
-      for (const stale of this.#net.machine(deviceId)) {
-        if (stale !== socket) this.#supersede(stale, "superseded by a newer connection")
-      }
-      attachment.helloDone = true
-      socket.serializeAttachment(attachment)
-      if (
-        !this.#net.send(
-          socket,
-          encodeCloudFrame({
-            t: "welcome",
-            protocol: CLOUD_PROTOCOL_VERSION,
-            connectionId: attachment.connectionId,
-            resume: token,
-            ...(resumed ? { resumed: true } : {}),
-            ...(attachment.peerAware ? { machines: this.listMachines() } : {}),
-            ...scope.welcome
-          })
-        )
-      ) {
-        this.#retireUndeliverable(socket)
-        return
-      }
-      hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
-      if (resumed) {
-        this.#replayBuffers(socket, attachment.connectionId)
-        return
-      }
-      for (const connectionId of this.#resume.deleteForMachineDevice(
-        deviceId,
-        attachment.connectionId
-      )) {
-        this.#net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
-      }
-      this.#net.broadcastMachineNotice({ t: "machine-reset", machineId: deviceId })
-      const row = machineRow(this.ctx.storage.sql, deviceId)
-      if (row !== undefined)
-        this.#net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, true) })
+      socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
+      return
     }
+    const deviceId = attachment.deviceId!
+    const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
+    if (this.#accountDeleted) return
+    attachment.peerAware = frame.features?.includes(MACHINE_PEERS_FEATURE) === true
+    const scope = hubTunnel.machineScope(this.env, frame.device)
+    const sql = this.ctx.storage.sql
+    attachment.machineGeneration = registerMachine(
+      sql,
+      deviceId,
+      scope.device,
+      attachment.peerAware
+    )
+    attachment.tunnel = scope.tunnelMachine
+    attachment.publicKey = frame.device.publicKey
+    for (const stale of this.#net.machine(deviceId)) {
+      if (stale !== socket) this.#supersede(stale, "superseded by a newer connection")
+    }
+    attachment.helloDone = true
+    socket.serializeAttachment(attachment)
+    if (
+      !this.#net.send(
+        socket,
+        encodeCloudFrame({
+          t: "welcome",
+          protocol: CLOUD_PROTOCOL_VERSION,
+          connectionId: attachment.connectionId,
+          resume: token,
+          ...(resumed ? { resumed: true } : {}),
+          ...(attachment.peerAware ? { machines: this.listMachines() } : {}),
+          ...scope.welcome
+        })
+      )
+    ) {
+      this.#retireUndeliverable(socket)
+      return
+    }
+    hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
+    if (resumed) {
+      this.#replayBuffers(socket, attachment.connectionId)
+      return
+    }
+    this.#announceFreshMachine(deviceId, attachment)
+  }
+
+  #announceFreshMachine(deviceId: string, attachment: SocketAttachment): void {
+    for (const connectionId of this.#resume.deleteForMachineDevice(
+      deviceId,
+      attachment.connectionId
+    )) {
+      this.#net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
+    }
+    this.#net.broadcastMachineNotice({ t: "machine-reset", machineId: deviceId })
+    const row = machineRow(this.ctx.storage.sql, deviceId)
+    if (row !== undefined)
+      this.#net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, true) })
   }
 
   async #adoptSession(
