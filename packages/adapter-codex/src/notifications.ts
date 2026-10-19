@@ -90,7 +90,7 @@ const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unk
   })
 }
 
-const completeNotificationTurn = (
+export const completeNotificationTurn = (
   session: CodexSession,
   payload: Record<string, unknown>
 ): void => {
@@ -113,12 +113,22 @@ const completeNotificationTurn = (
     session.reasoningSummariesRejected = true
   }
   const sharedAuthRejected = session.client.authRejected?.() === true
+  const turnId = session.heldTurnId ?? session.activeTurnId ?? randomUUID()
+  session.activeTurnId = undefined
+  session.interruptRequested = false
+  session.pendingTurnError = undefined
+  if (
+    status === "completed" &&
+    stopReason === "end_turn" &&
+    reportedError === undefined &&
+    session.asyncQuestion !== undefined
+  ) {
+    session.heldTurnId = turnId
+    return
+  }
+  session.heldTurnId = undefined
   const pending = session.pendingPrompt
   session.pendingPrompt = undefined
-  session.interruptRequested = false
-  const turnId = session.activeTurnId ?? randomUUID()
-  session.activeTurnId = undefined
-  session.pendingTurnError = undefined
   cancelPendingQuestions(session)
   void refreshCodexSessionTitle(session)
     .then(() => flushPendingGoalSnapshot(session))
@@ -282,6 +292,7 @@ export const handleNotification = (
       const turn = isRecord(payload.turn) ? payload.turn : {}
       session.activeTurnId = typeof turn.id === "string" ? turn.id : randomUUID()
       session.pendingTurnError = undefined
+      if (session.heldTurnId !== undefined) break
       void session.emit({
         kind: "session.updated",
         payload: {

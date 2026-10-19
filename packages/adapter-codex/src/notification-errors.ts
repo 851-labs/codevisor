@@ -44,11 +44,12 @@ export const handleNotificationError = (
     return
   }
   if (payload.willRetry === true) {
+    const heldOrActiveTurnId = session.heldTurnId ?? session.activeTurnId
     void session.emit({
       kind: "session.updated",
       payload: {
         retrying: codexRetryStatus(payload),
-        ...(session.activeTurnId === undefined ? {} : { turnId: session.activeTurnId })
+        ...(heldOrActiveTurnId === undefined ? {} : { turnId: heldOrActiveTurnId })
       },
       subjectId: session.key
     })

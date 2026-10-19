@@ -61,13 +61,11 @@ export const makeStartSession = ({
         bundled: { enabled: false },
         config: NATIVE_CODEX_PLUGIN_SKILL_NAMES.map((name) => ({ name, enabled: false }))
       },
-      features: {
-        browser_use: false,
-        browser_use_external: false,
-        browser_use_full_cdp_access: false,
-        computer_use: false,
-        in_app_browser: false
-      },
+      "features.browser_use": false,
+      "features.browser_use_external": false,
+      "features.browser_use_full_cdp_access": false,
+      "features.computer_use": false,
+      "features.in_app_browser": false,
       ...(toolGateway === undefined
         ? {}
         : {
@@ -107,6 +105,8 @@ export const makeStartSession = ({
     }
     const session: CodexSession = {
       activeTurnId: undefined,
+      asyncQuestion: undefined,
+      heldTurnId: undefined,
       latestContext: undefined,
       client,
       collabRunTurns: new Map(),

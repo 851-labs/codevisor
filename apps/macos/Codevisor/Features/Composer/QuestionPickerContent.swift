@@ -18,6 +18,7 @@ struct QuestionPickerContent: View {
   @State var notes: [String: String] = [:]
   @State var notesHeight: CGFloat = 24
   @State var highlighted = 0
+  @State var infoOption: String?
   @State var didOpenBrowserExtensions = false
   @State var anchor = AnchorBox()
 
@@ -88,6 +89,7 @@ struct QuestionPickerContent: View {
     }
     .onChange(of: request.questionId) { _, _ in
       questionIndex = 0
+      infoOption = nil
       selections = [:]
       notes = [:]
       highlighted = 0

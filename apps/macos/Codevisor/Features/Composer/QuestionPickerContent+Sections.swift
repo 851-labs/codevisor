@@ -46,7 +46,7 @@ extension QuestionPickerContent {
           question,
           index: question.options.count,
           label: "Other",
-          description: "Answer in your own words below.",
+          description: nil,
           isSelected: selections[question.id, default: []].contains(Self.otherToken)
         )
       }
@@ -70,59 +70,77 @@ extension QuestionPickerContent {
     isSelected: Bool
   ) -> some View {
     let isHighlighted = index == highlighted
-    return Button {
-      highlighted = index
-      activate(question, index: index)
-      if index >= question.options.count,
-        selections[question.id, default: []].contains(Self.otherToken)
-      {
-        focusNotes()
-      } else {
-        focusPicker()
-      }
-    } label: {
-      HStack(spacing: 10) {
-        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-          .font(.caption)
-          .foregroundStyle(
-            isHighlighted
-              ? AnyShapeStyle(.white)
-              : isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary)
-          )
-        Text(label)
-          .fontWeight(.medium)
-        if let description, !description.isEmpty {
-          Text(description)
-            .lineLimit(1)
-            .foregroundStyle(
-              isHighlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+    let info = description.flatMap { $0.isEmpty ? nil : $0 }
+    return HStack(spacing: 0) {
+      Button {
+        highlighted = index
+        activate(question, index: index)
+        if index >= question.options.count,
+          selections[question.id, default: []].contains(Self.otherToken)
+        {
+          focusNotes()
+        } else {
+          focusPicker()
         }
-        Spacer(minLength: 0)
-        if index < 9 {
-          Text("\(index + 1)")
-            .font(.caption2.monospacedDigit())
+      } label: {
+        HStack(spacing: 10) {
+          Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.caption)
             .foregroundStyle(
-              isHighlighted ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.quaternary))
+              isHighlighted
+                ? AnyShapeStyle(.white)
+                : isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary)
+            )
+          Text(label)
+            .fontWeight(.medium)
+            .multilineTextAlignment(.leading)
+          Spacer(minLength: 0)
         }
+        .padding(.leading, 10)
+        .padding(.trailing, info == nil ? 10 : 4)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
       }
-      .foregroundStyle(isHighlighted ? Color.white : Color.primary)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
-      .background(
-        RoundedRectangle(cornerRadius: 6)
-          .fill(
-            isHighlighted
-              ? AnyShapeStyle(Color.accentColor)
-              : isSelected
-                ? AnyShapeStyle(Color.primary.opacity(0.14))
-                : AnyShapeStyle(Color.clear)
-          )
-      )
-      .contentShape(RoundedRectangle(cornerRadius: 6))
+      .buttonStyle(.plain)
+      .accessibilityLabel(label)
+      .accessibilityHint(info ?? "")
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
+      if let info {
+        QuestionOptionInfoButton(
+          title: label,
+          info: info,
+          isHighlighted: isHighlighted,
+          showsInfo: infoBinding("\(question.id)/\(index)")
+        )
+        .padding(.trailing, 6)
+      }
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(label + (description.map { ", \($0)" } ?? ""))
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+    .background(
+      RoundedRectangle(cornerRadius: 6)
+        .fill(
+          isHighlighted
+            ? AnyShapeStyle(Color.accentColor)
+            : isSelected
+              ? AnyShapeStyle(Color.primary.opacity(0.14))
+              : AnyShapeStyle(Color.clear)
+        )
+    )
+    .contentShape(RoundedRectangle(cornerRadius: 6))
+  }
+
+  private func infoBinding(_ key: String) -> Binding<Bool> {
+    Binding(
+      get: { infoOption == key },
+      set: { isShowing in
+        if isShowing {
+          infoOption = key
+        } else if infoOption == key {
+          infoOption = nil
+          focusPicker()
+        }
+      }
+    )
   }
 
   func notesEditor(_ question: QuestionSpec) -> some View {
@@ -214,4 +232,36 @@ extension QuestionPickerContent {
     }
   }
 
+}
+
+private struct QuestionOptionInfoButton: View {
+  let title: String
+  let info: String
+  let isHighlighted: Bool
+  @Binding var showsInfo: Bool
+
+  var body: some View {
+    Button {
+      showsInfo = true
+    } label: {
+      Image(systemName: "info.circle")
+        .foregroundStyle(
+          isHighlighted
+            ? AnyShapeStyle(.white.opacity(0.85))
+            : showsInfo ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary)
+        )
+        .frame(width: 20, height: 20)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(info)
+    .accessibilityLabel("About \(title)")
+    .popover(isPresented: $showsInfo, arrowEdge: .bottom) {
+      Text(info)
+        .font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(12)
+        .frame(idealWidth: 300, maxWidth: 320, alignment: .leading)
+    }
+  }
 }

@@ -105,6 +105,10 @@ extension QuestionPickerContent {
     if isBrowserExtensionPresentation(question) {
       return handleBrowserExtensionKey(key, question: question)
     }
+    if infoOption != nil {
+      infoOption = nil
+      if key == .escape { return true }
+    }
     switch key {
     case .up:
       highlighted = max(0, highlighted - 1)
