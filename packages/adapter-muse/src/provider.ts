@@ -13,7 +13,6 @@ import {
   type ProviderEnvironment,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-import { isoTimestamp, type HarnessUsageLimits } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { accountInspection, readMuseAccount } from "./auth.js"
@@ -26,6 +25,7 @@ import {
 } from "./client.js"
 import { messageOf, record, text } from "./protocol.js"
 import { startMuseChat, type MuseChat } from "./session.js"
+import { museUsageLimits } from "./usage.js"
 import { museSessions } from "./wire.js"
 
 export interface MuseProviderConfig {
@@ -36,41 +36,6 @@ export interface MuseProviderConfig {
 const CHAT_HOST_ARGS = ["--trust-workspace", "--disable-sandbox"]
 
 const SESSION_PAGES = 5
-
-const usageWindow = (value: unknown, id: string, label: string) => {
-  const window = record(value)
-  if (typeof window.usedPercent !== "number") return []
-  const minutes =
-    typeof window.windowDurationMins === "number" ? window.windowDurationMins : undefined
-  return [
-    {
-      id,
-      label: minutes === 300 ? "5-hour limit" : label,
-      usedPercent: Math.max(0, Math.min(100, window.usedPercent)),
-      ...(minutes === undefined ? {} : { durationMinutes: minutes }),
-      ...(typeof window.resetsAtMs === "number"
-        ? { resetsAt: new Date(window.resetsAtMs).toISOString() }
-        : {})
-    }
-  ]
-}
-
-export const museUsageLimits = (response: unknown): HarnessUsageLimits => {
-  const usage = record(response)
-  const windows = [
-    ...usageWindow(usage.window, "window", "Session limit"),
-    ...usageWindow(usage.weekly, "weekly", "Weekly limit")
-  ]
-  return {
-    fetchedAt: isoTimestamp(),
-    harnessId: "muse-code",
-    state: windows.length > 0 ? "available" : "unavailable",
-    windows,
-    ...(windows.length > 0
-      ? {}
-      : { detail: "Muse Code reports usage limits after its first reply." })
-  }
-}
 
 const museSessionHandle = (chat: MuseChat): AgentSessionHandle => ({
   prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),

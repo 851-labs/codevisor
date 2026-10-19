@@ -33,6 +33,7 @@ import {
   summariesPath,
   type SummaryReader
 } from "./sessions.js"
+import { agyUsageLimitsFrom } from "./usage.js"
 
 const catalogKey = (account: HarnessAccountContext | undefined) => account?.id ?? ""
 
@@ -43,6 +44,7 @@ export interface AntigravityProviderConfig {
   readonly now?: () => number
   readonly catalogTtlMs?: number
   readonly commandDeadlineMs?: number
+  readonly usageDeadlineMs?: number
   readonly node?: string
   readonly overlays?: string
 }
@@ -77,6 +79,7 @@ export const makeAntigravityProvider = (
   const now = config.now ?? Date.now
   const catalogTtlMs = config.catalogTtlMs ?? 60 * 60_000
   const commandDeadlineMs = config.commandDeadlineMs ?? 30_000
+  const usageDeadlineMs = config.usageDeadlineMs ?? 15_000
   const node = config.node ?? process.execPath
   const overlays = config.overlays ?? join(tmpdir(), "codevisor-antigravity")
   const catalogs = new Map<string, { at: number; models: ReadonlyArray<AgyModel> }>()
@@ -194,6 +197,22 @@ export const makeAntigravityProvider = (
       const root = launchFor(account).geminiDir ?? join(home(), ".gemini")
       return agySessionSummaries(await reader(summariesPath(root)))
     },
+    readUsageLimits: (definition, _cwd, account) =>
+      adapterPromise("readUsageLimits", async () => {
+        const launch = launchFor(account)
+        try {
+          const result = await runner({
+            command: command(definition),
+            args: [...launch.args, "-p", "/usage"],
+            cwd: home(),
+            env: launch.env,
+            timeoutMs: usageDeadlineMs
+          })
+          return agyUsageLimitsFrom(result.code === 0 ? result.stdout : "")
+        } catch {
+          return agyUsageLimitsFrom("")
+        }
+      }),
     probeAuth: (definition, account) =>
       adapterPromise("probeAuth", async () => {
         try {

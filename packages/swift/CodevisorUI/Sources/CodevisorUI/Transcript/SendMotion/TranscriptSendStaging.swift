@@ -98,7 +98,9 @@ public final class TranscriptSendStaging {
     textView: TranscriptSendPlatformView,
     textRect: CGRect,
     lineHeight: CGFloat,
-    bubble: Color
+    bubble: Color,
+    revealsBubbleInFlight: Bool = false,
+    followsComposer: Bool = true
   ) {
     cancel(session: session)
     guard let window = textView.window,
@@ -117,6 +119,7 @@ public final class TranscriptSendStaging {
     pill.setFill(
       backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(), in: textView),
       tint: Self.resolved(bubble, in: textView))
+    pill.hidesFill = revealsBubbleInFlight
     glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
     pill.addSubview(glyphs)
     overlay.addSubview(pill)
@@ -143,7 +146,7 @@ public final class TranscriptSendStaging {
       beginMorph(stage, toward: found.0, provider: found.1, in: overlay)
     } else {
       #if canImport(UIKit)
-        if let container = textView.superview {
+        if followsComposer, let container = textView.superview {
           stage.board(TranscriptSendCarrier(content: container, overlay: overlay))
         }
       #endif

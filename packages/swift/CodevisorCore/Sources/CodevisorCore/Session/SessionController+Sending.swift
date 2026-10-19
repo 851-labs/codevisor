@@ -34,7 +34,7 @@ extension SessionController {
       attachments = collected
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
-    let shouldAnimateTranscriptSend = !isSending
+    let shouldAnimateTranscriptSend = !isSending || presentsBotConversation
     userSendSignal &+= 1
 
     if shouldAnimateTranscriptSend {

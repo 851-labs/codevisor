@@ -50,6 +50,20 @@ extension HomeView {
           newChatSheet(flow)
         }
     }
+    .overlay(alignment: .top) { stackBotHeader }
+  }
+
+  @ViewBuilder
+  private var stackBotHeader: some View {
+    Group {
+      if case let .bot(serverId, botId)? = path.last,
+        let bot = environment.bots.bot(serverId: serverId, id: botId)
+      {
+        BotConversationHeader(bot: bot) { botEditor = .edit(bot) }
+          .transition(.opacity)
+      }
+    }
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: path.last)
   }
 
   @ViewBuilder
@@ -73,6 +87,10 @@ extension HomeView {
       )
     case let .newChat(serverId):
       draftDestination(serverId: serverId)
+    case let .bot(serverId, botId):
+      BotConversationScreen(
+        serverId: serverId, botId: botId, showsHeader: false,
+        onOpenDetails: { botEditor = .edit($0) }, onNewTab: openNewTab(forBot:))
     }
   }
 }

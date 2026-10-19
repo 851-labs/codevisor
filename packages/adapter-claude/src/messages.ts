@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { usageLimitsObserved } from "@codevisor/agent-runtime"
 
 import { handleAssistantMessage, messageProse } from "./assistant-messages.js"
 import { handleSystemMessage } from "./background-tasks.js"
@@ -16,6 +17,7 @@ import {
 } from "./tasks.js"
 import { finishedToolTitle, sourcesContent, webSearchSources } from "./tool-presentation.js"
 import { handleResult } from "./turn-recovery.js"
+import { claudeRateLimitObservation } from "./usage.js"
 
 export const handleMessage = (
   session: ClaudeSession,
@@ -46,9 +48,13 @@ export const handleMessage = (
       }
       break
     }
-    case "rate_limit_event":
+    case "rate_limit_event": {
       session.latestRateLimitInfo = message.rate_limit_info
+      const observed = claudeRateLimitObservation(message.rate_limit_info)
+      if (observed !== undefined)
+        void session.emit(usageLimitsObserved(session.key, observed, true))
       break
+    }
     case "result":
       handleResult(session, message)
       break

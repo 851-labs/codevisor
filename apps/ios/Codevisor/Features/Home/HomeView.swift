@@ -42,6 +42,8 @@ struct HomeView: View {
   @State var detailPath = NavigationPath()
   @State var pendingDeviceApproval: CloudDeviceApprovalRequest?
   @State var pendingPluginInstall: PendingPluginInstall?
+  @State var botEditor: BotEditorTarget?
+  @State var deletingBot: Bot?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
@@ -80,6 +82,7 @@ struct HomeView: View {
     if pendingPluginInstall != nil { return "plugin_install" }
     if pendingDeviceApproval != nil { return "device_approval" }
     if renamingWorkspace != nil || renamingTab != nil { return "rename" }
+    if botEditor != nil { return "bot_editor" }
     return nil
   }
 

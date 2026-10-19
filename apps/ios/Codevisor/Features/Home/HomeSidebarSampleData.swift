@@ -65,8 +65,8 @@
 
       private var actions: HomeSidebarActions {
         HomeSidebarActions(
-          open: { row, ref in selected = HomeSidebarSelection(workspaceId: ref.id, paneId: row.id) },
-          openWorkspace: { selected = HomeSidebarSelection(workspaceId: $0.id, paneId: $0.primaryRow?.id) },
+          open: { row, ref in selected = .workspace(ref.id, paneId: row.id) },
+          openWorkspace: { selected = .workspace($0.id, paneId: $0.primaryRow?.id) },
           togglePin: { ref in
             let key = ref.id.uuidString
             if pinnedIDs.contains(key) { pinnedIDs.removeAll { $0 == key } } else { pinnedIDs.append(key) }

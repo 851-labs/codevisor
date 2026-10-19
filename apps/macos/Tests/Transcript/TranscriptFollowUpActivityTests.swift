@@ -437,6 +437,7 @@ private final class ActivityFixture {
       activeConversationItem: { item, _, _, _, _ in conversation(item) },
       assistantTurn: { message, _, _, _ in AnyView(ActivityLeaf(turn: message.turn)) },
       userMessage: { AnyView(Text($0.text)) },
+      botMessage: { AnyView(Text($0.text)) },
       workedItem: { _, _, _, _, _, _ in AnyView(EmptyView()) },
       attachmentThumbnail: { _ in AnyView(EmptyView()) },
       setup: { _ in AnyView(EmptyView()) },

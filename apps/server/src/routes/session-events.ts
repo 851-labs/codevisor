@@ -1,7 +1,13 @@
-import type { RuntimeEvent, RuntimeEventSink } from "@codevisor/agent-runtime"
+import {
+  usageLimitsObservation,
+  type RuntimeEvent,
+  type RuntimeEventSink,
+  type UsageLimitsObservation
+} from "@codevisor/agent-runtime"
 import type { AttachmentRef } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
+import { usageLimitsKey } from "../infra/usage-limits-cache.js"
 import {
   appendAndPublish,
   run,
@@ -24,6 +30,21 @@ const executionAnnotator = (services: CodevisorServerServices): ExecutionAnnotat
   return annotator
 }
 
+const observeUsageLimits = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  observation: UsageLimitsObservation
+): Promise<void> => {
+  const cache = services.usageLimits
+  if (cache === undefined) return
+  const session = await run(services.db.getSessionSummary(sessionId))
+  cache.observe(
+    usageLimitsKey(session.harnessId, session.harnessAccountId),
+    observation.limits,
+    observation.partial
+  )
+}
+
 export const sessionEventSink =
   (
     services: CodevisorServerServices,
@@ -34,6 +55,11 @@ export const sessionEventSink =
   (event) => {
     if (isUserRuntimeEvent(event)) {
       return undefined
+    }
+    const observation =
+      event.kind === "session.updated" ? usageLimitsObservation(event.payload) : undefined
+    if (observation !== undefined) {
+      return observeUsageLimits(services, sessionId, observation).catch(() => undefined)
     }
     const payload = objectPayload(event.payload)
     if (event.kind === "session.output" && payload.kind === "image_generation") {

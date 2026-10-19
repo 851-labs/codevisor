@@ -6,6 +6,7 @@ describe("CodexProvider", () => {
   it("keeps last-turn and cumulative usage distinct and omits nonfinite counters", async () => {
     const { client, created, events } = await setup()
     try {
+      await expect(run(created!.handle.readContext!)).resolves.toBeUndefined()
       client.emit("thread/tokenUsage/updated", {
         threadId: "thread-new",
         tokenUsage: {
@@ -59,6 +60,50 @@ describe("CodexProvider", () => {
           },
           subjectId: "thread-new"
         }
+      ])
+      await expect(run(created!.handle.readContext!)).resolves.toEqual({
+        categories: [{ name: "Free space", tokens: 249 }],
+        maxTokens: 256,
+        mcpTools: [],
+        totalTokens: 7
+      })
+    } finally {
+      await run(created!.handle.close)
+    }
+  })
+
+  it("reports live Codex plan usage and ignores other limit buckets", async () => {
+    const { client, created, events } = await setup()
+    try {
+      client.emit("account/rateLimits/updated", {
+        rateLimits: {
+          limitId: "codex",
+          primary: { resetsAt: 1_792_900_800, usedPercent: 18, windowDurationMins: 10_080 }
+        }
+      })
+      client.emit("account/rateLimits/updated", {
+        rateLimits: {
+          limitId: "codex_other",
+          primary: { usedPercent: 90, windowDurationMins: 300 }
+        }
+      })
+      expect(
+        events.map(payloadOf).filter((payload) => payload.sessionUpdate === "usage_limits_update")
+      ).toEqual([
+        expect.objectContaining({
+          partial: true,
+          limits: expect.objectContaining({
+            windows: [
+              {
+                durationMinutes: 10_080,
+                id: "primary",
+                label: "Weekly limit",
+                resetsAt: "2026-10-25T04:00:00.000Z",
+                usedPercent: 18
+              }
+            ]
+          })
+        })
       ])
     } finally {
       await run(created!.handle.close)

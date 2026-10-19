@@ -11,6 +11,7 @@ struct ChatPaneContentView: View {
   let project: Project
   let store: SessionStore
   let environment: AppEnvironment
+  var presentsBotConversation = false
 
   var body: some View {
     if let chatSessionId = descriptor.chatSessionId {
@@ -19,7 +20,7 @@ struct ChatPaneContentView: View {
           $0.serverId == hostWorkspace.serverId && $0.id == chatSession.projectId
         })
       {
-        if isUnstarted(chatSession) {
+        if !presentsBotConversation, isUnstarted(chatSession) {
           NewChatView(
             store: store,
             selection: .constant(nil),
@@ -46,7 +47,8 @@ struct ChatPaneContentView: View {
               for: chatSession,
               paneID: descriptor.id,
               controller: controller
-            )
+            ),
+            presentsBotConversation: presentsBotConversation
           )
           .environment(
             \.computerUsePiPPane,

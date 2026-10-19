@@ -45,6 +45,23 @@ public final class SessionModel {
     }
   }
   public internal(set) var isCancelling = false
+  public internal(set) var presentsBotConversation = false {
+    didSet {
+      if presentsBotConversation != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  public internal(set) var botMessages: [ServerBotMessage] = [] {
+    didSet {
+      if botMessages != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  var unsentBotMessages: [UserMessage] = [] {
+    didSet {
+      if unsentBotMessages != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  public internal(set) var hasOlderBotMessages = false
+  public internal(set) var isLoadingOlderBotMessages = false
   public internal(set) var modelFallback: SessionModelFallback?
   public internal(set) var isTakingLongerThanExpected = false
   public internal(set) var connectionRecoveryMessage: String? {

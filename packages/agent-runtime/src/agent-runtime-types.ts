@@ -1,4 +1,10 @@
-import type { Harness, HarnessUsageLimits, SessionConfigOption, SessionGoal } from "@codevisor/api"
+import type {
+  Harness,
+  HarnessUsageLimits,
+  SessionConfigOption,
+  SessionContext,
+  SessionGoal
+} from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AgentSessionListOptions, AgentSessionSummary } from "./agent-sessions.js"
@@ -81,6 +87,10 @@ export interface AgentRuntimeService {
     sessionId: string,
     input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
+  readonly steer?: (
+    sessionId: string,
+    input: string | PromptInput
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
   readonly loadedAgentSessionIds: () => ReadonlyArray<string>
   readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
@@ -100,6 +110,9 @@ export interface AgentRuntimeService {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
+  readonly readSessionContext: (
+    sessionId: string
+  ) => Effect.Effect<SessionContext | undefined, AgentRuntimeError>
   readonly probeHarnessAuth: (
     harnessId: string,
     account?: HarnessAccountContext

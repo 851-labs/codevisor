@@ -60,27 +60,19 @@ extension SidebarView {
     }
   }
 
-  var botEntries: [SidebarBotEntry] {
-    guard botsEnabled else { return [] }
-    return environment.bots.bots.map { bot in
-      SidebarBotEntry(
-        bot: bot,
-        children: (environment.navigationStore.workspaceEntries.botChildren[bot.id] ?? []).filter {
-          $0.serverId == bot.serverId
-        }
-      )
-    }
+  var botEntries: [BotSidebarEntry] {
+    botsEnabled ? environment.botSidebarEntries : []
   }
 
   var botNestedWorkspaceIDs: Set<UUID> {
-    Set(botEntries.flatMap { [$0.bot.workspaceId] + $0.children.map(\.id) })
+    Set(botEntries.flatMap(\.workspaceIDs))
   }
 
-  var visibleBotEntries: [SidebarBotEntry] {
+  var visibleBotEntries: [BotSidebarEntry] {
     botEntries.filter { botsExpanded || keepsSelection($0) }
   }
 
-  func visibleBotChildren(_ entry: SidebarBotEntry) -> [WorkspaceSidebarItem] {
+  func visibleBotChildren(_ entry: BotSidebarEntry) -> [WorkspaceSidebarItem] {
     visible(entry.children, showing: showsBotChildren(entry.bot))
   }
 
@@ -94,11 +86,11 @@ extension SidebarView {
     environment.navigationStore.workspaceEntries.botChildren.values.first { $0.contains { $0.id == id } }
   }
 
-  private func keepsSelection(_ entry: SidebarBotEntry) -> Bool {
+  private func keepsSelection(_ entry: BotSidebarEntry) -> Bool {
     isBotSelected(entry.bot) || entry.children.contains { $0.id == selectedWorkspaceID }
   }
 
-  private func isReleasing(_ entry: SidebarBotEntry) -> Bool {
+  private func isReleasing(_ entry: BotSidebarEntry) -> Bool {
     ([entry.bot.id, entry.bot.workspaceId] + entry.children.map(\.id)).contains(where: folds.isReleasing)
   }
 
@@ -106,7 +98,7 @@ extension SidebarView {
     botsExpanded && !collapsedGroupIDs.contains(Self.botGroupID(bot))
   }
 
-  private func botChildList(_ entry: SidebarBotEntry) -> some View {
+  private func botChildList(_ entry: BotSidebarEntry) -> some View {
     let isExpanded = showsBotChildren(entry.bot)
     guard folds.isFolding(Self.botGroupID(entry.bot)) || folds.isFolding(Self.botsFoldID) else {
       let rows = withReleasedRows(visibleBotChildren(entry), from: entry.children)
@@ -147,13 +139,6 @@ extension SidebarView {
   }
 }
 
-struct SidebarBotEntry: Identifiable {
-  let bot: Bot
-  let children: [WorkspaceSidebarItem]
-
-  var id: UUID { bot.id }
-}
-
 struct SidebarBotsModifier: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Binding var botEditor: BotEditorTarget?
@@ -163,7 +148,7 @@ struct SidebarBotsModifier: ViewModifier {
   func body(content: Content) -> some View {
     content
       .sheet(item: $botEditor) { target in
-        BotEditorSheet(target: target, defaultServerId: defaultServerId) { bot in
+        BotEditorSheet(target: target, environment: environment) { bot in
           selection = .bot(serverId: bot.serverId, id: bot.id)
         }
       }
@@ -175,25 +160,8 @@ struct SidebarBotsModifier: ViewModifier {
       ) { bot in
         Button("Delete Bot", role: .destructive) { delete(bot) }
       } message: { bot in
-        Text(deleteMessage(for: bot))
+        Text(environment.botDeletionMessage(for: bot))
       }
-  }
-
-  private func deleteMessage(for bot: Bot) -> String {
-    let removal =
-      "The bot's chat, its worktrees in \(bot.rootPath), and their codevisor/bot branches will be removed. Uncommitted and unpushed work in those worktrees will be lost."
-    let workspaces = environment.navigationStore.workspaceEntries.botChildren[bot.id]?.count ?? 0
-    switch workspaces {
-    case 0: return removal
-    case 1: return removal + " Its workspace will be archived."
-    default: return removal + " Its \(workspaces) workspaces will be archived."
-    }
-  }
-
-  private var defaultServerId: String {
-    let preferred = environment.defaultComposerServerId
-    if environment.bots.supportsBots(on: preferred) { return preferred }
-    return environment.bots.botMachines.first?.id ?? preferred
   }
 
   private func delete(_ bot: Bot) {

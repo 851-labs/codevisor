@@ -52,6 +52,7 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly sinks: Map<string, RuntimeEventSink>
   readonly emit: (sessionId: string, event: RuntimeEvent) => Promise<void>
   readonly releasePrompt: () => void
+  readonly steers: Array<readonly [string, string | PromptInput]>
 } => {
   const loads: Array<readonly [string, string, string]> = observableFixture([])
   const prompts: Array<readonly [string, string | PromptInput]> = observableFixture([])
@@ -78,8 +79,16 @@ export const makeAgents = (): AgentRuntimeService & {
   }
   const cancellable = new Map<string, () => void>()
   const promptGate = Promise.withResolvers<void>()
+  const steers: Array<readonly [string, string | PromptInput]> = observableFixture([])
   return {
     loads,
+    steers,
+    steer: (sessionId, input) =>
+      Effect.sync(() => {
+        if (!cancellable.has(sessionId)) return false
+        steers.push([sessionId, input])
+        return true
+      }),
     releasePrompt: () => promptGate.resolve(),
     prompts,
     cancellations,
@@ -459,6 +468,7 @@ export const makeAgents = (): AgentRuntimeService & {
           payload: { goalCleared: true }
         })
       }),
+    readSessionContext: () => Effect.succeed(undefined),
     probeHarnessAuth: () => Effect.succeed({ state: "notRequired", methods: [], canLogout: false }),
     authenticateHarness: () => Effect.void,
     logoutHarness: () => Effect.void,

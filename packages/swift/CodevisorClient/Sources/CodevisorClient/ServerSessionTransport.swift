@@ -31,6 +31,10 @@ public struct ServerSessionTransport: Sendable {
     try await client.sessionUsageLimits(id: sessionId)
   }
 
+  public func botConversation(before: Int?, limit: Int) async throws -> ServerBotConversationPage {
+    try await client.botConversation(sessionId: sessionId, before: before, limit: limit)
+  }
+
   public func promptQueue() async throws -> [ServerPromptQueueItem] {
     try await client.promptQueue(id: sessionId)
   }

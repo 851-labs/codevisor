@@ -16,4 +16,15 @@ extension CodevisorServerClient {
   public func deleteBot(id: String) async throws {
     try await sendNoResponse("/v1/bots/\(pathComponent(id))", method: "DELETE")
   }
+
+  public func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage {
+    var components = URLComponents()
+    components.path = "/v1/sessions/\(sessionId.uuidString)/conversation"
+    components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+    if let before {
+      components.queryItems?.append(URLQueryItem(name: "before", value: String(before)))
+    }
+    guard let path = components.string else { throw CodevisorServerClientError.invalidURL("conversation") }
+    return try await get(path)
+  }
 }

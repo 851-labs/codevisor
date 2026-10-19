@@ -21,12 +21,13 @@ export const makePromptQueueService = (
   | "deletePromptQueueItem"
   | "claimPromptQueueItem"
   | "completePromptQueueItem"
+  | "releasePromptQueueItem"
   | "listProcessingPromptQueue"
 > => {
   const { sqlite, getSession } = context
 
   return {
-    createPromptQueueItem: (rawSessionId, text, attachments, id, clientId) =>
+    createPromptQueueItem: (rawSessionId, text, attachments, id, clientId, origin) =>
       attempt("createPromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
@@ -38,13 +39,14 @@ export const makePromptQueueService = (
           createdAt: now,
           updatedAt: now,
           ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
-          ...(clientId === undefined ? {} : { clientId })
+          ...(clientId === undefined ? {} : { clientId }),
+          ...(origin === "system" ? { origin } : {})
         }
         sqlite
           .prepare(
             `insert into prompt_queue_items (
-              id, session_id, text, created_at, updated_at, attachments, client_id, position
-            ) values (?, ?, ?, ?, ?, ?, ?, (
+              id, session_id, text, created_at, updated_at, attachments, client_id, origin, position
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, (
               select coalesce(max(position), -1) + 1
               from prompt_queue_items
               where session_id = ? and state = 'pending'
@@ -58,6 +60,7 @@ export const makePromptQueueService = (
             now,
             serializeAttachments(attachments),
             clientId ?? null,
+            origin ?? "user",
             sessionId
           )
         return item
@@ -151,6 +154,14 @@ export const makePromptQueueService = (
         sqlite
           .prepare(
             "delete from prompt_queue_items where session_id = ? and id = ? and state = 'processing'"
+          )
+          .run(canonicalUuid(rawSessionId), queueItemId)
+      }),
+    releasePromptQueueItem: (rawSessionId, queueItemId) =>
+      attempt("releasePromptQueueItem", () => {
+        sqlite
+          .prepare(
+            "update prompt_queue_items set state = 'pending' where session_id = ? and id = ? and state = 'processing'"
           )
           .run(canonicalUuid(rawSessionId), queueItemId)
       }),

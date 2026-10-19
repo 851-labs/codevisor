@@ -20,7 +20,7 @@ import {
   type SetGoalUpdate,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-import type { Harness } from "@codevisor/api"
+import { isoTimestamp, type Harness, type HarnessUsageLimits } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AcpAgentConnection, AcpConnector } from "./connection.js"
@@ -115,6 +115,10 @@ export interface AcpProviderConfig {
   readonly providerId?: ProviderId
   readonly connector?: AcpConnector
   readonly launchEnv?: (env: NodeJS.ProcessEnv, launch: AcpLaunchContext) => NodeJS.ProcessEnv
+  readonly readUsageLimits?: (
+    connection: AcpAgentConnection,
+    definition: HarnessDefinition
+  ) => Effect.Effect<HarnessUsageLimits, AgentRuntimeError>
 }
 
 const skillGraceMs = 250
@@ -123,6 +127,16 @@ const skillListTimeoutMs = (sessionOptions: CreateSessionOptions | undefined): n
   sessionOptions?.skillListTimeoutMs ?? skillGraceMs
 
 const authProbeTimeoutMs = 10_000
+
+const usageLimitsTimeoutMs = 15_000
+
+const unavailableUsageLimits = (harnessId: string, detail: string): HarnessUsageLimits => ({
+  detail,
+  fetchedAt: isoTimestamp(),
+  harnessId,
+  state: "unavailable",
+  windows: []
+})
 
 const acpSessionHandle = (
   connection: AcpAgentConnection,
@@ -248,6 +262,7 @@ export const makeAcpProvider = (
       )
     })
 
+  const readUsage = config.readUsageLimits
   return {
     id: config.providerId ?? "acp",
     readiness: (definition) =>
@@ -326,6 +341,33 @@ export const makeAcpProvider = (
         return []
       }
     },
+    ...(readUsage === undefined
+      ? {}
+      : {
+          readUsageLimits: (
+            definition: HarnessDefinition,
+            cwd: string,
+            account?: HarnessAccountContext
+          ) =>
+            Effect.gen(function* () {
+              const connection = yield* connect(definition, cwd, () => Promise.resolve(), account)
+              return yield* readUsage(connection, definition).pipe(
+                Effect.timeout(usageLimitsTimeoutMs),
+                Effect.ensuring(connection.close.pipe(Effect.ignoreCause))
+              )
+            }).pipe(
+              Effect.catch((cause) =>
+                Effect.succeed(
+                  unavailableUsageLimits(
+                    definition.id,
+                    cause instanceof Error
+                      ? cause.message
+                      : `${definition.name} usage limits are unavailable.`
+                  )
+                )
+              )
+            )
+        }),
     probeAuth: (definition, account) =>
       Effect.gen(function* () {
         const connection = yield* connect(

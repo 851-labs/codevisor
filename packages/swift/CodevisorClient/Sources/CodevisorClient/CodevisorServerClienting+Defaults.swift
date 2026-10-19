@@ -450,6 +450,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.httpStatus(404, "")
   }
 
+  func sessionContext(id: UUID) async throws -> ServerSessionContext? {
+    nil
+  }
+
   @discardableResult
   func setSessionGoal(
     id: UUID,

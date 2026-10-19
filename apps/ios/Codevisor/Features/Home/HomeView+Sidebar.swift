@@ -53,6 +53,10 @@ extension HomeView {
               serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: workspace.anchorSessionId,
               chatSessionId: workspace.primaryRow?.chatSessionId, paneId: workspace.primaryRow?.id))
         } : nil,
+      openBot: { bot in openBot(bot) },
+      newBot: { botEditor = .create },
+      editBot: { bot in botEditor = .edit(bot) },
+      deleteBot: { bot in deletingBot = bot },
       didSelectInSplit: { dismissOverlaySidebarAfterSelection() },
       refresh: { await refreshNavigation() }
     )
@@ -142,7 +146,7 @@ extension HomeView {
     )
   }
 
-  private func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
+  func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
     guard var workspace = environment.workspaces.workspace(id: ref.id) else { return }
     var state = WorkspaceScreen.compactPaneState(from: workspace)
     let pane = state.addNewTabPane()

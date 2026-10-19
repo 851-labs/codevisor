@@ -73,6 +73,10 @@ struct SessionTranscriptView: View {
   @State var sendAnimationSourceFrame: CGRect?
   @State var queueSendAnimation = IOSQueueSendAnimation()
 
+  var userBubbleStyle: UserBubbleStyle {
+    controller.presentsBotConversation ? .accent : .standard
+  }
+
   var composerHeight: CGFloat {
     isReadOnly ? 0 : composerCardHeight + composerAccessoryHeight
   }
@@ -357,7 +361,7 @@ struct SessionTranscriptView: View {
           sendAnimationSourceFrame = frame
         },
         onWillSend: { text in
-          if controller.isSending {
+          if controller.isSending, !controller.presentsBotConversation {
             TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
             if !reduceMotion {
               queueSendAnimation.stage(
@@ -374,7 +378,9 @@ struct SessionTranscriptView: View {
             SentAttachmentThumbnails.prepare(controller.composerAttachments)
             ComposerSendStaging.stage(
               session: ObjectIdentifier(controller),
-              sourceFrame: sendAnimationSourceFrame ?? .zero
+              sourceFrame: sendAnimationSourceFrame ?? .zero,
+              style: userBubbleStyle,
+              followsComposer: !preservesComposerFocusOnSend
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)

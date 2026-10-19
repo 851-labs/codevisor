@@ -93,6 +93,11 @@ final public class SessionController {
     }
   }
   public internal(set) var pendingSendStartedAt: Date?
+  public internal(set) var presentsBotConversation = false {
+    didSet {
+      if presentsBotConversation != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
   public internal(set) var pendingUserMessage: UserMessage? {
     didSet {
       if pendingUserMessage != oldValue { transcriptProjectionRevision &+= 1 }

@@ -67,7 +67,8 @@ export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(attachments === undefined ? {} : { attachments }),
-    ...(row.client_id == null ? {} : { clientId: row.client_id })
+    ...(row.client_id == null ? {} : { clientId: row.client_id }),
+    ...(row.origin === "system" ? { origin: "system" as const } : {})
   }
 }
 

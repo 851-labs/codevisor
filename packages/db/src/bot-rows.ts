@@ -1,4 +1,4 @@
-import type { Bot, Workspace } from "@codevisor/api"
+import type { AttachmentRef, Bot, BotMessage, BotMessageSender, Workspace } from "@codevisor/api"
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
@@ -14,6 +14,7 @@ export interface BotRow {
   readonly session_id: string
   readonly workspace_id: string
   readonly harness_id: string
+  readonly conversational: number
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -36,9 +37,42 @@ export const botRows = rowReader<BotRow>({
   session_id: text,
   workspace_id: text,
   harness_id: text,
+  conversational: integer,
   created_at: text,
   updated_at: nullable(text)
 })
+
+export interface BotMessageRow {
+  readonly id: string
+  readonly session_id: string
+  readonly sequence: number
+  readonly sender: string
+  readonly text: string
+  readonly attachments: string | null
+  readonly created_at: string
+}
+
+export const botMessageRows = rowReader<BotMessageRow>({
+  id: text,
+  session_id: text,
+  sequence: integer,
+  sender: text,
+  text,
+  attachments: nullable(text),
+  created_at: text
+})
+
+export interface AppendBotMessageRecord {
+  readonly id?: string | undefined
+  readonly sender: BotMessageSender
+  readonly text: string
+  readonly attachments?: ReadonlyArray<AttachmentRef> | undefined
+}
+
+export interface BotMessagePage {
+  readonly messages: ReadonlyArray<BotMessage>
+  readonly hasMore: boolean
+}
 
 export const botProjectRows = rowReader<BotProjectRow>({
   bot_id: text,
@@ -56,6 +90,7 @@ export interface CreateBotRecord {
   readonly projectId: string
   readonly sessionId: string
   readonly workspaceId: string
+  readonly conversational?: boolean
   readonly projects: ReadonlyArray<{
     readonly projectId: string
     readonly folderName: string
@@ -84,4 +119,13 @@ export interface BotsService {
   readonly listBotWorkspaces: (
     botId: string
   ) => Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>
+  readonly appendBotMessage: (
+    sessionId: string,
+    record: AppendBotMessageRecord
+  ) => Effect.Effect<{ readonly message: BotMessage; readonly created: boolean }, DatabaseError>
+  readonly listBotMessages: (
+    sessionId: string,
+    before: number | undefined,
+    limit: number
+  ) => Effect.Effect<BotMessagePage, DatabaseError>
 }

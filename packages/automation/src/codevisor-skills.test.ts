@@ -72,7 +72,8 @@ describe("managed Codevisor skills", () => {
       "codevisor",
       "codevisor-agents",
       "codevisor-clients",
-      "codevisor-machines"
+      "codevisor-machines",
+      "codevisor-messages"
     ])
     for (const skill of codevisorSkills) {
       expect(skill.text).toMatch(

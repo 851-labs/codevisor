@@ -113,6 +113,8 @@ export class FakeCodexClient implements CodexClient {
           return { turn: { id: "turn-1", status: "inProgress" } }
         case "turn/interrupt":
           return {}
+        case "turn/steer":
+          return { turnId: recordOf(params).expectedTurnId }
         case "account/read":
           if (this.account === undefined) throw new Error(`Unexpected request: ${method}`)
           return this.account

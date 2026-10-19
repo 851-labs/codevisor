@@ -9,6 +9,7 @@ import {
 } from "@codevisor/api"
 import { gitBranchDiffTotals } from "@codevisor/worktrees"
 
+import { usageLimitsKey } from "../infra/usage-limits-cache.js"
 import {
   appendAndPublish,
   getProjectOrFail,
@@ -129,10 +130,13 @@ export const routeSessions = async (
       session.harnessAccountId === undefined
         ? await services.auth?.activeAccountContext(session.harnessId)
         : await services.auth?.accountContext(session.harnessAccountId)
-    const limits = await run(
-      services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext)
-    )
     const accountId = session.harnessAccountId ?? accountContext?.id
+    const readLimits = () =>
+      run(services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext))
+    const limits = await (services.usageLimits?.read(
+      usageLimitsKey(session.harnessId, accountId),
+      readLimits
+    ) ?? readLimits())
     const accounts = await services.auth?.accounts(session.harnessId)
     const account = accounts?.find((candidate) => candidate.id === accountId)
     writeJson(response, 200, {
@@ -140,6 +144,21 @@ export const routeSessions = async (
       ...(accountId === undefined ? {} : { accountId }),
       ...(account === undefined ? {} : { accountEmail: account.email, accountLabel: account.label })
     })
+    return true
+  }
+
+  const contextSessionId = matchRoute(url.pathname, "/v1/sessions/:id/context")
+  if (contextSessionId !== undefined && request.method === "GET") {
+    const session = await findSession(services.db, contextSessionId)
+    if (session === undefined) throw new HttpFailure(404, "Session not found")
+    const agentSessionId = session.agentSessionId
+    const isRuntimeLoaded =
+      agentSessionId !== undefined &&
+      services.agents.loadedAgentSessionIds().includes(agentSessionId)
+    const context = isRuntimeLoaded
+      ? await run(services.agents.readSessionContext(agentSessionId))
+      : undefined
+    writeJson(response, 200, context ?? null)
     return true
   }
 

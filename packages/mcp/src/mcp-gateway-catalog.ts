@@ -1,4 +1,4 @@
-import type { AutomationToolProvider } from "@codevisor/automation"
+import { CODEVISOR_BOT_TOOL_NAMES, type AutomationToolProvider } from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import { automationSkills } from "./mcp-automation-builtins.js"
@@ -119,6 +119,24 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     )
   ]
 
+  const isBotSession = async (sessionId: string | undefined): Promise<boolean> => {
+    if (sessionId === undefined) return false
+    const bot = await run(config.db.findBotOwning({ sessionId })).catch(() => undefined)
+    return (
+      bot !== undefined &&
+      bot.conversational &&
+      bot.sessionId.toLowerCase() === sessionId.toLowerCase()
+    )
+  }
+
+  const providerTools = async (
+    provider: AutomationToolProvider,
+    sessionId: string | undefined
+  ): Promise<ReadonlyArray<Tool>> =>
+    provider.id !== "codevisor" || sessionId === undefined || (await isBotSession(sessionId))
+      ? provider.tools
+      : provider.tools.filter((tool) => !CODEVISOR_BOT_TOOL_NAMES.has(tool.name))
+
   const sessionSkills = async (
     projectId?: string,
     sessionId?: string
@@ -126,6 +144,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const enabledIds = new Set(
       (await enabledServers(projectId, sessionId)).map((server) => server.id)
     )
+    if (enabledIds.has("codevisor") && (await isBotSession(sessionId))) enabledIds.add("bot")
     return skillEntries(
       builtinSkills,
       { enabledIds, pluginTools: await listPluginTools() },
@@ -143,7 +162,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
         const provider = automationProviders.get(server.id)
         return provider === undefined
           ? { server, tools: (await connectUpstream(server.id)).tools }
-          : { server, tools: provider.tools }
+          : { server, tools: await providerTools(provider, sessionId) }
       })
     )
     return [
@@ -205,9 +224,11 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
     if (!allowed) throw new Error("Tool server is disabled for this session")
     const provider = automationProviders.get(serverId)
-    const definition = (provider?.tools ?? (await connectUpstream(serverId)).tools).find(
-      (candidate) => candidate.name === toolName
-    )
+    const definition = (
+      provider === undefined
+        ? (await connectUpstream(serverId)).tools
+        : await providerTools(provider, sessionId)
+    ).find((candidate) => candidate.name === toolName)
     if (definition === undefined) throw new Error(`Tool not found: ${path}`)
     return definition
   }

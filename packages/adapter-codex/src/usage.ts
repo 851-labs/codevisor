@@ -1,4 +1,4 @@
-import type { HarnessUsageLimits } from "@codevisor/api"
+import type { HarnessUsageLimits, SessionContext } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
@@ -65,4 +65,29 @@ export const codexUsageLimitsFrom = (response: unknown): HarnessUsageLimits => {
       ? {}
       : { detail: "Codex did not return subscription usage limits for this account." })
   }
+}
+
+const tokenCount = (record: Record<string, unknown>, key: string): number => {
+  const value = record[key]
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+export const codexSessionContextFrom = (tokenUsage: unknown): SessionContext | undefined => {
+  if (!isRecord(tokenUsage) || !isRecord(tokenUsage.last)) return undefined
+  const maxTokens = tokenCount(tokenUsage, "modelContextWindow")
+  if (maxTokens === 0) return undefined
+  const last = tokenUsage.last
+  const input = tokenCount(last, "inputTokens")
+  const cached = Math.min(tokenCount(last, "cachedInputTokens"), input)
+  const output = tokenCount(last, "outputTokens")
+  const reasoning = Math.min(tokenCount(last, "reasoningOutputTokens"), output)
+  const totalTokens = tokenCount(last, "totalTokens") || input + output
+  const categories = [
+    { name: "Input", tokens: input - cached },
+    { name: "Cached input", tokens: cached },
+    { name: "Output", tokens: output - reasoning },
+    { name: "Reasoning", tokens: reasoning },
+    { name: "Free space", tokens: Math.max(maxTokens - totalTokens, 0) }
+  ].filter((category) => category.tokens > 0)
+  return { totalTokens, maxTokens, categories, mcpTools: [] }
 }

@@ -12,7 +12,8 @@ struct BotModelSelectionTests {
 
   nonisolated private static func capability(
     harnessId: String,
-    selections: [String: String] = [:]
+    selections: [String: String] = [:],
+    reportsModel: Bool = true
   ) -> ServerHarnessCapability {
     let model = selections["model"] ?? "opus"
     let efforts = Self.efforts[model] ?? []
@@ -31,7 +32,7 @@ struct BotModelSelectionTests {
       configOptions: [
         SessionConfigOption(
           id: "model", name: "Model", category: SessionConfigOption.Category.model,
-          currentValue: model,
+          currentValue: reportsModel ? model : "",
           options: ["opus", "haiku"].map { SessionConfigSelectOption(value: $0, name: $0) }
         ),
         SessionConfigOption(
@@ -44,11 +45,14 @@ struct BotModelSelectionTests {
   }
 
   private func makeSelection(
-    remembered: (harnessId: String, selections: [String: String])?
+    remembered: (harnessId: String, selections: [String: String])?,
+    reportsModel: Bool = true
   ) -> (BotModelSelection, SyncFakeServerClient) {
     let client = SyncFakeServerClient(projects: [], sessions: [])
     client.resolvedCapabilitiesHandler = { _, harnessId, selections in
-      ServerCapabilities(harnesses: [Self.capability(harnessId: harnessId, selections: selections)])
+      ServerCapabilities(harnesses: [
+        Self.capability(harnessId: harnessId, selections: selections, reportsModel: reportsModel)
+      ])
     }
     let cache = ConfigOptionCache(store: InMemoryStore())
     cache.store(
@@ -90,6 +94,16 @@ struct BotModelSelectionTests {
 
     #expect(selection.harnessId == "codex")
     #expect(selection.configSelections == ["model": "opus", "effort": "low"])
+  }
+
+  @Test("A harness that reports no current model starts on its first listed model")
+  func unreportedModelFallsBackToFirst() async {
+    let (selection, _) = makeSelection(remembered: nil, reportsModel: false)
+
+    await selection.seedDefaults()
+
+    #expect(selection.modelOption?.currentValue == "opus")
+    #expect(selection.configSelections["model"] == "opus")
   }
 
   @Test("Choosing another model resolves its effort levels and drops an unsupported effort")

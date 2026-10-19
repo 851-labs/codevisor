@@ -1,5 +1,6 @@
 import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
 
 import { codexInput } from "./attachments.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
@@ -76,6 +77,21 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
       })
       return pending
     }),
+  steer: (input) =>
+    adapterPromise("steer", async () => {
+      const turnId = session.activeTurnId
+      if (turnId === undefined || session.interruptRequested) return false
+      try {
+        await session.client.request("turn/steer", {
+          expectedTurnId: turnId,
+          input: codexInput(normalizePromptInput(input), session.skills),
+          threadId: session.threadId
+        })
+        return true
+      } catch {
+        return false
+      }
+    }),
   setConfigOption: (configId, value) =>
     adapterPromise("setConfigOption", async () => {
       if (configId === "model") {
@@ -135,5 +151,6 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     await emitGoalCleared(session)
   }),
   answerQuestion: (questionId, answer) =>
-    adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer))
+    adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer)),
+  readContext: Effect.sync(() => session.latestContext)
 })

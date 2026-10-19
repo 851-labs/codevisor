@@ -31,7 +31,7 @@ extension ChatScreen {
           )
         }
       }
-      if !controller.queuedPrompts.isEmpty {
+      if !presentsBotConversation, !controller.queuedPrompts.isEmpty {
         PromptQueueView(
           controller: controller,
           isExpanded: $isQueueExpanded,
@@ -51,9 +51,14 @@ extension ChatScreen {
         focusChatId: controller.serverSession?.id,
         glassNamespace: composerGlassNamespace
       )
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        composerCardHeight = $0
+      }
     }
-    .padding(.horizontal, 24)
-    .frame(maxWidth: 880)
+    .padding(.horizontal, Self.composerHorizontalPadding)
+    .frame(maxWidth: Self.composerMaxWidth)
     .padding(.bottom, Self.composerBottomMargin)
     .padding(.top, 24)
     .frame(maxWidth: .infinity)
@@ -109,7 +114,7 @@ extension ChatScreen {
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
         && (controller.goal ?? controller.draftGoal) != nil,
-      hasQueuedPrompts: !controller.queuedPrompts.isEmpty
+      hasQueuedPrompts: !presentsBotConversation && !controller.queuedPrompts.isEmpty
     )
   }
 }

@@ -43,8 +43,35 @@ extension SessionController {
       serverWaitMessage: serverWaitMessage,
       sessionErrorMessage: sessionErrorMessage,
       status: projectionStatus,
-      activityMessage: transcriptActivityOverride
+      activityMessage: transcriptActivityOverride,
+      botConversation: model?.transcriptBotConversation
+        ?? (presentsBotConversation ? TranscriptBotConversation(messages: [], isWorking: false) : nil)
     )
+  }
+
+  public var hasOlderBotMessages: Bool { model?.hasOlderBotMessages ?? false }
+  public var isLoadingOlderBotMessages: Bool { model?.isLoadingOlderBotMessages ?? false }
+
+  @discardableResult
+  public func loadOlderBotMessages() async -> Int {
+    await model?.loadOlderBotMessages() ?? 0
+  }
+
+  public var composerPlaceholder: String {
+    presentsBotConversation ? "Message" : "Do something"
+  }
+
+  public var hasOlderPresentedHistory: Bool {
+    presentsBotConversation ? hasOlderBotMessages : hasOlderHistory
+  }
+
+  public var isLoadingOlderPresentedHistory: Bool {
+    presentsBotConversation ? isLoadingOlderBotMessages : isLoadingOlderHistory
+  }
+
+  @discardableResult
+  public func loadOlderPresentedHistory() async -> Int {
+    presentsBotConversation ? await loadOlderBotMessages() : await loadOlderHistory()
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
@@ -188,5 +215,13 @@ extension SessionController {
       && configurationValidationState == .ready
       && !requiresModelSelection
       && (isConnected || selectedHarness != nil)
+  }
+}
+
+extension SessionController {
+  public func presentBotConversation() {
+    guard !presentsBotConversation else { return }
+    presentsBotConversation = true
+    model?.presentBotConversation()
   }
 }

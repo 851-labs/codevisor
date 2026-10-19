@@ -1,10 +1,10 @@
-import CodevisorCore
+import Foundation
 
-enum BotEditorTarget: Identifiable {
+public enum BotEditorTarget: Identifiable, Hashable {
   case create
   case edit(Bot)
 
-  var id: String {
+  public var id: String {
     switch self {
     case .create: "create"
     case let .edit(bot): bot.id.uuidString

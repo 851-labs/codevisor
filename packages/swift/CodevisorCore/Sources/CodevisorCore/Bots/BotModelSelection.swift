@@ -116,11 +116,14 @@ public final class BotModelSelection {
     to options: [SessionConfigOption]
   ) -> [SessionConfigOption] {
     options.map { option in
-      guard let value = selections[option.id],
-        option.options.contains(where: { $0.value == value })
-      else { return option }
       var updated = option
-      updated.currentValue = value
+      if let value = selections[option.id], option.options.contains(where: { $0.value == value }) {
+        updated.currentValue = value
+      } else if !option.options.contains(where: { $0.value == option.currentValue }),
+        let first = option.options.first
+      {
+        updated.currentValue = first.value
+      }
       return updated
     }
   }

@@ -44,6 +44,7 @@ const seedBot = async (db: CodevisorDatabaseService) => {
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
+      conversational: true,
       projects: [
         { projectId: web.id, folderName: "web", branch: "codevisor/bot-helper" },
         { projectId: api.id, folderName: "api", branch: "codevisor/bot-helper" }
@@ -65,6 +66,7 @@ describe("bots service", () => {
       name: "Helper",
       symbolName: "sparkles",
       harnessId: "codex",
+      conversational: true,
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
@@ -170,5 +172,82 @@ describe("bot workspaces", () => {
     const workspaces = await run(db.listWorkspaces)
     expect(workspaces.find((workspace) => workspace.id === "ws-child")?.botId).toBeUndefined()
     expect(await run(db.listBotWorkspaces("bot-helper"))).toEqual([])
+  })
+
+  it("keeps a bot conversation in send order and pages older messages", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    await seedBot(db)
+
+    const first = await run(
+      db.appendBotMessage("chat-helper", { id: "m-1", sender: "user", text: "hi" })
+    )
+    const replay = await run(
+      db.appendBotMessage("chat-helper", { id: "m-1", sender: "user", text: "hi again" })
+    )
+    await run(db.appendBotMessage("chat-helper", { sender: "bot", text: "hello" }))
+    await run(db.appendBotMessage("chat-helper", { sender: "notice", text: "rate limited" }))
+
+    expect(first.created).toBe(true)
+    expect(replay).toEqual({ message: first.message, created: false })
+    const latest = await run(db.listBotMessages("chat-helper", undefined, 2))
+    expect(latest.hasMore).toBe(true)
+    expect(
+      latest.messages.map((message) => [message.sequence, message.sender, message.text])
+    ).toEqual([
+      [2, "bot", "hello"],
+      [3, "notice", "rate limited"]
+    ])
+    const older = await run(db.listBotMessages("chat-helper", 2, 2))
+    expect(older).toEqual({ messages: [first.message], hasMore: false })
+  })
+
+  it("keeps the files a bot attaches to its messages", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    await seedBot(db)
+    const shot = {
+      fileId: "file-1",
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      kind: "image" as const
+    }
+
+    const { message } = await run(
+      db.appendBotMessage("chat-helper", { sender: "bot", text: "here", attachments: [shot] })
+    )
+
+    expect(message.attachments).toEqual([shot])
+    expect((await run(db.listBotMessages("chat-helper", undefined, 10))).messages).toEqual([
+      message
+    ])
+  })
+
+  it("leaves conversation mode off unless the bot asks for it", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const home = await run(db.createProject({ folderPath: botPath("quiet"), name: "Quiet" }))
+    await run(
+      db.createWorkspaceWithSession({
+        workspace: { id: "ws-quiet", projectId: home.id, name: "Quiet", hasCustomName: false },
+        session: { id: "chat-quiet", projectId: home.id, harnessId: "codex", title: "Quiet" }
+      })
+    )
+
+    const bot = await run(
+      db.createBot({
+        id: "bot-quiet",
+        name: "Quiet",
+        symbolName: "sparkles",
+        slug: "quiet",
+        projectId: home.id,
+        sessionId: "chat-quiet",
+        workspaceId: "ws-quiet",
+        projects: []
+      })
+    )
+
+    expect(bot.conversational).toBe(false)
   })
 })

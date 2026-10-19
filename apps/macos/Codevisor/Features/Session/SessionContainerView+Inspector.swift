@@ -14,6 +14,12 @@ extension SessionContainerView {
       _ = openFileDocument(path)
     case let .previewFile(path):
       _ = openFileDocument(path, preview: true)
+    case .botTranscript:
+      let workspace = selectedWorkspace
+      guard botsEnabled,
+        let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
+      else { return }
+      openBotTranscript(bot)
     }
   }
 

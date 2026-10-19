@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { basename, join } from "node:path"
 
@@ -34,7 +34,7 @@ import {
 } from "../server-context.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
 import { availableWorktreeName, slugifyWorktreeName } from "./project-worktree-create.js"
-import { createSessionIfMissing } from "./session-workspace.js"
+import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
 
 interface BotSource {
   readonly project: Project
@@ -132,7 +132,70 @@ const checkOut = async (
   return checkout
 }
 
-export const botInstructions = (name: string, checkouts: ReadonlyArray<BotCheckout>): string =>
+const BOT_MESSAGING_SECTION: ReadonlyArray<string> = [
+  "## Talking to the user",
+  "",
+  "The user chats with you like iMessage and only sees the messages you send with",
+  "`codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not",
+  "even your final reply. Read the `codevisor-messages` skill before your first reply.",
+  ""
+]
+
+const WAIT_FOLLOW_UP_STEP = "4. `sessions.wait` or `sessions.get` to follow up"
+
+const LEGACY_CREATE_STEP = "2. `sessions.create({ projectId, worktreeName, title })`"
+
+const createStep = (harnessId: string): string =>
+  `2. \`sessions.create({ projectId, worktreeName, harnessId: "${harnessId}", title })\``
+
+const EVENT_FOLLOW_UP_STEP =
+  "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result"
+
+const messagingSection = (conversational: boolean): ReadonlyArray<string> =>
+  conversational ? BOT_MESSAGING_SECTION : []
+
+const followUpStep = (conversational: boolean): string =>
+  conversational ? EVENT_FOLLOW_UP_STEP : WAIT_FOLLOW_UP_STEP
+
+export const upgradeBotInstructions = (
+  text: string,
+  harnessId: string,
+  conversational: boolean
+): string => {
+  const section = BOT_MESSAGING_SECTION.join("\n") + "\n"
+  const steps = text
+    .replace(
+      conversational ? WAIT_FOLLOW_UP_STEP : EVENT_FOLLOW_UP_STEP,
+      followUpStep(conversational)
+    )
+    .replace(LEGACY_CREATE_STEP, createStep(harnessId))
+  if (!conversational) return steps.replace(section, "")
+  if (steps.includes(BOT_MESSAGING_SECTION[0]!)) return steps
+  const repositories = steps.indexOf("## Repositories")
+  return repositories === -1
+    ? `${steps.trimEnd()}\n\n${section}`
+    : steps.slice(0, repositories) + section + steps.slice(repositories)
+}
+
+export const upgradeAllBotInstructions = async (
+  services: CodevisorServerServices
+): Promise<void> => {
+  for (const bot of await run(services.db.listBots)) {
+    const path = join(bot.rootPath, "AGENTS.md")
+    try {
+      const current = readFileSync(path, "utf8")
+      const upgraded = upgradeBotInstructions(current, bot.harnessId, bot.conversational)
+      if (upgraded !== current) writeFileSync(path, upgraded)
+    } catch {}
+  }
+}
+
+export const botInstructions = (
+  name: string,
+  harnessId: string,
+  conversational: boolean,
+  checkouts: ReadonlyArray<BotCheckout>
+): string =>
   [
     `# ${name}`,
     "",
@@ -140,6 +203,7 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     "Plan the work, hand it to sub-agents, and follow up on their results. Don't change code",
     "yourself; read the folders below to understand the code and decide what to delegate.",
     "",
+    ...messagingSection(conversational),
     "## Repositories",
     "",
     ...checkouts.map(
@@ -155,17 +219,26 @@ export const botInstructions = (name: string, checkouts: ReadonlyArray<BotChecko
     "not a project you can branch from.",
     "",
     "1. `worktrees.create({ projectId })`",
-    "2. `sessions.create({ projectId, worktreeName, title })`",
+    createStep(harnessId),
     "3. `sessions.prompt({ sessionId, text })`",
-    "4. `sessions.wait` or `sessions.get` to follow up",
+    followUpStep(conversational),
     "",
     "Workspaces your sub-agents work in, and any they create, are listed under this bot in the",
     "Codevisor sidebar.",
     ""
   ].join("\n")
 
-const writeInstructions = (slug: string, name: string, checkouts: ReadonlyArray<BotCheckout>) => {
-  writeFileSync(join(botPath(slug), "AGENTS.md"), botInstructions(name, checkouts))
+const writeInstructions = (
+  slug: string,
+  name: string,
+  harnessId: string,
+  conversational: boolean,
+  checkouts: ReadonlyArray<BotCheckout>
+) => {
+  writeFileSync(
+    join(botPath(slug), "AGENTS.md"),
+    botInstructions(name, harnessId, conversational, checkouts)
+  )
 }
 
 interface CreatedBotResources {
@@ -238,7 +311,8 @@ export const createBot = async (
     for (const source of sources) {
       created.checkouts.push(await checkOut(services, slug, source, folders))
     }
-    writeInstructions(slug, name, created.checkouts)
+    const conversational = payload.conversational === true
+    writeInstructions(slug, name, payload.harnessId, conversational, created.checkouts)
     const home = await run(services.db.createProject({ folderPath: botPath(slug), name }))
     created.homeProjectId = home.id
     await appendAndPublish(
@@ -258,6 +332,7 @@ export const createBot = async (
       workspaceId,
       title: name
     })
+    await applySessionUpdate(services, fanout, session.id, { title: name, titleIntent: "rename" })
     created.session = session
     const bot = await run(
       services.db.createBot({
@@ -268,6 +343,7 @@ export const createBot = async (
         projectId: home.id,
         sessionId: session.id,
         workspaceId,
+        conversational,
         projects: created.checkouts.map((checkout) => ({
           projectId: checkout.source.project.id,
           folderName: checkout.folderName,

@@ -140,7 +140,7 @@ struct WorkspacePaneContentView: View {
       } else {
         ContentUnavailableView("No Machine", systemImage: "bolt.slash")
       }
-    case .subagent:
+    case .subagent, .transcript:
       EmptyView()
     }
   }

@@ -18,7 +18,6 @@ import {
   type LoadedAgentSession,
   type ProviderEnvironment
 } from "@codevisor/agent-runtime"
-import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { metadataFor, resolveClaudeModel } from "./models.js"
@@ -26,7 +25,7 @@ import { claudeSessionHandle } from "./session-handle.js"
 import type { ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
-import { claudeUsageLimitsFrom } from "./usage.js"
+import { claudeUsageLimitsFrom, claudeUsageUnavailable, readClaudeOAuthUsage } from "./usage.js"
 
 const MINIMUM_CLAUDE_VERSION = "2.0.0"
 
@@ -38,6 +37,7 @@ export interface ClaudeProviderConfig {
   readonly readFile?: (path: string) => string | undefined
   readonly subagentTranscripts?: (configDir: string) => SubagentTranscripts
   readonly checkVersion?: (claudePath: string) => Promise<string>
+  readonly fetch?: typeof fetch
 }
 
 export const makeClaudeProvider = (
@@ -175,6 +175,14 @@ export const makeClaudeProvider = (
     },
     readUsageLimits: (definition, cwd, account) =>
       adapterPromise("readUsageLimits", async () => {
+        const envToken = account?.env?.CLAUDE_CODE_OAUTH_TOKEN
+        if (envToken !== undefined) {
+          try {
+            return await readClaudeOAuthUsage(envToken, config.fetch)
+          } catch (error) {
+            return claudeUsageUnavailable(error)
+          }
+        }
         const session = await startSession(
           definition,
           cwd,
@@ -196,16 +204,7 @@ export const makeClaudeProvider = (
           ])
           return claudeUsageLimitsFrom(usage)
         } catch (error) {
-          return {
-            detail:
-              error instanceof Error
-                ? error.message
-                : "Claude account usage limits are unavailable.",
-            fetchedAt: isoTimestamp(),
-            harnessId: "claude-code",
-            state: "unavailable" as const,
-            windows: []
-          }
+          return claudeUsageUnavailable(error)
         } finally {
           if (timeout !== undefined) clearTimeout(timeout)
           session.abort.abort()

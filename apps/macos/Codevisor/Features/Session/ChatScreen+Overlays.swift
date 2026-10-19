@@ -59,6 +59,44 @@ extension ChatScreen {
     return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane)
   }
 
+  @ViewBuilder
+  var composerScrim: some View {
+    if !isReadOnly, composerCardHeight > 0 {
+      let cornerRadius = composerCardStyle.cornerRadius
+      let fadeHeight = max(0, composerCardHeight - cornerRadius * 2)
+      let height = composerCardHeight - cornerRadius + Self.composerBottomMargin
+      let opaqueLocation = fadeHeight / height
+      Rectangle()
+        .fill(.ultraThinMaterial)
+        .mask(Self.scrimRamp(opaqueAt: opaqueLocation * 0.6))
+        .overlay {
+          Rectangle()
+            .fill(.background)
+            .mask(Self.scrimRamp(opaqueAt: opaqueLocation))
+        }
+        .frame(height: height)
+        .padding(.horizontal, Self.composerHorizontalPadding)
+        .frame(maxWidth: Self.composerMaxWidth)
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: composerCardHeight)
+    }
+  }
+
+  static func scrimRamp(opaqueAt location: CGFloat) -> LinearGradient {
+    LinearGradient(
+      stops: [
+        .init(color: .clear, location: 0),
+        .init(color: .black.opacity(0.5), location: location * 0.6),
+        .init(color: .black, location: location),
+        .init(color: .black, location: 1),
+      ],
+      startPoint: .top,
+      endPoint: .bottom
+    )
+  }
+
   var bottomChromeOverlay: some View {
     GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
       ZStack(alignment: .bottom) {

@@ -1,5 +1,5 @@
 import { AgentRuntimeError } from "@codevisor/agent-runtime"
-import type { AttachmentRef, EventEnvelope, PromptQueueItem } from "@codevisor/api"
+import type { AttachmentRef, EventEnvelope, PromptOrigin, PromptQueueItem } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
@@ -17,6 +17,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
+import { conversationalBotForSession, noteBotPrompt } from "./bot-turns.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
@@ -137,11 +138,13 @@ export const drainPromptQueue = async (
     return
   }
   if (routeState.activePromptSessions.has(sessionId)) {
+    await steerQueuedPrompts(services, fanout, routeState, serverId, sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
   if (routeState.activeTurnSessions.has(sessionId)) {
     routeState.turnHeldSessions.add(sessionId)
+    await steerQueuedPrompts(services, fanout, routeState, serverId, sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
@@ -209,13 +212,120 @@ export const drainPromptQueue = async (
         item.id,
         item.text,
         item.attachments,
-        item.clientId
+        item.clientId,
+        item.origin
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
   } finally {
     turn.release()
   }
+}
+
+const steerChains = new Map<string, Promise<void>>()
+
+const steerQueuedPrompts = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  serverId: string,
+  sessionId: string
+): Promise<void> => {
+  const previous = steerChains.get(sessionId) ?? Promise.resolve()
+  const next = previous
+    .then(() => steerPendingPrompts(services, fanout, routeState, serverId, sessionId))
+    .catch(swallowError)
+  steerChains.set(sessionId, next)
+  void next.finally(() => {
+    if (steerChains.get(sessionId) === next) steerChains.delete(sessionId)
+  })
+  return next
+}
+
+const steerPendingPrompts = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  serverId: string,
+  sessionId: string
+): Promise<void> => {
+  const steer = services.agents.steer
+  if (steer === undefined || (await conversationalBotForSession(services, sessionId)) === undefined)
+    return
+  while (true) {
+    const item = await run(services.db.claimPromptQueueItem(sessionId))
+    if (item === undefined) return
+    const steered = await (async () => {
+      const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+      const input = await promptInput(services, sessionId, item, agentSession.skills)
+      return run(steer(agentSession.sessionId, input))
+    })().catch(() => false)
+    if (!steered) {
+      await run(services.db.releasePromptQueueItem(sessionId, item.id))
+      if (!hasLiveTurn(routeState, sessionId)) {
+        void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
+      }
+      return
+    }
+    noteBotPrompt(services, sessionId, item.origin)
+    await recordUserPrompt(
+      services,
+      fanout,
+      serverId,
+      sessionId,
+      item.id,
+      item.text,
+      item.attachments,
+      false
+    )
+    await run(services.db.completePromptQueueItem(sessionId, item.id))
+  }
+}
+
+const promptInput = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  item: Pick<PromptQueueItem, "text" | "attachments" | "origin">,
+  skills: Parameters<typeof withCodevisorSkills>[3]
+) => {
+  const refs = item.attachments ?? []
+  const promptText =
+    item.origin === "system"
+      ? item.text
+      : await withCodevisorSkills(services, sessionId, item.text, skills)
+  return refs.length === 0
+    ? promptText
+    : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
+}
+
+const recordUserPrompt = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  messageId: string,
+  text: string,
+  attachments: ReadonlyArray<AttachmentRef> | undefined,
+  startsTurn: boolean
+): Promise<void> => {
+  const refs = attachments ?? []
+  return materializeRuntimeEvent(
+    services.db,
+    fanout,
+    serverId,
+    {
+      kind: "session.output",
+      subjectId: sessionId,
+      payload: {
+        role: "user",
+        messageId,
+        ...(startsTurn ? { startsTurn: true } : {}),
+        text,
+        ...(refs.length === 0 ? {} : { attachments: refs })
+      }
+    },
+    sessionId
+  )
 }
 
 const runPromptInBackground = async (
@@ -226,37 +336,36 @@ const runPromptInBackground = async (
   queueItemId: string,
   text: string,
   attachments?: ReadonlyArray<AttachmentRef>,
-  clientId?: string
+  clientId?: string,
+  origin?: PromptOrigin
 ): Promise<void> => {
   try {
-    const refs = attachments ?? []
-    await materializeRuntimeEvent(
-      services.db,
+    noteBotPrompt(services, sessionId, origin)
+    await recordUserPrompt(
+      services,
       fanout,
       serverId,
-      {
-        kind: "session.output",
-        subjectId: sessionId,
-        payload: {
-          role: "user",
-          messageId: queueItemId,
-          startsTurn: true,
-          text,
-          ...(refs.length === 0 ? {} : { attachments: refs })
-        }
-      },
-      sessionId
+      sessionId,
+      queueItemId,
+      text,
+      attachments,
+      true
     )
     await (clientId === undefined
       ? services.mcp?.beginTurn(sessionId)
       : services.mcp?.beginTurn(sessionId, { clientId }))
     await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-    const promptText = await withCodevisorSkills(services, sessionId, text, agentSession.skills)
-    const input =
-      refs.length === 0
-        ? promptText
-        : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
+    const input = await promptInput(
+      services,
+      sessionId,
+      {
+        text,
+        ...(attachments === undefined ? {} : { attachments }),
+        ...(origin === undefined ? {} : { origin })
+      },
+      agentSession.skills
+    )
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     const signedOut = isAuthenticationFailure(cause)

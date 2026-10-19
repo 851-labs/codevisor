@@ -14,7 +14,9 @@ const botSelect = `
   from bots join sessions on sessions.id = bots.session_id
 `
 
-export const makeBotsService = (context: ServiceContext): BotsService => {
+export const makeBotsService = (
+  context: ServiceContext
+): Omit<BotsService, "appendBotMessage" | "listBotMessages"> => {
   const { sqlite, config } = context
 
   const botFromRow = (row: BotRow): Bot => {
@@ -41,6 +43,7 @@ export const makeBotsService = (context: ServiceContext): BotsService => {
           branch: project.branch,
           path: `${rootPath}/${project.folder_name}`
         })),
+      conversational: row.conversational === 1,
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
     }
@@ -68,8 +71,8 @@ export const makeBotsService = (context: ServiceContext): BotsService => {
             .prepare(
               `insert into bots (
                 id, server_id, name, symbol_name, slug, project_id, session_id, workspace_id,
-                created_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                conversational, created_at
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               id,
@@ -80,6 +83,7 @@ export const makeBotsService = (context: ServiceContext): BotsService => {
               canonicalUuid(record.projectId),
               canonicalUuid(record.sessionId),
               canonicalUuid(record.workspaceId),
+              record.conversational === true ? 1 : 0,
               isoTimestamp()
             )
           const insertProject = sqlite.prepare(

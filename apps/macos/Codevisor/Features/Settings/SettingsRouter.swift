@@ -1,13 +1,20 @@
 import AppKit
 import CodevisorCore
+import CodevisorUI
 import Observation
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case general, account, updates, notifications
-  case shortcuts
+  case account, machines, projects
+  case general, updates, notifications, shortcuts
   case agents, mcps, skills, plugins
-  case projects, machines
   case developer
+
+  static let sidebarGroups: [[SettingsTab]] = [
+    [.account, .machines, .projects],
+    [.general, .updates, .notifications, .shortcuts],
+    [.agents, .mcps, .skills, .plugins],
+    [.developer],
+  ]
 
   var id: String { rawValue }
 
@@ -19,7 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .notifications: "Notifications"
     case .shortcuts: "Shortcuts"
     case .agents: "Harnesses"
-    case .mcps: "MCP Servers"
+    case .mcps: "MCPs"
     case .skills: "Skills"
     case .plugins: "Plugins"
     case .projects: "Projects"
@@ -28,20 +35,20 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
   }
 
-  var systemImage: String {
+  var icon: SettingsSectionIcon {
     switch self {
-    case .account: "person.crop.circle"
-    case .updates: "arrow.down.circle"
-    case .general: "gear"
-    case .notifications: "bell"
-    case .shortcuts: "keyboard"
-    case .agents: "brain"
-    case .mcps: "puzzlepiece.extension"
-    case .skills: "book.closed"
-    case .plugins: "puzzlepiece"
-    case .projects: "folder"
-    case .machines: "desktopcomputer"
-    case .developer: "hammer"
+    case .account: .account
+    case .updates: .updates
+    case .general: .general
+    case .notifications: .notifications
+    case .shortcuts: .shortcuts
+    case .agents: .harnesses
+    case .mcps: .mcps
+    case .skills: .skills
+    case .plugins: .plugins
+    case .projects: .projects
+    case .machines: .machines
+    case .developer: .developer
     }
   }
 }

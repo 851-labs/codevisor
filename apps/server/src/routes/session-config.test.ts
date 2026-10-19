@@ -3,10 +3,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { usageLimitsObserved } from "@codevisor/agent-runtime"
 import { decode } from "@codevisor/api"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
+import { makeUsageLimitsCache } from "../infra/usage-limits-cache.js"
+import { makeEventFanout } from "../server.js"
 import {
   jsonRequest,
   makeServices,
@@ -19,6 +22,7 @@ import {
 } from "../test-support.js"
 import { fakeHarnessAuth } from "./harness-auth-test-support.js"
 import { idOf } from "./response-test-support.js"
+import { sessionEventSink } from "./session-events.js"
 
 describe("session configuration routes", () => {
   it("shares session read and action-required state through the HTTP API", async () => {
@@ -228,6 +232,46 @@ describe("session configuration routes", () => {
     })
   })
 
+  it("reads the context of a running agent session and null for any other", async () => {
+    const { services } = await makeServices("server-a")
+    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "claude-code" })
+    )
+    const context = {
+      categories: [{ name: "Messages", tokens: 1_200 }],
+      maxTokens: 200_000,
+      mcpTools: [],
+      totalTokens: 1_200
+    }
+    let projectedSession = session
+    const routeServices = {
+      ...services,
+      agents: {
+        ...services.agents,
+        loadedAgentSessionIds: () => ["agent-live", "agent-plain"],
+        readSessionContext: (agentSessionId: string) =>
+          Effect.succeed(agentSessionId === "agent-live" ? context : undefined)
+      },
+      db: {
+        ...services.db,
+        getSessionSummary: (id: string) =>
+          id === session.id ? Effect.succeed(projectedSession) : services.db.getSessionSummary(id)
+      }
+    }
+    const server = await startWithApp(routeServices)
+    const contextOf = () => jsonRequest(server, `/v1/sessions/${session.id}/context`)
+
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-idle" }
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-plain" }
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-live" }
+    expect(await contextOf()).toEqual({ body: context, status: 200 })
+    expect((await jsonRequest(server, "/v1/sessions/missing/context")).status).toBe(404)
+  })
+
   it("reports session harness usage limits with workspace and account context", async () => {
     const { services } = await makeServices("server-a")
     const project = await run(services.db.createProject({ folderPath: "/tmp" }))
@@ -339,5 +383,86 @@ describe("session configuration routes", () => {
       },
       status: 200
     })
+  })
+
+  it("serves live harness usage observations without persisting them or asking again", async () => {
+    const { services } = await makeServices("server-a")
+    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const readHarnessUsageLimits = vi.fn((harnessId: string) =>
+      Effect.succeed({
+        fetchedAt: "2026-10-18T00:00:00.000Z",
+        harnessId,
+        plan: "pro",
+        state: "available" as const,
+        windows: [{ id: "primary", label: "Weekly limit", usedPercent: 10 }]
+      })
+    )
+    const routeServices = {
+      ...services,
+      agents: { ...services.agents, readHarnessUsageLimits },
+      usageLimits: makeUsageLimitsCache()
+    }
+    const server = await startWithApp(routeServices)
+    const before = listSubjectEvents(routeServices, session.id)
+    await jsonRequest(server, `/v1/sessions/${session.id}/usage-limits`)
+
+    await sessionEventSink(
+      routeServices,
+      await run(makeEventFanout),
+      "server-a",
+      session.id
+    )(
+      usageLimitsObserved(
+        session.id,
+        {
+          fetchedAt: "2026-10-18T00:01:00.000Z",
+          harnessId: "codex",
+          state: "available",
+          windows: [{ id: "primary", label: "Weekly limit", usedPercent: 27 }]
+        },
+        true
+      )
+    )
+
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}/usage-limits`)).toMatchObject({
+      body: { plan: "pro", windows: [{ id: "primary", usedPercent: 27 }] },
+      status: 200
+    })
+    expect(readHarnessUsageLimits).toHaveBeenCalledOnce()
+    expect(listSubjectEvents(routeServices, session.id)).toEqual(before)
+
+    await sessionEventSink(
+      services,
+      await run(makeEventFanout),
+      "server-a",
+      session.id
+    )(
+      usageLimitsObserved(session.id, {
+        fetchedAt: "2026-10-18T00:02:00.000Z",
+        harnessId: "codex",
+        state: "available",
+        windows: [{ id: "primary", label: "Weekly limit", usedPercent: 50 }]
+      })
+    )
+    expect(listSubjectEvents(services, session.id)).toEqual(before)
+
+    await expect(
+      sessionEventSink(
+        routeServices,
+        await run(makeEventFanout),
+        "server-a",
+        "missing-session"
+      )(
+        usageLimitsObserved("missing-session", {
+          fetchedAt: "2026-10-18T00:03:00.000Z",
+          harnessId: "codex",
+          state: "available",
+          windows: [{ id: "primary", label: "Weekly limit", usedPercent: 60 }]
+        })
+      )
+    ).resolves.toBeUndefined()
   })
 })

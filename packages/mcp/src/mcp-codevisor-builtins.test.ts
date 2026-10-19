@@ -27,6 +27,64 @@ const providers = {
 }
 
 describe("Codevisor built-in tools", () => {
+  it("offers messages.send and its skill only to a conversational bot's own session", async () => {
+    const { db, manager } = await testManager(providers)
+    manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-bot-home" }))
+    await run(
+      db.createWorkspaceWithSession({
+        workspace: { id: "ws-bot", projectId: project.id, name: "Bot", hasCustomName: false },
+        session: { id: "chat-bot", projectId: project.id, harnessId: "codex", title: "Bot" }
+      })
+    )
+    await run(
+      db.createBot({
+        id: "bot-1",
+        name: "Bot",
+        symbolName: "sparkles",
+        slug: "bot",
+        projectId: project.id,
+        sessionId: "chat-bot",
+        workspaceId: "ws-bot",
+        conversational: true,
+        projects: []
+      })
+    )
+    const agent = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Agent" })
+    )
+    const view = async (sessionId: string) => {
+      const issued = await manager.issueGateway(sessionId, project.id)
+      const client = new Client({ name: "bot-tools-test", version: "1" })
+      await client.connect(
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(issued.url), {
+            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+          })
+        )
+      )
+      try {
+        const skills = (await client.listTools()).tools.find((tool) => tool.name === "skills")
+        const described = await client.callTool({
+          name: "execute",
+          arguments: {
+            description: "Describe the send tool",
+            code: `async () => tools.describe.tool({ path: "codevisor.messages.send" })`
+          }
+        })
+        return {
+          skill: skills?.description?.includes("- codevisor-messages — ") === true,
+          tool: described.isError !== true
+        }
+      } finally {
+        await client.close()
+      }
+    }
+
+    expect(await view("chat-bot")).toEqual({ skill: true, tool: true })
+    expect(await view(agent.id)).toEqual({ skill: false, tool: false })
+  })
+
   it("lists its tools in settings and preserves a disabled provider across restarts", async () => {
     const { db, manager, directory } = await testManager(providers)
     const tools = await manager.tools("codevisor")

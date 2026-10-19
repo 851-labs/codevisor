@@ -10,6 +10,7 @@ extension SessionController {
       modeState: modeStateByHarness[harnessId],
       configOptions: []
     )
+    if presentsBotConversation { model.presentBotConversation() }
     model.onTurnEnded = { [weak self, weak model] in
       self?.liveTurnEndRevision &+= 1
       if let model { self?.captureTurnEnded(model) }

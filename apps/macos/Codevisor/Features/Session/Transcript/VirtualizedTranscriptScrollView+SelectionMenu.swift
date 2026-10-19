@@ -9,7 +9,11 @@ extension VirtualizedTranscriptScrollView {
       let surface = surface as? TranscriptSurfaceTextView,
       let point = selectionPoint(in: surface, atWindowPoint: event.locationInWindow)
     else { return nil }
-    if !transcriptSelection(contains: point) {
+    let isInSelection = transcriptSelection(contains: point)
+    if !isInSelection, let menu = messageMenu(forRowKey: point.rowKey) {
+      return menu
+    }
+    if !isInSelection {
       selectWord(at: point)
     }
     guard hasTranscriptSelection else { return nil }

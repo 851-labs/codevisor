@@ -16,6 +16,7 @@ import type {
   GitPullRequest,
   Harness,
   Project,
+  PromptOrigin,
   PromptQueueItem,
   QuestionPayload,
   SessionDetail,
@@ -249,7 +250,8 @@ export interface CodevisorDatabaseService extends SessionStateService, BotsServi
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
     id?: string,
-    clientId?: string
+    clientId?: string,
+    origin?: PromptOrigin
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
     name: string,
@@ -306,6 +308,10 @@ export interface CodevisorDatabaseService extends SessionStateService, BotsServi
     sessionId: string
   ) => Effect.Effect<PromptQueueItem | undefined, DatabaseError>
   readonly completePromptQueueItem: (
+    sessionId: string,
+    queueItemId: string
+  ) => Effect.Effect<void, DatabaseError>
+  readonly releasePromptQueueItem: (
     sessionId: string,
     queueItemId: string
   ) => Effect.Effect<void, DatabaseError>

@@ -40,7 +40,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "updates", "general", "agents", "mcps",
+    "root", "account", "machines", "projects", "general", "updates", "agents", "mcps",
     "skills", "plugins",
   ]
 
@@ -142,36 +142,36 @@ struct SettingsSheet: View {
   private var settingsSections: some View {
     Section {
       NavigationLink(value: SettingsDestination.section("account")) {
-        settingsLabel("Account", systemImage: "person.crop.circle")
+        sectionLabel("Account", icon: .account)
       }
       NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
-        settingsLabel("Machines", systemImage: "desktopcomputer")
+        sectionLabel("Machines", icon: .machines)
       }
       NavigationLink(value: SettingsDestination.section("projects")) {
-        settingsLabel("Projects", systemImage: "folder")
+        sectionLabel("Projects", icon: .projects)
       }
     }
     Section {
-      NavigationLink(value: SettingsDestination.section("updates")) {
-        settingsLabel("Updates", systemImage: "arrow.down.circle")
-          .badge(environment.updateCenter.availableCount)
-      }
       NavigationLink(value: SettingsDestination.section("general")) {
-        settingsLabel("Privacy & Data", systemImage: "hand.raised")
+        sectionLabel("Privacy & Data", icon: .general)
+      }
+      NavigationLink(value: SettingsDestination.section("updates")) {
+        sectionLabel("Updates", icon: .updates)
+          .badge(environment.updateCenter.availableCount)
       }
     }
     Section {
       NavigationLink(value: SettingsDestination.section("agents")) {
-        settingsLabel("Harnesses", systemImage: "brain")
+        sectionLabel("Harnesses", icon: .harnesses)
       }
       NavigationLink(value: SettingsDestination.section("mcps")) {
-        settingsLabel("MCPs", systemImage: "puzzlepiece.extension")
+        sectionLabel("MCPs", icon: .mcps)
       }
       NavigationLink(value: SettingsDestination.section("skills")) {
-        settingsLabel("Skills", systemImage: "book.closed")
+        sectionLabel("Skills", icon: .skills)
       }
       NavigationLink(value: SettingsDestination.section("plugins")) {
-        settingsLabel("Plugins", systemImage: "puzzlepiece")
+        sectionLabel("Plugins", icon: .plugins)
       }
     }
     Section {
@@ -208,6 +208,15 @@ struct SettingsSheet: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 12)
         .accessibilityIdentifier("settings.appVersion")
+    }
+  }
+
+  private func sectionLabel(_ title: LocalizedStringKey, icon: SettingsSectionIcon) -> some View {
+    Label {
+      Text(title)
+        .foregroundStyle(.primary)
+    } icon: {
+      SettingsIconTile(icon, size: 29)
     }
   }
 

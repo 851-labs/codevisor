@@ -4,6 +4,7 @@ import type {
   CanUseTool,
   ModelInfo,
   Options as ClaudeOptions,
+  SDKControlGetContextUsageResponse,
   SDKMessage,
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
@@ -133,6 +134,13 @@ export class FakeQuery {
 
   async usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(): Promise<never> {
     throw new Error("Claude usage is unavailable")
+  }
+
+  contextUsage: SDKControlGetContextUsageResponse | undefined
+
+  async getContextUsage(): Promise<SDKControlGetContextUsageResponse> {
+    if (this.contextUsage === undefined) throw new Error("Claude context usage is unavailable")
+    return this.contextUsage
   }
 
   commands: Array<ClaudeSlashCommand> = []

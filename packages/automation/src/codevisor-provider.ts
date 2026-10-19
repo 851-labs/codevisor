@@ -20,6 +20,8 @@ import {
   type UnknownRecord
 } from "./unknown-values.js"
 
+export { CODEVISOR_BOT_TOOL_NAMES } from "./codevisor-api-tools.js"
+
 const pathParameterNames = (path: string): ReadonlyArray<string> =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
 
@@ -192,6 +194,11 @@ const sessionCreatePayload = (
   ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
 })
 
+const sessionPromptPayload = (
+  payload: Readonly<Record<string, unknown>>,
+  context: AutomationProviderContext
+): Readonly<Record<string, unknown>> => ({ ...payload, fromSessionId: context.sessionId })
+
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,
@@ -253,7 +260,9 @@ const invokeApiTool = async (
         ? args.body
         : spec.name === "sessions.create"
           ? sessionCreatePayload(fields(), context)
-          : fields()
+          : spec.name === "sessions.prompt"
+            ? sessionPromptPayload(fields(), context)
+            : fields()
     )
     headers.set("content-type", "application/json")
   }

@@ -175,7 +175,7 @@ private extension ComposerCard {
           )
 
           if controller.composerText.isEmpty, !isAcceptingSubmission {
-            Text("Do something")
+            Text(controller.composerPlaceholder)
               .foregroundStyle(.tertiary)
               .padding(.top, 6 + editorTopBleed)
               .allowsHitTesting(false)
@@ -438,7 +438,7 @@ private extension ComposerCard {
     } else {
       guard controller.canSend, !isAppUpdateInProgress else { return }
       didAcceptSubmission = true
-      if !reduceMotion, !controller.isSending {
+      if !reduceMotion, !controller.isSending || controller.presentsBotConversation {
         sendSource.stage(controller: controller)
       }
       controller.promptClientId = clientControlId?.uuidString.lowercased()

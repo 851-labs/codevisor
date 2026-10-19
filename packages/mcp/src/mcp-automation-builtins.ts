@@ -52,9 +52,14 @@ const AUTOMATION_SKILLS = [
     gate: "codevisor",
     name: "codevisor-clients",
     summary: "see and drive the user's open Codevisor windows"
+  },
+  {
+    gate: "bot",
+    name: "codevisor-messages",
+    summary: "how a bot talks to the user: messages.send is the only output they see"
   }
 ] as const satisfies ReadonlyArray<{
-  gate: BuiltinMcpId
+  gate: BuiltinMcpId | "bot"
   name: string
   summary: string
   composer?: string

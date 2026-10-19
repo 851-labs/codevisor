@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorClient
 import CodevisorCore
 import CodevisorUI
@@ -5,7 +6,7 @@ import SwiftUI
 
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
-    case pullRequest(URL), link(URL), file(String), previewFile(String)
+    case pullRequest(URL), link(URL), file(String), previewFile(String), botTranscript
   }
 
   let workspace: Workspace
@@ -13,10 +14,17 @@ struct WorkspaceInspectorView: View {
   let branch: String?
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
+  let machineSymbol: String?
+  let showsBotTranscript: Bool
+  let usageChat: ChatSession?
+  let usage: WorkspaceInspectorUsageModel
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
   let activeFilePath: String?
+  let chatSessionId: UUID?
+  let chatUsage: SessionUsage?
+  let activity: Date?
   let client: any CodevisorServerClienting
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -33,6 +41,8 @@ struct WorkspaceInspectorView: View {
   @State private var tabViewport = TabViewport()
   @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
+  @State private var chatContext: (sessionId: UUID, context: ServerSessionContext)?
+  @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
   var body: some View {
     ZStack {
@@ -106,7 +116,7 @@ struct WorkspaceInspectorView: View {
   private var info: some View {
     Form {
       if let pullRequest {
-        Section("Pull Request") {
+        Section("Pull Request", isExpanded: expansion("Pull Request")) {
           row(.pullRequest(pullRequest.url)) {
             Label {
               Text("PR #\(pullRequest.number): \(pullRequest.title)")
@@ -123,21 +133,78 @@ struct WorkspaceInspectorView: View {
         }
       }
 
-      Section("Details") {
-        LabeledContent("Project", value: project.name)
+      Section("Details", isExpanded: expansion("Details")) {
+        detail("Project", systemImage: "folder", value: project.name)
         if let branch {
-          LabeledContent("Branch", value: branch)
+          detail("Branch", systemImage: "arrow.triangle.branch", value: branch)
         }
         if let worktree = workspace.worktreeName {
-          LabeledContent("Worktree", value: worktree)
+          detail("Worktree", systemImage: "tree", value: worktree)
         }
         if let machineName {
-          LabeledContent("Machine", value: machineName)
+          detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
         }
-        LabeledContent("Created", value: workspace.createdAt, format: .relative(presentation: .named))
+      }
+
+      if showsBotTranscript {
+        Section {
+        } footer: {
+          Button("Show Full Transcript") { onOpen(.botTranscript) }
+            .foregroundStyle(.primary)
+            .help("Show everything the bot did, including its tool calls and the messages it received")
+            .accessibilityIdentifier("bot.showFullTranscript")
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+      }
+
+      if let usageChat, let limits = usage.limits(for: usageChat) {
+        WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
+      }
+
+      if let chatSessionId {
+        WorkspaceInspectorContextSection(
+          context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
+          isExpanded: expansion("Context"))
       }
     }
     .formStyle(.grouped)
+    .task(
+      id: chatSessionId.map {
+        WorkspaceInspectorContextSection.LoadKey(sessionId: $0, usage: chatUsage, activity: activity)
+      }
+    ) {
+      guard let chatSessionId,
+        let context = try? await client.sessionContext(id: chatSessionId),
+        !Task.isCancelled
+      else { return }
+      chatContext = (chatSessionId, context)
+    }
+  }
+
+  private func detail(_ title: String, systemImage: String, value: String) -> some View {
+    Label {
+      Text(value)
+        .textSelection(.enabled)
+    } icon: {
+      Image(systemName: systemImage)
+        .foregroundStyle(.secondary)
+        .frame(width: 20)
+    }
+    .help(title)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(value)
+  }
+
+  private func expansion(_ section: String) -> Binding<Bool> {
+    Binding(
+      get: { !collapsedSections.contains(section) },
+      set: { expanded in
+        withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+          collapsedSections = collapsedSections.filter { $0 != section } + (expanded ? [] : [section])
+        }
+      }
+    )
   }
 
   private func row(_ destination: Destination, @ViewBuilder label: () -> some View) -> some View {

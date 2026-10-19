@@ -19,10 +19,16 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
 public struct TranscriptProjectionOptions: Hashable, Sendable {
   public let includesConnectingRow: Bool
   public let bottomSpacerHeight: CGFloat?
+  public let presentsBotConversation: Bool
 
-  public init(includesConnectingRow: Bool, bottomSpacerHeight: CGFloat? = nil) {
+  public init(
+    includesConnectingRow: Bool,
+    bottomSpacerHeight: CGFloat? = nil,
+    presentsBotConversation: Bool = false
+  ) {
     self.includesConnectingRow = includesConnectingRow
     self.bottomSpacerHeight = bottomSpacerHeight
+    self.presentsBotConversation = presentsBotConversation
   }
 }
 
@@ -59,6 +65,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case assistantAttachment(UUID, sourceID: String, ordinal: Int)
     case activeAttachment(UUID, sourceID: String, ordinal: Int)
     case active(UUID)
+    case botMessage(String)
+    case botTimestamp(String)
+    case botTyping
     case setup
     case startingAgent
     case backgroundTask
@@ -97,6 +106,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .activeAttachment(id, sourceID, ordinal):
         "message:\(id.uuidString):attachment:\(sourceID):\(ordinal)"
       case let .active(id): "message:\(id.uuidString)"
+      case let .botMessage(id): "bot:\(id)"
+      case let .botTimestamp(id): "bot:\(id):timestamp"
+      case .botTyping: "special:bot-typing"
       case .setup: "special:setup"
       case .startingAgent: "special:starting-agent"
       case .backgroundTask: "special:background"
@@ -117,9 +129,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       switch self {
       case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
         .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
-        .assistantChrome, .assistantMarkdown, .assistantAttachment:
+        .assistantChrome, .assistantMarkdown, .assistantAttachment, .botMessage, .botTimestamp:
         true
-      case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
+      case .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
         .activeMarkdown, .activeAttachment, .setup, .startingAgent,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
@@ -152,8 +164,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
         let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
         id
-      case .setup, .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait,
-        .error, .statusError, .bottomSpacer:
+      case .botMessage, .botTimestamp, .botTyping, .setup, .startingAgent, .backgroundTask,
+        .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
         nil
       }
     }
@@ -177,6 +189,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case markdownChunk(TranscriptMarkdownChunk)
     case assistantAttachment(TranscriptAssistantAttachment)
     case active(ConversationItem)
+    case botMessage(TranscriptBotMessage, isGroupTail: Bool)
+    case botTimestamp(Date)
+    case botTyping
     case setup([SessionSetupPhase])
     case optimistic(UserMessage)
     case startingAgent

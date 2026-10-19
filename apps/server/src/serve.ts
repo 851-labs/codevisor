@@ -44,6 +44,7 @@ import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
+import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
 import {
   restoreTerminalPersistence,
   screenSharingProvider,
@@ -355,7 +356,10 @@ export const runServe = (
         }),
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machines: machineLink,
-        machineEnrollment
+        machineEnrollment,
+        usageLimits: makeUsageLimitsCache({
+          store: makeUsageLimitsFileStore(join(dirname(databasePath), "usage-limits.json"))
+        })
       },
       defaultServerConfig({
         host,

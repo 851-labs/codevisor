@@ -32,6 +32,7 @@ import {
   tokenUsageUpdate,
   turnInput
 } from "./updates.js"
+import { observeMuseUsageLimits } from "./usage.js"
 import {
   approvalRequest,
   modelCatalog,
@@ -241,6 +242,7 @@ export const startMuseChat = async (
         const draining = subagents.drain()
         if (draining === undefined) finish()
         else void draining.then(finish)
+        void observeMuseUsageLimits(client, key, emit)
         return
       }
       case "item/delta":

@@ -117,6 +117,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func createBot(_ request: ServerCreateBotRequest) async throws -> ServerBot
   func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot
   func deleteBot(id: String) async throws
+  func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage
   func listPlugins() async throws -> [ServerPluginSummary]
   func listPluginUpdates() async throws -> [ServerPluginUpdateStatus]
   func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan
@@ -170,6 +171,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func listSessions() async throws -> [ServerSession]
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
+  func sessionContext(id: UUID) async throws -> ServerSessionContext?
   func openSession(
     _ session: ChatSession,
     project: Project?,

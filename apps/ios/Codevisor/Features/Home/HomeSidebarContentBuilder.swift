@@ -7,12 +7,26 @@ struct HomeSidebarContentBuilder {
   let environment: AppEnvironment
   let gitLookups: SidebarGitLookups
 
-  var listedItems: [WorkspaceSidebarItem] { known(environment.navigationStore.workspaceEntries.sidebar) }
-  var archivedItems: [WorkspaceSidebarItem] { known(environment.navigationStore.workspaceEntries.archived) }
+  var botEntries: [BotSidebarEntry] {
+    environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
+  }
+
+  var listedItems: [WorkspaceSidebarItem] {
+    let nested = Set(botEntries.flatMap(\.workspaceIDs))
+    let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))
+    return known(environment.navigationStore.workspaceEntries.sidebar).filter {
+      $0.botId == nil && !botProjects.contains($0.projectId) && !nested.contains($0.id)
+    }
+  }
+
+  var archivedItems: [WorkspaceSidebarItem] {
+    let homes = Set(botEntries.map(\.bot.workspaceId))
+    return known(environment.navigationStore.workspaceEntries.archived).filter { !homes.contains($0.id) }
+  }
 
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
-    return HomeSidebarContent.make(
+    var content = HomeSidebarContent.make(
       listed: listedItems,
       archived: archivedItems,
       preferences: preferences,
@@ -28,6 +42,29 @@ struct HomeSidebarContentBuilder {
         workspace, item: item, preferences: preferences, projectGroups: projectGroups,
         underHeading: placement == .list)
     }
+    content.canCreateBots = !environment.bots.botMachines.isEmpty
+    content.bots = botEntries.map { entry in
+      HomeSidebarBot(
+        bot: entry.bot,
+        status: environment.projectList.session(entry.bot.sessionId, serverId: entry.bot.serverId)
+          .map(status(for:)) ?? .idle,
+        machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: entry.bot.serverId) : nil,
+        home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == entry.bot.workspaceId }
+          .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
+        children: entry.children.compactMap {
+          botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
+        }
+      )
+    }
+    return content
+  }
+
+  private func botSidebarWorkspace(
+    _ item: WorkspaceSidebarItem, preferences: HomeSidebarPreferences, projectGroups: [ProjectGroup]
+  ) -> HomeSidebarWorkspace? {
+    guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace else { return nil }
+    return sidebarWorkspace(
+      workspace, item: item, preferences: preferences, projectGroups: projectGroups, underHeading: false)
   }
 
   private func known(_ items: [WorkspaceSidebarItem]) -> [WorkspaceSidebarItem] {
@@ -142,7 +179,7 @@ struct HomeSidebarContentBuilder {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator:
+    case .terminal, .plugin, .document, .screenSharing, .subagent, .review, .simulator, .transcript:
       return pane.displayName
     }
   }
@@ -170,7 +207,7 @@ struct HomeSidebarContentBuilder {
       .review
     case .newTab:
       .newTab
-    case .subagent:
+    case .subagent, .transcript:
       .newTab
     }
   }

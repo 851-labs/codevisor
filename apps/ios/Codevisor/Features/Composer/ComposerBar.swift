@@ -388,7 +388,7 @@ extension ComposerBar {
         }
 
         if !isCompact {
-          Text("Do something")
+          Text(controller.composerPlaceholder)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
             .opacity(text.isEmpty ? 1 : 0)

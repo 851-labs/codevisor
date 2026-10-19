@@ -91,6 +91,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   private var advanceScheduled = false
   private var isStartingFlights = false
   private var isSettlingFlightRow = false
+  private var isBeginningFlight = false
 
   public init() {}
 
@@ -280,7 +281,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
   }
 
   public func advance() {
-    guard !isSettlingFlightRow else { return }
+    guard !isSettlingFlightRow, !isBeginningFlight else { return }
     syncCarriers()
     if let push, layerTime - push.beginTime > TranscriptSendMotion.stagingTimeout {
       cancelPush()
@@ -336,6 +337,8 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       return
     }
     let token = entry.request.token
+    isBeginningFlight = true
+    defer { isBeginningFlight = false }
     guard let content = adapter.sendTransitionRowContent(for: entry.rowKey),
       let flight = TranscriptSendFlight.begin(
         session: session,

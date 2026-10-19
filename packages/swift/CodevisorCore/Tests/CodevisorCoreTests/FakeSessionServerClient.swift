@@ -50,6 +50,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
   var detailCursor = 0
   var initialTranscriptPage: ServerTranscriptPage?
+  var botConversationPage = ServerBotConversationPage(messages: [], hasMore: false, working: false)
   var olderTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPageHandler: (@Sendable (String) async throws -> ServerTranscriptPage)?
   let olderTranscriptPageRequests = TestSignal()
@@ -226,6 +227,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
   func emit(_ event: ServerEventEnvelope) {
     yieldEvent(event)
+  }
+
+  func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage {
+    botConversationPage
   }
 
   func health() async throws -> ServerHealth {

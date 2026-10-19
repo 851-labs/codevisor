@@ -41,6 +41,18 @@ struct HomeNavigationStateTests {
     #expect(!split.isNewChatSelected)
   }
 
+  @Test("A bot conversation is its own detail page, not a workspace")
+  func botRouteIsItsOwnPage() {
+    let botId = UUID()
+    var state = HomeNavigationState()
+    state.open(.bot(serverId: "machine", botId: botId), mode: .split)
+
+    #expect(!state.isNewChatSelected)
+    #expect(state.clientPage == "bot")
+    #expect(state.presentedWorkspace == nil)
+    #expect(state.detailIdentity(promotedDraftSessionId: nil, draftGeneration: generation) == .bot(botId))
+  }
+
   @Test("Select, replaceTop, and popToRoot keep a single-entry model")
   func selectionMutations() {
     var state = HomeNavigationState()
