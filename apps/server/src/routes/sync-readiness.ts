@@ -27,6 +27,20 @@ import {
 } from "../server-context.js"
 import { discoverHarnessesFromStoredAuthState } from "./harnesses.js"
 
+const publishReadinessChanges = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  namespace: string,
+  result: { readonly changedEntries: ReadonlyArray<SyncEntryRecord> }
+): void => {
+  if (result.changedEntries.length > 0) {
+    void appendAndPublish(services.db, fanout, "sync.changed", namespace, {
+      namespace,
+      entries: result.changedEntries
+    }).catch(swallowError)
+  }
+}
+
 export const republishAccountsRoster = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -38,12 +52,7 @@ export const republishAccountsRoster = async (
       harnessIds: services.agents.catalog.map((definition) => definition.id),
       serverId: config.id
     })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", ACCOUNTS_SYNC_NAMESPACE, {
-        namespace: ACCOUNTS_SYNC_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
+    publishReadinessChanges(services, fanout, ACCOUNTS_SYNC_NAMESPACE, result)
   } catch {}
 }
 
@@ -58,12 +67,7 @@ export const refreshMcpReadiness = async (
     const overlays = await readMcpOverlays(services.db, config.id)
     await mcp.setLocalSuppression(overlays.disabledHere)
     const result = await publishMcpReadiness({ db: services.db, mcp, serverId: config.id })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", MCP_READINESS_NAMESPACE, {
-        namespace: MCP_READINESS_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
+    publishReadinessChanges(services, fanout, MCP_READINESS_NAMESPACE, result)
   } catch {}
 }
 
@@ -131,12 +135,7 @@ export const refreshHarnessReadiness = async (
       value: { harnesses: rows.toSorted((a, b) => a.id.localeCompare(b.id)) },
       ...(answers === undefined ? {} : { answers })
     })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", HARNESS_READINESS_NAMESPACE, {
-        namespace: HARNESS_READINESS_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
+    publishReadinessChanges(services, fanout, HARNESS_READINESS_NAMESPACE, result)
   } catch {}
 }
 
@@ -207,11 +206,14 @@ export const refreshPluginReadiness = async (
           reason: "The plugin stopped running on this machine. Restart it to try again."
         }
       }
-      const state: PluginReadinessRow["state"] = machineOnly
-        ? "machineOnly"
-        : summary.enabled
-          ? "ready"
-          : "disabled"
+      let state: PluginReadinessRow["state"]
+      if (machineOnly) {
+        state = "machineOnly"
+      } else if (summary.enabled) {
+        state = "ready"
+      } else {
+        state = "disabled"
+      }
       return { id: summary.id, state }
     })
     const desired = await run(services.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
@@ -230,11 +232,6 @@ export const refreshPluginReadiness = async (
       serverId: config.id,
       value: { plugins: rows.toSorted((a, b) => a.id.localeCompare(b.id)) }
     })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", PLUGIN_READINESS_NAMESPACE, {
-        namespace: PLUGIN_READINESS_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
+    publishReadinessChanges(services, fanout, PLUGIN_READINESS_NAMESPACE, result)
   } catch {}
 }
