@@ -1,15 +1,10 @@
 import { randomUUID } from "node:crypto"
 
-import {
-  placeConfigValue,
-  type AgentSessionMetadata,
-  type HarnessAccountContext
-} from "@codevisor/agent-runtime"
+import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
 import type {
   CreateSessionRequest,
   UpdateSessionRequest,
   Project,
-  SessionConfigOption,
   SessionSummary
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
@@ -29,7 +24,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { botForParentSession } from "./bot-guards.js"
-import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
+import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
@@ -357,79 +352,3 @@ const hasNoAgentReplyToLose = async (
     detail.conversation.every((item) => item.role === "user" || item.text.trim() === "")
   )
 }
-
-export const configRestorePriority = (option: SessionConfigOption | undefined): number => {
-  if (option?.category === "model" || option?.id === "model") return 0
-  if (option?.category === "thought_level") return 1
-  if (option?.category === "speed" || option?.id === "speed") return 2
-  return 3
-}
-
-const restoreSessionConfigSelections = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string,
-  metadata: AgentSessionMetadata
-): Promise<AgentSessionMetadata> => {
-  if (metadata.configOptions.length === 0) {
-    await run(services.db.saveSessionRuntimeState(sessionId, metadata))
-    return metadata
-  }
-  const summary = await run(services.db.getSessionSummary(sessionId))
-  const saved = summary.configSelections ?? {}
-  const previouslyUnavailable = summary.unavailableConfigSelections ?? {}
-  const reconcile = (option: SessionConfigOption, value: string): string | undefined =>
-    services.agents.reconcileConfigValue(summary.harnessId, option, value)
-  let configOptions = metadata.configOptions
-  const migrated: Record<string, string> = {}
-  const unavailable: Record<string, string> = Object.fromEntries(
-    Object.entries(previouslyUnavailable).filter(([configId, value]) => saved[configId] === value)
-  )
-  const ordered = Object.entries(saved).toSorted(([leftId], [rightId]) => {
-    const left = configOptions.find((option) => option.id === leftId)
-    const right = configOptions.find((option) => option.id === rightId)
-    const difference = configRestorePriority(left) - configRestorePriority(right)
-    return difference === 0 ? leftId.localeCompare(rightId) : difference
-  })
-  for (const [configId, value] of ordered) {
-    const option = configOptions.find((candidate) => candidate.id === configId)
-    if (option === undefined) continue
-    const restored = placeConfigValue(option, value, reconcile)
-    if (restored === undefined) {
-      console.error(
-        `[session-config] ${sessionId}: saved ${configId}=${value} is no longer offered; keeping it as unavailable`
-      )
-      unavailable[configId] = value
-      continue
-    }
-    delete unavailable[configId]
-    if (restored !== value) migrated[configId] = restored
-    if (option.currentValue === restored) continue
-    try {
-      configOptions = await run(
-        services.agents.setConfigOption(metadata.sessionId, configId, restored)
-      )
-    } catch (error) {
-      console.error(
-        `[session-config] ${sessionId}: could not restore ${configId}=${restored}: ${String(error)}`
-      )
-    }
-  }
-  const selections = { ...saved, ...migrated }
-  if (!sameSelections(selections, saved) || !sameSelections(unavailable, previouslyUnavailable)) {
-    await run(services.db.replaceSessionConfigSelections(sessionId, selections, unavailable))
-    await publishSessionSelections(services, fanout, sessionId)
-  }
-  await publishSessionConfigOptions(services, fanout, serverId, sessionId, configOptions)
-  const current = { ...metadata, configOptions }
-  await run(services.db.saveSessionRuntimeState(sessionId, current))
-  return current
-}
-
-const sameSelections = (
-  left: Readonly<Record<string, string>>,
-  right: Readonly<Record<string, string>>
-): boolean =>
-  Object.keys(left).length === Object.keys(right).length &&
-  Object.entries(left).every(([key, value]) => right[key] === value)
