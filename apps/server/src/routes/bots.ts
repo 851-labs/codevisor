@@ -1,6 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { join } from "node:path"
 
 import type { Bot } from "@codevisor/api"
 import { UpdateBotRequest as UpdateBotRequestSchema } from "@codevisor/api"
@@ -26,6 +24,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
+import { renameInstructions } from "./bot-instructions.js"
 import { applySessionUpdate } from "./session-workspace.js"
 
 const getBotOrFail = async (services: CodevisorServerServices, id: string): Promise<Bot> => {
@@ -60,13 +59,6 @@ const updateBot = async (
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
   return true
-}
-
-const renameInstructions = (rootPath: string, name: string): void => {
-  const path = join(rootPath, "AGENTS.md")
-  try {
-    writeFileSync(path, readFileSync(path, "utf8").replace(/^# .*$/m, `# ${name}`))
-  } catch {}
 }
 
 const removeBotCheckout = async (

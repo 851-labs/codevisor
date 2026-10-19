@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { upgradeAllBotInstructions, upgradeBotInstructions } from "./bot-create.js"
+import { upgradeAllBotInstructions, upgradeBotInstructions } from "./bot-instructions.js"
 import { createBot, decodeBot, setUp } from "./bot-test-support.js"
 
 const legacy = [
