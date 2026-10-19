@@ -80,26 +80,10 @@ extension SessionContainerView {
   }
 
   var activePaneSubtitle: String {
-    if let store = activeScreenSharingPane?.store {
-      guard let display = store.displays.first(where: { $0.id == store.selectedDisplayId }), display.width > 0 else {
-        return ""
-      }
-      return "\(display.width) × \(display.height)"
-    }
-    if activeSimulatorModel?.device != nil { return "" }
-    guard activePaneDescriptor?.kind == .chat else { return "" }
-    let workspace = selectedWorkspace
-    let candidates: [String?] = [
-      workspace.name,
-      project.name,
-      workspace.worktreeName,
-      environment.machines.fleetMachineName(for: workspace.serverId),
-    ]
-    var parts: [String] = []
-    for candidate in candidates {
-      guard let candidate, !candidate.isEmpty, !parts.contains(candidate) else { continue }
-      parts.append(candidate)
-    }
-    return parts.joined(separator: " · ")
+    guard let store = activeScreenSharingPane?.store,
+      let display = store.displays.first(where: { $0.id == store.selectedDisplayId }),
+      display.width > 0
+    else { return "" }
+    return "\(display.width) × \(display.height)"
   }
 }
