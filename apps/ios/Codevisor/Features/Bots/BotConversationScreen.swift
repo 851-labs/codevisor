@@ -85,6 +85,7 @@ private struct BotConversationHeader: View {
     Button(action: onOpenDetails) {
       VStack(spacing: -8) {
         BotAvatar(symbolName: bot.symbolName, size: avatarSize)
+          .zIndex(1)
         HStack(spacing: 3) {
           Text(bot.name)
             .font(.headline)
@@ -97,6 +98,7 @@ private struct BotConversationHeader: View {
         .padding(.vertical, 6)
         .glassEffect(.regular.interactive(), in: .capsule)
       }
+      .frame(height: avatarSize, alignment: .top)
     }
     .buttonStyle(.plain)
     .accessibilityElement(children: .ignore)
