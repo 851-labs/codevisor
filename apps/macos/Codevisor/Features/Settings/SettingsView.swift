@@ -172,9 +172,7 @@ private struct SettingsSidebarRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 8) {
-        Image(systemName: tab.systemImage)
-          .frame(width: 18)
-          .foregroundStyle(.secondary)
+        SettingsIconTile(tab.icon, size: 20)
         Text(tab.title)
           .lineLimit(1)
         Spacer(minLength: 4)
