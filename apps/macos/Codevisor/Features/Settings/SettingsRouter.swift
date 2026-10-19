@@ -3,11 +3,17 @@ import CodevisorCore
 import Observation
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case general, account, updates, notifications
-  case shortcuts
+  case account, machines, projects
+  case general, updates, notifications, shortcuts
   case agents, mcps, skills, plugins
-  case projects, machines
   case developer
+
+  static let sidebarGroups: [[SettingsTab]] = [
+    [.account, .machines, .projects],
+    [.general, .updates, .notifications, .shortcuts],
+    [.agents, .mcps, .skills, .plugins],
+    [.developer],
+  ]
 
   var id: String { rawValue }
 
@@ -19,7 +25,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .notifications: "Notifications"
     case .shortcuts: "Shortcuts"
     case .agents: "Harnesses"
-    case .mcps: "MCP Servers"
+    case .mcps: "MCPs"
     case .skills: "Skills"
     case .plugins: "Plugins"
     case .projects: "Projects"

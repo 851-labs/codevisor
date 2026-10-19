@@ -40,7 +40,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "projects", "updates", "general", "agents", "mcps",
+    "root", "account", "machines", "projects", "general", "updates", "agents", "mcps",
     "skills", "plugins",
   ]
 
@@ -152,12 +152,12 @@ struct SettingsSheet: View {
       }
     }
     Section {
+      NavigationLink(value: SettingsDestination.section("general")) {
+        settingsLabel("Privacy & Data", systemImage: "hand.raised")
+      }
       NavigationLink(value: SettingsDestination.section("updates")) {
         settingsLabel("Updates", systemImage: "arrow.down.circle")
           .badge(environment.updateCenter.availableCount)
-      }
-      NavigationLink(value: SettingsDestination.section("general")) {
-        settingsLabel("Privacy & Data", systemImage: "hand.raised")
       }
     }
     Section {
