@@ -206,16 +206,23 @@ struct WorkspaceInspectorView: View {
         if let machineName {
           detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
         }
-      }
-
-      if showsBotTranscript {
-        Section {
-        } footer: {
-          Button("Show Full Transcript") { onOpen(.botTranscript) }
-            .foregroundStyle(.primary)
-            .help("Show everything the bot did, including its tool calls and the messages it received")
-            .accessibilityIdentifier("bot.showFullTranscript")
-            .frame(maxWidth: .infinity, alignment: .trailing)
+        if showsBotTranscript {
+          row(.botTranscript) {
+            Label {
+              HStack {
+                Text("Show Full Transcript")
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.forward.square")
+                  .foregroundStyle(.secondary)
+              }
+            } icon: {
+              Image(systemName: "text.page")
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            }
+          }
+          .help("Show everything the bot did, including its tool calls and the messages it received")
+          .accessibilityIdentifier("bot.showFullTranscript")
         }
       }
 
