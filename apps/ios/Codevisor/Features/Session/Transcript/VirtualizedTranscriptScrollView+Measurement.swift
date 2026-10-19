@@ -193,7 +193,7 @@ extension VirtualizedTranscriptScrollView {
     else { return layout }
     let spacer = layout.frame(at: spacerIndex)
     let screen = viewportHeight - appliedTopContentInset - Self.runwayTopClearance
-    let height = max(clearance, screen - (spacer.minY - turnTop))
+    let height = stacksFromBottom ? clearance : max(clearance, screen - (spacer.minY - turnTop))
     guard abs(spacer.height - height) > 0.5,
       let adjusted = layout.updatingHeights([spacerKey: height])
     else { return layout }

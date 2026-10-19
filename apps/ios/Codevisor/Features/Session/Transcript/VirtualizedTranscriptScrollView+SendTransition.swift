@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorUI
 import StreamMarkdown
 import SwiftUI
@@ -22,8 +23,10 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
 
   var sendTransitionViewportHeight: CGFloat { viewportHeight }
 
+  var stacksFromBottom: Bool { sessionController?.presentsBotConversation == true }
+
   var sendTransitionLanding: TranscriptSendLanding? {
-    guard window != nil else { return nil }
+    guard window != nil, !stacksFromBottom else { return nil }
     let viewportWidth = max(1, bounds.width)
     let rowWidth = min(Self.maxRowWidth, max(1, viewportWidth - Self.horizontalPadding * 2))
     let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
