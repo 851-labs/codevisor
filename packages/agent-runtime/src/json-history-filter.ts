@@ -12,21 +12,7 @@ export class JsonHistoryFilter {
     for (let index = 0; index < chunk.length; index++) {
       const char = chunk[index]!
       if (this.inString) {
-        if (this.keyString && this.key.length < 512) this.key += char
-        if (this.escaped) this.escaped = false
-        else if (char === "\\") this.escaped = true
-        else if (char === '"') {
-          this.inString = false
-          if (this.keyString) {
-            const current = this.stack.at(-1)!
-            try {
-              current.key = String(JSON.parse(this.key))
-            } catch {
-              current.key = ""
-            }
-            this.keyString = false
-          }
-        }
+        this.consumeQuotedCharacter(char)
         continue
       }
       if (char === '"') {
@@ -36,11 +22,7 @@ export class JsonHistoryFilter {
         continue
       }
       if (this.skipDepth > 0) {
-        if (char === "[" || char === "{") this.skipDepth += 1
-        else if (char === "]" || char === "}") {
-          this.skipDepth -= 1
-          if (this.skipDepth === 0) start = index + 1
-        }
+        if (this.consumeSkippedCharacter(char)) start = index + 1
         continue
       }
       const parent = this.stack.at(-1)
@@ -69,5 +51,37 @@ export class JsonHistoryFilter {
     }
     if (start >= 0) parts.push(chunk.slice(start))
     return parts.join("")
+  }
+
+  private consumeQuotedCharacter(char: string): void {
+    if (this.keyString && this.key.length < 512) this.key += char
+    if (this.escaped) {
+      this.escaped = false
+      return
+    }
+    if (char === "\\") {
+      this.escaped = true
+      return
+    }
+    if (char !== '"') return
+    this.inString = false
+    if (!this.keyString) return
+    const current = this.stack.at(-1)!
+    try {
+      current.key = String(JSON.parse(this.key))
+    } catch {
+      current.key = ""
+    }
+    this.keyString = false
+  }
+
+  private consumeSkippedCharacter(char: string): boolean {
+    if (char === "[" || char === "{") {
+      this.skipDepth += 1
+      return false
+    }
+    if (char !== "]" && char !== "}") return false
+    this.skipDepth -= 1
+    return this.skipDepth === 0
   }
 }
