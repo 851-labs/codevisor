@@ -5,6 +5,7 @@ import SwiftUI
 import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
+import StreamMarkdown
 
 @MainActor
 @Observable
@@ -255,7 +256,20 @@ final class PaneGroupModel: Identifiable {
         let current = self.state.panes.first(where: { $0.id == paneId }),
         let content = self.chatContent
       else { return AnyView(EmptyView()) }
-      return content(current)
+      return AnyView(
+        content(current).environment(\.transcriptWebLinkActions, self.webLinkActions(sourcePaneId: paneId)))
+    }
+  }
+
+  private func webLinkActions(sourcePaneId: UUID) -> MarkdownWebLinkActions {
+    MarkdownWebLinkActions { [weak self] url, destination in
+      let destination: BrowserLinkDestination =
+        switch destination {
+        case .newTab: .foregroundTab
+        case .newWindow: .window
+        case .split: .split(.trailing)
+        }
+      return self?.openBrowserLink?(sourcePaneId, url.absoluteString, destination, nil) ?? false
     }
   }
 

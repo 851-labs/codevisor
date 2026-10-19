@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import StreamMarkdown
 
 extension EnvironmentValues {
   @Entry public var transcriptDisclosure: TranscriptDisclosureStore?
@@ -15,6 +16,8 @@ extension EnvironmentValues {
   @Entry public var transcriptInvalidateRowMeasurement: TranscriptRowMeasurementInvalidationAction?
 
   @Entry public var transcriptAttachmentThumbnail: TranscriptAttachmentThumbnail?
+
+  @Entry public var transcriptWebLinkActions: MarkdownWebLinkActions?
 }
 
 public struct TranscriptAttachmentThumbnail: @unchecked Sendable {

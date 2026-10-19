@@ -162,4 +162,38 @@ struct TranscriptSurfaceTextViewTests {
     #expect(fixture.surface.nativeMenuRequests == 1)
     #expect(fixture.host.menuEvents.isEmpty)
   }
+
+  @Test("A right click on a web link offers Codevisor browser destinations")
+  func rightClickOnWebLinkOpensInCodevisorBrowser() {
+    let fixture = makeFixture()
+    defer {
+      fixture.window.contentView = nil
+      fixture.window.close()
+    }
+    let surface = TranscriptSurfaceTextView(frame: fixture.host.bounds)
+    surface.isEditable = false
+    surface.string = fixture.surface.string
+    fixture.surface.removeFromSuperview()
+    fixture.host.addSubview(surface)
+    let url = URL(string: "https://example.com/docs")!
+    surface.textStorage?.addAttribute(
+      .link, value: url, range: NSRange(location: 0, length: surface.string.utf16.count))
+    var opened: [(URL, MarkdownWebLinkActions.Destination)] = []
+    surface.linkAction = MarkdownLinkAction(
+      { _ in false },
+      webLinks: MarkdownWebLinkActions { url, destination in
+        opened.append((url, destination))
+        return true
+      })
+
+    let menu = surface.menu(for: fixture.click(.rightMouseDown))
+    let titles = menu?.items.map(\.title) ?? []
+    if let split = titles.firstIndex(of: "Open Link in Split") { menu?.performActionForItem(at: split) }
+
+    #expect(
+      Array(titles.prefix(3)) == ["Open Link in New Tab", "Open Link in New Window", "Open Link in Split"])
+    #expect(titles.last == "Copy Link Address")
+    #expect(opened.map(\.0) == [url])
+    #expect(opened.map(\.1) == [.split])
+  }
 }

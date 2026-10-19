@@ -77,6 +77,7 @@ extension ChatScreen {
                         openDocument: openFileDocument)
                     }
                     .markdownImageActions(transcriptImageActions)
+                    .markdownWebLinkActions(transcriptWebLinkActions)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
                     .environment(\.openSubagent, openSubagent)
@@ -121,6 +122,7 @@ extension ChatScreen {
                   openDocument: openFileDocument)
               },
               markdownImageActions: transcriptImageActions,
+              markdownWebLinkActions: transcriptWebLinkActions,
               onEarlierHistoryCollapseChange: { collapse in
                 DispatchQueue.main.async {
                   if earlierHistoryCollapse != collapse { earlierHistoryCollapse = collapse }

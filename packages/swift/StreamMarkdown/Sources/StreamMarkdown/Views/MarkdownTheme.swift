@@ -22,10 +22,16 @@ public typealias CodeHighlighting =
 public struct MarkdownLinkAction: @unchecked Sendable {
   private let handler: @MainActor (URL) -> Bool
   public var images: MarkdownImageActions?
+  public var webLinks: MarkdownWebLinkActions?
 
-  public init(_ handler: @escaping @MainActor (URL) -> Bool, images: MarkdownImageActions? = nil) {
+  public init(
+    _ handler: @escaping @MainActor (URL) -> Bool,
+    images: MarkdownImageActions? = nil,
+    webLinks: MarkdownWebLinkActions? = nil
+  ) {
     self.handler = handler
     self.images = images
+    self.webLinks = webLinks
   }
 
   @MainActor
@@ -62,6 +68,20 @@ public struct MarkdownImageActions: @unchecked Sendable {
     self.open = open
     self.openInNewTab = openInNewTab
     self.copy = copy
+  }
+}
+
+public struct MarkdownWebLinkActions: @unchecked Sendable {
+  public enum Destination: Sendable {
+    case newTab
+    case newWindow
+    case split
+  }
+
+  public var open: @MainActor (URL, Destination) -> Bool
+
+  public init(open: @escaping @MainActor (URL, Destination) -> Bool) {
+    self.open = open
   }
 }
 
@@ -184,7 +204,7 @@ public extension View {
   ) -> some View {
     let action = MarkdownLinkAction(handler)
     return transformEnvironment(\.markdownLinkAction) { current in
-      current = MarkdownLinkAction(handler, images: current?.images)
+      current = MarkdownLinkAction(handler, images: current?.images, webLinks: current?.webLinks)
     }
     .environment(
       \.openURL,
@@ -197,7 +217,14 @@ public extension View {
   func markdownImageActions(_ actions: MarkdownImageActions) -> some View {
     let unhandled: @MainActor (URL) -> Bool = { _ in false }
     return transformEnvironment(\.markdownLinkAction) { action in
-      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: actions)
+      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: actions, webLinks: action?.webLinks)
+    }
+  }
+
+  func markdownWebLinkActions(_ actions: MarkdownWebLinkActions?) -> some View {
+    let unhandled: @MainActor (URL) -> Bool = { _ in false }
+    return transformEnvironment(\.markdownLinkAction) { action in
+      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: action?.images, webLinks: actions)
     }
   }
 }

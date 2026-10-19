@@ -17,6 +17,7 @@ struct ChatScreen: View {
   @Environment(\.quickLook) var quickLook
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
+  @Environment(\.transcriptWebLinkActions) var transcriptWebLinkActions
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane

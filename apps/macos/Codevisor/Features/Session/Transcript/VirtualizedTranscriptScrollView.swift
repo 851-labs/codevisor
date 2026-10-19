@@ -69,12 +69,15 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var markdownImageLoader: MarkdownImageLoader = .remote
   var openMarkdownLink: (@MainActor (URL) -> Bool)?
   var markdownImageActions: MarkdownImageActions?
+  var markdownWebLinkActions: MarkdownWebLinkActions?
   lazy var markdownLinkAction = MarkdownLinkAction(
     { [weak self] url in self?.openMarkdownLink?(url) ?? false },
     images: MarkdownImageActions(
       open: { [weak self] url in self?.markdownImageActions?.open(url) },
       openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
-      copy: { [weak self] url in self?.markdownImageActions?.copy?(url) }))
+      copy: { [weak self] url in self?.markdownImageActions?.copy?(url) }),
+    webLinks: MarkdownWebLinkActions(
+      open: { [weak self] url, destination in self?.markdownWebLinkActions?.open(url, destination) ?? false }))
   var markdownRowStyle = TranscriptMarkdownRowStyle(markdown: .default)
   var pendingMeasuredHeights: [String: CGFloat] = [:]
   var measurementCommitTask: Task<Void, Never>?
