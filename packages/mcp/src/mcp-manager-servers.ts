@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto"
 
-import type { McpConnectionState } from "@codevisor/api"
+import type { McpAuthType, McpConnectionState } from "@codevisor/api"
 
 import { detectMcpAuth } from "./mcp-auth-detection.js"
 import { isBuiltinMcpId } from "./mcp-automation-builtins.js"
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
-import { encryptSecrets, type StoredOAuth, type StoredSecrets } from "./mcp-secret-store.js"
-import { connectionSecretsSignature, updatedSecrets } from "./mcp-secret-update.js"
+import { encryptSecrets } from "./mcp-secret-store.js"
+import { connectionSecretsSignature, initialSecrets, updatedSecrets } from "./mcp-secret-update.js"
 import { errorMessage, requireHttpUrl, run, validateRequest } from "./mcp-support.js"
 import type { ConnectUpstream } from "./mcp-upstream.js"
 
@@ -97,31 +97,19 @@ export const makeMcpServerOperations = (
   const create: McpManager["create"] = async (request) => {
     await builtinsReady
     validateRequest(request)
-    const authType =
-      request.transport === "stdio"
-        ? "none"
-        : (request.authType ?? (await detectMcpAuth(requireHttpUrl(request.url))).authType)
+    let authType: McpAuthType
+    if (request.transport === "stdio") {
+      authType = "none"
+    } else {
+      const requestedAuthType = request.authType
+      if (requestedAuthType === undefined || requestedAuthType === null) {
+        authType = (await detectMcpAuth(requireHttpUrl(request.url))).authType
+      } else {
+        authType = requestedAuthType
+      }
+    }
     const id = randomUUID()
-    const oauthState = `${id}.${randomUUID()}`
-    const oauth: StoredOAuth = {
-      state: oauthState,
-      ...(request.oauthClientId === undefined ? {} : { configuredClientId: request.oauthClientId }),
-      ...(request.oauthClientSecret === undefined
-        ? {}
-        : { configuredClientSecret: request.oauthClientSecret })
-    }
-    const stored: StoredSecrets = {
-      ...(request.env === undefined ? {} : { env: request.env }),
-      ...(request.headers === undefined ? {} : { headers: request.headers }),
-      ...(request.bearerToken === undefined || request.bearerToken === ""
-        ? {}
-        : { bearerToken: request.bearerToken }),
-      ...(authType !== "oauth"
-        ? {}
-        : {
-            oauth
-          })
-    }
+    const stored = initialSecrets(request, authType, id)
     const url = request.transport === "http" ? requireHttpUrl(request.url) : undefined
     const command = request.transport === "stdio" ? request.command : undefined
     const saved = await run(
@@ -207,13 +195,18 @@ export const makeMcpServerOperations = (
     if (definitionChanged || !enabled) await closeConnection(id)
     const wasLive =
       current.connectionState === "connected" || current.connectionState === "connecting"
-    const connectionState: McpConnectionState = definitionChanged
-      ? needsAuthorization
-        ? "needsAuthorization"
-        : "disconnected"
-      : !enabled && wasLive
-        ? "disconnected"
-        : current.connectionState
+    let connectionState: McpConnectionState
+    if (definitionChanged) {
+      if (needsAuthorization) {
+        connectionState = "needsAuthorization"
+      } else {
+        connectionState = "disconnected"
+      }
+    } else if (!enabled && wasLive) {
+      connectionState = "disconnected"
+    } else {
+      connectionState = current.connectionState
+    }
     const resetsState = definitionChanged || (!enabled && wasLive)
     const saved = await saveRecord(current, {
       name: request.name ?? current.name,
