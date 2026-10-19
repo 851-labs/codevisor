@@ -205,7 +205,7 @@ struct BotEditorView: View {
               Button(project.name) { Task { await editor.addProject(project.id) } }
             }
           } label: {
-            Label("Add Project", systemImage: "plus.circle.fill")
+            Label("Add Project", systemImage: "folder.badge.plus")
           }
           .accessibilityIdentifier("botEditor.addProject")
         }

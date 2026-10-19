@@ -33,7 +33,12 @@ struct WorkspaceInspectorView: View {
     var offset: CGFloat = 0
     var width: CGFloat = 0
     var contentWidth: CGFloat = 0
+
+    var overflowsLeading: Bool { offset > 1 }
+    var overflowsTrailing: Bool { offset + width < contentWidth - 1 }
   }
+
+  private static let tabOverflowInset: CGFloat = 40
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tabBarWidth: CGFloat = 0
@@ -80,24 +85,81 @@ struct WorkspaceInspectorView: View {
         Task { revealTab(tab, animated: false) }
       }
       .onChange(of: tab) { _, selected in revealTab(selected, animated: true) }
+      .mask {
+        HStack(spacing: 0) {
+          tabOverflowFade(.leading, isActive: tabViewport.overflowsLeading)
+          Rectangle()
+          tabOverflowFade(.trailing, isActive: tabViewport.overflowsTrailing)
+        }
+      }
+      .overlay(alignment: .leading) {
+        tabOverflowChevron(.leading, isActive: tabViewport.overflowsLeading)
+      }
+      .overlay(alignment: .trailing) {
+        tabOverflowChevron(.trailing, isActive: tabViewport.overflowsTrailing)
+      }
+      .animation(.easeOut(duration: 0.2), value: [tabViewport.overflowsLeading, tabViewport.overflowsTrailing])
     }
+  }
+
+  private func tabOverflowFade(_ edge: HorizontalEdge, isActive: Bool) -> some View {
+    ZStack {
+      Rectangle()
+        .opacity(isActive ? 0 : 1)
+      LinearGradient(
+        stops: [
+          .init(color: .black.opacity(0.06), location: 0), .init(color: .black.opacity(0.14), location: 0.5),
+          .init(color: .black, location: 1),
+        ],
+        startPoint: edge == .leading ? .leading : .trailing,
+        endPoint: edge == .leading ? .trailing : .leading
+      )
+      .opacity(isActive ? 1 : 0)
+    }
+    .frame(width: Self.tabOverflowInset)
+  }
+
+  private func tabOverflowChevron(_ edge: HorizontalEdge, isActive: Bool) -> some View {
+    Button {
+      scrollTabs(toward: edge)
+    } label: {
+      Image(systemName: edge == .leading ? "chevron.left" : "chevron.right")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.primary)
+        .frame(width: 20, height: 26)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .padding(.horizontal, 6)
+    .opacity(isActive ? 1 : 0)
+    .allowsHitTesting(isActive)
+    .accessibilityHidden(!isActive)
+    .accessibilityLabel(edge == .leading ? "Scroll Tabs Left" : "Scroll Tabs Right")
+  }
+
+  private func scrollTabs(toward edge: HorizontalEdge) {
+    let page = max(tabViewport.width - 2 * Self.tabOverflowInset, 0)
+    scrollTabs(to: tabViewport.offset + (edge == .leading ? -page : page), animated: true)
   }
 
   private func revealTab(_ tab: WorkspaceInspectorTab, animated: Bool) {
     guard let frame = tabFrames[tab], tabViewport.width > 0 else { return }
-    let leading = frame.minX
-    let trailing = frame.maxX + 2 * WorkspaceInspectorTabBar.scrollMargin
-    let target: CGFloat
+    let margin = WorkspaceInspectorTabBar.scrollMargin
+    let leading = frame.minX + margin - Self.tabOverflowInset
+    let trailing = frame.maxX + margin + Self.tabOverflowInset
     if leading < tabViewport.offset {
-      target = leading
+      scrollTabs(to: leading, animated: animated)
     } else if trailing > tabViewport.offset + tabViewport.width {
-      target = trailing - tabViewport.width
-    } else {
-      return
+      scrollTabs(to: trailing - tabViewport.width, animated: animated)
     }
-    let clamped = min(max(target, 0), max(tabViewport.contentWidth - tabViewport.width, 0))
+  }
+
+  private func scrollTabs(to offset: CGFloat, animated: Bool) {
+    let maxOffset = max(tabViewport.contentWidth - tabViewport.width, 0)
+    let snap = min(Self.tabOverflowInset, maxOffset / 2)
+    let target = offset < snap ? 0 : offset > maxOffset - snap ? maxOffset : offset
     withAnimation(animated && !reduceMotion ? .smooth(duration: 0.28) : nil) {
-      tabScroll.scrollTo(x: clamped)
+      tabScroll.scrollTo(x: target)
     }
   }
 
