@@ -38,6 +38,12 @@ struct MachinesSettingsScreen: View {
             "To add a machine, install Codevisor on it and run `codevisor auth login` to sign in to this account."
           )
         }
+
+        Section {
+          Toggle("Connect over LAN", isOn: localNetworkBinding)
+        } footer: {
+          Text("Connect to your machines directly over the local network when available.")
+        }
       }
       .task(id: focusedMachineID) {
         guard let focusedMachineID else { return }
@@ -60,6 +66,13 @@ struct MachinesSettingsScreen: View {
         try? await Task.sleep(for: .seconds(10))
       }
     }
+  }
+
+  private var localNetworkBinding: Binding<Bool> {
+    Binding(
+      get: { environment.localNetworkAccess == .requested },
+      set: { environment.setLocalNetworkAccess($0 ? .requested : .deferred) }
+    )
   }
 
   private func cloudMachine(for machine: CodevisorMachine) -> CloudMachine? {

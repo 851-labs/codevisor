@@ -46,8 +46,23 @@ struct MachinesSettingsView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
       }
+
+      Section {
+        Toggle("Connect over LAN", isOn: localNetworkBinding)
+      } footer: {
+        Text("Connect to your machines directly over the local network when available.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
     }
     .formStyle(.grouped)
+  }
+
+  private var localNetworkBinding: Binding<Bool> {
+    Binding(
+      get: { environment.localNetworkAccess == .requested },
+      set: { environment.setLocalNetworkAccess($0 ? .requested : .deferred) }
+    )
   }
 
   var body: some View {
