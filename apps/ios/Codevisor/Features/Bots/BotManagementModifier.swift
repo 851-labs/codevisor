@@ -21,7 +21,7 @@ struct BotManagementModifier: ViewModifier {
       ) { bot in
         Button("Delete Bot", role: .destructive) { delete(bot) }
       } message: { bot in
-        Text(environment.botDeletionMessage(for: bot))
+        Text(Bot.deletionMessage)
       }
   }
 

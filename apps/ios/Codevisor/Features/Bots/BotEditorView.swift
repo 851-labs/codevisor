@@ -92,7 +92,7 @@ struct BotEditorView: View {
             onDelete(bot)
           }
         } message: {
-          Text(environment.botDeletionMessage(for: bot))
+          Text(Bot.deletionMessage)
         }
     }
   }

@@ -22,14 +22,4 @@ extension AppEnvironment {
     if bots.supportsBots(on: preferred) { return preferred }
     return bots.botMachines.first?.id ?? preferred
   }
-
-  public func botDeletionMessage(for bot: Bot) -> String {
-    let removal =
-      "The bot's chat, its worktrees, and their codevisor/bot branches will be removed. Uncommitted and unpushed work in those worktrees will be lost."
-    switch navigationStore.workspaceEntries.botChildren[bot.id]?.count ?? 0 {
-    case 0: return removal
-    case 1: return removal + " Its workspace will be archived."
-    case let count: return removal + " Its \(count) workspaces will be archived."
-    }
-  }
 }

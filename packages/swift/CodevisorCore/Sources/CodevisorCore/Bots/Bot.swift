@@ -1,6 +1,8 @@
 import Foundation
 
 public struct Bot: Identifiable, Hashable, Sendable {
+  public static let deletionMessage = "Its chat and worktrees will be removed. Unpushed work will be lost."
+
   public let serverId: String
   public let id: UUID
   public let sessionId: UUID
