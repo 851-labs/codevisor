@@ -58,6 +58,7 @@ extension SessionModel {
         TranscriptReducer.apply(update, to: &message.turn)
         setItem(.assistant(message), at: index)
         recordToolRoute(for: update, itemId: message.id)
+        loadDeferredTranscriptDetails(of: message)
         return
       }
       ensureAssistantTurn()

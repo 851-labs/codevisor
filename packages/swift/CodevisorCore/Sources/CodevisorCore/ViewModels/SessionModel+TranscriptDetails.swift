@@ -4,12 +4,14 @@ import ACPKit
 extension SessionModel {
   func restoreActiveTranscriptDetails() {
     for item in conversation {
-      guard case let .assistant(message) = item,
-        message.turn.isGenerating, !message.turn.hasHydratedWorkedDetails,
-        let itemID = message.turn.deferredDetailItemId
-      else { continue }
-      _ = startTranscriptDetailLoad(itemId: itemID)
+      guard case let .assistant(message) = item, message.turn.isGenerating else { continue }
+      loadDeferredTranscriptDetails(of: message)
     }
+  }
+
+  func loadDeferredTranscriptDetails(of message: AssistantMessage) {
+    guard !message.turn.hasHydratedWorkedDetails, let itemID = message.turn.deferredDetailItemId else { return }
+    _ = startTranscriptDetailLoad(itemId: itemID)
   }
 
   @discardableResult
