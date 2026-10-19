@@ -197,9 +197,8 @@ struct BotEditorView: View {
               }
             }
           }
-        } currentValueLabel: {
-          Text(selectedModelName(models))
         }
+        .pickerStyle(.navigationLink)
         ForEach(models.parameterOptions) { option in
           Picker(option.name, selection: parameterBinding(option, in: models)) {
             ForEach(option.options) { value in
@@ -229,12 +228,6 @@ struct BotEditorView: View {
         "Chat with the bot like a messaging app. You see only the messages it sends you, you can message it while it works, and it tells you when its agents finish."
       )
     }
-  }
-
-  private func selectedModelName(_ models: BotModelSelection) -> String {
-    let harness = models.harnesses.first { $0.id == models.harnessId }
-    let value = models.modelOption?.currentValue
-    return harness?.models.first { $0.value == value }?.name ?? value ?? ""
   }
 
   private func modelBinding(_ models: BotModelSelection) -> Binding<ModelChoice> {
