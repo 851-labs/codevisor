@@ -18,6 +18,7 @@ import {
   supportsFastMode
 } from "./models.js"
 import { answerClaudeQuestion, cancelClaudePendingQuestions } from "./questions.js"
+import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import {
   ensureObservedTurnStarted,
@@ -25,7 +26,6 @@ import {
   failDeferredPrompts,
   finishActiveTurn
 } from "./turn-lifecycle.js"
-import { claudeSessionContextFrom } from "./usage.js"
 
 const CANCEL_GRACE_MS = 1_500
 

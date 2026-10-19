@@ -2,6 +2,7 @@ import type { SDKControlGetContextUsageResponse } from "@anthropic-ai/claude-age
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { claudeSessionContextFrom } from "./session-context.js"
 import {
   assistantErrorMessage,
   definition,
@@ -15,7 +16,7 @@ import {
   run,
   sdkMessage
 } from "./test-support.js"
-import { CLAUDE_OAUTH_USAGE_URL, claudeSessionContextFrom, claudeUsageLimitsFrom } from "./usage.js"
+import { CLAUDE_OAUTH_USAGE_URL, claudeUsageLimitsFrom } from "./usage.js"
 
 describe("Claude account usage", () => {
   it("normalizes the SDK's structured plan windows", () => {

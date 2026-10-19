@@ -5,13 +5,13 @@ import { settleGoalOnTurnEnd } from "./goals.js"
 import { isRecord, recordOf } from "./internal.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
 import { classifyResult, MAX_TRANSIENT_RETRIES, type TurnResolution } from "./result-resolution.js"
+import { claudeContextWindowFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import {
   ensureObservedTurnStarted,
   finishActiveTurn,
   refreshClaudeSessionTitle
 } from "./turn-lifecycle.js"
-import { claudeContextWindowFrom } from "./usage.js"
 
 const CONTINUE_PROMPT = "Please continue."
 
