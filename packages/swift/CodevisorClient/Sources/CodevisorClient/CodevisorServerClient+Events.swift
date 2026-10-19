@@ -125,13 +125,13 @@ extension CodevisorServerClient {
               let message = try await receiveEventMessage(socket, deadline: deadline)
               receivedFirstFrame = true
               guard let data = Self.data(from: message) else { continue }
-              let decodedEvent = scoped ? try decoder.decode(ServerEventEnvelope.self, from: data) : nil
-              let probe: ServerEventKindProbe
-              if let decodedEvent {
-                probe = ServerEventKindProbe(id: decodedEvent.id, kind: decodedEvent.kind)
+              let decodedEvent: ServerEventEnvelope?
+              if scoped {
+                decodedEvent = try decoder.decode(ServerEventEnvelope.self, from: data)
               } else {
-                probe = try decoder.decode(ServerEventKindProbe.self, from: data)
+                decodedEvent = nil
               }
+              let probe = try eventKindProbe(from: data, decodedEvent: decodedEvent)
               if probe.kind == "snapshot_required" {
                 throw EventSnapshotRequiredError()
               }
@@ -181,16 +181,7 @@ extension CodevisorServerClient {
             if scoped {
               try? emit(.synchronization(.reconnecting, cursor: cursor))
             }
-            if error is EventSnapshotRequiredError || (scoped && error is EventStreamGapError)
-              || (!scoped && error is DecodingError)
-            {
-              continuation.finish(throwing: error)
-              return
-            }
-            let failure = error as NSError
-            if failure.domain == NSPOSIXErrorDomain,
-              failure.code == POSIXErrorCode.EMSGSIZE.rawValue
-            {
+            if Self.isTerminalEventFailure(error, scoped: scoped) {
               continuation.finish(throwing: error)
               return
             }
@@ -205,6 +196,27 @@ extension CodevisorServerClient {
       }
       continuation.onTermination = { _ in task.cancel() }
     }
+  }
+
+  private func eventKindProbe(
+    from data: Data,
+    decodedEvent: ServerEventEnvelope?
+  ) throws -> ServerEventKindProbe {
+    if let decodedEvent {
+      return ServerEventKindProbe(id: decodedEvent.id, kind: decodedEvent.kind)
+    }
+    return try decoder.decode(ServerEventKindProbe.self, from: data)
+  }
+
+  private static func isTerminalEventFailure(_ error: any Error, scoped: Bool) -> Bool {
+    if error is EventSnapshotRequiredError || (scoped && error is EventStreamGapError)
+      || (!scoped && error is DecodingError)
+    {
+      return true
+    }
+    let failure = error as NSError
+    return failure.domain == NSPOSIXErrorDomain
+      && failure.code == POSIXErrorCode.EMSGSIZE.rawValue
   }
 
   static let keepaliveEventKind = "keepalive"
