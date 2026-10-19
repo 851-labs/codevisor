@@ -116,28 +116,34 @@ export const reconcileCredentials = async (
       failed.push({ id: source.id, reason: reasonOf(cause) })
       continue
     }
-    if (local !== undefined) {
-      if (appliedByKey.get(source.id) === fingerprint(local)) continue
-      if (!appliedByKey.has(source.id) && live !== undefined && live !== local) {
+    if (local === undefined) {
+      if (
+        !source.tombstoneOnAbsence ||
+        overrides.length !== 0 ||
+        !appliedByKey.has(source.id) ||
+        live === undefined
+      ) {
         continue
       }
-      if (live !== local) {
-        replicaWrites.push({ key: source.id, value: local, timestamp: stamp() })
-        published.push(source.id)
-      }
-      appliedWrites.push({ key: source.id, value: fingerprint(local), timestamp: stamp() })
-      appliedByKey.set(source.id, fingerprint(local))
-    } else if (
-      source.tombstoneOnAbsence &&
-      overrides.length === 0 &&
-      appliedByKey.has(source.id) &&
-      live !== undefined
-    ) {
       replicaWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
       appliedWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
       appliedByKey.delete(source.id)
       published.push(source.id)
+      continue
     }
+
+    const previousFingerprint = appliedByKey.get(source.id)
+    const localFingerprint = fingerprint(local)
+    if (previousFingerprint === localFingerprint) continue
+    if (!appliedByKey.has(source.id) && live !== undefined && live !== local) {
+      continue
+    }
+    if (live !== local) {
+      replicaWrites.push({ key: source.id, value: local, timestamp: stamp() })
+      published.push(source.id)
+    }
+    appliedWrites.push({ key: source.id, value: localFingerprint, timestamp: stamp() })
+    appliedByKey.set(source.id, localFingerprint)
   }
 
   const changedEntries =
