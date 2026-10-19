@@ -92,41 +92,42 @@ const toolActionEvents = (
   edge: Edge,
   kind: string,
   title: string
-): Array<MappedEvent> =>
-  edge === "started"
-    ? [
-        output({
-          sessionUpdate: "tool_call",
-          toolCallId: item.itemId,
-          kind,
-          title,
-          status: toolStatus(item.status)
-        })
-      ]
-    : item.status === "inProgress"
-      ? []
-      : [
-          output({
-            sessionUpdate: "tool_call_update",
-            toolCallId: item.itemId,
-            kind,
-            title,
-            status: toolStatus(item.status)
-          })
-        ]
+): Array<MappedEvent> => {
+  if (edge === "started") {
+    return [
+      output({
+        sessionUpdate: "tool_call",
+        toolCallId: item.itemId,
+        kind,
+        title,
+        status: toolStatus(item.status)
+      })
+    ]
+  }
+  if (item.status === "inProgress") return []
+  return [
+    output({
+      sessionUpdate: "tool_call_update",
+      toolCallId: item.itemId,
+      kind,
+      title,
+      status: toolStatus(item.status)
+    })
+  ]
+}
 
 const compactionEvents = (item: MuseItem, edge: Edge): Array<MappedEvent> => {
-  const status =
-    edge === "started"
-      ? "started"
-      : item.status === "completed"
-        ? "completed"
-        : item.status === "inProgress"
-          ? undefined
-          : "failed"
-  return status === undefined
-    ? []
-    : [output({ sessionUpdate: "context_compaction", compactionId: item.itemId, status })]
+  let status: "started" | "completed" | "failed"
+  if (edge === "started") {
+    status = "started"
+  } else if (item.status === "completed") {
+    status = "completed"
+  } else if (item.status === "inProgress") {
+    return []
+  } else {
+    status = "failed"
+  }
+  return [output({ sessionUpdate: "context_compaction", compactionId: item.itemId, status })]
 }
 
 export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapper => {
