@@ -468,16 +468,7 @@ export const makeAgents = (): AgentRuntimeService & {
           payload: { goalCleared: true }
         })
       }),
-    readSessionContext: () =>
-      Effect.succeed({
-        categories: [
-          { name: "Messages", tokens: 1_200 },
-          { isDeferred: true, name: "MCP tools (deferred)", tokens: 400 }
-        ],
-        maxTokens: 200_000,
-        mcpTools: [{ name: "mcp__linear__list_issues", serverName: "linear", tokens: 300 }],
-        totalTokens: 1_200
-      }),
+    readSessionContext: () => Effect.succeed(undefined),
     probeHarnessAuth: () => Effect.succeed({ state: "notRequired", methods: [], canLogout: false }),
     authenticateHarness: () => Effect.void,
     logoutHarness: () => Effect.void,
