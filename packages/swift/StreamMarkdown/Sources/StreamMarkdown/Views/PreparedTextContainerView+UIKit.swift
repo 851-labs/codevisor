@@ -5,13 +5,17 @@
   final class PreparedTextContainerView: UIView {
     private var textView: SelectableTextKitView?
 
-    func configure(layout: PreparedNativeTextLayout, delegate: UITextViewDelegate) {
+    func configure(
+      layout: PreparedNativeTextLayout, delegate: UITextViewDelegate, selectionSession: TextSelectionSession?
+    ) {
+      textView?.selectionSession = selectionSession
       guard textView?.layoutManager !== layout.manager else { return }
       let selection = textView?.selectedRange
       let wasFirstResponder = textView?.isFirstResponder == true
       textView?.removeFromSuperview()
       let view = SelectableTextKitView(preparedLayout: layout)
       view.delegate = delegate
+      view.selectionSession = selectionSession
       view.frame = CGRect(origin: .zero, size: layout.size)
       addSubview(view)
       textView = view

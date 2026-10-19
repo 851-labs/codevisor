@@ -7,8 +7,8 @@
     private let attributedText: NSAttributedString
     private let fillsWidth: Bool
     private let streamingAnimation: StreamingTextAnimationContext?
-    private let isSelecting: Binding<Bool>?
     @Environment(\.markdownLinkAction) private var linkAction
+    @Environment(\.textSelectionSession) private var selectionSession
     @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
     @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
 
@@ -16,14 +16,6 @@
       self.attributedText = attributedText
       self.fillsWidth = fillsWidth
       streamingAnimation = nil
-      isSelecting = nil
-    }
-
-    public init(attributedText: NSAttributedString, fillsWidth: Bool = true, isSelecting: Binding<Bool>) {
-      self.attributedText = attributedText
-      self.fillsWidth = fillsWidth
-      streamingAnimation = nil
-      self.isSelecting = isSelecting
     }
 
     init(
@@ -34,7 +26,6 @@
       self.attributedText = attributedText
       self.fillsWidth = fillsWidth
       self.streamingAnimation = streamingAnimation
-      isSelecting = nil
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -45,9 +36,8 @@
       let view = SelectableTextKitView()
       view.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
-      context.coordinator.isSelecting = isSelecting
       view.delegate = context.coordinator
-      view.selectionEnded = { [weak coordinator = context.coordinator] in coordinator?.endSelection() }
+      view.selectionSession = selectionSession
       let prepared = context.coordinator.preparedText(
         for: attributedText,
         animation: streamingAnimation
@@ -60,16 +50,13 @@
       _ = view.contentHeight(
         forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
       )
-      if let isSelecting {
-        view.setSelecting(isSelecting.wrappedValue)
-      }
       return view
     }
 
     public func updateUIView(_ textView: SelectableTextKitView, context: Context) {
       textView.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
-      context.coordinator.isSelecting = isSelecting
+      textView.selectionSession = selectionSession
       let prepared = context.coordinator.preparedText(
         for: attributedText,
         animation: streamingAnimation
@@ -82,9 +69,6 @@
       _ = textView.contentHeight(
         forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
       )
-      if let isSelecting {
-        textView.setSelecting(isSelecting.wrappedValue)
-      }
     }
 
     public func sizeThatFits(
@@ -130,7 +114,6 @@
     public final class Coordinator: NSObject, UITextViewDelegate {
       fileprivate lazy var measurer = UIKitTextKitTextMeasurer()
       var linkAction: MarkdownLinkAction?
-      var isSelecting: Binding<Bool>?
       private let animationState = StreamingTextAnimationState()
       private var attributedInput: NSAttributedString?
       private var stableAttributedText: NSAttributedString?
@@ -183,16 +166,11 @@
         return value
       }
 
-      func endSelection() {
-        guard let isSelecting, isSelecting.wrappedValue else { return }
-        isSelecting.wrappedValue = false
-      }
-
       public func textViewDidChangeSelection(_ textView: UITextView) {
-        guard let view = textView as? SelectableTextKitView, view.isSelectingOnDemand,
-          view.isFirstResponder, view.selectedRange.length == 0
+        guard let view = textView as? SelectableTextKitView, let session = view.selectionSession,
+          session.isActive, view.isFirstResponder, view.selectedRange.length == 0
         else { return }
-        endSelection()
+        session.end()
       }
 
       public func textView(
@@ -232,8 +210,6 @@
     private var latestAnimationEnd: TimeInterval?
     private var activeAnimationRanges: [NSRange] = []
     private var animationDisplayLink: CADisplayLink?
-    fileprivate var isSelectingOnDemand = false
-    fileprivate var selectionEnded: (() -> Void)?
     private var selectionMenuInteraction: UIEditMenuInteraction?
     public var animationFrameClock: StreamingTextAnimationFrameClock? {
       didSet {
@@ -284,6 +260,15 @@
       fatalError("init(coder:) has not been implemented")
     }
 
+    weak var selectionSession: TextSelectionSession? {
+      didSet {
+        guard selectionSession !== oldValue else { return }
+        oldValue?.leave(self)
+        selectionSession?.join(self)
+        isSelectable = selectionSession?.isActive ?? true
+      }
+    }
+
     func setContent(
       _ text: NSAttributedString,
       latestAnimationEnd: TimeInterval? = nil,
@@ -329,13 +314,10 @@
       setNeedsDisplay()
     }
 
-    fileprivate func setSelecting(_ selecting: Bool) {
-      guard selecting != isSelectingOnDemand || selecting != isSelectable else { return }
-      isSelectingOnDemand = selecting
-      isSelectable = selecting
-      guard selecting, textStorage.length > 0 else { return }
+    func focusSelection() {
+      guard textStorage.length > 0 else { return }
       DispatchQueue.main.async { [weak self] in
-        guard let self, self.isSelectingOnDemand, self.window != nil else { return }
+        guard let self, self.selectionSession?.isActive == true, self.window != nil else { return }
         self.becomeFirstResponder()
         self.selectAll(nil)
         self.presentSelectionMenu()
@@ -368,8 +350,8 @@
 
     public override func resignFirstResponder() -> Bool {
       let resigned = super.resignFirstResponder()
-      if resigned, isSelectingOnDemand {
-        selectionEnded?()
+      if resigned {
+        selectionSession?.memberResigned()
       }
       return resigned
     }

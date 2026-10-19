@@ -180,6 +180,7 @@
     private struct PreparedNativeTextView: UIViewRepresentable {
       let layout: PreparedNativeTextLayout
       @Environment(\.markdownLinkAction) private var linkAction
+      @Environment(\.textSelectionSession) private var selectionSession
 
       func makeCoordinator() -> SelectableTextView.Coordinator { .init() }
 
@@ -190,7 +191,7 @@
       }
 
       func updateUIView(_ view: PreparedTextContainerView, context: Context) {
-        view.configure(layout: layout, delegate: context.coordinator)
+        view.configure(layout: layout, delegate: context.coordinator, selectionSession: selectionSession)
         context.coordinator.linkAction = linkAction
       }
 

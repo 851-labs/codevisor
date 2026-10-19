@@ -5,17 +5,58 @@ import TranscriptKit
 import UIKit
 
 struct UserBubbleRow: View {
-  @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.userBubbleStyle) private var style
   let text: String
   let attachments: [Attachment]
-  @State private var isSelecting = false
+
+  var body: some View {
+    MessageBubbleView(side: .trailing, text: text, attachments: attachments, fill: style.fill) {
+      SelectableTextView(
+        attributedText: NSAttributedString(
+          string: text,
+          attributes: [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor(style.text),
+          ]
+        ),
+        fillsWidth: false
+      )
+    }
+  }
+}
+
+struct BotBubbleRow: View {
+  let message: TranscriptBotMessage
+
+  var body: some View {
+    MessageBubbleView(side: .leading, text: message.text, attachments: message.attachments) {
+      StreamingMarkdownView(message.text)
+        .frame(maxWidth: TranscriptBotMessageWidth.natural(of: message.text), alignment: .leading)
+    }
+  }
+}
+
+struct MessageBubbleView<Content: View>: View {
+  enum Side {
+    case leading
+    case trailing
+  }
+
+  @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @State private var selection = TextSelectionSession()
+  let side: Side
+  let text: String
+  let attachments: [Attachment]
+  var fill = Color.bubbleBackground
+  @ViewBuilder let content: () -> Content
 
   var body: some View {
     HStack {
-      Spacer(minLength: 40)
-      VStack(alignment: .trailing, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
+      if side == .trailing { Spacer(minLength: 40) }
+      VStack(
+        alignment: side == .trailing ? .trailing : .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing
+      ) {
         if !attachments.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
@@ -24,71 +65,12 @@ struct UserBubbleRow: View {
               }
             }
           }
-          .defaultScrollAnchor(.trailing)
+          .defaultScrollAnchor(side == .trailing ? .trailing : .leading)
           .scrollBounceBehavior(.basedOnSize)
         }
         if !text.isEmpty {
-          SelectableTextView(
-            attributedText: NSAttributedString(
-              string: text,
-              attributes: [
-                .font: UIFont.preferredFont(forTextStyle: .body),
-                .foregroundColor: UIColor(style.text),
-              ]
-            ),
-            fillsWidth: false,
-            isSelecting: $isSelecting
-          )
-          .environment(
-            \.streamMarkdownTextLayoutWidth,
-            rowLayoutWidth.map { max(1, $0 - 64) }
-          )
-          .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
-          .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
-          .background {
-            UserBubbleBackground(color: style.fill)
-              .background(
-                UserBubbleBackground.transcriptBackdrop(),
-                in: UserBubbleBackground.shape(for: dynamicTypeSize))
-          }
-          .contentShape(.contextMenuPreview, UserBubbleBackground.shape(for: dynamicTypeSize))
-          .contextMenu {
-            if !isSelecting {
-              Button("Copy", systemImage: "doc.on.doc") {
-                PlatformPasteboard.copy(text)
-              }
-              Button("Select Text", systemImage: "selection.pin.in.out") {
-                isSelecting = true
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-struct BotBubbleRow: View {
-  @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  let message: TranscriptBotMessage
-
-  var body: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 8) {
-        if !message.attachments.isEmpty {
-          ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-              ForEach(message.attachments) { attachment in
-                AttachmentThumbnailView(attachment: attachment)
-              }
-            }
-          }
-          .scrollBounceBehavior(.basedOnSize)
-        }
-        if !message.text.isEmpty {
-          StreamingMarkdownView(message.text)
-            .frame(maxWidth: TranscriptBotMessageWidth.natural(of: message.text), alignment: .leading)
+          content()
+            .environment(\.textSelectionSession, selection)
             .environment(
               \.streamMarkdownTextLayoutWidth,
               rowLayoutWidth.map { max(1, $0 - 64) }
@@ -96,19 +78,25 @@ struct BotBubbleRow: View {
             .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
             .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
             .background {
-              UserBubbleBackground(color: Color.bubbleBackground)
+              UserBubbleBackground(color: fill)
                 .background(
                   UserBubbleBackground.transcriptBackdrop(),
                   in: UserBubbleBackground.shape(for: dynamicTypeSize))
             }
+            .contentShape(.contextMenuPreview, UserBubbleBackground.shape(for: dynamicTypeSize))
             .contextMenu {
-              Button("Copy", systemImage: "doc.on.doc") {
-                PlatformPasteboard.copy(message.text)
+              if !selection.isActive {
+                Button("Copy", systemImage: "doc.on.doc") {
+                  PlatformPasteboard.copy(text)
+                }
+                Button("Select Text", systemImage: "selection.pin.in.out") {
+                  selection.begin()
+                }
               }
             }
         }
       }
-      Spacer(minLength: 40)
+      if side == .leading { Spacer(minLength: 40) }
     }
   }
 }
