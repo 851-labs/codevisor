@@ -23,6 +23,13 @@ public enum SettingsSectionIcon: Sendable {
     }
   }
 
+  var glyphScale: CGFloat {
+    switch self {
+    case .account, .general, .updates: 1.15
+    default: 1
+    }
+  }
+
   public var tint: Color {
     switch self {
     case .account: .blue
@@ -51,7 +58,7 @@ public struct SettingsIconTile: View {
 
   public var body: some View {
     Image(systemName: icon.systemImage)
-      .font(.system(size: size * 0.55, weight: .semibold))
+      .font(.system(size: size * 0.55 * icon.glyphScale, weight: .semibold))
       .foregroundStyle(.white)
       .frame(width: size, height: size)
       .background(icon.tint.gradient, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
