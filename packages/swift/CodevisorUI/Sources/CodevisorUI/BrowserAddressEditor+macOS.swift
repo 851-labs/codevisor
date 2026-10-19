@@ -144,7 +144,7 @@
         popup.contentView = NSHostingView(
           rootView:
             BrowserSuggestionList(suggestions: owner.suggestions) { [weak self] item in self?.choose(item.value) }
-            .background(.regularMaterial, in: .rect(cornerRadius: 18))
+            .glassEffect(.regular, in: .rect(cornerRadius: 18))
         )
         let anchor = window.convertToScreen(field.convert(field.bounds, to: nil))
         let available = anchor.minY - (window.screen?.visibleFrame.minY ?? 0) - 12

@@ -186,7 +186,7 @@ public struct BrowserPaneView: View {
         submitAddress()
       }
       .frame(maxHeight: 320)
-      .background(.regularMaterial, in: .rect(cornerRadius: 20))
+      .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
   }
 
