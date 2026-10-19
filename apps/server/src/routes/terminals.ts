@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { TerminalCreateRequest } from "@codevisor/api"
+import { TerminalCreateRequest, type Workspace } from "@codevisor/api"
 
 import {
   matchRoute,
@@ -33,21 +33,14 @@ export const routeTerminals = async (
         candidate.paneType === "terminal" && candidate.resourceId?.toLowerCase() === key
     )
     const workspaces = await run(services.db.listWorkspaces)
-    if (
-      workspaces.some(
-        (workspace) =>
-          workspace.isArchived &&
-          (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
-      )
-    ) {
+    const isArchivedWorkspace = (workspace: Workspace): boolean =>
+      workspace.isArchived &&
+      (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
+    if (workspaces.some(isArchivedWorkspace)) {
       throw new HttpFailure(409, "Restore the workspace before starting a terminal")
     }
     const terminal = await run(services.terminal.createTerminal(payload))
-    const archivedNow = (await run(services.db.listWorkspaces)).some(
-      (workspace) =>
-        workspace.isArchived &&
-        (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
-    )
+    const archivedNow = (await run(services.db.listWorkspaces)).some(isArchivedWorkspace)
     if (archivedNow) {
       await run(services.terminal.closeTerminal(terminal.terminalId))
       throw new HttpFailure(409, "Workspace was archived while starting the terminal")
