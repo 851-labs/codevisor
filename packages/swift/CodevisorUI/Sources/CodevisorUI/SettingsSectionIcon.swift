@@ -59,6 +59,7 @@ public struct SettingsIconTile: View {
   public var body: some View {
     Image(systemName: icon.systemImage)
       .font(.system(size: size * 0.55 * icon.glyphScale, weight: .semibold))
+      .imageScale(.medium)
       .foregroundStyle(.white)
       .frame(width: size, height: size)
       .background(icon.tint.gradient, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
