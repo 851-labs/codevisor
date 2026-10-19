@@ -4,7 +4,7 @@ import type { CreateSessionRequest, SessionSummary } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
-import { pendingQuestionRows, revisionRows } from "./common-rows.js"
+import { pendingQuestionRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { pendingQuestionFromRaw, sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
@@ -13,13 +13,7 @@ import { rowReader, text } from "./row-reader.js"
 import { sessionRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
-import {
-  attentionSettleDeadline,
-  ensureSessionAttentionState,
-  listPendingAttentionSettles,
-  projectSessionSidebarState,
-  settleSessionAttention
-} from "./session-attention.js"
+import { makeSessionAttentionService } from "./session-attention-service.js"
 
 export const insertSessionRow = (
   context: ServiceContext,
@@ -110,66 +104,7 @@ export const makeSessionsService = (
         )
         return pendingQuestionFromRaw(row?.pending_question ?? null)
       }),
-    markSessionRead: (rawId, throughSequence) =>
-      attempt("markSessionRead", () => {
-        const id = canonicalUuid(rawId)
-        getSession(id)
-        const latest = readLatestAttentionRevision(sqlite, id)
-        const requested = Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
-        const changedAt = isoTimestamp()
-        sqlite.transaction(() => {
-          advanceSessionReadCursor(sqlite, id, requested, changedAt)
-          acknowledgeReadAttentionError(sqlite, id, requested)
-          projectSessionSidebarState(sqlite, id, changedAt)
-        })()
-        return getSession(id)
-      }),
-    markSessionUnread: (rawId) =>
-      attempt("markSessionUnread", () => {
-        const id = canonicalUuid(rawId)
-        getSession(id)
-        const changedAt = isoTimestamp()
-        sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `insert into session_read_state (
-                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-               ) values (?, 'owner', 0, 1, ?)
-               on conflict(session_id, reader_id) do update set
-                 manually_unread = 1,
-                 updated_at = excluded.updated_at`
-            )
-            .run(id, changedAt)
-          projectSessionSidebarState(sqlite, id, changedAt)
-        })()
-        return getSession(id)
-      }),
-    clearSessionPlanApproval: (rawId) =>
-      attempt("clearSessionPlanApproval", () => {
-        const id = canonicalUuid(rawId)
-        getSession(id)
-        const changedAt = isoTimestamp()
-        sqlite.transaction(() => {
-          ensureSessionAttentionState(sqlite, id)
-          sqlite
-            .prepare("update session_attention set pending_plan_approval = 0 where session_id = ?")
-            .run(id)
-          projectSessionSidebarState(sqlite, id, changedAt)
-        })()
-        return getSession(id)
-      }),
-    settleSessionAttention: (rawId) =>
-      attempt("settleSessionAttention", () => {
-        const id = canonicalUuid(rawId)
-        return sqlite.transaction(() => settleSessionAttention(sqlite, id, isoTimestamp()))()
-      }),
-    listPendingAttentionSettles: attempt("listPendingAttentionSettles", () =>
-      listPendingAttentionSettles(sqlite)
-    ),
-    getAttentionSettleDeadline: (rawId) =>
-      attempt("getAttentionSettleDeadline", () =>
-        attentionSettleDeadline(sqlite, canonicalUuid(rawId))
-      ),
+    ...makeSessionAttentionService(sqlite, getSession),
     getSessionConfigSelections: (rawId) =>
       attempt("getSessionConfigSelections", () => {
         const id = canonicalUuid(rawId)
@@ -274,44 +209,3 @@ export const makeSessionsService = (
 }
 
 const configSelectionRows = rowReader({ config_selections: text })
-
-const readLatestAttentionRevision = (sqlite: ServiceContext["sqlite"], id: string): number => {
-  return revisionRows.one(
-    sqlite
-      .prepare(
-        "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
-      )
-      .get(id)
-  ).revision
-}
-
-const advanceSessionReadCursor = (
-  sqlite: ServiceContext["sqlite"],
-  id: string,
-  requested: number,
-  changedAt: string
-): void => {
-  sqlite
-    .prepare(
-      `insert into session_read_state (
-                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-               ) values (?, 'owner', ?, 0, ?)
-               on conflict(session_id, reader_id) do update set
-                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
-                 manually_unread = 0,
-                 updated_at = excluded.updated_at`
-    )
-    .run(id, requested, changedAt)
-}
-
-const acknowledgeReadAttentionError = (
-  sqlite: ServiceContext["sqlite"],
-  id: string,
-  requested: number
-): void => {
-  sqlite
-    .prepare(
-      "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
-    )
-    .run(id, requested)
-}
