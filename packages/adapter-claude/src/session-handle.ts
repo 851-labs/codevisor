@@ -25,6 +25,7 @@ import {
   failDeferredPrompts,
   finishActiveTurn
 } from "./turn-lifecycle.js"
+import { claudeSessionContextFrom } from "./usage.js"
 
 const CANCEL_GRACE_MS = 1_500
 
@@ -248,5 +249,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       payload: { goalCleared: true },
       subjectId: session.key
     })
-  })
+  }),
+  readContext: adapterPromise("readContext", async () =>
+    claudeSessionContextFrom(await session.q.getContextUsage())
+  )
 })

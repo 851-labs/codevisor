@@ -157,6 +157,10 @@ extension CodevisorServerClient {
     try await get("/v1/sessions/\(id.uuidString)/usage-limits")
   }
 
+  public func sessionContext(id: UUID) async throws -> ServerSessionContext? {
+    try await get("/v1/sessions/\(id.uuidString)/context")
+  }
+
   public func openSession(
     _ session: ChatSession,
     project: Project?,

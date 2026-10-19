@@ -468,6 +468,7 @@ export const makeAgents = (): AgentRuntimeService & {
           payload: { goalCleared: true }
         })
       }),
+    readSessionContext: () => Effect.succeed(undefined),
     probeHarnessAuth: () => Effect.succeed({ state: "notRequired", methods: [], canLogout: false }),
     authenticateHarness: () => Effect.void,
     logoutHarness: () => Effect.void,

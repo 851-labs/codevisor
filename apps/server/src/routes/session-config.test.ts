@@ -232,6 +232,46 @@ describe("session configuration routes", () => {
     })
   })
 
+  it("reads the context of a running agent session and null for any other", async () => {
+    const { services } = await makeServices("server-a")
+    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "claude-code" })
+    )
+    const context = {
+      categories: [{ name: "Messages", tokens: 1_200 }],
+      maxTokens: 200_000,
+      mcpTools: [],
+      totalTokens: 1_200
+    }
+    let projectedSession = session
+    const routeServices = {
+      ...services,
+      agents: {
+        ...services.agents,
+        loadedAgentSessionIds: () => ["agent-live", "agent-plain"],
+        readSessionContext: (agentSessionId: string) =>
+          Effect.succeed(agentSessionId === "agent-live" ? context : undefined)
+      },
+      db: {
+        ...services.db,
+        getSessionSummary: (id: string) =>
+          id === session.id ? Effect.succeed(projectedSession) : services.db.getSessionSummary(id)
+      }
+    }
+    const server = await startWithApp(routeServices)
+    const contextOf = () => jsonRequest(server, `/v1/sessions/${session.id}/context`)
+
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-idle" }
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-plain" }
+    expect(await contextOf()).toEqual({ body: null, status: 200 })
+    projectedSession = { ...session, agentSessionId: "agent-live" }
+    expect(await contextOf()).toEqual({ body: context, status: 200 })
+    expect((await jsonRequest(server, "/v1/sessions/missing/context")).status).toBe(404)
+  })
+
   it("reports session harness usage limits with workspace and account context", async () => {
     const { services } = await makeServices("server-a")
     const project = await run(services.db.createProject({ folderPath: "/tmp" }))

@@ -107,6 +107,7 @@ export const makeStartSession = ({
     }
     const session: CodexSession = {
       activeTurnId: undefined,
+      latestContext: undefined,
       client,
       collabRunTurns: new Map(),
       collabThreads: new Map(),

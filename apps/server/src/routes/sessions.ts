@@ -147,6 +147,21 @@ export const routeSessions = async (
     return true
   }
 
+  const contextSessionId = matchRoute(url.pathname, "/v1/sessions/:id/context")
+  if (contextSessionId !== undefined && request.method === "GET") {
+    const session = await findSession(services.db, contextSessionId)
+    if (session === undefined) throw new HttpFailure(404, "Session not found")
+    const agentSessionId = session.agentSessionId
+    const isRuntimeLoaded =
+      agentSessionId !== undefined &&
+      services.agents.loadedAgentSessionIds().includes(agentSessionId)
+    const context = isRuntimeLoaded
+      ? await run(services.agents.readSessionContext(agentSessionId))
+      : undefined
+    writeJson(response, 200, context ?? null)
+    return true
+  }
+
   const readSessionId = matchRoute(url.pathname, "/v1/sessions/:id/read")
   if (readSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, MarkSessionReadRequestSchema)

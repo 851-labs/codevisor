@@ -1,10 +1,11 @@
 import {
   USAGE_LIMIT_ERROR_PREFIXES,
+  type SDKControlGetContextUsageResponse,
   type SDKControlGetUsageResponse,
   type SDKMessage,
   type SDKRateLimitInfo
 } from "@anthropic-ai/claude-agent-sdk"
-import { isoTimestamp, type HarnessUsageLimits } from "@codevisor/api"
+import { isoTimestamp, type HarnessUsageLimits, type SessionContext } from "@codevisor/api"
 
 import { isRecord, recordOf } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
@@ -294,3 +295,23 @@ export const claudeContextWindowFrom = (
   )
   return available.size === 1 ? available.values().next().value : undefined
 }
+
+export const claudeSessionContextFrom = (
+  response: SDKControlGetContextUsageResponse
+): SessionContext => ({
+  ...(response.model === "" ? {} : { model: response.model }),
+  totalTokens: response.totalTokens,
+  maxTokens: response.maxTokens,
+  categories: response.categories.map((category) => ({
+    name: category.name,
+    tokens: category.tokens,
+    color: category.color,
+    ...(category.isDeferred === undefined ? {} : { isDeferred: category.isDeferred })
+  })),
+  mcpTools: response.mcpTools.map((tool) => ({
+    name: tool.name,
+    serverName: tool.serverName,
+    tokens: tool.tokens,
+    ...(tool.isLoaded === undefined ? {} : { isLoaded: tool.isLoaded })
+  }))
+})

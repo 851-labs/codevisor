@@ -11,7 +11,7 @@ import { emitItemLifecycle } from "./items.js"
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
-import { codexUsageLimitsFrom } from "./usage.js"
+import { codexSessionContextFrom, codexUsageLimitsFrom } from "./usage.js"
 
 export const codexThreadTitle = (thread: Record<string, unknown>): string | undefined => {
   for (const value of [thread.name, thread.preview]) {
@@ -68,6 +68,7 @@ const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unk
   const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
   const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
   const last = isRecord(tokenUsage.last) ? tokenUsage.last : {}
+  session.latestContext = codexSessionContextFrom(tokenUsage) ?? session.latestContext
   void session.emit({
     kind: "session.updated",
     payload: {

@@ -14,6 +14,7 @@ export type AgentSessionOperations = Pick<
   | "logoutHarness"
   | "probeHarnessAuth"
   | "prompt"
+  | "readSessionContext"
   | "setConfigOption"
   | "setGoal"
   | "setMode"
@@ -131,6 +132,13 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
           )
         }
         return yield* answerQuestion(questionId, answer)
+      }),
+    readSessionContext: (sessionId) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const readContext = session.handle.readContext
+        if (readContext === undefined) return undefined
+        return yield* readContext
       }),
     probeHarnessAuth: (harnessId, account) =>
       Effect.gen(function* () {
