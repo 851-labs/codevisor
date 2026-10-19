@@ -1,3 +1,5 @@
+lefthook: bun x lefthook
+
 pre-commit:
   parallel: false
   commands:
