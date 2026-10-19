@@ -24,7 +24,32 @@ extension QuestionPickerContent {
     } else {
       selected = selected.contains(token) ? [] : [token]
     }
+    if isOtherSelected(question), !selected.contains(Self.otherToken),
+      !revealedNotes.contains(question.id)
+    {
+      notes[question.id] = nil
+    }
     selections[question.id] = selected
+  }
+
+  func isOtherSelected(_ question: QuestionSpec) -> Bool {
+    selections[question.id, default: []].contains(Self.otherToken)
+  }
+
+  func showsNoteField(_ question: QuestionSpec) -> Bool {
+    guard question.presentation != .browserChoice, !isOtherSelected(question) else { return false }
+    return revealedNotes.contains(question.id)
+      || !(notes[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  func showsAddNoteButton(_ question: QuestionSpec) -> Bool {
+    question.presentation != .browserChoice && !isOtherSelected(question)
+      && !showsNoteField(question)
+  }
+
+  func revealNote(_ question: QuestionSpec) {
+    revealedNotes.insert(question.id)
+    anchor.focusesNotesWhenReady = true
   }
 
   private func selectHighlighted(_ question: QuestionSpec, index: Int) {
@@ -46,8 +71,20 @@ extension QuestionPickerContent {
   }
 
   func focusNotes() {
-    guard let view = anchor.notesEditor else { return }
-    view.window?.makeFirstResponder(view)
+    if let view = anchor.notesEditor, let window = view.window {
+      window.makeFirstResponder(view)
+    } else {
+      anchor.focusesNotesWhenReady = true
+    }
+  }
+
+  func attachNotesEditor(_ textView: SubmittingTextView) {
+    anchor.notesEditor = textView
+    textView.onWindowChanged = { [weak textView, anchor] in
+      guard anchor.focusesNotesWhenReady, let textView, let window = textView.window else { return }
+      anchor.focusesNotesWhenReady = false
+      window.makeFirstResponder(textView)
+    }
   }
 
   func advanceOrSubmit() {

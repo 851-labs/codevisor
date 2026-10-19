@@ -19,12 +19,14 @@ struct QuestionPickerContent: View {
   @State var notesHeight: CGFloat = 24
   @State var highlighted = 0
   @State var infoOption: String?
+  @State var revealedNotes: Set<String> = []
   @State var didOpenBrowserExtensions = false
   @State var anchor = AnchorBox()
 
   final class AnchorBox {
     weak var view: QuestionPickerKeyView?
     weak var notesEditor: SubmittingTextView?
+    var focusesNotesWhenReady = false
   }
 
   var question: QuestionSpec? {
@@ -58,8 +60,8 @@ struct QuestionPickerContent: View {
           }
           header(question)
           optionList(question)
-          if question.presentation != .browserChoice {
-            notesEditor(question)
+          if showsNoteField(question) {
+            noteField(question)
           }
           footer(question)
         }
@@ -90,6 +92,7 @@ struct QuestionPickerContent: View {
     .onChange(of: request.questionId) { _, _ in
       questionIndex = 0
       infoOption = nil
+      revealedNotes = []
       selections = [:]
       notes = [:]
       highlighted = 0
