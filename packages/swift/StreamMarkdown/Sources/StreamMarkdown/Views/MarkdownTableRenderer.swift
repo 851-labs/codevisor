@@ -223,20 +223,8 @@
         guard !substring.isEmpty else { continue }
         let intent = run.inlinePresentationIntent
 
-        var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.labelColor]
-        if intent?.contains(.code) == true {
-          attributes[.font] = codeFont
-          attributes[.backgroundColor] = codeBackground
-        } else {
-          attributes[.font] = styled(
-            baseFont,
-            bold: intent?.contains(.stronglyEmphasized) == true,
-            italic: intent?.contains(.emphasized) == true
-          )
-        }
-        if intent?.contains(.strikethrough) == true {
-          attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-        }
+        var attributes = inlineAttributes(
+          intent: intent, baseFont: baseFont, codeFont: codeFont, codeBackground: codeBackground)
         if let link = run.link {
           if markdownUsesServerFileLinkAttribute(link) {
             attributes[.streamMarkdownServerFileLink] = link
@@ -254,6 +242,29 @@
         }
       }
       return output
+    }
+
+    private static func inlineAttributes(
+      intent: InlinePresentationIntent?,
+      baseFont: NSFont,
+      codeFont: NSFont,
+      codeBackground: NSColor
+    ) -> [NSAttributedString.Key: Any] {
+      var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.labelColor]
+      if intent?.contains(.code) == true {
+        attributes[.font] = codeFont
+        attributes[.backgroundColor] = codeBackground
+      } else {
+        attributes[.font] = styled(
+          baseFont,
+          bold: intent?.contains(.stronglyEmphasized) == true,
+          italic: intent?.contains(.emphasized) == true
+        )
+      }
+      if intent?.contains(.strikethrough) == true {
+        attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+      }
+      return attributes
     }
 
     private static func styled(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {
