@@ -5,24 +5,17 @@ import { join, resolve as resolvePath } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
+import { CloneError, classifyCloneFailure, GitError, gitFailureMessage } from "./git-errors.js"
 import { GitCommandOutput, type GitOutputListener } from "./git-output.js"
 import { type CommandPriority, withPriority } from "./low-priority.js"
+
+export { CloneError, type CloneFailureCode, classifyCloneFailure, GitError } from "./git-errors.js"
 
 export {
   sanitizeGitOutputLine,
   type GitOutputListener,
   type GitOutputStream
 } from "./git-output.js"
-
-export class GitError extends Error {
-  constructor(
-    readonly operation: string,
-    message: string
-  ) {
-    super(message)
-    this.name = "GitError"
-  }
-}
 
 export interface GitRunOptions {
   readonly priority?: CommandPriority | undefined
@@ -44,7 +37,7 @@ const git = (
       { cwd, maxBuffer: options.maxBuffer ?? 1024 * 1024, ...(env === undefined ? {} : { env }) },
       (error, stdout, stderr) => {
         if (error !== null) {
-          reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
+          reject(new GitError(operation, gitFailureMessage(error, stderr)))
           return
         }
         resolve(stdout.trim())
@@ -65,7 +58,7 @@ const gitRaw = (
       { cwd, ...(env === undefined ? {} : { env }) },
       (error, stdout, stderr) => {
         if (error !== null) {
-          reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
+          reject(new GitError(operation, gitFailureMessage(error, stderr)))
           return
         }
         resolve(stdout)
@@ -233,58 +226,6 @@ export const addWorktree = (
       )
     })
   })
-
-export type CloneFailureCode =
-  | "auth_failed"
-  | "repo_not_found"
-  | "network"
-  | "disk_full"
-  | "invalid_url"
-
-export const classifyCloneFailure = (stderrText: string): CloneFailureCode | undefined => {
-  const text = stderrText.toLowerCase()
-  if (
-    text.includes("authentication failed") ||
-    text.includes("could not read username") ||
-    text.includes("could not read password") ||
-    text.includes("permission denied (publickey") ||
-    text.includes("host key verification failed") ||
-    text.includes("support for password authentication was removed")
-  ) {
-    return "auth_failed"
-  }
-  if (text.includes("repository") && text.includes("not found")) {
-    return "repo_not_found"
-  }
-  if (
-    text.includes("could not resolve host") ||
-    text.includes("unable to access") ||
-    text.includes("connection timed out") ||
-    text.includes("connection refused")
-  ) {
-    return "network"
-  }
-  if (text.includes("no space left on device")) {
-    return "disk_full"
-  }
-  if (
-    text.includes("does not appear to be a git repository") ||
-    text.includes("is not a valid repository name")
-  ) {
-    return "invalid_url"
-  }
-  return undefined
-}
-
-export class CloneError extends GitError {
-  constructor(
-    message: string,
-    readonly code: CloneFailureCode | undefined
-  ) {
-    super("clone", message)
-    this.name = "CloneError"
-  }
-}
 
 export const cloneRepository = (
   url: string,
