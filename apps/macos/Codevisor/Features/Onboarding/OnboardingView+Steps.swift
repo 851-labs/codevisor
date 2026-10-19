@@ -11,25 +11,14 @@ extension OnboardingView {
   var content: some View {
     switch step {
     case .welcome: welcomeStep
-    case .permissions: permissionsStep
-    case .analytics: analyticsStep
+    case .account: accountStep
+    case .localNetwork: localNetworkStep
     case .harnesses: harnessesStep
     case .project: projectStep
-    case .account: accountStep
+    case .computerUse: computerUseStep
+    case .fullDiskAccess: fullDiskAccessStep
+    case .analytics: analyticsStep
     }
-  }
-
-  private var permissionsStep: some View {
-    VStack(spacing: 20) {
-      stepHeader(
-        symbol: "lock.shield",
-        title: "Allow access",
-        subtitle: "Let Codevisor operate apps and work with protected files when you ask."
-      )
-
-      ComputerUsePermissionRowsView(model: permissions, includesFullDiskAccess: true)
-    }
-    .frame(maxWidth: .infinity)
   }
 
   private var welcomeStep: some View {
@@ -55,15 +44,11 @@ extension OnboardingView {
 
   private var analyticsStep: some View {
     VStack(spacing: 0) {
-      Image(systemName: "chart.line.uptrend.xyaxis")
-        .font(.system(size: Typography.IconSize.hero, weight: .medium))
-        .symbolRenderingMode(.hierarchical)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-
-      Text("Help improve Codevisor")
-        .font(.stepTitle)
-        .padding(.top, 18)
+      stepHeader(
+        symbol: "chart.line.uptrend.xyaxis",
+        title: "Help improve Codevisor",
+        subtitle: "Both are optional."
+      )
 
       VStack(alignment: .leading, spacing: 16) {
         VStack(alignment: .leading, spacing: 6) {
@@ -96,7 +81,7 @@ extension OnboardingView {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(Color.cardBackgroundColor)
       )
-      .padding(.top, 24)
+      .padding(.top, 20)
 
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: "lock.shield.fill")

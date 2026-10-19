@@ -105,10 +105,14 @@ struct HomeView: View {
         if let pendingDeviceApproval { return pendingDeviceApproval.presentsOverOnboarding }
         return readyForOnboarding && environment.navigationRosterStatus != .unverified
           && !showsSampleSidebar && presentedSettingsDestination == nil
-          && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
+          && (!hasAIDataSharingConsent || needsLocalNetworkStep || (!onboardingDismissed && !hasRemoteMachines))
       },
       set: { if !$0 && hasAIDataSharingConsent { onboardingDismissed = true } }
     )
+  }
+
+  var needsLocalNetworkStep: Bool {
+    environment.cloud.state.isSignedIn && environment.needsLocalNetworkChoice
   }
 
   var hasAIDataSharingConsent: Bool {

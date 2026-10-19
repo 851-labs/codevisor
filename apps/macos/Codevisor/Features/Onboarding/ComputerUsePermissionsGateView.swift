@@ -6,7 +6,6 @@ import CodevisorUI
 
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
-  var includesFullDiskAccess = false
   var embedded = false
   @Environment(\.controlActiveState) private var controlActiveState
 
@@ -31,18 +30,6 @@ struct ComputerUsePermissionRowsView: View {
           embedded: embedded
         ) {
           PermissionActionButton("Allow…") { model.requestScreenRecording() }
-        }
-        if includesFullDiskAccess {
-          Divider()
-          PermissionRow(
-            symbol: "internaldrive",
-            title: "Full Disk Access",
-            subtitle: "Accesses protected files",
-            grantedLabel: model.isFullDiskAccessGranted ? "Granted" : nil,
-            embedded: embedded
-          ) {
-            PermissionActionButton("Allow…") { model.requestFullDiskAccess() }
-          }
         }
       }
 

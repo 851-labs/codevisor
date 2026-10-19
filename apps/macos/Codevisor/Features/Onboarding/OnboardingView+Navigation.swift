@@ -54,9 +54,16 @@ extension OnboardingView {
 
   private var setUpLaterAction: (() -> Void)? {
     switch step {
-    case .permissions where !permissions.allGranted:
-      return skipPermissions
+    case .localNetwork where environment.localNetworkAccess != .requested:
+      return skipLocalNetwork
     case .project where projectSetup.selectedFolders.isEmpty:
+      return {
+        commitProjects()
+        navigate(to: .computerUse, back: false)
+      }
+    case .computerUse where !permissions.allGranted:
+      return skipComputerUse
+    case .fullDiskAccess where !permissions.isFullDiskAccessGranted:
       return { navigate(to: .analytics, back: false) }
     default:
       return nil
@@ -90,11 +97,8 @@ extension OnboardingView {
   private var primaryTitle: String {
     switch step {
     case .welcome: return "Get Started"
-    case .account: return "Continue"
-    case .harnesses: return "Continue"
-    case .permissions: return "Continue"
-    case .project: return "Continue"
     case .analytics: return "Finish"
+    default: return "Continue"
     }
   }
 
@@ -103,9 +107,11 @@ extension OnboardingView {
     switch step {
     case .welcome: return false
     case .account: return !environment.cloud.state.isSignedIn
+    case .localNetwork: return environment.localNetworkAccess != .requested
     case .harnesses: return !detection.isSettled
-    case .permissions: return !permissions.allGranted
     case .project: return projectSetup.selectedFolders.isEmpty
+    case .computerUse: return !permissions.allGranted
+    case .fullDiskAccess: return !permissions.isFullDiskAccessGranted
     case .analytics: return false
     }
   }
@@ -122,7 +128,12 @@ extension OnboardingView {
     navigate(to: previous, back: true)
   }
 
-  private func skipPermissions() {
+  private func skipLocalNetwork() {
+    environment.setLocalNetworkAccess(.deferred)
+    navigate(to: .harnesses, back: false)
+  }
+
+  private func skipComputerUse() {
     environment.settings.setPermissionsSetupSkipped(true)
     Task {
       await McpFleet.disableLocally(
@@ -131,7 +142,25 @@ extension OnboardingView {
         name: "Computer Use"
       )
     }
-    navigate(to: .project, back: false)
+    navigate(to: .fullDiskAccess, back: false)
+  }
+
+  private func commitProjects() {
+    for project in projectSetup.deselectedClonedProjects {
+      environment.projectList.removeProject(project)
+    }
+    let selected = Set(projectSetup.selectedFolders.map(\.standardizedFileURL.path))
+    let dropped = committedProjects.filter { !selected.contains($0.folderURL.standardizedFileURL.path) }
+    for project in dropped {
+      environment.projectList.removeProject(project)
+    }
+    committedProjects.removeAll { dropped.contains($0) }
+    let existing = Set(environment.projectList.projects.map(\.id))
+    let added = projectSetup.selectedFolders.map {
+      environment.projectList.addProject(folderURL: $0, serverId: CodevisorMachine.local.id)
+    }
+    committedProjects += added.filter { !existing.contains($0.id) && !committedProjects.contains($0) }
+    firstProject = added.first
   }
 
   private func advance() {
@@ -139,19 +168,24 @@ extension OnboardingView {
     case .welcome:
       navigate(to: .account, back: false)
     case .account:
+      navigate(to: .localNetwork, back: false)
+    case .localNetwork:
       navigate(to: .harnesses, back: false)
     case .harnesses:
-      navigate(to: .permissions, back: false)
+      navigate(to: .project, back: false)
       environment.configCache.seedHarnesses(
         harnesses,
         forServer: CodevisorMachine.local.id
       )
       Task { await environment.warmHarnessCapabilities(for: CodevisorMachine.local.id) }
-    case .permissions:
+    case .project:
+      commitProjects()
+      navigate(to: .computerUse, back: false)
+    case .computerUse:
       environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
       environment.settings.setPermissionsSetupSkipped(false)
-      navigate(to: .project, back: false)
-    case .project:
+      navigate(to: .fullDiskAccess, back: false)
+    case .fullDiskAccess:
       navigate(to: .analytics, back: false)
     case .analytics:
       environment.setShareAnalytics(shareAnalytics)
@@ -164,14 +198,8 @@ extension OnboardingView {
     guard !isFinishing else { return }
     isFinishing = true
     Task {
-      for project in projectSetup.deselectedClonedProjects {
-        environment.projectList.removeProject(project)
-      }
-      let project = await environment.finishOnboarding(
-        projectFolders: projectSetup.selectedFolders,
-        serverId: CodevisorMachine.local.id
-      )
-      onComplete(project)
+      await environment.finishOnboarding(importExternalSessions: false, serverId: CodevisorMachine.local.id)
+      onComplete(firstProject)
     }
   }
 }

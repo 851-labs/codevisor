@@ -47,7 +47,7 @@ extension HomeView {
         onboardingStart = .welcome
       } content: {
         OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
-          .interactiveDismissDisabled(!hasAIDataSharingConsent)
+          .interactiveDismissDisabled(!hasAIDataSharingConsent || needsLocalNetworkStep)
           .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: true))
       }
       .modifier(

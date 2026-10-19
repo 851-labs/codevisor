@@ -12,9 +12,11 @@ struct OnboardingView: View {
   var onComplete: (Project?) -> Void
 
   enum Step: Int, CaseIterable {
-    case welcome, harnesses, permissions, project, analytics, account
+    case welcome, harnesses, computerUse, project, analytics, account, localNetwork, fullDiskAccess
 
-    static let flow: [Step] = [.welcome, .account, .harnesses, .permissions, .project, .analytics]
+    static let flow: [Step] = [
+      .welcome, .account, .localNetwork, .harnesses, .project, .computerUse, .fullDiskAccess, .analytics,
+    ]
 
     var position: Int { Self.flow.firstIndex(of: self) ?? 0 }
     var next: Step? { Self.flow.indices.contains(position + 1) ? Self.flow[position + 1] : nil }
@@ -58,6 +60,8 @@ struct OnboardingView: View {
   @State var fleetPresenter = HarnessFleetPresenter()
   @State var projectSetup = ProjectSetupModel()
   @State var showingFolderPicker = false
+  @State var committedProjects: [Project] = []
+  @State var firstProject: Project?
   @State var showingGitClone = false
   @State var isFinishing = false
   @State var shareAnalytics = true

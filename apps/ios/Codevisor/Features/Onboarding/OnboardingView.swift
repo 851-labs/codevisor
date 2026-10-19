@@ -109,6 +109,10 @@ private struct ConnectMachineStep: View {
 
   private var cloud: CloudAccountController { environment.cloud }
 
+  private var showsLocalNetworkStep: Bool {
+    cloud.state.isSignedIn && environment.needsLocalNetworkChoice
+  }
+
   var body: some View {
     ZStack {
       switch cloud.state {
@@ -117,7 +121,9 @@ private struct ConnectMachineStep: View {
       case .validating:
         checkingContent
       case let .signedIn(userEmail):
-        if !hasCompletedFirstMachinesCheck {
+        if showsLocalNetworkStep {
+          OnboardingLocalNetworkScreen()
+        } else if !hasCompletedFirstMachinesCheck {
           checkingContent
             .task {
               await cloud.refreshMachines()
@@ -133,9 +139,11 @@ private struct ConnectMachineStep: View {
     .background(Color(.systemBackground))
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Settings", systemImage: "gearshape") { showsSettings = true }
-          .accessibilityIdentifier("onboarding.settings")
+      if !showsLocalNetworkStep {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Settings", systemImage: "gearshape") { showsSettings = true }
+            .accessibilityIdentifier("onboarding.settings")
+        }
       }
     }
     .sheet(isPresented: $showsSettings) { SettingsSheet() }
@@ -149,7 +157,7 @@ private struct ConnectMachineStep: View {
     VStack(spacing: 0) {
       Spacer()
         .frame(height: 96)
-      hero(
+      OnboardingHero(
         symbol: "lock.icloud",
         title: "Connect your machines",
         subtitle: "See and connect to all of your machines from anywhere. End-to-end encrypted."
@@ -251,25 +259,6 @@ private struct ConnectMachineStep: View {
     }
   }
 
-  private func hero(symbol: String, title: String, subtitle: String) -> some View {
-    VStack(spacing: 16) {
-      Image(systemName: symbol)
-        .font(.system(size: 60))
-        .foregroundStyle(.tint)
-        .accessibilityHidden(true)
-      Text(title)
-        .font(.largeTitle.bold())
-        .multilineTextAlignment(.center)
-      Text(subtitle)
-        .font(.body)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 8)
-    }
-    .padding(.horizontal, 24)
-  }
-
   private func instructionStep(_ number: Int, text: String, command: String) -> some View {
     HStack(alignment: .top, spacing: 12) {
       stepNumber(number)
@@ -298,6 +287,31 @@ private struct ConnectMachineStep: View {
       await cloudSignIn.signIn(provider: provider, cloud: environment.cloud)
       isSigningInToCloud = false
     }
+  }
+}
+
+struct OnboardingHero: View {
+  let symbol: String
+  let title: String
+  let subtitle: String
+
+  var body: some View {
+    VStack(spacing: 16) {
+      Image(systemName: symbol)
+        .font(.system(size: Typography.IconSize.hero, weight: .medium))
+        .foregroundStyle(.tint)
+        .accessibilityHidden(true)
+      Text(title)
+        .font(.largeTitle.bold())
+        .multilineTextAlignment(.center)
+      Text(subtitle)
+        .font(.body)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 8)
+    }
+    .padding(.horizontal, 24)
   }
 }
 
