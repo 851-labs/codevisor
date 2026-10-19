@@ -6,6 +6,9 @@ public enum TranscriptSendMotion {
   public static let bubble = TranscriptSpring(response: 0.4, dampingFraction: 0.74)
   public static let content = TranscriptSpring(response: 0.25, dampingFraction: 1)
   public static let bubbleSlide = TranscriptSpring(response: 0.15, dampingFraction: 1)
+  public static let attachmentRise = TranscriptSpring(response: 0.38, dampingFraction: 0.86)
+  public static let attachmentSlide = TranscriptSpring(response: 0.5, dampingFraction: 0.92)
+  public static let attachmentGrow = TranscriptSpring(response: 0.45, dampingFraction: 0.9)
 
   public static let bubbleStartScale: CGFloat = 0.96
 

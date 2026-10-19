@@ -2,6 +2,7 @@ import CoreGraphics
 
 public struct TranscriptSendFlightGeometry: Equatable, Sendable {
   public static let bubbleTextInsets = (horizontal: CGFloat(12), vertical: CGFloat(8))
+  public static let attachmentSpacing: CGFloat = 8
 
   public let rowOffset: CGSize
   public let bubbleTextHeight: CGFloat

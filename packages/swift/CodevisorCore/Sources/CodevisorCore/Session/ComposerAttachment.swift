@@ -37,6 +37,11 @@ public struct ComposerAttachment: Identifiable, Equatable {
 
   public var isImage: Bool { kind == .image }
 
+  public var uploadedFileID: String? {
+    if case let .uploaded(ref) = state { return ref.fileId }
+    return nil
+  }
+
   public var isPDF: Bool {
     mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
   }

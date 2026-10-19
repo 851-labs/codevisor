@@ -26,18 +26,28 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
   var stacksFromBottom: Bool { sessionController?.presentsBotConversation == true }
 
   var sendTransitionLanding: TranscriptSendLanding? {
-    guard window != nil, !stacksFromBottom else { return nil }
+    guard window != nil else { return nil }
     let viewportWidth = max(1, bounds.width)
     let rowWidth = min(Self.maxRowWidth, max(1, viewportWidth - Self.horizontalPadding * 2))
     let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
-    let corner = convert(
-      CGPoint(x: rowX + rowWidth, y: contentOffset.y + appliedTopContentInset + Self.runwayTopClearance),
-      to: nil)
+    let top: CGFloat
+    if stacksFromBottom {
+      guard let spacerIndex = virtualLayout.indexByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey] else {
+        return nil
+      }
+      let turnTop = canvasView.convert(
+        CGPoint(x: 0, y: transcriptRowsOrigin + virtualLayout.frame(at: spacerIndex).minY), to: self
+      ).y
+      top = min(turnTop, contentOffset.y + bounds.height - adjustedContentInset.bottom)
+    } else {
+      top = contentOffset.y + appliedTopContentInset + Self.runwayTopClearance
+    }
+    let corner = convert(CGPoint(x: rowX + rowWidth, y: top), to: nil)
     return TranscriptSendLanding(trailing: corner.x, top: corner.y, maxBubbleWidth: rowWidth - 40)
   }
 
   var sendTransitionPushDistance: CGFloat? {
-    guard let landing = sendTransitionLanding,
+    guard !stacksFromBottom, let landing = sendTransitionLanding,
       let spacerIndex = virtualLayout.indexByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]
     else { return nil }
     let turnTop = transcriptRowsOrigin + virtualLayout.frame(at: spacerIndex).minY

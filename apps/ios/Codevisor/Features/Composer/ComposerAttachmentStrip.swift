@@ -212,6 +212,9 @@ private struct ComposerAttachmentChip: View {
           .padding(6)
       }
     }
+    .transcriptSendAttachmentSource(
+      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 16, sentSize: CGSize(width: 56, height: 56)
+    )
     .task(id: attachment.fileURL) {
       guard attachment.hasVisualPreview, thumbnail == nil, let fileURL = attachment.fileURL else {
         return

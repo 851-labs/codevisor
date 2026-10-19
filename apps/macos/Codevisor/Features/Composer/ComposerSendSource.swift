@@ -18,7 +18,8 @@ final class ComposerSendSource {
       textRect: textView.laidOutTextRect,
       lineHeight: textView.firstLineHeight,
       bubble: style.fill,
-      revealsBubbleInFlight: style == .accent
+      revealsBubbleInFlight: style == .accent,
+      attachmentIDs: controller.composerAttachments.compactMap(\.uploadedFileID)
     )
     (textView as? SubmittingTextView)?.hideSentText()
   }

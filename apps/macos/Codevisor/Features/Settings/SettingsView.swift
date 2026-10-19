@@ -128,7 +128,7 @@ struct SettingsView: View {
         .navigationTitle("Updates")
     case .general:
       GeneralSettingsView()
-        .navigationTitle("Privacy & Data")
+        .navigationTitle("General")
     case .notifications:
       NotificationsSettingsView()
         .navigationTitle("Notifications")

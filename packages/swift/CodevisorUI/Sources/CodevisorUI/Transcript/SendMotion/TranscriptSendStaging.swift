@@ -100,7 +100,8 @@ public final class TranscriptSendStaging {
     lineHeight: CGFloat,
     bubble: Color,
     revealsBubbleInFlight: Bool = false,
-    followsComposer: Bool = true
+    followsComposer: Bool = true,
+    attachmentIDs: [String] = []
   ) {
     cancel(session: session)
     guard let window = textView.window,
@@ -122,14 +123,20 @@ public final class TranscriptSendStaging {
     pill.hidesFill = revealsBubbleInFlight
     glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
     pill.addSubview(glyphs)
+    let sources = TranscriptSendAttachmentAnchorView.sources(in: window, ids: Set(attachmentIDs))
+    let pieces = attachmentIDs.compactMap { id in sources.first { $0.attachmentID == id } }
+      .compactMap { TranscriptSendAttachmentPiece(source: $0, frame: overlay.rect(of: $0, $0.bounds)) }
+    for piece in pieces { overlay.addSubview(piece) }
+    TranscriptSendAttachmentDepartures.shared.depart(pieces)
     overlay.addSubview(pill)
-    transcriptSendLog.debug("staged composer glyphs")
+    transcriptSendLog.debug("staged composer glyphs with \(pieces.count) attachments")
     let stage = TranscriptSendStage(
       snapshot: pill,
       editorFrame: editorFrame,
       textRect: glyphRect,
       lineHeight: lineHeight,
       text: Self.attributedText(of: textView),
+      pieces: pieces,
       overlay: overlay
     )
     let timeout = DispatchWorkItem { [weak self, weak stage] in
