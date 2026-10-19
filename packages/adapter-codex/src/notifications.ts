@@ -4,10 +4,15 @@ import { usageLimitsObserved } from "@codevisor/agent-runtime"
 
 import { handleCollabItem, handleSubAgentActivity } from "./collab.js"
 import { fileChangeStats, fileChangeTitle, planStatus } from "./diff-presentation.js"
-import { codexErrorDetails, codexRetryStatus, codexSignedOutDetail } from "./errors.js"
+import { codexErrorDetails } from "./errors.js"
 import { emitGoalCleared, flushPendingGoalSnapshot, handleGoalUpdated } from "./goals.js"
 import { isRecord } from "./internal.js"
 import { emitItemLifecycle } from "./items.js"
+import {
+  confirmSignedOut,
+  handleNotificationError,
+  rejectsReasoningSummaries
+} from "./notification-errors.js"
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
@@ -142,33 +147,6 @@ const completeNotificationTurn = (
     })
 }
 
-const signedOutError = {
-  message: codexSignedOutDetail,
-  retryable: false,
-  stopKind: "authRequired" as const
-}
-
-const confirmSignedOut = async (
-  session: CodexSession,
-  status: string,
-  error: CodexSession["pendingTurnError"],
-  sharedAuthRejected: boolean
-): Promise<CodexSession["pendingTurnError"]> => {
-  if (status !== "failed" || error === undefined || error.stopKind !== undefined) return error
-  if (sharedAuthRejected) return signedOutError
-  try {
-    const result = await session.client.request<unknown>("account/read", { refreshToken: false })
-    return isRecord(result) && result.account === null && result.requiresOpenaiAuth === true
-      ? signedOutError
-      : error
-  } catch {
-    return error
-  }
-}
-
-const rejectsReasoningSummaries = (message: string): boolean =>
-  /reasoning summar/i.test(message) && /verif/i.test(message)
-
 const handleNotificationItemLifecycle = (
   session: CodexSession,
   method: string,
@@ -249,39 +227,6 @@ const emitStreamedFilePatch = (
       status: "in_progress",
       toolCallId: itemId
     },
-    subjectId: session.key
-  })
-}
-
-const handleNotificationError = (session: CodexSession, payload: Record<string, unknown>): void => {
-  const terminalError = codexErrorDetails(payload)
-  if (terminalError.stopKind === "authRequired" && session.activeTurnId !== undefined) {
-    if (session.pendingTurnError?.stopKind !== "authRequired") {
-      session.pendingTurnError = terminalError
-      void session.client
-        .request("turn/interrupt", { threadId: session.threadId, turnId: session.activeTurnId })
-        .catch(() => undefined)
-    }
-    return
-  }
-  if (payload.willRetry === true) {
-    void session.emit({
-      kind: "session.updated",
-      payload: {
-        retrying: codexRetryStatus(payload),
-        ...(session.activeTurnId === undefined ? {} : { turnId: session.activeTurnId })
-      },
-      subjectId: session.key
-    })
-    return
-  }
-  if (session.activeTurnId !== undefined) {
-    session.pendingTurnError = terminalError
-    return
-  }
-  void session.emit({
-    kind: "session.error",
-    payload: { message: terminalError.message },
     subjectId: session.key
   })
 }
