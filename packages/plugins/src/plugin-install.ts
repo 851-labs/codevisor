@@ -10,7 +10,6 @@ import type {
 } from "@codevisor/api"
 
 import { makePluginCandidatePreparer } from "./plugin-candidate.js"
-import { displayPluginCommand, pluginSetupCommands } from "./plugin-command.js"
 import { describePlugin } from "./plugin-discovery.js"
 import type {
   PreparedPluginUpdate,
@@ -21,6 +20,7 @@ import { linkPlugin, unlinkPlugin, type PluginLinkDeps } from "./plugin-link.js"
 import { readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { FindExecutable } from "./plugin-requirements.js"
 import { makePluginRestore, type PluginRestore } from "./plugin-restore.js"
+import { makePluginSetup } from "./plugin-setup.js"
 import { clonePluginSource, type ClonePluginSourceResult } from "./plugin-source.js"
 import { isPluginPathSafe, stagePluginSource } from "./plugin-staging.js"
 import { scanPlugins, type InstalledPlugin } from "./plugin-store.js"
@@ -100,54 +100,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     return destination
   }
 
-  const runSetupCommand = (
-    command: ReturnType<typeof pluginSetupCommands>[number],
-    manifest: PluginManifest,
-    directory: string,
-    env: NodeJS.ProcessEnv
-  ): Promise<{ readonly ok: boolean; readonly message: string }> =>
-    new Promise((resolvePromise) => {
-      const child =
-        command.kind === "shell"
-          ? spawnShell(command.command, { cwd: directory, env })
-          : spawnArgv(command.argv, { cwd: directory, env })
-      const terminal = deps.registerExternalTerminal?.(
-        { normalizeNewlines: true, sessionId: `plugin-install:${manifest.id}` },
-        { kill: () => child.kill(), resize: () => undefined, write: () => undefined }
-      )
-      terminal?.output(`$ ${displayPluginCommand(command)}\r\n`)
-      child.onOutput?.((data) => terminal?.output(data))
-      child.onExit((message, exitCode) => {
-        terminal?.exit(exitCode ?? undefined)
-        resolvePromise({ message, ok: exitCode === 0 })
-      })
-    })
-
-  const runSetup = async (
-    manifest: PluginManifest,
-    directory: string,
-    baseEnv: NodeJS.ProcessEnv,
-    previousVersion: string | undefined
-  ): Promise<void> => {
-    const env: NodeJS.ProcessEnv = {
-      ...baseEnv,
-      CODEVISOR_PLUGIN_ID: manifest.id,
-      CODEVISOR_PLUGIN_INSTALL_REASON: previousVersion === undefined ? "install" : "update",
-      CODEVISOR_PLUGIN_VERSION: manifest.version,
-      ...(previousVersion === undefined
-        ? {}
-        : { CODEVISOR_PLUGIN_PREVIOUS_VERSION: previousVersion })
-    }
-    for (const command of pluginSetupCommands(manifest, platform)) {
-      const outcome = await runSetupCommand(command, manifest, directory, env)
-      if (!outcome.ok) {
-        throw new PluginsError(
-          "invalid",
-          `Plugin ${manifest.id} setup command failed: ${outcome.message}`
-        )
-      }
-    }
-  }
+  const runSetup = makePluginSetup(deps, spawnShell, spawnArgv, platform)
 
   const candidates = makePluginCandidatePreparer({
     installedWithId,
@@ -170,6 +123,12 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       throw new PluginsError("invalid", `Invalid plugin update plan path: ${planId}`)
     }
     return directory
+  }
+
+  const assertPreparedDirectory = (prepared: PreparedPluginUpdate): void => {
+    if (prepared.directory !== preparedDirectory(prepared.pluginId, prepared.planId)) {
+      throw new PluginsError("invalid", "Plugin update plan directory is not trusted")
+    }
   }
 
   const importStaged = async (staged: StagedPlugin): Promise<void> => {
@@ -261,9 +220,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     applyPreparedUpdate: async (prepared) =>
       transactions.withLock(prepared.pluginId, async () => {
         await transactions.recoverPlugin(prepared.pluginId)
-        if (prepared.directory !== preparedDirectory(prepared.pluginId, prepared.planId)) {
-          throw new PluginsError("invalid", "Plugin update plan directory is not trusted")
-        }
+        assertPreparedDirectory(prepared)
         const existing = installedWithId(prepared.pluginId)
         const receipt = readPluginInstallReceipt(managedDirectory(prepared.pluginId))
         if (
@@ -289,9 +246,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         return prepared.manifest
       }),
     discardPreparedUpdate: async (prepared) => {
-      if (prepared.directory !== preparedDirectory(prepared.pluginId, prepared.planId)) {
-        throw new PluginsError("invalid", "Plugin update plan directory is not trusted")
-      }
+      assertPreparedDirectory(prepared)
       await rm(prepared.directory, { force: true, recursive: true })
     },
     recover: async () => {
