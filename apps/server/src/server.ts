@@ -23,7 +23,7 @@ import {
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
-import { upgradeAllBotInstructions } from "./routes/bot-create.js"
+import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
 import { handleUpgrade } from "./routes/events.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import {
