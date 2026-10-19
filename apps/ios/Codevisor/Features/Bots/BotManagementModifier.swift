@@ -11,7 +11,7 @@ struct BotManagementModifier: ViewModifier {
   func body(content: Content) -> some View {
     content
       .sheet(item: $editing) { target in
-        BotEditorView(target: target, environment: environment, onCreated: onCreated)
+        BotEditorView(target: target, environment: environment, onCreated: onCreated, onDelete: delete)
       }
       .confirmationDialog(
         "Delete \(deleting?.name ?? "Bot")?",

@@ -22,10 +22,11 @@ struct BotConversationScreen: View {
     content
       .navigationTitle(bot?.name ?? "Bot")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbarTitleMenu {
+      .toolbar {
         if let bot {
-          Button("Edit Bot…", systemImage: "pencil") { editing = .edit(bot) }
-          Button("Delete Bot…", systemImage: "trash", role: .destructive) { deleting = bot }
+          ToolbarItem(placement: .principal) {
+            BotConversationHeader(bot: bot) { editing = .edit(bot) }
+          }
         }
       }
       .botManagement(editing: $editing, deleting: $deleting, onDeleted: onDeleted)
@@ -72,5 +73,36 @@ struct BotConversationScreen: View {
       controller.applyComposerDefaults()
     }
     await controller.connectIfNeeded()
+  }
+}
+
+private struct BotConversationHeader: View {
+  let bot: Bot
+  let onOpenDetails: () -> Void
+  @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 56
+
+  var body: some View {
+    Button(action: onOpenDetails) {
+      VStack(spacing: -8) {
+        BotAvatar(symbolName: bot.symbolName, size: avatarSize)
+        HStack(spacing: 3) {
+          Text(bot.name)
+            .font(.headline)
+            .lineLimit(1)
+          Image(systemName: "chevron.forward")
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .glassEffect(.regular.interactive(), in: .capsule)
+      }
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(bot.name)
+    .accessibilityHint("Shows bot details")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityIdentifier("bot.header")
   }
 }

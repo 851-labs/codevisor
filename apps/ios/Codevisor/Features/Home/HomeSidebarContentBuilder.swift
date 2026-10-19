@@ -13,7 +13,10 @@ struct HomeSidebarContentBuilder {
 
   var listedItems: [WorkspaceSidebarItem] {
     let nested = Set(botEntries.flatMap(\.workspaceIDs))
-    return known(environment.navigationStore.workspaceEntries.sidebar).filter { !nested.contains($0.id) }
+    let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))
+    return known(environment.navigationStore.workspaceEntries.sidebar).filter {
+      $0.botId == nil && !botProjects.contains($0.projectId) && !nested.contains($0.id)
+    }
   }
 
   var archivedItems: [WorkspaceSidebarItem] {

@@ -10,14 +10,23 @@ struct BotEditorView: View {
   }
 
   @Environment(\.dismiss) private var dismiss
+  @Environment(AppEnvironment.self) private var environment
   @State private var editor: BotEditorModel
+  @State private var confirmsDelete = false
   @FocusState private var isNameFocused: Bool
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
   @ScaledMetric(relativeTo: .title2) private var iconChoiceSize: CGFloat = 44
   let onCreated: (Bot) -> Void
+  let onDelete: (Bot) -> Void
 
-  init(target: BotEditorTarget, environment: AppEnvironment, onCreated: @escaping (Bot) -> Void) {
+  init(
+    target: BotEditorTarget,
+    environment: AppEnvironment,
+    onCreated: @escaping (Bot) -> Void,
+    onDelete: @escaping (Bot) -> Void
+  ) {
     self.onCreated = onCreated
+    self.onDelete = onDelete
     _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
 
@@ -35,6 +44,9 @@ struct BotEditorView: View {
         if isCreating {
           modelSection
           conversationSection
+        }
+        if let bot = editor.editedBot {
+          deleteSection(bot)
         }
         if let errorMessage = editor.errorMessage {
           Section {
@@ -68,17 +80,27 @@ struct BotEditorView: View {
     }
   }
 
+  private func deleteSection(_ bot: Bot) -> some View {
+    Section {
+      Button("Delete Bot", role: .destructive) { confirmsDelete = true }
+        .frame(maxWidth: .infinity)
+        .confirmationDialog(
+          "Delete \(bot.name)?", isPresented: $confirmsDelete, titleVisibility: .visible
+        ) {
+          Button("Delete Bot", role: .destructive) {
+            dismiss()
+            onDelete(bot)
+          }
+        } message: {
+          Text(environment.botDeletionMessage(for: bot))
+        }
+    }
+  }
+
   private var identitySection: some View {
     Section {
       VStack(spacing: 16) {
-        Image(systemName: editor.symbolName)
-          .font(.system(size: iconSize * 0.45, weight: .medium))
-          .symbolRenderingMode(.monochrome)
-          .foregroundStyle(.white)
-          .frame(width: iconSize, height: iconSize)
-          .background(Color.accentColor.gradient, in: .circle)
-          .contentTransition(.symbolEffect(.replace))
-          .accessibilityHidden(true)
+        BotAvatar(symbolName: editor.symbolName, size: iconSize)
         TextField("Bot Name", text: $editor.name)
           .font(.title2.weight(.semibold))
           .multilineTextAlignment(.center)
