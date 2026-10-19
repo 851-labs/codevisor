@@ -40,7 +40,12 @@ public final class TranscriptSendFlight {
   ) -> TranscriptSendFlight? {
     guard let window = target.window, !target.bounds.isEmpty,
       let stage = TranscriptSendStaging.shared.take(session: session)
-    else { return nil }
+    else {
+      transcriptSendLog.debug(
+        "flight blocked: window=\(target.window != nil) bounds=\(target.bounds.debugDescription) staged=\(TranscriptSendStaging.shared.hasStage(for: session))"
+      )
+      return nil
+    }
     guard let overlay = TranscriptSendOverlayView.overlay(in: window) else {
       stage.remove(animated: false)
       return nil
