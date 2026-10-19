@@ -1,6 +1,35 @@
-import type { UpdateMcpServerRequest } from "@codevisor/api"
+import { randomUUID } from "node:crypto"
+
+import type { CreateMcpServerRequest, McpAuthType, UpdateMcpServerRequest } from "@codevisor/api"
 
 import type { StoredOAuth, StoredSecrets } from "./mcp-secret-store.js"
+
+export const initialSecrets = (
+  request: CreateMcpServerRequest,
+  authType: McpAuthType,
+  id: string
+): StoredSecrets => {
+  const oauthState = `${id}.${randomUUID()}`
+  const oauth: StoredOAuth = {
+    state: oauthState,
+    ...(request.oauthClientId === undefined ? {} : { configuredClientId: request.oauthClientId }),
+    ...(request.oauthClientSecret === undefined
+      ? {}
+      : { configuredClientSecret: request.oauthClientSecret })
+  }
+  return {
+    ...(request.env === undefined ? {} : { env: request.env }),
+    ...(request.headers === undefined ? {} : { headers: request.headers }),
+    ...(request.bearerToken === undefined || request.bearerToken === ""
+      ? {}
+      : { bearerToken: request.bearerToken }),
+    ...(authType !== "oauth"
+      ? {}
+      : {
+          oauth
+        })
+  }
+}
 
 const mergedSecretRecord = (
   current: Readonly<Record<string, string>> | undefined,
