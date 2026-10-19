@@ -156,6 +156,13 @@ export const endpoints = [
   "PATCH /v1/sessions/:id/queue",
   "PATCH /v1/sessions/:id/queue/:queueId",
   "DELETE /v1/sessions/:id/queue/:queueId",
+  "GET /v1/sessions/:id/subscriptions",
+  "POST /v1/sessions/:id/subscriptions",
+  "DELETE /v1/sessions/:id/subscriptions/:subscriptionId",
+  "GET /v1/sessions/:id/jobs",
+  "GET /v1/jobs/:jobId",
+  "POST /v1/jobs/:jobId/wait",
+  "POST /v1/jobs/:jobId/cancel",
   "POST /v1/sessions/:id/prompt",
   "POST /v1/sessions/:id/cancel",
   "POST /v1/sessions/:id/mode",
@@ -201,6 +208,14 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/restart/drain": "Get the restart drain state (live turns the server is waiting on)",
   "POST /v1/restart/drain": "Begin draining live turns so the server can restart safely",
   "DELETE /v1/restart/drain": "Cancel a restart drain and dispatch held prompts",
+  "GET /v1/sessions/:id/subscriptions": "List the session event subscriptions a session holds",
+  "POST /v1/sessions/:id/subscriptions":
+    "Subscribe a session to another session's events, delivered as hidden prompts",
+  "DELETE /v1/sessions/:id/subscriptions/:subscriptionId": "Remove a session event subscription",
+  "GET /v1/sessions/:id/jobs": "List a session's background execute jobs",
+  "GET /v1/jobs/:jobId": "Get a background execute job's status, output, and result",
+  "POST /v1/jobs/:jobId/wait": "Wait for a background execute job to finish",
+  "POST /v1/jobs/:jobId/cancel": "Cancel a running background execute job",
   "POST /v1/auth/pairing-token": "Issue a pairing token",
   "GET /v1/auth/connection-token": "Get the machine's stable connection token",
   "POST /v1/auth/connection-token/rotate": "Rotate the machine's connection token",
@@ -221,7 +236,8 @@ export const noContent = new Set<Endpoint>([
   "DELETE /v1/sessions/:id",
   "DELETE /v1/sessions/:id/plan-approval",
   "DELETE /v1/sessions/:id/queue/:queueId",
-  "DELETE /v1/sessions/:id/goal"
+  "DELETE /v1/sessions/:id/goal",
+  "DELETE /v1/sessions/:id/subscriptions/:subscriptionId"
 ])
 
 export const created = new Set<Endpoint>([
@@ -242,6 +258,7 @@ export const created = new Set<Endpoint>([
   "POST /v1/skills/import-remote",
   "POST /v1/bots",
   "POST /v1/sessions",
+  "POST /v1/sessions/:id/subscriptions",
   "POST /v1/files",
   "POST /v1/terminals"
 ])

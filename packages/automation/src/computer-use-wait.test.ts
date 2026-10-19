@@ -34,6 +34,41 @@ describe("Computer Use waits", () => {
     expect(calls.map((c) => c.screenshot)).toEqual([false, false, true])
     expect(calls.every((c) => c.disableDiff === true)).toBe(true)
   })
+  it("cuts a wait short to fit the execute budget and reports the shorter wait", async () => {
+    const reads: Array<number> = []
+    const time = clock()
+    const result = await waitForComputerState(
+      { app: "Music", text: "Never", timeout_ms: 30_000 },
+      async () => {
+        reads.push(time.now())
+        return reply("Current state")
+      },
+      time,
+      undefined,
+      5_000
+    )
+    expect(computerUseState(result)).toMatchObject({
+      matched: false,
+      text: "Current state",
+      waitError: "The requested state did not appear within 3500ms",
+      clampedToMs: 3_500
+    })
+    expect(reads.at(-1)).toBe(3_500)
+  })
+  it("doesn't shrink a wait to nothing when the execute budget is already spent", async () => {
+    const result = await waitForComputerState(
+      { app: "Music", text: "Never", timeout_ms: 400 },
+      async () => reply("Current state"),
+      clock(),
+      undefined,
+      0
+    )
+    expect(computerUseState(result)).toMatchObject({
+      matched: false,
+      waitError: "The requested state did not appear within 400ms"
+    })
+    expect(computerUseState(result).clampedToMs).toBeUndefined()
+  })
   it("waits for a dialog to disappear and returns the last state on timeout", async () => {
     let reads = 0
     expect(

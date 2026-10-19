@@ -48,10 +48,13 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
   public var createdAt: String
   public var updatedAt: String
   public var attachments: [ServerAttachmentRef]?
+  public var origin: String?
+
+  public var isSystem: Bool { origin == "system" }
 
   public init(
     id: String, sessionId: String, text: String, createdAt: String, updatedAt: String,
-    attachments: [ServerAttachmentRef]? = nil
+    attachments: [ServerAttachmentRef]? = nil, origin: String? = nil
   ) {
     self.id = id
     self.sessionId = sessionId
@@ -59,6 +62,7 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.attachments = attachments
+    self.origin = origin
   }
 }
 
@@ -322,7 +326,10 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var textRevision: Int?
   public var textResource: ToolDetailResource?
   public var planResource: ToolDetailResource?
+  public var origin: String? = nil
   public var revision: Int
+
+  public var isEvent: Bool { origin == "event" }
 
   public init(
     id: String,

@@ -212,6 +212,7 @@ export const TranscriptItem = Schema.Struct({
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   messageId: Schema.optional(Schema.String),
   phase: Schema.optional(MessagePhase),
+  origin: Schema.optional(Schema.Literals(["event"])),
   textResource: Schema.optional(TranscriptBodyResource),
   planResource: Schema.optional(TranscriptBodyResource),
   textGeneration: Schema.optional(Schema.Number),

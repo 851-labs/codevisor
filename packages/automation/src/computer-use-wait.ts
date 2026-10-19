@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
+import { MIN_CLAMPED_WAIT_MS, remainingBudgetMs } from "./codevisor-wait-budget.js"
 import { isPlainRecord, type UnknownRecord } from "./unknown-values.js"
 
 export const computerUseState = (result: CallToolResult): UnknownRecord => {
@@ -24,7 +25,8 @@ export const waitForComputerState = async (
     now: () => performance.now(),
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
   },
-  waitForChange?: (ms: number) => Promise<void>
+  waitForChange?: (ms: number) => Promise<void>,
+  budgetDeadline?: number
 ): Promise<CallToolResult> => {
   const text = typeof args.text === "string" ? args.text : undefined
   const role = typeof args.role === "string" ? args.role : undefined
@@ -43,7 +45,9 @@ export const waitForComputerState = async (
     screenshot,
     ...options
   } = args
-  const deadline = clock.now() + timeout
+  const budget = budgetedTimeout(timeout, clock.now(), budgetDeadline)
+  const deadline = clock.now() + budget
+  const clamped = budget < timeout ? { clampedToMs: budget } : {}
   const matches = (result: CallToolResult) => {
     const state = computerUseState(result)
     const tree = typeof state.text === "string" ? state.text : ""
@@ -79,7 +83,8 @@ export const waitForComputerState = async (
               ...(matched
                 ? {}
                 : {
-                    waitError: `The requested state ${requested === "absent" ? "was still present after" : "did not appear within"} ${timeout}ms`
+                    waitError: `The requested state ${requested === "absent" ? "was still present after" : "did not appear within"} ${budget}ms`,
+                    ...clamped
                   })
             })
           },
@@ -97,4 +102,11 @@ export const waitForComputerState = async (
       await clock.sleep(Math.min(200, remaining))
     })
   }
+}
+
+const budgetedTimeout = (timeout: number, now: number, budgetDeadline?: number): number => {
+  if (budgetDeadline === undefined) return timeout
+  const remaining = remainingBudgetMs(budgetDeadline, now)
+  if (remaining < MIN_CLAMPED_WAIT_MS) return timeout
+  return Math.min(timeout, remaining)
 }

@@ -59,6 +59,7 @@ import type {
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
 import type { SessionStateService } from "./session-state-types.js"
+import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
 import type {
@@ -78,7 +79,8 @@ export interface CodevisorDatabaseConfig {
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
-export interface CodevisorDatabaseService extends SessionStateService, BotsService {
+export interface CodevisorDatabaseService
+  extends SessionStateService, BotsService, SessionSubscriptionsService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>

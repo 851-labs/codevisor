@@ -11,7 +11,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
-import { executeTimeoutMessage, type ExecutionTimers } from "./mcp-gateway-execution.js"
+import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
 import { sdkTransport } from "./mcp-support.js"
 
@@ -35,6 +35,7 @@ const manualTimers = () => {
 const deadlineGateway = async (timers: ExecutionTimers) => {
   const contexts: Array<AutomationProviderContext> = []
   let onInvoked: (() => void) | undefined
+  let release: ((text: string) => void) | undefined
   const { db, manager } = await testManager({
     executionTimers: timers,
     makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
@@ -49,11 +50,12 @@ const deadlineGateway = async (timers: ExecutionTimers) => {
         contexts.push(context)
         if (toolName === "list_apps") return textToolResult(JSON.stringify({ apps: [] }))
         onInvoked?.()
-        return new Promise((_, reject) =>
+        return new Promise((resolve, reject) => {
+          release = (text) => resolve(textToolResult(text))
           context.signal?.addEventListener("abort", () => reject(context.signal?.reason), {
             once: true
           })
-        )
+        })
       }
     })
   })
@@ -74,13 +76,13 @@ const deadlineGateway = async (timers: ExecutionTimers) => {
     )
   )
   const invoked = new Promise<void>((resolve) => (onInvoked = resolve))
-  return { client, contexts, invoked }
+  return { client, contexts, invoked, manager, release: (text: string) => release?.(text) }
 }
 
 describe("execute deadline", () => {
-  it("stops the call at timeout_ms, cancels in-flight tools and names what was running", async () => {
+  it("returns a still-running handle at timeout_ms and lets the in-flight tool finish as a job", async () => {
     const { scheduled, timers } = manualTimers()
-    const { client, contexts, invoked } = await deadlineGateway(timers)
+    const { client, contexts, invoked, manager, release } = await deadlineGateway(timers)
     try {
       const pending = client.callTool({
         name: "execute",
@@ -91,22 +93,29 @@ describe("execute deadline", () => {
         }
       })
       await invoked
-      const deadline = scheduled.find((entry) => entry.ms === 5_000)!
       expect(contexts.at(-1)).toMatchObject({ deadline: 6_000 })
-      expect(contexts.at(-1)?.signal?.aborted).toBe(false)
-      deadline.fire()
+      scheduled.find((entry) => entry.ms === 5_000)!.fire()
       const result = CallToolResultSchema.parse(await pending)
-      expect(result.isError).toBe(true)
-      expect(result.content).toEqual([
-        { type: "text", text: executeTimeoutMessage(5_000, ["computer.get_app_state"]) }
-      ])
-      expect(contexts.at(-1)?.signal?.aborted).toBe(true)
+      const block = result.content[0]
+      const handle = JSON.parse(block?.type === "text" ? block.text : "{}")
+
+      expect(result.isError).toBeUndefined()
+      expect(handle).toMatchObject({ status: "running", running: ["computer.get_app_state"] })
+      expect(contexts.at(-1)?.signal?.aborted).toBe(false)
+      expect(manager.jobs.get(handle.jobId)).toMatchObject({ state: "running" })
+
+      release(JSON.stringify({ app: "Music" }))
+      const finished = await manager.jobs.wait(handle.jobId, 60_000)
+      expect(finished).toMatchObject({
+        timedOut: false,
+        job: { state: "completed", result: { app: "Music" }, running: [] }
+      })
     } finally {
       await client.close()
     }
   })
 
-  it("defaults to a two-minute deadline and clears it when the call finishes", async () => {
+  it("defaults to a two-minute budget and keeps quick calls inline", async () => {
     const { scheduled, timers } = manualTimers()
     const { client } = await deadlineGateway(timers)
     try {
@@ -124,15 +133,5 @@ describe("execute deadline", () => {
     } finally {
       await client.close()
     }
-  })
-
-  it("explains the timeout without saying a tool failed", () => {
-    expect(executeTimeoutMessage(120_000, ["computer.js"])).toBe(
-      "execute timed out after 120s (timeout_ms 120000) while computer.js was still running; its pending tool calls were cancelled. If this work legitimately needs longer, pass a larger timeout_ms (up to 600000)."
-    )
-    expect(executeTimeoutMessage(2_000, [])).toContain("while your code was running")
-    expect(executeTimeoutMessage(2_000, ["computer.js", "browser.js", "computer.js"])).toContain(
-      "while computer.js, browser.js were still running"
-    )
   })
 })

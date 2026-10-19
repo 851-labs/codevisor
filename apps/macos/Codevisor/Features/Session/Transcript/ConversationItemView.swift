@@ -14,6 +14,8 @@ struct ConversationItemView: View {
 
   var body: some View {
     switch item {
+    case let .user(message) where message.isEvent:
+      EmptyView()
     case let .user(message):
       UserMessageView(message: message)
     case let .assistant(message):

@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto"
 
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 
+import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -14,6 +15,7 @@ export interface McpGatewayOperationDeps {
   readonly finishRemoteBrowserTurn: GatewayHandles["finishRemoteBrowserTurn"]
   readonly gatewayRuntime: GatewayHandles["gatewayRuntime"]
   readonly invokeRemoteGatewayCall: GatewayHandles["invokeRemoteGatewayCall"]
+  readonly jobs: ExecutionJobs
   readonly unsubscribePluginTools: (() => void) | undefined
   readonly unsubscribeSkills: (() => void) | undefined
 }
@@ -51,6 +53,7 @@ export const makeMcpGatewayOperations = (
     finishRemoteBrowserTurn,
     gatewayRuntime,
     invokeRemoteGatewayCall,
+    jobs,
     unsubscribePluginTools,
     unsubscribeSkills
   } = deps
@@ -90,6 +93,7 @@ export const makeMcpGatewayOperations = (
     const gatewayId = sessionGatewayIds.get(sessionId)
     sessionGatewayIds.delete(sessionId)
     turnClientIds.delete(sessionId)
+    jobs.cancelSession(sessionId)
     if (gatewayId !== undefined) {
       const gateway = gateways.get(gatewayId)
       gateways.delete(gatewayId)

@@ -1,4 +1,6 @@
 import { detectMcpAuth } from "./mcp-auth-detection.js"
+import { systemExecutionTimers } from "./mcp-gateway-execution.js"
+import { makeExecutionJobs } from "./mcp-gateway-jobs.js"
 import { makeMcpGateway } from "./mcp-gateway.js"
 import { makeMcpBrowserOperations } from "./mcp-manager-browser.js"
 import { makeMcpManagerCore } from "./mcp-manager-core.js"
@@ -13,6 +15,8 @@ import { makeConnectUpstream } from "./mcp-upstream.js"
 
 export { automationSkillPath } from "./mcp-automation-builtins.js"
 export type { ToolGatewayConfig } from "./mcp-gateway.js"
+export type { ExecutionJobFinished, ExecutionJobs } from "./mcp-gateway-jobs.js"
+export type { ExecutionTimers } from "./mcp-gateway-execution.js"
 export type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
@@ -20,6 +24,10 @@ export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const core = makeMcpManagerCore(config)
   const connectUpstream = makeConnectUpstream(core)
+  const jobs = makeExecutionJobs({
+    dataDir: config.dataDir,
+    timers: config.executionTimers ?? systemExecutionTimers
+  })
 
   const {
     allTools,
@@ -37,6 +45,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     connectUpstream,
     gateways: core.gateways,
     isSuppressed: (name) => core.state.locallySuppressed.has(name),
+    jobs,
     record: core.record,
     selfMachine: core.selfMachine,
     turnClientId: (sessionId) => core.turnClientIds.get(sessionId)
@@ -88,10 +97,12 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       finishRemoteBrowserTurn,
       gatewayRuntime,
       invokeRemoteGatewayCall,
+      jobs,
       unsubscribePluginTools,
       unsubscribeSkills
     }),
     ...makeMcpBrowserOperations(core),
+    jobs,
     iconSources: async (id) => {
       const server = await core.record(id).catch(() => undefined)
       if (server === undefined) return undefined

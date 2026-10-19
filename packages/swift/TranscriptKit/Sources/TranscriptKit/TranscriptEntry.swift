@@ -25,13 +25,20 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public var text: String
   public var attachments: [Attachment]
   public var textResource: ToolDetailResource?
+  public var isEvent: Bool
 
-  public init(id: UUID = UUID(), text: String, attachments: [Attachment] = [], textResource: ToolDetailResource? = nil)
-  {
+  public init(
+    id: UUID = UUID(),
+    text: String,
+    attachments: [Attachment] = [],
+    textResource: ToolDetailResource? = nil,
+    isEvent: Bool = false
+  ) {
     self.id = id
     self.text = text
     self.textResource = textResource
     self.attachments = attachments
+    self.isEvent = isEvent
   }
 }
 
@@ -54,6 +61,16 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
     case let .user(message): return message.id
     case let .assistant(message): return message.id
     }
+  }
+
+  public var isVisibleInTranscript: Bool {
+    guard case let .user(message) = self else { return true }
+    return !message.isEvent
+  }
+
+  public var userPrompt: UserMessage? {
+    guard case let .user(message) = self, !message.isEvent else { return nil }
+    return message
   }
 
   public var hasRenderableTranscriptContent: Bool {

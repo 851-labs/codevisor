@@ -21,6 +21,7 @@ export default defineConfig({
         "src/infra/shared-accounts-test-support.ts",
         "src/routes/session-test-support.ts",
         "src/routes/bot-test-support.ts",
+        "src/routes/gateway-test-support.ts",
         "src/routes/response-test-support.ts",
         "src/main.ts",
         "src/serve.ts",

@@ -155,7 +155,9 @@ afterEach(async () => {
 
 export const makeServices = async (
   serverId = "test",
-  mcpConfig: Partial<Pick<McpManagerConfig, "packagedSkills" | "skillSource">> = {}
+  mcpConfig: Partial<
+    Pick<McpManagerConfig, "executionTimers" | "packagedSkills" | "skillSource">
+  > = {}
 ) => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-server-"))
   tempDirs.push(dir)
@@ -292,9 +294,10 @@ export const archiveSessionViaWorkspace = async (
 }
 
 export const start = async (
-  auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false }
+  auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false },
+  mcpConfig: Parameters<typeof makeServices>[1] = {}
 ) => {
-  const { agents, services, spawner } = await makeServices("server-a")
+  const { agents, services, spawner } = await makeServices("server-a", mcpConfig)
   const server = await run(
     startCodevisorServer(
       services,

@@ -52,10 +52,7 @@ public struct ComposerPromptHistory: Equatable, Sendable {
     in conversation: [ConversationItem],
     pending: UserMessage? = nil
   ) -> [String] {
-    var messages: [UserMessage] = conversation.compactMap {
-      if case let .user(message) = $0 { return message }
-      return nil
-    }
+    var messages: [UserMessage] = conversation.compactMap(\.userPrompt)
     if let pending, !messages.contains(where: { $0.id == pending.id }) {
       messages.append(pending)
     }

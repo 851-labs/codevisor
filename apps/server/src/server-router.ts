@@ -23,6 +23,7 @@ import { routeNetDirect } from "./routes/net-direct.js"
 import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeProjects } from "./routes/projects.js"
 import { routeScreenSharing } from "./routes/screen-sharing.js"
+import { routeSessionEvents } from "./routes/session-event-routes.js"
 import { routeSessions } from "./routes/sessions.js"
 import { routeSimulators, simulatorsAvailable } from "./routes/simulators.js"
 import { routeSkills } from "./routes/skills.js"
@@ -369,6 +370,9 @@ export const handleRequest = async (
       return
     }
     if (await routePlugins(services, fanout, request, response, url)) {
+      return
+    }
+    if (await routeSessionEvents(services, request, response, url)) {
       return
     }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {

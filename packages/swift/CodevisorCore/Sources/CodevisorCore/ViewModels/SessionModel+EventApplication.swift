@@ -168,11 +168,11 @@ extension SessionModel {
       )
       activeItem = .assistant(message)
       appliedUpdateCount += 1
-    case let .userMessage(id, text, attachments):
+    case let .userMessage(id, text, attachments, isEvent):
       appliedUpdateCount += 1
       let promotedFromQueue = consumeQueuePromotion(id: id)
-      appendRemoteUserIfNeeded(id: id, text: text, attachments: attachments)
-      if promotedFromQueue {
+      appendRemoteUserIfNeeded(id: id, text: text, attachments: attachments, isEvent: isEvent)
+      if promotedFromQueue, !isEvent {
         onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
       }
     case let .finished(stopReason, stopDetail, stopKind, retryable, chatItemId):
@@ -342,7 +342,8 @@ extension SessionModel {
   private func appendRemoteUserIfNeeded(
     id: String? = nil,
     text: String,
-    attachments: [Attachment] = []
+    attachments: [Attachment] = [],
+    isEvent: Bool = false
   ) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return }
@@ -352,20 +353,17 @@ extension SessionModel {
         return false
       })
     {
-      if case var .user(user) = settledConversation[index],
-        user.attachments.isEmpty, !attachments.isEmpty
-      {
-        user.attachments = attachments
-        settledConversation[index] = .user(user)
-      }
+      mergeRemoteEcho(at: index, attachments: attachments, isEvent: isEvent)
       pendingOptimisticUserMessageIDs.remove(echoId)
       return
     }
-    if let index = settledConversation.lastIndex(where: { item in
-      guard case let .user(user) = item else { return false }
-      return pendingOptimisticUserMessageIDs.contains(user.id)
-        && user.text == trimmed
-    }), case var .user(user) = settledConversation[index] {
+    if !isEvent,
+      let index = settledConversation.lastIndex(where: { item in
+        guard case let .user(user) = item else { return false }
+        return pendingOptimisticUserMessageIDs.contains(user.id)
+          && user.text == trimmed
+      }), case var .user(user) = settledConversation[index]
+    {
       if user.attachments.isEmpty, !attachments.isEmpty {
         user.attachments = attachments
         settledConversation[index] = .user(user)
@@ -379,10 +377,19 @@ extension SessionModel {
         UserMessage(
           id: id.flatMap(UUID.init(uuidString:)) ?? UUID(),
           text: text,
-          attachments: attachments
+          attachments: attachments,
+          isEvent: isEvent
         )))
     startActiveBubble()
     if !isSending { isSending = true }
+  }
+
+  private func mergeRemoteEcho(at index: Int, attachments: [Attachment], isEvent: Bool) {
+    guard case var .user(user) = settledConversation[index] else { return }
+    if user.attachments.isEmpty { user.attachments = attachments }
+    user.isEvent = user.isEvent || isEvent
+    guard ConversationItem.user(user) != settledConversation[index] else { return }
+    settledConversation[index] = .user(user)
   }
 
   func applyQueuedPromptSnapshot(_ queue: [ServerPromptQueueItem]) {

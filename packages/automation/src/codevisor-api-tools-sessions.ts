@@ -2,6 +2,7 @@ import {
   AddBotProjectRequest,
   CancelRequest,
   CreateSessionRequest,
+  DEFAULT_SESSION_WAIT_TIMEOUT_MS,
   MarkSessionReadRequest,
   OpenSessionRequest,
   PromptRequest,
@@ -178,10 +179,13 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sessions.wait",
-    "Wait until any of the listed sessions reaches one of the until states, instead of polling sessions.get or sessions.list in a loop. Checks immediately, then long-polls. until defaults to idle, waitingForUser, and errored; idle also matches a finished turn nobody has read yet (sidebarState unread) but never a session that still has queued prompts. Returns every listed session's sidebarState, actionRequiredKind, and pendingQuestion (answer it with sessions.question_answer), and timedOut when nothing matched in time. timeoutMs defaults to 60000 and is capped at 300000; keep it inside the execute call's timeout_ms (default 120000), and call again to keep waiting. A deleted session ends the wait and is omitted.",
+    "Wait until any of the listed sessions reaches one of the until states, instead of polling sessions.get or sessions.list in a loop. Checks immediately, then long-polls. until defaults to idle, waitingForUser, and errored; idle also matches a finished turn nobody has read yet (sidebarState unread) but never a session that still has queued prompts. Returns every listed session's sidebarState, actionRequiredKind, and pendingQuestion (answer it with sessions.question_answer), and timedOut when nothing matched in time. timeoutMs defaults to 60000, is capped at 300000, and is shortened to fit what is left of this execute call's budget so the wait returns cleanly (clampedToMs reports when that happened); call again to keep waiting. For a long wait, prefer sessions.subscribe and end your turn. A deleted session ends the wait and is omitted.",
     "POST",
     "/v1/sessions/wait",
-    { body: WaitForSessionsRequest }
+    {
+      body: WaitForSessionsRequest,
+      budgetedWait: { field: "timeoutMs", defaultMs: DEFAULT_SESSION_WAIT_TIMEOUT_MS }
+    }
   ),
   apiTool(
     "sessions.cancel",

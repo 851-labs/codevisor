@@ -184,7 +184,8 @@ enum ServerSessionEventDecoder {
         .userMessage(
           id: payload["messageId"]?.stringValue,
           text: text,
-          attachments: attachments
+          attachments: attachments,
+          isEvent: payload["origin"]?.stringValue == "event"
         )
       ]
     default:

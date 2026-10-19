@@ -18,6 +18,7 @@ import {
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession, noteBotPrompt } from "./bot-turns.js"
+import { transcriptOrigin } from "./prompt-origin.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
@@ -268,16 +269,13 @@ const steerPendingPrompts = async (
       return
     }
     noteBotPrompt(services, sessionId, item.origin)
-    await recordUserPrompt(
-      services,
-      fanout,
-      serverId,
-      sessionId,
-      item.id,
-      item.text,
-      item.attachments,
-      false
-    )
+    await recordUserPrompt(services, fanout, serverId, sessionId, {
+      messageId: item.id,
+      text: item.text,
+      attachments: item.attachments,
+      origin: item.origin,
+      startsTurn: false
+    })
     await run(services.db.completePromptQueueItem(sessionId, item.id))
   }
 }
@@ -298,17 +296,23 @@ const promptInput = async (
     : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
 }
 
+interface RecordedPrompt {
+  readonly messageId: string
+  readonly text: string
+  readonly attachments: ReadonlyArray<AttachmentRef> | undefined
+  readonly origin: PromptOrigin | undefined
+  readonly startsTurn: boolean
+}
+
 const recordUserPrompt = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
   sessionId: string,
-  messageId: string,
-  text: string,
-  attachments: ReadonlyArray<AttachmentRef> | undefined,
-  startsTurn: boolean
+  prompt: RecordedPrompt
 ): Promise<void> => {
-  const refs = attachments ?? []
+  const { messageId, text, startsTurn } = prompt
+  const refs = prompt.attachments ?? []
   return materializeRuntimeEvent(
     services.db,
     fanout,
@@ -321,7 +325,8 @@ const recordUserPrompt = (
         messageId,
         ...(startsTurn ? { startsTurn: true } : {}),
         text,
-        ...(refs.length === 0 ? {} : { attachments: refs })
+        ...(refs.length === 0 ? {} : { attachments: refs }),
+        ...transcriptOrigin(prompt.origin)
       }
     },
     sessionId
@@ -341,16 +346,13 @@ const runPromptInBackground = async (
 ): Promise<void> => {
   try {
     noteBotPrompt(services, sessionId, origin)
-    await recordUserPrompt(
-      services,
-      fanout,
-      serverId,
-      sessionId,
-      queueItemId,
+    await recordUserPrompt(services, fanout, serverId, sessionId, {
+      messageId: queueItemId,
       text,
       attachments,
-      true
-    )
+      origin,
+      startsTurn: true
+    })
     await (clientId === undefined
       ? services.mcp?.beginTurn(sessionId)
       : services.mcp?.beginTurn(sessionId, { clientId }))

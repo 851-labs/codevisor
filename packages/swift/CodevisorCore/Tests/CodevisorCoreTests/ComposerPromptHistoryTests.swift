@@ -38,6 +38,17 @@ struct ComposerPromptHistoryTests {
     )
   }
 
+  @Test("Event prompts Codevisor injected are never recalled")
+  func skipsEventPrompts() {
+    let conversation: [ConversationItem] = [
+      .user(UserMessage(text: "fix the build")),
+      .user(
+        UserMessage(text: "<codevisor-event type=\"session.turn_ended\">\nDone\n</codevisor-event>", isEvent: true)),
+    ]
+
+    #expect(ComposerPromptHistory.entries(in: conversation) == ["fix the build"])
+  }
+
   @Test("Recall starts only from an empty composer without attachments")
   func stepRequiresEmptyComposer() {
     let history = ComposerPromptHistory(entries: ["a", "b"])

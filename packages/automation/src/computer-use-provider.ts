@@ -357,7 +357,8 @@ export const makeComputerUseProvider = (
                     signal
                   )
                 }
-              : undefined
+              : undefined,
+            context.deadline
           )
         }
         if (

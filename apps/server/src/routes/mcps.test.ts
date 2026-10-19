@@ -5,35 +5,12 @@ import { join } from "node:path"
 
 import { NodeStreamableHttpTransport } from "@codevisor/mcp"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { gatewayTransport } from "./gateway-test-support.js"
 import { field } from "./response-test-support.js"
-
-const gatewayTransport = (gateway: {
-  readonly url: string
-  readonly bearerToken: string
-}): McpTransport => {
-  const inner = new StreamableHTTPClientTransport(new URL(gateway.url), {
-    requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
-  })
-  const transport: McpTransport = {
-    start: () => inner.start(),
-    send: (message, options) => inner.send(message, options),
-    close: () => inner.close(),
-    setProtocolVersion: (version) => inner.setProtocolVersion(version)
-  }
-  const forward: Pick<McpTransport, "onclose" | "onerror" | "onmessage"> = {
-    onclose: () => transport.onclose?.(),
-    onerror: (error) => transport.onerror?.(error),
-    onmessage: (message, extra) => transport.onmessage?.(message, extra)
-  }
-  Object.assign(inner, forward)
-  return transport
-}
 
 describe("mcp routes", () => {
   it("loads a large SSE tool catalog without opening the optional notification stream", async () => {

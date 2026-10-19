@@ -19,11 +19,12 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { captureAssistantFile } from "./assistant-files.js"
 import { conversationalBotForSession, postBotMessage, takeBotTurn } from "./bot-turns.js"
-import { drainPromptQueue, hasLiveTurn } from "./prompt-queue.js"
+import { hasLiveTurn } from "./prompt-queue.js"
+import { attribute } from "./session-event-messages.js"
+import { finalAssistantText } from "./session-event-router.js"
 
 const PAGE_LIMIT = 50
 const MAX_PAGE_LIMIT = 200
-const CHILD_REPORT_LIMIT = 4_000
 
 const requireBotSession = async (
   services: CodevisorServerServices,
@@ -103,37 +104,6 @@ export const routeBotConversation = async (
   return false
 }
 
-const finalAssistantText = async (
-  services: CodevisorServerServices,
-  sessionId: string
-): Promise<{ readonly text: string; readonly attachments?: ReadonlyArray<AttachmentRef> }> => {
-  const page = await run(services.db.getTranscriptPage(sessionId, undefined, 8))
-  const item = [...page.items].toReversed().find((candidate) => candidate.role === "assistant")
-  return {
-    text: item?.text.trim() ?? "",
-    ...(item?.attachments === undefined ? {} : { attachments: item.attachments })
-  }
-}
-
-const attribute = (value: string): string =>
-  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;")
-
-const childReport = (
-  childId: string,
-  title: string,
-  stopReason: string | undefined,
-  text: string
-): string => {
-  const body =
-    text.length > CHILD_REPORT_LIMIT ? `${text.slice(0, CHILD_REPORT_LIMIT)}\n…(truncated)` : text
-  const stop = stopReason === undefined ? "" : ` stopReason="${attribute(stopReason)}"`
-  return [
-    `<codevisor-event type="session.turn_ended" sessionId="${attribute(childId)}" title="${attribute(title)}"${stop}>`,
-    body.length === 0 ? "(no final message)" : body,
-    "</codevisor-event>"
-  ].join("\n")
-}
-
 export const agentMessageEvent = async (
   services: CodevisorServerServices,
   fromSessionId: string,
@@ -173,39 +143,8 @@ const settleBotTurn = async (
   })
 }
 
-const reportChildTurn = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  serverId: string,
-  childId: string,
-  payload: Record<string, unknown>
-): Promise<void> => {
-  const child = await run(services.db.getSessionSummary(childId))
-  const parentId = child.parentSessionId
-  if (
-    parentId === undefined ||
-    (await conversationalBotForSession(services, parentId)) === undefined
-  )
-    return
-  const final = await finalAssistantText(services, childId)
-  const report = childReport(
-    child.id,
-    child.title,
-    typeof payload.stopReason === "string" ? payload.stopReason : undefined,
-    final.text
-  )
-  await run(services.db.createPromptQueueItem(parentId, report, [], undefined, undefined, "system"))
-  await drainPromptQueue(services, fanout, routeState, serverId, parentId)
-}
-
 export const makeBotConversationListener =
-  (
-    services: CodevisorServerServices,
-    fanout: EventFanout,
-    routeState: RouteState,
-    serverId: string
-  ) =>
+  (services: CodevisorServerServices, fanout: EventFanout) =>
   (event: EventEnvelope): void => {
     const payload = isRecord(event.payload) ? event.payload : {}
     if (event.kind === "session.error") {
@@ -223,10 +162,7 @@ export const makeBotConversationListener =
     if (event.kind !== "session.updated" || payload.turnState !== "ended") return
     const turn = takeBotTurn(services, event.subjectId)
     void (async () => {
-      if ((await conversationalBotForSession(services, event.subjectId)) !== undefined) {
-        await settleBotTurn(services, fanout, event.subjectId, turn, payload)
-        return
-      }
-      await reportChildTurn(services, fanout, routeState, serverId, event.subjectId, payload)
+      if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
+      await settleBotTurn(services, fanout, event.subjectId, turn, payload)
     })().catch(swallowError)
   }

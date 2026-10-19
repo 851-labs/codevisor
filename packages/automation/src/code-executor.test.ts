@@ -35,6 +35,28 @@ describe.sequential("Codevisor code executor", () => {
     expect(calls).toEqual([{ path: "browser.tabs", args: { window: "current" } }])
   })
 
+  it("streams console lines while a tool call is still pending", async () => {
+    const streamed: Array<string> = []
+    const reached = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<unknown>()
+    const execution = makeCodeExecutor().execute(
+      `async () => { console.log("before"); await tools.slow.call({}); console.warn("after"); }`,
+      {
+        invoke: async () => {
+          reached.resolve()
+          return release.promise
+        }
+      },
+      { onLog: (line) => streamed.push(line) }
+    )
+
+    await reached.promise
+    expect(streamed).toEqual(["[log] before"])
+    release.resolve({})
+    expect((await execution).logs).toEqual(["[log] before", "[warn] after"])
+    expect(streamed).toEqual(["[log] before", "[warn] after"])
+  })
+
   it("calls the function however the model punctuates it", async () => {
     const executor = makeCodeExecutor()
     const results = await Promise.all(

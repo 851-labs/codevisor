@@ -82,7 +82,8 @@ const projectUserOrSystemConversation = (
       text: conversation.text,
       ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
       status: "complete",
-      ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments })
+      ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments }),
+      ...(conversation.origin === undefined ? {} : { origin: conversation.origin })
     })
   if (conversation.role === "user" && payload.startsTurn === true) {
     ensureAssistantChatItem(sqlite, sessionId, event.created_at)

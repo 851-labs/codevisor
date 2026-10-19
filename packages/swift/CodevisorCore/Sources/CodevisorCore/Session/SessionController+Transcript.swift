@@ -75,7 +75,7 @@ extension SessionController {
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
-  public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
+  public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts.filter { !$0.isSystem } ?? [] }
   public var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
   public var availableSkills: SessionSkills? { model?.availableSkills }
   public var isConnected: Bool { model != nil }

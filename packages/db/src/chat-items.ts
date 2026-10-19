@@ -85,6 +85,7 @@ export const createChatItem = (
     readonly attachments?: ReadonlyArray<AttachmentRef>
     readonly hasDetails?: boolean
     readonly revision?: number
+    readonly origin?: "event"
   }
 ): string => {
   const state = chatState(sqlite, sessionId)
@@ -112,8 +113,9 @@ const insertChatItemRow = (
     .prepare(
       `insert into chat_items (
         id, session_id, position, role, message_id, status, created_at, updated_at, turn_id,
-        started_at, completed_at, stop_reason, stop_detail, retryable, attachments, has_details, revision
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        started_at, completed_at, stop_reason, stop_detail, retryable, attachments, has_details, revision,
+        origin
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do nothing`
     )
     .run(
@@ -133,7 +135,8 @@ const insertChatItemRow = (
       Number(options.retryable === true),
       serializeAttachments(options.attachments),
       options.hasDetails === true ? 1 : 0,
-      options.revision ?? 1
+      options.revision ?? 1,
+      options.origin ?? null
     )
 }
 

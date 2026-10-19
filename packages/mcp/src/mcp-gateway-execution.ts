@@ -36,21 +36,6 @@ export const systemExecutionTimers: ExecutionTimers = {
 export const EXECUTE_DEFAULT_TIMEOUT_MS = 120_000
 export const EXECUTE_MAX_TIMEOUT_MS = 600_000
 
-export const executeTimeoutMessage = (
-  timeoutMs: number,
-  running: ReadonlyArray<string>
-): string => {
-  const still =
-    running.length === 0
-      ? "while your code was running"
-      : `while ${[...new Set(running)].join(", ")} ${running.length === 1 ? "was" : "were"} still running`
-  return (
-    `execute timed out after ${timeoutMs / 1000}s (timeout_ms ${timeoutMs}) ${still}; ` +
-    `its pending tool calls were cancelled. If this work legitimately needs longer, ` +
-    `pass a larger timeout_ms (up to ${EXECUTE_MAX_TIMEOUT_MS}).`
-  )
-}
-
 export const truncateText = (text: string, max: number): string => {
   const collapsed = text.replace(/\s+/g, " ").trim()
   return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max - 1).trimEnd()}…`

@@ -36,6 +36,7 @@ export interface CodeExecutionContext {
 export interface ExecuteCodeOptions {
   readonly signal?: AbortSignal
   readonly onStatus?: (text: string) => void
+  readonly onLog?: (line: string) => void
   readonly context?: CodeExecutionContext
 }
 

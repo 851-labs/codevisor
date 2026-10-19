@@ -107,8 +107,9 @@ export const executeSkill: BuiltinSkill = {
       ].join("\n\n"),
       ["## The `description` argument", DESCRIPTION_GUIDANCE].join("\n\n"),
       [
-        "## The `timeout_ms` argument",
-        "Each call has one wall-clock deadline: `timeout_ms`, default 120000 (2 minutes), maximum 600000. When it passes, the call fails with `execute timed out`, names what was still running, and cancels its pending tool calls. Pass a larger `timeout_ms` next to `code` and `description` for work that legitimately takes longer, such as waiting on other agents."
+        "## The `timeout_ms` argument and background jobs",
+        '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `codevisor.sessions.wait`, `codevisor.jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
+        "When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type=\"execution.job_finished\">` message with the job's result when it finishes, even if your harness would not otherwise wake up. To check sooner, call execute with `tools.codevisor.jobs.wait({ jobId })` (waits within that call's budget) or `tools.codevisor.jobs.get({ jobId })`; reading a finished result that way means no event is sent. `tools.codevisor.jobs.cancel({ jobId })` stops a job, and `tools.codevisor.jobs.list()` shows this session's jobs. `outputPath` is a log file with live `status()` text, console output, tool calls, and the final result. Jobs stop after 30 minutes and don't survive a server restart."
       ].join("\n\n"),
       [
         "## Skills for each capability",

@@ -7,6 +7,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { transcriptOrigin } from "./prompt-origin.js"
 
 type RecoveryContext = {
   readonly services: CodevisorServerServices
@@ -155,6 +156,7 @@ const restorePromptMessage = (
     messageId: item.id,
     text: item.text,
     ...(item.attachments === undefined ? {} : { attachments: item.attachments }),
+    ...transcriptOrigin(item.origin),
     serverId
   })
 

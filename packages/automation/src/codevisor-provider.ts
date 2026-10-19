@@ -9,6 +9,7 @@ import { textToolResult } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { pathArgumentName, pathParameterNames, toolInputSchema } from "./codevisor-tool-schema.js"
+import { budgetedWaitPayload, withClampNote } from "./codevisor-wait-budget.js"
 import { isRecord, recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 
 export {
@@ -131,6 +132,7 @@ const invokeApiTool = async (
   const headers = new Headers()
   headers.set("authorization", `Bearer ${await getBearerToken()}`)
   let body: BodyInit | undefined
+  let clampedToMs: number | undefined
   if (spec.name === "files.upload") {
     const encoded = args.dataBase64
     if (typeof encoded !== "string") throw new Error("files.upload requires dataBase64")
@@ -154,14 +156,17 @@ const invokeApiTool = async (
       if (promptsSession) return sessionPromptPayload(payload, context)
       return payload
     }
-    body = JSON.stringify(bodyPayload())
+    const budgeted = budgetedWaitPayload(spec, bodyPayload(), context)
+    clampedToMs = budgeted.clampedToMs
+    body = JSON.stringify(budgeted.payload)
     headers.set("content-type", "application/json")
   }
 
   const response = await fetch(url, {
     method: spec.method,
     headers,
-    ...(body === undefined ? {} : { body })
+    ...(body === undefined ? {} : { body }),
+    ...(context.signal === undefined ? {} : { signal: context.signal })
   })
   if (!response.ok) throw await responseError(spec, response)
 
@@ -187,7 +192,7 @@ const invokeApiTool = async (
   }
   const contentType = response.headers.get("content-type") ?? ""
   if (contentType.includes("application/json")) {
-    return textToolResult(JSON.stringify(JSON.parse(text) as unknown))
+    return textToolResult(withClampNote(JSON.stringify(JSON.parse(text) as unknown), clampedToMs))
   }
   return textToolResult(text)
 }

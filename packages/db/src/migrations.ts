@@ -26,6 +26,7 @@ import { migrations65 } from "./migrations-65.js"
 import { migrations66 } from "./migrations-66.js"
 import { migrations67 } from "./migrations-67.js"
 import { migrations68 } from "./migrations-68.js"
+import { migrations69 } from "./migrations-69.js"
 
 export type { Migration } from "./migration-types.js"
 
@@ -56,5 +57,6 @@ export const migrations: ReadonlyArray<Migration> = [
   ...migrations65,
   ...migrations66,
   ...migrations67,
-  ...migrations68
+  ...migrations68,
+  ...migrations69
 ]

@@ -263,6 +263,40 @@ describe("Codevisor MCP provider", () => {
     expect(requestJson(requests[0]!.init)).toEqual({ text: "done", fromSessionId: "agent" })
   })
 
+  it("shortens waits to what is left of the execute budget and says so", async () => {
+    const requests: Array<{ url: URL; init: RequestInit }> = []
+    stubFetch((url, init) => {
+      requests.push({ url, init })
+      return jsonResponse({ sessions: [], timedOut: true })
+    })
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token"
+    )
+    const signal = new AbortController().signal
+    const tight = { sessionId: "agent", deadline: performance.now() + 60_000, signal }
+    const roomy = { sessionId: "agent", deadline: performance.now() + 600_000 }
+
+    const clamped = await provider.invoke(tight, "sessions.wait", {
+      ids: ["child"],
+      timeoutMs: 300_000
+    })
+    const untouched = await provider.invoke(roomy, "jobs.wait", { jobId: "j1", timeoutMs: 1_000 })
+
+    const sentTimeout = expectRecord(requestJson(requests[0]!.init), "wait body").timeoutMs
+    expect(sentTimeout).toBeGreaterThan(50_000)
+    expect(sentTimeout).toBeLessThanOrEqual(58_500)
+    expect(requests[0]!.init.signal).toBe(signal)
+    expect(JSON.parse(textContent(clamped))).toEqual({
+      sessions: [],
+      timedOut: true,
+      clampedToMs: sentTimeout
+    })
+    expect(requests[1]!.url.pathname).toBe("/v1/jobs/j1/wait")
+    expect(requestJson(requests[1]!.init)).toEqual({ timeoutMs: 1_000 })
+    expect(JSON.parse(textContent(untouched))).toEqual({ sessions: [], timedOut: true })
+  })
+
   it("gates consent-marked tools on an explicit confirm argument", async () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {

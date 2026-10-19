@@ -145,10 +145,7 @@ extension SessionController {
       })
     else { return }
     guard
-      let prompt = model.conversation[..<assistantIndex].reversed().compactMap({ item in
-        if case let .user(message) = item { return message }
-        return nil
-      }).first
+      let prompt = model.conversation[..<assistantIndex].reversed().compactMap(\.userPrompt).first
     else { return }
     await model.retryResponse(to: prompt)
   }

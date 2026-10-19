@@ -12,6 +12,7 @@ export default defineConfig({
         "src/mcp-auth-detection.ts",
         "src/mcp-automation-builtins.ts",
         "src/mcp-gateway.ts",
+        "src/mcp-gateway-execute.ts",
         "src/mcp-gateway-dispatch.ts",
         "src/mcp-gateway-catalog.ts",
         "src/mcp-manager-browser.ts",

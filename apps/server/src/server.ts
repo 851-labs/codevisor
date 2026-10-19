@@ -26,6 +26,7 @@ import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
 import { handleUpgrade } from "./routes/events.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
+import { makeSessionEventRouter } from "./routes/session-event-router.js"
 import {
   drainPromptQueue,
   makeTurnDispatchListener,
@@ -102,8 +103,11 @@ export const makeCodevisorServerApp = (
     makeTurnDispatchListener(services, fanout, routeState, config.id)
   )
   const unsubscribeBotConversations = fanout.subscribe(
-    makeBotConversationListener(services, fanout, routeState, config.id)
+    makeBotConversationListener(services, fanout)
   )
+  const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id)
+  const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
+  const unsubscribeJobEvents = services.mcp?.jobs.subscribe(sessionEvents.onJobFinished)
   void upgradeAllBotInstructions(services).catch(swallowError)
   /* v8 ignore next 3 */
   const staleTurnSweep = setInterval(() => {
@@ -269,6 +273,8 @@ export const makeCodevisorServerApp = (
       attentionSettle.close()
       unsubscribeTurns()
       unsubscribeBotConversations()
+      unsubscribeSessionEvents()
+      unsubscribeJobEvents?.()
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
       config.sessionActivity?.stop()

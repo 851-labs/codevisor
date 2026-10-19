@@ -73,7 +73,28 @@ A new workspace, optionally with its own git worktree, suits separate work that 
 - A session on your harness starts on your model, reasoning, and speed. Pass `configSelections` (config id → value, e.g. `{ model: "…" }`) to pick others.
 - `labels` are free-form key/value pairs. Use them to find your agents again later.
 
-## Wait instead of polling
+## Get told when an agent finishes
+
+Subscribe and end your turn instead of waiting. Codevisor delivers each event as a hidden `<codevisor-event>` message: it starts a new turn for you when you're idle, or arrives at the end of your current turn. It works for any session, including agents you didn't create, and on every harness.
+
+```js
+;async () =>
+  tools.codevisor.sessions.subscribe({
+    targetSessionId: worker,
+    events: ["turn_ended", "waiting_for_user", "errored"], // the default; add "job_finished" for its background jobs
+    once: true // remove after the first event; omit to keep receiving events
+  })
+// → { id, subscriberSessionId, targetSessionId, events, once, createdAt }
+```
+
+- A `session.turn_ended` event carries the agent's final reply, `session.waiting_for_user` the pending question (answer it with `sessions.question_answer`), and `session.errored` the error.
+- Events carry a `subscriptionId`. Stop an ongoing subscription with `sessions.unsubscribe({ subscriptionId })`. `sessions.subscriptions()` lists the subscriptions you hold.
+- Events for a session that finishes several times while you're busy are combined, so you get its latest state once.
+- The user never sees these events as messages they typed.
+
+## Wait inside one call
+
+To wait inside a single execute call, for example to collect a quick result:
 
 ```js
 ;async () =>
@@ -82,14 +103,12 @@ A new workspace, optionally with its own git worktree, suits separate work that 
     until: ["idle", "waitingForUser", "errored"],
     timeoutMs: 100000
   })
-// → { sessions: [{ id, sidebarState, actionRequiredKind?, pendingQuestion? }], timedOut }
+// → { sessions: [{ id, sidebarState, actionRequiredKind?, pendingQuestion? }], timedOut, clampedToMs? }
 ```
 
-- Keep `timeoutMs` inside the execute call's `timeout_ms` (default 120000). For a longer wait, pass a larger `timeout_ms` to execute.
-
 - It returns as soon as any listed session reaches one of the `until` states.
-- Call it again with the remaining ids to keep waiting.
-- `timedOut: true` is normal; check state and wait again.
+- `timeoutMs` is shortened to fit what is left of the execute call's budget (`clampedToMs` says when), so the call returns cleanly with `timedOut: true` instead of running out.
+- `timedOut: true` is normal. For anything longer than a minute or two, subscribe and end your turn.
 
 ## Check progress and answer questions
 
@@ -100,6 +119,10 @@ A new workspace, optionally with its own git worktree, suits separate work that 
   - Read `pendingQuestion`.
   - Answer with `sessions.question_answer({ sessionId, questionId, outcome: "answered", answers })`, or send guidance with `sessions.prompt`.
 - `sessions.cancel({ sessionId })` stops the active turn.
+
+## If an execute call returns a job handle
+
+An execute call that outlives its `timeout_ms` returns `{ status: "running", jobId, … }` and keeps going. End your turn and wait for its `execution.job_finished` event, or check it with `tools.codevisor.jobs.wait({ jobId })` / `jobs.get({ jobId })`. `jobs.cancel({ jobId })` stops it.
 
 ## If you are the child
 

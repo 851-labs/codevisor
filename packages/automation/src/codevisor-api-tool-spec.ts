@@ -21,6 +21,12 @@ export interface CodevisorApiToolSpec {
   readonly query?: ReadonlyArray<QueryParameter> | undefined
   readonly response?: "binary" | undefined
   readonly confirm?: boolean | undefined
+  readonly budgetedWait?: BudgetedWait | undefined
+}
+
+export interface BudgetedWait {
+  readonly field: string
+  readonly defaultMs: number
 }
 
 export const stringQuery = (name: string, description?: string): QueryParameter => ({

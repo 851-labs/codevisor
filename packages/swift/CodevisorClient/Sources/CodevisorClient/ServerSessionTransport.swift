@@ -183,7 +183,8 @@ public struct ServerSessionTransport: Sendable {
           attachments: (item.attachments ?? []).map(\.attachment),
           textResource: item.textResource.flatMap {
             ($0.fields.first?.sizeBytes ?? 0) > item.text.utf16.count * 2 ? $0 : nil
-          }
+          },
+          isEvent: item.isEvent
         ))
     case .assistant:
       let textId = item.messageId.map { "acp:\($0)" } ?? "summary:\(item.id)"

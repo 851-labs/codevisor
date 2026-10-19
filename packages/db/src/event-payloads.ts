@@ -126,9 +126,10 @@ export const conversationEventPayload = (
       readonly text: string
       readonly messageId?: string
       readonly attachments?: ReadonlyArray<AttachmentRef>
+      readonly origin?: "event"
     }
   | undefined => {
-  const { role, text: directText, messageId, attachments } = payload
+  const { role, text: directText, messageId, attachments, origin } = payload
   if (
     (role === "user" || role === "assistant" || role === "system") &&
     typeof directText === "string" &&
@@ -139,7 +140,8 @@ export const conversationEventPayload = (
       role,
       text: directText,
       ...(messageId === undefined ? {} : { messageId }),
-      ...(attachments === undefined ? {} : { attachments })
+      ...(attachments === undefined ? {} : { attachments }),
+      ...(origin === "event" ? { origin } : {})
     }
   }
   if (

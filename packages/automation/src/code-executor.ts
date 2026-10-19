@@ -130,9 +130,17 @@ const readResultState = (
   error: readPropDump(context, handle, "error")
 })
 
-const createLogBridge = (context: QuickJSContext, logs: Array<string>): QuickJSHandle =>
+const createLogBridge = (
+  context: QuickJSContext,
+  logs: Array<string>,
+  onLog: ((line: string) => void) | undefined
+): QuickJSHandle =>
   context.newFunction("__codevisor_log", (levelHandle, lineHandle) => {
-    logs.push(`[${context.getString(levelHandle)}] ${context.getString(lineHandle)}`)
+    const line = `[${context.getString(levelHandle)}] ${context.getString(lineHandle)}`
+    logs.push(line)
+    try {
+      onLog?.(line)
+    } catch {}
     return context.undefined
   })
 
@@ -327,7 +335,7 @@ const evaluate = async (
     const context = session?.context ?? runtime.newContext()
     try {
       signal?.throwIfAborted()
-      const logBridge = createLogBridge(context, logs)
+      const logBridge = createLogBridge(context, logs, executeOptions.onLog)
       context.setProp(context.global, "__codevisor_log", logBridge)
       logBridge.dispose()
       const toolBridge = createToolBridge(context, toolInvoker, pendingDeferreds)

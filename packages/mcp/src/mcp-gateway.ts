@@ -17,26 +17,23 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod"
 
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
-import { gatewayToolError, makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
+import { makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
+import { makeExecuteHandler } from "./mcp-gateway-execute.js"
 import {
   EXECUTE_DEFAULT_TIMEOUT_MS,
   EXECUTE_MAX_TIMEOUT_MS,
-  executeTimeoutMessage,
-  executionArgsHash,
-  makeExecutionRecorder,
-  reportSkillRead,
-  systemExecutionTimers
+  reportSkillRead
 } from "./mcp-gateway-execution.js"
+import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import {
   composerSkills,
   DESCRIPTION_GUIDANCE,
   skillsToolDescription,
   skillsToolResult
 } from "./mcp-gateway-skills.js"
-import { makeExecutionSteps } from "./mcp-gateway-steps.js"
-import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
+import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
-import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
+import type { SandboxArtifactPersistence } from "./mcp-sandbox-results.js"
 import { run, sdkTransport, type UpstreamConnection } from "./mcp-support.js"
 
 export interface GatewayConnection {
@@ -71,6 +68,7 @@ export interface McpGatewayDeps {
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
   readonly gateways: Map<string, GatewayRuntime>
   readonly isSuppressed: (name: string) => boolean
+  readonly jobs: ExecutionJobs
   readonly record: (id: string) => Promise<McpServerRecord>
   readonly selfMachine: { readonly id: string; readonly name: string }
   readonly turnClientId: (sessionId: string) => string | undefined
@@ -139,6 +137,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     connectUpstream,
     gateways,
     isSuppressed,
+    jobs,
     record,
     selfMachine,
     turnClientId
@@ -244,6 +243,19 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     return browserSessionTabsNotice(parsed.tabs ?? [])
   }
 
+  const executeHandler = makeExecuteHandler({
+    automationProviders,
+    codeExecutor,
+    config,
+    connectUpstream,
+    dispatch: { invokeGatewayTool, invokeOnMachine, newArtifactCollector },
+    jobs,
+    openBrowserSessionTabs,
+    record,
+    selfMachine,
+    turnClientId
+  })
+
   const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
     const inventory = await integrationInventory(projectId, sessionId)
     const skillsDescription = skillsToolDescription(await sessionSkills(projectId, sessionId))
@@ -273,142 +285,11 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
             .max(EXECUTE_MAX_TIMEOUT_MS)
             .optional()
             .describe(
-              `Wall-clock limit for this call in milliseconds; default ${EXECUTE_DEFAULT_TIMEOUT_MS}. Raise it for work that legitimately takes longer.`
+              `How long to wait for the result, in milliseconds; default ${EXECUTE_DEFAULT_TIMEOUT_MS}. Work still running then keeps going in the background and the call returns a job handle instead of failing.`
             )
         }
       },
-      async ({ code, description, timeout_ms }, { signal: requestSignal }) => {
-        const recorder = makeExecutionRecorder({
-          sink: runtime.sink,
-          sessionId,
-          argsHash: executionArgsHash({
-            code,
-            description,
-            ...(timeout_ms === undefined ? {} : { timeout_ms })
-          }),
-          description
-        })
-        const timeoutMs = timeout_ms ?? EXECUTE_DEFAULT_TIMEOUT_MS
-        const timers = config.executionTimers ?? systemExecutionTimers
-        const deadline = timers.now() + timeoutMs
-        const running: Array<string> = []
-        const expiry = new AbortController()
-        let timedOut: string | undefined
-        const cancelExpiry = timers.setTimeout(() => {
-          timedOut = executeTimeoutMessage(timeoutMs, running)
-          expiry.abort(new Error(timedOut))
-        }, timeoutMs)
-        const signal = AbortSignal.any([requestSignal, expiry.signal])
-        const steps = makeExecutionSteps({
-          recorder,
-          collector: newArtifactCollector(),
-          record,
-          automationProviders,
-          connectUpstream
-        })
-        const clientId = turnClientId(sessionId)
-        const origin: GatewayOrigin = {
-          machineId: selfMachine.id,
-          machineName: selfMachine.name,
-          sessionId,
-          ...(clientId === undefined ? {} : { clientId })
-        }
-        let titledOrigin: Promise<GatewayOrigin> | undefined
-        const remoteOrigin = (): Promise<GatewayOrigin> => {
-          titledOrigin ??= run(config.db.getSessionSummary(sessionId)).then(
-            (session) => ({ ...origin, sessionTitle: session.title }),
-            () => origin
-          )
-          return titledOrigin
-        }
-        const callContext: GatewayCallContext = {
-          sessionId,
-          ...(projectId === undefined ? {} : { projectId }),
-          origin
-        }
-        let usedBrowser = false
-        const result = await codeExecutor
-          .execute(
-            code,
-            {
-              invoke: async ({ path, args, target }) => {
-                const machine =
-                  target?.machine === undefined || target.machine === selfMachine.id
-                    ? undefined
-                    : {
-                        machine: target.machine,
-                        ...(target.machineName === undefined
-                          ? {}
-                          : { machineName: target.machineName })
-                      }
-                const settle = await steps.begin(path, {
-                  internal: target?.internal === true,
-                  local: machine === undefined,
-                  ...(machine === undefined
-                    ? {}
-                    : { machine: machine.machineName ?? machine.machine })
-                })
-                running.push(path)
-                try {
-                  const value =
-                    machine === undefined
-                      ? await invokeGatewayTool(callContext, path, args, {
-                          artifacts: steps.artifacts,
-                          signal,
-                          deadline,
-                          onBrowser: () => {
-                            usedBrowser = true
-                          },
-                          onBrowserPage: steps.onBrowserPage,
-                          onComputerApp: steps.onComputerApp
-                        })
-                      : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
-                  await settle({ ok: true, value })
-                  return value
-                } catch (cause) {
-                  const error = gatewayToolError(cause)
-                  await settle({ ok: false, error: error.message })
-                  throw error
-                } finally {
-                  running.splice(running.indexOf(path), 1)
-                }
-              }
-            },
-            {
-              signal,
-              onStatus: recorder.status,
-              context: {
-                machine: selfMachine,
-                ...(clientId === undefined ? {} : { originClientId: clientId })
-              }
-            }
-          )
-          .finally(cancelExpiry)
-        const error = timedOut ?? result.error
-        await recorder.finish(error)
-        if (error !== undefined) {
-          const openTabs = usedBrowser
-            ? await openBrowserSessionTabs(sessionId, projectId).catch(() => "")
-            : ""
-          return {
-            isError: true,
-            content: [{ type: "text" as const, text: `${error}${openTabs}` }]
-          }
-        }
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                result: result.result,
-                logs: result.logs
-              })
-            },
-            ...sandboxOutputContent(result.output),
-            ...steps.artifacts.content
-          ]
-        }
-      }
+      executeHandler(runtime)
     )
     const skillsTool = sdkServer.registerTool(
       "skills",

@@ -54,6 +54,7 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.retryable === 1 ? { retryable: true } : {}),
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),
+    ...(row.origin === "event" ? { origin: "event" as const } : {}),
     revision: row.revision
   }
 }

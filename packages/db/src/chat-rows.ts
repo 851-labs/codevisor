@@ -52,6 +52,7 @@ export interface ChatItemRow {
   readonly attachments: string | null
   readonly has_details: number
   readonly revision: number
+  readonly origin: string | null
   readonly text: string
   readonly plan_document: string | null
 }
@@ -108,6 +109,7 @@ export const chatItemRows = rowReader<ChatItemRow>({
   attachments: nullable(text),
   has_details: integer,
   revision: integer,
+  origin: nullable(text),
   text,
   plan_document: nullable(text)
 })

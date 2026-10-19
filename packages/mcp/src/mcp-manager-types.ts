@@ -22,6 +22,7 @@ import type { WebSocket } from "ws"
 
 import type { AutomationTool } from "./mcp-automation-use.js"
 import type { ExecutionTimers } from "./mcp-gateway-execution.js"
+import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
@@ -152,6 +153,7 @@ export interface McpManager {
     signal?: AbortSignal
   ) => Promise<unknown>
   readonly closeSession: (sessionId: string) => Promise<void>
+  readonly jobs: ExecutionJobs
   readonly handleGatewayRequest: (
     request: IncomingMessage,
     response: ServerResponse
