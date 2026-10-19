@@ -71,8 +71,66 @@ export const makeWorkspaceMediaService = (
         photoRows
           .all(
             sqlite
-              .prepare(
-                `with candidates as (
+              .prepare(workspacePhotosSql)
+              .all({ workspaceId: canonicalUuid(workspaceId), limit, ...cursorParameters(before) })
+          )
+          .map(workspacePhotoFromRow)
+      ),
+    listWorkspaceMessageTexts: (workspaceId, before, limit) =>
+      attempt("listWorkspaceMessageTexts", () =>
+        messageTextRows
+          .all(
+            sqlite
+              .prepare(workspaceMessageTextsSql)
+              .all({ workspaceId: canonicalUuid(workspaceId), limit, ...cursorParameters(before) })
+          )
+          .map(workspaceMessageTextFromRow)
+      ),
+    listWorkspaceFileEdits: (workspaceId, limit) =>
+      attempt("listWorkspaceFileEdits", () =>
+        fileEditRows
+          .all(
+            sqlite
+              .prepare(workspaceFileEditsSql)
+              .all({ workspaceId: canonicalUuid(workspaceId), limit })
+          )
+          .map(workspaceFileEditFromRow)
+      )
+  }
+}
+
+const workspacePhotoFromRow = (row: ReturnType<typeof photoRows.one>): WorkspacePhoto => ({
+  attachment: {
+    fileId: row.file_id,
+    name: row.name,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    kind: "image"
+  },
+  sessionId: canonicalUuid(row.session_id),
+  itemId: row.item_id,
+  createdAt: row.created_at,
+  source: row.source === "tool" ? "tool" : "message"
+})
+
+const workspaceMessageTextFromRow = (
+  row: ReturnType<typeof messageTextRows.one>
+): WorkspaceMessageText => ({
+  itemId: row.item_id,
+  sessionId: canonicalUuid(row.session_id),
+  createdAt: row.created_at,
+  text: row.text
+})
+
+const workspaceFileEditFromRow = (row: ReturnType<typeof fileEditRows.one>): WorkspaceFileEdit => ({
+  path: row.path,
+  added: row.added,
+  removed: row.removed,
+  changedAt: row.changed_at,
+  sessionId: canonicalUuid(row.session_id)
+})
+
+const workspacePhotosSql = `with candidates as (
                    select json_extract(attachment.value, '$.fileId') as file_id, item.id as item_id,
                      item.session_id, item.created_at, 'message' as source
                    from sessions
@@ -104,30 +162,8 @@ export const makeWorkspaceMediaService = (
                    and (@beforeCreatedAt is null or (created_at, file_id) < (@beforeCreatedAt, @beforeId))
                  order by created_at desc, file_id desc
                  limit @limit`
-              )
-              .all({ workspaceId: canonicalUuid(workspaceId), limit, ...cursorParameters(before) })
-          )
-          .map((row): WorkspacePhoto => ({
-            attachment: {
-              fileId: row.file_id,
-              name: row.name,
-              mimeType: row.mime_type,
-              sizeBytes: row.size_bytes,
-              kind: "image"
-            },
-            sessionId: canonicalUuid(row.session_id),
-            itemId: row.item_id,
-            createdAt: row.created_at,
-            source: row.source === "tool" ? "tool" : "message"
-          }))
-      ),
-    listWorkspaceMessageTexts: (workspaceId, before, limit) =>
-      attempt("listWorkspaceMessageTexts", () =>
-        messageTextRows
-          .all(
-            sqlite
-              .prepare(
-                `select item.id as item_id, item.session_id, item.created_at, part.text
+
+const workspaceMessageTextsSql = `select item.id as item_id, item.session_id, item.created_at, part.text
                  from sessions
                  join chat_items item on item.session_id = sessions.id
                  join chat_parts part on part.item_id = item.id
@@ -138,23 +174,8 @@ export const makeWorkspaceMediaService = (
                    and (@beforeCreatedAt is null or (item.created_at, item.id) < (@beforeCreatedAt, @beforeId))
                  order by item.created_at desc, item.id desc, part.position
                  limit @limit`
-              )
-              .all({ workspaceId: canonicalUuid(workspaceId), limit, ...cursorParameters(before) })
-          )
-          .map((row): WorkspaceMessageText => ({
-            itemId: row.item_id,
-            sessionId: canonicalUuid(row.session_id),
-            createdAt: row.created_at,
-            text: row.text
-          }))
-      ),
-    listWorkspaceFileEdits: (workspaceId, limit) =>
-      attempt("listWorkspaceFileEdits", () =>
-        fileEditRows
-          .all(
-            sqlite
-              .prepare(
-                `with edits as (
+
+const workspaceFileEditsSql = `with edits as (
                    select change.path, change.added, change.removed, change.updated_at,
                      item.session_id
                    from sessions
@@ -175,16 +196,3 @@ export const makeWorkspaceMediaService = (
                  where recency = 1
                  order by updated_at desc, path
                  limit @limit`
-              )
-              .all({ workspaceId: canonicalUuid(workspaceId), limit })
-          )
-          .map((row): WorkspaceFileEdit => ({
-            path: row.path,
-            added: row.added,
-            removed: row.removed,
-            changedAt: row.changed_at,
-            sessionId: canonicalUuid(row.session_id)
-          }))
-      )
-  }
-}
