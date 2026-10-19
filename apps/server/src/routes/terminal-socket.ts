@@ -195,6 +195,25 @@ export const attachTerminalSocket = async (
     webSocket.close()
     return
   }
+  const handlePing = (message: unknown): boolean => {
+    if (
+      !(
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "ping"
+      )
+    )
+      return false
+    try {
+      const ping = decode(TerminalPingFrame)(message)
+      if (ping.srtt !== undefined) sender.setRoundTrip(ping.srtt)
+      webSocket.send(JSON.stringify({ type: "pong", seq: 0, t: ping.t }))
+    } catch (cause) {
+      sendError(webSocket, cause)
+    }
+    return true
+  }
   webSocket.on("message", (data: Buffer) => {
     let message: unknown
     try {
@@ -203,21 +222,7 @@ export const attachTerminalSocket = async (
       sendError(webSocket, cause)
       return
     }
-    if (
-      typeof message === "object" &&
-      message !== null &&
-      "type" in message &&
-      message.type === "ping"
-    ) {
-      try {
-        const ping = decode(TerminalPingFrame)(message)
-        if (ping.srtt !== undefined) sender.setRoundTrip(ping.srtt)
-        webSocket.send(JSON.stringify({ type: "pong", seq: 0, t: ping.t }))
-      } catch (cause) {
-        sendError(webSocket, cause)
-      }
-      return
-    }
+    if (handlePing(message)) return
     let frame: TerminalClientFrame
     try {
       frame = decode(TerminalClientFrame)(message)
