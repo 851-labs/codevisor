@@ -99,6 +99,7 @@ extension ComposerBar {
     .onGeometryChange(for: CGRect.self) { proxy in
       proxy.frame(in: .global)
     } action: { frame in
+      guard isCompact else { return }
       onSendSourceFrameChange?(frame)
     }
     .buttonStyle(.plain)

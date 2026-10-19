@@ -60,6 +60,9 @@ struct ComposerAttachmentThumb: View {
         .opacity(isHovered ? 1 : 0)
         .allowsHitTesting(isHovered)
     }
+    .transcriptSendAttachmentSource(
+      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 8, sentSize: CGSize(width: 56, height: 56)
+    )
     .onHover { hovering in
       guard hovering != isHovered else { return }
       var transaction = Transaction()

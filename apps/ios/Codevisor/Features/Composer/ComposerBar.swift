@@ -374,7 +374,8 @@ extension ComposerBar {
         .animation(editorFadeAnimation) { $0.opacity(isCompact ? 0 : 1) }
         .allowsHitTesting(!isCompact)
         .accessibilityHidden(isCompact)
-        .onGeometryChange(for: CGRect.self) { proxy in
+        .onGeometryChange(for: CGRect?.self) { [isCompact] proxy in
+          guard !isCompact else { return nil }
           let frame = proxy.frame(in: .global)
           return CGRect(
             x: frame.minX,
@@ -383,7 +384,7 @@ extension ComposerBar {
             height: max(0, frame.height - Self.editorTopBleed)
           )
         } action: { frame in
-          guard !isCompact else { return }
+          guard let frame else { return }
           onSendSourceFrameChange?(frame)
         }
 

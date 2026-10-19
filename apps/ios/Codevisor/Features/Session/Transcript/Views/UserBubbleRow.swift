@@ -15,10 +15,10 @@ struct UserBubbleRow: View {
   var body: some View {
     HStack {
       Spacer(minLength: 40)
-      VStack(alignment: .trailing, spacing: 8) {
+      VStack(alignment: .trailing, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
         if !attachments.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
               ForEach(attachments) { attachment in
                 AttachmentThumbnailView(attachment: attachment)
               }

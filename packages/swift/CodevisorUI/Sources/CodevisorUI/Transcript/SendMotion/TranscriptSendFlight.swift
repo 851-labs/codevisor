@@ -28,8 +28,12 @@ public final class TranscriptSendFlight {
   private var completion: (@MainActor () -> Void)?
   private var hasEnded = false
   private var morphLanding: (@MainActor () -> Void)?
+  private var pieces: [TranscriptSendAttachmentPiece] = []
+  private var pendingSettles = 1
 
-  public static var duration: TimeInterval { TranscriptSendMotion.bubble.settlingDuration() }
+  public static var duration: TimeInterval {
+    max(TranscriptSendMotion.bubble.settlingDuration(), TranscriptSendAttachmentPiece.duration)
+  }
 
   public static func begin(
     session: ObjectIdentifier,
@@ -51,6 +55,7 @@ public final class TranscriptSendFlight {
       return nil
     }
     if stage.overlay !== overlay, !Self.rides(stage) {
+      for piece in stage.pieces { overlay.addSubview(piece) }
       overlay.addSubview(stage.snapshot)
       stage.overlay = overlay
     }
@@ -76,7 +81,7 @@ public final class TranscriptSendFlight {
     self.overlay = overlay
     self.completion = completion
     #if canImport(UIKit)
-      if stage.morph == nil {
+      if stage.morph == nil, stage.carrier != nil {
         stage.board(TranscriptSendCarrier(content: target, overlay: overlay))
       }
       let space: TranscriptSendPlatformView = stage.carrier?.view ?? overlay
@@ -132,14 +137,33 @@ public final class TranscriptSendFlight {
       anchor
       .map { Self.rect(of: $0, $0.bounds, in: space, overlay: overlay) }
       .flatMap { $0.isEmpty ? nil : $0 }
-    let landing: @MainActor () -> Void = { [weak self] in
-      transcriptSendLog.debug("flight settled")
-      self?.land()
+    let targets = proxy.transcriptSendDescendants(ofType: TranscriptSendAttachmentAnchorView.self)
+      .filter { $0.role == .target }
+    var flying: [(piece: TranscriptSendAttachmentPiece, target: TranscriptSendAttachmentAnchorView, frame: CGRect)] =
+      []
+    var strays: [TranscriptSendAttachmentPiece] = []
+    for piece in stage.releasePieces() {
+      if let target = targets.first(where: { $0.attachmentID == piece.attachmentID }) {
+        let frame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+        if !frame.isEmpty {
+          flying.append((piece, target, frame))
+          continue
+        }
+      }
+      strays.append(piece)
     }
+    pieces = flying.map(\.piece)
+    pendingSettles = (bubbleFrame != nil || flying.isEmpty ? 1 : 0) + flying.count
+    let landing: @MainActor () -> Void = { [weak self] in self?.settle() }
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let snapshot = stage.snapshot
+    TranscriptSendAttachmentDepartures.shared.arrive(strays)
+    for stray in strays { stray.fadeOut() }
+    for (piece, target, frame) in flying {
+      piece.fly(to: target, frame: frame, onSettle: landing)
+    }
     if let bubbleFrame {
       morphLanding = landing
       if let morph = stage.morph {
@@ -156,6 +180,12 @@ public final class TranscriptSendFlight {
         stage.rewrap(
           toTextWidth: bubbleFrame.width - TranscriptSendFlightGeometry.bubbleTextInsets.horizontal * 2)
       }
+      proxy.setTranscriptSendOpacity(0)
+    } else if !flying.isEmpty {
+      snapshot.transcriptSendLayer?.add(
+        TranscriptSendLayerAnimations.fade(from: 1, to: 0, duration: TranscriptSendMotion.followerFadeDuration),
+        forKey: "codevisor.send-flight.fade")
+      snapshot.setTranscriptSendOpacity(0)
       proxy.setTranscriptSendOpacity(0)
     } else if let morph = stage.morph {
       morph.retarget(to: proxy.frame, onSettle: landing)
@@ -214,17 +244,19 @@ public final class TranscriptSendFlight {
     let delta = CGSize(width: origin.x - targetOrigin.x, height: origin.y - targetOrigin.y)
     guard abs(delta.width) > 0.5 || abs(delta.height) > 0.5 else { return }
     targetOrigin = origin
+    shiftSerial &+= 1
+    let key = TranscriptSendAnimationKeys.shiftPrefix + String(shiftSerial)
     if let morph = stage.morph, let landing = morphLanding {
       proxy.frame = proxy.frame.offsetBy(dx: delta.width, dy: delta.height)
       morph.retarget(to: morph.end.offsetBy(dx: delta.width, dy: delta.height), onSettle: landing)
+      for piece in pieces { piece.shift(by: delta, key: key) }
       return
     }
-    shiftSerial &+= 1
-    let key = TranscriptSendAnimationKeys.shiftPrefix + String(shiftSerial)
     let back = CGSize(width: -delta.width, height: -delta.height)
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    for piece in pieces { piece.shift(by: delta, key: key) }
     for view in [proxy, stage.snapshot] {
       view.frame = view.frame.offsetBy(dx: delta.width, dy: delta.height)
       view.transcriptSendLayer?.add(
@@ -268,11 +300,20 @@ public final class TranscriptSendFlight {
     #endif
   }
 
+  private func settle() {
+    pendingSettles -= 1
+    guard pendingSettles <= 0 else { return }
+    transcriptSendLog.debug("flight settled")
+    land()
+  }
+
   public func land() {
     guard !hasEnded else { return }
     hasEnded = true
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    TranscriptSendAttachmentDepartures.shared.arrive(pieces)
+    for piece in pieces { piece.removeFromSuperview() }
     proxy.removeFromSuperview()
     stage.remove(animated: false)
     overlay?.releaseIfIdle()
@@ -292,6 +333,12 @@ extension TranscriptSendPlatformView {
     #else
       alphaValue = opacity
     #endif
+  }
+
+  func transcriptSendDescendants<View: TranscriptSendPlatformView>(ofType type: View.Type) -> [View] {
+    subviews.flatMap { subview in
+      (subview as? View).map { [$0] } ?? subview.transcriptSendDescendants(ofType: type)
+    }
   }
 
   func transcriptSendDescendant<View: TranscriptSendPlatformView>(ofType type: View.Type) -> View? {

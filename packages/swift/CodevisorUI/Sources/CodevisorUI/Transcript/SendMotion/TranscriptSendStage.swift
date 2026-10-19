@@ -14,6 +14,7 @@ public final class TranscriptSendStage {
   private(set) var textRect: CGRect
   let lineHeight: CGFloat
   let text: NSAttributedString?
+  private(set) var pieces: [TranscriptSendAttachmentPiece]
   private(set) var wrappedTextWidth: CGFloat?
   weak var overlay: TranscriptSendOverlayView?
   var timeout: DispatchWorkItem?
@@ -28,6 +29,7 @@ public final class TranscriptSendStage {
     textRect: CGRect,
     lineHeight: CGFloat,
     text: NSAttributedString?,
+    pieces: [TranscriptSendAttachmentPiece],
     overlay: TranscriptSendOverlayView
   ) {
     self.snapshot = snapshot
@@ -35,7 +37,13 @@ public final class TranscriptSendStage {
     self.textRect = textRect
     self.lineHeight = lineHeight
     self.text = text
+    self.pieces = pieces
     self.overlay = overlay
+  }
+
+  func releasePieces() -> [TranscriptSendAttachmentPiece] {
+    defer { pieces = [] }
+    return pieces
   }
 
   private var visibleTextRect: CGRect {
@@ -75,6 +83,12 @@ public final class TranscriptSendStage {
   }
 
   func beginMorph(toward landing: TranscriptSendLanding) {
+    var landing = landing
+    let spacing = TranscriptSendFlightGeometry.attachmentSpacing
+    let strip = TranscriptSendAttachmentGeometry.strip(
+      sizes: pieces.map(\.sentSize), trailing: landing.trailing, top: landing.top, spacing: spacing)
+    for (piece, frame) in zip(pieces, strip) { piece.fly(toward: frame) }
+    if let bottom = strip.map(\.maxY).max() { landing.top = bottom + spacing }
     var end = TranscriptSendMorphGeometry.predictedEnd(
       start: snapshot.frame, editorFrame: editorFrame, textRect: textRect,
       lineHeight: lineHeight, landing: landing)
@@ -92,16 +106,24 @@ public final class TranscriptSendStage {
     func board(_ carrier: TranscriptSendCarrier?) {
       guard let overlay else { return }
       let space: UIView = carrier?.view ?? overlay
-      let onScreen: CGRect
-      if let layer = snapshot.layer.presentation(), let overlayLayer = overlay.layer.presentation() {
-        onScreen = layer.convert(layer.bounds, to: overlayLayer)
-      } else {
-        onScreen = overlay.convert(snapshot.bounds, from: snapshot)
+      func boarded(_ view: UIView) -> CGRect {
+        let onScreen: CGRect
+        if let layer = view.layer.presentation(), let overlayLayer = overlay.layer.presentation() {
+          onScreen = layer.convert(layer.bounds, to: overlayLayer)
+        } else {
+          onScreen = overlay.convert(view.bounds, from: view)
+        }
+        return carrier?.rect(displayedAt: onScreen, in: overlay) ?? onScreen
       }
-      let frame = carrier?.rect(displayedAt: onScreen, in: overlay) ?? onScreen
+      let frame = boarded(snapshot)
+      let pieceFrames = pieces.map(boarded)
       let dx = frame.minX - snapshot.frame.minX
       let dy = frame.minY - snapshot.frame.minY
       UIView.performWithoutAnimation {
+        for (piece, pieceFrame) in zip(pieces, pieceFrames) {
+          space.addSubview(piece)
+          piece.frame = pieceFrame
+        }
         space.addSubview(snapshot)
         snapshot.frame = frame
       }
@@ -117,11 +139,14 @@ public final class TranscriptSendStage {
     timeout = nil
     let snapshot = snapshot
     let overlay = overlay
+    let pieces = releasePieces()
+    TranscriptSendAttachmentDepartures.shared.arrive(pieces)
     #if canImport(UIKit)
       let carrier = carrier
       self.carrier = nil
     #endif
     guard animated, snapshot.superview != nil else {
+      for piece in pieces { piece.removeFromSuperview() }
       snapshot.removeFromSuperview()
       #if canImport(UIKit)
         carrier?.remove()
@@ -132,6 +157,7 @@ public final class TranscriptSendStage {
     CATransaction.begin()
     CATransaction.setCompletionBlock {
       MainActor.assumeIsolated {
+        for piece in pieces { piece.removeFromSuperview() }
         snapshot.removeFromSuperview()
         #if canImport(UIKit)
           carrier?.remove()
@@ -144,6 +170,13 @@ public final class TranscriptSendStage {
       forKey: TranscriptSendAnimationKeys.follower
     )
     snapshot.setTranscriptSendOpacity(0)
+    for piece in pieces {
+      piece.transcriptSendLayer?.add(
+        TranscriptSendLayerAnimations.fade(from: 1, to: 0, duration: 0.15),
+        forKey: TranscriptSendAnimationKeys.follower
+      )
+      piece.setTranscriptSendOpacity(0)
+    }
     CATransaction.commit()
   }
 }

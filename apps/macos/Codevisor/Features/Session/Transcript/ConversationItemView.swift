@@ -87,9 +87,11 @@ struct MessageBubbleView<Content: View>: View {
   var body: some View {
     HStack {
       if side == .trailing { Spacer(minLength: 40) }
-      VStack(alignment: side == .trailing ? .trailing : .leading, spacing: 8) {
+      VStack(
+        alignment: side == .trailing ? .trailing : .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing
+      ) {
         if !attachments.isEmpty {
-          HStack(spacing: 8) {
+          HStack(spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
             ForEach(attachments) { attachment in
               AttachmentThumbnailView(attachment: attachment)
             }
