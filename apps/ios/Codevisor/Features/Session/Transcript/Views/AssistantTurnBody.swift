@@ -158,14 +158,8 @@ struct AssistantTurnBody: View {
       animationPresentation: textAnimationPresentation,
       animationEnabled: animationEnabled
     ) { file, label in
-      VStack(alignment: .leading, spacing: 4) {
+      TranscriptInlineFile(file: file, label: label) {
         AttachmentThumbnailView(file: file, inline: true)
-          .accessibilityLabel(label)
-        if file.kind != .image {
-          Text(label)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
       }
     }
   }

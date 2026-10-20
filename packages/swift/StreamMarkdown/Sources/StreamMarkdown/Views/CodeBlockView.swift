@@ -6,15 +6,16 @@ import SwiftUI
   import UIKit
 #endif
 
-struct CodeBlockView: View {
+public struct CodeBlockView<Title: View, Accessory: View>: View {
   let id: String
   let language: String?
   let code: String
   let isComplete: Bool
+  private let maxHeight: CGFloat?
+  private let title: Title
+  private let accessory: Accessory
 
   @Environment(\.markdownTheme) private var theme
-  @State private var didCopy = false
-  @State private var copyResetTask: Task<Void, Never>?
   @State private var highlighted: CodeHighlightSnapshot?
   @State private var plainMemo = PlainCodeMemo()
   @State private var usesPreparedLayout: Bool
@@ -22,83 +23,46 @@ struct CodeBlockView: View {
     @State private var nativeMemo = NativeCodeMemo()
   #endif
 
-  init(id: String, language: String?, code: String, isComplete: Bool) {
+  public init(
+    id: String,
+    language: String?,
+    code: String,
+    isComplete: Bool,
+    maxHeight: CGFloat? = nil,
+    @ViewBuilder title: () -> Title,
+    @ViewBuilder accessory: () -> Accessory
+  ) {
     self.id = id
     self.language = language
     self.code = code
     self.isComplete = isComplete
+    self.maxHeight = maxHeight
+    self.title = title()
+    self.accessory = accessory()
     _usesPreparedLayout = State(
       initialValue: isComplete && code.utf8.count > MarkdownLayoutPolicy.maximumSynchronousTextBytes
     )
   }
 
-  var body: some View {
+  public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text(language?.uppercased() ?? "CODE")
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(.secondary)
+        title
         if !isComplete {
           ProgressView()
             .controlSize(.mini)
         }
         Spacer()
-        Button {
-          copy()
-        } label: {
-          Label {
-            Text(didCopy ? "Copied" : "Copy")
-          } icon: {
-            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-              .frame(width: 13, height: 13)
-          }
-          .font(.caption2)
-          .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        accessory
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
 
       Divider()
 
-      #if canImport(AppKit)
-        if usesPreparedLayout {
-          PreparedSelectableTextView(
-            text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
-          )
-        } else {
-          HorizontalCodeScrollView(
-            text: renderedText,
-            foreground: theme.codeForeground
-          )
-        }
-      #elseif canImport(UIKit)
-        ScrollView(.horizontal, showsIndicators: false) {
-          if usesPreparedLayout {
-            PreparedSelectableTextView(
-              text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
-            ).padding(10)
-          } else {
-            SelectableTextView(
-              attributedText: nativeMemo.attributed(
-                for: renderedText,
-                fallback: theme.codeForeground
-              ),
-              fillsWidth: false
-            )
-            .padding(10)
-          }
-        }
-      #else
-        ScrollView(.horizontal, showsIndicators: false) {
-          Text(renderedText)
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(theme.codeForeground)
-            .padding(10)
-        }
-      #endif
+      CodeBlockHeightLimit(maxHeight: maxHeight) {
+        codeText
+      }
     }
     .background(theme.codeBackground)
     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -126,6 +90,45 @@ struct CodeBlockView: View {
     }
   }
 
+  @ViewBuilder private var codeText: some View {
+    #if canImport(AppKit)
+      if usesPreparedLayout {
+        PreparedSelectableTextView(
+          text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
+        )
+      } else {
+        HorizontalCodeScrollView(
+          text: renderedText,
+          foreground: theme.codeForeground
+        )
+      }
+    #elseif canImport(UIKit)
+      ScrollView(.horizontal, showsIndicators: false) {
+        if usesPreparedLayout {
+          PreparedSelectableTextView(
+            text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
+          ).padding(10)
+        } else {
+          SelectableTextView(
+            attributedText: nativeMemo.attributed(
+              for: renderedText,
+              fallback: theme.codeForeground
+            ),
+            fillsWidth: false
+          )
+          .padding(10)
+        }
+      }
+    #else
+      ScrollView(.horizontal, showsIndicators: false) {
+        Text(renderedText)
+          .font(.system(.caption, design: .monospaced))
+          .foregroundStyle(theme.codeForeground)
+          .padding(10)
+      }
+    #endif
+  }
+
   private var resultCacheKey: CodeHighlightResultCache.Key {
     CodeHighlightResultCache.Key(themeKey: theme.codeThemeKey, language: language, code: code)
   }
@@ -149,22 +152,16 @@ struct CodeBlockView: View {
     HighlightTaskKey(result: resultCacheKey, isComplete: isComplete)
   }
 
-  private func copy() {
-    #if canImport(AppKit)
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(code, forType: .string)
-    #elseif canImport(UIKit)
-      UIPasteboard.general.string = code
-    #endif
-    didCopy = true
-    copyResetTask?.cancel()
-    copyResetTask = Task {
-      try? await Task.sleep(for: .seconds(1.5))
-      guard !Task.isCancelled else { return }
-      didCopy = false
+}
+
+extension CodeBlockView where Title == CodeBlockLanguageTitle, Accessory == CodeBlockCopyButton {
+  init(id: String, language: String?, code: String, isComplete: Bool) {
+    self.init(id: id, language: language, code: code, isComplete: isComplete) {
+      CodeBlockLanguageTitle(language: language)
+    } accessory: {
+      CodeBlockCopyButton(code: code)
     }
   }
-
 }
 
 #if canImport(AppKit) || canImport(UIKit)

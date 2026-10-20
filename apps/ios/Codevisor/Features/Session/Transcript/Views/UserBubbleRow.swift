@@ -26,12 +26,19 @@ struct UserBubbleRow: View {
 }
 
 struct BotBubbleRow: View {
-  let message: TranscriptBotMessage
+  private let content: TranscriptBotMessageContent
+
+  init(message: TranscriptBotMessage) {
+    content = TranscriptBotMessageContent(message)
+  }
 
   var body: some View {
-    MessageBubbleView(side: .leading, text: message.text, attachments: message.attachments) {
-      StreamingMarkdownView(message.text)
-        .frame(maxWidth: TranscriptBotMessageWidth.natural(of: message.text), alignment: .leading)
+    VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
+      MessageBubbleView(side: .leading, text: content.text, attachments: []) {
+        StreamingMarkdownView(content.text)
+          .frame(maxWidth: TranscriptBotMessageWidth.natural(of: content.text), alignment: .leading)
+      }
+      TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0, inline: true) }
     }
   }
 }

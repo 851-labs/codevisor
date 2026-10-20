@@ -120,14 +120,8 @@ public struct TranscriptRowContentView: View {
     case let .markdownChunk(chunk):
       TranscriptMarkdownChunkView(chunk: chunk)
     case let .assistantAttachment(attachment):
-      VStack(alignment: .leading, spacing: 4) {
+      TranscriptInlineFile(file: attachment.file, label: attachment.label) {
         leaves.attachmentThumbnail(attachment.file)
-          .accessibilityLabel(attachment.label)
-        if attachment.file.kind != .image {
-          Text(attachment.label)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
       }
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)

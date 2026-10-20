@@ -219,10 +219,12 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     _ path: String,
     method: String,
     body: Data?,
-    contentType: String?
+    contentType: String?,
+    headers: [String: String] = [:]
   ) async throws -> (Data, HTTPURLResponse) {
     try await waitForServerIfNeeded(path: path)
-    let request = try makeRawRequest(path, method: method, body: body, contentType: contentType)
+    var request = try makeRawRequest(path, method: method, body: body, contentType: contentType)
+    for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
 
     let (data, httpResponse) = try await requestTransport.data(for: request)
     try validateResponse(data, httpResponse)

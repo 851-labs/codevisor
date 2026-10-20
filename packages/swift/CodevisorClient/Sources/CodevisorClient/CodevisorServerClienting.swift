@@ -223,6 +223,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func filePreview(id: String) async throws -> Data
   func filePreview(path: String, sessionId: UUID?) async throws -> Data
   func fileData(id: String) async throws -> Data
+  func filePrefix(id: String, length: Int) async throws -> Data
   func toolIcon(_ request: ServerToolIconRequest) async throws -> Data
   func readDocument(path: String) async throws -> ServerFileDocument
   func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument
@@ -240,6 +241,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func linkPreview(url: URL) async throws -> ServerLinkPreview
   func linkPreviewImage(url: URL) async throws -> Data
   func fileData(sessionId: UUID, path: String) async throws -> Data
+  func filePrefix(sessionId: UUID, path: String, length: Int) async throws -> Data
   func fileVersion(sessionId: UUID, path: String) async throws -> String?
   func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
   func reorderQueuedPrompts(

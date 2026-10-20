@@ -437,7 +437,7 @@ extension CodevisorServerClient {
     return fallback.isEmpty ? nil : fallback
   }
 
-  private func liveFileRequestPath(sessionId: UUID, path: String) throws -> String {
+  func liveFileRequestPath(sessionId: UUID, path: String) throws -> String {
     var components = URLComponents()
     components.path = "/v1/fs/file"
     components.queryItems = [

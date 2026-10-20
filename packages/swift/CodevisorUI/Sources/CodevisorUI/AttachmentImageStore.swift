@@ -31,6 +31,7 @@ private final class AttachmentPreviewBox {
 public final class AttachmentImageStore {
   public typealias Fetch = (PreviewFile.Source) async throws -> Data
   public typealias Version = (PreviewFile.Source) async throws -> String?
+  public typealias FetchPrefix = (PreviewFile.Source, Int) async throws -> Data
 
   private static let memory: NSCache<NSString, AttachmentPreviewBox> = {
     let cache = NSCache<NSString, AttachmentPreviewBox>()
@@ -58,13 +59,21 @@ public final class AttachmentImageStore {
   public let namespace: String
   private let fetch: Fetch
   private let fetchPreview: Fetch
+  private let fetchPrefix: FetchPrefix?
   private let version: Version
   private var versions: [String: String] = [:]
 
-  public init(namespace: String, fetch: @escaping Fetch, fetchPreview: @escaping Fetch, version: @escaping Version) {
+  public init(
+    namespace: String,
+    fetch: @escaping Fetch,
+    fetchPreview: @escaping Fetch,
+    fetchPrefix: FetchPrefix? = nil,
+    version: @escaping Version
+  ) {
     self.namespace = namespace
     self.fetch = fetch
     self.fetchPreview = fetchPreview
+    self.fetchPrefix = fetchPrefix
     self.version = version
   }
 
@@ -146,6 +155,11 @@ public final class AttachmentImageStore {
 
   public func data(for source: PreviewFile.Source) async throws -> Data {
     try await fetch(source)
+  }
+
+  public func dataPrefix(for source: PreviewFile.Source, length: Int) async throws -> Data {
+    guard let fetchPrefix else { return try await fetch(source).prefix(length) }
+    return try await fetchPrefix(source, length)
   }
 
   private func baseKey(for source: PreviewFile.Source) -> String {

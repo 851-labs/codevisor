@@ -430,11 +430,19 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func filePrefix(id: String, length: Int) async throws -> Data {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func toolIcon(_ request: ServerToolIconRequest) async throws -> Data {
     throw CodevisorServerClientError.invalidResponse
   }
 
   func fileData(sessionId: UUID, path: String) async throws -> Data {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func filePrefix(sessionId: UUID, path: String, length: Int) async throws -> Data {
     throw CodevisorServerClientError.invalidResponse
   }
 

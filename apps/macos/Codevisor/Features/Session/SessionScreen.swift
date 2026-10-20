@@ -67,6 +67,10 @@ struct SessionScreen: View {
         guard let controller else { throw SessionControllerError.serverUnavailable }
         return try await controller.filePreview(for: source)
       },
+      fetchPrefix: { [weak controller] source, length in
+        guard let controller else { throw SessionControllerError.serverUnavailable }
+        return try await controller.filePrefix(for: source, length: length)
+      },
       version: { [weak controller] source in
         guard let controller else {
           throw SessionControllerError.serverUnavailable
