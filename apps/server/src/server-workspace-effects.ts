@@ -9,7 +9,6 @@ import {
 } from "@codevisor/db"
 import {
   deleteSnapshot,
-  moveTrashEntries,
   removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotWorktree,
@@ -32,7 +31,6 @@ import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 export { worktreeTrashRoot }
 
 export const sweepTrashedWorktrees = async (): Promise<void> => {
-  await moveTrashEntries(legacyWorktreeTrashRoot(), worktreeTrashRoot())
   await Promise.all([
     sweepWorktreeTrash(worktreeTrashRoot()),
     sweepWorktreeTrash(legacyWorktreeTrashRoot())

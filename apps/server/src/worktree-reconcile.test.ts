@@ -105,7 +105,6 @@ describe("worktree archive reconciliation", () => {
       }
       await sweepTrashedWorktrees()
       expect(leftovers.filter((leftover) => existsSync(leftover))).toEqual([])
-      expect(existsSync(join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".trash"))).toBe(false)
     })
   })
 

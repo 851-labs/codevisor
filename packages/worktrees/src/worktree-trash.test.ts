@@ -9,7 +9,6 @@ import { removeArchivedWorktreeFiles } from "./worktree-archive.js"
 import {
   diskSpace,
   LOW_DISK_FREE_BYTES,
-  moveTrashEntries,
   purgePriority,
   sweepWorktreeTrash,
   trashDirectory,
@@ -122,56 +121,6 @@ describe("worktree trash", () => {
     await sweepWorktreeTrash(trashRoot)
 
     expect(readdirSync(trashRoot)).toEqual([".metadata_never_index"])
-  })
-
-  it("moves what the old trash folder holds into the new one, one entry at a time", async () => {
-    const { root } = makeGitRepo()
-    const legacy = join(root, ".trash")
-    const trashRoot = join(root, ".trash.noindex")
-    await moveTrashEntries(legacy, trashRoot)
-    expect(existsSync(trashRoot)).toBe(false)
-
-    mkdirSync(join(legacy, "wt-1-abc", "node_modules"), { recursive: true })
-    writeFileSync(join(legacy, "wt-1-abc", "node_modules", "index.js"), "x")
-    mkdirSync(join(legacy, "wt-2-def"))
-    writeFileSync(join(legacy, ".metadata_never_index"), "")
-    await moveTrashEntries(legacy, trashRoot)
-
-    expect(existsSync(legacy)).toBe(false)
-    expect(readdirSync(trashRoot).toSorted()).toEqual([
-      ".metadata_never_index",
-      "wt-1-abc",
-      "wt-2-def"
-    ])
-    expect(existsSync(join(trashRoot, "wt-1-abc", "node_modules", "index.js"))).toBe(true)
-
-    mkdirSync(join(legacy, "wt-3-ghi"), { recursive: true })
-    await moveTrashEntries(legacy, trashRoot)
-    expect(existsSync(legacy)).toBe(false)
-    expect(existsSync(join(trashRoot, "wt-3-ghi"))).toBe(true)
-  })
-
-  it("leaves an old trash entry it cannot move for the sweep to delete in place", async () => {
-    const { root } = makeGitRepo()
-    const legacy = join(root, ".trash")
-    const trashRoot = join(root, ".trash.noindex")
-    mkdirSync(join(legacy, "wt-1-abc"), { recursive: true })
-    writeFileSync(join(legacy, "wt-1-abc", "file"), "x")
-    mkdirSync(join(legacy, "wt-2-def"))
-    mkdirSync(join(trashRoot, "wt-1-abc", "occupied"), { recursive: true })
-
-    await moveTrashEntries(legacy, trashRoot)
-    expect(readdirSync(legacy)).toEqual(["wt-1-abc"])
-    expect(existsSync(join(trashRoot, "wt-2-def"))).toBe(true)
-
-    await sweepWorktreeTrash(legacy)
-    expect(readdirSync(legacy)).toEqual([])
-
-    const blocked = join(root, "blocked")
-    writeFileSync(blocked, "")
-    mkdirSync(join(legacy, "wt-3-ghi"))
-    await moveTrashEntries(legacy, blocked)
-    expect(readdirSync(legacy)).toEqual(["wt-3-ghi"])
   })
 
   it("deletes at background priority unless the disk is running low", () => {

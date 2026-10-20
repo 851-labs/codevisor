@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { lstat, mkdir, readdir, rename, rmdir, statfs, unlink, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readdir, rename, statfs, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { removeWorktree } from "./git.js"
@@ -89,28 +89,6 @@ export const trashDirectory = async (
     return { purged: purge(directory) }
   }
   return { purged: purge(target) }
-}
-
-const ignore = (): void => undefined
-
-export const moveTrashEntries = async (fromRoot: string, toRoot: string): Promise<void> => {
-  let entries: ReadonlyArray<string>
-  try {
-    entries = (await readdir(fromRoot)).filter((entry) => entry !== neverIndexMarker)
-    await prepareTrashRoot(toRoot)
-  } catch {
-    return
-  }
-  let moved = 0
-  for (const entry of entries) {
-    try {
-      await rename(join(fromRoot, entry), join(toRoot, entry))
-      moved += 1
-    } catch {}
-  }
-  if (moved < entries.length) return
-  await unlink(join(fromRoot, neverIndexMarker)).catch(ignore)
-  await rmdir(fromRoot).catch(ignore)
 }
 
 export const sweepWorktreeTrash = async (trashRoot: string): Promise<void> => {
