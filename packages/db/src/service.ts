@@ -33,7 +33,6 @@ import type {
   UpsertWorkspacePaneRequest,
   Workspace,
   WorkspacePane,
-  WorkspacePhoto,
   WorkspaceSnapshot,
   Worktree
 } from "@codevisor/api"
@@ -66,6 +65,7 @@ import type { SyncBatch } from "./sync-journal.js"
 import type {
   WorkspaceFileEdit,
   WorkspaceMediaCursor,
+  WorkspaceMediaRow,
   WorkspaceMessageText
 } from "./workspace-media.js"
 import type {
@@ -264,11 +264,16 @@ export interface CodevisorDatabaseService
   ) => Effect.Effect<FileMetadata, DatabaseError>
   readonly createDiskFile: (metadata: FileMetadata) => Effect.Effect<FileMetadata, DatabaseError>
   readonly getFileMetadata: (id: string) => Effect.Effect<FileMetadata | undefined, DatabaseError>
-  readonly listWorkspacePhotos: (
+  readonly listWorkspaceMedia: (
     workspaceId: string,
+    includeVideos: boolean,
     before: WorkspaceMediaCursor | undefined,
     limit: number
-  ) => Effect.Effect<ReadonlyArray<WorkspacePhoto>, DatabaseError>
+  ) => Effect.Effect<ReadonlyArray<WorkspaceMediaRow>, DatabaseError>
+  readonly recordMediaDuration: (
+    sha256: string,
+    durationMs: number | undefined
+  ) => Effect.Effect<void, DatabaseError>
   readonly listWorkspaceMessageTexts: (
     workspaceId: string,
     before: WorkspaceMediaCursor | undefined,

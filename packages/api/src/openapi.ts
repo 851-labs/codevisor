@@ -151,6 +151,7 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
   }
   if (
     endpoint === "GET /v1/workspaces/:workspaceId/photos" ||
+    endpoint === "GET /v1/workspaces/:workspaceId/media" ||
     endpoint === "GET /v1/workspaces/:workspaceId/links"
   ) {
     return [

@@ -75,6 +75,7 @@ describe("workspace media", () => {
       const generated = await image("generated.png", "generated")
       const copy = await image("copy.png", "attached")
       const foreign = await image("foreign.png", "foreign")
+      const clip = await typed("clip.mov", "video/quicktime")
 
       tick()
       await run(
@@ -116,6 +117,14 @@ describe("workspace media", () => {
       )
       tick()
       await run(
+        db.appendEvent("session.output", second.id, {
+          role: "user",
+          text: "Here's the bug",
+          attachments: [ref(clip)]
+        })
+      )
+      tick()
+      await run(
         db.appendEvent("session.output", first.id, {
           sessionUpdate: "assistant_message_finalized",
           markdown: "Done, see [the docs](https://example.com/docs).",
@@ -130,7 +139,7 @@ describe("workspace media", () => {
         })
       )
 
-      const photos = await run(db.listWorkspacePhotos(work.workspace.id, undefined, 10))
+      const photos = await run(db.listWorkspaceMedia(work.workspace.id, false, undefined, 10))
       expect(photos.map((photo) => [photo.attachment.fileId, photo.source])).toEqual([
         [copy.id, "tool"],
         [generated.id, "message"],
@@ -138,17 +147,39 @@ describe("workspace media", () => {
       ])
       expect(photos[0]).toMatchObject({ sessionId: second.id, attachment: ref(copy) })
 
-      const page = await run(db.listWorkspacePhotos(work.workspace.id, undefined, 2))
+      const page = await run(db.listWorkspaceMedia(work.workspace.id, false, undefined, 2))
       const last = page.at(-1)!
       expect(
         await run(
-          db.listWorkspacePhotos(
+          db.listWorkspaceMedia(
             work.workspace.id.toUpperCase(),
+            false,
             { createdAt: last.createdAt, id: last.attachment.fileId },
             2
           )
         )
       ).toEqual([photos[2]])
+
+      await run(db.recordMediaDuration(clip.sha256, 4250))
+      await run(db.recordMediaDuration(recording.sha256, undefined))
+      const sameMoment = [screenshot, recording].toSorted((a, b) => (a.id < b.id ? 1 : -1))
+      const media = await run(db.listWorkspaceMedia(work.workspace.id, true, undefined, 10))
+      expect(
+        media.map((item) => [item.attachment.fileId, item.source, item.attachment.kind])
+      ).toEqual([
+        [clip.id, "message", "file"],
+        [copy.id, "tool", "image"],
+        [generated.id, "message", "image"],
+        ...sameMoment.map((file) => [file.id, "tool", file === screenshot ? "image" : "file"])
+      ])
+      expect(media[0]).toMatchObject({ durationProbed: true, durationMs: 4250 })
+      const unmeasured = media.find((item) => item.attachment.fileId === recording.id)
+      expect(unmeasured?.durationProbed).toBe(true)
+      expect(unmeasured).not.toHaveProperty("durationMs")
+      expect(media.find((item) => item.attachment.fileId === copy.id)).toMatchObject({
+        durationProbed: false
+      })
+      expect(media.filter((item) => item.attachment.kind === "image")).toEqual(photos)
 
       const texts = await run(db.listWorkspaceMessageTexts(work.workspace.id, undefined, 10))
       expect(texts.map((message) => [message.sessionId, message.text])).toEqual([
@@ -170,17 +201,21 @@ describe("workspace media", () => {
     }
   })
 
-  it("backfills execution screenshots recorded before tool media was tracked", async () => {
+  it("backfills execution screenshots and recordings recorded before tool media was tracked", async () => {
     const filename = tempDatabase()
     const current = await run(makeDatabase({ filename, serverId: "local" }))
     let work: Awaited<ReturnType<typeof seedWorkspace>>
     let session: Awaited<ReturnType<typeof work.session>>
     let screenshot: FileMetadata
+    let recording: FileMetadata
     try {
       work = await seedWorkspace(current, "upgrade")
       session = await work.session()
       screenshot = await run(
         current.createFile("screenshot.png", "image/png", "image", Buffer.from("upgrade"))
+      )
+      recording = await run(
+        current.createFile("recording.mp4", "video/mp4", "file", Buffer.from("recording"))
       )
       tick()
       await run(current.appendEvent("session.updated", session.id, { turnState: "started" }))
@@ -188,7 +223,10 @@ describe("workspace media", () => {
         current.appendEvent(
           "session.output",
           session.id,
-          executeUpdate([{ fileId: screenshot.id, mimeType: "image/png" }])
+          executeUpdate([
+            { fileId: screenshot.id, mimeType: "image/png" },
+            { fileId: recording.id, mimeType: "video/mp4" }
+          ])
         )
       )
     } finally {
@@ -199,7 +237,8 @@ describe("workspace media", () => {
     try {
       legacy.exec(`
       drop table chat_item_media;
-      delete from schema_migrations where id = 62;
+      drop table media_durations;
+      delete from schema_migrations where id in (62, 71);
     `)
     } finally {
       legacy.close()
@@ -207,9 +246,12 @@ describe("workspace media", () => {
 
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     try {
-      expect(
-        await run(upgraded.listWorkspacePhotos(work.workspace.id, undefined, 10))
-      ).toMatchObject([{ attachment: ref(screenshot), sessionId: session.id, source: "tool" }])
+      const media = await run(upgraded.listWorkspaceMedia(work.workspace.id, true, undefined, 10))
+      expect(media).toMatchObject(
+        [screenshot, recording]
+          .toSorted((a, b) => (a.id < b.id ? 1 : -1))
+          .map((file) => ({ attachment: ref(file), sessionId: session.id, source: "tool" }))
+      )
     } finally {
       await run(upgraded.close)
     }

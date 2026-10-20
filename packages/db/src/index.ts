@@ -33,6 +33,7 @@ export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js
 export type {
   WorkspaceFileEdit,
   WorkspaceMediaCursor,
+  WorkspaceMediaRow,
   WorkspaceMessageText
 } from "./workspace-media.js"
 export type {

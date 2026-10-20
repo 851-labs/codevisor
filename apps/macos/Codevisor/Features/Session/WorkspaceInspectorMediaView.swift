@@ -4,32 +4,33 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct WorkspaceInspectorPhotosView: View {
+struct WorkspaceInspectorMediaView: View {
   let model: WorkspaceInspectorMediaModel
   let onRetry: () -> Void
 
   var body: some View {
-    if model.photos.isEmpty {
+    if model.media.isEmpty {
       WorkspaceInspectorMediaPlaceholder(
-        phase: model.photosPhase, emptyTitle: "No Photos", systemImage: "photo.on.rectangle",
-        emptyDescription: "Images shared or captured in this workspace's chats appear here.",
+        phase: model.mediaPhase, emptyTitle: "No Media", systemImage: "photo.on.rectangle",
+        emptyDescription: "Images and videos shared or captured in this workspace's chats appear here.",
         onRetry: onRetry
       )
     } else {
       ScrollView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 4)], spacing: 4) {
-          ForEach(model.photos) { photo in
-            WorkspaceInspectorPhotoTile(
+          ForEach(model.media) { item in
+            WorkspaceInspectorMediaTile(
               file: PreviewFile(
-                source: .attachment(fileId: photo.attachment.fileId),
-                name: photo.attachment.name,
-                mimeType: photo.attachment.mimeType,
-                kind: .image
-              )
+                source: .attachment(fileId: item.attachment.fileId),
+                name: item.attachment.name,
+                mimeType: item.attachment.mimeType,
+                kind: item.isVideo ? .file : .image
+              ),
+              durationSeconds: item.durationSeconds
             )
             .onAppear {
-              guard photo.id == model.photos.last?.id else { return }
-              Task { await model.loadMorePhotos() }
+              guard item.id == model.media.last?.id else { return }
+              Task { await model.loadMoreMedia() }
             }
           }
         }
@@ -39,10 +40,11 @@ struct WorkspaceInspectorPhotosView: View {
   }
 }
 
-private struct WorkspaceInspectorPhotoTile: View {
+private struct WorkspaceInspectorMediaTile: View {
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.quickLook) private var quickLook
   let file: PreviewFile
+  let durationSeconds: Double?
   @State private var image: NSImage?
 
   var body: some View {
@@ -55,8 +57,17 @@ private struct WorkspaceInspectorPhotoTile: View {
             .resizable()
             .scaledToFill()
         } else {
-          Image(systemName: "photo")
+          Image(systemName: file.isVideo ? "video" : "photo")
             .foregroundStyle(.tertiary)
+        }
+      }
+      .overlay {
+        if file.isVideo { VideoPlayBadge() }
+      }
+      .overlay(alignment: .bottomTrailing) {
+        if file.isVideo, let durationSeconds {
+          VideoDurationBadge(seconds: durationSeconds)
+            .padding(4)
         }
       }
       .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -66,7 +77,7 @@ private struct WorkspaceInspectorPhotoTile: View {
       }
       .help(file.name)
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel(file.name)
+      .accessibilityLabel(file.isVideo ? "Video \(file.name)" : file.name)
       .accessibilityAddTraits([.isImage, .isButton])
       .attachmentContextMenu(file: file, image: image)
       .task(id: file.name + file.mimeType + String(describing: file.source)) {

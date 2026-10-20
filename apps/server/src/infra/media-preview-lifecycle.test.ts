@@ -132,6 +132,51 @@ it("handles missing encoders, subprocess errors, and timed-out video decoders", 
   }
 })
 
+it("reads a video's duration and reports probe failures", async () => {
+  const { videoDurationMs } = await import("./media-previews.js")
+  mocks.encoder.value = null
+  await expect(videoDurationMs("clip.mp4")).rejects.toThrow("unavailable")
+  mocks.encoder.value = "/ffmpeg"
+  for (const mode of ["duration", "none", "error", "timeout"]) {
+    const started = Promise.withResolvers<void>()
+    const child = Object.assign(new EventEmitter(), {
+      stderr: new EventEmitter(),
+      kill: vi.fn(() => {
+        child.emit("close", null, "SIGKILL")
+        return true
+      })
+    })
+    mocks.spawn.mockImplementation(() => {
+      started.resolve()
+      return child
+    })
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      const result = videoDurationMs(mode)
+      await started.promise
+      if (mode === "duration") {
+        child.stderr.emit("data", Buffer.from("  Duration: 01:02:03.45, start: 0.000000"))
+        child.emit("close", 1, null)
+        expect(await result).toBe(3_723_450)
+      } else if (mode === "none") {
+        child.stderr.emit("data", Buffer.from("  Duration: N/A, bitrate: N/A"))
+        child.emit("close", 1, null)
+        expect(await result).toBeUndefined()
+      } else if (mode === "error") {
+        child.emit("error", new Error("spawn failed"))
+        await expect(result).rejects.toThrow("spawn failed")
+      } else {
+        const rejected = expect(result).rejects.toThrow("stopped by SIGKILL")
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(child.kill).toHaveBeenCalledWith("SIGKILL")
+        await rejected
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+})
+
 it("terminates timed-out PDF workers and surfaces worker failures", async () => {
   const { mediaPreview } = await import("./media-previews.js")
   for (const mode of ["error", "exit", "timeout"]) {

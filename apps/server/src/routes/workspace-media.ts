@@ -1,9 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { WorkspaceLink, WorkspaceLinkPage, WorkspacePhotoPage } from "@codevisor/api"
-import type { WorkspaceMediaCursor } from "@codevisor/db"
+import type {
+  WorkspaceLink,
+  WorkspaceLinkPage,
+  WorkspaceMediaItem,
+  WorkspaceMediaPage,
+  WorkspacePhotoPage
+} from "@codevisor/api"
+import type { WorkspaceMediaCursor, WorkspaceMediaRow } from "@codevisor/db"
 
+import { videoDurationMs } from "../infra/media-previews.js"
 import {
+  attachmentDiskFile,
   HttpFailure,
   matchRouteParams,
   run,
@@ -39,21 +47,75 @@ const decodeCursor = (raw: string | null): WorkspaceMediaCursor | undefined => {
   throw new HttpFailure(400, "Invalid before cursor")
 }
 
+const mediaPage = async (
+  services: CodevisorServerServices,
+  workspaceId: string,
+  includeVideos: boolean,
+  before: WorkspaceMediaCursor | undefined,
+  limit: number
+): Promise<{ rows: ReadonlyArray<WorkspaceMediaRow>; nextBefore?: string }> => {
+  const rows = await run(
+    services.db.listWorkspaceMedia(workspaceId, includeVideos, before, limit + 1)
+  )
+  const page = rows.slice(0, limit)
+  const last = page.at(-1)
+  return rows.length > limit && last !== undefined
+    ? {
+        rows: page,
+        nextBefore: encodeCursor({ createdAt: last.createdAt, id: last.attachment.fileId })
+      }
+    : { rows: page }
+}
+
+const photo = ({ attachment, sessionId, itemId, createdAt, source }: WorkspaceMediaRow) => ({
+  attachment,
+  sessionId,
+  itemId,
+  createdAt,
+  source
+})
+
 const workspacePhotos = async (
   services: CodevisorServerServices,
   workspaceId: string,
   before: WorkspaceMediaCursor | undefined,
   limit: number
 ): Promise<WorkspacePhotoPage> => {
-  const rows = await run(services.db.listWorkspacePhotos(workspaceId, before, limit + 1))
-  const photos = rows.slice(0, limit)
-  const last = photos.at(-1)
-  return rows.length > limit && last !== undefined
-    ? {
-        photos,
-        nextBefore: encodeCursor({ createdAt: last.createdAt, id: last.attachment.fileId })
-      }
-    : { photos }
+  const { rows, nextBefore } = await mediaPage(services, workspaceId, false, before, limit)
+  const photos = rows.map(photo)
+  return nextBefore === undefined ? { photos } : { photos, nextBefore }
+}
+
+const cachedOrProbedDurationMs = async (
+  services: CodevisorServerServices,
+  row: WorkspaceMediaRow
+): Promise<number | undefined> => {
+  if (!row.attachment.mimeType.startsWith("video/")) return undefined
+  if (row.durationProbed) return row.durationMs
+  try {
+    const file = await attachmentDiskFile(services, row.attachment.fileId)
+    const probed = await videoDurationMs(file.path)
+    await run(services.db.recordMediaDuration(row.sha256, probed))
+    return probed
+  } catch {
+    return undefined
+  }
+}
+
+const workspaceMedia = async (
+  services: CodevisorServerServices,
+  workspaceId: string,
+  before: WorkspaceMediaCursor | undefined,
+  limit: number
+): Promise<WorkspaceMediaPage> => {
+  const { rows, nextBefore } = await mediaPage(services, workspaceId, true, before, limit)
+  const media = await Promise.all(
+    rows.map(async (row): Promise<WorkspaceMediaItem> => {
+      const ms = await cachedOrProbedDurationMs(services, row)
+      return ms === undefined ? photo(row) : { ...photo(row), durationSeconds: ms / 1000 }
+    })
+  )
+  return nextBefore === undefined ? { media } : { media, nextBefore }
 }
 
 const workspaceLinks = async (
@@ -98,8 +160,9 @@ export const routeWorkspaceMedia = async (
 ): Promise<boolean> => {
   if (request.method !== "GET") return false
   const photosRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/photos")
+  const mediaRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/media")
   const linksRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/links")
-  const route = photosRoute ?? linksRoute
+  const route = photosRoute ?? mediaRoute ?? linksRoute
   if (route === undefined) return false
   const workspaceId = routeParam(route, "workspaceId")
   if ((await findWorkspace(workspaceId)) === undefined) {
@@ -110,9 +173,11 @@ export const routeWorkspaceMedia = async (
   writeJson(
     response,
     200,
-    photosRoute === undefined
-      ? await workspaceLinks(services, workspaceId, before, pageLimit(limit, 100))
-      : await workspacePhotos(services, workspaceId, before, pageLimit(limit, 60))
+    photosRoute !== undefined
+      ? await workspacePhotos(services, workspaceId, before, pageLimit(limit, 60))
+      : mediaRoute !== undefined
+        ? await workspaceMedia(services, workspaceId, before, pageLimit(limit, 60))
+        : await workspaceLinks(services, workspaceId, before, pageLimit(limit, 100))
   )
   return true
 }

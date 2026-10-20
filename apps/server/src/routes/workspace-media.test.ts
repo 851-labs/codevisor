@@ -1,6 +1,21 @@
-import { WorkspaceLinkPage, WorkspacePhotoPage, type EventEnvelope } from "@codevisor/api"
+import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { promisify } from "node:util"
+
+import {
+  WorkspaceLinkPage,
+  WorkspaceMediaPage,
+  WorkspacePhotoPage,
+  type AttachmentKind,
+  type EventEnvelope,
+  type FileMetadata
+} from "@codevisor/api"
 import { Schema } from "effect"
-import { describe, expect, it, vi } from "vitest"
+import ffmpeg from "ffmpeg-static"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeEventFanout } from "../server.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
@@ -35,7 +50,7 @@ const fixture = async () => {
       vi.setSystemTime(new Date(Date.UTC(2026, 9, 15, 12, minute)))
       return run(services.db.appendEvent("session.output", session.id, { role: "user", text }))
     }
-    return Object.assign(output, { say })
+    return Object.assign(output, { say, sessionId: session.id })
   }
   const server = await startWithApp(services, fanout)
   const get = (path: string) => jsonRequest(server, `/v1/workspaces/${workspace.id}/${path}`)
@@ -43,6 +58,36 @@ const fixture = async () => {
 }
 
 const photoPage = (body: unknown) => Schema.decodeUnknownSync(WorkspacePhotoPage)(body)
+const mediaPage = (body: unknown) => Schema.decodeUnknownSync(WorkspaceMediaPage)(body)
+
+const ref = (file: FileMetadata) => ({
+  fileId: file.id,
+  name: file.name,
+  mimeType: file.mimeType,
+  sizeBytes: file.sizeBytes,
+  kind: file.kind
+})
+
+const videoClip = async (seconds: number): Promise<Buffer> => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-media-"))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, "clip.mp4")
+  if (typeof ffmpeg !== "string") throw new Error("Missing ffmpeg binary")
+  await promisify(execFile)(ffmpeg, [
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=blue:s=64x48:r=10",
+    "-t",
+    String(seconds),
+    "-y",
+    path
+  ])
+  return readFile(path)
+}
 const linkPage = (body: unknown) => Schema.decodeUnknownSync(WorkspaceLinkPage)(body)
 
 describe("workspace media routes", () => {
@@ -137,6 +182,96 @@ describe("workspace media routes", () => {
     expect((await jsonRequest(f.server, "/v1/workspaces/missing-workspace/photos")).status).toBe(
       404
     )
+  })
+
+  it("lists videos among images newest first, probing each video's duration once", async () => {
+    const f = await fixture()
+    const output = await f.chat()
+    const store = async (name: string, mimeType: string, kind: AttachmentKind, data: Buffer) => {
+      const stored = await f.services.attachments.put(data)
+      return run(
+        f.services.db.createDiskFile({
+          id: randomUUID(),
+          name,
+          mimeType,
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+          kind,
+          createdAt: new Date().toISOString()
+        })
+      )
+    }
+    const shot = await store("shot.png", "image/png", "image", Buffer.from("screenshot"))
+    const clip = await store("clip.mp4", "video/mp4", "file", await videoClip(2.5))
+    const broken = await store("broken.mov", "video/quicktime", "file", Buffer.from("not video"))
+    const recording = await store("recording.mp4", "video/mp4", "file", await videoClip(1))
+    const lost = await store("lost.mp4", "video/mp4", "file", Buffer.from("lost video"))
+    await rm(f.services.attachments.objectPath(lost.sha256))
+    const attach = (minute: number, file: FileMetadata) => {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 15, 12, minute)))
+      return run(
+        f.services.db.appendEvent("session.output", output.sessionId, {
+          role: "user",
+          text: "",
+          attachments: [ref(file)]
+        })
+      )
+    }
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      await attach(1, shot)
+      await attach(2, clip)
+      await attach(3, broken)
+      await attach(4, lost)
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 15, 12, 5)))
+      await output({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "execute",
+        status: "completed",
+        _meta: {
+          codevisorExecution: {
+            state: "completed",
+            calls: [{ path: "computer.record", ok: true, ms: 9, files: [{ fileId: recording.id }] }]
+          }
+        }
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+
+    const all = mediaPage((await f.get("media")).body)
+    expect(
+      all.media.map((item) => [
+        item.attachment.name,
+        item.attachment.kind,
+        item.source,
+        item.durationSeconds
+      ])
+    ).toEqual([
+      ["recording.mp4", "file", "tool", 1],
+      ["lost.mp4", "file", "message", undefined],
+      ["broken.mov", "file", "message", undefined],
+      ["clip.mp4", "file", "message", 2.5],
+      ["shot.png", "image", "message", undefined]
+    ])
+    expect(all.media.at(-1)).toEqual({
+      attachment: ref(shot),
+      sessionId: output.sessionId,
+      itemId: expect.any(String),
+      createdAt: "2026-10-15T12:01:00.000Z",
+      source: "message"
+    })
+    expect((await f.get("photos")).body).toEqual({ photos: [all.media.at(-1)] })
+
+    const first = mediaPage((await f.get("media?limit=4")).body)
+    expect(first.media).toEqual(all.media.slice(0, 4))
+    expect(mediaPage((await f.get(`media?before=${first.nextBefore!}`)).body)).toEqual({
+      media: all.media.slice(4)
+    })
+
+    await rm(f.services.attachments.objectPath(clip.sha256))
+    expect(mediaPage((await f.get("media")).body).media[3]?.durationSeconds).toBe(2.5)
+    expect((await jsonRequest(f.server, "/v1/workspaces/missing-workspace/media")).status).toBe(404)
   })
 
   it("leaves a tool update untouched when its image can't be stored", async () => {

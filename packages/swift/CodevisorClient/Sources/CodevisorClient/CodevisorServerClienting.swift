@@ -234,7 +234,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func gitRefs(path: String) async throws -> ServerGitRefs
   func gitPullRequest(path: String) async throws -> ServerGitPullRequest?
   func workspaceGit(workspaceId: UUID, includePullRequest: Bool) async throws -> ServerWorkspaceGit
-  func workspacePhotos(workspaceId: UUID, before: String?, limit: Int) async throws -> ServerWorkspacePhotoPage
+  func workspaceMedia(workspaceId: UUID, before: String?, limit: Int) async throws -> ServerWorkspaceMediaPage
   func workspaceLinks(workspaceId: UUID, before: String?, limit: Int) async throws -> ServerWorkspaceLinkPage
   func workspaceFiles(workspaceId: UUID) async throws -> ServerWorkspaceFileChanges
   func linkPreview(url: URL) async throws -> ServerLinkPreview
