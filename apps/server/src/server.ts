@@ -164,6 +164,11 @@ export const makeCodevisorServerApp = (
     }).catch(swallowError)
     authSyncRefresh.request()
   })
+  const unsubscribeNotices = services.sharedAccounts?.subscribeNotices((harnessId, notice) => {
+    void appendAndPublish(services.db, fanout, "harness.notice", harnessId, notice).catch(
+      swallowError
+    )
+  })
   let sharedAccountReconcile: Promise<void> | undefined
   const reconcileSharedAccounts = () => {
     sharedAccountReconcile = services.sharedAccounts?.reconcile().catch(swallowError)
@@ -280,6 +285,7 @@ export const makeCodevisorServerApp = (
       config.sessionActivity?.stop()
       unsubscribeAuth?.()
       unsubscribeSharedAccounts?.()
+      unsubscribeNotices?.()
       clearInterval(sharedAccountSweep)
       services.sharedAccounts?.gateway.close()
       authSyncRefresh.close()

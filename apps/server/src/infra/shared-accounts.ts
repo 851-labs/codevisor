@@ -20,6 +20,7 @@ import type {
 } from "@codevisor/harness-manager"
 import { Effect } from "effect"
 
+import { makeClaudeLoginTakeover, type MachineClaudeLogin } from "./claude-login-takeover.js"
 import { sharedAccountContext } from "./shared-account-context.js"
 import { machineLoginReplacesDeadGrant } from "./shared-account-dead-grants.js"
 import { SharedAccountLocalState } from "./shared-account-local-state.js"
@@ -30,11 +31,12 @@ import {
 import {
   discoverNativeAccount,
   forgetNativeProfileLogin,
+  nativeClaudeMachine,
   sharedAccountVault
 } from "./shared-account-storage.js"
 import {
   makeSharedAccountStore,
-  sharedAccountLabel,
+  sharedAccountFor,
   sharedHarness,
   type SharedHarnessAccount
 } from "./shared-account-store.js"
@@ -59,6 +61,7 @@ export const makeSharedAccounts = (options: {
   readonly environment?: () => Promise<NodeJS.ProcessEnv>
   readonly discover?: typeof discoverNativeAccount
   readonly forgetProfileLogin?: ForgetProfileLogin
+  readonly claudeMachine?: (env: NodeJS.ProcessEnv) => MachineClaudeLogin
   readonly openCode2?: OpenCode2Deps
 }) => {
   const { db, auth, dataDir, serverId } = options
@@ -72,6 +75,7 @@ export const makeSharedAccounts = (options: {
     environment
   })
   const discover = options.discover ?? discoverNativeAccount
+  const claudeMachine = options.claudeMachine ?? nativeClaudeMachine(dataDir)
   const localState = new SharedAccountLocalState(db, serverId)
   const profileLogins = makeClaudeProfileLogins({
     db,
@@ -151,29 +155,33 @@ export const makeSharedAccounts = (options: {
     } else {
       const credential = await vault.create(bundle)
       if (previous?.credential) await vault.revoke(previous.credential)
-      await store.save({
-        id,
-        harnessId: bundle.harnessId,
-        label: previous?.label ?? sharedAccountLabel(bundle, label),
-        subject: bundle.subject,
-        ...(bundle.email ? { email: bundle.email } : {}),
-        ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
-        createdAt: previous?.createdAt ?? Date.now(),
-        credential,
-        ...(bundle.ownership === "external"
-          ? { sourceMachineId: serverId, sourceExpiresAt: bundle.expiresAt }
-          : {})
-      })
+      await store.save(sharedAccountFor(bundle, credential, previous, serverId, label))
     }
     const saved = (await store.get(id))!
     await saveLocal(saved, previous?.credential && !explicit ? undefined : bundle)
-    if (nativeId && nativeId !== id) {
-      await localState.setAlias(nativeId, id)
-      if (bundle.harnessId === "claude-code")
-        await run(db.rebindHarnessAccountSessions(nativeId, id))
-    }
+    await linkNative(nativeId, saved)
     return saved
   }
+  const linkNative = async (nativeId: string | undefined, account: SharedHarnessAccount) => {
+    if (!nativeId || nativeId === account.id) return
+    await localState.setAlias(nativeId, account.id)
+    if (account.harnessId === "claude-code")
+      await run(db.rebindHarnessAccountSessions(nativeId, account.id))
+  }
+  const claudeTakeover = makeClaudeLoginTakeover({
+    vault,
+    store,
+    localState,
+    record: async ({ login, credential, previous }, nativeId) => {
+      await store.save(sharedAccountFor(login, credential, previous, serverId))
+      const saved = (await store.get(sharedOAuthIdentity(login)))!
+      await saveLocal(saved, login)
+      await linkNative(nativeId, saved)
+      await probe(saved.id)
+    },
+    log: (line) => console.error(line),
+    platform: process.platform
+  })
   const nativeBundle = async (account: HarnessAccountRecord, managed: boolean) => {
     if (!sharedHarness(account.harnessId) || account.profileKind !== "managed") return undefined
     const path = join(
@@ -205,19 +213,25 @@ export const makeSharedAccounts = (options: {
     await localState.completeLogin(id, target)
     await applySelection(bundle.harnessId)
   }
+  const adoptClaudeMachineLogin = async (env: NodeJS.ProcessEnv, nativeId: string | undefined) => {
+    const machine = claudeMachine(env)
+    const login = await machine.read()
+    if (login?.authMethod === "apiKey") await importBundle(login, nativeId)
+    else await claudeTakeover.run(machine, login, nativeId)
+  }
   const reconcile = (): Promise<void> => {
     reconciling ??= (async () => {
       for (const harnessId of ["claude-code", "codex"] as const) {
         const env = await environment()
-        const directory =
-          harnessId === "codex"
-            ? (env.CODEX_HOME ?? join(env.HOME ?? homedir(), ".codex"))
-            : (env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), ".claude"))
         try {
-          const bundle = await discover(harnessId, directory, true, false, env)
           const rows = await run(db.listHarnessAccounts(harnessId))
-          if (bundle)
-            await importBundle(bundle, rows.find((row) => row.profileKind === "default")?.id)
+          const nativeId = rows.find((row) => row.profileKind === "default")?.id
+          if (harnessId === "claude-code") await adoptClaudeMachineLogin(env, nativeId)
+          else {
+            const directory = env.CODEX_HOME ?? join(env.HOME ?? homedir(), ".codex")
+            const bundle = await discover(harnessId, directory, true, false, env)
+            if (bundle) await importBundle(bundle, nativeId)
+          }
           for (const row of rows.filter(
             (candidate) =>
               candidate.profileKind === "managed" &&
@@ -418,6 +432,8 @@ export const makeSharedAccounts = (options: {
       return fresh.id
     },
     loginFailed: (id: string) => localState.cancelLogin(id),
+    notice: claudeTakeover.notice,
+    subscribeNotices: claudeTakeover.subscribe,
     captureLogin,
     context: async (id: string): Promise<HarnessAccountContext | undefined> => {
       const account = await resolve(id)

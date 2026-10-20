@@ -3,7 +3,7 @@ import { readFile, realpath } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
 import { antigravityAuthPath, parseAntigravityAuth } from "./antigravity-credentials.js"
-import { claudeKeychainService } from "./claude-profile-login.js"
+import { claudeKeychainAccount, claudeKeychainService } from "./claude-profile-login.js"
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 import { errnoCode, recordOrEmpty } from "./json-values.js"
 import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
@@ -129,6 +129,7 @@ export const readNativeOAuth = async (options: {
   readonly env: NodeJS.ProcessEnv
   readonly exec: HarnessAuthExec
   readonly platform?: string
+  readonly keychainService?: string
 }): Promise<SharedTokenBundle | undefined> => {
   const { harnessId, directory, ownership } = options
   if (harnessId === "muse-code") {
@@ -152,15 +153,16 @@ export const readNativeOAuth = async (options: {
     const service =
       harnessId === "codex"
         ? "Codex Auth"
-        : claudeKeychainService(directory, options.isDefault && !options.env.CLAUDE_CONFIG_DIR)
+        : (options.keychainService ??
+          claudeKeychainService(directory, options.isDefault && !options.env.CLAUDE_CONFIG_DIR))
     const account =
       harnessId === "codex"
         ? `cli|${createHash("sha256").update(canonical).digest("hex").slice(0, 16)}`
-        : options.env.USER
+        : claudeKeychainAccount(options.env)
     try {
       const stored = await options.exec(
         "/usr/bin/security",
-        ["find-generic-password", "-s", service, ...(account ? ["-a", account] : []), "-w"],
+        ["find-generic-password", "-s", service, "-a", account, "-w"],
         { timeout: 5_000, maxBuffer: 100_000 }
       )
       document = recordOrEmpty(JSON.parse(stored.stdout))

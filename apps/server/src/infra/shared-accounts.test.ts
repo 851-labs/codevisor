@@ -4,7 +4,7 @@ import {
   sharedApiKey
 } from "@codevisor/harness-manager"
 import { Effect } from "effect"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { fleet, native } from "./shared-accounts-test-support.js"
 import { makeSharedAccounts } from "./shared-accounts.js"
@@ -305,10 +305,18 @@ it("replaces an existing managed login without leaving its previous grant active
 it("builds isolated Claude contexts and keeps machine sign-out separate from the shared editor", async () => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(100_000)
-  const f = fleet(),
-    m = await f.machine("a", { ...native("alice"), harnessId: "claude-code" })
+  const m = await fleet().machine("a")
+  const login = {
+    ...native("alice"),
+    harnessId: "claude-code" as const,
+    ownership: "managed" as const,
+    refreshToken: "machine-refresh"
+  }
+  m.claude.signIn(login)
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+  onTestFinished(() => errors.mockRestore())
   await m.shared.reconcile()
-  const id = sharedOAuthIdentity({ ...native("alice"), harnessId: "claude-code" })
+  const id = sharedOAuthIdentity(login)
   const context = await m.shared.context(id)
   expect(context?.env).toMatchObject({
     CLAUDE_CODE_OAUTH_TOKEN: "access-alice",
@@ -404,7 +412,14 @@ it("handles anonymous account labels, explicit native directories, and missing w
     accessToken: "access",
     planType: "plus"
   })
-  m.setBundle({ ...bundle, harnessId: "claude-code" })
+  m.claude.signIn({
+    ...bundle,
+    harnessId: "claude-code",
+    ownership: "managed",
+    refreshToken: "machine-refresh"
+  })
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+  onTestFinished(() => errors.mockRestore())
   expect((await m.shared.accounts("claude-code", true))?.[0]?.label).toBe("Claude")
   const blank = await f.machine("empty", undefined, { environment: async () => ({}) })
   await blank.shared.reconcile()

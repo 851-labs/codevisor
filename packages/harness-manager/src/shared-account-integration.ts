@@ -1,5 +1,5 @@
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
-import type { HarnessAccount } from "@codevisor/api"
+import type { HarnessAccount, HarnessNotice } from "@codevisor/api"
 
 export interface SharedAccountIntegration {
   readonly reconcile: () => Promise<void>
@@ -15,4 +15,5 @@ export interface SharedAccountIntegration {
   readonly logout: (id: string) => Promise<HarnessAccount | undefined>
   readonly loginFailed: (id: string) => Promise<void>
   readonly saveApiKey: (id: string, key: string) => Promise<void>
+  readonly notice?: (harnessId: string) => Promise<HarnessNotice | undefined>
 }

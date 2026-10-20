@@ -3,11 +3,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
+import { claudeKeychainService } from "@codevisor/harness-manager"
 import { afterEach, expect, it, vi } from "vitest"
 
 import {
   discoverNativeAccount,
   forgetNativeProfileLogin,
+  nativeClaudeMachine,
   sharedAccountVault
 } from "./shared-account-storage.js"
 const execute = vi.hoisted(() =>
@@ -17,7 +19,10 @@ const execute = vi.hoisted(() =>
       _args: string[],
       _options: unknown,
       callback: (e: Error | null, out: string, err: string) => void
-    ) => callback(new Error("no keychain"), "", "")
+    ): { stdin: { end: (input?: string) => void } } => {
+      callback(new Error("no keychain"), "", "")
+      return { stdin: { end: () => {} } }
+    }
   )
 )
 vi.mock("node:child_process", () => ({ execFile: execute }))
@@ -123,7 +128,10 @@ it.each(["darwin", "linux"])(
 
 it("forgets a Claude profile login through the machine's Keychain", async () => {
   Object.defineProperty(process, "platform", { value: "darwin" })
-  execute.mockImplementationOnce((_cmd, _args, _options, callback) => callback(null, "", ""))
+  execute.mockImplementationOnce((_cmd, _args, _options, callback) => {
+    callback(null, "", "")
+    return { stdin: { end: () => {} } }
+  })
   const path = await directory()
 
   expect(await forgetNativeProfileLogin(path, { USER: "fixture" })).toBe(true)
@@ -139,4 +147,42 @@ it("forgets a Claude profile login through the machine's Keychain", async () => 
     expect.objectContaining({ encoding: "utf8" }),
     expect.any(Function)
   )
+})
+
+it("drives a development server's Claude Code login through its throwaway config directory's Keychain item", async () => {
+  Object.defineProperty(process, "platform", { value: "darwin" })
+  const dataDir = await directory()
+  let item: string | undefined = JSON.stringify({
+    claudeAiOauth: { accessToken: "a", refreshToken: "r", expiresAt: 10_000_000 },
+    mcpOAuth: { server: { accessToken: "mcp" } }
+  })
+  const stdin: string[] = []
+  execute.mockImplementation((_cmd, args, _options, callback) => {
+    if (args[0] === "find-generic-password") callback(null, item ?? "", "")
+    else callback(null, "", "")
+    return {
+      stdin: {
+        end: (input?: string) => {
+          if (input === undefined) return
+          stdin.push(input)
+          item = JSON.stringify({ mcpOAuth: { server: { accessToken: "mcp" } } })
+        }
+      }
+    }
+  })
+  const machine = nativeClaudeMachine(dataDir)({
+    USER: "fixture",
+    CODEVISOR_DEV_INSTANCE_ID: "dev"
+  })
+  const service = claudeKeychainService(join(dataDir, "claude-machine-login-devtest"), false)
+
+  await machine.whileLocked(() => machine.signOut())
+
+  expect(execute.mock.calls.map(([, args]) => args.slice(0, 5))).toEqual([
+    ["find-generic-password", "-a", "fixture", "-s", service],
+    ["-i"],
+    ["find-generic-password", "-a", "fixture", "-s", service]
+  ])
+  expect(stdin).toEqual([expect.stringContaining(`-s "${service}" -X "`)])
+  expect(await machine.read()).toBeUndefined()
 })

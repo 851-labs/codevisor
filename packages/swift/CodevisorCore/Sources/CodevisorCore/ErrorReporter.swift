@@ -4,15 +4,22 @@ import Observation
 @MainActor
 @Observable
 public final class ErrorReporter {
+  public enum Kind: Equatable, Sendable {
+    case error
+    case notice
+  }
+
   public struct Entry: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let title: String
     public let message: String?
+    public let kind: Kind
 
-    public init(id: UUID = UUID(), title: String, message: String? = nil) {
+    public init(id: UUID = UUID(), title: String, message: String? = nil, kind: Kind = .error) {
       self.id = id
       self.title = title
       self.message = message
+      self.kind = kind
     }
   }
 
@@ -39,6 +46,14 @@ public final class ErrorReporter {
       dismiss(entries[0].id)
     }
     scheduleDismissal(of: entry.id)
+  }
+
+  public func notify(_ title: String, message: String? = nil) {
+    Log.surfaced.info("\(title, privacy: .public)")
+    entries.append(Entry(title: title, message: message, kind: .notice))
+    while entries.count > maxVisible {
+      dismiss(entries[0].id)
+    }
   }
 
   public func report(

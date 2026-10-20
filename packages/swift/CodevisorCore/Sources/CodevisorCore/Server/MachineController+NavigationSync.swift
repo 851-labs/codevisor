@@ -6,6 +6,7 @@ extension MachineController {
     "navigation.changed",
     "harness.lifecycle.updated",
     "harness.auth.updated",
+    "harness.notice",
     "plugin.state.updated",
     "plugin.updated",
     "mcp.updated",
@@ -117,6 +118,12 @@ extension MachineController {
       onHarnessLifecycleChanged?(serverId)
     case "harness.auth.updated":
       onHarnessAuthChanged?(serverId)
+    case "harness.notice":
+      if let data = try? JSONEncoder().encode(event.payload),
+        let notice = try? JSONDecoder().decode(ServerHarnessNotice.self, from: data)
+      {
+        onHarnessNotice?(notice)
+      }
     case "plugin.state.updated":
       onPluginStateChanged?(serverId)
     case "mcp.updated":

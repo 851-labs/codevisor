@@ -25,6 +25,7 @@ public final class AppEnvironment {
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
+  @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
   public let navigationStore: NavigationStore
@@ -167,6 +168,7 @@ public final class AppEnvironment {
       self?.harnessCatalogDidChange(onServer: $0)
     }
     machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
+    machines.onHarnessNotice = { [weak self] in self?.showHarnessNotice($0) }
     machines.onSessionStateChanged = { [weak self] in self?.onSessionStateChanged?($0, $1) }
   }
 

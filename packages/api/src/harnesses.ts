@@ -45,13 +45,20 @@ export const HarnessAccount = Schema.Struct({
 })
 export type HarnessAccount = typeof HarnessAccount.Type
 
+export const HarnessNotice = Schema.Struct({
+  id: Schema.String,
+  message: Schema.String
+})
+export type HarnessNotice = typeof HarnessNotice.Type
+
 export const HarnessAuth = Schema.Struct({
   state: HarnessAuthState,
   activeAccountId: Schema.optional(Schema.String),
   accounts: Schema.Array(HarnessAccount),
   loginMethods: Schema.Array(HarnessAuthMethod),
   supportsMultipleAccounts: Schema.Boolean,
-  detail: Schema.optional(Schema.String)
+  detail: Schema.optional(Schema.String),
+  notice: Schema.optional(HarnessNotice)
 })
 export type HarnessAuth = typeof HarnessAuth.Type
 

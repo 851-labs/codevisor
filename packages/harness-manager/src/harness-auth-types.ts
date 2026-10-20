@@ -28,6 +28,7 @@ export interface HarnessAuthExecOptions {
   readonly env?: NodeJS.ProcessEnv
   readonly timeout?: number
   readonly maxBuffer?: number
+  readonly input?: string
 }
 
 export type HarnessAuthExec = (

@@ -149,6 +149,7 @@ export const makeHarnessAuthDecoration = (
     const accounts =
       storedAccounts ?? (await run(config.db.listHarnessAccounts(harnessId))).map(publicAccount)
     const active = accounts.find((account) => account.isActive) ?? accounts[0]
+    const notice = await config.sharedAccounts?.()?.notice?.(harnessId)
     return {
       state:
         active?.authState ?? (storedAccounts === undefined ? "unavailable" : "unauthenticated"),
@@ -162,7 +163,8 @@ export const makeHarnessAuthDecoration = (
         "opencode",
         "muse-code",
         "antigravity"
-      ].includes(harnessId)
+      ].includes(harnessId),
+      ...(notice === undefined ? {} : { notice })
     }
   }
 

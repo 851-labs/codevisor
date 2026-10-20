@@ -28,11 +28,16 @@ export const forgetClaudeProfileLogin = async (
   return removedFile || removedItem
 }
 
+export const claudeKeychainAccount = (env: NodeJS.ProcessEnv): string => {
+  const user = env.USER || userInfo().username
+  return keychainAccountPattern.test(user) ? user : fallbackKeychainAccount
+}
+
 const keychainServicePrefix = "Claude Code-credentials"
+const keychainAccountPattern = /^[a-zA-Z0-9._-]+$/
+const fallbackKeychainAccount = "claude-code-user"
 const keychainItemNotFound = 44
 const securityTimeoutMs = 5_000
-
-const keychainAccount = (env: NodeJS.ProcessEnv): string => env.USER ?? userInfo().username
 
 const directoryHash = (directory: string): string =>
   createHash("sha256").update(resolve(directory).normalize("NFC")).digest("hex").slice(0, 8)
@@ -49,7 +54,7 @@ const removeCredentialsFile = async (directory: string): Promise<boolean> => {
 
 const deleteKeychainItem = async (options: ClaudeProfileLoginOptions): Promise<boolean> => {
   const service = claudeKeychainService(options.directory, false)
-  const account = keychainAccount(options.env)
+  const account = claudeKeychainAccount(options.env)
   try {
     await options.exec(
       "/usr/bin/security",
@@ -63,8 +68,4 @@ const deleteKeychainItem = async (options: ClaudeProfileLoginOptions): Promise<b
   }
 }
 
-const isMissingItem = (cause: unknown): boolean =>
-  typeof cause === "object" &&
-  cause !== null &&
-  "code" in cause &&
-  cause.code === keychainItemNotFound
+const isMissingItem = (cause: unknown): boolean => errnoCode(cause) === keychainItemNotFound

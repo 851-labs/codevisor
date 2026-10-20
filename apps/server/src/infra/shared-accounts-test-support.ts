@@ -5,6 +5,7 @@ import { join } from "node:path"
 
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
 import {
+  ClaudeRefreshLockBusy,
   makeSharedCredentialVault,
   type HarnessAuthManager,
   type SharedTokenBundle
@@ -12,6 +13,7 @@ import {
 import { onTestFinished, vi } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
+import type { MachineClaudeLogin } from "./claude-login-takeover.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./shared-account-store.js"
 import { makeSharedAccounts } from "./shared-accounts.js"
 
@@ -24,6 +26,41 @@ export const native = (subject: string): SharedTokenBundle => ({
   expiresAt: 10_000_000,
   ownership: "external"
 })
+export const fakeClaudeMachine = () => {
+  let login: SharedTokenBundle | undefined
+  let refreshing = false
+  let lockLosses = 0
+  const read = vi.fn(async () => login)
+  const signOut = vi.fn(async () => {
+    login = undefined
+  })
+  const machine: MachineClaudeLogin = {
+    read,
+    whileLocked: async (body) => {
+      if (refreshing) throw new ClaudeRefreshLockBusy()
+      const lost = lockLosses > 0
+      if (lost) lockLosses -= 1
+      return body({ isCompromised: () => lost })
+    },
+    signOut
+  }
+  return {
+    machine,
+    read,
+    signOut,
+    login: () => login,
+    signIn: (next: SharedTokenBundle | undefined) => {
+      login = next
+    },
+    refreshing: (value: boolean) => {
+      refreshing = value
+    },
+    loseNextLock: () => {
+      lockLosses += 1
+    }
+  }
+}
+
 const notFaked = (name: string) => (): Promise<never> =>
   Promise.reject(new Error(`The shared accounts fixture does not fake auth.${name}`))
 
@@ -47,6 +84,7 @@ export const fleet = () => {
     )
     let bundle = initial
     const forgetProfileLogin = vi.fn(async (_directory: string) => false)
+    const claude = fakeClaudeMachine()
     const receipts = new Map<string, { operationId: string; sealed: string }>()
     const vault = makeSharedCredentialVault({
       coordinate: async (key, command) => {
@@ -123,6 +161,7 @@ export const fleet = () => {
         return bundle
       },
       forgetProfileLogin,
+      claudeMachine: () => claude.machine,
       ...overrides
     }
     const shared = makeSharedAccounts(options)
@@ -135,6 +174,7 @@ export const fleet = () => {
       dataDir,
       db: services.db,
       forgetProfileLogin,
+      claude,
       setBundle: (next: SharedTokenBundle | undefined) => {
         bundle = next
       }

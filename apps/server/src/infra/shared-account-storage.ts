@@ -1,19 +1,27 @@
 import { execFile } from "node:child_process"
 import { readFile, rm, open } from "node:fs/promises"
 import { join } from "node:path"
-import { promisify } from "node:util"
 
 import {
   atomicWriteJson,
   forgetClaudeProfileLogin,
   makeSharedCredentialVault,
+  readClaudeMachineLogin,
   readNativeOAuth,
-  refreshSharedOAuth
+  refreshSharedOAuth,
+  signOutClaudeMachineLogin,
+  withClaudeRefreshLock
 } from "@codevisor/harness-manager"
-import type { CredentialCoordinator, SharedOAuthHarness } from "@codevisor/harness-manager"
+import type {
+  ClaudeMachineLoginOptions,
+  CredentialCoordinator,
+  SharedOAuthHarness
+} from "@codevisor/harness-manager"
 import { Schema } from "effect"
 
 import { errorCode } from "../unknown-values.js"
+import type { MachineClaudeLogin } from "./claude-login-takeover.js"
+import { claudeMachineLocation } from "./claude-machine-location.js"
 import { makeCredentialCoordinator } from "./credential-coordinator.js"
 
 const Receipt = Schema.Struct({ operationId: Schema.String, sealed: Schema.String })
@@ -51,7 +59,20 @@ export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordin
   })
 }
 
-const exec = promisify(execFile)
+const nativeExec: ClaudeMachineLoginOptions["exec"] = (command, args, { input, ...options }) =>
+  new Promise((resolve, reject) => {
+    const child = execFile(
+      command,
+      [...args],
+      { ...options, encoding: "utf8" },
+      (error, stdout, stderr) => {
+        if (error) reject(error)
+        else resolve({ stdout, stderr })
+      }
+    )
+    child.stdin?.end(input)
+  })
+
 export const discoverNativeAccount = (
   harnessId: SharedOAuthHarness,
   directory: string,
@@ -65,7 +86,7 @@ export const discoverNativeAccount = (
     isDefault,
     ownership: managed ? "managed" : "external",
     env,
-    exec: (command, args, options) => exec(command, [...args], { ...options, encoding: "utf8" })
+    exec: nativeExec
   })
 
 export const forgetNativeProfileLogin = (directory: string, env: NodeJS.ProcessEnv) =>
@@ -73,5 +94,17 @@ export const forgetNativeProfileLogin = (directory: string, env: NodeJS.ProcessE
     directory,
     env,
     platform: process.platform,
-    exec: (command, args, options) => exec(command, [...args], { ...options, encoding: "utf8" })
+    exec: nativeExec
   })
+
+export const nativeClaudeMachine =
+  (dataDir: string) =>
+  (env: NodeJS.ProcessEnv): MachineClaudeLogin => {
+    const location = claudeMachineLocation(env, dataDir)
+    const options = { location, env, exec: nativeExec, platform: process.platform }
+    return {
+      read: () => readClaudeMachineLogin(options),
+      whileLocked: (body) => withClaudeRefreshLock(location.directory, body),
+      signOut: () => signOutClaudeMachineLogin(options)
+    }
+  }

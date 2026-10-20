@@ -1,8 +1,9 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type {
-  SharedCredentialReference,
-  SharedOAuthHarness,
-  SharedTokenBundle
+import {
+  sharedOAuthIdentity,
+  type SharedCredentialReference,
+  type SharedOAuthHarness,
+  type SharedTokenBundle
 } from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
@@ -36,6 +37,26 @@ export const sharedAccountLabel = (bundle: SharedTokenBundle, chosen?: string): 
     ] ?? "Claude"
   )
 }
+
+export const sharedAccountFor = (
+  bundle: SharedTokenBundle,
+  credential: SharedCredentialReference,
+  previous: SharedHarnessAccount | undefined,
+  serverId: string,
+  label?: string
+): SharedHarnessAccount => ({
+  id: sharedOAuthIdentity(bundle),
+  harnessId: bundle.harnessId,
+  label: previous?.label ?? sharedAccountLabel(bundle, label),
+  subject: bundle.subject,
+  ...(bundle.email ? { email: bundle.email } : {}),
+  ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
+  createdAt: previous?.createdAt ?? Date.now(),
+  credential,
+  ...(bundle.ownership === "external"
+    ? { sourceMachineId: serverId, sourceExpiresAt: bundle.expiresAt }
+    : {})
+})
 
 export const sharedHarness = (id: string): id is SharedOAuthHarness =>
   id === "claude-code" || id === "codex" || id === "muse-code" || id === "antigravity"

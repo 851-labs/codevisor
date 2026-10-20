@@ -2,7 +2,17 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { field } from "../unknown-values.js"
+
 const NAMESPACE = "local.shared-accounts"
+
+export interface TakeoverNotice {
+  readonly id: string
+  readonly at: number
+}
+
+const isTakeoverNotice = (value: unknown): value is TakeoverNotice =>
+  typeof field(value, "id") === "string" && typeof field(value, "at") === "number"
 
 export class SharedAccountLocalState {
   private readonly capturingLogins = new Set<string>()
@@ -61,6 +71,28 @@ export class SharedAccountLocalState {
     this.capturingLogins.delete(profileId)
     const target = await this.loginTarget(profileId)
     if (target !== undefined) await this.write(`pending:${target}`, false)
+  }
+
+  async takeoverKey(credentialId: string): Promise<string | undefined> {
+    const key = await this.read(`takeover:${credentialId}`)
+    return typeof key === "string" ? key : undefined
+  }
+
+  setTakeoverKey(credentialId: string, key: string): Promise<void> {
+    return this.write(`takeover:${credentialId}`, key)
+  }
+
+  forgetTakeoverKey(credentialId: string): Promise<void> {
+    return this.write(`takeover:${credentialId}`, null)
+  }
+
+  async takeoverNotice(harnessId: string): Promise<TakeoverNotice | undefined> {
+    const notice = await this.read(`notice:${harnessId}`)
+    return isTakeoverNotice(notice) ? notice : undefined
+  }
+
+  setTakeoverNotice(harnessId: string, notice: TakeoverNotice): Promise<void> {
+    return this.write(`notice:${harnessId}`, notice)
   }
 
   private async read(key: string): Promise<unknown> {

@@ -33,9 +33,13 @@ private struct ErrorBannerView: View {
     self.onDismiss = onDismiss
   }
 
+  private var isNotice: Bool { entry.kind == .notice }
+  private var symbolName: String { isNotice ? "info.circle.fill" : "exclamationmark.triangle.fill" }
+  private var tint: Color { isNotice ? .accentColor : .red }
+
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Image(systemName: "exclamationmark.triangle.fill")
+      Image(systemName: symbolName)
         .font(.caption)
         .accessibilityHidden(true)
 
@@ -60,13 +64,13 @@ private struct ErrorBannerView: View {
       .help("Dismiss")
       .accessibilityLabel("Dismiss")
     }
-    .foregroundStyle(.red)
+    .foregroundStyle(tint)
     .padding(ComposerCardStyle.contentPadding)
     .frame(width: 360, alignment: .leading)
     .background {
       ZStack {
         cardStyle.shape.fill(Color.windowBackgroundColor)
-        cardStyle.shape.fill(Color.red.opacity(0.08))
+        cardStyle.shape.fill(tint.opacity(0.08))
       }
     }
     .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
@@ -86,6 +90,9 @@ private struct ErrorBannerView: View {
     reporter.report(
       "Couldn't delete the session on the server",
       message: "It may reappear the next time this list refreshes."
+    )
+    reporter.notify(
+      "Claude is now signed in through Codevisor on all your machines. Claude Code on this Mac was signed out."
     )
     return ZStack {
       Color(nsColor: .windowBackgroundColor)

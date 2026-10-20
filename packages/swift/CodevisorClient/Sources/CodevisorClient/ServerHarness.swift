@@ -277,12 +277,18 @@ public struct ServerHarnessAccount: Codable, Equatable, Identifiable, Sendable {
   public var detail: String?
 }
 
+public struct ServerHarnessNotice: Codable, Equatable, Sendable {
+  public var id: String
+  public var message: String
+}
+
 public struct ServerHarnessAuth: Codable, Equatable, Sendable {
   public var state: String
   public var activeAccountId: String?
   public var accounts: [ServerHarnessAccount]
   public var loginMethods: [ServerHarnessAuthMethod]
   public var supportsMultipleAccounts: Bool
+  public var notice: ServerHarnessNotice?
 
   public var resolvedState: ServerHarnessAuthenticationState { .init(rawValue: state) }
 

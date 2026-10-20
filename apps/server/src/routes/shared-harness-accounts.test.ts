@@ -1,9 +1,10 @@
-import { decode } from "@codevisor/api"
+import { decode, type EventEnvelope } from "@codevisor/api"
 import { Schema } from "effect"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, expect, it, onTestFinished, vi } from "vitest"
 
 import { waitFor } from "../changes-test-support.js"
-import { fleet } from "../infra/shared-accounts-test-support.js"
+import { fleet, native as nativeLogin } from "../infra/shared-accounts-test-support.js"
+import { makeEventFanout } from "../server-context.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
 import { field, idOf } from "./response-test-support.js"
@@ -301,4 +302,30 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
   expect((await send("grok-build", { action: "providers" })).status).toBe(400)
   const codex = await host.shared.create("codex")
   expect((await send("codex", { action: "providers", accountId: codex.id })).status).toBe(400)
+})
+
+it("tells connected apps once it has signed this machine's Claude Code out", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(100_000)
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+  onTestFinished(() => errors.mockRestore())
+  const m = await fleet().machine("a")
+  m.claude.signIn({
+    ...nativeLogin("alice"),
+    harnessId: "claude-code",
+    ownership: "managed",
+    refreshToken: "machine-refresh"
+  })
+  const fanout = await run(makeEventFanout)
+  const published = Promise.withResolvers<EventEnvelope>()
+  fanout.subscribe((event) => {
+    if (event.kind === "harness.notice") published.resolve(event)
+  })
+
+  await startWithApp(m.services, fanout)
+
+  expect(await published.promise).toMatchObject({
+    subjectId: "claude-code",
+    payload: await m.shared.notice("claude-code")
+  })
 })

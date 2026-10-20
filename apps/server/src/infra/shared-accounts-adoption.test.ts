@@ -1,6 +1,10 @@
-import { makeHarnessAuthManager, sharedOAuthIdentity } from "@codevisor/harness-manager"
+import {
+  makeHarnessAuthManager,
+  OAuthRefreshRejected,
+  sharedOAuthIdentity
+} from "@codevisor/harness-manager"
 import { Effect } from "effect"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { fleet, native } from "./shared-accounts-test-support.js"
 
@@ -64,6 +68,47 @@ describe("adopting an existing terminal login", () => {
     await expect(
       Effect.runPromise(a.db.getHarnessAccount(sharedOAuthIdentity(native("alice"))))
     ).resolves.toMatchObject({ authState: "checking" })
+  })
+})
+
+const signedInToCodex = async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(100_000)
+  const f = fleet()
+  const m = await f.machine("a")
+  const placeholder = await m.shared.create("codex")
+  const loginProfile = await m.shared.prepareLogin(placeholder.id)
+  m.setBundle({
+    ...native("alice"),
+    ownership: "managed",
+    refreshToken: "codevisor-refresh",
+    expiresAt: 1
+  })
+  await m.shared.captureLogin(loginProfile)
+  m.setBundle(native("alice"))
+  return { f, m, id: sharedOAuthIdentity(native("alice")) }
+}
+
+describe("preferring this machine's Codex login over a dead Codevisor credential", () => {
+  it("keeps the synced sign-in while it still refreshes", async () => {
+    const { m, id } = await signedInToCodex()
+
+    await m.shared.reconcile()
+
+    expect((await (await m.shared.context(id))?.oauth?.token())?.accessToken).toBe("rotated")
+  })
+
+  it("borrows the machine login when the synced sign-in can no longer refresh", async () => {
+    const { f, m, id } = await signedInToCodex()
+    const dead = (await m.shared.store.get(id))!.credential!
+    f.rotate.mockRejectedValue(new OAuthRefreshRejected(400, "invalid_grant"))
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    onTestFinished(() => errors.mockRestore())
+
+    await m.shared.reconcile()
+
+    expect((await (await m.shared.context(id))?.oauth?.token())?.accessToken).toBe("access-alice")
+    expect(f.records.get(dead.id)?.revoked).toBe(true)
   })
 })
 

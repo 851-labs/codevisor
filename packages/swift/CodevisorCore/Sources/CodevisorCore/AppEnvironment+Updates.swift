@@ -19,6 +19,7 @@ extension AppEnvironment {
   }
 
   func noteMachineConnected(_ machineId: String) {
+    checkHarnessNotices(onServer: machineId)
     Task { await bots.refresh(serverId: machineId) }
     Task {
       await configSync.synchronizeMachine(machineId)
@@ -26,6 +27,19 @@ extension AppEnvironment {
         await seedHarnessCatalogIfNeeded(from: machineId)
       }
     }
+  }
+
+  func checkHarnessNotices(onServer serverId: String) {
+    #if os(macOS)
+      let client = machines.client(for: serverId)
+      Task { await harnessNotices.check(client) }
+    #endif
+  }
+
+  func showHarnessNotice(_ notice: ServerHarnessNotice) {
+    #if os(macOS)
+      harnessNotices.show([notice])
+    #endif
   }
 
   static let harnessCatalogSeedKey = "harnessCatalogSeed.v1"

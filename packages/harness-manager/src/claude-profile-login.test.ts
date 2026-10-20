@@ -1,10 +1,14 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { claudeKeychainService, forgetClaudeProfileLogin } from "./claude-profile-login.js"
+import {
+  claudeKeychainAccount,
+  claudeKeychainService,
+  forgetClaudeProfileLogin
+} from "./claude-profile-login.js"
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 
 const profile = async () => {
@@ -80,5 +84,13 @@ describe("forgetting a Claude profile login", () => {
     await forgetClaudeProfileLogin({ directory: await profile(), env: {}, exec, platform: "linux" })
 
     expect(exec).not.toHaveBeenCalled()
+  })
+
+  it.each<[NodeJS.ProcessEnv, string]>([
+    [{ USER: "alice" }, "alice"],
+    [{ USER: "alice smith" }, "claude-code-user"],
+    [{ USER: "" }, userInfo().username]
+  ])("names the Keychain account the way Claude Code does for %j", (env, account) => {
+    expect(claudeKeychainAccount(env)).toBe(account)
   })
 })

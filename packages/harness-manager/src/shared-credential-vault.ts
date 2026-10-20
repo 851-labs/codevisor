@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto"
 
-import type { CoordinatedCredential } from "@codevisor/api"
+import type { CoordinatedCredential, CredentialCoordinationResult } from "@codevisor/api"
 
 import { refreshFailedLine, refreshSucceededLine } from "./shared-credential-refresh-log.js"
 import {
@@ -68,6 +68,30 @@ const hasDifferentCredentialAccount = (
   candidate.providerId !== previous.providerId ||
   candidate.harnessId !== previous.harnessId
 
+const sameGrant = (held: SharedTokenBundle, bundle: SharedTokenBundle): boolean =>
+  held.refreshToken === bundle.refreshToken && held.accessToken === bundle.accessToken
+
+interface OwnedRecord {
+  readonly credential: CoordinatedCredential
+  readonly bundle: SharedTokenBundle
+}
+
+const ownRecord = (
+  reference: SharedCredentialReference,
+  state: CredentialCoordinationResult
+): OwnedRecord | undefined => {
+  if (state.status !== "ready") return undefined
+  const credential = state.credential!
+  try {
+    return {
+      credential,
+      bundle: openSharedCredential(reference, credential.sealed)
+    }
+  } catch {
+    return undefined
+  }
+}
+
 const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
   ["pi", "opencode", "grok-build"].includes(harnessId) ? 6 * 60_000 : 60_000
 
@@ -125,6 +149,32 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       log(refreshFailedLine(reference, bundle, cause))
       throw new SharedCredentialError("reauthenticate")
     }
+  }
+  const commitUnderLease = async (
+    reference: SharedCredentialReference,
+    generation: number,
+    bundle: SharedTokenBundle
+  ): Promise<boolean> => {
+    const operationId = randomUUID()
+    const acquired = await config.coordinate(reference.id, {
+      action: "acquire",
+      generation,
+      operationId
+    })
+    if (acquired.status !== "acquired") return false
+    const started = await config.coordinate(reference.id, { action: "start", operationId })
+    if (started.status !== "acquired") return false
+    const sealed = sealSharedCredential(reference, bundle)
+    await writeReceipt(reference.id, { operationId, sealed })
+    const committed = await config.coordinate(reference.id, {
+      action: "commit",
+      operationId,
+      sealed
+    })
+    if (committed.status !== "ready") throw new SharedCredentialError("offline")
+    await removeReceipt(reference.id)
+    remember(reference, committed.credential)
+    return true
   }
   const serves = (bundle: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
     bundle.expiresAt > now() + minimumValidityMs(bundle.harnessId) &&
@@ -255,25 +305,33 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       if (previous.ownership !== "external" || hasDifferentCredentialAccount(previous, bundle))
         return
       if (!isNewer(previous)) return
-      const operationId = randomUUID()
-      const acquired = await config.coordinate(reference.id, {
-        action: "acquire",
-        generation: state.credential!.generation,
-        operationId
+      await commitUnderLease(reference, state.credential!.generation, bundle)
+    },
+    claim: async (
+      reference: SharedCredentialReference,
+      bundle: SharedTokenBundle
+    ): Promise<boolean> => {
+      const seeded = await config.coordinate(reference.id, {
+        action: "seed",
+        sealed: sealSharedCredential(reference, bundle)
       })
-      if (acquired.status !== "acquired") return
-      const started = await config.coordinate(reference.id, { action: "start", operationId })
-      if (started.status !== "acquired") return
-      const sealed = sealSharedCredential(reference, bundle)
-      await writeReceipt(reference.id, { operationId, sealed })
-      const committed = await config.coordinate(reference.id, {
-        action: "commit",
-        operationId,
-        sealed
-      })
-      if (committed.status !== "ready") throw new SharedCredentialError("offline")
-      await removeReceipt(reference.id)
-      remember(reference, committed.credential)
+      const owned = ownRecord(reference, seeded)
+      if (owned === undefined) return false
+      if (sameGrant(owned.bundle, bundle)) {
+        remember(reference, owned.credential)
+        return true
+      }
+
+      if (!(await commitUnderLease(reference, owned.credential.generation, bundle)))
+        throw new SharedCredentialError("busy")
+      return true
+    },
+    confirm: async (
+      reference: SharedCredentialReference,
+      bundle: SharedTokenBundle
+    ): Promise<boolean> => {
+      const owned = ownRecord(reference, await config.coordinate(reference.id, { action: "read" }))
+      return owned !== undefined && sameGrant(owned.bundle, bundle)
     },
     invalidate: (): void => cached.clear(),
     revoke: async (reference: SharedCredentialReference): Promise<void> => {

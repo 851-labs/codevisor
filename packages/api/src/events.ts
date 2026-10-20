@@ -26,6 +26,7 @@ export const EventKind = Schema.Literals([
   "harness.account.updated",
   "harness.authFlow.updated",
   "harness.lifecycle.updated",
+  "harness.notice",
   "session.updateGate.updated",
   "plugin.state.updated",
   "plugin.updated",
