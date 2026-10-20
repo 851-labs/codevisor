@@ -41,6 +41,7 @@ export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
 export const UpsertWorkspaceRequest = Schema.Struct({
   sidebarOrderHead: Schema.optional(WorkspacePosition),
+  sidebarPosition: Schema.optional(WorkspacePosition),
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
   name: Schema.String,

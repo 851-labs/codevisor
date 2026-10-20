@@ -307,6 +307,7 @@ export type SessionDetail = typeof SessionDetail.Type
 
 export const CreateSessionRequest = Schema.Struct({
   sidebarOrderHead: Schema.optional(WorkspacePosition),
+  sidebarPosition: Schema.optional(WorkspacePosition),
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
   harnessId: Schema.String,
@@ -327,6 +328,7 @@ export type CreateSessionRequest = typeof CreateSessionRequest.Type
 
 export const UpdateSessionRequest = Schema.Struct({
   sidebarOrderHead: Schema.optional(WorkspacePosition),
+  sidebarPosition: Schema.optional(WorkspacePosition),
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
   titleIntent: Schema.optional(Schema.Literals(["fallback", "rename"])),

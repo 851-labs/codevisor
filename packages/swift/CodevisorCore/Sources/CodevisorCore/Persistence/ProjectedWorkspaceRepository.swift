@@ -23,6 +23,10 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     }
     WorkspaceOrderClock.shared.observe(
       changed.compactMap { projection.workspacesById[$0]?.effectiveSidebarPosition }.min())
+    WorkspaceOrderClock.shared.observeDrafts(
+      Dictionary(
+        projection.workspaces.filter(\.isDraft).map { ($0.id, $0.effectiveSidebarPosition) },
+        uniquingKeysWith: { first, _ in first }))
     store?.workspaceEntries.apply(projection, changed: changed, removed: removed)
   }
 

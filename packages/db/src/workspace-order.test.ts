@@ -55,6 +55,41 @@ describe("shared workspace positions", () => {
     }
   })
 
+  it("creates a workspace at its requested position, but never moves an existing one", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/workspace-requested" }))
+      const request = { projectId: project.id, name: "Workspace", hasCustomName: false }
+      const top = await run(db.upsertWorkspace(request))
+      const below = initialWorkspacePosition(1_000, "00000000-0000-0000-0000-000000000002")
+      const requested = await run(
+        db.upsertWorkspace({
+          ...request,
+          sidebarOrderHead: top.sidebarPosition!,
+          sidebarPosition: below
+        })
+      )
+      expect(requested.sidebarPosition).toBe(below)
+      const kept = await run(
+        db.upsertWorkspace({
+          ...request,
+          id: top.id,
+          sidebarPosition: initialWorkspacePosition(5, top.id)
+        })
+      )
+      expect(kept.sidebarPosition).toBe(top.sidebarPosition)
+      const fallback = await run(db.upsertWorkspace(request))
+      expect(fallback.sidebarPosition! < top.sidebarPosition!).toBe(true)
+      expect((await run(db.listWorkspaces)).map((row) => row.id)).toEqual([
+        fallback.id,
+        top.id,
+        requested.id
+      ])
+    } finally {
+      await run(db.close)
+    }
+  })
+
   it("applies the latest move even from a stale revision, and keeps order through metadata changes", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {

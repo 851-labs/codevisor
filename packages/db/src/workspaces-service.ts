@@ -55,7 +55,8 @@ export const upsertWorkspaceRow = (
     head ? workspacePositionEpoch(head.sidebar_position) + 1 : 0,
     request.sidebarOrderHead ? workspacePositionEpoch(request.sidebarOrderHead) + 1 : 0
   )
-  const position = existing?.sidebar_position ?? initialWorkspacePosition(epoch, id)
+  const position =
+    existing?.sidebar_position ?? request.sidebarPosition ?? initialWorkspacePosition(epoch, id)
   const stamp = archivedStamp(
     request.isArchived,
     existing?.is_archived === 1,

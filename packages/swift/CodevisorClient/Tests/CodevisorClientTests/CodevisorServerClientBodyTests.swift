@@ -17,6 +17,21 @@ struct CodevisorServerClientBodyTests {
     #expect(fallback["title"] == .string("First message"))
   }
 
+  @Test("Creating a session's workspace asks for its draft's sidebar position")
+  func draftSidebarPosition() throws {
+    let session = ChatSession(projectId: UUID(), title: "First message")
+    let draftId = UUID()
+    let position = WorkspacePosition.initial(createdAt: Date(timeIntervalSince1970: 1), id: draftId)
+    WorkspaceOrderClock.shared.observeDrafts([draftId: position])
+    defer { WorkspaceOrderClock.shared.observeDrafts([:]) }
+    func json(_ body: some Encodable) throws -> JSONValue {
+      try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(body))
+    }
+    #expect(try json(CreateSessionBody(session: session, workspaceId: draftId))["sidebarPosition"] == .string(position))
+    #expect(try json(UpdateSessionBody(session: session, workspaceId: draftId))["sidebarPosition"] == .string(position))
+    #expect(try json(CreateSessionBody(session: session, workspaceId: UUID()))["sidebarPosition"] == nil)
+  }
+
   @Test("SetGoalBody encodes the token-budget double-option")
   func setGoalBodyEncoding() throws {
     func json(_ body: SetGoalBody) throws -> String {
