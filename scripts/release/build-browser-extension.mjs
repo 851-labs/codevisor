@@ -54,9 +54,68 @@ const archiveName = `Codevisor-Chrome-${version}.zip`
 const archivePath = join(outputDir, archiveName)
 const checksumPath = `${archivePath}.sha256`
 const productionRelay = "ws://127.0.0.1:49361/v1/browser-use/extension/socket"
+const listingDoc = "docs/chrome-web-store.md"
+const reviewedPermissions = [
+  "alarms",
+  "clipboardRead",
+  "clipboardWrite",
+  "debugger",
+  "downloads",
+  "history",
+  "offscreen",
+  "tabGroups",
+  "tabs"
+]
+const reviewedHostPermissions = []
+const maxStoreNameLength = 75
+const maxStoreSummaryLength = 132
+const remoteCodePattern = /<script[^>]+src=["']?(https?:)?\/\/|\beval\(|\bnew Function\(/
 
 if (!existsSync(sourceDir)) {
   throw new Error(`Browser extension source is missing: ${sourceDir}`)
+}
+
+const unreviewed = (declared, reviewed) =>
+  (declared ?? []).filter((name) => !reviewed.includes(name))
+
+const assertReviewedPermissions = (manifest) => {
+  const added = [
+    ...unreviewed(manifest.permissions, reviewedPermissions),
+    ...unreviewed(manifest.optional_permissions, reviewedPermissions),
+    ...unreviewed(manifest.host_permissions, reviewedHostPermissions),
+    ...unreviewed(manifest.optional_host_permissions, reviewedHostPermissions)
+  ]
+  if (added.length === 0) return
+
+  throw new Error(
+    `Permissions without a store justification: ${added.join(", ")}. A new permission disables the store extension for every user until they accept it. Justify it in ${listingDoc}, then add it to the reviewed list in this script.`
+  )
+}
+
+const assertStoreManifest = (manifest) => {
+  if (manifest.manifest_version !== 3) {
+    throw new Error("The production extension must use Manifest V3")
+  }
+  if (manifest.name.length > maxStoreNameLength) {
+    throw new Error(`The extension name is longer than ${maxStoreNameLength} characters`)
+  }
+  if (manifest.description.length > maxStoreSummaryLength) {
+    throw new Error(`The extension description is longer than ${maxStoreSummaryLength} characters`)
+  }
+  if (manifest.content_security_policy !== undefined) {
+    throw new Error("The store extension must keep Chrome's default content security policy")
+  }
+  assertReviewedPermissions(manifest)
+}
+
+const assertNoRemoteCode = (stageDir, files) => {
+  const offenders = files
+    .filter((file) => /\.(html|js)$/.test(file))
+    .filter((file) => remoteCodePattern.test(readFileSync(file, "utf8")))
+  if (offenders.length === 0) return
+
+  const names = offenders.map((file) => relative(stageDir, file)).join(", ")
+  throw new Error(`The store extension cannot load or evaluate remote code: ${names}`)
 }
 
 const collectFiles = (directory) => {
@@ -86,15 +145,12 @@ try {
 
   const manifestPath = join(stageDir, "manifest.json")
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
-  if (manifest.manifest_version !== 3) {
-    throw new Error("The production extension must use Manifest V3")
-  }
-
   manifest.name = "Codevisor"
   manifest.version = version
   manifest.description = "Control Chrome with Codevisor."
   delete manifest.version_name
   delete manifest.key
+  assertStoreManifest(manifest)
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
   writeFileSync(
@@ -127,6 +183,7 @@ try {
   const files = collectFiles(stageDir).toSorted((left, right) =>
     relative(stageDir, left).localeCompare(relative(stageDir, right))
   )
+  assertNoRemoteCode(stageDir, files)
   for (const file of files.filter((path) => path.endsWith(".js"))) {
     execFileSync(process.execPath, ["--check", file], { stdio: "inherit" })
   }

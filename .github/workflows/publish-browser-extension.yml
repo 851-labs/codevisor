@@ -17,6 +17,11 @@ on:
         required: true
         default: true
         type: boolean
+      stage_only:
+        description: After approval, hold the version until it is published from the developer dashboard.
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -76,11 +81,14 @@ jobs:
           CHROME_WEBSTORE_PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
           CHROME_WEBSTORE_EXTENSION_ID: ${{ vars.CHROME_WEBSTORE_EXTENSION_ID }}
           UPLOAD_PACKAGE: ${{ inputs.upload_package }}
+          STAGE_ONLY: ${{ inputs.stage_only }}
         shell: bash
         run: |
+          flags=()
+          [[ "$STAGE_ONLY" == true ]] && flags+=(--staged)
           if [[ "$UPLOAD_PACKAGE" == true ]]; then
-            node scripts/release/publish-browser-extension.mjs \
+            node scripts/release/publish-browser-extension.mjs "${flags[@]}" \
               "dist/release/Codevisor-Chrome-$version.zip"
           else
-            node scripts/release/publish-browser-extension.mjs --publish-only
+            node scripts/release/publish-browser-extension.mjs "${flags[@]}" --publish-only
           fi

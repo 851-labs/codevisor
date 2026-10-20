@@ -98,6 +98,20 @@ test("publishItem requests immediate publishing and blocks on warnings", async (
   })
 })
 
+test("publishItem can stage an approved version instead of releasing it", async () => {
+  const calls = []
+  await publishItem(
+    configuration,
+    async (url, options) => {
+      calls.push({ url, options })
+      return jsonResponse({ state: "PENDING_REVIEW" })
+    },
+    "STAGED_PUBLISH"
+  )
+
+  assert.equal(JSON.parse(calls[0].options.body).publishType, "STAGED_PUBLISH")
+})
+
 test("API errors surface the Chrome Web Store message", async () => {
   await assert.rejects(
     fetchStatus(configuration, async () =>
