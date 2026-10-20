@@ -3,8 +3,9 @@ import { dirname, join } from "node:path"
 
 import { decode, Project, SessionDetail, Workspace, WorkspacePane } from "@codevisor/api"
 import { botsRoot } from "@codevisor/db"
+import { worktreeTrashQueue } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { jsonRequest, listEvents } from "../test-support.js"
 import { createBot, decodeBot, git, listBots, listProjects, setUp } from "./bot-test-support.js"
@@ -183,10 +184,17 @@ describe("bot routes", () => {
     }
     const projectsBefore = await listProjects(running)
     const closesBefore = running.agents.closes.length
+    const deleting = Promise.withResolvers<void>()
+    const busyTrash = vi.spyOn(worktreeTrashQueue, "enqueue").mockReturnValue(deleting.promise)
+    onTestFinished(() => {
+      deleting.resolve()
+      busyTrash.mockRestore()
+    })
 
     const response = await createBot(running, { projectIds: ["api-project", "web-project"] })
 
     expect(response.status).toBeGreaterThanOrEqual(400)
+    expect(busyTrash).toHaveBeenCalled()
     expect(existsSync(join(botsRoot(), "release-helper"))).toBe(false)
     for (const folder of [apiFolder, webFolder]) {
       expect(await git(["branch", "--list", "codevisor/*"], folder)).toBe("")
