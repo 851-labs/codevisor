@@ -1,8 +1,12 @@
-import { join } from "node:path"
-
 import type { ArchivedWorktree, SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { worktreePath, worktreesRoot } from "@codevisor/db"
+import {
+  legacyWorktreeTrashRoot,
+  worktreeNameAt,
+  worktreePath,
+  worktreePathBeside,
+  worktreeTrashRoot
+} from "@codevisor/db"
 import {
   deleteSnapshot,
   removeArchivedWorktreeFiles,
@@ -24,9 +28,14 @@ import { workspaceOwnedBranch } from "./workspace-owned-branch.js"
 import { settleCleanup, workspaceTerminalKeys } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
-export const worktreeTrashRoot = (): string => join(worktreesRoot(), ".trash")
+export { worktreeTrashRoot }
 
-export const sweepTrashedWorktrees = (): Promise<void> => sweepWorktreeTrash(worktreeTrashRoot())
+export const sweepTrashedWorktrees = async (): Promise<void> => {
+  await Promise.all([
+    sweepWorktreeTrash(worktreeTrashRoot()),
+    sweepWorktreeTrash(legacyWorktreeTrashRoot())
+  ])
+}
 
 export const sessionIsArchived = async (
   services: CodevisorServerServices,
@@ -201,7 +210,7 @@ export const restoreWorkspaceWorktree = async (
   withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
     const found = await findArchivedWorktreeFor(services, serverId, workspace)
     if (found === undefined) return { workspace, restoredFiles: true }
-    const { worktreeName, archived } = found
+    const { rootDirectory, worktreeName, archived } = found
     if (archived === undefined) {
       const existing = (await run(services.db.listWorktrees(workspace.projectId))).find(
         (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
@@ -220,7 +229,7 @@ export const restoreWorkspaceWorktree = async (
     )
     const restored = await restoreWorktree({
       repoDir: location.folderPath,
-      worktreePathFor: (name) => worktreePath(workspace.projectId, name),
+      worktreePathFor: (name) => worktreePathBeside(workspace.projectId, rootDirectory, name),
       originalName: archived.originalName,
       parentSha: archived.parentSha,
       snapshotRef: archived.snapshotRef,
@@ -282,21 +291,19 @@ const findArchivedWorktreeFor = async (
   serverId: string,
   workspace: Workspace
 ): Promise<
-  { readonly worktreeName: string; readonly archived: ArchivedWorktree | undefined } | undefined
+  | {
+      readonly rootDirectory: string
+      readonly worktreeName: string
+      readonly archived: ArchivedWorktree | undefined
+    }
+  | undefined
 > => {
   const rootDirectory = workspace.rootDirectory
   if (rootDirectory === undefined) return undefined
-  const worktreeName = archivedNameFor(workspace.projectId, rootDirectory)
+  const worktreeName = worktreeNameAt(workspace.projectId, rootDirectory)
   if (worktreeName === undefined) return undefined
   const archived = await run(
     services.db.findArchivedWorktree(workspace.projectId, serverId, worktreeName)
   )
-  return { worktreeName, archived }
-}
-
-const archivedNameFor = (projectId: string, rootDirectory: string): string | undefined => {
-  const separator = rootDirectory.lastIndexOf("/")
-  if (separator < 0) return undefined
-  const name = rootDirectory.slice(separator + 1)
-  return worktreePath(projectId, name) === rootDirectory ? name : undefined
+  return { rootDirectory, worktreeName, archived }
 }

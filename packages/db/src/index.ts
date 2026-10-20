@@ -17,11 +17,16 @@ export {
   isBotFolder,
   isManagedFolder,
   isScratchFolder,
+  legacyBotsRoot,
+  legacyWorktreeTrashRoot,
   managedRepoPath,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
+  worktreeNameAt,
   worktreePath,
-  worktreesRoot
+  worktreePathBeside,
+  worktreesRoot,
+  worktreeTrashRoot
 } from "./paths.js"
 
 export * from "./rows.js"

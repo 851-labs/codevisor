@@ -256,6 +256,60 @@ describe("project worktree archive routes", () => {
     })
   })
 
+  it("keeps a worktree from before the .noindex layout in its folder across archive and restore", async () => {
+    await withWorktreesRoot(async (worktreesRoot) => {
+      const { server, services, repoFolder } = await setUpGitProjects()
+      const legacyPath = join(worktreesRoot, "git-project", "udon")
+      await git(["worktree", "add", "-b", "codevisor/udon", legacyPath], repoFolder)
+      const worktree = await run(
+        services.db.createWorktree("git-project", "udon", "codevisor/udon")
+      )
+      expect(worktree.path).toBe(legacyPath)
+      await jsonRequest(server, "/v1/workspaces/udon-ws", {
+        body: JSON.stringify({
+          projectId: "git-project",
+          name: "udon",
+          hasCustomName: false,
+          rootDirectory: legacyPath
+        }),
+        method: "PUT"
+      })
+      const chatId = idOf(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            body: JSON.stringify({
+              projectId: "git-project",
+              workspaceId: "udon-ws",
+              harnessId: "codex",
+              worktreeName: "udon"
+            }),
+            method: "POST"
+          })
+        ).body
+      )
+      const setArchived = async (isArchived: boolean) => {
+        const response = await jsonRequest(server, "/v1/workspaces/udon-ws", {
+          body: JSON.stringify({ isArchived }),
+          method: "PATCH"
+        })
+        await archiveJobs(services).idle()
+        return response
+      }
+
+      await setArchived(true)
+      expect(existsSync(legacyPath)).toBe(false)
+
+      const restored = decodeRooted((await setArchived(false)).body)
+      expect(restored.rootDirectory).toBe(legacyPath)
+      expect(existsSync(legacyPath)).toBe(true)
+      expect(existsSync(join(worktreesRoot, "worktrees.noindex", "git-project", "udon"))).toBe(
+        false
+      )
+      const chat = decodeChatCwd((await jsonRequest(server, `/v1/sessions/${chatId}`)).body)
+      expect(chat.session.cwd).toBe(legacyPath)
+    })
+  })
+
   it("rejects sessions whose worktree or project folder is unavailable", async () => {
     await withWorktreesRoot(async () => {
       const { repoFolder, repoRoot, server, serverDatabasePath } = await setUpGitProjects()

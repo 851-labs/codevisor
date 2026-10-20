@@ -93,13 +93,18 @@ describe("worktree archive reconciliation", () => {
     })
   })
 
-  it("clears worktree files an earlier run left in the trash", async () => {
+  it("clears worktree files an earlier run left in the trash or the old trash folder", async () => {
     await withWorktreesRoot(async () => {
-      const leftover = join(worktreeTrashRoot(), "wt-1-abc")
-      mkdirSync(leftover, { recursive: true })
-      writeFileSync(join(leftover, "file.txt"), "x")
+      const leftovers = [
+        join(worktreeTrashRoot(), "wt-1-abc"),
+        join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".trash", "wt-2-def")
+      ]
+      for (const leftover of leftovers) {
+        mkdirSync(leftover, { recursive: true })
+        writeFileSync(join(leftover, "file.txt"), "x")
+      }
       await sweepTrashedWorktrees()
-      expect(existsSync(leftover)).toBe(false)
+      expect(leftovers.filter((leftover) => existsSync(leftover))).toEqual([])
     })
   })
 
@@ -341,7 +346,7 @@ describe("worktree archive reconciliation", () => {
         (await run(services.db.listWorktrees("git-project"))).map((worktree) => worktree.id)
       ).toContain(foreign.id)
 
-      writeFileSync(join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".trash"), "")
+      writeFileSync(worktreeTrashRoot(), "")
       rmSync(join(repoFolder, ".git", "worktrees", stubborn.name), { recursive: true, force: true })
       const project = (await run(services.db.listProjects)).find(
         (candidate) => candidate.id === "git-project"

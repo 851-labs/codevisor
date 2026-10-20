@@ -5,7 +5,7 @@ import { basename, join } from "node:path"
 
 import type { Project, SessionSummary } from "@codevisor/api"
 import { CreateBotRequest as CreateBotRequestSchema } from "@codevisor/api"
-import { botPath, botsRoot } from "@codevisor/db"
+import { botPath, botsRoot, legacyBotsRoot } from "@codevisor/db"
 import {
   addWorktree,
   isGitWorkTree,
@@ -78,15 +78,20 @@ const allocateBotFolder = async (
   name: string
 ): Promise<string> => {
   mkdirSync(botsRoot(), { recursive: true })
+  let legacyFolders: ReadonlyArray<string> = []
+  try {
+    legacyFolders = readdirSync(legacyBotsRoot())
+  } catch {}
   const taken = new Set([
     ...readdirSync(botsRoot()),
+    ...legacyFolders,
     ...(await run(services.db.listBots)).map((bot) => basename(bot.rootPath))
   ])
   const base = slugifyWorktreeName(name) ?? "bot"
   for (;;) {
     const candidate = availableWorktreeName(base, taken)
     try {
-      mkdirSync(botPath(candidate))
+      mkdirSync(join(botsRoot(), candidate))
       return candidate
     } catch (cause) {
       /* v8 ignore start */

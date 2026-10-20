@@ -118,7 +118,9 @@ describe("project worktree routes", () => {
       })
       expect(worktree.name).toBe("fix-auth")
       expect(worktree.branch).toBe(`codevisor/${worktree.name}`)
-      expect(worktree.path).toBe(join(worktreesRoot, "git-project", worktree.name))
+      expect(worktree.path).toBe(
+        join(worktreesRoot, "worktrees.noindex", "git-project", worktree.name)
+      )
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
 
       const setupPayloads = listEvents(services)
