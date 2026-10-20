@@ -6,13 +6,13 @@ import Testing
 @Suite("Machine connection presentation")
 struct MachineConnectionPresentationTests {
   static let now = Date(timeIntervalSince1970: 1_800_000_000)
-  static let peerToPeer = CloudMachineReach(online: true, hasTunnel: true, route: .peerToPeer(milliseconds: 12))
+  static let lan = reach(.localNetwork(address: "192.168.1.20"), milliseconds: 12)
 
   private func presentation(
     reachable: Bool? = true,
     availability: ServerAvailability? = .ready,
     sync: NavigationSyncState? = .current,
-    cloud: CloudMachineReach? = peerToPeer,
+    cloud: CloudMachineReach? = lan,
     isLocal: Bool = false
   ) -> MachineConnectionPresentation {
     MachineConnectionPresentation(
@@ -24,19 +24,35 @@ struct MachineConnectionPresentationTests {
     )
   }
 
-  @Test("A connected cloud machine says how it's reached and its round trip")
-  func tunnelRoutes() {
-    let direct = presentation()
-    #expect(direct.label() == "Peer-to-peer · 12 ms")
-    #expect(direct.indicator == .connected)
-    #expect(direct.help == "Direct encrypted connection")
+  private static func reach(_ route: CloudTunnelRoute, milliseconds: Int) -> CloudMachineReach {
+    CloudMachineReach(
+      online: true, hasTunnel: true, path: CloudTunnelPath(route: route, roundTripMilliseconds: milliseconds))
+  }
 
-    let relayed = presentation(
-      cloud: CloudMachineReach(
-        online: true, hasTunnel: true,
-        route: .relayed(relayURL: "https://relay-sjc-1.codevisor.dev/", milliseconds: 48)))
-    #expect(relayed.label() == "Relayed · 48 ms")
-    #expect(relayed.help == "Through the Codevisor relay in San Jose; a direct connection wasn't possible")
+  @Test("A connected cloud machine names its path and round trip, with where it goes on hover")
+  func tunnelRoutes() {
+    let lan = presentation()
+    #expect(lan.label() == "Local network · 12 ms")
+    #expect(lan.indicator == .connected)
+    #expect(lan.help == "192.168.1.20")
+
+    let tailscale = presentation(cloud: Self.reach(.tailscale(address: "100.101.102.103"), milliseconds: 30))
+    #expect(tailscale.label() == "Tailscale · 30 ms")
+    #expect(tailscale.help == "100.101.102.103")
+
+    let internet = presentation(cloud: Self.reach(.internet(address: "203.0.113.9"), milliseconds: 70))
+    #expect(internet.label() == "Internet · 70 ms")
+
+    let relayed = presentation(cloud: Self.reach(.relay(url: "https://relay-sjc-1.codevisor.dev/"), milliseconds: 48))
+    #expect(relayed.label() == "Codevisor relay · 48 ms")
+    #expect(relayed.help == "San Jose")
+  }
+
+  @Test("A reachable machine whose path isn't read yet just says it's connected")
+  func connectedWithoutPath() {
+    let result = presentation(cloud: CloudMachineReach(online: true, hasTunnel: true))
+    #expect(result.label() == "Connected")
+    #expect(result.help == nil)
   }
 
   @Test("This Mac is labeled as such")

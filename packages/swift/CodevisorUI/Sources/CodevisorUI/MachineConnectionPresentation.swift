@@ -6,8 +6,7 @@ public enum MachineConnectionPresentation: Equatable {
   case connecting
   case waiting(ServerWaitingReason)
   case syncing
-  case peerToPeer(milliseconds: Int?)
-  case relayed(relayURL: String?, milliseconds: Int?)
+  case connected(CloudTunnelPath?)
   case updateNeeded
   case offline(lastSeen: Date?)
 
@@ -74,7 +73,7 @@ public enum MachineConnectionPresentation: Equatable {
 
   private static func unprobed(_ cloud: CloudMachineReach?, lastSeen: Date?) -> Self {
     if let cloud {
-      if cloud.route != nil || cloud.dialing {
+      if cloud.path != nil || cloud.dialing {
         return .connecting
       } else {
         return cloud.online ? .connecting : .offline(lastSeen: lastSeen)
@@ -86,16 +85,12 @@ public enum MachineConnectionPresentation: Equatable {
 
   private static func connected(isLocal: Bool, cloud: CloudMachineReach?) -> MachineConnectionPresentation {
     if isLocal { return .thisMac }
-    switch cloud?.route {
-    case .peerToPeer(let milliseconds): return .peerToPeer(milliseconds: milliseconds)
-    case .relayed(let url, let milliseconds): return .relayed(relayURL: url, milliseconds: milliseconds)
-    case nil: return .peerToPeer(milliseconds: nil)
-    }
+    return .connected(cloud?.path)
   }
 
   public var indicator: Indicator {
     switch self {
-    case .thisMac, .peerToPeer, .relayed: .connected
+    case .thisMac, .connected: .connected
     case .connecting, .waiting, .syncing: .busy
     case .updateNeeded, .offline: .inactive
     }
@@ -109,8 +104,7 @@ public enum MachineConnectionPresentation: Equatable {
     case .waiting(.updating): "Updating…"
     case .waiting(.restarting): "Restarting…"
     case .syncing: "Syncing…"
-    case .peerToPeer(let milliseconds): Self.withRoundTrip("Peer-to-peer", milliseconds)
-    case .relayed(_, let milliseconds): Self.withRoundTrip("Relayed", milliseconds)
+    case .connected(let path): MachineRouteDescription(path: path).label
     case .updateNeeded: "Update needed"
     case .offline(let lastSeen): lastSeen.map { "Last seen \(Self.relative($0, now: now))" } ?? "Offline"
     }
@@ -118,16 +112,10 @@ public enum MachineConnectionPresentation: Equatable {
 
   public var help: String? {
     switch self {
-    case .peerToPeer: "Direct encrypted connection"
-    case .relayed(let url, _):
-      "Through the Codevisor relay\(Self.relayPlace(url).map { " in \($0)" } ?? ""); a direct connection wasn't possible"
+    case .connected(let path): MachineRouteDescription(path: path).help
     case .updateNeeded: "Update Codevisor on this machine to connect"
     default: nil
     }
-  }
-
-  private static func withRoundTrip(_ label: String, _ milliseconds: Int?) -> String {
-    milliseconds.map { "\(label) · \($0) ms" } ?? label
   }
 
   private static func relative(_ date: Date, now: Date) -> String {
@@ -135,12 +123,5 @@ public enum MachineConnectionPresentation: Equatable {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .full
     return formatter.localizedString(for: date, relativeTo: now)
-  }
-
-  static func relayPlace(_ url: String?) -> String? {
-    guard let host = url.flatMap({ URL(string: $0)?.host() }) else { return nil }
-    let places = ["iad": "Virginia", "sjc": "San Jose", "fra": "Frankfurt", "sin": "Singapore"]
-    let region = host.split(separator: ".").first?.split(separator: "-").dropFirst().first.map(String.init)
-    return region.flatMap { places[$0] }
   }
 }

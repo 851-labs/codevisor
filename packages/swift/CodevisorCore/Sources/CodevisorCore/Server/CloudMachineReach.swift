@@ -2,21 +2,18 @@ import CodevisorCloud
 import Foundation
 
 public struct CloudMachineReach: Equatable, Sendable {
-  public enum Route: Equatable, Sendable {
-    case peerToPeer(milliseconds: Int)
-    case relayed(relayURL: String?, milliseconds: Int)
-  }
-
   public var online: Bool
   public var hasTunnel: Bool
-  public var route: Route?
+  public var path: CloudTunnelPath?
   public var dialing: Bool
   public var lastSeen: Date?
 
-  public init(online: Bool, hasTunnel: Bool, route: Route? = nil, dialing: Bool = false, lastSeen: Date? = nil) {
+  public init(
+    online: Bool, hasTunnel: Bool, path: CloudTunnelPath? = nil, dialing: Bool = false, lastSeen: Date? = nil
+  ) {
     self.online = online
     self.hasTunnel = hasTunnel
-    self.route = route
+    self.path = path
     self.dialing = dialing
     self.lastSeen = lastSeen
   }
@@ -25,17 +22,12 @@ public struct CloudMachineReach: Equatable, Sendable {
 extension CloudMachineReach {
   @MainActor
   public init(presence: CloudMachine, pipes: CloudDirectPathController) {
-    let path = pipes.paths[presence.deviceId]
     let reached = pipes.lastReachable[presence.deviceId]
     let hubLastSeen = presence.online ? nil : Self.parse(presence.lastSeenAt)
     self.init(
       online: presence.online,
       hasTunnel: presence.tunnel != nil,
-      route: path.map {
-        $0.isRelayed
-          ? .relayed(relayURL: $0.relayURL, milliseconds: $0.roundTripMilliseconds)
-          : .peerToPeer(milliseconds: $0.roundTripMilliseconds)
-      },
+      path: pipes.paths[presence.deviceId],
       dialing: pipes.dialing.contains(presence.deviceId),
       lastSeen: [reached, hubLastSeen].compactMap { $0 }.max()
     )

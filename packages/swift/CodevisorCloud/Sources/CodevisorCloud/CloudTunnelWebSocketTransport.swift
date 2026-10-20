@@ -12,18 +12,6 @@ struct CloudTunnelWebSocketTransport: ServerWebSocketTransport {
   }
 }
 
-public struct CloudTunnelPath: Equatable, Sendable {
-  public var isRelayed: Bool
-  public var relayURL: String?
-  public var roundTripMilliseconds: Int
-
-  public init(isRelayed: Bool, relayURL: String? = nil, roundTripMilliseconds: Int) {
-    self.isRelayed = isRelayed
-    self.relayURL = relayURL
-    self.roundTripMilliseconds = roundTripMilliseconds
-  }
-}
-
 final class CloudTunnelPathProbe: @unchecked Sendable {
   private let lock = NSLock()
   private var connection: NetConnectionHandle?
@@ -37,8 +25,8 @@ final class CloudTunnelPathProbe: @unchecked Sendable {
     let paths = connection.paths()
     guard let path = paths.first(where: \.selected) ?? paths.first else { return nil }
     return CloudTunnelPath(
-      isRelayed: path.isRelay,
-      relayURL: path.isRelay ? path.remote : nil,
+      route: CloudTunnelRoute(
+        remote: path.remote, isRelay: path.isRelay, localSubnets: CloudLocalInterfaces.subnets()),
       roundTripMilliseconds: Int(path.rttMs.rounded())
     )
   }
