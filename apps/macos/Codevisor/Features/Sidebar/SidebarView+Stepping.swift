@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 extension SidebarView {
@@ -10,12 +11,20 @@ extension SidebarView {
   }
 
   var sidebarStops: [SidebarStop] {
-    let bots = visibleBotEntries.flatMap { entry in
-      [SidebarStop.bot(entry.bot)]
-        + visibleBotChildren(entry).compactMap(listItem(for:)).map(SidebarStop.workspace)
-    }
-    return [.newChat] + bots + listedWorkspaceItems.map(SidebarStop.workspace)
-      + listedArchivedWorkspaces.map(SidebarStop.archived)
+    let bots = Dictionary(botEntries.map { ($0.bot.id, $0.bot) }, uniquingKeysWith: { first, _ in first })
+    return [.newChat]
+      + sidebarRows.compactMap { row in
+        switch row.kind {
+        case let .bot(bot, _):
+          bots[bot.id].map(SidebarStop.bot)
+        case let .workspace(item, .archived):
+          environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
+        case let .workspace(item, _):
+          listItem(for: item).map(SidebarStop.workspace)
+        case .section, .group, .newBot, .showMoreArchived:
+          nil
+        }
+      }
   }
 
   func stepWorkspace(_ offset: Int) {

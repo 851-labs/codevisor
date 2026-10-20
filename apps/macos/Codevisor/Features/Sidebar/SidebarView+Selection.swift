@@ -4,8 +4,7 @@ import CodevisorUI
 
 extension SidebarView {
   var workspaceSections: [[SidebarWorkspaceListItem]] {
-    (visibleBotEntries.map(visibleBotChildren) + workspaceGroups.map(visibleItems(of:)))
-      .map { $0.compactMap(listItem(for:)) }
+    SidebarRows.activeWorkspaceSections(sidebarRows).map { $0.compactMap(listItem(for:)) }
   }
 
   func moveSelection(awayFrom workspace: Workspace) {
