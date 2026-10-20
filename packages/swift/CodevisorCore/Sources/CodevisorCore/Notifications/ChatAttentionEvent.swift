@@ -1,3 +1,4 @@
+import CodevisorProtocol
 import Foundation
 
 public enum ChatAttentionKind: String, Sendable, CaseIterable {
@@ -18,19 +19,22 @@ public struct ChatAttentionEvent: Sendable {
   public let serverId: String
   public let sessionTitle: String
   public let kind: ChatAttentionKind
+  public let botMessage: BotMessagePreview?
 
   public init(
     id: UUID = UUID(),
     sessionId: UUID,
     serverId: String,
     sessionTitle: String,
-    kind: ChatAttentionKind
+    kind: ChatAttentionKind,
+    botMessage: BotMessagePreview? = nil
   ) {
     self.id = id
     self.sessionId = sessionId
     self.serverId = serverId
     self.sessionTitle = sessionTitle
     self.kind = kind
+    self.botMessage = botMessage
   }
 }
 

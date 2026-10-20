@@ -10,6 +10,7 @@ public struct SessionAttentionSummary: Equatable, Sendable {
   public let actionRequired: Bool
   public let pendingPlanApproval: Bool
   public let title: String
+  public let latestBotMessage: BotMessagePreview?
 
   public init(_ session: ChatSession) {
     sidebarState = session.sidebarState
@@ -20,6 +21,7 @@ public struct SessionAttentionSummary: Equatable, Sendable {
     actionRequired = session.actionRequired
     pendingPlanApproval = session.pendingPlanApproval
     title = session.title
+    latestBotMessage = session.latestBotMessage
   }
 
   public var hasUnseenAttention: Bool {

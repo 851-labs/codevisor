@@ -12,6 +12,7 @@ import type {
   Worktree
 } from "@codevisor/api"
 
+import { botMessagePreview } from "./bot-conversation-attention.js"
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { StringArray, parseJsonColumn } from "./json-column.js"
 import { isBotFolder, isScratchFolder, resolveSessionCwd, worktreePath } from "./paths.js"
@@ -189,6 +190,10 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     row.unavailable_config_selections
   )
   const labels = parseLabels(row.labels)
+  const latestBotMessage = botMessagePreview(
+    row.latest_bot_message_text,
+    row.latest_bot_message_attachments
+  )
   return {
     id: row.id,
     projectId: row.project_id,
@@ -220,6 +225,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
         ? { actionRequiredKind: "planApproval" as const }
         : {}),
     pendingPlanApproval: row.pending_plan_approval === 1,
+    ...(latestBotMessage === undefined ? {} : { latestBotMessage }),
     ...(row.parent_session_id == null ? {} : { parentSessionId: row.parent_session_id }),
     ...(labels === undefined ? {} : { labels }),
     usage: {

@@ -196,8 +196,9 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     }
 
     let content = UNMutableNotificationContent()
-    content.title = event.kind.notificationTitle
-    content.body = event.sessionTitle.isEmpty ? "Chat" : event.sessionTitle
+    let text = ChatNotificationContent(event)
+    content.title = text.title
+    content.body = text.body
     content.categoryIdentifier = Self.categoryIdentifier
     content.threadIdentifier = "chat.\(event.sessionId.uuidString)"
     content.targetContentIdentifier = event.sessionId.uuidString

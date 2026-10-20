@@ -102,7 +102,8 @@ public final class SessionAttentionCoordinator {
         sessionId: transition.sessionId,
         serverId: transition.serverId,
         sessionTitle: transition.new.title,
-        kind: kind
+        kind: kind,
+        botMessage: kind == .finished ? transition.new.latestBotMessage : nil
       ))
   }
 }

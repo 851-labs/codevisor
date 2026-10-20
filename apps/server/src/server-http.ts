@@ -88,7 +88,8 @@ export const appendAndPublish = async (
     kind === "session.updated" ||
     kind === "session.error" ||
     kind === "session.queue.updated" ||
-    kind === "session.authRequired"
+    kind === "session.authRequired" ||
+    kind === "bot.message"
   const before = affectsAttention ? await run(db.getSessionSummary(subjectId)) : undefined
   const event = await run(db.appendEvent(kind, subjectId, payload))
   await run(fanout.publish(event))
@@ -113,6 +114,7 @@ const sessionAttentionSignature = (session: SessionSummary): string =>
     session.actionRequired,
     session.actionRequiredKind,
     session.pendingPlanApproval,
+    session.latestBotMessage,
     session.sidebarState,
     session.sidebarStateChangedAt
   ])

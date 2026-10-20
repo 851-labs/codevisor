@@ -1,5 +1,10 @@
 import type Database from "better-sqlite3"
 
+import {
+  isBotConversation,
+  isTurnEnd,
+  projectBotConversationAttention
+} from "./bot-conversation-attention.js"
 import { sessionGoalSnapshot } from "./chat-items.js"
 import type { JsonRecord } from "./event-payloads.js"
 import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"
@@ -172,6 +177,10 @@ export const projectSessionAttention = (
   projectAttentionRuntime(sqlite, event, payload)
   projectAttentionTurnStart(sqlite, event, payload)
   projectUserConversationAttention(sqlite, event, payload)
+  if (isBotConversation(sqlite, event.session_id)) {
+    projectBotConversationAttention(sqlite, event, payload)
+    return
+  }
   projectTerminalAttention(sqlite, event, payload)
 
   reevaluatePendingFinish(sqlite, event.session_id, event.created_at)
@@ -289,11 +298,7 @@ const projectTerminalAttention = (
   event: SessionEventRow,
   payload: JsonRecord
 ): void => {
-  const terminal =
-    event.kind === "session.error" ||
-    (event.kind === "session.updated" &&
-      (payload.turnState === "ended" || typeof payload.stopReason === "string"))
-  if (terminal) {
+  if (isTurnEnd(event, payload)) {
     const initiatedBy = payload.initiatedBy === "agent" ? "agent" : "user"
     const failed = terminalAttentionError(event, payload)
     sqlite

@@ -2,6 +2,7 @@ import type { Project, SessionSummary } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
+import { latestBotMessageColumns } from "./bot-conversation-attention.js"
 import { canonicalUuid } from "./ids.js"
 import { projectFromRow, sessionFromRow } from "./row-mappers.js"
 import { projectLocationRows, projectRows, sessionRows, type ProjectLocationRow } from "./rows.js"
@@ -82,7 +83,7 @@ export const createServiceContext = (
       coalesce((
         select pending_plan_approval from session_attention sa
         where sa.session_id = sessions.id
-      ), 0) as pending_plan_approval
+      ), 0) as pending_plan_approval,${latestBotMessageColumns}
     from sessions`
 
   const getProject = (id: string): Project => {

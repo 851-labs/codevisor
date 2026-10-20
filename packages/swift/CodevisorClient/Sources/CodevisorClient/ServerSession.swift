@@ -188,6 +188,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var actionRequired: Bool? = nil
   public var actionRequiredKind: String? = nil
   public var pendingPlanApproval: Bool? = nil
+  public var latestBotMessage: BotMessagePreview? = nil
 
   public func chatSession(serverId scopedServerId: String) throws -> ChatSession {
     guard let uuid = UUID(uuidString: id) else {
@@ -224,7 +225,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
       hasUnreadError: hasUnreadError ?? false,
       actionRequired: actionRequired ?? false,
       actionRequiredKind: actionRequiredKind,
-      pendingPlanApproval: pendingPlanApproval ?? false
+      pendingPlanApproval: pendingPlanApproval ?? false,
+      latestBotMessage: latestBotMessage
     )
   }
 
@@ -253,7 +255,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
     hasUnreadError: Bool? = nil,
     actionRequired: Bool? = nil,
     actionRequiredKind: String? = nil,
-    pendingPlanApproval: Bool? = nil
+    pendingPlanApproval: Bool? = nil,
+    latestBotMessage: BotMessagePreview? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -280,6 +283,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.actionRequired = actionRequired
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
+    self.latestBotMessage = latestBotMessage
   }
 }
 

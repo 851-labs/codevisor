@@ -98,6 +98,12 @@ export const SessionSidebarState = Schema.Literals([
 ])
 export type SessionSidebarState = typeof SessionSidebarState.Type
 
+export const BotMessagePreview = Schema.Struct({
+  text: Schema.String,
+  attachmentNames: Schema.Array(Schema.String)
+})
+export type BotMessagePreview = typeof BotMessagePreview.Type
+
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -124,6 +130,7 @@ export const SessionSummary = Schema.Struct({
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
   pendingPlanApproval: Schema.optional(Schema.Boolean),
+  latestBotMessage: Schema.optional(BotMessagePreview),
   parentSessionId: Schema.optional(Schema.String),
   labels: Schema.optional(Labels)
 })
