@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { SessionAutoResume } from "./auto-resume.js"
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
 import { GoalStatus, SessionGoal, SessionOrigin, SessionSkills } from "./session-config.js"
@@ -244,7 +245,8 @@ export const TranscriptPage = Schema.Struct({
   skills: Schema.optional(SessionSkills),
   sessionPlan: Schema.optional(SessionPlan),
   usage: Schema.optional(SessionUsage),
-  updateGate: Schema.optional(SessionUpdateGate)
+  updateGate: Schema.optional(SessionUpdateGate),
+  autoResume: Schema.optional(SessionAutoResume)
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
@@ -301,7 +303,8 @@ export const SessionDetail = Schema.Struct({
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   goal: Schema.optional(SessionGoal),
   sessionPlan: Schema.optional(SessionPlan),
-  updateGate: Schema.optional(SessionUpdateGate)
+  updateGate: Schema.optional(SessionUpdateGate),
+  autoResume: Schema.optional(SessionAutoResume)
 })
 export type SessionDetail = typeof SessionDetail.Type
 

@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { HttpFailure, matchRoute, matchRouteParams, run, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { field } from "../unknown-values.js"
+import { withAutoResume } from "./auto-resume-routes.js"
 import { routeParam } from "./route-params.js"
 import { withUpdateGate } from "./update-gate.js"
 
@@ -91,10 +92,14 @@ const readTranscriptPage = async (
   writeJson(
     response,
     200,
-    withUpdateGate(
-      await run(services.db.getTranscriptPage(transcriptSessionId, before, limit, forward)),
-      services,
-      routeState,
+    await withAutoResume(
+      services.db,
+      withUpdateGate(
+        await run(services.db.getTranscriptPage(transcriptSessionId, before, limit, forward)),
+        services,
+        routeState,
+        transcriptSessionId
+      ),
       transcriptSessionId
     )
   )

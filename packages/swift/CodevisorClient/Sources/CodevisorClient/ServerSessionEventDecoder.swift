@@ -68,6 +68,8 @@ enum ServerSessionEventDecoder {
             ?? "the agent"
         )
       ]
+    case "session.autoResume.updated":
+      return [.autoResume(ServerSessionAutoResume.pending(from: event.payload))]
     case "session.output":
       return outputEvents(from: event.payload)
     case "session.updated":

@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { HarnessUsageLimits } from "@codevisor/api"
 import {
   MarkSessionReadRequest as MarkSessionReadRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
@@ -9,7 +8,6 @@ import {
 } from "@codevisor/api"
 import { gitBranchDiffTotals } from "@codevisor/worktrees"
 
-import { usageLimitsKey } from "../infra/usage-limits-cache.js"
 import {
   appendAndPublish,
   getProjectOrFail,
@@ -25,9 +23,11 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { withAutoResume } from "./auto-resume-routes.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { routeSessionActions } from "./session-actions.js"
+import { readSessionUsageLimits } from "./session-usage-limits.js"
 import { waitForSessions } from "./session-wait.js"
 import {
   applySessionUpdate,
@@ -111,32 +111,7 @@ export const routeSessions = async (
   if (usageLimitsSessionId !== undefined && request.method === "GET") {
     const session = await findSession(services.db, usageLimitsSessionId)
     if (session === undefined) throw new HttpFailure(404, "Session not found")
-    const project = await getProjectOrFail(services.db, session.projectId)
-    const cwd =
-      session.cwd ??
-      project.locations.find((location) => location.serverId === session.serverId)?.folderPath
-    if (cwd === undefined) {
-      const unavailable: HarnessUsageLimits = {
-        detail: "This session has no local workspace from which to query its harness.",
-        fetchedAt: new Date().toISOString(),
-        harnessId: session.harnessId,
-        state: "unavailable",
-        windows: []
-      }
-      writeJson(response, 200, unavailable)
-      return true
-    }
-    const accountContext =
-      session.harnessAccountId === undefined
-        ? await services.auth?.activeAccountContext(session.harnessId)
-        : await services.auth?.accountContext(session.harnessAccountId)
-    const accountId = session.harnessAccountId ?? accountContext?.id
-    const readLimits = () =>
-      run(services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext))
-    const limits = await (services.usageLimits?.read(
-      usageLimitsKey(session.harnessId, accountId),
-      readLimits
-    ) ?? readLimits())
+    const { limits, accountId } = await readSessionUsageLimits(services, session)
     const accounts = await services.auth?.accounts(session.harnessId)
     const account = accounts?.find((candidate) => candidate.id === accountId)
     writeJson(response, 200, {
@@ -192,10 +167,14 @@ export const routeSessions = async (
     writeJson(
       response,
       200,
-      withUpdateGate(
-        await run(services.db.getSessionDetail(sessionId)),
-        services,
-        routeState,
+      await withAutoResume(
+        services.db,
+        withUpdateGate(
+          await run(services.db.getSessionDetail(sessionId)),
+          services,
+          routeState,
+          sessionId
+        ),
         sessionId
       )
     )

@@ -211,6 +211,8 @@ extension SessionModel {
       applyQueuedPromptSnapshot(queue)
     case let .updateGate(waiting, harnessName):
       updateGateHarnessName = waiting ? harnessName : nil
+    case let .autoResume(pending):
+      autoResume = pending
     case let .backgroundTasks(tasks):
       backgroundTasks = tasks
     case .runtimeState:
@@ -334,7 +336,7 @@ extension SessionModel {
     case .retrying, .userMessage, .assistantItemStarted, .assistantFinalized:
       return true
     case .synchronization, .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
-      .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback, .botMessage:
+      .autoResume, .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback, .botMessage:
       return false
     }
   }

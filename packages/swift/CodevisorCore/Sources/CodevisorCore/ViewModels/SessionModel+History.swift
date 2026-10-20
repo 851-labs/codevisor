@@ -111,6 +111,7 @@ extension SessionModel {
       pendingQuestion = page.pendingQuestion
       pendingPlanApproval = page.pendingPlanApproval
       updateGateHarnessName = page.updateGateHarnessName
+      autoResume = page.autoResume
       if let tasks = page.backgroundTasks { backgroundTasks = tasks }
       goal = page.goal
       sessionPlan = page.sessionPlan

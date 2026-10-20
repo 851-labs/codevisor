@@ -83,6 +83,13 @@ public final class SessionModel {
       if updateGateHarnessName != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
+  public internal(set) var autoResume: SessionAutoResume? {
+    didSet {
+      guard autoResume != oldValue else { return }
+      activeItemRevision &+= 1
+      transcriptProjectionRevision &+= 1
+    }
+  }
   public var composerText: String = ""
   public internal(set) var availableCommands: [AvailableCommand] = []
   public internal(set) var availableSkills: SessionSkills?

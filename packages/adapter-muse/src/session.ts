@@ -25,6 +25,7 @@ import {
 import { approvalQuestion, userInputQuestion, type MuseQuestion } from "./questions.js"
 import { itemEdge } from "./rows.js"
 import { makeMuseSubagents } from "./subagents.js"
+import { completedOutcome, signedOutOutcome, type TurnOutcome } from "./turn-outcomes.js"
 import {
   contextUsageUpdate,
   museSkills,
@@ -82,14 +83,6 @@ const sessionConfig = (gateway: ToolGatewayConfig | undefined) =>
         }
       }
 
-const stopDetail = (
-  error: Record<string, unknown>,
-  reason: string | undefined
-): string | undefined =>
-  error.kind === "authRequired"
-    ? "Sign in to Muse Code to continue."
-    : (text(error.message) ?? reason)
-
 export const startMuseChat = async (
   client: MuseClient,
   emit: RuntimeEmit,
@@ -139,12 +132,7 @@ export const startMuseChat = async (
       ...("answers" in answer && answer.answers !== undefined ? { answers: answer.answers } : {})
     })
 
-  const endTurn = async (outcome: {
-    detail?: string
-    retryable?: boolean
-    cancelled?: boolean
-    authRequired?: boolean
-  }) => {
+  const endTurn = async (outcome: TurnOutcome) => {
     const ended = turn
     if (ended === undefined) return
     turn = undefined
@@ -155,8 +143,9 @@ export const startMuseChat = async (
     await send("session.updated", {
       initiatedBy: ended.initiatedBy,
       stopReason,
-      ...(outcome.detail === undefined ? {} : { stopDetail: outcome.detail }),
-      ...(outcome.authRequired === true ? { stopKind: "authRequired" } : {}),
+      ...(outcome.stopDetail === undefined ? {} : { stopDetail: outcome.stopDetail }),
+      ...(outcome.stopKind === undefined ? {} : { stopKind: outcome.stopKind }),
+      ...(outcome.resetsAt === undefined ? {} : { resetsAt: outcome.resetsAt }),
       ...(outcome.retryable === true ? { retryable: true } : {}),
       turnId: ended.id,
       turnState: "ended"
@@ -227,18 +216,7 @@ export const startMuseChat = async (
           (turn.museTurnId !== undefined && turn.museTurnId !== event.turnId)
         )
           return
-        const error = record(event.error)
-        const finish = () =>
-          void endTurn({
-            ...(event.terminal === "cancelled" ? { cancelled: true } : {}),
-            ...(event.terminal === "failed"
-              ? { detail: stopDetail(error, text(event.reason)) ?? "Muse stopped with an error." }
-              : {}),
-            ...(event.terminal === "failed" && error.kind === "authRequired"
-              ? { authRequired: true }
-              : {}),
-            ...(error.retryable === true ? { retryable: true } : {})
-          })
+        const finish = () => void endTurn(completedOutcome(event))
         const draining = subagents.drain()
         if (draining === undefined) finish()
         else void draining.then(finish)
@@ -297,7 +275,7 @@ export const startMuseChat = async (
 
   client.onClose((error) => {
     void send("session.error", { message: error.message })
-    void endTurn({ detail: error.message })
+    void endTurn({ stopDetail: error.message })
   })
 
   const config = sessionConfig(options.toolGateway)
@@ -370,10 +348,7 @@ export const startMuseChat = async (
         if (typeof accepted.turnId === "string") started.museTurnId = accepted.turnId
       } catch (cause) {
         const signedOut = cause instanceof MuseRequestError && cause.kind === "authRequired"
-        await endTurn({
-          detail: signedOut ? "Sign in to Muse Code to continue." : messageOf(cause),
-          ...(signedOut ? { authRequired: true } : {})
-        })
+        await endTurn(signedOut ? signedOutOutcome : { stopDetail: messageOf(cause) })
       }
       return finished
     },

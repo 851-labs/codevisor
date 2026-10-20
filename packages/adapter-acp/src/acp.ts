@@ -2,13 +2,15 @@ export { normalizeAcpConfigOptions } from "./config-options.js"
 export {
   type AcpAgentConnection,
   type AcpConnector,
-  type AcpHarnessLaunchRequest
+  type AcpHarnessLaunchRequest,
+  type AcpPromptResult
 } from "./connection.js"
 export { type ConfigureAcpClientApp } from "./client-app.js"
 export { runtimeEventFromNotification, type AcpUpdateNotification } from "./notifications.js"
 export { turnLifecycleEvent } from "./internal.js"
 export { makeAcpProvider, type AcpLaunchContext, type AcpProviderConfig } from "./provider.js"
 export { type AcpMappedQuestion } from "./questions.js"
+export { type AcpRequestFailure, type AcpUsageLimitRule } from "./usage-limit-failures.js"
 export {
   type AcpConnectionExtensionContext,
   type AcpQuestionControls,

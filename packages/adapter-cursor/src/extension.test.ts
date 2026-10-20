@@ -239,6 +239,42 @@ describe("Cursor ACP recovery", () => {
   })
 })
 
+describe("Cursor usage limits", () => {
+  it.each(["Upgrade your plan to continue", "Add a payment method to continue"])(
+    "ends the turn at the account's usage limit when Cursor only says %s",
+    async (notice) => {
+      const { base, connection, events } = makeHarness([
+        (emit) => {
+          emit(agentChunk(notice.slice(0, 8)))
+          emit(agentChunk(`${notice.slice(8)}\n`))
+        }
+      ])
+
+      await expect(
+        Effect.runPromise(connection.prompt(SESSION_ID, "Do the work"))
+      ).resolves.toEqual({ stopDetail: notice, stopKind: "usageLimit", stopReason: "end_turn" })
+      expect(base.prompts).toEqual(["Do the work"])
+      expect(outputText(events)).toBe("")
+    }
+  )
+
+  it("streams a reply that only starts like a usage-limit notice", async () => {
+    const { connection, events } = makeHarness([
+      (emit) => {
+        emit(agentChunk("Upgrade your plan to continue"))
+        emit(agentChunk(" using Max mode, or switch models."))
+      }
+    ])
+
+    await expect(
+      Effect.runPromise(connection.prompt(SESSION_ID, "Can I use Max?"))
+    ).resolves.toEqual({ stopReason: "end_turn" })
+    expect(outputText(events)).toBe(
+      "Upgrade your plan to continue using Max mode, or switch models."
+    )
+  })
+})
+
 describe("Cursor config_option_update mapping", () => {
   it("keeps ACP thought-level labels concise and remaps Cursor's fast toggle", () => {
     const extension = makeCursorExtension({

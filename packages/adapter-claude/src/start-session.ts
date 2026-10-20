@@ -337,12 +337,10 @@ export const makeStartSession = (deps: StartSessionDeps) => {
             if (created.interruptRequested) {
               await finishActiveTurn(created, "cancelled")
             } else if (!(await resumeAfterStreamDeath())) {
-              await finishActiveTurn(
-                created,
-                "end_turn",
-                streamFailure ?? "The Claude connection ended unexpectedly.",
-                true
-              )
+              await finishActiveTurn(created, "end_turn", {
+                retryable: true,
+                stopDetail: streamFailure ?? "The Claude connection ended unexpectedly."
+              })
             }
           }
         }

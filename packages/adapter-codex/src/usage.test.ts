@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { payloadOf, run, setup } from "./test-support.js"
 import { codexSessionContextFrom, codexUsageLimitsFrom } from "./usage.js"
 
 describe("Codex account usage", () => {
@@ -22,6 +23,58 @@ describe("Codex account usage", () => {
       ],
       credits: { hasCredits: true, unlimited: false, balance: "12.50" }
     })
+  })
+
+  it.each([
+    {
+      expected: "2025-10-20T23:00:00.000Z",
+      name: "the exhausted window",
+      primary: { resetsAt: 1_761_001_200, usedPercent: 100, windowDurationMins: 300 },
+      secondary: { resetsAt: 1_761_500_000, usedPercent: 42, windowDurationMins: 10_080 }
+    },
+    {
+      expected: "2025-10-26T17:33:20.000Z",
+      name: "the latest of several exhausted windows",
+      primary: { resetsAt: 1_761_001_200, usedPercent: 100, windowDurationMins: 300 },
+      secondary: { resetsAt: 1_761_500_000, usedPercent: 100, windowDurationMins: 10_080 }
+    },
+    {
+      expected: undefined,
+      name: "no window with a known reset",
+      primary: { usedPercent: 100, windowDurationMins: 300 },
+      secondary: { resetsAt: 1_761_500_000, usedPercent: 42, windowDurationMins: 10_080 }
+    }
+  ])("ends a usage-limited turn with the reset of $name", async (fixture) => {
+    const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("try this"))
+    await turnRequested
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-usage-reset", status: "inProgress" }
+    })
+    client.emit("account/rateLimits/updated", {
+      rateLimits: { limitId: "codex", primary: fixture.primary, secondary: fixture.secondary }
+    })
+    client.emit("error", {
+      error: {
+        codexErrorInfo: "usageLimitExceeded",
+        message:
+          "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:05 PM."
+      },
+      threadId: "thread-new",
+      turnId: "turn-usage-reset",
+      willRetry: false
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-usage-reset", status: "failed" }
+    })
+    await prompt
+
+    const ended = payloadOf(events.at(-1))
+    expect(ended).toMatchObject({ stopKind: "usageLimit", turnState: "ended" })
+    expect(ended.resetsAt).toBe(fixture.expected)
   })
 })
 

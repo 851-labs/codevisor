@@ -32,6 +32,7 @@ public struct AssistantTurn: Sendable, Equatable {
   public var stopReason: StopReason?
   public var stopDetail: String?
   public var stopKind: String?
+  public var autoResume: SessionAutoResume? = nil
   public var retryable: Bool
   public var retryStatus: RetryStatus?
   public var plan: Plan?

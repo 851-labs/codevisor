@@ -160,6 +160,7 @@ export const endpoints = [
   "GET /v1/sessions/:id/subscriptions",
   "POST /v1/sessions/:id/subscriptions",
   "DELETE /v1/sessions/:id/subscriptions/:subscriptionId",
+  "DELETE /v1/sessions/:id/auto-resume",
   "GET /v1/sessions/:id/jobs",
   "GET /v1/jobs/:jobId",
   "POST /v1/jobs/:jobId/wait",
@@ -215,6 +216,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/sessions/:id/subscriptions":
     "Subscribe a session to another session's events, delivered as hidden prompts",
   "DELETE /v1/sessions/:id/subscriptions/:subscriptionId": "Remove a session event subscription",
+  "DELETE /v1/sessions/:id/auto-resume":
+    "Cancel the automatic resume of a chat that stopped at its usage limit",
   "GET /v1/sessions/:id/jobs": "List a session's background execute jobs",
   "GET /v1/jobs/:jobId": "Get a background execute job's status, output, and result",
   "POST /v1/jobs/:jobId/wait": "Wait for a background execute job to finish",
@@ -240,7 +243,8 @@ export const noContent = new Set<Endpoint>([
   "DELETE /v1/sessions/:id/plan-approval",
   "DELETE /v1/sessions/:id/queue/:queueId",
   "DELETE /v1/sessions/:id/goal",
-  "DELETE /v1/sessions/:id/subscriptions/:subscriptionId"
+  "DELETE /v1/sessions/:id/subscriptions/:subscriptionId",
+  "DELETE /v1/sessions/:id/auto-resume"
 ])
 
 export const created = new Set<Endpoint>([

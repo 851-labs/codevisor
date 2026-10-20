@@ -16,7 +16,7 @@ import {
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
-import { codexSessionContextFrom, codexUsageLimitsFrom } from "./usage.js"
+import { codexSessionContextFrom, codexUsageLimitsFrom, exhaustedWindowReset } from "./usage.js"
 
 export const codexThreadTitle = (thread: Record<string, unknown>): string | undefined => {
   for (const value of [thread.name, thread.preview]) {
@@ -141,6 +141,7 @@ export const completeNotificationTurn = (
           stopReason,
           ...(terminalError === undefined ? {} : { stopDetail: terminalError.message }),
           ...(terminalError?.stopKind === undefined ? {} : { stopKind: terminalError.stopKind }),
+          ...usageLimitReset(session, terminalError),
           ...(terminalError?.retryable === true ? { retryable: true } : {}),
           turnId,
           turnState: "ended"
@@ -155,6 +156,16 @@ export const completeNotificationTurn = (
         void session.titleGenerator?.onTurnCompleted()
       }
     })
+}
+
+const usageLimitReset = (
+  session: CodexSession,
+  error: CodexSession["pendingTurnError"]
+): { resetsAt?: string } => {
+  if (error?.stopKind !== "usageLimit") return {}
+
+  const resetsAt = exhaustedWindowReset(session.latestUsageLimits)
+  return resetsAt === undefined ? {} : { resetsAt }
 }
 
 const handleNotificationItemLifecycle = (
@@ -275,7 +286,8 @@ export const handleNotification = (
     case "account/rateLimits/updated": {
       const snapshot = isRecord(payload.rateLimits) ? payload.rateLimits : {}
       if (typeof snapshot.limitId === "string" && snapshot.limitId !== "codex") break
-      void session.emit(usageLimitsObserved(session.key, codexUsageLimitsFrom(payload), true))
+      session.latestUsageLimits = codexUsageLimitsFrom(payload)
+      void session.emit(usageLimitsObserved(session.key, session.latestUsageLimits, true))
       break
     }
     case "thread/name/updated": {

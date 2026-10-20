@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { Effect } from "effect"
 
 import { makeAuthService } from "./auth-service.js"
+import { makeAutoResumeService } from "./auto-resume-service.js"
 import { makeBotMessagesService } from "./bot-messages-service.js"
 import { makeBotsService } from "./bots-service.js"
 import { makeBrowserStateService } from "./browser-state-service.js"
@@ -55,6 +56,7 @@ export const createService = (
     ...makeEventsService(context),
     ...makePromptQueueService(context),
     ...makeSessionSubscriptionsService(context),
+    ...makeAutoResumeService(context),
     ...makeFilesService(context),
     ...makeWorkspaceMediaService(context),
     ...makeHarnessService(context),

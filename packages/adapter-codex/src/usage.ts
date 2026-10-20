@@ -67,6 +67,24 @@ export const codexUsageLimitsFrom = (response: unknown): HarnessUsageLimits => {
   }
 }
 
+export const exhaustedWindowReset = (
+  limits: HarnessUsageLimits | undefined
+): string | undefined => {
+  const resets = (limits?.windows ?? []).filter(isExhausted).flatMap(windowReset)
+  if (resets.length === 0) return undefined
+
+  return new Date(Math.max(...resets)).toISOString()
+}
+
+const exhaustedPercent = 100
+
+type UsageWindow = HarnessUsageLimits["windows"][number]
+
+const isExhausted = (window: UsageWindow): boolean => window.usedPercent >= exhaustedPercent
+
+const windowReset = (window: UsageWindow): ReadonlyArray<number> =>
+  window.resetsAt === undefined ? [] : [Date.parse(window.resetsAt)]
+
 const tokenCount = (record: Record<string, unknown>, key: string): number => {
   const value = record[key]
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0

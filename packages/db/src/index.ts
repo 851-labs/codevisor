@@ -28,6 +28,8 @@ export * from "./rows.js"
 
 export * from "./service.js"
 
+export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js"
+
 export type {
   WorkspaceFileEdit,
   WorkspaceMediaCursor,

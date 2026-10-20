@@ -25,6 +25,14 @@ export interface AcpHarnessLaunchRequest {
   readonly env: NodeJS.ProcessEnv
 }
 
+export interface AcpPromptResult {
+  readonly stopReason: string
+  readonly stopDetail?: string
+  readonly stopKind?: TurnStopKind
+  readonly resetsAt?: string
+  readonly retryable?: boolean
+}
+
 export interface AcpAgentConnection {
   readonly listSessions?: Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   readonly createSession: (
@@ -41,15 +49,7 @@ export interface AcpAgentConnection {
   readonly prompt: (
     sessionId: string,
     input: string | PromptInput
-  ) => Effect.Effect<
-    {
-      readonly stopReason: string
-      readonly stopDetail?: string
-      readonly stopKind?: TurnStopKind
-      readonly retryable?: boolean
-    },
-    AgentRuntimeError
-  >
+  ) => Effect.Effect<AcpPromptResult, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

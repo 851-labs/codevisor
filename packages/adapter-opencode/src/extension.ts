@@ -6,6 +6,7 @@ import {
   CHILD_UPDATE_METHOD,
   OpenCodeSubagents
 } from "./subagents.js"
+import { isOpenCodeUsageLimit } from "./usage-limits.js"
 
 export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
   const subagents = new OpenCodeSubagents()
@@ -26,6 +27,7 @@ export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
       return app
     },
     mapSessionNotification: (notification) =>
-      subagents.mapNotification({ ...notification, update: skillReadUpdate(notification.update) })
+      subagents.mapNotification({ ...notification, update: skillReadUpdate(notification.update) }),
+    sdkConnectionCustomization: { isUsageLimitFailure: isOpenCodeUsageLimit }
   }
 }

@@ -1,5 +1,11 @@
 import type { QuestionAnswer, RuntimeEmit } from "@codevisor/agent-runtime"
-import type { QuestionSpec, SessionContext, SessionGoal, TurnStopKind } from "@codevisor/api"
+import type {
+  HarnessUsageLimits,
+  QuestionSpec,
+  SessionContext,
+  SessionGoal,
+  TurnStopKind
+} from "@codevisor/api"
 
 import type { CodexClient } from "./client.js"
 import type { CodexSkill } from "./skills.js"
@@ -60,4 +66,5 @@ export interface CodexSession {
   readonly pendingQuestions: Map<string, PendingCodexQuestion>
   asyncQuestion: AsyncCodexQuestion | undefined
   latestContext: SessionContext | undefined
+  latestUsageLimits: HarnessUsageLimits | undefined
 }

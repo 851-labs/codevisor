@@ -10,6 +10,7 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { withAutoResume } from "./auto-resume-routes.js"
 import { applySessionUpdate, createSessionIfMissing, findSession } from "./session-workspace.js"
 import { withUpdateGate } from "./update-gate.js"
 
@@ -39,10 +40,14 @@ export const openSessionAction = async (
       : payload.update === undefined
         ? existing
         : await applySessionUpdate(services, fanout, openSessionId, payload.update)
-  const transcript = withUpdateGate(
-    await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
-    services,
-    routeState,
+  const transcript = await withAutoResume(
+    services.db,
+    withUpdateGate(
+      await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
+      services,
+      routeState,
+      openSessionId
+    ),
     openSessionId
   )
   const runtime = await run(services.db.getSessionRuntimeState(openSessionId))

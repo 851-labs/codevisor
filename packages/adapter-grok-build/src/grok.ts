@@ -33,7 +33,7 @@ const GROK_IMPLEMENT_PLAN_LABEL = "Implement plan"
 const GROK_KEEP_PLANNING_LABEL = "Keep planning"
 const GROK_ABANDON_PLAN_LABEL = "Abandon plan"
 
-const unwrapGrokExtensionParams = (params: unknown): unknown => {
+export const unwrapGrokExtensionParams = (params: unknown): unknown => {
   if (!isRecord(params)) return params
   return typeof params.method === "string" && params.params !== undefined ? params.params : params
 }
@@ -57,17 +57,6 @@ const grokGoalStatus = (status: string): GoalStatus | undefined => {
     default:
       return undefined
   }
-}
-
-export const grokAuthFailureSession = (params: unknown): string | undefined => {
-  const notification = record(unwrapGrokExtensionParams(params))
-  const update = record(notification?.update)
-  return typeof notification?.sessionId === "string" &&
-    update?.sessionUpdate === "retry_state" &&
-    update.type === "failed" &&
-    update.error_type === "auth"
-    ? notification.sessionId
-    : undefined
 }
 
 export const grokGoalNotification = (

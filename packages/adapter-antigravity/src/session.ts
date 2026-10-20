@@ -17,17 +17,8 @@ import {
   resolveSelection,
   type AgyModel
 } from "./models.js"
-import {
-  agyResult,
-  agyStep,
-  finite,
-  messageOf,
-  record,
-  signedOut,
-  SIGN_IN_DETAIL,
-  text,
-  type AgyResult
-} from "./protocol.js"
+import { agyResult, agyStep, finite, messageOf, record, text, type AgyResult } from "./protocol.js"
+import { agyStop, failureDetail } from "./stops.js"
 
 interface Turn {
   readonly id: string
@@ -64,13 +55,6 @@ const HEADLESS_ARGS = [
 ]
 
 class AgyStartError extends Error {}
-
-const failureDetail = (message: string | undefined): string =>
-  message === undefined
-    ? "Antigravity stopped with an error."
-    : signedOut(message)
-      ? SIGN_IN_DETAIL
-      : message
 
 const totalsUpdate = (result: AgyResult): Record<string, unknown> | undefined => {
   const usage = record(result.usage)
@@ -121,10 +105,7 @@ export const startAgyChat = async (
       stopReason,
       ...(outcome.detail === undefined || stopReason === "cancelled"
         ? {}
-        : { stopDetail: outcome.detail }),
-      ...(outcome.detail === SIGN_IN_DETAIL && stopReason !== "cancelled"
-        ? { stopKind: "authRequired" }
-        : {}),
+        : agyStop(outcome.detail)),
       turnId: ended.id,
       turnState: "ended"
     })

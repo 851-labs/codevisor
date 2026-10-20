@@ -29,6 +29,7 @@ export const TurnLifecycle = Schema.Struct({
   stopReason: Schema.optional(Schema.String),
   stopDetail: Schema.optional(Schema.String),
   stopKind: Schema.optional(TurnStopKind),
+  resetsAt: Schema.optional(Schema.String),
   retryable: Schema.optional(Schema.Boolean)
 })
 export type TurnLifecycle = typeof TurnLifecycle.Type

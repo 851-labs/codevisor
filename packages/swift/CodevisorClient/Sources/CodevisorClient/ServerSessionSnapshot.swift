@@ -30,6 +30,7 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
   public var sessionPlan: Plan? = nil
   public var usage: SessionUsage? = nil
   public var updateGateHarnessName: String? = nil
+  public var autoResume: SessionAutoResume? = nil
 }
 
 public enum SessionRuntimeState: String, Equatable, Sendable {
@@ -54,6 +55,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
   )
   case retrying(RetryStatus)
   case updateGate(waiting: Bool, harnessName: String)
+  case autoResume(SessionAutoResume?)
   case failed(String, retryable: Bool = false, chatItemId: UUID? = nil)
   case authenticationRequired(String)
   case backgroundTasks([BackgroundTaskInfo])

@@ -466,6 +466,8 @@ public extension CodevisorServerClienting {
 
   func clearSessionGoal(id: UUID) async throws {}
 
+  func cancelSessionAutoResume(id: UUID) async throws {}
+
   func answerSessionQuestion(
     id: UUID,
     questionId: String,

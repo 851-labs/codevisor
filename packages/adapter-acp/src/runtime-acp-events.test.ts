@@ -59,18 +59,52 @@ describe("@codevisor/agent-runtime", () => {
     )
   })
 
-  it("preserves retryable terminal metadata from an extended ACP connection", async () => {
-    class RetryableConnection extends FakeConnection {
+  it.each([
+    {
+      name: "retryable terminal metadata",
+      stop: {
+        retryable: true,
+        stopDetail: "Cursor is temporarily unavailable.",
+        stopReason: "end_turn"
+      },
+      ended: {
+        retryable: true,
+        stopDetail: "Cursor is temporarily unavailable.",
+        stopReason: "end_turn"
+      }
+    },
+    {
+      name: "a usage limit and when it resets",
+      stop: {
+        resetsAt: "2026-10-20T19:14:47.000Z",
+        stopDetail: "You have exhausted your capacity on this model.",
+        stopKind: "usageLimit" as const,
+        stopReason: "end_turn"
+      },
+      ended: {
+        resetsAt: "2026-10-20T19:14:47.000Z",
+        stopDetail: "You have exhausted your capacity on this model.",
+        stopKind: "usageLimit",
+        stopReason: "end_turn"
+      }
+    },
+    {
+      name: "a sign-in stop, named for the harness",
+      stop: { stopKind: "authRequired" as const, stopReason: "end_turn" },
+      ended: {
+        stopDetail: "Gemini CLI isn't signed in. Sign in to continue.",
+        stopKind: "authRequired",
+        stopReason: "end_turn"
+      }
+    }
+  ])("ends the turn with $name from an extended ACP connection", async ({ stop, ended }) => {
+    class StoppingConnection extends FakeConnection {
       override prompt(_sessionId: string, _input: Parameters<FakeConnection["prompt"]>[1]) {
-        return Effect.succeed({
-          retryable: true,
-          stopDetail: "Cursor is temporarily unavailable.",
-          stopReason: "end_turn"
-        })
+        return Effect.succeed(stop)
       }
     }
     const connector: AcpConnector = {
-      connect: (request, emit) => Effect.succeed(new RetryableConnection(request, emit))
+      connect: (request, emit) => Effect.succeed(new StoppingConnection(request, emit))
     }
     const runtime = makeAcpAgentRuntime({
       connector,
@@ -87,50 +121,15 @@ describe("@codevisor/agent-runtime", () => {
 
     await run(runtime.prompt(sessionId, "hello"))
 
-    expect(events.at(-1)).toMatchObject({
+    expect(events.at(-1)).toEqual({
       kind: "session.updated",
       payload: {
-        retryable: true,
-        stopDetail: "Cursor is temporarily unavailable.",
-        stopReason: "end_turn",
+        ...ended,
+        initiatedBy: "user",
+        turnId: payloadString(events[0]!, "turnId"),
         turnState: "ended"
       },
       subjectId: sessionId
-    })
-  })
-
-  it("ends a turn the agent rejected for sign-in as needing sign-in, named for the harness", async () => {
-    class SignedOutConnection extends FakeConnection {
-      override prompt(_sessionId: string, _input: Parameters<FakeConnection["prompt"]>[1]) {
-        return Effect.succeed({ stopKind: "authRequired" as const, stopReason: "end_turn" })
-      }
-    }
-    const connector: AcpConnector = {
-      connect: (request, emit) => Effect.succeed(new SignedOutConnection(request, emit))
-    }
-    const runtime = makeAcpAgentRuntime({
-      connector,
-      env: { PATH: "/bin" },
-      executableExists: (name) => name === "gemini",
-      locateExecutable: (name) => `/bin/${name}`
-    })
-    const events: Array<RuntimeEvent> = []
-    const sessionId = await run(
-      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
-        events.push(event)
-      })
-    )
-
-    await run(runtime.prompt(sessionId, "hello"))
-
-    expect(events.at(-1)).toMatchObject({
-      kind: "session.updated",
-      payload: {
-        stopDetail: "Gemini CLI isn't signed in. Sign in to continue.",
-        stopKind: "authRequired",
-        stopReason: "end_turn",
-        turnState: "ended"
-      }
     })
   })
 

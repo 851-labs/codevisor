@@ -3,6 +3,7 @@ export type CursorTerminalErrorKind =
   | "non_retriable"
   | "action_required"
   | "cancelled"
+  | "usage_limit"
 
 export interface CursorTerminalError {
   readonly kind: CursorTerminalErrorKind
@@ -20,12 +21,10 @@ const ERROR_NAMES = [
 
 const ERROR_PREFIXES = ERROR_NAMES.map((name) => `Error: ${name}:`)
 
-export const couldBeCursorTerminalError = (text: string): boolean => {
-  const candidate = text.trimStart()
-  return ERROR_PREFIXES.some(
-    (prefix) => prefix.startsWith(candidate) || candidate.startsWith(prefix)
-  )
-}
+const USAGE_LIMIT_NOTICES = ["Upgrade your plan to continue", "Add a payment method to continue"]
+
+export const couldBeCursorTerminalError = (text: string): boolean =>
+  couldBeErrorSentinel(text.trimStart()) || couldBeUsageLimitNotice(text.trim())
 
 const cursorErrorMessage = (kind: CursorTerminalErrorKind, detail: string): string => {
   const coded = /^\[([^\]]+)\]\s*(.*)$/s.exec(detail)
@@ -46,7 +45,7 @@ export const parseCursorTerminalError = (text: string): CursorTerminalError | un
     /^\s*Error:\s*(RetriableError|NonRetriableError|ActionRequiredError|CancelledError):\s*(.*?)\s*$/s.exec(
       text
     )
-  if (match === null) return undefined
+  if (match === null) return usageLimitNotice(text)
   const name = match[1]
   const rawDetail = match[2] ?? ""
   const kind: CursorTerminalErrorKind =
@@ -63,4 +62,16 @@ export const parseCursorTerminalError = (text: string): CursorTerminalError | un
     rawDetail,
     retryable: kind === "retriable"
   }
+}
+
+const couldBeErrorSentinel = (candidate: string): boolean =>
+  ERROR_PREFIXES.some((prefix) => prefix.startsWith(candidate) || candidate.startsWith(prefix))
+
+const couldBeUsageLimitNotice = (candidate: string): boolean =>
+  USAGE_LIMIT_NOTICES.some((notice) => notice.startsWith(candidate))
+
+const usageLimitNotice = (text: string): CursorTerminalError | undefined => {
+  const notice = text.trim()
+  if (!USAGE_LIMIT_NOTICES.includes(notice)) return undefined
+  return { kind: "usage_limit", message: notice, rawDetail: notice, retryable: false }
 }

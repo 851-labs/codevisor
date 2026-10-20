@@ -6,6 +6,7 @@ import type { UpdateInfo } from "@codevisor/api"
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
 import { applyAfterDrain } from "./apply-after-drain.js"
+import { routeAutoResume } from "./routes/auto-resume-routes.js"
 import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
@@ -362,6 +363,9 @@ export const handleRequest = async (
       return
     }
     if (await routeSessionEvents(services, request, response, url)) {
+      return
+    }
+    if (await routeAutoResume(routeState, request, response, url)) {
       return
     }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {

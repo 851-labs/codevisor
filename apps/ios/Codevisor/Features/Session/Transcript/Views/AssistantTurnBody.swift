@@ -203,16 +203,19 @@ struct AssistantTurnBody: View {
   @ViewBuilder
   private func turnErrorRow(_ message: String) -> some View {
     if turn.stopKind == "usageLimit" {
-      ChatErrorRow(
+      UsageLimitNotice(
         message,
-        actionTitle: "Switch Account",
-        action: { [weak transcriptController] in
+        autoResume: turn.autoResume,
+        switchAccount: { [weak transcriptController] in
           guard let controller = transcriptController,
             let harnessId = controller.activeHarnessId
           else { return }
           HarnessSignInRequest(
             serverId: controller.project.serverId, harnessId: harnessId
           ).post()
+        },
+        cancelAutoResume: { [weak transcriptController] in
+          Task { await transcriptController?.cancelAutoResume() }
         }
       )
     } else if turn.stopKind == "authRequired"

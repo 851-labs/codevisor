@@ -43,6 +43,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
   private var _goalClearCount = 0
   private var _nextGoalClearShouldFail = false
+  private var _autoResumeCancelCount = 0
+  private var _nextAutoResumeCancelShouldFail = false
   private var _lastBudget: Int?
   private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
   private var _questionAnswerGate: AsyncStream<Void>?
@@ -211,6 +213,14 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
   func failNextGoalClear() {
     lock.withLock { _nextGoalClearShouldFail = true }
+  }
+
+  var autoResumeCancelCount: Int {
+    lock.withLock { _autoResumeCancelCount }
+  }
+
+  func failNextAutoResumeCancel() {
+    lock.withLock { _nextAutoResumeCancelShouldFail = true }
   }
 
   var questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] {
@@ -506,6 +516,17 @@ extension FakeSessionServerClient {
         _goalClearCount += 1
       }
       return _nextGoalClearShouldFail
+    }
+    if shouldFail { throw CodevisorServerClientError.invalidResponse }
+  }
+
+  func cancelSessionAutoResume(id: UUID) async throws {
+    let shouldFail = lock.withLock {
+      defer { _nextAutoResumeCancelShouldFail = false }
+      if !_nextAutoResumeCancelShouldFail {
+        _autoResumeCancelCount += 1
+      }
+      return _nextAutoResumeCancelShouldFail
     }
     if shouldFail { throw CodevisorServerClientError.invalidResponse }
   }

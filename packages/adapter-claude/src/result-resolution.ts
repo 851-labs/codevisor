@@ -1,8 +1,13 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { usageLimitStop } from "@codevisor/agent-runtime"
 import type { TurnStopKind } from "@codevisor/api"
 
 import type { ClaudeSession } from "./session.js"
-import { rejectedUsageLimitDetail, usageLimitTextFromResult } from "./usage.js"
+import {
+  rejectedUsageLimitDetail,
+  rejectedUsageLimitReset,
+  usageLimitTextFromResult
+} from "./usage.js"
 
 const TRUNCATION_STOP_REASONS = new Set(["max_tokens"])
 
@@ -34,6 +39,7 @@ export type TurnResolution =
       readonly stopDetail?: string | undefined
       readonly stopKind?: TurnStopKind | undefined
       readonly retryable?: boolean | undefined
+      readonly resetsAt?: string | undefined
     }
 
 export const classifyResult = (
@@ -91,8 +97,7 @@ const usageLimitResolution = (
     return {
       kind: "end",
       stopReason: "end_turn",
-      stopDetail: usageLimitDetail,
-      stopKind: "usageLimit"
+      ...usageLimitStop(usageLimitDetail, rejectedUsageLimitReset(session.latestRateLimitInfo))
     }
   }
 

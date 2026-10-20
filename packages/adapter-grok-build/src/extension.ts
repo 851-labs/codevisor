@@ -4,6 +4,7 @@ import * as acp from "@agentclientprotocol/sdk"
 import {
   turnLifecycleEvent,
   type AcpAgentConnection,
+  type AcpPromptResult,
   type AcpConnectionExtensionContext,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
@@ -18,7 +19,6 @@ import { Effect } from "effect"
 
 import {
   grokAskUserQuestion,
-  grokAuthFailureSession,
   grokGoalNotification,
   grokModeState,
   grokPlanApprovalQuestion,
@@ -37,6 +37,7 @@ import {
 } from "./model-selection.js"
 import { GrokStreamNormalizer } from "./stream.js"
 import { GrokSubagents } from "./subagents.js"
+import { grokTurnFailure } from "./turn-failures.js"
 
 const withGrokMetadata = (
   metadata: AgentSessionMetadata,
@@ -47,8 +48,6 @@ const withGrokMetadata = (
   modes: metadata.modes ?? grokModeState,
   supportsGoals: true
 })
-
-const grokSignedOutDetail = "Grok Build isn't signed in. Sign in to continue."
 
 const emitAll = (
   emit: (event: RuntimeEvent) => void,
@@ -63,9 +62,18 @@ const extendGrokConnection = (
   emit: (event: RuntimeEvent) => void,
   normalizer: GrokStreamNormalizer,
   goals: Map<string, SessionGoal>,
-  authFailures: Set<string>
+  turnFailures: Map<string, AcpPromptResult>
 ): AcpAgentConnection => {
   const goalTurns = new Map<string, Promise<void>>()
+
+  const takeTurnFailure = (sessionId: string): AcpPromptResult | undefined => {
+    const stop = turnFailures.get(sessionId)
+    turnFailures.delete(sessionId)
+    return stop
+  }
+
+  const failedGoalTurnStop = (sessionId: string): AcpPromptResult =>
+    takeTurnFailure(sessionId) ?? { stopReason: "cancelled" }
 
   const runGoalPrompt = (
     sessionId: string,
@@ -73,7 +81,7 @@ const extendGrokConnection = (
     announceActivity = false
   ): Promise<void> => {
     const turnId = randomUUID()
-    authFailures.delete(sessionId)
+    turnFailures.delete(sessionId)
     emit(turnLifecycleEvent(sessionId, turnId, "started"))
     if (announceActivity) {
       emit({
@@ -93,23 +101,11 @@ const extendGrokConnection = (
       .then(
         (response) => {
           emitAll(emit, normalizer.completeTurn(sessionId))
-          emit(turnLifecycleEvent(sessionId, turnId, "ended", response.stopReason))
+          emit(turnLifecycleEvent(sessionId, turnId, "ended", { stopReason: response.stopReason }))
         },
         (cause) => {
           normalizer.cancelTurn(sessionId)
-          emit(
-            authFailures.delete(sessionId)
-              ? turnLifecycleEvent(
-                  sessionId,
-                  turnId,
-                  "ended",
-                  "end_turn",
-                  grokSignedOutDetail,
-                  false,
-                  "authRequired"
-                )
-              : turnLifecycleEvent(sessionId, turnId, "ended", "cancelled")
-          )
+          emit(turnLifecycleEvent(sessionId, turnId, "ended", failedGoalTurnStop(sessionId)))
           throw cause
         }
       )
@@ -207,14 +203,13 @@ const extendGrokConnection = (
     ...base,
     prompt: (sessionId, input) =>
       Effect.suspend(() => {
-        authFailures.delete(sessionId)
+        turnFailures.delete(sessionId)
         return base.prompt(sessionId, input)
       }).pipe(
-        Effect.catch((cause) =>
-          authFailures.delete(sessionId)
-            ? Effect.succeed({ stopReason: "end_turn", stopKind: "authRequired" as const })
-            : Effect.fail(cause)
-        ),
+        Effect.catch((cause) => {
+          const stop = takeTurnFailure(sessionId)
+          return stop === undefined ? Effect.fail(cause) : Effect.succeed(stop)
+        }),
         Effect.map((result) => {
           emitAll(emit, normalizer.completeTurn(sessionId))
           return result
@@ -237,7 +232,7 @@ const extendGrokConnection = (
 
 export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueueQuestion }) => {
   const goals = new Map<string, SessionGoal>()
-  const authFailures = new Set<string>()
+  const turnFailures = new Map<string, AcpPromptResult>()
   const modelStates = new Map<string, AcpModelState>()
   const nativeConfigIds = new Map<string, ReadonlySet<string>>()
   const normalizer = new GrokStreamNormalizer()
@@ -274,8 +269,8 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           method,
           (params) => params,
           ({ params }) => {
-            const authFailure = grokAuthFailureSession(params)
-            if (authFailure !== undefined) authFailures.add(authFailure)
+            const failure = grokTurnFailure(params)
+            if (failure !== undefined) turnFailures.set(failure.sessionId, failure.stop)
             emitAll(emit, subagents.notification(params))
             const events = normalizer.mapExtensionNotification(params)
             const sessionId = subagents.sessionOf(params)
@@ -327,7 +322,7 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
         return Promise.resolve(undefined)
       },
       extendConnection: (connection, context) =>
-        extendGrokConnection(connection, context, emit, normalizer, goals, authFailures)
+        extendGrokConnection(connection, context, emit, normalizer, goals, turnFailures)
     }
   }
 }

@@ -22,6 +22,7 @@ import type { AcpAgentConnection } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
 import { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
 import type { AcpSkillTracker } from "./skills.js"
+import { usageLimitPromptStop, type AcpUsageLimitRule } from "./usage-limit-failures.js"
 
 export interface AcpQuestionControls {
   readonly answerQuestion: (
@@ -63,6 +64,7 @@ export interface AcpSdkConnectionCustomization {
   readonly setConfigOption?: (
     context: AcpSetConfigOptionContext
   ) => Promise<ReadonlyArray<SessionConfigOption> | undefined>
+  readonly isUsageLimitFailure?: AcpUsageLimitRule
   readonly extendConnection?: (
     connection: AcpAgentConnection,
     context: AcpConnectionExtensionContext
@@ -239,8 +241,12 @@ export const sdkConnection = (
           })
           return { stopReason: response.stopReason }
         } catch (cause) {
-          if (!isAuthenticationRequired(cause)) throw cause
-          return { stopReason: "end_turn", stopKind: "authRequired" as const }
+          if (isAuthenticationRequired(cause)) {
+            return { stopReason: "end_turn", stopKind: "authRequired" as const }
+          }
+          const usageLimit = usageLimitPromptStop(cause, options.customization?.isUsageLimitFailure)
+          if (usageLimit === undefined) throw cause
+          return usageLimit
         }
       }),
     cancel: (sessionId) =>

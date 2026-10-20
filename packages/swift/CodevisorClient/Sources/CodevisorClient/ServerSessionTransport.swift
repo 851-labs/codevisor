@@ -60,7 +60,8 @@ public struct ServerSessionTransport: Sendable {
       skills: page.skills,
       sessionPlan: page.sessionPlan,
       usage: page.usage?.sessionUsage,
-      updateGateHarnessName: page.updateGate?.harnessName
+      updateGateHarnessName: page.updateGate?.harnessName,
+      autoResume: page.autoResume?.sessionAutoResume
     )
   }
 
@@ -390,6 +391,10 @@ public struct ServerSessionTransport: Sendable {
 
   public func clearGoal() async throws {
     try await client.clearSessionGoal(id: sessionId)
+  }
+
+  public func cancelAutoResume() async throws {
+    try await client.cancelSessionAutoResume(id: sessionId)
   }
 
   public func answerQuestion(

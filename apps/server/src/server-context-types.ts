@@ -22,6 +22,7 @@ import type { ClientControlBroker } from "./infra/client-control.js"
 import type { SharedAccounts } from "./infra/shared-accounts.js"
 import type { UsageLimitsCache } from "./infra/usage-limits-cache.js"
 import type { RestartCoordinator } from "./restart-drain.js"
+import type { AutoResumeScheduler } from "./routes/auto-resume-scheduler.js"
 import type { Simulators } from "./simulators.js"
 import type { UpdateResumer } from "./update-resume.js"
 
@@ -163,6 +164,7 @@ export interface RouteState {
   readonly restart: RestartCoordinator
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
+  autoResume?: AutoResumeScheduler
 }
 
 export class EventFanout {

@@ -23,7 +23,7 @@ import {
 import { isoTimestamp, type Harness, type HarnessUsageLimits } from "@codevisor/api"
 import { Effect } from "effect"
 
-import type { AcpAgentConnection, AcpConnector } from "./connection.js"
+import type { AcpAgentConnection, AcpConnector, AcpPromptResult } from "./connection.js"
 import { turnLifecycleEvent } from "./internal.js"
 import { makeStdioAcpConnectorWithOptions } from "./stdio-connector.js"
 
@@ -138,6 +138,11 @@ const unavailableUsageLimits = (harnessId: string, detail: string): HarnessUsage
   windows: []
 })
 
+const withSignInDetail = (result: AcpPromptResult, harnessName: string): AcpPromptResult => {
+  if (result.stopKind !== "authRequired" || result.stopDetail !== undefined) return result
+  return { ...result, stopDetail: `${harnessName} isn't signed in. Sign in to continue.` }
+}
+
 const acpSessionHandle = (
   connection: AcpAgentConnection,
   sessionId: string,
@@ -156,29 +161,15 @@ const acpSessionHandle = (
         emit(turnLifecycleEvent(sessionId, turnId, "started"))
       )
       const result = yield* connection.prompt(sessionId, input)
-      const stopDetail =
-        result.stopKind === "authRequired"
-          ? (result.stopDetail ?? `${harnessName} isn't signed in. Sign in to continue.`)
-          : result.stopDetail
       yield* adapterPromise("promptTurnEnd", () =>
-        emit(
-          turnLifecycleEvent(
-            sessionId,
-            turnId,
-            "ended",
-            result.stopReason,
-            stopDetail,
-            result.retryable,
-            result.stopKind
-          )
-        )
+        emit(turnLifecycleEvent(sessionId, turnId, "ended", withSignInDetail(result, harnessName)))
       )
       return result
     }),
   cancel: Effect.gen(function* () {
     yield* connection.cancel(sessionId)
     yield* adapterPromise("cancelTurnEnd", () =>
-      emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
+      emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", { stopReason: "cancelled" }))
     )
     return { runtimeState: "reusable" as const }
   }),

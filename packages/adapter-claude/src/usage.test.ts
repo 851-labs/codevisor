@@ -284,6 +284,37 @@ describe("ClaudeProvider", () => {
     expect(endedPayload?.stopDetail).toBe(limitMessage)
     expect(endedPayload?.stopKind).toBe("usageLimit")
     expect(endedPayload?.retryable).toBeUndefined()
+    expect(endedPayload).not.toHaveProperty("resetsAt")
+  })
+
+  it("reports when Claude's rejected usage limit resets", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    const limitMessage = "You've hit your session limit · resets 3pm (America/Los_Angeles)"
+    fake.push(
+      rateLimitEvent({ rateLimitType: "five_hour", resetsAt: 1_761_001_200, status: "rejected" })
+    )
+    fake.push(assistantErrorMessage("rate_limit"))
+    fake.push(resultWith({ is_error: true, result: limitMessage }))
+
+    await promptPromise
+    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
+    expect(endedPayload).toMatchObject({
+      resetsAt: "2025-10-20T23:00:00.000Z",
+      stopDetail: limitMessage,
+      stopKind: "usageLimit"
+    })
   })
 
   it("uses rejected Claude subscription state when the result omits limit copy", async () => {

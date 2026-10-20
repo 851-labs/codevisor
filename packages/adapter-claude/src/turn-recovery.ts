@@ -173,13 +173,7 @@ export const handleResult = (
   settleForkedCommands(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
-  void finishActiveTurn(
-    session,
-    resolution.stopReason,
-    resolution.stopDetail,
-    resolution.retryable,
-    resolution.stopKind
-  )
+  void finishActiveTurn(session, resolution.stopReason, resolution)
 }
 
 const retryMessageForAssistantError = (error: string | undefined): string => {

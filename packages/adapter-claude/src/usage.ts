@@ -4,6 +4,7 @@ import {
   type SDKMessage,
   type SDKRateLimitInfo
 } from "@anthropic-ai/claude-agent-sdk"
+import { epochResetTime } from "@codevisor/agent-runtime"
 import { isoTimestamp, type HarnessUsageLimits } from "@codevisor/api"
 
 import { isRecord, recordOf } from "./internal.js"
@@ -204,6 +205,13 @@ export const usageLimitTextFromResult = (
     if (text !== undefined) return text
   }
   return undefined
+}
+
+export const rejectedUsageLimitReset = (
+  info: ClaudeSession["latestRateLimitInfo"]
+): Date | undefined => {
+  if (info?.status !== "rejected") return undefined
+  return epochResetTime(info.resetsAt, "seconds")
 }
 
 export const rejectedUsageLimitDetail = (

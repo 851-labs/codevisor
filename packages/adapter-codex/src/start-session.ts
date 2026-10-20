@@ -108,6 +108,7 @@ export const makeStartSession = ({
       asyncQuestion: undefined,
       heldTurnId: undefined,
       latestContext: undefined,
+      latestUsageLimits: undefined,
       client,
       collabRunTurns: new Map(),
       collabThreads: new Map(),

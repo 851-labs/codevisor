@@ -7,6 +7,13 @@ import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 
+export interface TurnEnding {
+  readonly stopDetail?: string | undefined
+  readonly retryable?: boolean | undefined
+  readonly stopKind?: TurnStopKind | undefined
+  readonly resetsAt?: string | undefined
+}
+
 export const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise<void> => {
   try {
     const info = await session.getSessionInfo(session.sdkSessionId, { dir: session.cwd })
@@ -24,9 +31,7 @@ export const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise
 export const finishActiveTurn = (
   session: ClaudeSession,
   stopReason: string,
-  stopDetail?: string,
-  retryable?: boolean,
-  stopKind?: TurnStopKind
+  ending: TurnEnding = {}
 ): Promise<void> => {
   const completion = session.turnCompletion
   if (!session.turnActive) return completion?.promise ?? Promise.resolve()
@@ -61,9 +66,10 @@ export const finishActiveTurn = (
     payload: {
       initiatedBy: session.initiatedBy,
       stopReason,
-      ...(stopDetail === undefined ? {} : { stopDetail }),
-      ...(stopKind === undefined ? {} : { stopKind }),
-      ...(retryable === true ? { retryable: true } : {}),
+      ...(ending.stopDetail === undefined ? {} : { stopDetail: ending.stopDetail }),
+      ...(ending.stopKind === undefined ? {} : { stopKind: ending.stopKind }),
+      ...(ending.resetsAt === undefined ? {} : { resetsAt: ending.resetsAt }),
+      ...(ending.retryable === true ? { retryable: true } : {}),
       turnId: session.turnId,
       turnState: "ended"
     },

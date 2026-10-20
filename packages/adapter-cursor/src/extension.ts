@@ -6,7 +6,7 @@ import {
   type AcpConnectionExtensionContext,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { usageLimitStop, type RuntimeEvent } from "@codevisor/agent-runtime"
 import { isPlainRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
@@ -143,6 +143,10 @@ const extendCursorConnection = (
         if (terminalError.kind === "cancelled") {
           normalizer.cancelTurn(sessionId)
           return { stopReason: "cancelled" }
+        }
+        if (terminalError.kind === "usage_limit") {
+          emitAll(emit, normalizer.completeTurn(sessionId))
+          return { stopReason: "end_turn", ...usageLimitStop(terminalError.message) }
         }
         if (terminalError.kind !== "retriable") {
           emitAll(emit, normalizer.completeTurn(sessionId))

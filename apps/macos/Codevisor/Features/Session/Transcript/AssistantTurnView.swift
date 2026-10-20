@@ -222,10 +222,11 @@ struct AssistantTurnView: View {
   @ViewBuilder
   private func turnErrorRow(_ message: String) -> some View {
     if turn.stopKind == "usageLimit" {
-      ChatErrorRow(
+      UsageLimitNotice(
         message,
-        actionTitle: "Switch Account",
-        action: openHarnessAccountSettings
+        autoResume: turn.autoResume,
+        switchAccount: openHarnessAccountSettings,
+        cancelAutoResume: { Task { await transcriptController?.cancelAutoResume() } }
       )
     } else if turn.stopKind == "authRequired"
       || (transcriptController?.errorRequiresHarnessAuthentication == true

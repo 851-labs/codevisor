@@ -20,6 +20,7 @@ import {
   type PiModel
 } from "./models.js"
 import { dialogQuestion, type PiDialogQuestion } from "./questions.js"
+import { failureDetail, piStop } from "./stops.js"
 import { errorMessage, record } from "./values.js"
 
 export const MINIMUM_PI_VERSION = "0.81.0"
@@ -152,17 +153,12 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     turn = undefined
     for (const [questionId, open] of questions)
       resolveQuestion(questionId, open, { outcome: "cancelled" })
-    const outcome = mapper.outcome()
     const stopReason = ended.cancelled ? "cancelled" : "end_turn"
-    const stopDetail =
-      detail ??
-      (ended.cancelled || outcome?.stopReason !== "error"
-        ? undefined
-        : (outcome.errorMessage ?? "Pi stopped with an error."))
+    const stopDetail = detail ?? failureDetail(ended.cancelled, mapper.outcome())
     await send("session.updated", {
       initiatedBy: ended.initiatedBy,
       stopReason,
-      ...(stopDetail === undefined ? {} : { stopDetail }),
+      ...(stopDetail === undefined ? {} : piStop(stopDetail)),
       turnId: ended.id,
       turnState: "ended"
     })

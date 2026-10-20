@@ -1,14 +1,12 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import type { TurnStopKind } from "@codevisor/api"
+
+import type { AcpPromptResult } from "./connection.js"
 
 export const turnLifecycleEvent = (
   sessionId: string,
   turnId: string,
   turnState: "started" | "ended",
-  stopReason?: string,
-  stopDetail?: string,
-  retryable?: boolean,
-  stopKind?: TurnStopKind
+  stop: Partial<AcpPromptResult> = {}
 ): RuntimeEvent => ({
   kind: "session.updated",
   subjectId: sessionId,
@@ -16,10 +14,11 @@ export const turnLifecycleEvent = (
     initiatedBy: "user",
     turnId,
     turnState,
-    ...(stopReason === undefined ? {} : { stopReason }),
-    ...(stopDetail === undefined ? {} : { stopDetail }),
-    ...(stopKind === undefined ? {} : { stopKind }),
-    ...(retryable === true ? { retryable: true } : {})
+    ...(stop.stopReason === undefined ? {} : { stopReason: stop.stopReason }),
+    ...(stop.stopDetail === undefined ? {} : { stopDetail: stop.stopDetail }),
+    ...(stop.stopKind === undefined ? {} : { stopKind: stop.stopKind }),
+    ...(stop.resetsAt === undefined ? {} : { resetsAt: stop.resetsAt }),
+    ...(stop.retryable === true ? { retryable: true } : {})
   }
 })
 

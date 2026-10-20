@@ -245,6 +245,7 @@ describe("CodexProvider", () => {
       turnState: "ended"
     })
     expect(payloadOf(events.at(-1)).retryable).toBeUndefined()
+    expect(payloadOf(events.at(-1))).not.toHaveProperty("resetsAt")
   })
 
   it("ends a turn Codex rejected as unauthorized as needing sign-in", async () => {

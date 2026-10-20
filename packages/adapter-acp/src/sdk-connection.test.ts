@@ -1,8 +1,8 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { Effect, Result } from "effect"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { sdkConnection } from "./sdk-connection.js"
+import { sdkConnection, type AcpSdkConnectionCustomization } from "./sdk-connection.js"
 
 const newSession = { sessionId: "s-1", configOptions: [] }
 
@@ -75,42 +75,153 @@ describe("sdkConnection.createSession", () => {
   })
 })
 
-const promptingAgent = (fail: () => never) =>
+const promptingAgent = (respond: () => Promise<acp.PromptResponse>) =>
   acp.client({ name: "test" }).connect(
     acp
       .agent({ name: "fake-agent" })
       .onRequest(acp.methods.agent.session.new, () => newSession)
-      .onRequest(acp.methods.agent.session.prompt, fail)
+      .onRequest(acp.methods.agent.session.prompt, respond)
   )
 
-describe("sdkConnection.prompt", () => {
-  it("ends the turn as needing sign-in when the agent rejects the prompt for authentication", async () => {
-    const connection = sdkConnection(
-      promptingAgent(() => {
-        throw acp.RequestError.authRequired({}, "provider authentication required")
-      }),
-      () => ""
-    )
-    expect(await Effect.runPromise(connection.prompt("s-1", "hi"))).toEqual({
-      stopKind: "authRequired",
-      stopReason: "end_turn"
-    })
+const rejectingWith = (error: acp.RequestError) => () => Promise.reject(error)
+
+const promptRejectedWith = async (
+  error: acp.RequestError,
+  customization?: AcpSdkConnectionCustomization
+) => {
+  const connection = sdkConnection(
+    promptingAgent(rejectingWith(error)),
+    () => "",
+    customization === undefined ? {} : { customization }
+  )
+  try {
+    return await Effect.runPromise(Effect.result(connection.prompt("s-1", "hi")))
+  } finally {
     await Effect.runPromise(connection.close)
+  }
+}
+
+const now = new Date("2026-10-20T12:00:00.000Z")
+
+const later = (milliseconds: number): string => new Date(now.getTime() + milliseconds).toISOString()
+
+const usageLimitEnd = (stopDetail: string, resetsAt?: string) => ({
+  stopDetail,
+  stopKind: "usageLimit",
+  stopReason: "end_turn",
+  ...(resetsAt === undefined ? {} : { resetsAt })
+})
+
+describe("sdkConnection.prompt", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(now)
   })
 
-  it("still fails the prompt for other agent errors", async () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("ends the turn as needing sign-in when the agent rejects the prompt for authentication", async () => {
+    const result = await promptRejectedWith(
+      acp.RequestError.authRequired({}, "provider authentication required")
+    )
+    expect(result).toEqual(Result.succeed({ stopKind: "authRequired", stopReason: "end_turn" }))
+  })
+
+  it.each([
+    {
+      name: "Gemini's daily quota",
+      error: new acp.RequestError(429, "You have exhausted your daily quota on this model."),
+      stop: usageLimitEnd("You have exhausted your daily quota on this model.")
+    },
+    {
+      name: "Gemini's capacity quota, without its trailing tip",
+      error: new acp.RequestError(
+        429,
+        "You have exhausted your capacity on this model. Your quota will reset after 19h14m47s.\n\n💡 Tip: Switch to a different model with /model."
+      ),
+      stop: usageLimitEnd(
+        "You have exhausted your capacity on this model. Your quota will reset after 19h14m47s.",
+        later((19 * 3600 + 14 * 60 + 47) * 1000)
+      )
+    },
+    {
+      name: "a Gemini API key with no quota left",
+      error: new acp.RequestError(
+        429,
+        "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0\nPlease retry in 59.9s."
+      ),
+      stop: usageLimitEnd(
+        "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0\nPlease retry in 59.9s.",
+        later(59_900)
+      )
+    },
+    {
+      name: "Codex's usage limit",
+      error: acp.RequestError.internalError(
+        { codexErrorInfo: "usageLimitExceeded" },
+        "You've hit your usage limit. Upgrade to Pro, or try again in ~142 min."
+      ),
+      stop: usageLimitEnd(
+        "You've hit your usage limit. Upgrade to Pro, or try again in ~142 min.",
+        later(142 * 60_000)
+      )
+    },
+    {
+      name: "Claude's usage limit",
+      error: acp.RequestError.internalError(
+        { errorKind: "rate_limit" },
+        "You've hit your limit · resets 3pm (America/New_York)"
+      ),
+      stop: usageLimitEnd("You've hit your limit · resets 3pm (America/New_York)")
+    }
+  ])("ends the turn at the account's usage limit for $name", async ({ error, stop }) => {
+    expect(await promptRejectedWith(error)).toEqual(Result.succeed(stop))
+  })
+
+  it("lets a harness recognize its own usage-limit failures", async () => {
+    const result = await promptRejectedWith(
+      acp.RequestError.internalError(undefined, "The usage limit has been reached"),
+      { isUsageLimitFailure: (failure) => failure.message.endsWith("usage limit has been reached") }
+    )
+    expect(result).toEqual(Result.succeed(usageLimitEnd("The usage limit has been reached")))
+  })
+
+  it.each([
+    {
+      name: "a plain rate limit",
+      error: new acp.RequestError(429, "Rate limit exceeded. Try again later.")
+    },
+    {
+      name: "a model with no capacity",
+      error: new acp.RequestError(503, "No capacity available for model gemini-3-pro-preview")
+    },
+    {
+      name: "Claude's transient rate limit",
+      error: acp.RequestError.internalError({ errorKind: "rate_limit" }, "API Error: 429")
+    },
+    {
+      name: "another agent error",
+      error: acp.RequestError.internalError({ errorName: "provider.no-route" }, "Model unavailable")
+    },
+    {
+      name: "an agent error without details",
+      error: acp.RequestError.internalError(undefined, "limit: 0")
+    }
+  ])("still fails the prompt for $name", async ({ error }) => {
+    expect(await promptRejectedWith(error)).toMatchObject(
+      Result.fail({ operation: "prompt", message: error.message })
+    )
+  })
+
+  it("still fails the prompt when the connection closes mid-turn", async () => {
     const connection = sdkConnection(
-      promptingAgent(() => {
-        throw acp.RequestError.internalError(
-          { errorName: "provider.no-route" },
-          "Model unavailable"
-        )
-      }),
+      promptingAgent(() => new Promise(() => undefined)),
       () => ""
     )
-    await expect(Effect.runPromise(connection.prompt("s-1", "hi"))).rejects.toMatchObject({
-      operation: "prompt"
-    })
+    const prompt = Effect.runPromise(connection.prompt("s-1", "hi"))
     await Effect.runPromise(connection.close)
+    await expect(prompt).rejects.toMatchObject({ operation: "prompt" })
   })
 })

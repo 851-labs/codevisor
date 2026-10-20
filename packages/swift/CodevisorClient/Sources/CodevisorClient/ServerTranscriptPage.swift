@@ -19,6 +19,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
   public var sessionPlan: Plan?
   public var usage: ServerSessionUsage?
   public var updateGate: ServerSessionUpdateGate?
+  public var autoResume: ServerSessionAutoResume?
 
   public init(
     items: [ServerTranscriptItem],
@@ -31,7 +32,8 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     goal: SessionGoal? = nil,
     sessionPlan: Plan? = nil,
     usage: ServerSessionUsage? = nil,
-    updateGate: ServerSessionUpdateGate? = nil
+    updateGate: ServerSessionUpdateGate? = nil,
+    autoResume: ServerSessionAutoResume? = nil
   ) {
     self.items = items
     self.nextBefore = nextBefore
@@ -44,6 +46,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     self.sessionPlan = sessionPlan
     self.usage = usage
     self.updateGate = updateGate
+    self.autoResume = autoResume
   }
 
   enum CodingKeys: String, CodingKey {
@@ -63,6 +66,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     case sessionPlan
     case usage
     case updateGate
+    case autoResume
   }
 
   public init(from decoder: any Decoder) throws {
@@ -85,5 +89,6 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
     usage = try container.decodeIfPresent(ServerSessionUsage.self, forKey: .usage)
     updateGate = try container.decodeIfPresent(ServerSessionUpdateGate.self, forKey: .updateGate)
+    autoResume = try container.decodeIfPresent(ServerSessionAutoResume.self, forKey: .autoResume)
   }
 }

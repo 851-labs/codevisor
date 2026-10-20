@@ -3,8 +3,14 @@ import ACPKit
 
 extension SessionController {
   public var conversation: [ConversationItem] { model?.conversation ?? [] }
-  public var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
-  public var activeItem: ConversationItem? { model?.activeItem }
+  public var settledConversation: [ConversationItem] {
+    let settled = model?.settledConversation ?? []
+    guard model?.activeItem == nil else { return settled }
+    return TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: settled)
+  }
+  public var activeItem: ConversationItem? {
+    TranscriptAutoResumeStamp.stamping(model?.autoResume, onto: model?.activeItem)
+  }
   public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
   public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
   public var transcriptProjectionKey: TranscriptProjectionKey {
@@ -193,6 +199,9 @@ extension SessionController {
   }
 
   public var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }
+
+  @discardableResult
+  public func cancelAutoResume() async -> Bool { await model?.cancelAutoResume() ?? false }
 
   public var waitingBackgroundTaskDescription: String? {
     guard isWaitingOnBackgroundTasks else { return nil }

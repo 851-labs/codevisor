@@ -409,6 +409,20 @@ extension SessionModel {
     }
   }
 
+  @discardableResult
+  public func cancelAutoResume() async -> Bool {
+    guard let pending = autoResume else { return true }
+    autoResume = nil
+    do {
+      try await transport.cancelAutoResume()
+      return true
+    } catch {
+      autoResume = pending
+      errorMessage = serverErrorMessage(error)
+      return false
+    }
+  }
+
   public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
     guard let question = pendingQuestion, !isResolvingQuestion else { return }
     isResolvingQuestion = true

@@ -263,6 +263,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
     tokenBudget: TokenBudgetUpdate
   ) async throws -> SessionGoal
   func clearSessionGoal(id: UUID) async throws
+  func cancelSessionAutoResume(id: UUID) async throws
   func answerSessionQuestion(
     id: UUID,
     questionId: String,

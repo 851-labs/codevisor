@@ -23,6 +23,7 @@ import {
   makeRestartCoordinator
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
+import { makeServerAutoResume } from "./routes/auto-resume-dispatch.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
 import { handleUpgrade } from "./routes/events.js"
@@ -135,6 +136,8 @@ export const makeCodevisorServerApp = (
   }, 60_000)
   staleTurnSweep.unref()
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
+  const autoResume = makeServerAutoResume(services, fanout, routeState, config.id)
+  routeState.autoResume = autoResume
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
   const workspaceGit =
     config.workspaceGit === true
@@ -147,6 +150,7 @@ export const makeCodevisorServerApp = (
         })
       : undefined
   void attentionSettle.recover().catch(swallowError)
+  void autoResume.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = config.sessionActivity
     ? fanout.subscribe((event) => {
@@ -291,6 +295,7 @@ export const makeCodevisorServerApp = (
       restart.close()
       updateResume.close()
       attentionSettle.close()
+      autoResume.close()
       unsubscribeTurns()
       unsubscribeBotConversations()
       unsubscribeSessionEvents()

@@ -41,6 +41,7 @@ extension AssistantMessage {
     var copy = self
     copy.turn.stopDetail = nil
     copy.turn.stopKind = nil
+    copy.turn.autoResume = nil
     return copy
   }
 }

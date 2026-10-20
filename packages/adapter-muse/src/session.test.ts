@@ -177,7 +177,7 @@ describe("Muse chat", () => {
     ])
   })
 
-  it("explains failed turns, and offers a retry when Muse says it may work", async () => {
+  it("explains failed turns, offering a retry only when Muse says it may work", async () => {
     const { client, chat, events } = await start()
     const run = async (completed: Record<string, unknown>) => {
       const { finished, turnId } = await send(chat, client)
@@ -201,6 +201,22 @@ describe("Muse chat", () => {
     })
     expect(overloaded).toMatchObject({ stopDetail: "Overloaded", retryable: true })
     expect(overloaded).not.toHaveProperty("stopKind")
+    const limited = await run({
+      terminal: "failed",
+      error: {
+        kind: "modelError",
+        message: "usage limit reached",
+        retryable: true,
+        quota: { limitKind: "tierLimit", resetsAtMs: 1792400000000 }
+      }
+    })
+    expect(limited).toMatchObject({
+      stopReason: "end_turn",
+      stopDetail: "usage limit reached",
+      stopKind: "usageLimit",
+      resetsAt: "2026-10-19T08:53:20.000Z"
+    })
+    expect(limited).not.toHaveProperty("retryable")
     expect(await run({ terminal: "failed", reason: "host died" })).toMatchObject({
       stopDetail: "host died"
     })

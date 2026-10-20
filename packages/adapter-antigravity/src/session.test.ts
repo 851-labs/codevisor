@@ -13,6 +13,15 @@ import {
 
 const models = parseModels(MODELS_OUTPUT)
 
+const individualQuota =
+  "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 7m11s."
+
+const resourceExhausted =
+  "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted. Resets in 20s."
+
+const capacityExhausted =
+  "API error (attempt 1): MODEL_CAPACITY_EXHAUSTED (code 429): No capacity available for model. Resets in 30s."
+
 const start = async (
   options: Partial<AgyChatOptions> = {},
   opens?: (process: FakeAgyProcess, index: number) => void
@@ -167,11 +176,43 @@ describe("Antigravity chat", () => {
   })
 
   it.each<
-    [Record<string, unknown>, { stopReason: string; stopDetail?: string; stopKind?: string }]
+    [
+      Record<string, unknown>,
+      { stopReason: string; stopDetail?: string; stopKind?: string; resetsAt?: string }
+    ]
   >([
     [
       { status: "ERROR", error: "model capacity exhausted" },
       { stopReason: "end_turn", stopDetail: "model capacity exhausted" }
+    ],
+    [
+      { status: "ERROR", error: individualQuota },
+      {
+        stopReason: "end_turn",
+        stopDetail: individualQuota,
+        stopKind: "usageLimit",
+        resetsAt: "2026-10-20T12:07:11.000Z"
+      }
+    ],
+    [
+      { status: "ERROR", error: "Your AI credits balance is too low to continue." },
+      {
+        stopReason: "end_turn",
+        stopDetail: "Your AI credits balance is too low to continue.",
+        stopKind: "usageLimit"
+      }
+    ],
+    [
+      { status: "ERROR", error: "Rate limit exceeded. Resets in 20s." },
+      { stopReason: "end_turn", stopDetail: "Rate limit exceeded. Resets in 20s." }
+    ],
+    [
+      { status: "ERROR", error: capacityExhausted },
+      { stopReason: "end_turn", stopDetail: capacityExhausted }
+    ],
+    [
+      { status: "ERROR", error: resourceExhausted },
+      { stopReason: "end_turn", stopDetail: resourceExhausted }
     ],
     [
       { status: "ERROR", error: "authentication failed or timed out" },
@@ -192,6 +233,8 @@ describe("Antigravity chat", () => {
     ],
     [{ status: "CANCELED" }, { stopReason: "cancelled" }]
   ])("ends a turn agy reports as %j", async (result, ending) => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-20T12:00:00.000Z"))
     const { chat, events, first } = await start()
     const done = chat.prompt("go")
     await first.sends()
@@ -201,6 +244,7 @@ describe("Antigravity chat", () => {
     expect(ended.stopReason).toBe(ending.stopReason)
     expect(ended.stopDetail).toBe(ending.stopDetail)
     expect(ended.stopKind).toBe(ending.stopKind)
+    expect(ended.resetsAt).toBe(ending.resetsAt)
   })
 
   it("can't start without a sign-in, and says so", async () => {
