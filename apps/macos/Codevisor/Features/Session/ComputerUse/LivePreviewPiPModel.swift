@@ -7,6 +7,7 @@ protocol LivePreviewPiPModel: AnyObject, Observable {
   associatedtype ChangeKey: Equatable
 
   var changeKey: ChangeKey { get }
+  var isMounted: Bool { get }
   var isVisible: Bool { get }
   var viewer: ComputerUseLivePreviewViewer? { get }
   var corner: ComputerUseLivePreviewCorner { get set }

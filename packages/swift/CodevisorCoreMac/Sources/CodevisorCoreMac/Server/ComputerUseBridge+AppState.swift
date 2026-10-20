@@ -66,10 +66,21 @@ extension ComputerUseBridge {
     let snapshotID = UUID().uuidString
     let accessibilityWindowFrame = frame(of: window)
     let wantsScreenshot = options["screenshot"] as? Bool ?? true
+    let visibility = windowID.map { id in
+      ComputerUseWindowVisibility.read(windowID: id, pid: app.processIdentifier) {
+        copyAttribute(window, kAXMinimizedAttribute) as? Bool == true
+      }
+    }
+    let appName = app.localizedName ?? name
+    let uncapturable = visibility.flatMap { computerUseUncapturableReason($0, appName: appName) }
     let outcome: ScreenshotOutcome =
-      wantsScreenshot
-      ? screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
-      : .unavailable("Screenshot not requested.")
+      if !wantsScreenshot {
+        .unavailable("Screenshot not requested.")
+      } else if let reason = uncapturable {
+        .unavailable(reason)
+      } else {
+        screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
+      }
     let capture = outcome.capture
     let windowFrame = frame(of: window) ?? accessibilityWindowFrame
     if let capture, let windowFrame, !computerUseFramesMatch(capture.windowFrame, windowFrame) {
@@ -227,7 +238,9 @@ extension ComputerUseBridge {
     }
     if let windowID {
       metadata["windowId"] = Int(windowID)
-      metadata["isOnActiveSpace"] = windowIsOnVisibleSpace(windowID)
+    }
+    if let visibility {
+      metadata["windowVisibility"] = visibility.rawValue
     }
     if let title = accessibility.windowTitle { metadata["windowTitle"] = title }
     if let windowFrame { metadata["screenWindowBounds"] = frameObject(windowFrame) }

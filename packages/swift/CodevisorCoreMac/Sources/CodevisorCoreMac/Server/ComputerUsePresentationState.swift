@@ -23,6 +23,7 @@ final class ComputerUsePresentationState: NSObject {
   private var colorIndexBySession: [String: Int] = [:]
   private var lastActivityBySession: [String: Date] = [:]
   var visibilityTimer: Timer?
+  let windowVisibility = ComputerUseWindowVisibilityMonitor()
 
   private override init() {
     super.init()

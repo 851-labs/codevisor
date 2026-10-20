@@ -28,8 +28,6 @@ final class ComputerUsePiPModel {
   private static var areaBySession: [UUID: CGFloat] = [:]
   private static var lastArea: CGFloat?
 
-  static let hideDelay: Duration = .seconds(2)
-
   let chatSessionID: UUID
   private let source: Source
   private let preview: ComputerUseLivePreview
@@ -44,8 +42,6 @@ final class ComputerUsePiPModel {
       if let area { Self.lastArea = area }
     }
   }
-  private(set) var isLingering = false
-  @ObservationIgnored private var hideTask: Task<Void, Never>?
   @ObservationIgnored private var reappearanceTask: Task<Void, Never>?
   @ObservationIgnored private var prefersFastPolling = false
 
@@ -67,16 +63,12 @@ final class ComputerUsePiPModel {
     isRemote ? nil : preview.activity(forChatSession: chatSessionID)
   }
 
+  var isMounted: Bool {
+    !isDismissed && viewer != nil
+  }
+
   var isVisible: Bool {
-    guard !isDismissed, let viewer else { return false }
-    if isRemote {
-      switch viewer.phase {
-      case .searching: return false
-      case .connecting, .live, .reconnecting, .stopped: return true
-      }
-    }
-    guard let activity else { return false }
-    return activity.state != .stopped || isLingering
+    isMounted && isLive
   }
 
   var title: String {
@@ -88,29 +80,16 @@ final class ComputerUsePiPModel {
   }
 
   var isLive: Bool {
-    guard let viewer, viewer.phase == .live else { return false }
-    return isRemote || activity?.state == .active
+    guard let viewer, viewer.phase == .live, viewer.frameSize != nil else { return false }
+    if isRemote { return viewer.notice == nil }
+    return activity?.state == .active && activity?.windowVisibility == .visible
   }
 
   var cursor: CGPoint? {
     isLive ? activity?.cursor : nil
   }
 
-  var statusText: String? {
-    guard let viewer else { return nil }
-    switch viewer.phase {
-    case .searching, .connecting: return "Connecting…"
-    case .reconnecting: return "Reconnecting…"
-    case .stopped(let message): return message
-    case .live: break
-    }
-    guard let activity else { return viewer.frameSize == nil ? "Starting…" : nil }
-    switch activity.state {
-    case .active: return viewer.frameSize == nil ? "Starting…" : nil
-    case .idle: return "Idle"
-    case .stopped: return "Stopped"
-    }
-  }
+  var statusText: String? { nil }
 
   var canActivateTarget: Bool { activity != nil }
 
@@ -180,11 +159,8 @@ final class ComputerUsePiPModel {
   }
 
   func teardown() {
-    hideTask?.cancel()
-    hideTask = nil
     reappearanceTask?.cancel()
     reappearanceTask = nil
-    isLingering = false
     releaseViewer()
   }
 
@@ -235,21 +211,10 @@ final class ComputerUsePiPModel {
     if activity.state != .active { undismiss(reason: "the activity went \(activity.state)") }
     switch activity.state {
     case .active, .idle:
-      hideTask?.cancel()
-      hideTask = nil
-      isLingering = false
       guard !isDismissed, viewer == nil, activity.state == .active else { return }
       viewer = makeViewer()
     case .stopped:
-      guard viewer != nil, hideTask == nil else { return }
-      isLingering = true
-      hideTask = Task { [weak self] in
-        try? await Task.sleep(for: Self.hideDelay)
-        guard !Task.isCancelled, let self else { return }
-        self.isLingering = false
-        self.releaseViewer()
-        self.hideTask = nil
-      }
+      releaseViewer()
     }
   }
 

@@ -82,6 +82,23 @@ struct ComputerUseLivePreviewHostTests {
     #expect(await host.handle(world.request(.heartbeat)).status == "stopped")
   }
 
+  @Test("Tells viewers why no video is coming while the window is out of sight, and clears it once shown")
+  func windowNotice() async {
+    let world = World()
+    world.activityState = .active
+    world.windowVisibility = .appHidden
+    let host = world.host()
+    let started = await host.handle(world.request(.start, offer: Self.offer))
+    #expect(started.status == "connecting")
+    #expect(started.message == "TextEdit is hidden")
+    world.windowVisibility = .minimized
+    #expect(await host.handle(world.request(.heartbeat)).message == "Window is minimized")
+    world.windowVisibility = .visible
+    let shown = await host.handle(world.request(.heartbeat))
+    #expect(shown.status == "connecting")
+    #expect(shown.message == nil)
+  }
+
   @Test("Restart replaces the viewer's media peer")
   func restart() async throws {
     let world = World()
@@ -167,6 +184,7 @@ struct ComputerUseLivePreviewHostTests {
 private final class World {
   var access = true
   var activityState: ComputerUseLivePreview.State?
+  var windowVisibility = ComputerUseWindowVisibility.visible
   var clock: TimeInterval = 100
   var peerGate: TestSignal?
   let peerRequested = TestSignal()
@@ -196,7 +214,7 @@ private final class World {
           return .init(
             sessionID: id, bridgeSessionID: "BRIDGE-ID", appName: "TextEdit", pid: 42, windowID: 7,
             windowFrame: CGRect(x: 0, y: 0, width: 600, height: 400), colorIndex: 0, cursor: nil,
-            state: state)
+            state: state, windowVisibility: windowVisibility)
         },
         streamSize: { _ in CGSize(width: 960, height: 640) },
         attach: { [unowned self] id, sink in

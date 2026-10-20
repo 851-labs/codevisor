@@ -218,6 +218,32 @@ struct NativeScreenSharingViewerBackendTests {
         == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
   }
 
+  @Test func aNoticeInTheStartReplyShowsWithoutWaitingForAHeartbeat() async throws {
+    let harness = NativeBackendHarness(transport: SharingTransport(startNotice: "TextEdit is hidden"))
+    harness.configureSession = { $0.deliversVideo = false }
+    harness.connect()
+    await harness.clock.waitForSleep(.seconds(8))
+    let endpoint = try #require(harness.log.endpoints.first)
+    expectNoDifference(harness.log.events, [.opened(endpoint), .hostNotice("TextEdit is hidden")])
+  }
+
+  @Test func aFasterHeartbeatStillWaitsTheFullTimeForTheFirstFrame() async throws {
+    let harness = NativeBackendHarness(heartbeatInterval: .seconds(2))
+    harness.configureSession = { $0.deliversVideo = false }
+    harness.connect()
+    for heartbeat in 1...11 {
+      await harness.clock.waitForSleep(.seconds(2), count: heartbeat)
+      harness.clock.advance(by: .seconds(2))
+    }
+    await harness.clock.waitForSleep(.seconds(2), count: 12)
+    #expect(harness.log.finished == 0)
+    harness.clock.advance(by: .seconds(2))
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(
+      harness.log.events.last
+        == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
+  }
+
   @Test func decoderFailureEndsViewingAtTheNextHeartbeat() async throws {
     let harness = NativeBackendHarness()
     harness.connect()

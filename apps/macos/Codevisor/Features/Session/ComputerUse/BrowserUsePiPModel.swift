@@ -25,8 +25,6 @@ final class BrowserUsePiPModel {
       if let area { Self.lastArea = area }
     }
   }
-  private(set) var isLingering = false
-  @ObservationIgnored private var hideTask: Task<Void, Never>?
 
   init(chatSessionID: UUID, client: any CodevisorServerClienting) {
     self.chatSessionID = chatSessionID
@@ -50,13 +48,12 @@ final class BrowserUsePiPModel {
 extension BrowserUsePiPModel: LivePreviewPiPModel {
   var changeKey: LivePreviewConnection.Status? { connection.status }
 
+  var isMounted: Bool {
+    !isDismissed && viewer != nil
+  }
+
   var isVisible: Bool {
-    guard !isDismissed, viewer != nil else { return false }
-    switch state {
-    case .active, .idle: return true
-    case .stopped: return isLingering
-    case .inactive: return false
-    }
+    isMounted && isLive
   }
 
   var title: String {
@@ -76,15 +73,7 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
     state == .active && connection.isConnected && viewer?.frameSize != nil
   }
 
-  var statusText: String? {
-    guard let viewer else { return nil }
-    if !connection.isConnected { return "Reconnecting…" }
-    switch state {
-    case .active: return viewer.frameSize == nil ? "Starting…" : nil
-    case .idle: return "Idle"
-    case .stopped, .inactive: return "Stopped"
-    }
-  }
+  var statusText: String? { nil }
 
   var canReload: Bool { viewer != nil && state == .active }
 
@@ -100,25 +89,12 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
     }
     switch state {
     case .active, .idle:
-      hideTask?.cancel()
-      hideTask = nil
-      isLingering = false
       guard !isDismissed, viewer == nil, state == .active else {
         viewer?.update(title: title)
         return
       }
       viewer = connection.makeViewer(title: title)
-    case .stopped:
-      guard viewer != nil, hideTask == nil else { return }
-      isLingering = true
-      hideTask = Task { [weak self] in
-        try? await Task.sleep(for: ComputerUsePiPModel.hideDelay)
-        guard !Task.isCancelled, let self else { return }
-        self.isLingering = false
-        self.releaseViewer()
-        self.hideTask = nil
-      }
-    case .inactive:
+    case .stopped, .inactive:
       releaseViewer()
     }
   }
@@ -126,9 +102,6 @@ extension BrowserUsePiPModel: LivePreviewPiPModel {
   func turnActivityChanged(isRunning: Bool) {}
 
   func teardown() {
-    hideTask?.cancel()
-    hideTask = nil
-    isLingering = false
     releaseViewer()
     connection.stop()
   }

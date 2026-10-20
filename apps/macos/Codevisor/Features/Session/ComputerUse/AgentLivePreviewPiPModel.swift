@@ -10,7 +10,9 @@ final class AgentLivePreviewPiPModel {
     let computer: ComputerUseLivePreview.Activity?
     let browser: LivePreviewConnection.Status?
     let lastUsedTool: LivePreviewConnection.Tool?
+    let computerMounted: Bool
     let computerVisible: Bool
+    let browserMounted: Bool
     let browserVisible: Bool
   }
 
@@ -27,9 +29,14 @@ final class AgentLivePreviewPiPModel {
   }
 
   private var shown: (any LivePreviewPiPModel)? {
-    let showsComputer = computer?.isVisible == true
-    if browser?.isVisible == true, !showsComputer || browser?.lastUsedTool == .browser { return browser }
-    return showsComputer ? computer : nil
+    let mounted = byPreference.filter(\.isMounted)
+    return mounted.first(where: \.isVisible) ?? mounted.first
+  }
+
+  private var byPreference: [any LivePreviewPiPModel] {
+    let order: [(any LivePreviewPiPModel)?] =
+      browser?.lastUsedTool == .browser ? [browser, computer] : [computer, browser]
+    return order.compactMap { $0 }
   }
 
   private var placement: (any LivePreviewPiPModel)? {
@@ -49,11 +56,14 @@ extension AgentLivePreviewPiPModel: LivePreviewPiPModel {
       computer: computer?.activity,
       browser: browser?.changeKey,
       lastUsedTool: browser?.lastUsedTool,
+      computerMounted: computer?.isMounted == true,
       computerVisible: computer?.isVisible == true,
+      browserMounted: browser?.isMounted == true,
       browserVisible: browser?.isVisible == true)
   }
 
-  var isVisible: Bool { shown != nil }
+  var isMounted: Bool { shown != nil }
+  var isVisible: Bool { shown?.isVisible ?? false }
   var viewer: ComputerUseLivePreviewViewer? { shown?.viewer }
 
   var corner: ComputerUseLivePreviewCorner {

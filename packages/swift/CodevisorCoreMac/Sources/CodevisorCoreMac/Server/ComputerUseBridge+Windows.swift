@@ -273,15 +273,18 @@ extension ComputerUseBridge {
   ) -> [[String: Any]] {
     let focusedID = elementAttribute(application, kAXFocusedWindowAttribute)
       .flatMap { computerUseWindowID(for: $0) }
+    var pid: pid_t = 0
+    AXUIElementGetPid(application, &pid)
     return accessibleWindows(application).compactMap { candidate in
       guard let id = computerUseWindowID(for: candidate) else { return nil }
+      let isMinimized = copyAttribute(candidate, kAXMinimizedAttribute) as? Bool == true
       var entry: [String: Any] = [
         "windowId": Int(id),
         "isSessionWindow": id == pinnedWindowID,
         "isFocused": id == focusedID,
         "hasModalSheet": !sheetElements(of: candidate).isEmpty,
-        "isOnActiveSpace": windowIsOnVisibleSpace(id),
-        "isMinimized": copyAttribute(candidate, kAXMinimizedAttribute) as? Bool == true,
+        "visibility": ComputerUseWindowVisibility.read(windowID: id, pid: pid) { isMinimized }.rawValue,
+        "isMinimized": isMinimized,
       ]
       if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
         entry["title"] = title

@@ -191,12 +191,12 @@ final class ComputerUseLivePreviewHost {
       guard let session = sessions[owner], session.sessionID == sessionID else {
         return .init(status: "stopped", message: "The live view ended on the host Mac.")
       }
-      guard liveActivity(sessionID) != nil else {
+      guard let activity = liveActivity(sessionID) else {
         end(owner: owner, session: session)
         return .init(status: "stopped", message: "The agent stopped controlling the app.")
       }
       session.expiresAt = dependencies.now() + Self.lifetime
-      return .init(status: session.state)
+      return .init(status: session.state, message: activity.windowNotice)
     case .start, .restart:
       if let old = sessions[owner] { end(owner: owner, session: old) }
       guard sessions.count < Self.maximumSessions else {
@@ -236,7 +236,7 @@ final class ComputerUseLivePreviewHost {
           let answer = try await peer.answer(offer: offer)
           guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
           session.token = dependencies.attach(session.bridgeSessionID, peer.sink)
-          return .init(status: "connecting", answer: answer)
+          return .init(status: "connecting", message: activity.windowNotice, answer: answer)
         } catch {
           if sessions[owner] === session { end(owner: owner, session: session) } else { peer.close() }
           throw error

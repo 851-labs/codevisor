@@ -34,6 +34,7 @@ struct ComputerUseLivePreviewLedger: Equatable {
     case cursorHidden(sessionID: String)
     case expireCursors(now: TimeInterval)
     case windowFrameChanged(sessionID: String, windowID: CGWindowID, frame: CGRect)
+    case windowVisibilityChanged(sessionID: String, windowID: CGWindowID, visibility: ComputerUseWindowVisibility)
     case idled(sessionID: String)
     case stopped(sessionID: String, pid: pid_t?)
     case terminated(pid: pid_t)
@@ -50,6 +51,7 @@ struct ComputerUseLivePreviewLedger: Equatable {
       let key = Self.key(sessionID)
       let previous = activities[key]
       let sameWindow = previous?.windowID == windowID && previous?.pid == pid
+      let knownVisibility = sameWindow ? previous?.windowVisibility : nil
       activities[key] = ComputerUseLivePreview.Activity(
         sessionID: key,
         bridgeSessionID: sessionID,
@@ -60,7 +62,8 @@ struct ComputerUseLivePreviewLedger: Equatable {
         colorIndex: colorIndex,
         cursor: sameWindow ? previous?.cursor : nil,
         cursorExpiresAt: sameWindow ? previous?.cursorExpiresAt : nil,
-        state: .active
+        state: .active,
+        windowVisibility: knownVisibility ?? .visible
       )
     case .cursorMoved(let sessionID, let point, let now):
       let key = Self.key(sessionID)
@@ -89,6 +92,11 @@ struct ComputerUseLivePreviewLedger: Equatable {
       activity.windowFrame = frame
       activity.cursor = nil
       activity.cursorExpiresAt = nil
+      activities[key] = activity
+    case .windowVisibilityChanged(let sessionID, let windowID, let visibility):
+      let key = Self.key(sessionID)
+      guard var activity = activities[key], activity.windowID == windowID else { return }
+      activity.windowVisibility = visibility
       activities[key] = activity
     case .idled(let sessionID):
       let key = Self.key(sessionID)
@@ -145,8 +153,10 @@ public final class ComputerUseLivePreview {
     public internal(set) var cursor: CGPoint?
     var cursorExpiresAt: TimeInterval? = nil
     public internal(set) var state: State
+    public internal(set) var windowVisibility: ComputerUseWindowVisibility = .visible
 
     public var tint: NSColor { ComputerUseCursorPalette.color(at: colorIndex) }
+    public var windowNotice: String? { windowVisibility.notice(appName: appName) }
   }
 
   private var ledger = ComputerUseLivePreviewLedger()
@@ -249,6 +259,7 @@ public final class ComputerUseLivePreviewViewer {
   public private(set) var title: String
   public private(set) var frameSize: CGSize?
   public private(set) var windowContent: ComputerUseWindowContent?
+  public private(set) var notice: String?
   @ObservationIgnored public var prefersFastPolling = false
   @ObservationIgnored public let view: NSView = ComputerUseLivePreviewContainer()
 
@@ -282,6 +293,7 @@ public final class ComputerUseLivePreviewViewer {
 
   func update(phase: Phase) { self.phase = phase }
   public func update(title: String) { self.title = title }
+  func update(notice: String?) { self.notice = notice }
   func update(windowContent: ComputerUseWindowContent) {
     guard !isDetached else { return }
     self.windowContent = windowContent

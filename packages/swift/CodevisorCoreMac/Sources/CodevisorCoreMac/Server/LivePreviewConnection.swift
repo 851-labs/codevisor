@@ -103,6 +103,9 @@ public final class LivePreviewConnection {
     do {
       socket = try client.livePreviewSocket(sessionId: chatSession)
     } catch {
+      let reason = error.localizedDescription
+      Log.computerUse.notice(
+        "Browser live view \(self.chatSession, privacy: .public) can't connect: \(reason, privacy: .public)")
       return false
     }
     self.socket = socket
@@ -114,7 +117,13 @@ public final class LivePreviewConnection {
     }
     if sink != nil { watch() }
     while !Task.isCancelled {
-      guard let message = try? await socket.receive() else { return connected }
+      guard let message = try? await socket.receive() else {
+        if !Task.isCancelled {
+          Log.computerUse.notice(
+            "Browser live view \(self.chatSession, privacy: .public) lost its connection (connected=\(connected))")
+        }
+        return connected
+      }
       if !connected {
         connected = true
         isConnected = true

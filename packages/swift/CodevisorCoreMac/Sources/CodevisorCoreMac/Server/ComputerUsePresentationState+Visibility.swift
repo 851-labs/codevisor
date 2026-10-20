@@ -30,6 +30,25 @@ extension ComputerUsePresentationState {
     let windows = onScreenWindowInfo()
     refreshCursorVisibility(windowInfo: windows)
     refreshWatchedWindowFrames(windowInfo: windows)
+    refreshWindowVisibility()
+  }
+
+  func refreshWindowVisibility() {
+    let targets = sessions.compactMapValues { presentation in
+      presentation.targetWindowID.map { ComputerUseWindowVisibilityMonitor.Target(pid: presentation.pid, windowID: $0) }
+    }
+    for (sessionID, reading) in windowVisibility.read(targets) {
+      guard let target = targets[sessionID] else { continue }
+      ComputerUseLivePreview.shared.apply(
+        .windowVisibilityChanged(sessionID: sessionID, windowID: target.windowID, visibility: reading.visibility))
+      if reading.becameVisible { restartCapture(sessionID: sessionID, target: target) }
+    }
+  }
+
+  private func restartCapture(sessionID: String, target: ComputerUseWindowVisibilityMonitor.Target) {
+    guard let activity = ComputerUseLivePreview.shared.activity(forSessionID: sessionID) else { return }
+    ComputerUseNativeSharing.shared.activate(
+      sessionID: sessionID, pid: target.pid, windowID: target.windowID, windowFrame: activity.windowFrame)
   }
 
   func refreshWatchedWindowFrames(windowInfo: [[String: Any]]) {

@@ -124,6 +124,21 @@ struct ComputerUseLivePreviewTests {
     #expect(ledger.activities["abc"]?.cursor == nil)
   }
 
+  @Test("Keeps a hidden window's notice across tool calls on it and drops it when the agent switches windows")
+  func ledgerTracksWindowVisibility() {
+    var ledger = ComputerUseLivePreviewLedger()
+    ledger.apply(activated("abc", window: 7, frame: .zero))
+    ledger.apply(.windowVisibilityChanged(sessionID: "ABC", windowID: 8, visibility: .minimized))
+    #expect(ledger.activities["abc"]?.windowNotice == nil)
+
+    ledger.apply(.windowVisibilityChanged(sessionID: "ABC", windowID: 7, visibility: .appHidden))
+    ledger.apply(activated("abc", window: 7, frame: .zero))
+    #expect(ledger.activities["abc"]?.windowNotice == "TextEdit is hidden")
+
+    ledger.apply(activated("abc", window: 9, frame: .zero))
+    #expect(ledger.activities["abc"]?.windowNotice == nil)
+  }
+
   @Test("Reads a window's bounds from the window server list")
   func windowBounds() {
     let info: [[String: Any]] = [

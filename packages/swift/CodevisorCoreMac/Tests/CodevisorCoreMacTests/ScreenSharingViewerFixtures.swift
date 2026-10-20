@@ -126,14 +126,17 @@ actor SharingTransport: ServerRequestTransport {
   private var heartbeatReplies: [ServerScreenSharingReply]
   private let restartStatus: String
   private let provider: String?
+  private let startNotice: String?
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
-    restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = []
+    restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = [],
+    startNotice: String? = nil
   ) {
     self.heartbeatReplies = heartbeatReplies
+    self.startNotice = startNotice
     self.blockFirstStart = blockFirstStart
     self.capabilitiesStatus = capabilitiesStatus
     self.heartbeatStatus = heartbeatStatus
@@ -152,7 +155,9 @@ actor SharingTransport: ServerRequestTransport {
       let first = requests.filter { $0.operation == .start }.count == 1
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
-      reply = .init(status: payload.operation == .restart ? restartStatus : "connecting", answer: "fixture answer")
+      reply = .init(
+        status: payload.operation == .restart ? restartStatus : "connecting", message: startNotice,
+        answer: "fixture answer")
     case .heartbeat:
       reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()
     case .setScale: reply = .init(status: "unsupported")
@@ -196,7 +201,8 @@ final class NativeBackendHarness {
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen = { _ in
       throw RFBError.transport("No VNC display in this test.")
     },
-    target: String? = nil
+    target: String? = nil,
+    heartbeatInterval: Duration = .seconds(8)
   ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
@@ -215,7 +221,7 @@ final class NativeBackendHarness {
         surfaces.append(surface)
         return surface
       },
-      vncOpen: vncOpen, target: target)
+      vncOpen: vncOpen, target: target, heartbeatInterval: heartbeatInterval)
   }
 
   @discardableResult

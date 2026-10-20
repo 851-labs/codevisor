@@ -76,11 +76,13 @@ extension ScreenSharingViewerBackend {
       @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
-    target: String? = nil
+    target: String? = nil,
+    heartbeatInterval: Duration = .seconds(8)
   ) -> Self {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia)
+      makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia,
+      heartbeatInterval: heartbeatInterval)
     guard let machineId else {
       return Self(
         connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
@@ -109,6 +111,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private var controlLease = false
   private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
   private let target: String?
+  private let heartbeatInterval: Duration
   private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
 
   init(
@@ -119,9 +122,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
-    tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
+    tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil,
+    heartbeatInterval: Duration = .seconds(8)
   ) {
     self.target = target
+    self.heartbeatInterval = heartbeatInterval
     self.tunnelMedia = tunnelMedia
     self.client = client
     self.workspaceId = workspaceId
@@ -272,10 +277,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
           return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
         }
         try await session.accept(Self.remoteAnswer(answer, offer: offer, media: media, bridge: reply.tunnelMedia))
-        var heartbeatsBeforeVideo = 0
-        var notice: String?
+        var waitedForVideo = Duration.zero
+        var notice = reply.message
+        if notice != nil { emit(.hostNotice(notice)) }
         while true {
-          try await sleep(.seconds(8))
+          try await sleep(heartbeatInterval)
           try Task.checkCancellation()
           let reply = try await client.screenSharing(request(.heartbeat, viewerId: viewerId))
           try Task.checkCancellation()
@@ -288,8 +294,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
             emit(.hostNotice(notice))
           }
           if !attempt.ready, notice == nil {
-            heartbeatsBeforeVideo += 1
-            guard heartbeatsBeforeVideo < 3 else {
+            waitedForVideo += heartbeatInterval
+            guard waitedForVideo < Self.missingVideoTimeout else {
               return .ended(
                 "No video arrived. Check the connection between these Macs or the configured relay, then retry.")
             }
@@ -314,6 +320,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     }
     return (outcome, attempt.started)
   }
+
+  private static let missingVideoTimeout: Duration = .seconds(24)
 
   private func hostEndReason(viewerId: UUID) async -> String? {
     let heartbeat = request(.heartbeat, viewerId: viewerId)

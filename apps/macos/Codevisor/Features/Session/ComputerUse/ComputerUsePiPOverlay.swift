@@ -26,7 +26,7 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
       let insets = ComputerUseLivePreviewLayout.insets(composerHeight: composerHeight)
       ZStack(alignment: .topLeading) {
         Color.clear.allowsHitTesting(false)
-        if model.isVisible, let viewer = model.viewer {
+        if model.isMounted, let viewer = model.viewer {
           let aspect = aspect(viewer: viewer)
           let size = cardSize(aspect: aspect, container: geometry.size, insets: insets)
           let origin = ComputerUseLivePreviewLayout.origin(
@@ -40,8 +40,12 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
             .accessibilityLabel("Live view of \(model.title) controlled by the agent")
             .accessibilityAction(.default) { model.activateTarget() }
             .id(ObjectIdentifier(viewer))
+            .scaleEffect(model.isVisible ? 1 : 0.92, anchor: model.corner.unitPoint)
+            .opacity(model.isVisible ? 1 : 0)
+            .allowsHitTesting(model.isVisible)
+            .accessibilityHidden(!model.isVisible)
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
-            .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
+            .transition(.opacity)
         }
       }
       .coordinateSpace(name: Self.coordinateSpace)

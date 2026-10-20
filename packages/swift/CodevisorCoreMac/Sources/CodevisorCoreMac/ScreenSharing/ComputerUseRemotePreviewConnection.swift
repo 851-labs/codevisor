@@ -47,7 +47,7 @@ extension ComputerUseLivePreview {
 enum ComputerUseRemotePreviewTiming {
   static let activePoll: Duration = .seconds(3)
   static let quietPoll: Duration = .seconds(15)
-  static let endedLinger: Duration = .seconds(2)
+  static let heartbeat: Duration = .seconds(2)
 
   static func pollInterval(prefersFastPolling: Bool) -> Duration {
     prefersFastPolling ? activePoll : quietPoll
@@ -78,7 +78,8 @@ final class ComputerUseRemotePreviewConnection {
         self?.latestSurface = surface
         return surface
       },
-      target: target)
+      target: target,
+      heartbeatInterval: ComputerUseRemotePreviewTiming.heartbeat)
   }
 
   func start(viewer: ComputerUseLivePreviewViewer) {
@@ -123,7 +124,9 @@ final class ComputerUseRemotePreviewConnection {
         viewer.update(phase: .live)
       case .reconnecting:
         viewer.update(phase: .reconnecting)
-      case .hostNotice, .elsewhere:
+      case .hostNotice(let notice):
+        viewer.update(notice: notice)
+      case .elsewhere:
         break
       case .ended(let message):
         ended = message
@@ -131,10 +134,11 @@ final class ComputerUseRemotePreviewConnection {
     }
     guard !Task.isCancelled else { return }
     if let ended {
+      Log.computerUse.notice("Live view \(self.target, privacy: .public) ended: \(ended, privacy: .public)")
       viewer.update(phase: .stopped(ended))
-      try? await Task.sleep(for: ComputerUseRemotePreviewTiming.endedLinger)
     }
     viewer.install(nil)
+    viewer.update(notice: nil)
     viewer.update(phase: .searching)
   }
 }

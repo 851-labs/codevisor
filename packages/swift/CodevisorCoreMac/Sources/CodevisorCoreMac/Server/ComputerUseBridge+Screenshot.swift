@@ -123,6 +123,17 @@ extension ComputerUseBridge {
   }
 }
 
+func computerUseUncapturableReason(_ visibility: ComputerUseWindowVisibility, appName: String) -> String? {
+  switch visibility {
+  case .minimized:
+    "The window is minimized, so it can't be captured. Restore it with windowAction to see it; accessibility actions still work."
+  case .appHidden:
+    "\(appName) is hidden, so its window can't be captured. Accessibility actions still work; one that unhides the app reports appBecameVisible."
+  case .visible, .otherSpace, .closed:
+    nil
+  }
+}
+
 private final class ScreenshotBox: @unchecked Sendable {
   private let lock = NSLock()
   private var capture: ComputerUseBridge.ScreenshotCapture?
