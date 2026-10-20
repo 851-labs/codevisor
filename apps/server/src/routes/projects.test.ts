@@ -323,8 +323,19 @@ describe("project routes", () => {
       expect(scratch.isScratch).toBe(true)
       const scratchFolder = scratch.locations[0]?.folderPath
       if (scratchFolder === undefined) throw new Error("missing scratch folder")
-      expect(scratchFolder).toBe(join(worktreesRoot, "workspaces", scratch.name))
+      expect(scratchFolder).toBe(join(worktreesRoot, "workspaces.noindex", scratch.name))
       expect(existsSync(scratchFolder)).toBe(true)
+
+      const olderFolder = join(worktreesRoot, "workspaces", "older-scratch")
+      mkdirSync(olderFolder, { recursive: true })
+      const older = await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: olderFolder }),
+        method: "POST"
+      })
+      expect(decodeProject(older.body)).toMatchObject({
+        isScratch: true,
+        locations: [{ folderPath: olderFolder }]
+      })
 
       const replay = await jsonRequest(server, "/v1/projects/scratch", {
         body: JSON.stringify({ id: "scratch-project" }),
@@ -332,7 +343,7 @@ describe("project routes", () => {
       })
       expect(replay.status).toBe(200)
       expect(idOf(replay.body)).toBe("scratch-project")
-      expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(1)
+      expect(readdirSync(join(worktreesRoot, "workspaces.noindex"))).toHaveLength(1)
 
       const anonymous = await jsonRequest(server, "/v1/projects/scratch", {
         body: JSON.stringify({}),
@@ -340,7 +351,7 @@ describe("project routes", () => {
       })
       expect(anonymous.status).toBe(201)
       expect(decodeProject(anonymous.body).isScratch).toBe(true)
-      expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(2)
+      expect(readdirSync(join(worktreesRoot, "workspaces.noindex"))).toHaveLength(2)
 
       resetRepoUrlDiscoveryCache()
       const listed = await jsonRequest(server, "/v1/projects", { method: "GET" })

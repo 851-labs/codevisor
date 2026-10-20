@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 import {
   botPath,
   isBotFolder,
+  isScratchFolder,
   legacyWorktreeTrashRoot,
   managedRepoPath,
   scratchWorkspacePath,
@@ -47,9 +48,14 @@ describe("@codevisor/db", () => {
   it("derives scratch workspace paths beside the worktrees root", () => {
     const previous = process.env["CODEVISOR_WORKTREES_ROOT"]
     delete process.env["CODEVISOR_WORKTREES_ROOT"]
-    expect(scratchWorkspacesRoot()).toBe(join(homedir(), "codevisor", "workspaces"))
+    expect(scratchWorkspacesRoot()).toBe(join(homedir(), "codevisor", "workspaces.noindex"))
     process.env["CODEVISOR_WORKTREES_ROOT"] = "/tmp/custom-worktrees"
-    expect(scratchWorkspacePath("meatball")).toBe("/tmp/custom-worktrees/workspaces/meatball")
+    expect(scratchWorkspacePath("meatball")).toBe(
+      "/tmp/custom-worktrees/workspaces.noindex/meatball"
+    )
+    expect(isScratchFolder("/tmp/custom-worktrees/workspaces.noindex/meatball")).toBe(true)
+    expect(isScratchFolder("/tmp/custom-worktrees/workspaces/meatball")).toBe(true)
+    expect(isScratchFolder("/tmp/custom-worktrees/bots/meatball")).toBe(false)
     if (previous === undefined) {
       delete process.env["CODEVISOR_WORKTREES_ROOT"]
     } else {

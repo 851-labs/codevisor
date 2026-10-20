@@ -18,6 +18,7 @@ export {
   isManagedFolder,
   isScratchFolder,
   legacyBotsRoot,
+  legacyScratchWorkspacesRoot,
   legacyWorktreeTrashRoot,
   managedRepoPath,
   scratchWorkspacePath,

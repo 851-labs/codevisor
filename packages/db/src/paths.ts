@@ -33,7 +33,9 @@ export const worktreePathBeside = (projectId: string, previous: string, name: st
     ? legacyWorktreePath(projectId, name)
     : unindexedWorktreePath(projectId, name)
 
-export const scratchWorkspacesRoot = (): string => join(worktreesRoot(), "workspaces")
+export const scratchWorkspacesRoot = (): string => join(worktreesRoot(), "workspaces.noindex")
+
+export const legacyScratchWorkspacesRoot = (): string => join(worktreesRoot(), "workspaces")
 
 export const scratchWorkspacePath = (name: string): string => join(scratchWorkspacesRoot(), name)
 
@@ -51,7 +53,8 @@ export const worktreeTrashRoot = (): string => join(worktreesRoot(), ".trash.noi
 export const legacyWorktreeTrashRoot = (): string => join(worktreesRoot(), ".trash")
 
 export const isScratchFolder = (folderPath: string): boolean =>
-  dirname(folderPath) === scratchWorkspacesRoot()
+  dirname(folderPath) === scratchWorkspacesRoot() ||
+  dirname(folderPath) === legacyScratchWorkspacesRoot()
 
 export const isBotFolder = (folderPath: string): boolean =>
   dirname(folderPath) === botsRoot() || dirname(folderPath) === legacyBotsRoot()
