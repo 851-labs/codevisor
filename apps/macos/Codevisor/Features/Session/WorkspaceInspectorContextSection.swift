@@ -79,29 +79,34 @@ private struct WorkspaceInspectorContextBar: View {
   let used: Double
   let size: Double
 
+  private static let barHeight: CGFloat = 8
+
+  private var fills: [(Color, Double)] {
+    segments.isEmpty ? [(.accentColor, used)] : segments
+  }
+
   var body: some View {
-    GeometryReader { proxy in
-      HStack(spacing: 1) {
-        if segments.isEmpty {
-          Rectangle()
-            .fill(Color.accentColor)
-            .frame(width: proxy.size.width * min(used / size, 1))
-        } else {
-          ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-            Rectangle()
-              .fill(segment.0)
-              .frame(width: max(proxy.size.width * segment.1 / size - 1, 1))
+    ProgressView(value: 0)
+      .progressViewStyle(.linear)
+      .labelsHidden()
+      .tint(.clear)
+      .overlay(alignment: .leading) {
+        GeometryReader { proxy in
+          HStack(spacing: 1) {
+            ForEach(Array(fills.enumerated()), id: \.offset) { _, fill in
+              Rectangle()
+                .fill(fill.0)
+                .frame(width: max(proxy.size.width * min(fill.1 / size, 1) - 1, 1))
+            }
           }
+          .frame(height: Self.barHeight)
+          .clipShape(Capsule())
+          .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
-        Spacer(minLength: 0)
       }
-      .background(.quaternary)
-      .clipShape(Capsule())
-    }
-    .frame(height: 6)
-    .accessibilityElement()
-    .accessibilityLabel("Context used")
-    .accessibilityValue("\(Int((used / size * 100).rounded())) percent")
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Context used")
+      .accessibilityValue("\(Int((used / size * 100).rounded())) percent")
   }
 }
 
