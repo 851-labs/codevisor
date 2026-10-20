@@ -27,6 +27,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   let transcriptDocumentView = FlippedTranscriptDocumentView()
   let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = NSProgressIndicator()
+  let bottomFadeMask = CAGradientLayer()
+  var bottomFade = TranscriptBottomFade.none
+  var bottomFadeMaskGeometry: (height: CGFloat, fade: TranscriptBottomFade, flipped: Bool)?
   var rows: [TranscriptVirtualRow] { rowSet.rows }
   var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
   var projectedRows: [TranscriptVirtualRow] {
@@ -173,6 +176,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     horizontalScrollElasticity = .none
     automaticallyAdjustsContentInsets = false
     contentView.postsBoundsChangedNotifications = true
+    contentView.wantsLayer = true
     transcriptDocumentView.wantsLayer = true
     transcriptDocumentView.layer?.backgroundColor = NSColor.clear.cgColor
     documentView = transcriptDocumentView
@@ -191,7 +195,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       object: contentView,
       queue: .main
     ) { [weak self] _ in
-      Self.onMain { [weak self] in self?.viewportDidScroll() }
+      Self.onMain { [weak self] in
+        self?.layoutBottomFadeMask()
+        self?.viewportDidScroll()
+      }
     }
     liveScrollObservers = [
       NotificationCenter.default.addObserver(
@@ -315,6 +322,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
     layoutMountedTextViewportsIfNeeded()
     updateCollapsibleEarlierHistory()
+    layoutBottomFadeMask()
   }
 
   override func scrollWheel(with event: NSEvent) {

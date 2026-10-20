@@ -61,7 +61,8 @@ extension ChatScreen {
               sendAnimationRequest: controller.userSendAnimationRequest,
               textAnimationRegistry: presentationSurface.textAnimationRegistry,
               allowsLiveTextAnimation: presentationSurface.textAnimationVisibility.isVisible,
-              reduceMotion: reduceMotion
+              reduceMotion: reduceMotion,
+              bottomFade: transcriptBottomFade
             ),
             callbacks: TranscriptSurfaceCallbacks(
               claimSendAnimation: { request in

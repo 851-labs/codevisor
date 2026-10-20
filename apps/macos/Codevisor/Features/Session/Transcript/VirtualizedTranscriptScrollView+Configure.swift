@@ -60,6 +60,7 @@ extension VirtualizedTranscriptScrollView {
     onEarlierHistoryCollapseChange = callbacks.onEarlierHistoryCollapseChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
+    applyBottomFade(input.bottomFade)
     updatePaginationLoadingIndicator(
       isPresented: newShowsOlderHistoryLoadingIndicator
     )

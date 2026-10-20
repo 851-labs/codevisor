@@ -59,64 +59,15 @@ extension ChatScreen {
     return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane)
   }
 
-  @ViewBuilder
-  var composerScrim: some View {
-    if !isReadOnly, composerCardHeight > 0 {
-      let cardHeight = composerCardHeight
-      let height = cardHeight + Self.composerBottomMargin
-      let solidStart = cardHeight * 0.15
-      let solidEnd = max(cardHeight / 2, cardHeight - composerCardStyle.cornerRadius)
-      let blurPeak = min(cardHeight * 0.45, solidEnd)
-      let blurFadeStart = max(blurPeak, solidStart + (solidEnd - solidStart) * 0.7)
-      ZStack(alignment: .top) {
-        Rectangle()
-          .fill(.ultraThinMaterial)
-          .mask(
-            Self.scrimRamp(
-              rising: 0...blurPeak / cardHeight,
-              falling: blurFadeStart / cardHeight...solidEnd / cardHeight
-            )
-          )
-          .frame(height: cardHeight)
-          .clipShape(composerCardStyle.shape)
-        ZStack(alignment: .top) {
-          Rectangle()
-            .fill(.background)
-            .frame(height: cardHeight)
-            .clipShape(composerCardStyle.shape)
-          Rectangle()
-            .fill(.background)
-            .padding(.top, cardHeight / 2)
-        }
-        .mask(Self.scrimRamp(rising: solidStart / height...solidEnd / height))
-      }
-      .frame(height: height)
-      .padding(.horizontal, Self.composerHorizontalPadding)
-      .frame(maxWidth: Self.composerMaxWidth)
-      .frame(maxWidth: .infinity)
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
-      .animation(Motion.quick(reduceMotion: reduceMotion), value: composerCardHeight)
-    }
-  }
-
-  static func scrimRamp(
-    rising: ClosedRange<CGFloat>,
-    falling: ClosedRange<CGFloat>? = nil
-  ) -> LinearGradient {
-    func easedStops(across range: ClosedRange<CGFloat>, rising: Bool) -> [Gradient.Stop] {
-      let steps = 8
-      return (0...steps).map { step in
-        let progress = CGFloat(step) / CGFloat(steps)
-        let eased = progress * progress * (3 - 2 * progress)
-        return Gradient.Stop(
-          color: .black.opacity(rising ? eased : 1 - eased),
-          location: range.lowerBound + (range.upperBound - range.lowerBound) * progress
-        )
-      }
-    }
-    let stops = easedStops(across: rising, rising: true) + (falling.map { easedStops(across: $0, rising: false) } ?? [])
-    return LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
+  var transcriptBottomFade: TranscriptBottomFade {
+    guard !isReadOnly, composerCardHeight > 0 else { return .none }
+    let cardHeight = composerCardHeight
+    let fadeStart = cardHeight * 0.15
+    let fadeEnd = max(cardHeight / 2, cardHeight - composerCardStyle.cornerRadius)
+    return TranscriptBottomFade(
+      clearHeight: cardHeight - fadeEnd + Self.composerBottomMargin,
+      fadeHeight: fadeEnd - fadeStart
+    )
   }
 
   var bottomChromeOverlay: some View {

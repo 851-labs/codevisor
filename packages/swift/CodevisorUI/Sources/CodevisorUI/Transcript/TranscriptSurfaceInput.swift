@@ -15,6 +15,18 @@ public struct TranscriptScrollCommand: Equatable, Sendable {
   }
 }
 
+public struct TranscriptBottomFade: Equatable, Sendable {
+  public var clearHeight: CGFloat
+  public var fadeHeight: CGFloat
+
+  public static let none = TranscriptBottomFade(clearHeight: 0, fadeHeight: 0)
+
+  public init(clearHeight: CGFloat, fadeHeight: CGFloat) {
+    self.clearHeight = clearHeight
+    self.fadeHeight = fadeHeight
+  }
+}
+
 public enum TranscriptPresentationRole: Equatable, Sendable {
   case foreground
   case prewarming
@@ -49,6 +61,7 @@ public struct TranscriptSurfaceInput {
   public var reduceMotion: Bool
   public var scrollIndicatorBottomInset: CGFloat
   public var topContentClearance: CGFloat
+  public var bottomFade: TranscriptBottomFade
 
   public init(
     sessionController: SessionController,
@@ -77,7 +90,8 @@ public struct TranscriptSurfaceInput {
     allowsLiveTextAnimation: Bool = true,
     reduceMotion: Bool,
     scrollIndicatorBottomInset: CGFloat = 0,
-    topContentClearance: CGFloat = 0
+    topContentClearance: CGFloat = 0,
+    bottomFade: TranscriptBottomFade = .none
   ) {
     self.sessionController = sessionController
     self.rows = rows
@@ -106,6 +120,7 @@ public struct TranscriptSurfaceInput {
     self.reduceMotion = reduceMotion
     self.scrollIndicatorBottomInset = scrollIndicatorBottomInset
     self.topContentClearance = topContentClearance
+    self.bottomFade = bottomFade
   }
 }
 

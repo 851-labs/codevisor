@@ -93,7 +93,6 @@ struct ChatScreen: View {
         presentationSurface.isQueueExpanded = isExpanded
       }
       .overlay { initialLoadingOverlay }
-      .overlay(alignment: .bottom) { composerScrim }
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
