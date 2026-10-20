@@ -156,6 +156,7 @@ export const endpoints = [
   "PATCH /v1/sessions/:id/queue",
   "PATCH /v1/sessions/:id/queue/:queueId",
   "DELETE /v1/sessions/:id/queue/:queueId",
+  "POST /v1/sessions/:id/queue/:queueId/send-now",
   "GET /v1/sessions/:id/subscriptions",
   "POST /v1/sessions/:id/subscriptions",
   "DELETE /v1/sessions/:id/subscriptions/:subscriptionId",

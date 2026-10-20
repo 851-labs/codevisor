@@ -255,12 +255,13 @@ export const makeAgents = (): AgentRuntimeService & {
         }
         if (text === "prompt until cancelled") {
           const turnId = `turn-${prompts.length}`
+          const cancelled = new Promise<void>((resolve) => cancellable.set(sessionId, resolve))
           await emit(sessionId, {
             kind: "session.updated",
             subjectId: sessionId,
             payload: { initiatedBy: "user", turnId, turnState: "started" }
           })
-          await new Promise<void>((resolve) => cancellable.set(sessionId, resolve))
+          await cancelled
           await emit(sessionId, {
             kind: "session.updated",
             subjectId: sessionId,

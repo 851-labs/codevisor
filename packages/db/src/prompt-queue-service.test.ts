@@ -38,4 +38,16 @@ describe("prompt queue", () => {
 
     expect(await run(db.claimPromptQueueItem(session.id))).toMatchObject({ id: item.id })
   })
+
+  it("claims a chosen prompt out of line without disturbing the others", async () => {
+    const { db, session } = await queueFixture()
+    const first = await run(db.createPromptQueueItem(session.id, "first"))
+    const second = await run(db.createPromptQueueItem(session.id, "second"))
+
+    expect(await run(db.claimPromptQueueItem(session.id, second.id))).toMatchObject({
+      id: second.id
+    })
+    expect(await run(db.claimPromptQueueItem(session.id, second.id))).toBeUndefined()
+    expect(await run(db.listPromptQueue(session.id))).toMatchObject([{ id: first.id }])
+  })
 })

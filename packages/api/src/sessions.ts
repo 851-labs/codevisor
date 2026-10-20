@@ -360,8 +360,15 @@ export const OpenSessionResponse = Schema.Struct({
 })
 export type OpenSessionResponse = typeof OpenSessionResponse.Type
 
+export const PromptDelivery = Schema.Literals(["steer", "queue"])
+export type PromptDelivery = typeof PromptDelivery.Type
+
+export const PromptDelivered = Schema.Literals(["sent", "steered", "queued"])
+export type PromptDelivered = typeof PromptDelivered.Type
+
 export const PromptRequest = Schema.Struct({
   text: Schema.String,
+  delivery: Schema.optional(PromptDelivery),
   clientActionId: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   messageId: Schema.optional(Schema.String),
@@ -373,7 +380,9 @@ export type PromptRequest = typeof PromptRequest.Type
 export const PromptAcceptedResponse = Schema.Struct({
   accepted: Schema.Boolean,
   sessionId: Schema.String,
-  queueItemId: Schema.optional(Schema.String)
+  queueItemId: Schema.optional(Schema.String),
+  delivered: Schema.optional(PromptDelivered),
+  steerDeclined: Schema.optional(Schema.Boolean)
 })
 export type PromptAcceptedResponse = typeof PromptAcceptedResponse.Type
 

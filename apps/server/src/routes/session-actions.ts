@@ -31,6 +31,11 @@ import type {
 } from "../server-context.js"
 import { agentMessageEvent, routeBotConversation } from "./bot-conversation.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
+import {
+  defaultPromptDelivery,
+  deliverQueuedPrompt,
+  sendQueuedPromptNow
+} from "./prompt-delivery.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { routeParam } from "./route-params.js"
 import { applySessionConfigPick } from "./session-config.js"
@@ -109,6 +114,22 @@ export const routeSessionActions = async (
     return true
   }
 
+  const sendNowRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId/send-now")
+  if (sendNowRoute !== undefined && request.method === "POST") {
+    const id = routeParam(sendNowRoute, "id")
+    const queueId = routeParam(sendNowRoute, "queueId")
+    const outcome = await sendQueuedPromptNow(services, fanout, routeState, config.id, id, queueId)
+    const result: PromptAcceptedResponse = {
+      accepted: true,
+      sessionId: id,
+      queueItemId: queueId,
+      ...outcome
+    }
+    writeJson(response, 200, result)
+    void drainPromptQueue(services, fanout, routeState, config.id, id).catch(swallowError)
+    return true
+  }
+
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
     if (
@@ -169,10 +190,20 @@ export const routeSessionActions = async (
         ...(attachments.length === 0 ? {} : { attachments })
       })
     }
+    const outcome = await deliverQueuedPrompt(
+      services,
+      fanout,
+      routeState,
+      config.id,
+      promptSessionId,
+      queueItem.id,
+      payload.delivery ?? defaultPromptDelivery
+    )
     const result: PromptAcceptedResponse = {
       accepted: true,
       sessionId: promptSessionId,
-      queueItemId: queueItem.id
+      queueItemId: queueItem.id,
+      ...outcome
     }
     if (payload.clientActionId !== undefined) {
       await run(

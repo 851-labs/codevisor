@@ -365,6 +365,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "PATCH /v1/sessions/:id/queue": arrayOf(PromptQueueItem),
   "PATCH /v1/sessions/:id/queue/:queueId": PromptQueueItem,
   "POST /v1/sessions/:id/prompt": PromptAcceptedResponse,
+  "POST /v1/sessions/:id/queue/:queueId/send-now": PromptAcceptedResponse,
   "POST /v1/sessions/:id/cancel": Schema.Struct({ cancelled: Schema.Boolean }),
   "POST /v1/sessions/:id/mode": Schema.Struct({ modeId: Schema.String }),
   "POST /v1/sessions/:id/config": Schema.Struct({

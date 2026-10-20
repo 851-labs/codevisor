@@ -149,8 +149,14 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/sessions/:id/queue/:queueId"
   ),
   apiTool(
+    "sessions.queue_send_now",
+    "Send a queued prompt now instead of waiting its turn: steered into the running turn when the harness allows it, otherwise moved to the front of the queue. Returns the same delivered and steerDeclined fields as sessions.prompt.",
+    "POST",
+    "/v1/sessions/:id/queue/:queueId/send-now"
+  ),
+  apiTool(
     "sessions.prompt",
-    "Send or queue a prompt in a Codevisor session.",
+    "Send a prompt to a Codevisor session. An idle session starts a turn with it. While a turn is running, delivery picks how it lands: steer (the default) adds it to the running turn so the agent reads it at its next step; queue holds it until the turn and any earlier queued prompts finish. delivered reports what happened: sent (started a turn), steered, or queued. steerDeclined: true means the running turn couldn't take it (the harness can't steer, or Codevisor is holding prompts for an update), so it was queued instead; to make it run now, sessions.cancel the turn. queueItemId identifies a queued prompt for the queue_* tools.",
     "POST",
     "/v1/sessions/:id/prompt",
     {

@@ -42,6 +42,24 @@ const liveBotTurn = async () => {
 }
 
 describe("steering a bot's running turn", () => {
+  it("steers every queued prompt into the running turn in order", async () => {
+    const { agents, services, drain } = await liveBotTurn()
+    await run(services.db.createPromptQueueItem("chat-bot", "first event"))
+    await run(services.db.createPromptQueueItem("chat-bot", "second event"))
+    const steered: Array<unknown> = []
+    vi.spyOn(agents, "steer").mockImplementation((_sessionId, input) =>
+      Effect.sync(() => {
+        steered.push(input)
+        return true
+      })
+    )
+
+    await drain()
+
+    expect(steered).toEqual(["first event", "second event"])
+    expect(await run(services.db.listPromptQueue("chat-bot"))).toEqual([])
+  })
+
   it("runs a prompt the harness declined once the turn it raced has ended", async () => {
     const { agents, services, state, drain } = await liveBotTurn()
     await run(services.db.createPromptQueueItem("chat-bot", "also this"))

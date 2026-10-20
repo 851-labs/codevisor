@@ -307,7 +307,8 @@ export interface CodevisorDatabaseService
     queueItemId: string
   ) => Effect.Effect<void, DatabaseError>
   readonly claimPromptQueueItem: (
-    sessionId: string
+    sessionId: string,
+    queueItemId?: string
   ) => Effect.Effect<PromptQueueItem | undefined, DatabaseError>
   readonly completePromptQueueItem: (
     sessionId: string,

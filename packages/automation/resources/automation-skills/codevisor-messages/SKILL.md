@@ -52,7 +52,7 @@ Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-e
 </codevisor-event>
 ```
 
-Messages another agent sends you with `sessions.prompt` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`.
+Messages another agent sends you with `sessions.prompt` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`. Like the user's messages, they can reach you mid-task.
 
 When the user adds or removes one of your repositories, a `<codevisor-event type="bot.projects_changed">` tells you which one. It needs no reply.
 

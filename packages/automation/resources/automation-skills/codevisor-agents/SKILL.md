@@ -73,6 +73,26 @@ A new workspace, optionally with its own git worktree, suits separate work that 
 - A session on your harness starts on your model, reasoning, and speed. Pass `configSelections` (config id → value, e.g. `{ model: "…" }`) to pick others.
 - `labels` are free-form key/value pairs. Use them to find your agents again later.
 
+## Talking to a busy agent
+
+`sessions.prompt` starts a turn when the agent is idle. While it's working, `delivery` decides how your message lands:
+
+- `"steer"` (the default): added to the running turn, so the agent reads it at its next step. Use it for corrections and extra context about the current task ("also cover the error path", "stop editing src/legacy").
+- `"queue"`: waits until the turn and anything queued before it finish. Use it for the next, separate task, so you don't derail the current one.
+
+The result's `delivered` says what happened: `sent` (started a turn), `steered`, or `queued`.
+
+```js
+;async () =>
+  tools.codevisor.sessions.prompt({ sessionId: worker, text: "Then add tests.", delivery: "queue" })
+// → { accepted, sessionId, queueItemId, delivered: "queued" }
+```
+
+- `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it: the harness can't steer (only some can), or Codevisor is holding prompts for an update. It runs after the turn. If it can't wait, `sessions.cancel` the turn.
+- `sessions.queue_send_now({ sessionId, queueId })` sends a queued prompt now: steered into the running turn, or moved to the front of the queue when steering isn't possible. It returns the same `delivered` field.
+- Conversational bots take every message into their running turn, so a prompt to one reports `steered` even when you asked to queue.
+- `sessions.queue_list`, `queue_update`, `queue_reorder`, and `queue_delete` manage what's still waiting.
+
 ## Get told when an agent finishes
 
 Subscribe and end your turn instead of waiting. Codevisor delivers each event as a hidden `<codevisor-event>` message: it starts a new turn for you when you're idle, or arrives at the end of your current turn. It works for any session, including agents you didn't create, and on every harness.

@@ -125,20 +125,11 @@ export const makePromptQueueService = (
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
       }),
-    claimPromptQueueItem: (rawSessionId) =>
+    claimPromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("claimPromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         const transaction = sqlite.transaction(() => {
-          const row = promptQueueRows.maybe(
-            sqlite
-              .prepare(
-                `select * from prompt_queue_items
-               where session_id = ? and state = 'pending'
-               order by position asc, created_at asc, rowid asc
-               limit 1`
-              )
-              .get(sessionId)
-          )
+          const row = pendingQueueRow(sqlite, sessionId, queueItemId)
           if (row === undefined) {
             return undefined
           }
@@ -173,3 +164,22 @@ export const makePromptQueueService = (
       })
   }
 }
+
+const pendingQueueRow = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  queueItemId: string | undefined
+) => {
+  if (queueItemId === undefined) {
+    return promptQueueRows.maybe(sqlite.prepare(nextPendingQueueRowSql).get(sessionId))
+  }
+  return promptQueueRows.maybe(sqlite.prepare(pendingQueueRowSql).get(sessionId, queueItemId))
+}
+
+const nextPendingQueueRowSql = `select * from prompt_queue_items
+  where session_id = ? and state = 'pending'
+  order by position asc, created_at asc, rowid asc
+  limit 1`
+
+const pendingQueueRowSql =
+  "select * from prompt_queue_items where session_id = ? and state = 'pending' and id = ?"

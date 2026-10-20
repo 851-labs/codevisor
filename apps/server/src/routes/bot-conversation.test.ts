@@ -132,7 +132,10 @@ describe("bot conversations", () => {
 
     await prompt(running, bot.sessionId, "prompt until cancelled")
     await waitFor(() => running.agents.prompts.length === 1)
-    await prompt(running, bot.sessionId, "also do this")
+    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+      body: JSON.stringify({ text: "also do this", delivery: "queue" }),
+      method: "POST"
+    })
     const sent = await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
       body: JSON.stringify({ text: "hi" }),
       method: "POST"
@@ -143,7 +146,6 @@ describe("bot conversations", () => {
     await waitFor(
       async () => (await run(running.services.db.listPromptQueue(bot.sessionId))).length === 1
     )
-    expect(running.agents.steers).toEqual([])
     expect(await transcript(running, bot.sessionId)).toEqual([])
   })
 

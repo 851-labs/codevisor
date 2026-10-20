@@ -41,7 +41,7 @@ export const memoryDatabase = async (
   return { ...db, ...overrides }
 }
 
-type StartedServer = Awaited<ReturnType<typeof start>>["server"]
+export type StartedServer = Awaited<ReturnType<typeof start>>["server"]
 
 export const setUpWorkspace = async () => {
   const { agents, server, services } = await start()

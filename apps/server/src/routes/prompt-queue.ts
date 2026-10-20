@@ -223,7 +223,17 @@ export const drainPromptQueue = async (
   }
 }
 
-const steerChains = new Map<string, Promise<void>>()
+const steerChains = new Map<string, Promise<unknown>>()
+
+const onSteerChain = <A>(sessionId: string, task: () => Promise<A>): Promise<A> => {
+  const next = (steerChains.get(sessionId) ?? Promise.resolve()).then(task)
+  const settled = next.catch(swallowError)
+  steerChains.set(sessionId, settled)
+  void settled.finally(() => {
+    if (steerChains.get(sessionId) === settled) steerChains.delete(sessionId)
+  })
+  return next
+}
 
 const steerQueuedPrompts = (
   services: CodevisorServerServices,
@@ -231,17 +241,24 @@ const steerQueuedPrompts = (
   routeState: RouteState,
   serverId: string,
   sessionId: string
-): Promise<void> => {
-  const previous = steerChains.get(sessionId) ?? Promise.resolve()
-  const next = previous
-    .then(() => steerPendingPrompts(services, fanout, routeState, serverId, sessionId))
-    .catch(swallowError)
-  steerChains.set(sessionId, next)
-  void next.finally(() => {
-    if (steerChains.get(sessionId) === next) steerChains.delete(sessionId)
+): Promise<void> =>
+  onSteerChain(sessionId, () =>
+    steerPendingPrompts(services, fanout, routeState, serverId, sessionId)
+  ).catch(swallowError)
+
+export const steerQueuedPrompt = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  queueItemId: string
+): Promise<boolean> =>
+  onSteerChain(sessionId, async () => {
+    const item = await run(services.db.claimPromptQueueItem(sessionId, queueItemId))
+    /* v8 ignore next */
+    if (item === undefined) return false
+    return steerClaimedPrompt(services, fanout, serverId, sessionId, item)
   })
-  return next
-}
 
 const steerPendingPrompts = async (
   services: CodevisorServerServices,
@@ -250,34 +267,60 @@ const steerPendingPrompts = async (
   serverId: string,
   sessionId: string
 ): Promise<void> => {
-  const steer = services.agents.steer
-  if (steer === undefined || (await conversationalBotForSession(services, sessionId)) === undefined)
-    return
+  if ((await conversationalBotForSession(services, sessionId)) === undefined) return
   while (true) {
     const item = await run(services.db.claimPromptQueueItem(sessionId))
     if (item === undefined) return
-    const steered = await (async () => {
-      const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-      const input = await promptInput(services, sessionId, item, agentSession.skills)
-      return run(steer(agentSession.sessionId, input))
-    })().catch(() => false)
-    if (!steered) {
-      await run(services.db.releasePromptQueueItem(sessionId, item.id))
-      if (!hasLiveTurn(routeState, sessionId)) {
-        void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
-      }
-      return
+    if (await steerClaimedPrompt(services, fanout, serverId, sessionId, item)) continue
+
+    if (!hasLiveTurn(routeState, sessionId)) {
+      void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
     }
-    noteBotPrompt(services, sessionId, item.origin)
-    await recordUserPrompt(services, fanout, serverId, sessionId, {
-      messageId: item.id,
-      text: item.text,
-      attachments: item.attachments,
-      origin: item.origin,
-      startsTurn: false
-    })
-    await run(services.db.completePromptQueueItem(sessionId, item.id))
+    return
   }
+}
+
+const steerClaimedPrompt = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  item: PromptQueueItem
+): Promise<boolean> => {
+  const steered = await steerIntoRunningTurn(services, fanout, serverId, sessionId, item).catch(
+    () => false
+  )
+  if (!steered) {
+    await run(services.db.releasePromptQueueItem(sessionId, item.id))
+    return false
+  }
+
+  noteBotPrompt(services, sessionId, item.origin)
+  await recordUserPrompt(services, fanout, serverId, sessionId, {
+    messageId: item.id,
+    text: item.text,
+    attachments: item.attachments,
+    origin: item.origin,
+    startsTurn: false
+  })
+  await run(services.db.completePromptQueueItem(sessionId, item.id))
+  return true
+}
+
+const steerIntoRunningTurn = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  item: PromptQueueItem
+): Promise<boolean> => {
+  const steer = services.agents.steer
+  /* v8 ignore next */
+  if (steer === undefined) return false
+
+  const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+  const input = await promptInput(services, sessionId, item, agentSession.skills)
+  return run(steer(agentSession.sessionId, input))
 }
 
 const promptInput = async (
