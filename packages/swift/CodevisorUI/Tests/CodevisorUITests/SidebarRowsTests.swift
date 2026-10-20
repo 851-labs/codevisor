@@ -59,6 +59,9 @@ struct SidebarRowsTests {
         .section(.archived), .workspace(archived[0].id), .workspace(archived[1].id),
       ])
     #expect(layout.rows.map(\.depth) == [0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0])
+    #expect(
+      layout.rows.map(\.section) == [.bots, .bots, .bots, .pinned, .pinned, .list, .list, .list, .list, .list]
+        + [.archived, .archived, .archived])
   }
 
   @Test("A workspace keeps one row id whether it's in a group, Pinned, under a bot, or in Archived")

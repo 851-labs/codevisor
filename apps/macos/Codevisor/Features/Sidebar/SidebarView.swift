@@ -94,12 +94,6 @@ struct SidebarView: View {
     .overlay(alignment: .topLeading) { groupReorderOverlay }
   }
 
-  private var workspacesHeader: some View {
-    SidebarSectionHeader(title: grouping.listTitle, isExpanded: listExpanded) {
-      fold(Self.listSection) { listExpanded.toggle() }
-    }
-  }
-
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
     Picker(selection: $grouping) {
@@ -142,73 +136,19 @@ struct SidebarView: View {
   }
 
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
-    let pinned = groups.first { $0.id == SidebarWorkspaceGroup.pinnedID }
-    let rest = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }
-    let listFolding = folds.isFolding(Self.listSection)
+    let headed = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }.map(\.id)
     return SidebarStack(spacing: 1) {
       botsSection
-      if let pinned {
-        SidebarSectionHeader(title: "Pinned", isExpanded: pinnedExpanded) {
-          fold(pinned.id) { pinnedExpanded.toggle() }
-        }
-        workspaceList(of: pinned)
-      }
-      workspacesHeader
-      ForEach(rest) { group in
-        SidebarFoldingList(shows: listExpanded) { progress in
-          if let heading = group.heading, listExpanded || listFolding {
-            SidebarGroupRow(
-              title: heading.title,
-              systemImage: heading.systemImage,
-              isExpanded: isExpanded(group),
-              isReordering: isReordering,
-              onToggle: {
-                guard allowsGroupToggle else { return }
-                fold(group.id) { toggleGroup(group) }
-              },
-              onNewChat: heading.newChatTarget.map { target in { selection = .newChat(target) } }
-            )
-            .opacity(groupDrag?.groupID == group.id ? 0.4 : 1)
-            .onGeometryChange(for: CGRect.self) { proxy in
-              proxy.frame(in: .named(Self.reorderSpace))
-            } action: { frame in
-              dragGeometry.headings[group.id] = frame
-            }
-            .onDisappear { dragGeometry.headings[group.id] = nil }
-            .simultaneousGesture(groupReorderGesture(for: group), including: reordersGroups ? .all : .subviews)
-            .sidebarFoldingRow(listFolding, progress: progress, shows: listExpanded)
-          }
-          workspaceList(of: group)
-            .padding(.leading, group.heading == nil ? 0 : Self.groupIndent * progress.shown)
-            .sidebarFoldingRow(listFolding && !keepsSelection(group), progress: progress, shows: listExpanded)
-        }
-        .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .named(Self.reorderSpace))
-        } action: { frame in
-          dragGeometry.groups[group.id] = frame
-        }
-        .onDisappear { dragGeometry.groups[group.id] = nil }
-      }
+      workspaceRowList(workspaceRegionRows)
       archivedSection
     }
     .padding(.horizontal, 10)
     .padding(.bottom, 8)
-    .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedSidebarItems.isEmpty)
-    .onChange(of: rest.map(\.id)) { _, ids in endGroupDrag(ifMissingFrom: ids) }
+    .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }
   }
 
   static let groupIndent: CGFloat = 8
-  static let listSection = "list"
-
-  private func keepsSelection(_ group: SidebarWorkspaceGroup) -> Bool {
-    group.items.contains { $0.id == selectedWorkspaceID }
-  }
-
-  private func isFolding(_ group: SidebarWorkspaceGroup) -> Bool {
-    folds.isFolding(group.id)
-      || (group.id != SidebarWorkspaceGroup.pinnedID && folds.isFolding(Self.listSection))
-  }
 
   func fold(_ section: String, _ change: () -> Void) {
     let folds = folds
@@ -218,18 +158,6 @@ struct SidebarView: View {
       try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
       folds.end(section, generation: generation)
     }
-  }
-
-  private func workspaceList(of group: SidebarWorkspaceGroup) -> some View {
-    let visible = visibleItems(of: group)
-    guard isFolding(group) else {
-      let rows = withReleasedRows(visible, from: group.items)
-      return workspaceList(rows.items, folding: [], releasing: rows.releasing, shows: isShowing(group))
-    }
-    let kept = group.items.filter { $0.id == selectedWorkspaceID }
-    let shown = folds.isFolding(group.id) || isExpanded(group) ? group.items : visible
-    let folding = Set(shown.map(\.id)).subtracting(kept.map(\.id))
-    return workspaceList(shown, folding: folding, releasing: [], shows: isShowing(group))
   }
 
   func withReleasedRows(

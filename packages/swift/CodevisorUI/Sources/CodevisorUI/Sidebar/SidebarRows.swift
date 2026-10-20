@@ -42,6 +42,22 @@ public struct SidebarRow: Identifiable, Equatable {
     self.depth = depth
   }
 
+  public var section: SidebarSection {
+    switch kind {
+    case let .section(section, _): section
+    case .group: .list
+    case .bot, .newBot: .bots
+    case .showMoreArchived: .archived
+    case let .workspace(_, placement):
+      switch placement {
+      case .bot: .bots
+      case .pinned: .pinned
+      case .group: .list
+      case .archived: .archived
+      }
+    }
+  }
+
   public var id: SidebarRowID {
     switch kind {
     case let .section(section, _): .section(section)
