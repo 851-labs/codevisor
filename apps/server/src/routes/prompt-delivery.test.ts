@@ -1,9 +1,23 @@
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import type { PromptInput } from "@codevisor/agent-runtime"
-import { PromptAcceptedResponse, TranscriptPage, decode } from "@codevisor/api"
+import { PromptAcceptedResponse, decode } from "@codevisor/api"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { jsonRequest, run, waitFor } from "../test-support.js"
+import { makeEventFanout } from "../server.js"
+import {
+  idleRouteState,
+  jsonRequest,
+  makeServices,
+  run,
+  tempDirs,
+  waitFor
+} from "../test-support.js"
+import { deliverQueuedPrompt } from "./prompt-delivery.js"
+import { drainPromptQueue } from "./prompt-queue.js"
 import { createFirstSession, setUpWorkspace, type StartedServer } from "./session-test-support.js"
 
 const prompt = async (server: StartedServer, sessionId: string, body: object) =>
@@ -21,11 +35,6 @@ const sendNow = (server: StartedServer, sessionId: string, queueItemId: string |
     method: "POST"
   })
 
-const lastTurnGenerating = async (server: StartedServer, sessionId: string) =>
-  decode(TranscriptPage)(
-    (await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body
-  ).items.findLast((item) => item.role === "assistant")?.isGenerating ?? true
-
 const textOf = (input: string | PromptInput): string =>
   typeof input === "string" ? input : input.text
 
@@ -38,6 +47,23 @@ const sessionRunning = async (firstPrompt: string) => {
   const steered = () => agents.steers.map(([, input]) => textOf(input))
   const prompted = () => agents.prompts.map(([, input]) => textOf(input))
   return { agents, server, sessionId: session.id, first, queue, steered, prompted }
+}
+
+const runningTurn = async () => {
+  const { agents, services } = await makeServices("server-a")
+  const folder = mkdtempSync(join(tmpdir(), "codevisor-prompt-delivery-"))
+  tempDirs.push(folder)
+  const project = await run(services.db.createProject({ folderPath: folder }))
+  await run(
+    services.db.createWorkspaceWithSession({
+      workspace: { id: "ws-chat", projectId: project.id, name: "Chat", hasCustomName: false },
+      session: { id: "chat", projectId: project.id, harnessId: "codex", title: "Chat" }
+    })
+  )
+  const state = idleRouteState()
+  state.activeTurnSessions.add("chat")
+  const fanout = await run(makeEventFanout)
+  return { agents, services, state, fanout }
 }
 
 describe("prompt delivery", () => {
@@ -85,31 +111,28 @@ describe("prompt delivery", () => {
   })
 
   it("sends a declined steer at once when the turn ends while it is declined", async () => {
-    const { agents, server, sessionId, prompted } = await sessionRunning("hello")
-    await waitFor(async () => !(await lastTurnGenerating(server, sessionId)))
-    const agentSessionId = agents.prompts[0]![0]
-    const turn = { initiatedBy: "agent", turnId: "agent-turn" }
-    await agents.emit(agentSessionId, {
-      kind: "session.updated",
-      subjectId: agentSessionId,
-      payload: { ...turn, turnState: "started" }
-    })
+    const { agents, services, state, fanout } = await runningTurn()
+    const item = await run(services.db.createPromptQueueItem("chat", "after the agent's turn"))
     vi.spyOn(agents, "steer").mockImplementation(() =>
-      Effect.promise(async () => {
-        await agents.emit(agentSessionId, {
-          kind: "session.updated",
-          subjectId: agentSessionId,
-          payload: { ...turn, turnState: "ended", stopReason: "end_turn" }
-        })
+      Effect.sync(() => {
+        state.activeTurnSessions.delete("chat")
         return false
       })
     )
 
-    const result = await prompt(server, sessionId, { text: "after the agent's turn" })
+    const outcome = await deliverQueuedPrompt(
+      services,
+      fanout,
+      state,
+      "server-a",
+      "chat",
+      item.id,
+      "steer"
+    )
 
-    expect(result.delivered).toBe("sent")
-    await waitFor(() => agents.prompts.length === 2)
-    expect(prompted()).toEqual(["hello", "after the agent's turn"])
+    expect(outcome).toEqual({ delivered: "sent" })
+    await drainPromptQueue(services, fanout, state, "server-a", "chat")
+    expect(agents.prompts.map(([, input]) => textOf(input))).toEqual(["after the agent's turn"])
   })
 
   it("rejects sending a prompt that is no longer queued", async () => {
