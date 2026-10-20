@@ -2,7 +2,11 @@ import { mkdirSync, readdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { CreateScratchProjectRequest as CreateScratchProjectRequestSchema } from "@codevisor/api"
-import { scratchWorkspacePath, scratchWorkspacesRoot } from "@codevisor/db"
+import {
+  legacyScratchWorkspacesRoot,
+  scratchWorkspacePath,
+  scratchWorkspacesRoot
+} from "@codevisor/db"
 import {
   availableDevelopmentWorktreeName,
   availableProductionWorktreeName
@@ -22,7 +26,11 @@ import { probeProject } from "./project-probe.js"
 
 const allocateScratchWorkspaceFolder = (config: CodevisorServerConfig): string => {
   mkdirSync(scratchWorkspacesRoot(), { recursive: true })
-  const taken = new Set(readdirSync(scratchWorkspacesRoot()))
+  let legacyFolders: ReadonlyArray<string> = []
+  try {
+    legacyFolders = readdirSync(legacyScratchWorkspacesRoot())
+  } catch {}
+  const taken = new Set([...readdirSync(scratchWorkspacesRoot()), ...legacyFolders])
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const candidate =
       config.worktreeNameStyle === "development"

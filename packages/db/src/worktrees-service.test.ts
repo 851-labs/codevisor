@@ -56,7 +56,7 @@ describe("@codevisor/db", () => {
         serverId: "local",
         name: "fix-auth",
         branch: "codevisor/fix-auth",
-        path: join(homedir(), "codevisor", project.id, "fix-auth")
+        path: join(homedir(), "codevisor", "worktrees.noindex", project.id, "fix-auth")
       })
       expect(worktree.path).toBe(worktreePath(project.id, "fix-auth"))
 
