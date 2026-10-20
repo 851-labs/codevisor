@@ -189,7 +189,7 @@ private struct SidebarFoldingStack: Layout {
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let layout = layout(subviews, width: proposal.width)
-    return CGSize(width: layout.frames.map(\.maxX).max() ?? 0, height: layout.height)
+    return CGSize(width: layout.frames.map(\.maxX).max() ?? proposal.width ?? 0, height: layout.height)
   }
 
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
