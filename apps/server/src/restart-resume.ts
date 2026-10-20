@@ -65,7 +65,7 @@ export const resumeSessionsAfterRestart = async (
         log(`Could not resume session ${sessionId}: ${failureMessage(cause)}`)
       }
       const pending = await run(services.db.listPromptQueue(sessionId))
-      if (pending.length > 0) {
+      if (pending.length > 0 && !routeState.updateResume.isPending(sessionId)) {
         void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
       }
     }

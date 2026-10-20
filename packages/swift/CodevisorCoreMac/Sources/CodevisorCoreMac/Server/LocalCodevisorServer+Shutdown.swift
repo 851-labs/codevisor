@@ -2,7 +2,7 @@ import CodevisorCore
 import Foundation
 
 extension LocalCodevisorServer {
-  static let appUpdateDrainTimeout: Duration = .seconds(15 * 60)
+  static let appUpdatePauseTimeout: Duration = .seconds(60)
   static let appUpdateDrainPollInterval: Duration = .seconds(1)
 
   @discardableResult
@@ -23,7 +23,7 @@ extension LocalCodevisorServer {
     updateRequestSource?.cancel()
     updateRequestSource = nil
     guard await drainForAppUpdate(onStatus: onStatus) else {
-      lifecycleLog.error("Update cancelled: server drain did not finish before its final deadline")
+      lifecycleLog.error("Update cancelled: the server did not pause its chats before the deadline")
       return false
     }
     lifecycleLog.note("prepareForAppUpdate: drain finished (\(clock.lap()) ms)")
@@ -36,43 +36,31 @@ extension LocalCodevisorServer {
 
   func drainForAppUpdate(
     onStatus: @escaping @MainActor (String) -> Void,
-    drainTimeout: Duration = appUpdateDrainTimeout,
-    interruptionTimeout: Duration = .seconds(15),
+    pauseTimeout: Duration = appUpdatePauseTimeout,
     pollInterval: Duration = appUpdateDrainPollInterval,
     scheduler: LocalServerScheduler = .continuous
   ) async -> Bool {
     guard
       let first = try? await StartupDeadline.run(
         for: .seconds(5), scheduler: scheduler,
-        operation: { [client] in try await client.beginRestartDrain(interrupt: false) })
+        operation: { [client] in try await client.beginRestartDrain() })
     else {
       lifecycleLog.note("prepareForAppUpdate: server has no restart drain (or is not answering)")
       return true
     }
-    lifecycleLog.note("prepareForAppUpdate: drain \(first.state), \(first.remaining) live turn(s)")
+    lifecycleLog.note("prepareForAppUpdate: pausing \(first.remaining) live turn(s)")
     if first.isDrained { return true }
-    let deadline = scheduler.now() + drainTimeout
-    let finalDeadline = deadline + interruptionTimeout
-    var interrupted = false
+    let deadline = scheduler.now() + pauseTimeout
     while true {
-      guard !Task.isCancelled, scheduler.now() < finalDeadline else { return false }
+      guard !Task.isCancelled, scheduler.now() < deadline else { return false }
       guard
         let state = try? await StartupDeadline.run(
-          for: min(.seconds(3), finalDeadline - scheduler.now()), scheduler: scheduler,
+          for: min(.seconds(3), deadline - scheduler.now()), scheduler: scheduler,
           operation: { [client] in try await client.restartDrainState() })
       else { return false }
       if state.isDrained { return true }
       let chats = state.remaining == 1 ? "1 chat" : "\(state.remaining) chats"
-      onStatus("Waiting for \(chats) to finish…")
-      if scheduler.now() >= deadline, !interrupted {
-        interrupted = true
-        lifecycleLog.note("prepareForAppUpdate: drain deadline reached, interrupting live turns")
-        _ = try? await StartupDeadline.run(
-          for: min(.seconds(5), finalDeadline - scheduler.now()), scheduler: scheduler
-        ) { [client] in
-          try await client.beginRestartDrain(interrupt: true)
-        }
-      }
+      onStatus("Pausing \(chats) for the update…")
       do { try await scheduler.sleep(pollInterval) } catch { return false }
     }
   }

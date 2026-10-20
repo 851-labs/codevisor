@@ -383,6 +383,7 @@ export const runServe = (
           requireBearerToken: authMode === "token"
         },
         restartSnapshotPath: join(dirname(databasePath), "restart-resume.json"),
+        pausedTurnsPath: join(dirname(databasePath), "paused-for-update.json"),
         onShutdownRequested: () => {
           console.log("Codevisor server shutting down (requested by client)")
           stopOwnerMonitor?.()

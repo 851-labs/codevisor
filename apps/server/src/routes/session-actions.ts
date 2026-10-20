@@ -182,6 +182,7 @@ export const routeSessionActions = async (
         agentSessionId === undefined ? "user" : "system"
       )
     )
+    routeState.updateResume.cancel(promptSessionId)
     if (toBot && agentSessionId === undefined) {
       await postBotMessage(services, fanout, promptSessionId, {
         id: queueItem.id,
@@ -236,6 +237,7 @@ export const routeSessionActions = async (
       "cancel",
       payload,
       async () => {
+        routeState.updateResume.cancel(cancelSessionId)
         const cancelRequestedAt = isoTimestamp()
         const session = await run(services.db.getSessionSummary(cancelSessionId))
         const activeItem = (

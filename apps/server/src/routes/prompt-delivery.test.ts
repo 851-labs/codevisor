@@ -1,6 +1,7 @@
 import type { PromptInput } from "@codevisor/agent-runtime"
-import { PromptAcceptedResponse, decode } from "@codevisor/api"
-import { describe, expect, it } from "vitest"
+import { PromptAcceptedResponse, TranscriptPage, decode } from "@codevisor/api"
+import { Effect } from "effect"
+import { describe, expect, it, vi } from "vitest"
 
 import { jsonRequest, run, waitFor } from "../test-support.js"
 import { createFirstSession, setUpWorkspace, type StartedServer } from "./session-test-support.js"
@@ -19,6 +20,11 @@ const sendNow = (server: StartedServer, sessionId: string, queueItemId: string |
   jsonRequest(server, `/v1/sessions/${sessionId}/queue/${queueItemId}/send-now`, {
     method: "POST"
   })
+
+const lastTurnGenerating = async (server: StartedServer, sessionId: string) =>
+  decode(TranscriptPage)(
+    (await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body
+  ).items.findLast((item) => item.role === "assistant")?.isGenerating ?? true
 
 const textOf = (input: string | PromptInput): string =>
   typeof input === "string" ? input : input.text
@@ -76,6 +82,34 @@ describe("prompt delivery", () => {
     agents.releasePrompt()
     await waitFor(() => agents.prompts.length === 3)
     expect(prompted()).toEqual(["slow prompt", "urgent", "earlier"])
+  })
+
+  it("sends a declined steer at once when the turn ends while it is declined", async () => {
+    const { agents, server, sessionId, prompted } = await sessionRunning("hello")
+    await waitFor(async () => !(await lastTurnGenerating(server, sessionId)))
+    const agentSessionId = agents.prompts[0]![0]
+    const turn = { initiatedBy: "agent", turnId: "agent-turn" }
+    await agents.emit(agentSessionId, {
+      kind: "session.updated",
+      subjectId: agentSessionId,
+      payload: { ...turn, turnState: "started" }
+    })
+    vi.spyOn(agents, "steer").mockImplementation(() =>
+      Effect.promise(async () => {
+        await agents.emit(agentSessionId, {
+          kind: "session.updated",
+          subjectId: agentSessionId,
+          payload: { ...turn, turnState: "ended", stopReason: "end_turn" }
+        })
+        return false
+      })
+    )
+
+    const result = await prompt(server, sessionId, { text: "after the agent's turn" })
+
+    expect(result.delivered).toBe("sent")
+    await waitFor(() => agents.prompts.length === 2)
+    expect(prompted()).toEqual(["hello", "after the agent's turn"])
   })
 
   it("rejects sending a prompt that is no longer queued", async () => {

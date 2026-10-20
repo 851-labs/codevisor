@@ -1,8 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { dirname } from "node:path"
-
 import type { RestartDrainState } from "@codevisor/api"
 
+import { readJsonStateFile, removeJsonStateFile, writeJsonStateFile } from "./json-state-file.js"
+import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -11,11 +10,11 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "./server-context.js"
+import { forgetTurnInterruptions, markTurnInterrupted } from "./turn-interruptions.js"
 import { field } from "./unknown-values.js"
 
-export const DEFAULT_RESTART_DRAIN_TIMEOUT_MS = 10 * 60_000
 export const DRAINED_WITHOUT_RESTART_GRACE_MS = 15 * 60_000
-const INTERRUPT_SETTLE_MS = 15_000
+export const PAUSE_SETTLE_MS = 15_000
 const POLL_MS = 250
 
 export const RESTART_GATE_HARNESS_ID = "codevisor-server"
@@ -30,28 +29,16 @@ export interface RestartSnapshotStore {
 /* v8 ignore start */
 export const makeFileRestartSnapshotStore = (path: string): RestartSnapshotStore => ({
   read: () => {
-    try {
-      if (!existsSync(path)) return undefined
-      const sessions = field(JSON.parse(readFileSync(path, "utf8")), "sessions")
-      return Array.isArray(sessions)
-        ? sessions.filter((id): id is string => typeof id === "string")
-        : undefined
-    } catch {
-      return undefined
-    }
+    const sessions = field(readJsonStateFile(path), "sessions")
+    return Array.isArray(sessions)
+      ? sessions.filter((id): id is string => typeof id === "string")
+      : undefined
   },
   write: (sessionIds) => {
-    mkdirSync(dirname(path), { recursive: true })
-    const temporary = `${path}.${process.pid}.tmp`
-    writeFileSync(
-      temporary,
-      `${JSON.stringify({ sessions: sessionIds, at: new Date().toISOString() })}\n`,
-      { encoding: "utf8", mode: 0o600 }
-    )
-    renameSync(temporary, path)
+    writeJsonStateFile(path, { sessions: sessionIds, at: new Date().toISOString() })
   },
   clear: () => {
-    rmSync(path, { force: true })
+    removeJsonStateFile(path)
   }
 })
 /* v8 ignore stop */
@@ -69,15 +56,15 @@ export const makeMemoryRestartSnapshotStore = (): RestartSnapshotStore => {
   }
 }
 
-export interface RestartDrainOptions {
-  readonly interrupt?: boolean | undefined
-  readonly timeoutMs?: number | undefined
+interface PauseTarget {
+  readonly agentSessionId: string
+  readonly turn: PausedTurn
 }
 
 export interface RestartCoordinator {
   readonly state: () => RestartDrainState
   readonly isGated: () => boolean
-  readonly begin: (options?: RestartDrainOptions) => Promise<RestartDrainState>
+  readonly begin: () => Promise<RestartDrainState>
   readonly cancel: () => Promise<RestartDrainState>
   readonly close: () => void
 }
@@ -91,20 +78,18 @@ export interface RestartCoordinatorDeps {
     readonly restartHeldSessions: Set<string>
   }
   readonly snapshot: RestartSnapshotStore
-  readonly defaultTimeoutMs?: number | undefined
+  readonly pausedTurns: PausedTurnStore
   readonly log?: ((line: string) => void) | undefined
   readonly redrain: (sessionId: string) => Promise<void>
+  readonly resumePaused: () => void
 }
 
 export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoordinator => {
-  const { services, fanout, turns, snapshot, redrain } = deps
+  const { services, fanout, turns, snapshot, pausedTurns, redrain } = deps
   const log = deps.log ?? ((line: string) => console.log(line))
-  const defaultTimeoutMs = deps.defaultTimeoutMs ?? DEFAULT_RESTART_DRAIN_TIMEOUT_MS
 
   let phase: RestartDrainState["state"] = "idle"
   let startedAt = new Date().toISOString()
-  let deadlineAt: number | undefined
-  let interruptRequested = false
   let inFlight: Promise<RestartDrainState> | undefined
   let cancelling: Promise<RestartDrainState> | undefined
   let destructiveWork: Promise<unknown> | undefined
@@ -117,8 +102,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const state = (): RestartDrainState => ({
     state: phase,
     remaining: liveSessions().size,
-    startedAt,
-    ...(deadlineAt === undefined ? {} : { deadlineAt: new Date(deadlineAt).toISOString() })
+    startedAt
   })
 
   const destructive = async (work: Promise<unknown>): Promise<void> => {
@@ -130,21 +114,36 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     }
   }
 
-  const cancelLiveTurns = async (myGeneration: number): Promise<void> => {
-    for (const sessionId of liveSessions()) {
-      if (generation !== myGeneration) return
-      try {
-        const session = await run(services.db.getSessionSummary(sessionId))
-        if (generation !== myGeneration) return
-        const agentSessionId =
-          session.agentSessionId === undefined || session.agentSessionId === ""
-            ? sessionId
-            : session.agentSessionId
-        await destructive(run(services.agents.cancel(agentSessionId)))
-      } catch (cause) {
-        log(`Restart drain could not cancel ${sessionId}: ${failureMessage(cause)}`)
+  const pauseTarget = async (sessionId: string): Promise<PauseTarget | undefined> => {
+    try {
+      const session = await run(services.db.getSessionSummary(sessionId))
+      return {
+        agentSessionId: agentSessionIdOf(session),
+        turn: await pausedTurnOf(services, sessionId)
       }
+    } catch (cause) {
+      log(`Restart drain could not pause ${sessionId}: ${failureMessage(cause)}`)
+      return undefined
     }
+  }
+
+  const interruptTurn = async ({ agentSessionId, turn }: PauseTarget): Promise<void> => {
+    markTurnInterrupted(services, turn.sessionId)
+    await run(services.agents.cancel(agentSessionId)).catch((cause: unknown) => {
+      log(`Restart drain could not interrupt ${turn.sessionId}: ${failureMessage(cause)}`)
+    })
+  }
+
+  const pauseLiveTurns = async (myGeneration: number): Promise<void> => {
+    const sessionIds = [...liveSessions()]
+    if (sessionIds.length === 0) return
+
+    const targets = (await Promise.all(sessionIds.map(pauseTarget))).filter(isDefined)
+    if (generation !== myGeneration) return
+
+    pausedTurns.add(targets.map((target) => target.turn))
+    log(`Restart drain pausing ${targets.length} live turn(s)`)
+    await destructive(Promise.all(targets.map(interruptTurn)))
   }
 
   let wakeDrain: (() => void) | undefined
@@ -159,13 +158,11 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       wakeDrain = done
     })
 
-  const waitUntilIdle = async (until: number, myGeneration: number): Promise<boolean> => {
+  const waitUntilIdle = async (until: number, myGeneration: number): Promise<void> => {
     while (liveSessions().size > 0 && Date.now() < until) {
       await pollPause()
-      if (generation !== myGeneration) return false
-      if (interruptRequested) return true
+      if (generation !== myGeneration) return
     }
-    return generation === myGeneration
   }
 
   const sessionsToResume = async (): Promise<ReadonlyArray<string>> => {
@@ -193,17 +190,13 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     )
   }
 
-  const drain = async (deadline: number, myGeneration: number): Promise<RestartDrainState> => {
-    let idle = await waitUntilIdle(deadline, myGeneration)
+  const drain = async (myGeneration: number): Promise<RestartDrainState> => {
+    await pauseLiveTurns(myGeneration)
     if (generation !== myGeneration) return state()
-    if (liveSessions().size > 0 && idle) {
-      log(`Restart drain interrupting ${liveSessions().size} live turn(s)`)
-      await cancelLiveTurns(myGeneration)
-      if (generation !== myGeneration) return state()
-      interruptRequested = false
-      idle = await waitUntilIdle(Date.now() + INTERRUPT_SETTLE_MS, myGeneration)
-      if (generation !== myGeneration) return state()
-    }
+
+    await waitUntilIdle(Date.now() + PAUSE_SETTLE_MS, myGeneration)
+    if (generation !== myGeneration) return state()
+
     let finalized = true
     try {
       await finalize(myGeneration)
@@ -216,7 +209,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       return coordinator.cancel()
     }
     phase = "drained"
-    deadlineAt = undefined
     graceTimer = setTimeout(() => {
       log("Restart drain abandoned: the server never restarted")
       void coordinator.cancel()
@@ -228,20 +220,15 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const coordinator: RestartCoordinator = {
     state,
     isGated: () => phase !== "idle",
-    begin: (options) => {
-      if (cancelling !== undefined) return cancelling.then(() => coordinator.begin(options))
-      if (options?.interrupt === true) interruptRequested = true
+    begin: () => {
+      if (cancelling !== undefined) return cancelling.then(() => coordinator.begin())
       if (inFlight !== undefined) return inFlight
       if (phase === "drained") return Promise.resolve(state())
       phase = "draining"
       startedAt = new Date().toISOString()
-      const deadline = Date.now() + (options?.timeoutMs ?? defaultTimeoutMs)
-      deadlineAt = deadline
       const myGeneration = generation
-      log(
-        `Restart drain started: waiting for ${liveSessions().size} live turn(s) before restarting`
-      )
-      const work = drain(deadline, myGeneration).finally(() => {
+      log(`Restart drain started: pausing ${liveSessions().size} live turn(s) before restarting`)
+      const work = drain(myGeneration).finally(() => {
         if (inFlight === work) inFlight = undefined
       })
       inFlight = work
@@ -257,8 +244,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
         if (destructiveWork !== undefined) await destructiveWork.catch(swallowError)
         phase = "idle"
         startedAt = new Date().toISOString()
-        deadlineAt = undefined
-        interruptRequested = false
+        forgetTurnInterruptions(services)
         if (graceTimer !== undefined) {
           clearTimeout(graceTimer)
           graceTimer = undefined
@@ -278,6 +264,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
           }).catch(swallowError)
           void redrain(sessionId).catch(swallowError)
         }
+        deps.resumePaused()
         log("Restart drain cancelled: prompts dispatch again")
         return state()
       })().finally(() => {
@@ -295,4 +282,24 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     }
   }
   return coordinator
+}
+
+const isDefined = <A>(value: A | undefined): value is A => value !== undefined
+
+const agentSessionIdOf = (session: {
+  readonly id: string
+  readonly agentSessionId?: string | undefined
+}): string =>
+  session.agentSessionId === undefined || session.agentSessionId === ""
+    ? session.id
+    : session.agentSessionId
+
+const pausedTurnOf = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<PausedTurn> => {
+  const pausedAt = new Date().toISOString()
+  const latest = (await run(services.db.getTranscriptPage(sessionId, undefined, 1))).items.at(-1)
+  const turnId = latest?.isGenerating === true ? latest.turnId : undefined
+  return turnId === undefined ? { sessionId, pausedAt } : { sessionId, turnId, pausedAt }
 }

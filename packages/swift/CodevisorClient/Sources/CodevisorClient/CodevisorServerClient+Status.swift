@@ -184,13 +184,11 @@ public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
   public var state: String
   public var remaining: Int
   public var startedAt: String?
-  public var deadlineAt: String?
 
-  public init(state: String, remaining: Int, startedAt: String? = nil, deadlineAt: String? = nil) {
+  public init(state: String, remaining: Int, startedAt: String? = nil) {
     self.state = state
     self.remaining = remaining
     self.startedAt = startedAt
-    self.deadlineAt = deadlineAt
   }
 
   public var isDrained: Bool { state == "drained" }
@@ -334,16 +332,8 @@ extension CodevisorServerClient {
     return try await send("/v1/update/apply\(suffix)", method: "POST", body: Optional<EmptyBody>.none)
   }
 
-  private struct RestartDrainBody: Encodable {
-    var interrupt: Bool
-  }
-
-  public func beginRestartDrain(interrupt: Bool = false) async throws -> ServerRestartDrainState {
-    try await send(
-      "/v1/restart/drain",
-      method: "POST",
-      body: RestartDrainBody(interrupt: interrupt)
-    )
+  public func beginRestartDrain() async throws -> ServerRestartDrainState {
+    try await send("/v1/restart/drain", method: "POST", body: Optional<EmptyBody>.none)
   }
 
   public func restartDrainState() async throws -> ServerRestartDrainState {

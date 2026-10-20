@@ -23,8 +23,9 @@ bind address, and feature markers.
 ## Updates
 
 Standalone release builds check the stable release manifest. `GET /v1/update` reports update state;
-`POST /v1/update/apply` downloads the matching runtime and restarts when no prompt is in flight. A
-busy server rejects the restart without interrupting active work.
+`POST /v1/update/apply` downloads the matching runtime and restarts right away. Running chats are
+paused for the restart and continue on their own once the server is back, unless you send them
+something first. Terminals and dev servers that agents started do not survive the restart.
 
 `codevisor update` always performs a fresh Stable check before applying an update. To include Alpha
 releases, run:

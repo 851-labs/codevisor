@@ -9,7 +9,6 @@ describe("applyAfterDrain", () => {
     const calls: Array<string> = []
     await applyAfterDrain(
       { ...restart, begin: async () => restart.state() },
-      {},
       () => calls.push("publish"),
       async () => {
         calls.push("apply")
@@ -29,7 +28,6 @@ describe("applyAfterDrain", () => {
           return restart.state()
         }
       },
-      {},
       () => calls.push("publish"),
       async () => {
         calls.push("apply")

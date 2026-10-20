@@ -57,7 +57,13 @@ export const idleRouteState = (): RouteState => ({
   turnHeldSessions: new Set(),
   updateSignature: {},
   restartHeldSessions: new Set(),
-  restart: idleRestartCoordinator()
+  restart: idleRestartCoordinator(),
+  updateResume: {
+    resume: () => {},
+    isPending: () => false,
+    cancel: () => {},
+    close: () => {}
+  }
 })
 
 class FakeProcess implements TerminalProcess {

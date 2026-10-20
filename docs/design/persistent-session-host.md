@@ -1,6 +1,9 @@
 # Persistent session host
 
-Linear: 851-2771. Status: design only, nothing built.
+Linear: 851-2771. Status: the interrupt-and-continue part of option A is built (v1). Updates no longer
+wait for chats: running turns are interrupted and recorded in `paused-for-update.json`, end with stop
+kind `interrupted`, and get a hidden "continue" a few seconds apart after the restart. The rest is
+design only.
 
 ## Summary
 

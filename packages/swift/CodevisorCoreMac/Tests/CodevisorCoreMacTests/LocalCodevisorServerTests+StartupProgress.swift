@@ -151,33 +151,28 @@ extension LocalCodevisorServerTests {
     #expect(clock.elapsed == .seconds(10))
   }
 
-  @Test("Update drain has a final deadline after requesting interruption once")
-  func updateDrainFinalDeadline() async throws {
+  @Test("Update waits only for the server to pause its chats, then gives up at the deadline")
+  func updatePauseDeadline() async throws {
     let directory = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [])
     client.drainResult = ServerRestartDrainState(state: "draining", remaining: 1)
     let clock = AdvancingLocalServerScheduler()
-    var interruptedAt: [Duration] = []
-    clock.onSleep = { [weak clock] in
-      guard let clock else { return }
-      if client.drainInterruptions > interruptedAt.count { interruptedAt.append(clock.elapsed) }
-    }
     let server = LocalCodevisorServer(
       client: client,
       databasePath: directory.appendingPathComponent("db.sqlite").path,
       logURL: directory.appendingPathComponent("server.log"))
+    var statuses: [String] = []
     #expect(
       await !server.drainForAppUpdate(
-        onStatus: { _ in }, drainTimeout: .milliseconds(5),
-        interruptionTimeout: .milliseconds(10), pollInterval: .milliseconds(1), scheduler: clock.scheduler))
-    #expect(client.drainInterruptions == 1)
-    #expect(interruptedAt == [.milliseconds(5)])
-    #expect(clock.elapsed == .milliseconds(15))
-    #expect(clock.requestedIntervals == Array(repeating: .milliseconds(1), count: 15))
+        onStatus: { statuses.append($0) }, pauseTimeout: .milliseconds(5),
+        pollInterval: .milliseconds(1), scheduler: clock.scheduler))
+    #expect(client.drainBegins == 1)
+    #expect(clock.elapsed == .milliseconds(5))
+    #expect(statuses.first == "Pausing 1 chat for the update…")
     client.drainResult = ServerRestartDrainState(state: "drained", remaining: 0)
     #expect(await server.drainForAppUpdate(onStatus: { _ in }, scheduler: clock.scheduler))
-    #expect(clock.elapsed == .milliseconds(15))
+    #expect(clock.elapsed == .milliseconds(5))
   }
 
   @Test("A deadline returns even when its operation ignores cancellation")

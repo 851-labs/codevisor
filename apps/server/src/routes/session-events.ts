@@ -14,6 +14,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { withInterruptedStop } from "../turn-interruptions.js"
 import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
@@ -102,7 +103,8 @@ export const sessionEventSink =
             )
           }
         }
-        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+        const ended = withInterruptedStop(services, sessionId, event, payload)
+        await materializeRuntimeEvent(services.db, fanout, serverId, ended, sessionId)
       })()
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)

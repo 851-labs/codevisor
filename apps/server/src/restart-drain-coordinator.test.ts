@@ -1,10 +1,12 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, type AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { makeMemoryPausedTurnStore } from "./paused-turns.js"
 import {
   DRAINED_WITHOUT_RESTART_GRACE_MS,
   makeMemoryRestartSnapshotStore,
+  PAUSE_SETTLE_MS,
   makeRestartCoordinator,
   type RestartSnapshotStore
 } from "./restart-drain.js"
@@ -17,8 +19,10 @@ const makeHarness = async () => {
   const fanout = await run(makeEventFanout)
   const turns = idleRouteState()
   const snapshot = makeMemoryRestartSnapshotStore()
+  const pausedTurns = makeMemoryPausedTurnStore()
   const logs: Array<string> = []
   const redrained: Array<string> = []
+  const resumes: Array<ReadonlyArray<string>> = []
   const project = await run(
     services.db.createProject({ folderPath: "/tmp/codevisor-coordinator", name: "Repo" })
   )
@@ -53,8 +57,10 @@ const makeHarness = async () => {
     fanout,
     turns,
     snapshot,
+    pausedTurns,
     logs,
     redrained,
+    resumes,
     sessions: { live, fresh, archived },
     make: (overrides: Partial<AgentRuntimeService> = {}, store: RestartSnapshotStore = snapshot) =>
       makeRestartCoordinator({
@@ -62,13 +68,17 @@ const makeHarness = async () => {
         fanout,
         turns,
         snapshot: store,
+        pausedTurns,
         log: (line) => logs.push(line),
         redrain: async (sessionId) => {
           redrained.push(sessionId)
-        }
+        },
+        resumePaused: () => resumes.push(pausedTurns.read().map((turn) => turn.sessionId))
       })
   }
 }
+
+const POLL_STEP_MS = 250
 
 const diskFull = (): never => {
   throw new Error("ENOSPC: no space left on device")
@@ -107,8 +117,7 @@ describe("restart coordinator", () => {
             return { runtimeState: "reusable" as const }
           })
       })
-      const old = coordinator.begin({ interrupt: true })
-      await vi.advanceTimersByTimeAsync(250)
+      const old = coordinator.begin()
       let next: Promise<unknown> | undefined
       try {
         await entered.promise
@@ -124,7 +133,9 @@ describe("restart coordinator", () => {
         }
         release.resolve()
         await Promise.all([old, cancelling, next])
-        expect(interrupted).toEqual(stage === "lookup" ? [] : ["agent-live"])
+        expect(interrupted.toSorted()).toEqual(
+          stage === "lookup" ? [] : ["agent-live", sessions.fresh.id].toSorted()
+        )
         expect(agents.closes).toEqual([])
       } finally {
         release.resolve()
@@ -160,7 +171,9 @@ describe("restart coordinator", () => {
         fanout: harness.fanout,
         turns: harness.turns,
         snapshot: harness.snapshot,
+        pausedTurns: harness.pausedTurns,
         redrain: async () => undefined,
+        resumePaused: () => undefined,
         log: () => undefined
       })
       const old = coordinator.begin()
@@ -204,69 +217,81 @@ describe("restart coordinator", () => {
     coordinator.close()
   })
 
-  it("interrupts at the deadline and tolerates harnesses that refuse", async () => {
+  it("pauses every live turn at once and records which turn it paused", async () => {
     const harness = await makeHarness()
-    const { sessions, turns } = harness
+    const { sessions, turns, services } = harness
+    await run(
+      services.db.appendEvent("session.updated", sessions.live.id, {
+        initiatedBy: "user",
+        turnId: "turn-live",
+        turnState: "started"
+      })
+    )
     turns.activeTurnSessions.add(sessions.live.id)
-    turns.activeTurnSessions.add(sessions.fresh.id)
-    turns.activePromptSessions.add("vanished-session")
-    let closeAttempts = 0
+    turns.activePromptSessions.add(sessions.fresh.id)
     const cancelled: Array<string> = []
     const coordinator = harness.make({
       cancel: (agentSessionId) =>
-        Effect.promise(async () => {
+        Effect.sync(() => {
           cancelled.push(agentSessionId)
-          if (agentSessionId === "agent-live") turns.activeTurnSessions.delete(sessions.live.id)
-          if (agentSessionId === sessions.fresh.id) {
-            turns.activeTurnSessions.delete(sessions.fresh.id)
-          }
+          turns.activeTurnSessions.delete(sessions.live.id)
+          turns.activePromptSessions.delete(sessions.fresh.id)
           return { runtimeState: "reusable" as const }
         }),
-      closeAgentSession: () =>
-        Effect.promise(async () => {
-          closeAttempts += 1
+      loadedAgentSessionIds: () => ["agent-live"]
+    })
+
+    const drained = await coordinator.begin()
+
+    expect(drained.state).toBe("drained")
+    expect(cancelled.toSorted()).toEqual(["agent-live", sessions.fresh.id].toSorted())
+    expect(harness.pausedTurns.read()).toHaveLength(2)
+    expect(harness.pausedTurns.read()).toEqual(
+      expect.arrayContaining([
+        { sessionId: sessions.live.id, turnId: "turn-live", pausedAt: expect.any(String) },
+        { sessionId: sessions.fresh.id, pausedAt: expect.any(String) }
+      ])
+    )
+    expect(harness.agents.closes).toEqual(["agent-live"])
+    coordinator.close()
+  })
+
+  it("tolerates harnesses that refuse to stop and closes them after the settle time", async () => {
+    const harness = await makeHarness()
+    const { sessions, turns } = harness
+    turns.activeTurnSessions.add(sessions.live.id)
+    turns.activePromptSessions.add("vanished-session")
+    const coordinator = harness.make({
+      cancel: () => Effect.fail(new AgentRuntimeError({ message: "busy", operation: "cancel" })),
+      closeAgentSession: (agentSessionId) =>
+        Effect.sync(() => {
+          harness.agents.closes.push(agentSessionId)
           throw new Error("already gone")
         }),
       loadedAgentSessionIds: () => ["agent-live"]
     })
 
-    const started = coordinator.begin({ timeoutMs: 20 })
-    await vi.advanceTimersByTimeAsync(19)
-    expect(cancelled).toEqual([])
-    expect(coordinator.state()).toMatchObject({ state: "draining", remaining: 3 })
-    await vi.advanceTimersByTimeAsync(16_000)
-    const drained = await started
-    expect(drained.state).toBe("drained")
-    expect(cancelled.toSorted()).toEqual(["agent-live", sessions.fresh.id].toSorted())
-    expect(harness.logs.some((line) => line.includes("could not cancel vanished-session"))).toBe(
+    const started = coordinator.begin()
+    expect(coordinator.begin()).toBe(started)
+    await vi.advanceTimersByTimeAsync(PAUSE_SETTLE_MS - 1)
+    expect(coordinator.state()).toMatchObject({ state: "draining", remaining: 2 })
+    expect(harness.agents.closes).toEqual([])
+    await vi.advanceTimersByTimeAsync(POLL_STEP_MS)
+
+    expect((await started).state).toBe("drained")
+    expect(harness.agents.closes).toEqual(["agent-live"])
+    expect(harness.pausedTurns.read().map((turn) => turn.sessionId)).toEqual([sessions.live.id])
+    expect(harness.logs.some((line) => line.includes("could not interrupt"))).toBe(true)
+    expect(harness.logs.some((line) => line.includes("could not close agent-live"))).toBe(true)
+    expect(harness.logs.some((line) => line.includes("could not pause vanished-session"))).toBe(
       true
     )
-    expect(closeAttempts).toBe(1)
-    expect(harness.logs.some((line) => line.includes("could not close agent-live"))).toBe(true)
-    expect(harness.snapshot.read()).not.toContain(sessions.live.id)
     coordinator.close()
+    turns.activeTurnSessions.clear()
     turns.activePromptSessions.clear()
   })
 
-  it("interrupts immediately when asked to", async () => {
-    const harness = await makeHarness()
-    const { sessions, turns } = harness
-    turns.activeTurnSessions.add(sessions.live.id)
-    const coordinator = harness.make({
-      cancel: () =>
-        Effect.sync(() => {
-          turns.activeTurnSessions.delete(sessions.live.id)
-          return { runtimeState: "reusable" as const }
-        })
-    })
-    const draining = coordinator.begin({ interrupt: true, timeoutMs: 60_000 })
-    await vi.advanceTimersByTimeAsync(250)
-    const drained = await draining
-    expect(drained.state).toBe("drained")
-    coordinator.close()
-  })
-
-  it("a cancel while waiting for interrupted turns abandons the drain", async () => {
+  it("a cancel while turns are pausing continues them and releases held prompts", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
     turns.activeTurnSessions.add(sessions.live.id)
@@ -274,15 +299,17 @@ describe("restart coordinator", () => {
     const coordinator = harness.make({
       cancel: () => Effect.succeed({ runtimeState: "reusable" as const })
     })
-    const started = coordinator.begin({ timeoutMs: 10 })
-    await vi.advanceTimersByTimeAsync(250)
-    expect(harness.logs.some((line) => line.includes("interrupting 1 live turn"))).toBe(true)
+    const started = coordinator.begin()
+    await vi.advanceTimersByTimeAsync(POLL_STEP_MS)
+    expect(harness.logs.some((line) => line.includes("pausing 1 live turn"))).toBe(true)
+
     const cancelled = await coordinator.cancel()
+
     expect(cancelled.state).toBe("idle")
-    await vi.advanceTimersByTimeAsync(250)
     expect((await started).state).toBe("idle")
     expect(harness.snapshot.read()).toBeUndefined()
     expect(harness.redrained).toEqual([sessions.fresh.id])
+    expect(harness.resumes).toEqual([[sessions.live.id]])
     expect(turns.restartHeldSessions.size).toBe(0)
     coordinator.close()
     turns.activeTurnSessions.clear()

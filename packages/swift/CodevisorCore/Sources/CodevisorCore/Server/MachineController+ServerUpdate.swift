@@ -78,7 +78,7 @@ extension MachineController {
       }
       let initialApplyAt = connection.updateInfo?.lastApply?.at
       if applied.draining == true {
-        connection.updateStatusMessage = "Waiting for chats to finish…"
+        connection.updateStatusMessage = "Pausing chats for the update…"
       }
       let pollBudget = updatePollInterval * updatePollAttempts
       var deadline = updateScheduler.now() + pollBudget
@@ -105,7 +105,7 @@ extension MachineController {
             return
           case "draining":
             connection.updateProgress = nil
-            connection.updateStatusMessage = lastApply.message ?? "Waiting for chats to finish…"
+            connection.updateStatusMessage = lastApply.message ?? "Pausing chats for the update…"
             deadline = max(deadline, updateScheduler.now() + pollBudget)
             continue
           case "installing":

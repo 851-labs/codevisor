@@ -184,5 +184,6 @@ const settleRecoveredTurn = (
   appendAndPublish(services.db, fanout, "session.updated", sessionId, {
     ...(turnId === undefined ? {} : { initiatedBy: "user", turnId, turnState: "ended" }),
     serverId,
-    stopReason: "end_turn"
+    stopReason: "end_turn",
+    stopKind: "interrupted"
   })

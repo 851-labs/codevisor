@@ -206,9 +206,11 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
   "DELETE /v1/bots/:id/projects/:projectId": "Remove a project and its checkout from a bot",
-  "GET /v1/restart/drain": "Get the restart drain state (live turns the server is waiting on)",
-  "POST /v1/restart/drain": "Begin draining live turns so the server can restart safely",
-  "DELETE /v1/restart/drain": "Cancel a restart drain and dispatch held prompts",
+  "GET /v1/restart/drain": "Get the restart drain state (live turns being paused for a restart)",
+  "POST /v1/restart/drain":
+    "Pause live turns for a restart; they continue automatically once the server is back",
+  "DELETE /v1/restart/drain":
+    "Cancel a restart drain, dispatch held prompts and continue paused chats",
   "GET /v1/sessions/:id/subscriptions": "List the session event subscriptions a session holds",
   "POST /v1/sessions/:id/subscriptions":
     "Subscribe a session to another session's events, delivered as hidden prompts",

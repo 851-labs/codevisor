@@ -24,7 +24,7 @@ export const defaultServerConfig = (
   onShutdownRequested: overrides.onShutdownRequested,
   updater: overrides.updater,
   restartSnapshotPath: overrides.restartSnapshotPath,
-  restartDrainTimeoutMs: overrides.restartDrainTimeoutMs,
+  pausedTurnsPath: overrides.pausedTurnsPath,
   sessionActivity: overrides.sessionActivity,
   screenSharing: overrides.screenSharing,
   screenSharingVNC: overrides.screenSharingVNC,

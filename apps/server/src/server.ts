@@ -16,6 +16,7 @@ import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import { forwardTerminalTitles } from "./infra/terminal-titles.js"
 import { startWorkspaceGitMonitor } from "./infra/workspace-git.js"
+import { makeFilePausedTurnStore, makeMemoryPausedTurnStore } from "./paused-turns.js"
 import {
   makeFileRestartSnapshotStore,
   makeMemoryRestartSnapshotStore,
@@ -53,6 +54,7 @@ import type {
   RunningCodevisorServer
 } from "./server-context.js"
 import { handleRequest } from "./server-router.js"
+import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
 import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
 export * from "./server-context.js"
@@ -75,13 +77,23 @@ export const makeCodevisorServerApp = (
     config.restartSnapshotPath === undefined
       ? makeMemoryRestartSnapshotStore()
       : makeFileRestartSnapshotStore(config.restartSnapshotPath)
+  const pausedTurns =
+    config.pausedTurnsPath === undefined
+      ? makeMemoryPausedTurnStore()
+      : makeFilePausedTurnStore(config.pausedTurnsPath)
+  const updateResume = makeUpdateResumer({
+    pausedTurns,
+    continueSession: (sessionId) =>
+      continueAfterUpdate(services, fanout, routeState, config.id, sessionId)
+  })
   const restart = makeRestartCoordinator({
     services,
     fanout,
     turns,
     snapshot: restartSnapshot,
-    defaultTimeoutMs: config.restartDrainTimeoutMs,
-    redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId)
+    pausedTurns,
+    redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId),
+    resumePaused: () => updateResume.resume(pausedTurns.read())
   })
   const browserProxy = new BrowserProxy()
   const clientControl = new ClientControlBroker()
@@ -94,8 +106,10 @@ export const makeCodevisorServerApp = (
     pendingSessionCreates: new Map(),
     turnHeldSessions: new Set(),
     updateSignature: {},
-    restart
+    restart,
+    updateResume
   }
+  updateResume.resume(pausedTurns.read())
   void resumeSessionsAfterRestart(services, fanout, routeState, config.id, restartSnapshot).catch(
     swallowError
   )
@@ -275,6 +289,7 @@ export const makeCodevisorServerApp = (
       clientControl.close()
       clearInterval(staleTurnSweep)
       restart.close()
+      updateResume.close()
       attentionSettle.close()
       unsubscribeTurns()
       unsubscribeBotConversations()

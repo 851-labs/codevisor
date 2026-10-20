@@ -23,6 +23,7 @@ import type { SharedAccounts } from "./infra/shared-accounts.js"
 import type { UsageLimitsCache } from "./infra/usage-limits-cache.js"
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { Simulators } from "./simulators.js"
+import type { UpdateResumer } from "./update-resume.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -61,7 +62,7 @@ export interface CodevisorServerConfig {
   readonly onShutdownRequested?: (() => void) | undefined
   readonly updater?: CodevisorServerUpdater | undefined
   readonly restartSnapshotPath?: string | undefined
-  readonly restartDrainTimeoutMs?: number | undefined
+  readonly pausedTurnsPath?: string | undefined
   readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly screenSharingVNC?: ScreenSharingVNCConfig | undefined
   readonly simulators?: Simulators | undefined
@@ -160,6 +161,7 @@ export interface RouteState {
   readonly turnHeldSessions: Set<string>
   readonly restartHeldSessions: Set<string>
   readonly restart: RestartCoordinator
+  readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
 }
 

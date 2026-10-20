@@ -321,11 +321,11 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   }
 
   var drainResult = ServerRestartDrainState(state: "drained", remaining: 0)
-  var drainInterruptions = 0
+  var drainBegins = 0
 
-  func beginRestartDrain(interrupt: Bool) async throws -> ServerRestartDrainState {
+  func beginRestartDrain() async throws -> ServerRestartDrainState {
     lock.withLock {
-      if interrupt { drainInterruptions += 1 }
+      drainBegins += 1
       return drainResult
     }
   }

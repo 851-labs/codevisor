@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { hostname } from "node:os"
 
-import { makeOpenApiDocument, MAX_UPLOAD_BYTES, RestartDrainRequest } from "@codevisor/api"
-import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from "@codevisor/api"
+import { makeOpenApiDocument, MAX_UPLOAD_BYTES } from "@codevisor/api"
+import type { UpdateInfo } from "@codevisor/api"
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
 import { applyAfterDrain } from "./apply-after-drain.js"
@@ -39,7 +39,6 @@ import {
   failureMessage,
   HttpFailure,
   parseRequestUrl,
-  readSchema,
   run,
   swallowError,
   writeFailure,
@@ -241,10 +240,6 @@ export const handleRequest = async (
       }
       const busy =
         routeState.activePromptSessions.size > 0 || routeState.activeTurnSessions.size > 0
-      if (busy && url.searchParams.get("whenBusy") === "refuse") {
-        writeJson(response, 200, { accepted: false, reason: "busy" })
-        return
-      }
       const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
       const info = await config.updater.check({ channel, force: true })
       publishUpdateChanged(services, fanout, routeState, info)
@@ -263,7 +258,6 @@ export const handleRequest = async (
       const updater = config.updater
       void applyAfterDrain(
         routeState.restart,
-        { interrupt: url.searchParams.get("interrupt") === "1" },
         () =>
           publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info)),
         () => updater.apply({ channel })
@@ -280,12 +274,7 @@ export const handleRequest = async (
         return
       }
       if (request.method === "POST") {
-        const payload = await readSchema(request, RestartDrainRequest).catch(
-          (): RestartDrainRequestBody => ({})
-        )
-        void routeState.restart
-          .begin({ interrupt: payload.interrupt, timeoutMs: payload.timeoutMs })
-          .catch(swallowError)
+        void routeState.restart.begin().catch(swallowError)
         writeJson(response, 202, routeState.restart.state())
         return
       }
@@ -432,7 +421,7 @@ const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo 
       state: drain.state === "draining" ? "draining" : "installing",
       message:
         drain.state === "draining"
-          ? `Waiting for ${chats} to finish`
+          ? `Pausing ${chats} for the update`
           : "Restarting to install the update",
       targetVersion: info.latestVersion,
       at: drain.startedAt

@@ -81,16 +81,9 @@ export type UpdateInfo = typeof UpdateInfo.Type
 export const RestartDrainState = Schema.Struct({
   state: Schema.Literals(["idle", "draining", "drained"]),
   remaining: Schema.Number,
-  startedAt: Schema.String,
-  deadlineAt: Schema.optional(Schema.String)
+  startedAt: Schema.String
 })
 export type RestartDrainState = typeof RestartDrainState.Type
-
-export const RestartDrainRequest = Schema.Struct({
-  interrupt: Schema.optional(Schema.Boolean),
-  timeoutMs: Schema.optional(Schema.Number)
-})
-export type RestartDrainRequest = typeof RestartDrainRequest.Type
 
 export const PairingTokenResponse = Schema.Struct({
   token: Schema.String,

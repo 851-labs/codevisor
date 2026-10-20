@@ -1,7 +1,7 @@
 import Foundation
 
 public extension CodevisorServerClienting {
-  func beginRestartDrain(interrupt: Bool) async throws -> ServerRestartDrainState {
+  func beginRestartDrain() async throws -> ServerRestartDrainState {
     ServerRestartDrainState(state: "drained", remaining: 0)
   }
 

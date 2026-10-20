@@ -1,12 +1,11 @@
-import type { RestartCoordinator, RestartDrainOptions } from "./restart-drain.js"
+import type { RestartCoordinator } from "./restart-drain.js"
 
 export const applyAfterDrain = async (
   restart: RestartCoordinator,
-  options: RestartDrainOptions,
   publish: () => void,
   apply: () => Promise<void>
 ): Promise<void> => {
-  const drained = await restart.begin(options)
+  const drained = await restart.begin()
   if (drained.state !== "drained") return
   publish()
   try {

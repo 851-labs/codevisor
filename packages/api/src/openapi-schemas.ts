@@ -77,7 +77,6 @@ import {
   RemoveNativeMcpRequest,
   RemoveNativeMcpResult,
   ReorderQueuedPromptsRequest,
-  RestartDrainRequest,
   RestartDrainState,
   ServerCapabilities,
   ServerInfo,
@@ -219,8 +218,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sessions/:id/config": SetConfigRequest,
   "POST /v1/sessions/:id/goal": SetGoalRequest,
   "POST /v1/sessions/:id/questions/:questionId/answer": SetQuestionAnswerRequest,
-  "POST /v1/terminals": TerminalCreateRequest,
-  "POST /v1/restart/drain": RestartDrainRequest
+  "POST /v1/terminals": TerminalCreateRequest
 })
 
 export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
