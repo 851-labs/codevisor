@@ -22,8 +22,8 @@ the policy audit, packaging, the extension ID plan, and a draft of every listing
 - Updates: there are none. A dragged-in copy stays at whatever version it was installed with. The
   bundled manifest is fixed at version `0.2.0`, so the app can't tell old copies from new ones.
 - Production builds already link to `chromewebstore.google.com/detail/<id>` (`webStore` setup
-  mode). That listing doesn't exist yet. Google's update server returns `error-unknownApplication`
-  for the ID.
+  mode). The store item exists with that ID but is still a draft, so the link works only after
+  the listing is published.
 
 ## Packaging and upload
 
@@ -61,7 +61,7 @@ GitHub environment already has these variables:
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/48659336838/locations/global/workloadIdentityPools/github-actions/...` | Must trust this repository's OIDC tokens.                                            |
 | `GCP_SERVICE_ACCOUNT`            | `codevisor-chrome-publisher@labs-851.iam.gserviceaccount.com`                    | Must be added as a user under the publisher in the developer dashboard.              |
 | `CHROME_WEBSTORE_PUBLISHER_ID`   | `79f7ff5e-c4b0-4019-aa45-c0d99e58a805`                                           | From the developer dashboard's account page. Confirm it matches the account you use. |
-| `CHROME_WEBSTORE_EXTENSION_ID`   | `clemkifaacpllomplgomnkbeoiindbhl`                                               | **Wrong after the first upload.** Replace it with the store-assigned item ID.        |
+| `CHROME_WEBSTORE_EXTENSION_ID`   | `clemkifaacpllomplgomnkbeoiindbhl`                                               | Correct. The store item has the same ID as the app.                                  |
 
 The Chrome Web Store API must also be enabled in the `labs-851` Google Cloud project. None of this
 has been tested end to end: the only run of the workflow, on 2026-07-24, was skipped.
@@ -99,8 +99,8 @@ has been tested end to end: the only run of the workflow, on 2026-07-24, was ski
    to `optional_permissions` and asking on first use would make the install prompt shorter. That
    is a product decision for Phase 2, and the build guard covers optional permissions too.
 5. **Store icon padding.** Chrome's guidelines ask for 96×96 artwork inside the 128×128 icon, with
-   16 px of transparent padding. The current icons are cropped close to the edge, so make a padded
-   128×128 store icon from the source art.
+   16 px of transparent padding. The packaged icons are cropped close to the edge, so the listing
+   uses a separate padded store icon. See [Images](#images).
 6. **`connect.html` isn't used.** It is packaged but never opened. It does no harm in review. It
    could become the page opened after install in Phase 2, and it already holds the data
    disclosure.
@@ -117,31 +117,17 @@ in three places:
 Nothing else uses the ID: there is no native messaging host manifest and no
 `externally_connectable`.
 
-**Why it changes.** The ID comes from the public `key` in the repository manifest. The store zip
-drops `key`, so on the first dashboard upload the store creates the item with its own key and ID.
-The documented process has no way to bring an existing key. Until the code knows the new ID, a
-store-installed extension can't connect: the server refuses its `Origin`.
+**The store item already has this ID.** The draft item, created on 2026-07-22, is
+`clemkifaacpllomplgomnkbeoiindbhl`. Its public key on the Package tab ("View public key") is the
+same key as `manifest.json` `key`. So the ID doesn't change:
 
-**Recommendation: adopt the store-assigned ID.**
+- the app already accepts the store-installed extension, with no code change and no legacy ID;
+- `CHROME_WEBSTORE_EXTENSION_ID` is already correct;
+- the store zip still strips `key`, because the store item fixes the ID for every later upload.
 
-1. Upload the first zip in the dashboard ("Add new item"). Don't publish yet.
-2. From the Package tab, copy the item ID and the public key ("View public key", joined onto one
-   line).
-3. In code (Phase 2):
-   - put the store public key in `manifest.json` `key`, so unpacked and dev builds get the store ID;
-   - set `CODEVISOR_BROWSER_EXTENSION_ID` to the store ID, and keep the old ID as a legacy ID that
-     the `Origin` check and install detection still accept, so existing installs keep working;
-   - update the contract test that ties the key to the ID.
-4. Set `CHROME_WEBSTORE_EXTENSION_ID` in the GitHub environment to the store ID.
-5. Ship that app release before the listing goes public, or together with it using `stage_only`.
-
-If both the old dragged-in copy and the store copy are installed, both try to connect. Phase 2
-should tell users to remove the old copy once the store copy is connected.
-
-**Alternative: keep `clemkifaacpllomplgomnkbeoiindbhl`.** This only works if someone still has the
-private key for the repository's `key`; it isn't in the repository. Older Chrome docs allowed
-putting it as `key.pem` in the root of the first upload to keep the ID. Current docs don't
-mention this, and the first upload fixes the ID for good. It isn't worth relying on.
+A dragged-in copy and a store copy share the ID. This hasn't been tested yet: check what Chrome does
+when a user with a dragged-in copy installs from the store, and tell them to remove the old copy if
+needed.
 
 ## Listing draft
 
@@ -156,6 +142,9 @@ Codevisor." Proposed, needs a decision because it also shows in `chrome://extens
 **Category:** Developer Tools.
 
 **Language:** English.
+
+**Official URL:** codevisor.dev (verified in Search Console). **Homepage URL:**
+<https://www.codevisor.dev>. **Support URL:** <https://www.codevisor.dev/support>.
 
 **Description:**
 
@@ -230,70 +219,70 @@ provider the user chose is part of the user-facing feature.
 
 ### Images
 
-| Asset              | Size                                    | Required   | Source                                           |
-| ------------------ | --------------------------------------- | ---------- | ------------------------------------------------ |
-| Store icon         | 128×128 PNG, 96×96 artwork plus padding | Yes        | Pad `apps/www/public/codevisor-icon.png`.        |
-| Screenshots        | 1280×800 (or 640×400), 1 to 5           | At least 1 | See below.                                       |
-| Small promo tile   | 440×280 PNG or JPEG                     | Yes        | New: icon and wordmark on the site's background. |
-| Marquee promo tile | 1400×560                                | No         | Only needed if the store features the extension. |
-| Promo video        | YouTube link                            | No         | Reuse the reviewer screen recording.             |
+The uploaded images and their sources are in `docs/assets/chrome-web-store/`. Run `render.sh`
+there to rebuild the PNGs from the HTML pages with headless Chrome.
 
-Screenshots to take (macOS app plus Chrome, at 1280×800):
+| Asset              | File                                    | Notes                                                                                                     |
+| ------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Store icon         | `store-icon.png` (128×128)              | `source/codevisor-icon.png` (from `apps/www/public`) scaled so the artwork is 96×96, with 16 px padding.  |
+| Screenshot 1       | `screenshot-1.png` (1280×800, no alpha) | Chrome with the Codevisor tab group, the debugging banner and the popup showing "Connected to Codevisor". |
+| Screenshot 2       | `screenshot-2.png` (1280×800, no alpha) | The Codevisor chat that drove that Chrome through the extension.                                          |
+| Small promo tile   | `small-promo-tile.png` (440×280)        | Icon and wordmark on the site's black background.                                                         |
+| Marquee promo tile | None                                    | Optional. Only needed if the store features the extension.                                                |
+| Promo video        | None                                    | Optional. A YouTube link.                                                                                 |
 
-1. A chat where an agent is working in the user's Chrome, with the tab group and debugging banner
-   visible. `apps/www/public/screenshots/mac-browser.webp` shows the built-in browser, not the
-   extension, so it can't be reused.
-2. The "Which browser should I use?" question with "Use Codevisor Extension".
-3. The toolbar popup showing "Connected to Codevisor" and controlled tabs.
-4. A finished task showing what the agent did in Chrome.
+The two captures in `source/` are real windows. Chrome ran with a temporary profile and the
+unpacked extension (loaded with the CDP `Extensions.loadUnpacked` command), connected to the
+Codevisor app on the same Mac. A Codevisor chat then asked to open codevisor.dev "using the
+Codevisor Extension". The chat capture has its inspector and sidebar hidden, and some empty rows
+removed above the composer.
 
 ### Test instructions (for the reviewer)
 
-> 1. Install Codevisor for macOS from https://www.codevisor.dev and sign in to one AI provider.
-> 2. Install this extension. The toolbar popup shows "Connected to Codevisor" within a few seconds.
-> 3. In Codevisor, start a chat and ask: "Open example.com in my Chrome and tell me the page
->    title." When asked which browser to use, choose "Use Codevisor Extension".
-> 4. Chrome shows the debugging banner, the tab joins a Codevisor tab group, and the agent replies
->    with the title.
+The dashboard allows 500 characters. This is the saved text:
+
+> Needs the Codevisor app for macOS; the extension does nothing without it. The extension needs no
+> account.
 >
-> A screen recording of these steps: <link>.
+> 1. Install Codevisor from https://www.codevisor.dev and sign in to an AI provider.
+> 2. Install this extension. Its popup shows "Connected to Codevisor".
+> 3. In Codevisor, start a chat: "Open example.com in my Chrome and tell me the page title." If
+>    asked which browser, pick "Use Codevisor Extension".
+> 4. Chrome shows its debugging banner, the tab joins a Codevisor group, and the agent replies.
 
 If reviewers need an AI provider account, give them test credentials in this tab.
 
-## What only Dylan can do
+## Dashboard status
 
-- [ ] **Developer account.** Confirm which Google account owns publisher
-      `79f7ff5e-c4b0-4019-aa45-c0d99e58a805`. If there isn't one yet, register (one-time US$5 fee).
-      Ideally use a shared Google Group or company account, not a personal one.
-- [ ] **Verification.** Verify the contact email. Set the publisher name to Codevisor or 851 Labs.
-      Verify `codevisor.dev` in Search Console so the listing shows it as the verified site. If the
-      publisher is a trader under EU rules, fill in the trader details.
-- [ ] **Two-step verification** on the publishing Google account. Chrome Web Store requires it to
-      publish.
-- [ ] **API access.** In the `labs-851` Google Cloud project, enable the Chrome Web Store API.
-      Confirm the workload identity provider trusts this repository. Add
-      `codevisor-chrome-publisher@labs-851.iam.gserviceaccount.com` to the publisher in the
-      developer dashboard.
-- [ ] **Create the item.** Upload the latest Stable zip in the dashboard ("Add new item"). The API
-      can't create items, so this first upload is manual.
-- [ ] **Hand back the ID.** Send the item ID and public key from the Package tab, and update the
-      `CHROME_WEBSTORE_EXTENSION_ID` GitHub variable. Phase 2 needs both before the listing goes
-      public.
+As of 2026-10-20 the draft is ready to submit. "Why can't I submit?" is gone and "Submit for
+review" is enabled. Nobody has pressed it yet.
+
+| Area              | State                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Publisher         | `79f7ff5e-c4b0-4019-aa45-c0d99e58a805`, display name Codevisor, owned by dylan@851.sh. Trader account, verified as 851 INC.           |
+| Contact email     | dylan@851.sh, verified.                                                                                                               |
+| Service account   | `codevisor-chrome-publisher@labs-851.iam.gserviceaccount.com` is added to the publisher.                                              |
+| Package           | 0.1.108, built from main with `bun run release:browser-extension 0.1.108`. Permissions match the reviewed list; no host permissions.  |
+| Store listing     | The description, category, language and URLs above, the padded icon, two screenshots and the small promo tile.                        |
+| Privacy           | Single purpose, all nine justifications, remote code "No", the three data types, the three certifications and the privacy policy URL. |
+| Distribution      | Free, public.                                                                                                                         |
+| Test instructions | The text above.                                                                                                                       |
+
+The draft package is 0.1.108, the next Stable version. If the dashboard refuses a later upload of
+the same version, publish with the following Stable.
+
+Still open:
+
+- [ ] **Submit.** Press "Submit for review" in the dashboard, or run Publish Chrome Extension with
+      the next Stable version. Tick `stage_only` to hold the approved version until you publish it.
+- [ ] **API access.** The Chrome Web Store API and the workload identity provider in `labs-851`
+      haven't been tested end to end.
 - [ ] **Decisions** in the next section.
-- [ ] **Assets.** Make or approve the padded store icon, the promo tile and the screenshots, and
-      record the reviewer video.
-- [ ] **Fill in the dashboard** from this doc: Store listing, Privacy (single purpose,
-      justifications, remote code, data use, certifications, policy URL), Distribution (free,
-      public, all regions) and Test instructions.
-- [ ] **Submit.** After Phase 2 merges, run Publish Chrome Extension with `stage_only` ticked.
-      Publish from the dashboard once the matching app release is out.
 
 ## Decisions needed
 
-1. **Extension ID:** adopt the store-assigned ID (recommended), or try to keep the old one if the
-   private key still exists.
-2. **Summary text:** keep "Control Chrome with Codevisor." or use the proposed summary.
-3. **`history` and `clipboardRead`:** keep them as install-time permissions, or request them on
-   first use in Phase 2.
-4. **Reviewer access:** whether to give reviewers a test AI provider account.
-5. **Publisher identity:** which Google account and publisher name the listing goes under.
+1. **Summary text:** keep "Control Chrome with Codevisor." or use the proposed summary. It comes
+   from the manifest, so changing it needs a new package.
+2. **`history` and `clipboardRead`:** keep them as install-time permissions, or request them on
+   first use.
+3. **Reviewer access:** whether to give reviewers a test AI provider account.
