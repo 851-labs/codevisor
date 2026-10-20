@@ -68,10 +68,6 @@ extension SidebarView {
     Set(botEntries.flatMap(\.workspaceIDs))
   }
 
-  var visibleBotEntries: [BotSidebarEntry] {
-    botEntries.filter { botsExpanded || keepsSelection($0) }
-  }
-
   func visibleBotChildren(_ entry: BotSidebarEntry) -> [WorkspaceSidebarItem] {
     visible(entry.children, showing: showsBotChildren(entry.bot))
   }
@@ -80,7 +76,7 @@ extension SidebarView {
     bot.id == selectedBotID || bot.workspaceId == selectedWorkspaceID
   }
 
-  static func botGroupID(_ bot: Bot) -> String { "bot:\(bot.serverId)|\(bot.id.uuidString)" }
+  static func botGroupID(_ bot: Bot) -> String { SidebarRows.Bot.groupID(serverId: bot.serverId, id: bot.id) }
 
   func botChildren(containing id: UUID) -> [WorkspaceSidebarItem]? {
     environment.navigationStore.workspaceEntries.botChildren.values.first { $0.contains { $0.id == id } }
