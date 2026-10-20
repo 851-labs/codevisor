@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { lstat, mkdir, readdir, rename, statfs, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { promisify } from "node:util"
 
 import { removeWorktree } from "./git.js"
-import { type CommandPriority, withPriority } from "./low-priority.js"
 
 const neverIndexMarker = ".metadata_never_index"
 
@@ -25,35 +25,48 @@ const prepareTrashRoot = async (trashRoot: string): Promise<void> => {
   await writeFile(join(trashRoot, neverIndexMarker), "", { flag: "a" })
 }
 
-export const LOW_DISK_FREE_BYTES = 20 * 1024 ** 3
-export const LOW_DISK_FREE_RATIO = 0.1
+export type TrashCommandRunner = (command: string, args: ReadonlyArray<string>) => Promise<void>
 
-export const purgePriority = (
-  space: { readonly free: number; readonly total: number } | undefined
-): CommandPriority =>
-  space !== undefined &&
-  (space.free < LOW_DISK_FREE_BYTES || space.free < space.total * LOW_DISK_FREE_RATIO)
-    ? "utility"
-    : "background"
+export interface TrashQueue {
+  readonly enqueue: (path: string) => Promise<void>
+}
 
-export const diskSpace = async (
-  path: string
-): Promise<{ readonly free: number; readonly total: number } | undefined> => {
-  try {
-    const stats = await statfs(path)
-    return { free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }
-  } catch {
-    return undefined
+export const makeTrashQueue = (
+  run: TrashCommandRunner,
+  log: (line: string) => void
+): TrashQueue => {
+  const pending = new Map<string, Promise<void>>()
+  let tail: Promise<void> = Promise.resolve()
+  return {
+    enqueue: (path) => {
+      const queued = pending.get(path)
+      if (queued !== undefined) return queued
+      const purged = tail.then(async () => {
+        try {
+          await run("/bin/rm", ["-rf", "--", path])
+        } catch (cause) {
+          log(`Couldn't delete trashed ${path}: ${String(cause)}`)
+        } finally {
+          pending.delete(path)
+        }
+      })
+      pending.set(path, purged)
+      tail = purged
+      return purged
+    }
   }
 }
 
-const purge = async (path: string): Promise<void> => {
-  const priority = purgePriority(await diskSpace(path))
-  return new Promise((resolve) => {
-    const command = withPriority("/bin/rm", ["-rf", "--", path], priority)
-    execFile(command.command, [...command.args], () => resolve())
-  })
-}
+const execFileAsync = promisify(execFile)
+
+export const worktreeTrashQueue: TrashQueue = makeTrashQueue(
+  async (command, args) => {
+    await execFileAsync(command, [...args])
+  },
+  (line) => console.error(line)
+)
+
+const purge = (path: string): Promise<void> => worktreeTrashQueue.enqueue(path)
 
 export const trashWorktree = async (
   repoDir: string,

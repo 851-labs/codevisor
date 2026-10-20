@@ -17,6 +17,7 @@ import {
 
 import {
   appendAndPublish,
+  archiveJobs,
   assertLocationFolderExists,
   getProjectOrFail,
   HttpFailure,
@@ -187,7 +188,7 @@ const rollBack = async (
     trashRoot: worktreeTrashRoot(),
     id: `bot-${created.slug}`
   })
-    .then((trashed) => trashed.purged)
+    .then((trashed) => archiveJobs(services).track(trashed.purged))
     .catch(swallowError)
 }
 
