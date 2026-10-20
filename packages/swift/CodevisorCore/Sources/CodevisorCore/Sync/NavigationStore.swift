@@ -161,6 +161,7 @@ public final class NavigationStore {
     guard let cache = caches.caches[machineId] else { return }
     outbox.retire(machineId: machineId, cursor: cache.eventCursor, snapshotRequestedAt: snapshotRequestedAt)
     outbox.retireExpectedSessions(machineId: machineId, listed: Set(cache.sessions.map(\.id)))
+    outbox.retireListedProjects(machineId: machineId, listed: Set(cache.projects.map(\.id)))
   }
 
   func rebuild(origin: SessionAttentionTransition.Origin = .snapshot) {

@@ -63,6 +63,11 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     return nil
   }
 
+  var upsertedProjectId: UUID? {
+    if case let .upsertProject(project) = self { return project.id }
+    return nil
+  }
+
   var isRemoval: Bool {
     switch self {
     case .deleteProject, .deleteSession, .closePane: true

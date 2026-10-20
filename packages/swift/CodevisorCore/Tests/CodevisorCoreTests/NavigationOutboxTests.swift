@@ -87,6 +87,18 @@ struct NavigationOutboxTests {
     #expect(outbox.entries.isEmpty)
   }
 
+  @Test("An accepted new project leaves once the server lists it, even before the cache reaches its cursor")
+  func acceptedProjectRetires() {
+    let outbox = NavigationOutbox(store: InMemoryStore())
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/widget"), serverId: "m")
+    outbox.enqueue(.upsertProject(project), machineId: "m")
+    #expect(!outbox.retireListedProjects(machineId: "m", listed: [project.id]))
+    outbox.markAccepted(outbox.entries[0].id, cursor: 10, at: Date())
+    #expect(!outbox.retireListedProjects(machineId: "m", listed: [UUID()]))
+    #expect(outbox.retireListedProjects(machineId: "m", listed: [project.id]))
+    #expect(outbox.entries.isEmpty)
+  }
+
   @Test(
     "Failures are sorted into done, refused, and try again",
     arguments: [

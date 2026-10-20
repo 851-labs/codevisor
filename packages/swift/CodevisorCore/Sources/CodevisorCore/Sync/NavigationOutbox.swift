@@ -112,6 +112,18 @@ final class NavigationOutbox {
     return true
   }
 
+  @discardableResult
+  func retireListedProjects(machineId: String, listed: Set<UUID>) -> Bool {
+    let before = entries.count
+    entries.removeAll { entry in
+      guard entry.machineId == machineId, case .awaiting = entry.state else { return false }
+      return entry.intent.upsertedProjectId.map(listed.contains) == true
+    }
+    guard entries.count != before else { return false }
+    persist()
+    return true
+  }
+
   func removeAll(machineId: String) {
     let before = entries.count
     entries.removeAll { $0.machineId == machineId }
