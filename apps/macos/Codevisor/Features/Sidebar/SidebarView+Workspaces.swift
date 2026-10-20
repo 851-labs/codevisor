@@ -136,9 +136,7 @@ extension SidebarView {
   private func archiveWorkspace(_ workspace: Workspace) {
     let folds = folds
     guard folds.beginArchive(workspace.id) else { return }
-    if routesSelectedSession(workspace) {
-      selectNextChat(serverId: workspace.serverId)
-    }
+    moveSelection(awayFrom: workspace)
     let commit = {
       folds.arrive(workspace.id)
       environment.archiveWorkspace(workspace)
