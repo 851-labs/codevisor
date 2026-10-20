@@ -2,12 +2,12 @@ import SwiftUI
 import CodevisorCore
 
 extension SidebarView {
-  func selectNextChat(serverId: String, leaving archivedId: UUID) {
+  func selectNextChat(serverId: String) {
     let next = environment.projectList.sessions
       .filter { session in
         guard session.serverId == serverId else { return false }
         guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return true }
-        return workspaceId != archivedId && environment.workspaces.workspace(id: workspaceId)?.isArchived != true
+        return !folds.isArchiving(workspaceId) && environment.workspaces.workspace(id: workspaceId)?.isArchived != true
       }
       .max { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) }
     if let next { store?.selectChat(next) }

@@ -194,6 +194,7 @@ struct SidebarView: View {
     .padding(.horizontal, 10)
     .padding(.bottom, 8)
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
+    .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedSidebarItems.isEmpty)
     .onChange(of: rest.map(\.id)) { _, ids in endGroupDrag(ifMissingFrom: ids) }
   }
 
@@ -235,7 +236,10 @@ struct SidebarView: View {
     _ visible: [WorkspaceSidebarItem], from items: [WorkspaceSidebarItem]
   ) -> (items: [WorkspaceSidebarItem], releasing: Set<UUID>) {
     let visibleIDs = Set(visible.map(\.id))
-    let releasing = Set(items.lazy.map(\.id).filter { !visibleIDs.contains($0) && folds.isReleasing($0) })
+    let releasing = Set(
+      items.lazy.map(\.id).filter {
+        folds.isArchiving($0) || (!visibleIDs.contains($0) && folds.isReleasing($0))
+      })
     guard !releasing.isEmpty else { return (visible, []) }
     return (items.filter { visibleIDs.contains($0.id) || releasing.contains($0.id) }, releasing)
   }
