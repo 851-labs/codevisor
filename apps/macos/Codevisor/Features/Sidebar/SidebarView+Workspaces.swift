@@ -134,11 +134,21 @@ extension SidebarView {
   }
 
   private func archiveWorkspace(_ workspace: Workspace) {
-    let selectionLeaves = routesSelectedSession(workspace)
-    environment.archiveWorkspace(workspace)
-    pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
-    if selectionLeaves {
-      selectNextChat(serverId: workspace.serverId, leaving: workspace.id)
+    let folds = folds
+    guard folds.beginArchive(workspace.id) else { return }
+    if routesSelectedSession(workspace) {
+      selectNextChat(serverId: workspace.serverId)
+    }
+    let commit = {
+      folds.arrive(workspace.id)
+      environment.archiveWorkspace(workspace)
+      pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
+      folds.endArchive(workspace.id)
+    }
+    guard !reduceMotion else { return commit() }
+    Task {
+      try? await Task.sleep(for: .seconds(Motion.listReflowDuration))
+      commit()
     }
   }
 

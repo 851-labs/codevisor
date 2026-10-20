@@ -57,14 +57,18 @@ extension SidebarView {
         ) { progress in
           ForEach(pages[index]) { item in
             if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
-              archivedRow(workspace, item: item)
-                .sidebarFoldingRow(
-                  released.releasing.contains(item.id)
-                    ? .releasing : unfolding || folding.contains(item.id) ? .folding : .kept,
-                  progress: progress, shows: archivedExpanded
-                )
-                .transition(.identity)
-                .id(workspace.id)
+              SidebarFoldingList(shows: true, appearsFolded: folds.isArriving(item.id)) { arrival in
+                archivedRow(workspace, item: item)
+                  .sidebarFoldingRow(true, progress: arrival, shows: true)
+              }
+              .onAppear { folds.endArrival(item.id) }
+              .sidebarFoldingRow(
+                released.releasing.contains(item.id)
+                  ? .releasing : unfolding || folding.contains(item.id) ? .folding : .kept,
+                progress: progress, shows: archivedExpanded
+              )
+              .transition(.identity)
+              .id(workspace.id)
             }
           }
         }
