@@ -259,6 +259,7 @@ struct SessionTranscriptView: View {
   }
 
   var showsWatermark: Bool {
+    guard !controller.presentsBotConversation else { return false }
     guard controller.pendingUserMessage == nil, controller.setupPhases.isEmpty else { return false }
     guard controller.sessionErrorMessage == nil else { return false }
     guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
