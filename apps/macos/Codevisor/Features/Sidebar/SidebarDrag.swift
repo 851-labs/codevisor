@@ -5,7 +5,6 @@ import SwiftUI
 @MainActor
 final class SidebarDragGeometryStore {
   var workspaces: [UUID: CGRect] = [:]
-  var groups: [String: CGRect] = [:]
   var headings: [String: CGRect] = [:]
 }
 

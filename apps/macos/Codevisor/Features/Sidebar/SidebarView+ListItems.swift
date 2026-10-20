@@ -20,8 +20,12 @@ extension SidebarView {
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
+    workspaceGroups(listedSidebarItems)
+  }
+
+  func workspaceGroups(_ items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
     SidebarWorkspaceGroup.groups(
-      listedSidebarItems, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs, projects: list.projects,
+      items, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs, projects: list.projects,
       defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey,
       projectOrder: projectOrder
     ) { serverId in
@@ -40,12 +44,10 @@ extension SidebarView {
 
   func togglePin(_ workspace: Workspace) {
     let id = workspace.id.uuidString
-    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-      if pinnedWorkspaceIDs.contains(id) {
-        pinnedWorkspaceIDs.removeAll { $0 == id }
-      } else {
-        pinnedWorkspaceIDs.append(id)
-      }
+    if pinnedWorkspaceIDs.contains(id) {
+      pinnedWorkspaceIDs.removeAll { $0 == id }
+    } else {
+      pinnedWorkspaceIDs.append(id)
     }
   }
 
@@ -57,11 +59,11 @@ extension SidebarView {
     group.id == SidebarWorkspaceGroup.pinnedID ? pinnedExpanded : listExpanded && isExpanded(group)
   }
 
-  func toggleGroup(_ group: SidebarWorkspaceGroup) {
-    if collapsedGroupIDs.contains(group.id) {
-      collapsedGroupIDs.removeAll { $0 == group.id }
+  func toggleGroup(_ id: String) {
+    if collapsedGroupIDs.contains(id) {
+      collapsedGroupIDs.removeAll { $0 == id }
     } else {
-      collapsedGroupIDs.append(group.id)
+      collapsedGroupIDs.append(id)
     }
   }
 

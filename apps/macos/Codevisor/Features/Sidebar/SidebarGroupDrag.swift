@@ -20,22 +20,21 @@ extension SidebarView {
     environment.navigationStore.machineOrderKey(forMachineId: serverId, machines: environment.machines)
   }
 
-  func groupReorderGesture(for group: SidebarWorkspaceGroup) -> some Gesture {
+  func groupReorderGesture(for id: String, heading: SidebarWorkspaceGroup.Heading) -> some Gesture {
     DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.reorderSpace))
       .onChanged { value in
-        if groupDrag?.groupID != group.id {
-          guard let heading = group.heading, let frame = dragGeometry.headings[group.id], frame != .zero
-          else { return }
+        if groupDrag?.groupID != id {
+          guard let frame = dragGeometry.headings[id], frame != .zero else { return }
           withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
             groupDrag = SidebarGroupDrag(
-              groupID: group.id, title: heading.title, systemImage: heading.systemImage, liftedFrame: frame)
+              groupID: id, title: heading.title, systemImage: heading.systemImage, liftedFrame: frame)
           }
         }
         groupDrag?.translation = value.translation.height
         retargetGroup()
       }
       .onEnded { value in
-        guard groupDrag?.groupID == group.id else { return }
+        guard groupDrag?.groupID == id else { return }
         groupDrag?.translation = value.translation.height
         retargetGroup()
         guard let finished = groupDrag else { return }
@@ -66,8 +65,17 @@ extension SidebarView {
     workspaceGroups.filter { $0.id != SidebarWorkspaceGroup.pinnedID && $0.heading != nil }
   }
 
+  private func groupFrames() -> [String: CGRect] {
+    var frames: [String: CGRect] = [:]
+    for group in headedGroups {
+      guard let heading = dragGeometry.headings[group.id] else { continue }
+      frames[group.id] = group.items.compactMap { dragGeometry.workspaces[$0.id] }.reduce(heading) { $0.union($1) }
+    }
+    return frames
+  }
+
   private func groupDropCandidates() -> [String] {
-    headedGroups.map(\.id).filter { dragGeometry.groups[$0] != nil }
+    headedGroups.map(\.id).filter { dragGeometry.headings[$0] != nil }
   }
 
   private func retargetGroup() {
@@ -75,7 +83,7 @@ extension SidebarView {
     let order = groupDropCandidates()
     guard
       let index = ListReorder.destinationIndex(
-        of: current.groupID, in: order, frames: dragGeometry.groups, midY: current.ghostFrame.midY)
+        of: current.groupID, in: order, frames: groupFrames(), midY: current.ghostFrame.midY)
     else { return }
     let target = order.firstIndex(of: current.groupID) == index ? nil : index
     guard target != current.targetIndex else { return }
@@ -133,9 +141,10 @@ extension SidebarView {
 
   private func groupInsertionLine(for drag: SidebarGroupDrag) -> CGRect? {
     guard let index = drag.targetIndex else { return nil }
+    let frames = groupFrames()
     let others = groupDropCandidates()
       .filter { $0 != drag.groupID }
-      .compactMap { dragGeometry.groups[$0] }
+      .compactMap { frames[$0] }
     return SidebarInsertionLine.frame(at: index, among: others)
   }
 }
