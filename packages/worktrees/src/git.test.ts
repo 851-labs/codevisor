@@ -20,6 +20,7 @@ import {
   isGitWorkTree,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
+  listRemoteCodevisorBranchNames,
   parseGitNumstat,
   rollbackFailedWorktree,
   sanitizeGitOutputLine,
@@ -77,6 +78,17 @@ describe("git helper", () => {
     execFileSync("git", ["branch", "unrelated"], { cwd: repo })
 
     expect(await listCodevisorWorktreeBranchNames(repo)).toEqual(["chicken-fingers-8394"])
+  })
+
+  it("lists Codevisor branch names the repo has seen on its remotes", async () => {
+    const { repo } = makeRepo()
+    execFileSync("git", ["update-ref", "refs/remotes/origin/codevisor/sushi", "HEAD"], {
+      cwd: repo
+    })
+    execFileSync("git", ["update-ref", "refs/remotes/fork/codevisor/ramen", "HEAD"], { cwd: repo })
+    execFileSync("git", ["update-ref", "refs/remotes/origin/unrelated", "HEAD"], { cwd: repo })
+
+    expect(await listRemoteCodevisorBranchNames(repo)).toEqual(["ramen", "sushi"])
   })
 
   it("streams git output lines while adding a worktree", async () => {

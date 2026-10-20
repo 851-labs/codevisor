@@ -24,6 +24,9 @@ const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFil
   return { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, argsFile }
 }
 
+const mergedAnswer = (createdAt: string | undefined): string =>
+  JSON.stringify({ number: 9, title: "t", state: "MERGED", isDraft: false, url: "u", createdAt })
+
 describe("gitPullRequest", () => {
   it("asks gh about the current branch and normalizes its answer", async () => {
     const { root, repo } = makeGitRepo()
@@ -72,6 +75,20 @@ describe("gitPullRequest", () => {
       "view",
       "codevisor/archived"
     ])
+  })
+
+  it("ignores a pull request opened before the worktree claimed its branch", async () => {
+    const owned = { name: "codevisor/sushi", ownedSince: "2026-03-01T12:00:00.000Z" }
+    const ask = async (createdAt: string | undefined, branch = owned.name) => {
+      const { root, repo } = makeGitRepo()
+      const { env } = fakeGh(root, `echo '${mergedAnswer(createdAt)}'`)
+      return findGitPullRequest(repo, env, branch, owned)
+    }
+
+    expect(await ask("2026-02-01T09:30:00Z")).toBeNull()
+    expect(await ask("2026-03-01T12:04:00Z")).toMatchObject({ number: 9, state: "merged" })
+    expect(await ask("2026-02-01T09:30:00Z", "codevisor/sushi-2")).toMatchObject({ number: 9 })
+    expect(await ask(undefined)).toMatchObject({ number: 9 })
   })
 
   it("is null on a detached HEAD without asking gh", async () => {

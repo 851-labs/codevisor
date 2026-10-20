@@ -54,9 +54,12 @@ const workspaceGit = async (
     ? gitCurrentBranch(checkout.directory, env)
     : Promise.resolve(checkout.branch))
   if (!includePullRequest) return { branch }
+  if (branch === null) return { branch, pullRequest: null }
+
+  const owned = checkout.ownedBranch
   return {
     branch,
-    pullRequest: branch === null ? null : await cachedPullRequest(checkout.directory, env, branch)
+    pullRequest: await cachedPullRequest(checkout.directory, env, { branch, owned })
   }
 }
 

@@ -75,6 +75,20 @@ const setUpGitProjects = async () => {
 }
 
 describe("project worktree routes", () => {
+  it("skips names a remote already has as Codevisor branches", async () => {
+    await withWorktreesRoot(async () => {
+      const { repoFolder, server } = await setUpGitProjects()
+      await git(["update-ref", "refs/remotes/origin/codevisor/pushed", "HEAD"], repoFolder)
+
+      const created = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "pushed" }),
+        method: "POST"
+      })
+
+      expect(created.body).toMatchObject({ name: "pushed-2", branch: "codevisor/pushed-2" })
+    })
+  })
+
   it("creates worktrees with setup events, readable names, and worktree sessions", async () => {
     await withWorktreesRoot(async (worktreesRoot) => {
       const { agents, repoFolder, server, services } = await setUpGitProjects()

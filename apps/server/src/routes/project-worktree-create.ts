@@ -10,6 +10,7 @@ import {
   isGitWorkTree,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
+  listRemoteCodevisorBranchNames,
   rollbackFailedWorktree,
   worktreeStartPoint
 } from "@codevisor/worktrees"
@@ -54,6 +55,9 @@ export const createProjectWorktree = async (
   }
   const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
   for (const name of await listCodevisorWorktreeBranchNames(location.folderPath)) {
+    existing.add(name)
+  }
+  for (const name of await listRemoteCodevisorBranchNames(location.folderPath)) {
     existing.add(name)
   }
   const requested = slugifyWorktreeName(payload.name)

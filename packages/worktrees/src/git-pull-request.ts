@@ -57,16 +57,74 @@ const runGh = (
     )
   })
 
-const pullRequestFields = "number,title,state,isDraft,url,statusCheckRollup"
+const pullRequestFields = "number,title,state,isDraft,url,statusCheckRollup,createdAt"
 const noPullRequest = /no (?:open )?pull requests? found/i
 
-export const parseGitPullRequest = (json: string): GitPullRequest | null => {
-  let value: unknown
+export interface OwnedBranch {
+  readonly name: string
+  readonly ownedSince: string
+}
+
+export const parseGitPullRequest = (json: string): GitPullRequest | null =>
+  pullRequestFrom(parseJson(json))
+
+export const gitCurrentBranch = async (
+  dir: string,
+  env: NodeJS.ProcessEnv
+): Promise<string | null> => {
+  const branch = await runGit(
+    "current-branch",
+    ["symbolic-ref", "--short", "--quiet", "HEAD"],
+    dir,
+    env
+  ).catch(() => null)
+  return branch === null || branch.length === 0 ? null : branch
+}
+
+export const gitPullRequest = async (
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  knownBranch?: string,
+  owned?: OwnedBranch
+): Promise<GitPullRequest | null> => {
+  const branch = knownBranch ?? (await gitCurrentBranch(dir, env))
+  if (branch === null || branch.length === 0) return null
+  return (await findGitPullRequest(dir, env, branch, owned)) ?? null
+}
+
+export const findGitPullRequest = async (
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  branch: string,
+  owned?: OwnedBranch
+): Promise<GitPullRequest | null | undefined> => {
+  const result = await runGh(["pr", "view", branch, "--json", pullRequestFields], dir, env)
+  if (!("stdout" in result)) return noPullRequest.test(result.failure) ? null : undefined
+
+  const answer = parseJson(result.stdout)
+  if (openedBefore(answer, ownedSince(branch, owned))) return null
+
+  return pullRequestFrom(answer)
+}
+
+const ownedSince = (branch: string, owned: OwnedBranch | undefined): number | undefined =>
+  owned?.name === branch ? Date.parse(owned.ownedSince) : undefined
+
+const openedBefore = (answer: unknown, since: number | undefined): boolean =>
+  since !== undefined && openedAt(answer) < since
+
+const openedAt = (answer: unknown): number =>
+  isRecord(answer) && typeof answer.createdAt === "string" ? Date.parse(answer.createdAt) : NaN
+
+const parseJson = (json: string): unknown => {
   try {
-    value = JSON.parse(json)
+    return JSON.parse(json)
   } catch {
     return null
   }
+}
+
+const pullRequestFrom = (value: unknown): GitPullRequest | null => {
   if (!isRecord(value)) return null
   const { number, title, state, isDraft, url, statusCheckRollup } = value
   const normalizedState = typeof state === "string" ? states[state] : undefined
@@ -87,37 +145,4 @@ export const parseGitPullRequest = (json: string): GitPullRequest | null => {
     url,
     checks: rollUpChecks(statusCheckRollup)
   }
-}
-
-export const gitCurrentBranch = async (
-  dir: string,
-  env: NodeJS.ProcessEnv
-): Promise<string | null> => {
-  const branch = await runGit(
-    "current-branch",
-    ["symbolic-ref", "--short", "--quiet", "HEAD"],
-    dir,
-    env
-  ).catch(() => null)
-  return branch === null || branch.length === 0 ? null : branch
-}
-
-export const gitPullRequest = async (
-  dir: string,
-  env: NodeJS.ProcessEnv,
-  knownBranch?: string
-): Promise<GitPullRequest | null> => {
-  const branch = knownBranch ?? (await gitCurrentBranch(dir, env))
-  if (branch === null || branch.length === 0) return null
-  return (await findGitPullRequest(dir, env, branch)) ?? null
-}
-
-export const findGitPullRequest = async (
-  dir: string,
-  env: NodeJS.ProcessEnv,
-  branch: string
-): Promise<GitPullRequest | null | undefined> => {
-  const result = await runGh(["pr", "view", branch, "--json", pullRequestFields], dir, env)
-  if ("stdout" in result) return parseGitPullRequest(result.stdout)
-  return noPullRequest.test(result.failure) ? null : undefined
 }

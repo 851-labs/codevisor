@@ -7,11 +7,13 @@ import {
   gitPullRequest,
   gitRefs,
   GitReviewError,
-  type GitReviewFailureCode
+  type GitReviewFailureCode,
+  type OwnedBranch
 } from "@codevisor/worktrees"
 import { Schema } from "effect"
 
 import { HttpFailure, writeJson, type CodevisorServerServices } from "../server-context.js"
+import { folderOwnedBranch } from "../workspace-owned-branch.js"
 import { expandFsPath } from "./fs-paths.js"
 
 const failureStatus: Readonly<Record<GitReviewFailureCode, number>> = {
@@ -42,19 +44,24 @@ const pullRequests = new Map<
   { readonly at: number; readonly lookup: Promise<GitPullRequest | null> }
 >()
 
+export interface PullRequestQuery {
+  readonly branch?: string | undefined
+  readonly owned?: OwnedBranch | undefined
+}
+
 export const cachedPullRequest = (
   directory: string,
   env: NodeJS.ProcessEnv,
-  branch?: string,
+  { branch, owned }: PullRequestQuery = {},
   now = Date.now()
 ): Promise<GitPullRequest | null> => {
   for (const [key, entry] of pullRequests) {
     if (now - entry.at >= pullRequestTtlMs) pullRequests.delete(key)
   }
-  const key = branch === undefined ? directory : `${directory}\0${branch}`
+  const key = [directory, branch ?? "", owned?.name ?? "", owned?.ownedSince ?? ""].join("\0")
   const cached = pullRequests.get(key)
   if (cached !== undefined) return cached.lookup
-  const lookup = gitPullRequest(directory, env, branch)
+  const lookup = gitPullRequest(directory, env, branch, owned)
   pullRequests.set(key, { at: now, lookup })
   return lookup
 }
@@ -77,7 +84,8 @@ export const routeGitReview = async (
       return true
     }
     if (url.pathname === "/v1/fs/git/pull-request") {
-      writeJson(response, 200, { pullRequest: await cachedPullRequest(directory, env) })
+      const owned = await folderOwnedBranch(services, directory)
+      writeJson(response, 200, { pullRequest: await cachedPullRequest(directory, env, { owned }) })
       return true
     }
     const mode = url.searchParams.get("mode")

@@ -8,7 +8,8 @@ import {
   removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotWorktree,
-  sweepWorktreeTrash
+  sweepWorktreeTrash,
+  type OwnedBranch
 } from "@codevisor/worktrees"
 
 import type { CodevisorServerServices, RouteState } from "./server-context-types.js"
@@ -19,6 +20,7 @@ import {
   run,
   swallowError
 } from "./server-http.js"
+import { workspaceOwnedBranch } from "./workspace-owned-branch.js"
 import { settleCleanup, workspaceTerminalKeys } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
@@ -250,6 +252,7 @@ export const restoreWorkspaceWorktree = async (
 export interface WorkspaceGitCheckout {
   readonly directory: string
   readonly branch?: string
+  readonly ownedBranch?: OwnedBranch
 }
 
 export const workspaceGitCheckout = async (
@@ -268,7 +271,10 @@ export const workspaceGitCheckout = async (
     }
   }
   const directory = existingDirectory(workspace.rootDirectory ?? null)
-  return directory === undefined ? undefined : { directory }
+  if (directory === undefined) return undefined
+
+  const ownedBranch = await workspaceOwnedBranch(services, workspace)
+  return ownedBranch === undefined ? { directory } : { directory, ownedBranch }
 }
 
 const findArchivedWorktreeFor = async (

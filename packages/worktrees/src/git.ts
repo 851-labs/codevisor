@@ -102,13 +102,28 @@ export const gitRemoteUrl = async (
   }
 }
 
-export const listCodevisorWorktreeBranchNames = async (
+export const listCodevisorWorktreeBranchNames = (
   repoDir: string,
   env?: NodeJS.ProcessEnv
+): Promise<ReadonlyArray<string>> =>
+  listRefNames("list-codevisor-branches", "refs/heads/codevisor/", 3, repoDir, env)
+
+export const listRemoteCodevisorBranchNames = (
+  repoDir: string,
+  env?: NodeJS.ProcessEnv
+): Promise<ReadonlyArray<string>> =>
+  listRefNames("list-remote-codevisor-branches", "refs/remotes/*/codevisor/*", 4, repoDir, env)
+
+const listRefNames = async (
+  operation: string,
+  pattern: string,
+  strippedComponents: number,
+  repoDir: string,
+  env: NodeJS.ProcessEnv | undefined
 ): Promise<ReadonlyArray<string>> => {
   const output = await gitRaw(
-    "list-codevisor-branches",
-    ["for-each-ref", "--format=%(refname:strip=3)", "refs/heads/codevisor/"],
+    operation,
+    ["for-each-ref", `--format=%(refname:strip=${String(strippedComponents)})`, pattern],
     repoDir,
     env
   )
