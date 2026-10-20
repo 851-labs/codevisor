@@ -213,12 +213,8 @@ private extension ComposerCard {
           }
           Spacer(minLength: 0)
           HStack(spacing: 4) {
-            if controller.isSending, !hasComposerDraft {
-              stopButton
-            } else {
-              stopButton
-              sendButton
-            }
+            if controller.canStop { stopButton }
+            if showsSendButton { sendButton }
           }
         }
       }
@@ -282,35 +278,37 @@ private extension ComposerCard {
     return true
   }
 
+  private var showsSendButton: Bool {
+    !controller.canStop || hasComposerDraft
+  }
+
   @ViewBuilder
   private var stopButton: some View {
-    if controller.isSending {
-      if controller.isCancelling {
-        ProgressView()
-          .controlSize(.small)
+    if controller.isCancelling {
+      ProgressView()
+        .controlSize(.small)
+        .frame(width: 26, height: 26)
+        .help("Stopping…")
+    } else {
+      Button(action: stop) {
+        Image(systemName: "stop.fill")
+          .font(.system(size: 10, weight: .bold))
           .frame(width: 26, height: 26)
-          .help("Stopping…")
-      } else {
-        Button(action: stop) {
-          Image(systemName: "stop.fill")
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: 26, height: 26)
-            .background(
-              Circle()
-                .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
-            )
-            .overlay(
-              Circle()
-                .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
-            )
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
-        .onHover { isStopButtonHovered = $0 }
-        .help("Stop")
-        .accessibilityLabel("Stop")
+          .background(
+            Circle()
+              .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
+          )
+          .overlay(
+            Circle()
+              .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
+          )
+          .contentShape(Circle())
       }
+      .buttonStyle(.plain)
+      .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
+      .onHover { isStopButtonHovered = $0 }
+      .help("Stop")
+      .accessibilityLabel("Stop")
     }
   }
 

@@ -462,12 +462,8 @@ extension ComposerBar {
           Spacer(minLength: 0)
         }
         HStack(spacing: 6) {
-          if controller.isSending {
-            stopButton
-            if !trimmed.isEmpty { sendButton }
-          } else {
-            sendButton
-          }
+          if controller.canStop { stopButton }
+          if showsSendButton { sendButton }
         }
       }
       .transition(composerModeTransition)

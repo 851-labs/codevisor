@@ -251,6 +251,10 @@ extension ComposerBar {
     }
   }
 
+  var showsSendButton: Bool {
+    !controller.canStop || !trimmed.isEmpty
+  }
+
   var stopButton: some View {
     Button {
       Task { await controller.stop() }
