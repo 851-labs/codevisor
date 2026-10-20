@@ -257,6 +257,10 @@ export const makeBrowserUseProvider = (
       extensionRelay.accept(socket)
     },
     onExtensionConnectionChange: extensionRelay.onConnectionChange,
+    awaitExtensionReconnect: async () =>
+      extensionEndpoint() !== undefined ||
+      (browserExtensionInstallation().installationState !== "not_installed" &&
+        (await extensionRelay.reconnected())),
     openDevelopmentExtensionFolder: () =>
       openBrowserExtensionDevelopmentFolder(developmentExtensionPath),
     openDevelopmentExtensionPage: () =>

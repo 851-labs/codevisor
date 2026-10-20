@@ -143,6 +143,7 @@ export const makeBrowserSetupBroker = (
   ): Promise<BrowserChoice> => {
     const finish = (backend: BrowserBackend): Promise<BrowserBackend> =>
       persistPreference ? remember(backend) : Promise.resolve(backend)
+    if (await provider.awaitExtensionReconnect()) return finish("extension")
     let installerOpened = false
     while (true) {
       if (provider.status().extensionConnected) return finish("extension")

@@ -12,11 +12,14 @@ const fixture = (
     chrome?: boolean
     connected?: boolean
     preference?: BrowserPreference
+    reconnecting?: boolean
     setupMode?: "development" | "webStore"
   } = {}
 ) => {
   let preference = options.preference
   let connected = options.connected ?? false
+  const reconnects = new Set<(connected: boolean) => void>()
+  const reconnectRequested = Promise.withResolvers<void>()
   const listeners = new Set<(connected: boolean) => void>()
   const backends = new Map<string, BrowserBackend>()
   const showFolder = vi.fn(async () => {})
@@ -58,6 +61,11 @@ const fixture = (
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    awaitExtensionReconnect: () => {
+      if (connected || options.reconnecting !== true) return Promise.resolve(connected)
+      reconnectRequested.resolve()
+      return new Promise<boolean>((resolve) => reconnects.add(resolve))
+    },
     openDevelopmentExtensionFolder: showFolder,
     openDevelopmentExtensionPage: openExtensions,
     openExtensionWebStore: openWebStore
@@ -91,9 +99,16 @@ const fixture = (
     setPreference: (value: BrowserPreference) => {
       preference = value
     },
+    reconnectRequested: reconnectRequested.promise,
     connect: () => {
       connected = true
+      for (const resolve of reconnects) resolve(true)
+      reconnects.clear()
       for (const listener of listeners) listener(true)
+    },
+    reconnectGraceEnded: () => {
+      for (const resolve of reconnects) resolve(false)
+      reconnects.clear()
     },
     disconnect: () => {
       connected = false
@@ -265,6 +280,32 @@ describe("browser setup broker", () => {
     expect(current.openExtensions).toHaveBeenCalledOnce()
     current.connect()
     await expect(reconnecting).resolves.toBe("extension")
+  })
+
+  it("waits for an installed extension to reconnect after a restart instead of asking to install it", async () => {
+    const current = fixture({ preference: "chrome", reconnecting: true })
+    const resolving = current.broker.resolveBackend("session")
+    await current.reconnectRequested
+    expect(current.events).toHaveLength(0)
+
+    current.connect()
+    await expect(resolving).resolves.toBe("extension")
+    expect(current.events).toHaveLength(0)
+  })
+
+  it("asks to set up the extension once the reconnect grace ends", async () => {
+    const current = fixture({ preference: "chrome", reconnecting: true })
+    const resolving = current.broker.resolveBackend("session")
+    await current.reconnectRequested
+    current.reconnectGraceEnded()
+    await current.nextQuestion()
+    expect(latestQuestions(current.events)[0]).toMatchObject({
+      presentation: "browserExtensionSetup"
+    })
+
+    current.connect()
+    await expect(resolving).resolves.toBe("extension")
+    expect(autoResolved(current.events)).toBe(true)
   })
 
   it("turns invalid answers and Escape into deterministic tool rejection", async () => {

@@ -26,7 +26,7 @@ interface FailedSessionCommand {
 
 type SessionRecoveryHandler = (command: FailedSessionCommand) => Promise<string | undefined>
 
-interface CdpSocket {
+export interface CdpSocket {
   readonly readyState: number
   on(event: "message", listener: (data: Buffer) => void): unknown
   on(event: "error", listener: (error: Error) => void): unknown

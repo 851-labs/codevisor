@@ -47,14 +47,27 @@ describe("browser-use routes", () => {
       ).status
     ).toBe(400)
 
-    const socket = new WebSocket(
-      `${server.url.replace("http:", "ws:")}/v1/browser-use/extension/socket`,
-      { headers: { Origin: `chrome-extension://${CODEVISOR_BROWSER_EXTENSION_ID}` } }
-    )
-    await new Promise<void>((resolve, reject) => {
-      socket.once("open", resolve)
-      socket.once("error", reject)
-    })
+    const extension = async (): Promise<WebSocket> => {
+      const socket = new WebSocket(
+        `${server.url.replace("http:", "ws:")}/v1/browser-use/extension/socket`,
+        { headers: { Origin: `chrome-extension://${CODEVISOR_BROWSER_EXTENSION_ID}` } }
+      )
+      socket.on("message", (data: Buffer) => {
+        const command: unknown = JSON.parse(data.toString())
+        const id =
+          typeof command === "object" && command !== null && "id" in command ? command.id : -1
+        socket.send(JSON.stringify({ id, result: { targetInfos: [] } }))
+      })
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", resolve)
+        socket.once("error", reject)
+      })
+      return socket
+    }
+    const replaced = await extension()
+    const replacedClosed = new Promise((resolve) => replaced.once("close", resolve))
+    const socket = await extension()
+    await replacedClosed
     expect((await jsonRequest(server, "/v1/browser-use")).body).toMatchObject({
       chromeConnected: true
     })

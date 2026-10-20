@@ -118,6 +118,7 @@ export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider =
       socket.close()
     },
     onExtensionConnectionChange: () => () => undefined,
+    awaitExtensionReconnect: async () => false,
     openDevelopmentExtensionFolder: unavailable,
     openDevelopmentExtensionPage: unavailable,
     openDevelopmentExtensionInstaller: unavailable,

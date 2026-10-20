@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
 
 import { observeCdp } from "./browser-cdp-test-support.js"
-import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { makeBrowserUseProvider, type BrowserUseProvider } from "./browser-use-provider.js"
 import {
   expectNumber,
   expectRecord,
@@ -38,6 +38,15 @@ const relaySocket = (value: unknown): WebSocket => {
   if (!(value instanceof WebSocket)) throw new Error("Relay accepted a non-WebSocket connection")
   return value
 }
+
+const extensionReady = (provider: BrowserUseProvider): Promise<void> =>
+  new Promise((resolve) => {
+    const stop = provider.onExtensionConnectionChange((connected) => {
+      if (!connected) return
+      stop()
+      resolve()
+    })
+  })
 
 const makeExtensionFixture = (directory: string) => {
   const provider = makeBrowserUseProvider(directory)
@@ -176,7 +185,10 @@ describe("Browser Use extension tab lifecycle", () => {
       })
       await once(client, "open")
       const [socket] = await serverSocket
+      const ready = extensionReady(provider)
       provider.acceptExtensionConnection(relaySocket(socket))
+      await ready
+      targetPolls = 0
 
       const context = { sessionId: "new-tab-test", projectId: "new-tab-test" }
       provider.setSessionBackend(context.sessionId, "extension")
@@ -283,7 +295,9 @@ describe("Browser Use extension tab lifecycle", () => {
       })
       await once(client, "open")
       const [socket] = await serverSocket
+      const ready = extensionReady(provider)
       provider.acceptExtensionConnection(relaySocket(socket))
+      await ready
 
       const context = { sessionId: "session-recovery-test", projectId: "session-recovery-test" }
       provider.setSessionBackend(context.sessionId, "extension")

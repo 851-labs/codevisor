@@ -12,9 +12,7 @@ import {
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 
-import type { WebSocket } from "ws"
-
-import { CdpConnection } from "./browser-cdp.js"
+import { CdpConnection, type CdpSocket } from "./browser-cdp.js"
 import { createBrowserExtensionArchive } from "./browser-extension-archive.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 import { expectRecord, recordOrEmpty } from "./unknown-values.js"
@@ -309,21 +307,63 @@ export const openBrowserExtensionWebStore = async (
   throw new Error(`Chrome Web Store setup is unavailable on ${platform}`)
 }
 
+export interface BrowserExtensionSocket extends CdpSocket {
+  close(code?: number, reason?: string): void
+}
+
+export const EXTENSION_RECONNECT_GRACE_MS = 40_000
+export const EXTENSION_READY_PROBE_MS = 1_000
+
+const extensionReady = async (connection: CdpConnection): Promise<boolean> => {
+  while (!connection.closed) {
+    try {
+      await connection.sendOnce("Target.getTargets", {}, undefined, EXTENSION_READY_PROBE_MS)
+      return true
+    } catch (cause) {
+      const timedOut =
+        cause instanceof Error && cause.message.startsWith("Browser command timed out")
+      if (!timedOut) return !connection.closed
+    }
+  }
+  return false
+}
+
 export interface BrowserExtensionRelay {
   readonly connect: () => Promise<CdpConnection>
-  readonly accept: (socket: WebSocket) => void
+  readonly accept: (socket: BrowserExtensionSocket) => void
   readonly connected: () => boolean
+  readonly reconnected: () => Promise<boolean>
   readonly onConnectionChange: (listener: (connected: boolean) => void) => () => void
   readonly close: () => Promise<void>
 }
 
 export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
-  let active: { readonly socket: WebSocket; readonly connection: CdpConnection } | undefined
+  let active:
+    | { readonly socket: BrowserExtensionSocket; readonly connection: CdpConnection }
+    | undefined
   const waiters = new Set<(connection: CdpConnection) => void>()
   const listeners = new Set<(connected: boolean) => void>()
+  const reconnects = new Set<(connected: boolean) => void>()
   let closed = false
+  let droppedAt = Date.now()
   const notify = (connected: boolean) => {
     for (const listener of listeners) listener(connected)
+  }
+  const activate = (socket: BrowserExtensionSocket, connection: CdpConnection) => {
+    const previous = active
+    const next = { socket, connection }
+    active = next
+    socket.once("close", () => {
+      if (active !== next) return
+      active = undefined
+      droppedAt = Date.now()
+      notify(false)
+    })
+    for (const resolve of waiters) resolve(connection)
+    waiters.clear()
+    for (const finish of reconnects) finish(true)
+    notify(true)
+    if (previous !== undefined) void previous.connection.close().catch(() => undefined)
   }
   return {
     connect: () => {
@@ -336,21 +376,27 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
         socket.close(1001, "Codevisor browser relay is closed")
         return
       }
-      const previous = active
       const connection = CdpConnection.fromSocket(socket)
-      const next = { socket, connection }
-      active = next
-      socket.once("close", () => {
-        if (active !== next) return
-        active = undefined
-        notify(false)
+      void extensionReady(connection).then((ready) => {
+        if (ready && !closed) activate(socket, connection)
+        else void connection.close().catch(() => undefined)
       })
-      for (const resolve of waiters) resolve(connection)
-      waiters.clear()
-      notify(true)
-      if (previous !== undefined) void previous.connection.close().catch(() => undefined)
     },
     connected: () => active !== undefined,
+    reconnected: () => {
+      if (active !== undefined) return Promise.resolve(true)
+      const remaining = droppedAt + EXTENSION_RECONNECT_GRACE_MS - Date.now()
+      if (closed || remaining <= 0) return Promise.resolve(false)
+      return new Promise<boolean>((resolve) => {
+        const finish = (connected: boolean) => {
+          clearTimeout(timer)
+          reconnects.delete(finish)
+          resolve(connected)
+        }
+        const timer = setTimeout(() => finish(false), remaining)
+        reconnects.add(finish)
+      })
+    },
     onConnectionChange: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -359,6 +405,7 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
       closed = true
       waiters.clear()
       listeners.clear()
+      for (const finish of reconnects) finish(false)
       const connection = active?.connection
       active = undefined
       if (connection !== undefined) await connection.close().catch(() => undefined)

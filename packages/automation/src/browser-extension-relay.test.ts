@@ -1,21 +1,28 @@
+import { EventEmitter } from "node:events"
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { crc32 } from "node:zlib"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { WebSocket } from "ws"
 
+import type { BrowserExtensionSocket } from "./browser-extension-relay.js"
 import {
   browserExtensionArchivePath,
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL,
   createBrowserExtensionArchive,
+  EXTENSION_READY_PROBE_MS,
+  EXTENSION_RECONNECT_GRACE_MS,
+  makeBrowserExtensionRelay,
   openBrowserExtensionDevelopmentFolder,
   openBrowserExtensionDevelopmentInstaller,
   openBrowserExtensionDevelopmentPage,
   openBrowserExtensionWebStore,
   prepareBrowserExtension
 } from "./browser-extension-relay.js"
+import { expectRecord } from "./unknown-values.js"
 
 const temporaryDirectories: Array<string> = []
 
@@ -263,5 +270,91 @@ describe("portable browser extension archive", () => {
       "504b05060000000003000300a9000000840000000000"
     )
     expect(bytes.length).toBe(323)
+  })
+})
+
+class FakeExtensionSocket extends EventEmitter implements BrowserExtensionSocket {
+  readyState: number = WebSocket.OPEN
+  readonly received: Array<string> = []
+
+  constructor(private unheardMessages = 0) {
+    super()
+  }
+
+  send(message: string): void {
+    const { id, method } = expectRecord(JSON.parse(message), "relay command")
+    this.received.push(String(method))
+    if (this.unheardMessages > 0) {
+      this.unheardMessages -= 1
+      return
+    }
+    this.emit("message", Buffer.from(JSON.stringify({ id, result: { targetInfos: [] } })))
+  }
+  close(): void {
+    this.readyState = WebSocket.CLOSED
+    this.emit("close")
+  }
+  terminate(): void {
+    this.close()
+  }
+}
+
+describe("browser extension relay reconnect grace", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("waits for the extension to reconnect after the server starts or the socket drops", async () => {
+    vi.useFakeTimers()
+    const relay = makeBrowserExtensionRelay()
+    const afterStart = vi.fn()
+    const started = relay.reconnected().then(afterStart)
+    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS - 1)
+    expect(afterStart).not.toHaveBeenCalled()
+    const socket = new FakeExtensionSocket()
+    relay.accept(socket)
+    await started
+    expect(afterStart).toHaveBeenCalledWith(true)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    socket.close()
+    const afterDrop = vi.fn()
+    const dropped = relay.reconnected().then(afterDrop)
+    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS - 1)
+    expect(afterDrop).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await dropped
+    expect(afterDrop).toHaveBeenCalledWith(false)
+    await relay.close()
+  })
+
+  it("reports the extension connected only once it answers commands", async () => {
+    vi.useFakeTimers()
+    const relay = makeBrowserExtensionRelay()
+    const socket = new FakeExtensionSocket(1)
+    const connected = vi.fn()
+    const reconnected = relay.reconnected().then(connected)
+    relay.accept(socket)
+    await vi.advanceTimersByTimeAsync(EXTENSION_READY_PROBE_MS - 1)
+    expect(relay.connected()).toBe(false)
+    expect(connected).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await reconnected
+    expect(connected).toHaveBeenCalledWith(true)
+    expect(socket.received).toEqual(["Target.getTargets", "Target.getTargets"])
+    await relay.close()
+  })
+
+  it("does not wait once the grace has passed or the relay is closed", async () => {
+    vi.useFakeTimers()
+    const relay = makeBrowserExtensionRelay()
+    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS)
+    await expect(relay.reconnected()).resolves.toBe(false)
+
+    const fresh = makeBrowserExtensionRelay()
+    const pending = fresh.reconnected()
+    await fresh.close()
+    await expect(pending).resolves.toBe(false)
   })
 })

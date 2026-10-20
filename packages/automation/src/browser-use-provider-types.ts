@@ -22,6 +22,7 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
   readonly acceptExtensionConnection: (socket: WebSocket) => void
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
+  readonly awaitExtensionReconnect: () => Promise<boolean>
   readonly openDevelopmentExtensionFolder: () => Promise<void>
   readonly openDevelopmentExtensionPage: () => Promise<void>
   readonly openDevelopmentExtensionInstaller: () => Promise<void>
