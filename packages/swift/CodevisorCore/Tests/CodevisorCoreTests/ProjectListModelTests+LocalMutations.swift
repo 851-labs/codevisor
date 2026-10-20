@@ -56,6 +56,22 @@ extension ProjectListModelTests {
     #expect(NavigationFixture(persistence: persistence).projectList.projects.count == 1)
   }
 
+  @Test("An added project takes the server's git state once listed, though the server's cursor ran ahead")
+  func addedProjectTakesServerGitState() async {
+    let fixture = NavigationFixture()
+    await fixture.install(cursor: 1)
+    fixture.connect(FakeServerClient())
+    let project = fixture.projectList.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"))
+    await fixture.flush()
+    #expect(fixture.projectList.projects.map(\.isGitRepository) == [false])
+
+    var listed = project
+    listed.locations[0].isGitRepository = true
+    await fixture.applyEvent(cursor: 2, projects: [listed])
+    #expect(fixture.projectList.projects.map(\.isGitRepository) == [true])
+    #expect(fixture.store.pendingIntents.isEmpty)
+  }
+
   @Test("Adding the same folder twice does not duplicate")
   func addDeduplicates() {
     let model = NavigationFixture().projectList
