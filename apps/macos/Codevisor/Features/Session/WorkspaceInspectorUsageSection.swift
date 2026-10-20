@@ -59,15 +59,11 @@ private struct WorkspaceInspectorUsageWindowRow: View {
             .monospacedDigit()
             .foregroundStyle(.secondary)
         }
-        ProgressView(value: used, total: 100)
-          .progressViewStyle(.linear)
-          .tint(tint)
-          .labelsHidden()
-          .overlay(alignment: .leading) {
-            if let pace {
-              WorkspaceInspectorUsagePaceMarker(pace: pace)
-            }
-          }
+        WorkspaceInspectorMeter(
+          segments: [.init(color: tint, value: used)],
+          total: 100,
+          markers: pace.map { [.init(color: $0.reservePercent >= 0 ? .green : .red, value: $0.expectedPercent)] } ?? []
+        )
         if let caption = Self.caption(pace: pace, resetsAt: resetsAt, now: context.date) {
           Text(caption)
             .font(.caption)
@@ -108,23 +104,5 @@ private struct WorkspaceInspectorUsageWindowRow: View {
     date.timeIntervalSince(now) < 86_400
       ? date.formatted(.relative(presentation: .named))
       : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
-  }
-}
-
-private struct WorkspaceInspectorUsagePaceMarker: View {
-  let pace: ServerHarnessUsagePace
-
-  var body: some View {
-    GeometryReader { proxy in
-      Capsule()
-        .fill(pace.reservePercent >= 0 ? Color.green : Color.red)
-        .frame(width: 2, height: 12)
-        .padding(.horizontal, 1)
-        .background(Capsule().fill(.white.opacity(0.85)))
-        .position(
-          x: min(max(proxy.size.width * pace.expectedPercent / 100, 2), proxy.size.width - 2),
-          y: proxy.size.height / 2)
-    }
-    .accessibilityHidden(true)
   }
 }
