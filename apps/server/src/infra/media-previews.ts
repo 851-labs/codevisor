@@ -85,6 +85,53 @@ const videoFrame = (path: string, output: string): Promise<void> =>
     })
   })
 
+const durationPattern = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/
+
+const probeDuration = (path: string): Promise<number | undefined> =>
+  new Promise((resolve, reject) => {
+    if (typeof ffmpeg !== "string") {
+      reject(new Error("Video probe is unavailable"))
+      return
+    }
+    const child = spawn(
+      ffmpeg,
+      ["-nostdin", "-hide_banner", "-protocol_whitelist", "file,pipe", "-i", path],
+      { stdio: ["ignore", "ignore", "pipe"] }
+    )
+    let detail = ""
+    child.stderr.on("data", (chunk) => {
+      detail = (detail + String(chunk)).slice(0, 16_384)
+    })
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000)
+    timeout.unref()
+    child.once("error", (error) => {
+      clearTimeout(timeout)
+      reject(error)
+    })
+    child.once("close", (_code, signal) => {
+      clearTimeout(timeout)
+      if (signal !== null) {
+        reject(new Error(`Video probe stopped by ${signal}`))
+        return
+      }
+      const match = durationPattern.exec(detail)
+      resolve(
+        match === null
+          ? undefined
+          : Math.round((Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])) * 1000)
+      )
+    })
+  })
+
+export const videoDurationMs = async (path: string): Promise<number | undefined> => {
+  await acquire()
+  try {
+    return await probeDuration(path)
+  } finally {
+    release()
+  }
+}
+
 export const mediaPreview = async (
   path: string,
   mimeType: string,

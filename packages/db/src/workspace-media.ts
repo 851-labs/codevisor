@@ -2,13 +2,19 @@ import type { WorkspacePhoto } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
-import { integer, rowReader, text } from "./row-reader.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
 export interface WorkspaceMediaCursor {
   readonly createdAt: string
   readonly id: string
+}
+
+export interface WorkspaceMediaRow extends WorkspacePhoto {
+  readonly sha256: string
+  readonly durationProbed: boolean
+  readonly durationMs?: number
 }
 
 export interface WorkspaceFileEdit {
@@ -26,7 +32,7 @@ export interface WorkspaceMessageText {
   readonly text: string
 }
 
-const photoRows = rowReader({
+const mediaRows = rowReader({
   file_id: text,
   item_id: text,
   session_id: text,
@@ -34,7 +40,10 @@ const photoRows = rowReader({
   source: text,
   name: text,
   mime_type: text,
-  size_bytes: integer
+  size_bytes: integer,
+  sha256: text,
+  duration_probed: integer,
+  duration_ms: nullable(integer)
 })
 
 const messageTextRows = rowReader({
@@ -61,21 +70,36 @@ export const makeWorkspaceMediaService = (
   context: ServiceContext
 ): Pick<
   CodevisorDatabaseService,
-  "listWorkspacePhotos" | "listWorkspaceMessageTexts" | "listWorkspaceFileEdits"
+  | "listWorkspaceMedia"
+  | "recordMediaDuration"
+  | "listWorkspaceMessageTexts"
+  | "listWorkspaceFileEdits"
 > => {
   const { sqlite } = context
 
   return {
-    listWorkspacePhotos: (workspaceId, before, limit) =>
-      attempt("listWorkspacePhotos", () =>
-        photoRows
+    listWorkspaceMedia: (workspaceId, includeVideos, before, limit) =>
+      attempt("listWorkspaceMedia", () =>
+        mediaRows
           .all(
-            sqlite
-              .prepare(workspacePhotosSql)
-              .all({ workspaceId: canonicalUuid(workspaceId), limit, ...cursorParameters(before) })
+            sqlite.prepare(workspaceMediaSql).all({
+              workspaceId: canonicalUuid(workspaceId),
+              includeVideos: includeVideos ? 1 : 0,
+              limit,
+              ...cursorParameters(before)
+            })
           )
-          .map(workspacePhotoFromRow)
+          .map(workspaceMediaFromRow)
       ),
+    recordMediaDuration: (sha256, durationMs) =>
+      attempt("recordMediaDuration", () => {
+        sqlite
+          .prepare(
+            `insert into media_durations (sha256, duration_ms) values (?, ?)
+              on conflict (sha256) do update set duration_ms = excluded.duration_ms`
+          )
+          .run(sha256, durationMs ?? null)
+      }),
     listWorkspaceMessageTexts: (workspaceId, before, limit) =>
       attempt("listWorkspaceMessageTexts", () =>
         messageTextRows
@@ -99,18 +123,21 @@ export const makeWorkspaceMediaService = (
   }
 }
 
-const workspacePhotoFromRow = (row: ReturnType<typeof photoRows.one>): WorkspacePhoto => ({
+const workspaceMediaFromRow = (row: ReturnType<typeof mediaRows.one>): WorkspaceMediaRow => ({
   attachment: {
     fileId: row.file_id,
     name: row.name,
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
-    kind: "image"
+    kind: row.mime_type.startsWith("image/") ? "image" : "file"
   },
   sessionId: canonicalUuid(row.session_id),
   itemId: row.item_id,
   createdAt: row.created_at,
-  source: row.source === "tool" ? "tool" : "message"
+  source: row.source === "tool" ? "tool" : "message",
+  sha256: row.sha256,
+  durationProbed: row.duration_probed === 1,
+  ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms })
 })
 
 const workspaceMessageTextFromRow = (
@@ -130,34 +157,39 @@ const workspaceFileEditFromRow = (row: ReturnType<typeof fileEditRows.one>): Wor
   sessionId: canonicalUuid(row.session_id)
 })
 
-const workspacePhotosSql = `with candidates as (
+const workspaceMediaSql = `with candidates as (
                    select json_extract(attachment.value, '$.fileId') as file_id, item.id as item_id,
-                     item.session_id, item.created_at, 'message' as source
+                     item.session_id, item.created_at, 'message' as source,
+                     json_extract(attachment.value, '$.kind') = 'image' as image_kind
                    from sessions
                    join chat_items item on item.session_id = sessions.id
                    join json_each(
                      case when json_valid(item.attachments) then item.attachments else '[]' end
                    ) attachment
                    where sessions.workspace_id = @workspaceId
-                     and json_extract(attachment.value, '$.kind') = 'image'
+                     and (@includeVideos = 1 or json_extract(attachment.value, '$.kind') = 'image')
                    union all
-                   select media.file_id, item.id, item.session_id, media.created_at, 'tool'
+                   select media.file_id, item.id, item.session_id, media.created_at, 'tool', 1
                    from sessions
                    join chat_items item on item.session_id = sessions.id
                    join chat_item_media media on media.item_id = item.id
                    where sessions.workspace_id = @workspaceId
                  ),
                  ranked as (
-                   select candidates.*, files.name, files.mime_type, files.size_bytes,
+                   select candidates.*, files.name, files.mime_type, files.size_bytes, files.sha256,
                      row_number() over (
                        partition by files.sha256
                        order by candidates.created_at desc, candidates.file_id desc
                      ) as copy
                    from candidates join files on files.id = candidates.file_id
-                   where files.mime_type like 'image/%'
+                   where (candidates.image_kind and files.mime_type like 'image/%')
+                     or (@includeVideos = 1 and files.mime_type like 'video/%')
                  )
-                 select file_id, item_id, session_id, created_at, source, name, mime_type, size_bytes
+                 select file_id, item_id, session_id, created_at, source, name, mime_type, size_bytes,
+                   ranked.sha256, durations.sha256 is not null as duration_probed,
+                   durations.duration_ms
                  from ranked
+                 left join media_durations durations on durations.sha256 = ranked.sha256
                  where copy = 1
                    and (@beforeCreatedAt is null or (created_at, file_id) < (@beforeCreatedAt, @beforeId))
                  order by created_at desc, file_id desc

@@ -20,6 +20,18 @@ export const WorkspacePhotoPage = Schema.Struct({
 })
 export type WorkspacePhotoPage = typeof WorkspacePhotoPage.Type
 
+export const WorkspaceMediaItem = Schema.Struct({
+  ...WorkspacePhoto.fields,
+  durationSeconds: Schema.optional(Schema.Number)
+})
+export type WorkspaceMediaItem = typeof WorkspaceMediaItem.Type
+
+export const WorkspaceMediaPage = Schema.Struct({
+  media: Schema.Array(WorkspaceMediaItem),
+  nextBefore: Schema.optional(Schema.String)
+})
+export type WorkspaceMediaPage = typeof WorkspaceMediaPage.Type
+
 export const WorkspaceLink = Schema.Struct({
   url: Schema.String,
   title: Schema.optional(Schema.String),

@@ -314,6 +314,18 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool(
+    "workspaces.media",
+    "List images and videos from a workspace's chats, newest first: everything workspaces.photos lists plus attached and tool-recorded videos, with each video's duration when known. Pass nextBefore back as before for the next page.",
+    "GET",
+    "/v1/workspaces/:workspaceId/media",
+    {
+      query: [
+        stringQuery("before", "nextBefore from the previous page."),
+        integerQuery("limit", "Items per page, 1-200 (default 60).")
+      ]
+    }
+  ),
+  apiTool(
     "workspaces.links",
     "List web links mentioned in a workspace's chats, newest first, each URL once. Pass nextBefore back as before for the next page.",
     "GET",

@@ -167,7 +167,7 @@ struct WorkspaceInspectorView: View {
   private func content(for tab: WorkspaceInspectorTab) -> some View {
     switch tab {
     case .info: info
-    case .photos: WorkspaceInspectorPhotosView(model: media, onRetry: onReload)
+    case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
     case .links:
       WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
     case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)

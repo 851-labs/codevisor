@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ServerWorkspacePhoto: Codable, Equatable, Sendable, Identifiable {
+public struct ServerWorkspaceMedia: Codable, Equatable, Sendable, Identifiable {
   public enum Source: String, Codable, Sendable {
     case message
     case tool
@@ -11,28 +11,37 @@ public struct ServerWorkspacePhoto: Codable, Equatable, Sendable, Identifiable {
   public let itemId: String
   public let createdAt: String
   public let source: Source
+  public let durationSeconds: Double?
 
   public var id: String { attachment.fileId }
+  public var isVideo: Bool { attachment.mimeType.hasPrefix("video/") }
 
   public init(
-    attachment: ServerAttachmentRef, sessionId: UUID, itemId: String, createdAt: String, source: Source
+    attachment: ServerAttachmentRef, sessionId: UUID, itemId: String, createdAt: String, source: Source,
+    durationSeconds: Double? = nil
   ) {
     self.attachment = attachment
     self.sessionId = sessionId
     self.itemId = itemId
     self.createdAt = createdAt
     self.source = source
+    self.durationSeconds = durationSeconds
   }
 }
 
-public struct ServerWorkspacePhotoPage: Codable, Equatable, Sendable {
-  public let photos: [ServerWorkspacePhoto]
+public struct ServerWorkspaceMediaPage: Codable, Equatable, Sendable {
+  public let media: [ServerWorkspaceMedia]
   public let nextBefore: String?
 
-  public init(photos: [ServerWorkspacePhoto], nextBefore: String? = nil) {
-    self.photos = photos
+  public init(media: [ServerWorkspaceMedia], nextBefore: String? = nil) {
+    self.media = media
     self.nextBefore = nextBefore
   }
+}
+
+private struct ServerWorkspacePhotoPage: Decodable {
+  let photos: [ServerWorkspaceMedia]
+  let nextBefore: String?
 }
 
 public struct ServerWorkspaceLink: Codable, Equatable, Sendable, Identifiable {
@@ -109,12 +118,18 @@ extension CodevisorServerClient {
     try await get("/v1/workspaces/\(workspaceId.uuidString)/files")
   }
 
-  public func workspacePhotos(
+  public func workspaceMedia(
     workspaceId: UUID, before: String?, limit: Int
   ) async throws
-    -> ServerWorkspacePhotoPage
+    -> ServerWorkspaceMediaPage
   {
-    try await get(try workspaceMediaPath(workspaceId, "photos", before: before, limit: limit))
+    do {
+      return try await get(try workspaceMediaPath(workspaceId, "media", before: before, limit: limit))
+    } catch CodevisorServerClientError.httpStatus(404, _) {
+      let page: ServerWorkspacePhotoPage = try await get(
+        try workspaceMediaPath(workspaceId, "photos", before: before, limit: limit))
+      return ServerWorkspaceMediaPage(media: page.photos, nextBefore: page.nextBefore)
+    }
   }
 
   public func workspaceLinks(
@@ -146,10 +161,10 @@ extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  public func workspacePhotos(
+  public func workspaceMedia(
     workspaceId: UUID, before: String?, limit: Int
   ) async throws
-    -> ServerWorkspacePhotoPage
+    -> ServerWorkspaceMediaPage
   {
     throw CodevisorServerClientError.invalidResponse
   }
