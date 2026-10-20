@@ -49,23 +49,30 @@ private struct WorkspaceInspectorUsageWindowRow: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      HStack(alignment: .firstTextBaseline) {
-        Text(window.label)
-        Spacer()
-        Text(used / 100, format: .percent.precision(.fractionLength(0)))
-          .monospacedDigit()
-          .foregroundStyle(.secondary)
-      }
-      ProgressView(value: used, total: 100)
-        .progressViewStyle(.linear)
-        .tint(tint)
-        .labelsHidden()
-      if let resetsAt = window.resetsAt.flatMap({ try? ServerDateCoding.date(from: $0) }) {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-          Text(Self.resetText(resetsAt, now: context.date))
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      let pace = window.pace(now: context.date)
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .firstTextBaseline) {
+          Text(window.label)
+          Spacer()
+          Text(used / 100, format: .percent.precision(.fractionLength(0)))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+        }
+        ProgressView(value: used, total: 100)
+          .progressViewStyle(.linear)
+          .tint(tint)
+          .labelsHidden()
+          .overlay(alignment: .leading) {
+            if let pace {
+              WorkspaceInspectorUsagePaceMarker(pace: pace)
+            }
+          }
+        if let caption = Self.caption(pace: pace, resetsAt: resetsAt, now: context.date) {
+          Text(caption)
             .font(.caption)
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
     }
@@ -73,11 +80,51 @@ private struct WorkspaceInspectorUsageWindowRow: View {
     .accessibilityElement(children: .combine)
   }
 
-  static func resetText(_ date: Date, now: Date) -> String {
-    guard date > now else { return "Resets soon" }
-    if date.timeIntervalSince(now) < 86_400 {
-      return "Resets \(date.formatted(.relative(presentation: .named)))"
+  private var resetsAt: Date? {
+    window.resetsAt.flatMap { try? ServerDateCoding.date(from: $0) }
+  }
+
+  static func caption(pace: ServerHarnessUsagePace?, resetsAt: Date?, now: Date) -> String? {
+    var parts: [String] = []
+    if let pace {
+      let reserve = Int(pace.reservePercent.rounded())
+      parts.append(
+        reserve == 0 ? "On pace" : reserve > 0 ? "\(reserve)% in reserve" : "\(-reserve)% in deficit")
+      switch pace.outlook {
+      case .lastsUntilReset:
+        parts.append("Lasts until reset")
+      case let .runsOut(date):
+        parts.append(date > now ? "Runs out \(moment(date, now: now))" : "Runs out now")
+      }
     }
-    return "Resets \(date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))"
+    if let resetsAt {
+      parts.append(resetsAt > now ? "Resets \(moment(resetsAt, now: now))" : "Resets soon")
+    }
+    return parts.isEmpty
+      ? nil : parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · ")
+  }
+
+  private static func moment(_ date: Date, now: Date) -> String {
+    date.timeIntervalSince(now) < 86_400
+      ? date.formatted(.relative(presentation: .named))
+      : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+  }
+}
+
+private struct WorkspaceInspectorUsagePaceMarker: View {
+  let pace: ServerHarnessUsagePace
+
+  var body: some View {
+    GeometryReader { proxy in
+      Capsule()
+        .fill(pace.reservePercent >= 0 ? Color.green : Color.red)
+        .frame(width: 2, height: 12)
+        .padding(.horizontal, 1)
+        .background(Capsule().fill(.white.opacity(0.85)))
+        .position(
+          x: min(max(proxy.size.width * pace.expectedPercent / 100, 2), proxy.size.width - 2),
+          y: proxy.size.height / 2)
+    }
+    .accessibilityHidden(true)
   }
 }
