@@ -132,6 +132,53 @@ struct SessionControllerConfigurationTests {
     #expect(controller.modelOption?.currentValue == "sonnet")
   }
 
+  @Test("An existing chat before its first turn resolves settings for its saved model")
+  func existingChatResolvesSavedModelSettings() async throws {
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    var unresolved = capability(model: "gpt-5.5")
+    unresolved.configOptions[0].currentValue = ""
+    let catalog = unresolved
+    var chat = session()
+    chat.configSelections = ["model": "gpt-5.5", "effort": "high", "speed": "standard"]
+    let project = Project.fromFolder(
+      URL(fileURLWithPath: "/remote/project"),
+      id: chat.projectId,
+      serverId: chat.serverId
+    )
+    cache.store([catalog], forServer: project.serverId)
+    let client = SyncFakeServerClient(projects: [], sessions: [])
+    client.resolvedCapabilitiesHandler = { _, _, selections in
+      var resolved = catalog
+      guard let model = selections["model"] else { return ServerCapabilities(harnesses: [resolved]) }
+      resolved.configOptions[0].currentValue = model
+      resolved.configOptions += [
+        SessionConfigOption(
+          id: "effort", name: "Effort", category: SessionConfigOption.Category.thoughtLevel,
+          currentValue: selections["effort"] ?? "medium",
+          options: ["low", "medium", "high", "max"].map { SessionConfigSelectOption(value: $0, name: $0) }
+        ),
+        SessionConfigOption(
+          id: "speed", name: "Speed", category: SessionConfigOption.Category.speed,
+          currentValue: selections["speed"] ?? "standard",
+          options: ["standard", "fast"].map { SessionConfigSelectOption(value: $0, name: $0) }
+        ),
+      ]
+      return ServerCapabilities(harnesses: [resolved])
+    }
+    let controller = SessionController(project: project, configCache: cache, serverClient: client)
+    controller.configureExistingSession(chat)
+
+    await controller.prepareExistingSessionCapabilities()
+
+    let effort = try #require(controller.configOptions.first { $0.id == "effort" })
+    #expect(effort.currentValue == "high")
+    #expect(effort.options.map(\.value) == ["low", "medium", "high", "max"])
+    let speed = try #require(controller.configOptions.first { $0.id == "speed" })
+    #expect(speed.currentValue == "standard")
+    #expect(speed.options.map(\.value) == ["standard", "fast"])
+    #expect(cache.options(forHarness: catalog.harness.id, onServer: project.serverId) == catalog.configOptions)
+  }
+
   @Test("Remote attention metadata does not republish the controller session")
   func ignoresPresentationOnlySessionUpdates() {
     let original = session()

@@ -57,10 +57,12 @@ extension SessionController {
     guard hasExistingAgentSession, let serverClient, !harnessId.isEmpty else { return }
     let startedAt = ProcessInfo.processInfo.systemUptime
     let target = CapabilityFetchTarget(serverId: project.serverId, cwd: sessionCwdURL.path)
+    let savedSelections = existingChatSelections
     do {
       let response = try await serverClient.capabilities(
         cwd: target.cwd,
-        harnessId: harnessId
+        harnessId: harnessId,
+        configSelections: savedSelections
       )
       guard let capability = response.harnesses.first(where: { $0.harness.id == harnessId }) else {
         existingConfigurationError = "The chat's harness is unavailable."
@@ -68,7 +70,10 @@ extension SessionController {
         logExistingChatPhase("capabilities_missing", harnessId: harnessId, startedAt: startedAt)
         return
       }
-      configCache.store(capability, forServer: project.serverId)
+      let isMachineWideCatalog = savedSelections.isEmpty
+      if isMachineWideCatalog {
+        configCache.store(capability, forServer: project.serverId)
+      }
       configCache.storeSkills(from: [capability], forServer: target.serverId, cwd: target.cwd)
       applyHarnessCapabilities([capability])
       didLoadExistingHarnessCapabilities = true
