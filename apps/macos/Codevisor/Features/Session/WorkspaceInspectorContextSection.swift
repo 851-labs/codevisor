@@ -79,34 +79,13 @@ private struct WorkspaceInspectorContextBar: View {
   let used: Double
   let size: Double
 
-  private static let barHeight: CGFloat = 8
-
-  private var fills: [(Color, Double)] {
-    segments.isEmpty ? [(.accentColor, used)] : segments
-  }
-
   var body: some View {
-    ProgressView(value: 0)
-      .progressViewStyle(.linear)
-      .labelsHidden()
-      .tint(.clear)
-      .overlay(alignment: .leading) {
-        GeometryReader { proxy in
-          HStack(spacing: 1) {
-            ForEach(Array(fills.enumerated()), id: \.offset) { _, fill in
-              Rectangle()
-                .fill(fill.0)
-                .frame(width: max(proxy.size.width * min(fill.1 / size, 1) - 1, 1))
-            }
-          }
-          .frame(height: Self.barHeight)
-          .clipShape(Capsule())
-          .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-        }
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("Context used")
-      .accessibilityValue("\(Int((used / size * 100).rounded())) percent")
+    WorkspaceInspectorMeter(
+      segments: segments.isEmpty
+        ? [.init(color: .accentColor, value: used)] : segments.map { .init(color: $0.0, value: $0.1) },
+      total: size
+    )
+    .accessibilityLabel("Context used")
   }
 }
 
