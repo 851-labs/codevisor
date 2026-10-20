@@ -16,6 +16,7 @@ extension WorkspaceScreen {
     }
     if let path = pane.documentPath, path != model.path { model.navigate(to: path, notify: false) }
     model.onNavigate = { navigateFile(pane, to: $0) }
+    model.onClose = { close(pane) }
     return model
   }
 

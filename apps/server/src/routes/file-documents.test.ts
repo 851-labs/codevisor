@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -105,5 +106,32 @@ describe("file documents", () => {
       ).status
     ).toBe(404)
     expect((await fetch(`${server.url}/v1/fs/document?path=relative`)).status).toBe(400)
+  })
+
+  it("recreates a deleted file without overwriting one that came back", async () => {
+    const { server } = await start()
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-document-restore-")))
+    tempDirs.push(root)
+    const path = join(root, "restored.md")
+    const endpoint = `${server.url}/v1/fs/document?path=${encodeURIComponent(path)}`
+    const restore = (body: unknown) =>
+      fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      })
+    expect((await restore({})).status).toBe(400)
+    expect(existsSync(path)).toBe(false)
+    const restored = await restore({ content: "# Unsaved edits" })
+    expect(restored.status).toBe(201)
+    expect(await restored.json()).toMatchObject({
+      path,
+      content: "# Unsaved edits",
+      writable: true
+    })
+    const duplicate = await restore({ content: "# Other edits" })
+    expect(duplicate.status).toBe(409)
+    expect(await duplicate.json()).toMatchObject({ code: "file_conflict" })
+    expect(readFileSync(path, "utf8")).toBe("# Unsaved edits")
   })
 })

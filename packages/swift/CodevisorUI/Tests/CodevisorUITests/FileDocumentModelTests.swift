@@ -12,12 +12,30 @@ private actor DocumentFixture {
   var writes: [String] = []
   private var failNext = false
   func failNextWrite() { failNext = true }
+  private var deleted = false
   func read() -> ServerFileDocument { value }
+  func delete() { deleted = true }
+  func readFromDisk() throws -> ServerFileDocument {
+    try requireFile()
+    return value
+  }
+  private func requireFile() throws {
+    guard !deleted else {
+      throw CodevisorServerClientError.httpStatus(404, #"{"code":"not_found","error":"Deleted"}"#)
+    }
+  }
+  func create(_ text: String) -> ServerFileDocument {
+    deleted = false
+    value = ServerFileDocument(
+      path: value.path, content: text, version: "created", size: text.utf8.count, writable: true)
+    return value
+  }
   func externalEdit(_ text: String) {
     value = ServerFileDocument(path: value.path, content: text, version: "2", size: text.utf8.count, writable: true)
   }
   func write(_ text: String, version: String) throws -> ServerFileDocument {
     writes.append(text)
+    try requireFile()
     if failNext {
       failNext = false
       throw URLError(.notConnectedToInternet)
@@ -109,7 +127,7 @@ struct FileDocumentModelTests {
     await readEntered.wait()
     await recovered.save()
     readRelease.signal()
-    await refresh.value
+    _ = await refresh.value
     #expect(recovered.text == "my edits")
     #expect(recovered.snapshot?.content == "my edits")
     #expect(!recovered.isDirty)
@@ -355,4 +373,55 @@ struct FileDocumentModelTests {
     #expect(!FileManager.default.fileExists(atPath: url.path))
   }
 
+  @Test func quickDeleteAndRecreateKeepsTheFileOpen() async {
+    let clock = TestClock()
+    let fixture = DocumentFixture()
+    let document = FileDocumentModel(
+      path: "/project/file.md", sleep: { try await clock.sleep(for: $0) }, read: { try await fixture.readFromDisk() },
+      write: { try await fixture.write($0, version: $1) })
+    await document.refresh()
+    await fixture.delete()
+    let refresh = Task { await document.refresh() }
+    await clock.waitForSleep(FileDocumentModel.deletionGrace)
+    _ = await fixture.create("formatted")
+    clock.advance(by: FileDocumentModel.deletionGrace)
+    #expect(await refresh.value)
+    #expect(!document.isMissing)
+    #expect(document.text == "formatted")
+  }
+
+  @Test func fileThatStaysDeletedBecomesMissing() async {
+    let clock = TestClock()
+    let fixture = DocumentFixture()
+    let document = FileDocumentModel(
+      path: "/project/file.md", sleep: { try await clock.sleep(for: $0) }, read: { try await fixture.readFromDisk() },
+      write: { try await fixture.write($0, version: $1) })
+    await document.refresh()
+    await fixture.delete()
+    let refresh = Task { await document.refresh() }
+    await clock.waitForSleep(FileDocumentModel.deletionGrace)
+    #expect(!document.isMissing)
+    clock.advance(by: FileDocumentModel.deletionGrace)
+    #expect(await refresh.value == false)
+    #expect(document.isMissing)
+    #expect(document.error == nil)
+  }
+
+  @Test func restoringADeletedFileWritesTheUnsavedEdits() async {
+    let clock = TestClock()
+    let fixture = DocumentFixture()
+    let document = FileDocumentModel(
+      path: "/project/file.md", sleep: { try await clock.sleep(for: $0) }, read: { try await fixture.readFromDisk() },
+      write: { try await fixture.write($0, version: $1) }, create: { await fixture.create($0) })
+    await document.refresh()
+    document.edit("my edits")
+    await fixture.delete()
+    await document.save()
+    #expect(document.isMissing)
+    #expect(document.isDirty)
+    await document.recreate()
+    #expect(await fixture.read().content == "my edits")
+    #expect(!document.isMissing)
+    #expect(!document.isDirty)
+  }
 }

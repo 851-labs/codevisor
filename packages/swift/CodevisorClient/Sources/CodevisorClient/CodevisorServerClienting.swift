@@ -226,6 +226,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func toolIcon(_ request: ServerToolIconRequest) async throws -> Data
   func readDocument(path: String) async throws -> ServerFileDocument
   func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument
+  func createDocument(path: String, content: String) async throws -> ServerFileDocument
   func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing
   func searchFileEntries(path: String, query: String) async throws -> ServerFileSearch
   func documentData(path: String) async throws -> Data

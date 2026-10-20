@@ -48,12 +48,12 @@ public struct FilePaneView: View {
       guard !model.isBrowsing else { return }
       let active = document
       defer { active.flushAutosave() }
-      await active.refresh()
-      if active.snapshot != nil { model.recordRecent() }
+      await model.refreshDocument()
+      if active.snapshot != nil, !active.isMissing { model.recordRecent() }
       guard !model.path.hasPrefix("https://attachments.codevisor.invalid/") else { return }
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(3)) } catch { break }
-        if scenePhase == .active { await active.refresh() }
+        if scenePhase == .active { await model.refreshDocument() }
       }
     }
     .onChange(of: model.editor.preview) { _, preview in
@@ -61,7 +61,7 @@ public struct FilePaneView: View {
     }
     .onChange(of: scenePhase) { _, phase in
       document.flushAutosave()
-      if phase == .active && !model.isBrowsing { Task { await document.refresh() } }
+      if phase == .active && !model.isBrowsing { Task { await model.refreshDocument() } }
     }
     .onDisappear { document.flushAutosave() }
     .alert("Go to Line", isPresented: $model.showsGoToLine) {
@@ -86,6 +86,8 @@ public struct FilePaneView: View {
       #else
         FileBrowserView(model: model)
       #endif
+    } else if document.isMissing {
+      FileMissingView(model: model)
     } else if document.snapshot == nil {
       if document.isLoading {
         ProgressView("Opening file…").frame(maxWidth: .infinity, maxHeight: .infinity)

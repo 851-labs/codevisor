@@ -25,7 +25,8 @@ public final class FileDocumentStore {
       return FileDocumentModel(
         path: path, draftURL: draftURL,
         read: { try await FileDocumentLocation.read(path: path, client: client) },
-        write: { try await client.saveDocument(path: path, content: $0, version: $1) })
+        write: { try await client.saveDocument(path: path, content: $0, version: $1) },
+        create: { try await client.createDocument(path: path, content: $0) })
     }
   }
 

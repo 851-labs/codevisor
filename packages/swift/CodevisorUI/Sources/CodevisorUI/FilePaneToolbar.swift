@@ -107,7 +107,7 @@ private struct FilePaneActions: View {
           .keyboardShortcut("g", modifiers: .control)
       }
       Divider()
-      Button("Reload from Machine", systemImage: "arrow.clockwise") { Task { await model.document.refresh() } }
+      Button("Reload from Machine", systemImage: "arrow.clockwise") { Task { await model.refreshDocument() } }
       Divider()
       Button("New Tab", systemImage: Self.newTabSymbol) { onNewTab() }
     } label: {

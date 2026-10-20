@@ -11,10 +11,12 @@ public final class FileDocumentModel {
   public private(set) var conflict: ServerFileDocument?
   public private(set) var isLoading = false
   public private(set) var isSaving = false
+  public private(set) var isMissing = false
   public private(set) var error: String?
   public private(set) var draftError: String?
   @ObservationIgnored private let read: @Sendable () async throws -> ServerFileDocument
   @ObservationIgnored private let write: @Sendable (String, String) async throws -> ServerFileDocument
+  @ObservationIgnored private let create: @Sendable (String) async throws -> ServerFileDocument
   @ObservationIgnored private let draftURL: URL?
   @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored private var draftTask: Task<Void, Never>?
@@ -24,6 +26,7 @@ public final class FileDocumentModel {
   @ObservationIgnored private var draftWriteGeneration: UInt64 = 0
 
   static let drafts = CoalescingWorkQueue(label: "com.codevisor.file-drafts")
+  static let deletionGrace = Duration.seconds(1)
 
   public var isEditable: Bool { snapshot?.writable == true }
   public var isMarkdown: Bool { MarkdownDocumentPath.isMarkdown(name) }
@@ -38,9 +41,12 @@ public final class FileDocumentModel {
     path: String, draftURL: URL? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     read: @escaping @Sendable () async throws -> ServerFileDocument,
-    write: @escaping @Sendable (String, String) async throws -> ServerFileDocument
+    write: @escaping @Sendable (String, String) async throws -> ServerFileDocument,
+    create: @escaping @Sendable (String) async throws -> ServerFileDocument = { _ in
+      throw CodevisorServerClientError.invalidResponse
+    }
   ) {
-    self.path = path; self.draftURL = draftURL; self.read = read; self.write = write
+    self.path = path; self.draftURL = draftURL; self.read = read; self.write = write; self.create = create
     self.sleep = sleep
     if let draftURL {
       draftLoad = Task { [weak self] in
@@ -79,16 +85,17 @@ public final class FileDocumentModel {
     isDirty = text.utf8.count != base.utf8.count || text != base
   }
 
-  public func refresh() async {
-    guard !isLoading, !isSaving else { return }
+  @discardableResult public func refresh() async -> Bool {
+    guard !isLoading, !isSaving else { return false }
     isLoading = true
     defer { isLoading = false }
     if let draftLoad { await draftLoad.value }
     let originalVersion = snapshot?.version
     do {
-      let latest = try await read()
+      let latest = try await readAllowingQuickRecreate()
       try Task.checkCancellation()
-      guard !isSaving, snapshot?.version == originalVersion else { return }
+      guard !isSaving, snapshot?.version == originalVersion else { return true }
+      isMissing = false
       if let previous = snapshot, isDirty, latest.version != previous.version {
         if latest.content == text {
           setSnapshot(latest); conflict = nil; persistDraft()
@@ -105,10 +112,33 @@ public final class FileDocumentModel {
       }
       if !isDirty { error = nil }
       if autosaveTask == nil { scheduleAutosave() }
+      return true
     } catch {
-      if !isTaskCancellation(error) { self.error = serverErrorMessage(error) }
+      record(readFailure: error)
+      return false
     }
   }
+
+  private func readAllowingQuickRecreate() async throws -> ServerFileDocument {
+    do {
+      return try await read()
+    } catch let error where isNotFound(error) && snapshot != nil && !isMissing {
+      try await sleep(Self.deletionGrace)
+      return try await read()
+    }
+  }
+
+  private func record(readFailure error: any Error) {
+    if isTaskCancellation(error) { return }
+    if isNotFound(error) {
+      isMissing = true
+      self.error = nil
+    } else {
+      self.error = serverErrorMessage(error)
+    }
+  }
+
+  private func isNotFound(_ error: any Error) -> Bool { serverErrorCode(error) == "not_found" }
 
   public func edit(_ value: String) {
     setText(value)
@@ -149,7 +179,7 @@ public final class FileDocumentModel {
   public func save() async {
     autosaveTask?.cancel()
     autosaveTask = nil
-    guard !isSaving, isDirty, isEditable, conflict == nil else { return }
+    guard !isSaving, isDirty, isEditable, conflict == nil, !isMissing else { return }
     isSaving = true
     defer { isSaving = false }
     while isDirty, isEditable, conflict == nil, let snapshot {
@@ -160,6 +190,10 @@ public final class FileDocumentModel {
         setSnapshot(saved)
         self.error = nil
         persistDraft()
+      } catch let error where isNotFound(error) {
+        isMissing = true
+        persistDraft()
+        return
       } catch {
         self.error = "Couldn’t save changes: \(serverErrorMessage(error))"
         if serverErrorCode(error) == "file_conflict" {
@@ -168,6 +202,21 @@ public final class FileDocumentModel {
         persistDraft()
         return
       }
+    }
+  }
+
+  public func recreate() async {
+    guard isMissing, !isSaving else { return }
+    isSaving = true
+    defer { isSaving = false }
+    do {
+      let created = try await create(text)
+      isMissing = false
+      error = nil
+      setSnapshot(created)
+      persistDraft()
+    } catch {
+      self.error = "Couldn’t restore the file: \(serverErrorMessage(error))"
     }
   }
 

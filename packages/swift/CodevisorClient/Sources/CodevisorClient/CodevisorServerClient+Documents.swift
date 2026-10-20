@@ -45,6 +45,11 @@ extension CodevisorServerClient {
       fileRequestPath("/v1/fs/document", path: path), method: "PUT", body: Body(content: content, version: version))
   }
 
+  public func createDocument(path: String, content: String) async throws -> ServerFileDocument {
+    struct Body: Encodable { let content: String }
+    return try await send(fileRequestPath("/v1/fs/document", path: path), method: "POST", body: Body(content: content))
+  }
+
   public func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing {
     try await get(fileRequestPath("/v1/fs/entries", path: path) + "&showHidden=\(showHidden)")
   }
@@ -74,6 +79,9 @@ extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   public func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func createDocument(path: String, content: String) async throws -> ServerFileDocument {
     throw CodevisorServerClientError.invalidResponse
   }
   public func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing {

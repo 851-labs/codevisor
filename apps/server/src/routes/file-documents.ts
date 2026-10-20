@@ -122,12 +122,17 @@ function replaceDocument(
   }
 }
 
-function save(path: string, input: unknown) {
-  assertSaveInput(input)
-  const bytes = Buffer.from(input.content, "utf8")
+function editableBytes(content: string): Buffer {
+  const bytes = Buffer.from(content, "utf8")
   if (bytes.length > textLimit || textContent(bytes) === null) {
     throw new HttpFailure(413, "Save a UTF-8 text file smaller than 4 MB.", "file_too_large")
   }
+  return bytes
+}
+
+function save(path: string, input: unknown) {
+  assertSaveInput(input)
+  const bytes = editableBytes(input.content)
   const current = snapshot(path)
   if (current.version !== input.version) {
     throw new HttpFailure(
@@ -139,6 +144,23 @@ function save(path: string, input: unknown) {
   if (current.reason !== null) throw new HttpFailure(403, current.reason, "permission_denied")
   replaceDocument(current, bytes, input)
   return snapshot(current.path)
+}
+
+function assertCreateInput(input: unknown): asserts input is { content: string } {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("content" in input) ||
+    typeof input.content !== "string"
+  ) {
+    throw new HttpFailure(400, "File contents are required.", "invalid_request")
+  }
+}
+
+function create(path: string, input: unknown) {
+  assertCreateInput(input)
+  writeFileSync(path, editableBytes(input.content), { flag: "wx" })
+  return snapshot(path)
 }
 
 export async function routeFileDocuments(
@@ -157,6 +179,8 @@ export async function routeFileDocuments(
       return readDocument(response, url, path)
     if (url.pathname === "/v1/fs/document" && request.method === "PUT")
       return await writeDocument(request, response, path)
+    if (url.pathname === "/v1/fs/document" && request.method === "POST")
+      return await createDocument(request, response, path)
     throw new HttpFailure(405, "This file operation is not supported.", "method_not_allowed")
   } catch (error) {
     throw documentFailure(error)
@@ -240,6 +264,16 @@ async function writeDocument(
   return true
 }
 
+async function createDocument(
+  request: IncomingMessage,
+  response: ServerResponse,
+  path: string
+): Promise<boolean> {
+  const body = await readJson(request)
+  writeJson(response, 201, create(path, body))
+  return true
+}
+
 function documentFailure(error: unknown): unknown {
   if (error instanceof HttpFailure) return error
   const code = errorCode(error)
@@ -251,6 +285,8 @@ function documentFailure(error: unknown): unknown {
       "You don’t have permission to access this file.",
       "permission_denied"
     )
+  if (code === "EEXIST")
+    return new HttpFailure(409, "A file already exists at this path.", "file_conflict")
   if (code === "ENOTDIR")
     return new HttpFailure(400, "This path is not a folder.", "not_a_directory")
   return error

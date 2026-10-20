@@ -156,6 +156,7 @@ final class PaneGroupModel: Identifiable {
   private func makeDocumentPane(for descriptor: PaneDescriptorState) -> FilePane {
     let document = FilePane(context: makeContext(descriptor), descriptor: descriptor)
     document.model.onEdit = { [weak self] in self?.onPaneEdited?(descriptor.id) }
+    document.model.onClose = { [weak self] in self?.closeTab(id: descriptor.id) }
     document.onNavigate = { [weak self] path in
       guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
       state.panes[index].documentPath = path
@@ -303,16 +304,19 @@ final class PaneGroupModel: Identifiable {
     case .split, .focusSplit, .previousSplit, .nextSplit, .reopenClosedPane, .previousWorkspace, .nextWorkspace:
       return
     case .closeTab:
-      guard let selected = state.selectedPane,
-        canClose(id: selected.id)
-      else { return }
-      let wasLastTab = state.panes.count == 1
-      closePane(id: selected.id)
-      if wasLastTab {
-        requestComposerFocus?()
-      } else {
-        requestSelectedPaneFocus()
-      }
+      guard let selected = state.selectedPane else { return }
+      closeTab(id: selected.id)
+    }
+  }
+
+  func closeTab(id: UUID) {
+    guard canClose(id: id) else { return }
+    let wasLastTab = state.panes.count == 1
+    closePane(id: id)
+    if wasLastTab {
+      requestComposerFocus?()
+    } else {
+      requestSelectedPaneFocus()
     }
   }
 

@@ -19,6 +19,8 @@ public final class FilePaneModel {
   public var lineText = ""
   public private(set) var explorerFocusRequests = 0
   @ObservationIgnored public var onNavigate: ((String) -> Void)?
+  @ObservationIgnored public var onClose: (() -> Void)?
+  @ObservationIgnored private var pathSeenOnDisk: String?
   @ObservationIgnored private let sessions: FileEditorSessions
   @ObservationIgnored let recents: FileRecents
   let explorer: FileExplorerModel
@@ -50,7 +52,21 @@ public final class FilePaneModel {
 
   public func close() { sessions.close() }
 
+  public func refreshDocument() async {
+    let path = path
+    let document = document
+    let foundOnDisk = await document.refresh()
+    guard path == self.path else { return }
+    if foundOnDisk { pathSeenOnDisk = path }
+    if fileWasDeletedWithoutEdits(at: path) { onClose?() }
+  }
+
+  private func fileWasDeletedWithoutEdits(at path: String) -> Bool {
+    document.isMissing && !document.isDirty && pathSeenOnDisk == path
+  }
+
   public var isBrowsing: Bool { path.hasSuffix("/") }
+  public var displayPath: String { explorer.relativePath(path) }
   public var title: String { isBrowsing ? "Open File" : document.name }
   public var canSave: Bool {
     document.isDirty && document.isEditable && !document.isSaving && document.conflict == nil
