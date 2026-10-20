@@ -30,7 +30,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   @Environment(AppEnvironment.self) private var environment
   @Environment(AdaptivePanelLayout.self) private var panelLayout
-  @ClientPreference(Self.presentedKey, default: true) private var isPresented
+  @ClientPreference(Self.presentedKey, default: false) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @State private var media = WorkspaceInspectorMediaModel()
