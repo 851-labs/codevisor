@@ -76,6 +76,7 @@ private struct AnswerQuestionBody: Encodable {
 
 struct CreateSessionBody: Encodable {
   var sidebarOrderHead = WorkspaceOrderClock.shared.head
+  var sidebarPosition: String?
   var id: String
   var projectId: String
   var harnessId: String
@@ -99,6 +100,7 @@ struct CreateSessionBody: Encodable {
     origin = session.origin
     worktreeName = session.worktreeName
     self.workspaceId = workspaceId?.uuidString
+    sidebarPosition = workspaceId.flatMap(WorkspaceOrderClock.shared.draftPosition(of:))
     createdAt = ServerDateCoding.string(from: session.createdAt)
     updatedAt = session.updatedAt.map(ServerDateCoding.string)
     deferAgentSession = session.hasAgentSession ? nil : true
@@ -107,6 +109,7 @@ struct CreateSessionBody: Encodable {
 
 struct UpdateSessionBody: Encodable {
   var sidebarOrderHead = WorkspaceOrderClock.shared.head
+  var sidebarPosition: String?
   var agentSessionId: String?
   var title: String
   var titleIntent = "fallback"
@@ -120,6 +123,7 @@ struct UpdateSessionBody: Encodable {
     title = session.title
     worktreeName = session.worktreeName
     self.workspaceId = workspaceId?.uuidString
+    sidebarPosition = workspaceId.flatMap(WorkspaceOrderClock.shared.draftPosition(of:))
     harnessId = session.harnessId.isEmpty ? nil : session.harnessId
     harnessAccountId = session.harnessAccountId
   }

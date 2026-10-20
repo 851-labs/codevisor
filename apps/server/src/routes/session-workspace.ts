@@ -65,9 +65,7 @@ const createServerSession = async (
   const created = await run(
     services.db.createWorkspaceWithSession({
       workspace: {
-        ...(payload.sidebarOrderHead === undefined
-          ? {}
-          : { sidebarOrderHead: payload.sidebarOrderHead }),
+        ...workspaceOrder(payload),
         ...(await botForParentSession(services, payload.parentSessionId)),
         id: payload.workspaceId.toLowerCase(),
         projectId: project.id,
@@ -147,7 +145,7 @@ export const applySessionUpdate = async (
       project,
       payload.worktreeName ?? before.worktreeName ?? project.name,
       before.cwd,
-      payload.sidebarOrderHead
+      workspaceOrder(payload)
     )
   }
   let session = await run(services.db.updateSession(sessionId, payload))
@@ -159,6 +157,13 @@ export const applySessionUpdate = async (
   await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
   return session
 }
+
+type WorkspaceOrder = Pick<UpdateSessionRequest, "sidebarOrderHead" | "sidebarPosition">
+
+const workspaceOrder = (payload: WorkspaceOrder): WorkspaceOrder => ({
+  ...(payload.sidebarOrderHead === undefined ? {} : { sidebarOrderHead: payload.sidebarOrderHead }),
+  ...(payload.sidebarPosition === undefined ? {} : { sidebarPosition: payload.sidebarPosition })
+})
 
 const assertWorkspaceProject = async (
   services: CodevisorServerServices,
@@ -187,13 +192,13 @@ const ensureSessionWorkspace = async (
   project: Project,
   workspaceName: string,
   rootDirectory: string | undefined,
-  sidebarOrderHead?: string
+  order: WorkspaceOrder
 ): Promise<void> => {
   if (await assertWorkspaceProject(services, workspaceId, project)) return
   const canonical = workspaceId.toLowerCase()
   const workspace = await run(
     services.db.upsertWorkspace({
-      ...(sidebarOrderHead === undefined ? {} : { sidebarOrderHead }),
+      ...order,
       id: canonical,
       projectId: project.id,
       name: workspaceName,

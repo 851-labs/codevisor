@@ -93,4 +93,52 @@ describe("workspace ordering over HTTP", () => {
       "fifth"
     )
   })
+
+  it("creates a session's new workspace at its draft position and leaves existing ones in place", async () => {
+    const { server, services } = await start()
+    const folder = mkdtempSync(join(tmpdir(), "workspace-order-draft-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const synced = decodeWorkspace(
+      (
+        await jsonRequest(server, "/v1/workspaces/synced", {
+          method: "PUT",
+          body: JSON.stringify({ projectId: project.id, name: "A", hasCustomName: false })
+        })
+      ).body
+    )
+    const draftPosition = initialWorkspacePosition(1_000, "draft")
+    const created = await jsonRequest(server, "/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: project.id,
+        harnessId: "codex",
+        deferAgentSession: true,
+        workspaceId: "draft",
+        sidebarOrderHead: synced.sidebarPosition,
+        sidebarPosition: draftPosition
+      })
+    })
+    expect(created.status).toBe(201)
+    const movedPosition = initialWorkspacePosition(500, "moved")
+    const moved = await jsonRequest(server, `/v1/sessions/${idOf(created.body)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ workspaceId: "moved", sidebarPosition: movedPosition })
+    })
+    expect(moved.status).toBe(200)
+    const kept = await jsonRequest(server, `/v1/sessions/${idOf(created.body)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        workspaceId: "synced",
+        sidebarPosition: initialWorkspacePosition(1, "synced")
+      })
+    })
+    expect(kept.status).toBe(200)
+    const rows = decodeWorkspaces((await jsonRequest(server, "/v1/workspaces")).body)
+    expect(rows.map((row) => [row.id, row.sidebarPosition])).toEqual([
+      ["synced", synced.sidebarPosition],
+      ["draft", draftPosition],
+      ["moved", movedPosition]
+    ])
+  })
 })

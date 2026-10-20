@@ -49,8 +49,13 @@ public final class WorkspaceOrderClock: @unchecked Sendable {
   public static let shared = WorkspaceOrderClock()
   private let lock = NSLock()
   private var value: String?
+  private var drafts: [UUID: String] = [:]
   public init() {}
   public var head: String? { lock.withLock { value } }
+  public func draftPosition(of workspaceId: UUID) -> String? { lock.withLock { drafts[workspaceId] } }
+  public func observeDrafts(_ positions: [UUID: String]) {
+    lock.withLock { drafts = positions.filter { WorkspacePosition.isValid($0.value) } }
+  }
   public func observe(_ position: String?) {
     guard let position, WorkspacePosition.isValid(position) else { return }
     lock.withLock {

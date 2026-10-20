@@ -49,6 +49,36 @@ struct WorkspaceOrderSyncTests {
     #expect(try isOnTop(fixture))
   }
 
+  @Test("A workspace moved before the server has it offers that place for creation and keeps it")
+  func draftMoveSurvivesCreation() async throws {
+    let fixture = await makeFixture()
+    let draft = fixture.repository.ensureWorkspace(
+      for: WorkspaceSessionSeed(
+        sessionId: UUID(), initialName: "Draft", serverId: fixture.serverId, projectId: fixture.project.id,
+        rootDirectory: nil),
+      legacyGroups: nil)
+    #expect(draft.isDraft)
+    func order() -> [UUID] {
+      fixture.repository.loadAll().sorted(by: WorkspaceSidebarOrder.precedes).map(\.id)
+    }
+    let synced = order().filter { $0 != draft.id }
+    fixture.sync.reorderWorkspace(id: draft.id, visibleIDs: synced + [draft.id])
+    #expect(order() == synced + [draft.id])
+    let moved = try #require(fixture.repository.workspace(id: draft.id)?.sidebarPosition)
+    #expect(fixture.store.layouts.draft(id: draft.id)?.sidebarPosition == moved)
+    #expect(WorkspaceOrderClock.shared.draftPosition(of: draft.id) == moved)
+    #expect(fixture.store.pendingIntents.isEmpty)
+
+    var created = try fixture.serverRecord(fixture.otherWorkspace.id)
+    created.id = draft.id.uuidString.lowercased()
+    created.sidebarPosition = moved
+    fixture.server.commit(workspaces: [created])
+    await fixture.deliver()
+    #expect(fixture.repository.workspace(id: draft.id)?.isDraft == false)
+    #expect(order() == synced + [draft.id])
+    #expect(WorkspaceOrderClock.shared.draftPosition(of: draft.id) == nil)
+  }
+
   @Test("Rapid drags coalesce into one request carrying the latest position")
   func rapidDragsCoalesce() async throws {
     let fixture = await makeFixture()
