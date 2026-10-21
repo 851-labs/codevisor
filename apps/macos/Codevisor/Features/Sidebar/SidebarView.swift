@@ -102,9 +102,6 @@ struct SidebarView: View {
         .labelStyle(.titleAndIcon)
     }
     .pickerStyle(.menu)
-    if canCreateBots {
-      Button("New Bot…", systemImage: "sparkles") { botEditor = .create }
-    }
     Menu {
       ForEach(SidebarRowDetail.trailingDetails) { detail in
         rowDetailToggle(detail)
