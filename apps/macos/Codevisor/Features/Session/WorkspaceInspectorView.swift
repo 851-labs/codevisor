@@ -239,6 +239,7 @@ struct WorkspaceInspectorView: View {
         }
       }
       .padding(.vertical, 10)
+      .containerRelativeFrame(.horizontal)
     }
     .task(
       id: chatSessionId.map {
