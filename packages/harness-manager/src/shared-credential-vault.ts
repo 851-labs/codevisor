@@ -96,6 +96,20 @@ const ownRecord = (
 const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
   ["pi", "opencode", "grok-build", "mcp"].includes(harnessId) ? 6 * 60_000 : 60_000
 
+const OFFLINE_VALIDITY_MS = 30_000
+const LEASE_WAIT_MS = 8_000
+
+const cannotRefresh = (bundle: SharedTokenBundle): boolean =>
+  bundle.ownership !== "managed" || !bundle.refreshToken
+
+const throwIfLeaseLost = (state: CredentialCoordinationResult): void => {
+  if (state.status === "uncertain") throw new SharedCredentialError("reauthenticate")
+  if (state.status === "revoked") throw new SharedCredentialError("revoked")
+}
+
+const commitFailure = (committed: CredentialCoordinationResult): SharedCredentialError["reason"] =>
+  committed.status === "revoked" ? "revoked" : "reauthenticate"
+
 export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) => {
   const now = config.now ?? Date.now
   const elapsed = config.elapsed ?? (() => performance.now())
@@ -194,74 +208,89 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     const bundle = held(reference)
     return bundle !== undefined && serves(bundle, rejectedAccessToken) ? bundle : undefined
   }
+  const coordinatorFor = (reference: SharedCredentialReference) => ({
+    read: () => config.coordinate(reference.id, { action: "read" }),
+    acquire: (generation: number, operationId: string) =>
+      config.coordinate(reference.id, { action: "acquire", generation, operationId }),
+    start: (operationId: string) =>
+      config.coordinate(reference.id, { action: "start", operationId }),
+    release: (operationId: string) =>
+      config.coordinate(reference.id, { action: "release", operationId }),
+    commit: (operationId: string, sealed: string) =>
+      config.coordinate(reference.id, { action: "commit", operationId, sealed })
+  })
+  const outlastsOutage = (token: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
+    token.expiresAt > now() + OFFLINE_VALIDITY_MS && token.accessToken !== rejectedAccessToken
+  const offlineCopy = (
+    reference: SharedCredentialReference,
+    previous: CoordinatedCredential | undefined,
+    rejectedAccessToken: string | undefined
+  ): SharedTokenBundle => {
+    if (previous === undefined) throw new SharedCredentialError("offline")
+    if (previous.revoked) throw new SharedCredentialError("revoked")
+
+    const token = openSharedCredential(reference, previous.sealed)
+    if (outlastsOutage(token, rejectedAccessToken)) return token
+    throw new SharedCredentialError("offline")
+  }
+  const lastVerified = (reference: SharedCredentialReference) =>
+    cached.get(reference.id)?.credential
   const read = async (
     reference: SharedCredentialReference,
     rejectedAccessToken?: string
   ): Promise<SharedTokenBundle> => {
     const fresh = local(reference, rejectedAccessToken)
     if (fresh !== undefined) return fresh
+
+    const coordinator = coordinatorFor(reference)
     let state
     try {
       await recover(reference)
-      state = await config.coordinate(reference.id, { action: "read" })
+      state = await coordinator.read()
     } catch (cause) {
       if (cause instanceof SharedCredentialError) throw cause
-      const previous = config.readCached
-        ? await config.readCached(reference.id).catch(() => undefined)
-        : cached.get(reference.id)?.credential
-      if (previous !== undefined) {
-        if (previous.revoked) throw new SharedCredentialError("revoked")
-        const token = openSharedCredential(reference, previous.sealed)
-        if (token.expiresAt > now() + 30_000 && token.accessToken !== rejectedAccessToken)
-          return token
-      }
-      throw new SharedCredentialError("offline")
+      if (!config.readCached)
+        return offlineCopy(reference, lastVerified(reference), rejectedAccessToken)
+      const stored = await config.readCached(reference.id).catch(() => undefined)
+      return offlineCopy(reference, stored, rejectedAccessToken)
     }
-    const deadline = elapsed() + 8_000
+
+    const deadline = elapsed() + LEASE_WAIT_MS
     for (;;) {
       const bundle = remember(reference, state.credential)
       if (serves(bundle, rejectedAccessToken)) return bundle
-      if (bundle.ownership !== "managed" || !bundle.refreshToken)
-        throw new SharedCredentialError("reauthenticate")
+      if (cannotRefresh(bundle)) throw new SharedCredentialError("reauthenticate")
+
       const operationId = randomUUID()
-      state = await config.coordinate(reference.id, {
-        action: "acquire",
-        generation: state.credential!.generation,
-        operationId
-      })
+      state = await coordinator.acquire(state.credential!.generation, operationId)
       if (state.status === "ready") continue
-      if (state.status === "uncertain") throw new SharedCredentialError("reauthenticate")
-      if (state.status === "revoked") throw new SharedCredentialError("revoked")
+      throwIfLeaseLost(state)
       if (state.status !== "acquired") {
         if (elapsed() >= deadline) throw new SharedCredentialError("busy")
         await wait()
-        state = await config.coordinate(reference.id, { action: "read" })
+        state = await coordinator.read()
         continue
       }
-      const started = await config.coordinate(reference.id, { action: "start", operationId })
+
+      const started = await coordinator.start(operationId)
       if (started.status !== "acquired") throw new SharedCredentialError("reauthenticate")
+
       let rotated: SharedTokenBundle
       try {
         rotated = await rotate(reference, bundle)
       } catch (cause) {
-        if (cause instanceof OAuthRefreshUnavailable)
-          await config.coordinate(reference.id, { action: "release", operationId })
+        if (cause instanceof OAuthRefreshUnavailable) await coordinator.release(operationId)
         throw cause
       }
       if (hasDifferentCredentialAccount(rotated, bundle)) {
         throw new SharedCredentialError("reauthenticate")
       }
+
       const sealed = sealSharedCredential(reference, rotated)
       await writeReceipt(reference.id, { operationId, sealed })
-      const committed = await config.coordinate(reference.id, {
-        action: "commit",
-        operationId,
-        sealed
-      })
-      if (committed.status !== "ready")
-        throw new SharedCredentialError(
-          committed.status === "revoked" ? "revoked" : "reauthenticate"
-        )
+      const committed = await coordinator.commit(operationId, sealed)
+      if (committed.status !== "ready") throw new SharedCredentialError(commitFailure(committed))
+
       await removeReceipt(reference.id)
       return remember(reference, committed.credential)
     }
