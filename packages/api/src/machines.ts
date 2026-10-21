@@ -55,11 +55,11 @@ export const MachineStatsUsage = Schema.Struct({
 })
 export type MachineStatsUsage = typeof MachineStatsUsage.Type
 
-export const MachineCpuSample = Schema.Struct({
+export const MachineLoadSample = Schema.Struct({
   at: Schema.String,
   usedPercent: Schema.Number
 })
-export type MachineCpuSample = typeof MachineCpuSample.Type
+export type MachineLoadSample = typeof MachineLoadSample.Type
 
 export const MachineStats = Schema.Struct({
   sampledAt: Schema.String,
@@ -67,8 +67,16 @@ export const MachineStats = Schema.Struct({
   cpu: Schema.Struct({
     cores: Schema.Number,
     usedPercent: Schema.optional(Schema.Number),
-    history: Schema.Array(MachineCpuSample)
+    history: Schema.Array(MachineLoadSample)
   }),
+  gpu: Schema.optional(
+    Schema.Struct({
+      model: Schema.optional(Schema.String),
+      cores: Schema.optional(Schema.Number),
+      usedPercent: Schema.optional(Schema.Number),
+      history: Schema.Array(MachineLoadSample)
+    })
+  ),
   memory: MachineStatsUsage,
   disk: Schema.optional(MachineStatsUsage)
 })

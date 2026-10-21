@@ -3,7 +3,7 @@ import { readFile, statfs } from "node:fs/promises"
 import { cpus, freemem, homedir, totalmem, uptime } from "node:os"
 import { promisify } from "node:util"
 
-import type { MachineCpuSample, MachineStats, MachineStatsUsage } from "@codevisor/api"
+import type { MachineLoadSample, MachineStats, MachineStatsUsage } from "@codevisor/api"
 
 const execFileAsync = promisify(execFile)
 
@@ -12,9 +12,16 @@ export interface CpuTimes {
   readonly total: number
 }
 
+export interface GpuReading {
+  readonly usedPercent: number
+  readonly model?: string
+  readonly cores?: number
+}
+
 export interface MachineStatsReaders {
   readonly cores: () => number
   readonly cpuTimes: () => CpuTimes
+  readonly gpu: () => Promise<GpuReading | undefined>
   readonly memory: () => Promise<MachineStatsUsage>
   readonly disk: () => Promise<MachineStatsUsage | undefined>
   readonly uptimeSeconds: () => number
@@ -84,12 +91,62 @@ export const linuxUsedMemory = (meminfo: string): MachineStatsUsage | undefined 
   return { usedBytes: (Number(total) - Number(available)) * 1024, totalBytes: Number(total) * 1024 }
 }
 
+export const darwinGpu = (ioreg: string): GpuReading | undefined => {
+  const used = /"Device Utilization %"=(\d+)/.exec(ioreg)?.[1]
+  if (used === undefined) return undefined
+  const model = /"model" = "([^"]+)"/.exec(ioreg)?.[1]
+  const cores = /"gpu-core-count" = (\d+)/.exec(ioreg)?.[1]
+  return {
+    usedPercent: Math.min(Number(used), 100),
+    ...(model === undefined ? {} : { model }),
+    ...(cores === undefined ? {} : { cores: Number(cores) })
+  }
+}
+
+export const nvidiaGpu = (csv: string): GpuReading | undefined => {
+  const [used, model] = csv.split(/,|\n/).map((part) => part.trim())
+  const usedPercent = Number.parseFloat(String(used))
+  if (!Number.isFinite(usedPercent)) return undefined
+  return { usedPercent: Math.min(usedPercent, 100), ...(model ? { model } : {}) }
+}
+
 /* v8 ignore start */
+const systemGpu = async (): Promise<GpuReading | undefined> => {
+  try {
+    if (process.platform === "darwin") {
+      return darwinGpu(
+        (
+          await execFileAsync("/usr/sbin/ioreg", [
+            "-r",
+            "-d",
+            "1",
+            "-w",
+            "0",
+            "-c",
+            "IOAccelerator"
+          ])
+        ).stdout
+      )
+    }
+    if (process.platform === "linux") {
+      return nvidiaGpu(
+        (
+          await execFileAsync("nvidia-smi", [
+            "--query-gpu=utilization.gpu,name",
+            "--format=csv,noheader,nounits"
+          ])
+        ).stdout
+      )
+    }
+  } catch {}
+  return undefined
+}
+
 const systemMemory = async (): Promise<MachineStatsUsage> => {
   const totalBytes = totalmem()
   try {
     if (process.platform === "darwin") {
-      const used = darwinUsedMemory((await execFileAsync("vm_stat")).stdout)
+      const used = darwinUsedMemory((await execFileAsync("/usr/bin/vm_stat")).stdout)
       if (used !== undefined) return { usedBytes: Math.min(used, totalBytes), totalBytes }
     }
     if (process.platform === "linux") {
@@ -113,6 +170,7 @@ const systemDisk = async (): Promise<MachineStatsUsage | undefined> => {
 export const systemReaders: MachineStatsReaders = {
   cores: () => cpus().length,
   cpuTimes: () => cpuTimesOf(cpus()),
+  gpu: systemGpu,
   memory: systemMemory,
   disk: systemDisk,
   uptimeSeconds: () => Math.round(uptime())
@@ -137,7 +195,9 @@ export const makeMachineStatsSampler = (
   const historyLength = options.historyLength ?? 100
   const idleMs = options.idleMs ?? 60_000
   let previous: CpuTimes = { idle: 0, total: 0 }
-  let history: Array<MachineCpuSample> = []
+  let history: Array<MachineLoadSample> = []
+  let gpu: GpuReading | undefined
+  let gpuHistory: Array<MachineLoadSample> = []
   let cancel: (() => void) | undefined
   let lastReadAt = 0
 
@@ -145,6 +205,15 @@ export const makeMachineStatsSampler = (
     cancel?.()
     cancel = undefined
     history = []
+    gpu = undefined
+    gpuHistory = []
+  }
+
+  const sampleGpu = async (at: string): Promise<void> => {
+    const reading = await readers.gpu()
+    if (reading === undefined || cancel === undefined) return
+    gpu = reading
+    gpuHistory = [...gpuHistory, { at, usedPercent: reading.usedPercent }].slice(-historyLength)
   }
 
   const tick = (): void => {
@@ -152,12 +221,13 @@ export const makeMachineStatsSampler = (
       stop()
       return
     }
+    const at = new Date(now()).toISOString()
     const current = readers.cpuTimes()
-    history = [
-      ...history,
-      { at: new Date(now()).toISOString(), usedPercent: cpuPercentBetween(previous, current) }
-    ].slice(-historyLength)
+    history = [...history, { at, usedPercent: cpuPercentBetween(previous, current) }].slice(
+      -historyLength
+    )
     previous = current
+    void sampleGpu(at)
   }
 
   return {
@@ -167,6 +237,7 @@ export const makeMachineStatsSampler = (
       if (cancel === undefined) {
         previous = readers.cpuTimes()
         cancel = every(tick, intervalMs)
+        await sampleGpu(new Date(now()).toISOString())
       }
       const [memory, disk] = await Promise.all([readers.memory(), readers.disk()])
       const latest = history.at(-1)
@@ -178,6 +249,16 @@ export const makeMachineStatsSampler = (
           ...(latest === undefined ? {} : { usedPercent: latest.usedPercent }),
           history
         },
+        ...(gpu === undefined
+          ? {}
+          : {
+              gpu: {
+                ...(gpu.model === undefined ? {} : { model: gpu.model }),
+                ...(gpu.cores === undefined ? {} : { cores: gpu.cores }),
+                usedPercent: gpu.usedPercent,
+                history: gpuHistory
+              }
+            }),
         memory,
         ...(disk === undefined ? {} : { disk })
       }

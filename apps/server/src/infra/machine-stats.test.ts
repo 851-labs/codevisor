@@ -3,20 +3,24 @@ import { describe, expect, it } from "vitest"
 import {
   cpuPercentBetween,
   cpuTimesOf,
+  darwinGpu,
   darwinUsedMemory,
   linuxUsedMemory,
   makeMachineStatsSampler,
+  nvidiaGpu,
   type CpuTimes,
+  type GpuReading,
   type MachineStatsReaders
 } from "./machine-stats.js"
 
-const sampler = (cpu: Array<CpuTimes>, disk = true) => {
+const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading> = []) => {
   let now = Date.parse("2026-10-20T12:00:00.000Z")
   let tick: (() => void) | undefined
   let cancelled = 0
   const readers: MachineStatsReaders = {
     cores: () => 8,
     cpuTimes: () => cpu.shift() ?? { idle: 0, total: 0 },
+    gpu: async () => gpu.shift(),
     memory: async () => ({ usedBytes: 6, totalBytes: 16 }),
     disk: async () => (disk ? { usedBytes: 200, totalBytes: 500 } : undefined),
     uptimeSeconds: () => 3_600
@@ -118,6 +122,7 @@ describe("machine stats", () => {
       readers: {
         cores: () => 1,
         cpuTimes: () => ({ idle: 0, total: 0 }),
+        gpu: async () => undefined,
         memory: async () => ({ usedBytes: 1, totalBytes: 2 }),
         disk: async () => undefined,
         uptimeSeconds: () => 1
@@ -131,6 +136,54 @@ describe("machine stats", () => {
     stats.stop()
     await stats.read()
     expect(intervals).toEqual([3_000])
+  })
+
+  it("reads GPU use from ioreg on macOS and nvidia-smi on Linux", () => {
+    const ioreg = [
+      '"PerformanceStatistics" = {"Tiler Utilization %"=12,"Device Utilization %"=37,"Renderer Utilization %"=12}',
+      '"model" = "Apple M1 Pro"',
+      '"gpu-core-count" = 16'
+    ].join("\n")
+    expect(darwinGpu(ioreg)).toEqual({ usedPercent: 37, model: "Apple M1 Pro", cores: 16 })
+    expect(darwinGpu('"Device Utilization %"=140')).toEqual({ usedPercent: 100 })
+    expect(darwinGpu("no accelerator")).toBeUndefined()
+    expect(nvidiaGpu("42, NVIDIA GeForce RTX 4090\n7, Second GPU\n")).toEqual({
+      usedPercent: 42,
+      model: "NVIDIA GeForce RTX 4090"
+    })
+    expect(nvidiaGpu("42\n")).toEqual({ usedPercent: 42 })
+    expect(nvidiaGpu("[N/A], GPU\n")).toBeUndefined()
+    expect(nvidiaGpu("")).toBeUndefined()
+  })
+
+  it("samples the GPU alongside the CPU and drops a reading that lands after it stopped", async () => {
+    const { stats, advance } = sampler(
+      [
+        { idle: 0, total: 0 },
+        { idle: 50, total: 100 }
+      ],
+      true,
+      [{ usedPercent: 10, model: "Apple M1 Pro", cores: 16 }, { usedPercent: 40 }]
+    )
+    expect((await stats.read()).gpu).toEqual({
+      model: "Apple M1 Pro",
+      cores: 16,
+      usedPercent: 10,
+      history: [{ at: "2026-10-20T12:00:00.000Z", usedPercent: 10 }]
+    })
+    advance(3_000)
+    await Promise.resolve()
+    expect((await stats.read()).gpu).toEqual({
+      usedPercent: 40,
+      history: [
+        { at: "2026-10-20T12:00:00.000Z", usedPercent: 10 },
+        { at: "2026-10-20T12:00:03.000Z", usedPercent: 40 }
+      ]
+    })
+
+    advance(20_000)
+    stats.stop()
+    expect((await stats.read()).gpu).toBeUndefined()
   })
 
   it("leaves out the disk when it can't be read", async () => {

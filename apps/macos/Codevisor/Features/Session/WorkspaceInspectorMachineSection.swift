@@ -10,7 +10,14 @@ struct WorkspaceInspectorMachineSection: View {
 
   var body: some View {
     Section("Machine", isExpanded: $isExpanded) {
-      WorkspaceInspectorMachineCPU(cpu: stats.cpu)
+      WorkspaceInspectorMachineLoad(
+        title: "CPU", usedPercent: stats.cpu.usedPercent, history: stats.cpu.history,
+        detail: "\(stats.cpu.cores) cores")
+      if let gpu = stats.gpu {
+        WorkspaceInspectorMachineLoad(
+          title: "GPU", usedPercent: gpu.usedPercent, history: gpu.history,
+          detail: [gpu.model, gpu.cores.map { "\($0) cores" }].compactMap { $0 }.joined(separator: " · "))
+      }
       WorkspaceInspectorMachineUsageRow(title: "Memory", usage: stats.memory, style: .memory)
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
@@ -32,17 +39,20 @@ struct WorkspaceInspectorMachineSection: View {
   }
 }
 
-private struct WorkspaceInspectorMachineCPU: View {
-  let cpu: ServerMachineStats.Cpu
+private struct WorkspaceInspectorMachineLoad: View {
+  let title: String
+  let usedPercent: Double?
+  let history: [ServerMachineStats.LoadSample]
+  let detail: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .firstTextBaseline) {
-        Text("CPU")
+        Text(title)
         Spacer()
         Group {
-          if let used = cpu.usedPercent {
-            Text(used / 100, format: .percent.precision(.fractionLength(0)))
+          if let usedPercent {
+            Text(usedPercent / 100, format: .percent.precision(.fractionLength(0)))
           } else {
             Text("Measuring…")
           }
@@ -51,13 +61,13 @@ private struct WorkspaceInspectorMachineCPU: View {
         .foregroundStyle(.secondary)
       }
       WorkspaceInspectorSparkline(
-        values: cpu.history.map(\.usedPercent),
+        values: history.map(\.usedPercent),
         slots: WorkspaceInspectorMachineSection.historySlots,
-        tint: WorkspaceInspectorMachineSection.tint(forPercent: cpu.usedPercent ?? 0)
+        tint: WorkspaceInspectorMachineSection.tint(forPercent: usedPercent ?? 0)
       )
       .frame(height: 28)
       Text(
-        [["\(cpu.cores) cores"], Self.windowText(cpu.history).map { ["last \($0)"] } ?? []].flatMap { $0 }
+        [detail.isEmpty ? nil : detail, Self.windowText(history).map { "last \($0)" }].compactMap { $0 }
           .joined(separator: " · ")
       )
       .font(.caption)
@@ -65,11 +75,11 @@ private struct WorkspaceInspectorMachineCPU: View {
     }
     .padding(.vertical, 2)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("CPU")
-    .accessibilityValue(cpu.usedPercent.map { "\(Int($0.rounded())) percent" } ?? "Measuring")
+    .accessibilityLabel(title)
+    .accessibilityValue(usedPercent.map { "\(Int($0.rounded())) percent" } ?? "Measuring")
   }
 
-  private static func windowText(_ history: [ServerMachineStats.CpuSample]) -> String? {
+  private static func windowText(_ history: [ServerMachineStats.LoadSample]) -> String? {
     guard let first = history.first.flatMap({ try? ServerDateCoding.date(from: $0.at) }),
       let last = history.last.flatMap({ try? ServerDateCoding.date(from: $0.at) }),
       last > first
