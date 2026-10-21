@@ -39,13 +39,10 @@ extension SidebarView {
         drag?.translation = value.translation.height
         retarget()
         guard let finished = drag else { return }
-        withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-          if let target = finished.targetIndex {
-            commitWorkspaceMove(
-              finished.workspaceID, toIndex: target, within: dropCandidates(for: finished.workspaceID))
-          }
-          drag = nil
+        if let target = finished.targetIndex {
+          commitWorkspaceMove(finished.workspaceID, toIndex: target, within: dropCandidates(for: finished.workspaceID))
         }
+        withAnimation(Motion.quick(reduceMotion: reduceMotion)) { drag = nil }
       }
   }
 

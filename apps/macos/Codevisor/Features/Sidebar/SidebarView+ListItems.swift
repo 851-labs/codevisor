@@ -51,14 +51,6 @@ extension SidebarView {
     }
   }
 
-  func isExpanded(_ group: SidebarWorkspaceGroup) -> Bool {
-    group.heading == nil || !collapsedGroupIDs.contains(group.id)
-  }
-
-  func isShowing(_ group: SidebarWorkspaceGroup) -> Bool {
-    group.id == SidebarWorkspaceGroup.pinnedID ? pinnedExpanded : listExpanded && isExpanded(group)
-  }
-
   func toggleGroup(_ id: String) {
     if collapsedGroupIDs.contains(id) {
       collapsedGroupIDs.removeAll { $0 == id }
@@ -82,19 +74,5 @@ extension SidebarView {
     case let .workspace(serverId, id): (serverId, id)
     case .archivedWorkspace, .bot, .newChat, .none: nil
     }
-  }
-
-  func visibleItems(of group: SidebarWorkspaceGroup) -> [WorkspaceSidebarItem] {
-    visible(group.items, showing: isShowing(group))
-  }
-
-  func visible(_ items: [WorkspaceSidebarItem], showing: Bool) -> [WorkspaceSidebarItem] {
-    if showing { return items }
-    guard let selectedWorkspaceID else { return [] }
-    return items.filter { $0.id == selectedWorkspaceID }
-  }
-
-  var listedWorkspaceItems: [SidebarWorkspaceListItem] {
-    workspaceGroups.flatMap(visibleItems(of:)).compactMap(listItem(for:))
   }
 }

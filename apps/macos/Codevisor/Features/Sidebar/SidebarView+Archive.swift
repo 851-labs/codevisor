@@ -9,19 +9,6 @@ extension SidebarView {
     }
   }
 
-  var visibleArchivedItems: [WorkspaceSidebarItem] {
-    let items = archivedSidebarItems
-    if archivedExpanded { return Array(items.prefix(archivedVisibleCount)) }
-    guard let selectedWorkspaceID else { return [] }
-    return items.filter { $0.id == selectedWorkspaceID }
-  }
-
-  var listedArchivedWorkspaces: [Workspace] {
-    visibleArchivedItems.compactMap {
-      environment.navigationStore.workspaceEntries.entry($0.id).workspace
-    }
-  }
-
   func toggleArchived() {
     if !archivedExpanded { archivedVisibleCount = sidebarArchivedPageSize }
     archivedExpanded.toggle()

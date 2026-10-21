@@ -51,16 +51,32 @@ extension SidebarView {
     rowContent.subtitle(for: workspace, isPinned: isPinned(workspace))
   }
 
+  private var shownWorkspaceItems: (active: [WorkspaceSidebarItem], archived: [WorkspaceSidebarItem]) {
+    var active: [WorkspaceSidebarItem] = []
+    var archived: [WorkspaceSidebarItem] = []
+    for row in sidebarRows {
+      switch row.kind {
+      case let .workspace(item, .archived): archived.append(item)
+      case let .workspace(item, .pinned), let .workspace(item, .group): active.append(item)
+      default: continue
+      }
+    }
+    return (active, archived)
+  }
+
   var gitLookupRefreshKey: SidebarGitLookups.RefreshKey? {
     guard store != nil else { return nil }
     return SidebarGitLookups.refreshKey(
       details: rowDetails, workspaceIds: listedSidebarItems.map(\.id),
-      archivedWorkspaceIds: visibleArchivedItems.map(\.id))
+      archivedWorkspaceIds: shownWorkspaceItems.archived.map(\.id))
   }
 
   func refreshGitLookups() {
+    let shown = shownWorkspaceItems
+    let entries = environment.navigationStore.workspaceEntries
     store?.gitLookups.refresh(
-      active: listedWorkspaceItems.map(\.workspace), archived: listedArchivedWorkspaces,
+      active: shown.active.compactMap(listItem(for:)).map(\.workspace),
+      archived: shown.archived.compactMap { entries.entry($0.id).workspace },
       listedIds: listedSidebarItems.map(\.id), details: rowDetails, client: environment.machines.client(for:)
     )
   }

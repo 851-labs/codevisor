@@ -38,10 +38,8 @@ extension SidebarView {
         groupDrag?.translation = value.translation.height
         retargetGroup()
         guard let finished = groupDrag else { return }
-        withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-          if let target = finished.targetIndex { commitGroupMove(finished.groupID, toIndex: target) }
-          groupDrag = nil
-        }
+        if let target = finished.targetIndex { commitGroupMove(finished.groupID, toIndex: target) }
+        withAnimation(Motion.quick(reduceMotion: reduceMotion)) { groupDrag = nil }
         holdGroupToggles()
       }
   }
