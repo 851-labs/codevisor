@@ -265,6 +265,39 @@ struct TranscriptReducerTests {
     #expect(turn.entries.isEmpty)
   }
 
+  @Test("Setup questions become a setup request that ends set up or declined, never a question row")
+  func setupQuestions() {
+    let computerUse = [QuestionSpec(id: "c", question: "Allow", presentation: .computerUsePermissions)]
+    let chrome = [QuestionSpec(id: "b", question: "Connect", presentation: .browserExtensionSetup)]
+    var turn = AssistantTurn()
+    TranscriptReducer.apply(.question(QuestionRequest(questionId: "cu", questions: computerUse)), to: &turn)
+    TranscriptReducer.apply(.question(QuestionRequest(questionId: "chrome", questions: chrome)), to: &turn)
+    #expect(turn.setupRequests.map(\.state) == [.pending, .pending])
+
+    TranscriptReducer.apply(
+      .questionResolved(QuestionResolution(questionId: "cu", outcome: .cancelled, questions: computerUse)), to: &turn)
+    TranscriptReducer.apply(
+      .questionResolved(QuestionResolution(questionId: "chrome", outcome: .autoResolved, questions: chrome)),
+      to: &turn)
+    #expect(
+      turn.setupRequests == [
+        TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined),
+        TranscriptSetupRequest(id: "chrome", kind: .chromeExtension, state: .setUp),
+      ])
+    #expect(turn.entries.isEmpty)
+  }
+
+  @Test("Replaying a setup question keeps the outcome the transcript summary already knows")
+  func replayedSetupQuestionKeepsOutcome() {
+    let questions = [QuestionSpec(id: "c", question: "Allow", presentation: .computerUsePermissions)]
+    var turn = AssistantTurn()
+    turn.setupRequests = [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined)]
+
+    TranscriptReducer.apply(.question(QuestionRequest(questionId: "cu", questions: questions)), to: &turn)
+
+    #expect(turn.setupRequests == [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined)])
+  }
+
   @Test("Resolved questions become one inline tool-call row per id")
   func answeredQuestions() {
     var turn = AssistantTurn()

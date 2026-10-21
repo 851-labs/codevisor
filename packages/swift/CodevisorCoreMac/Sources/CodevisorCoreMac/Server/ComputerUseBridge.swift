@@ -218,10 +218,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
           }
         } catch {
           let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
-          response = [
+          var failure: [String: Any] = [
             "id": object?["id"] as? String ?? "",
             "error": String(describing: error),
           ]
+          if let code = (error as? BridgeError)?.code { failure["code"] = code }
+          response = failure
         }
         guard let data = try? JSONSerialization.data(withJSONObject: response) else { return }
         writeAll(descriptor, data + Data([0x0A]))
@@ -247,20 +249,22 @@ public final class ComputerUseBridge: @unchecked Sendable {
     )
   }
 
-  func requireAccessibility(prompt: Bool) throws {
+  func requireAccessibility() throws {
     if AXIsProcessTrusted() { return }
-    if prompt {
-      _ = AXIsProcessTrustedWithOptions(
-        ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-      )
-    }
-    throw BridgeError("Enable Codevisor in System Settings → Privacy & Security → Accessibility")
+    throw BridgeError(
+      "Enable Codevisor in System Settings → Privacy & Security → Accessibility",
+      code: "accessibilityRequired"
+    )
   }
 }
 
 struct BridgeError: LocalizedError, CustomStringConvertible {
   let message: String
-  init(_ message: String) { self.message = message }
+  var code: String?
+  init(_ message: String, code: String? = nil) {
+    self.message = message
+    self.code = code
+  }
   var errorDescription: String? { message }
   var description: String { message }
 }

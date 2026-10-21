@@ -238,6 +238,7 @@ describe("Chrome extension install prompt", () => {
     await closed.nextQuestion()
     await closed.broker.closeSession("session")
     await expect(closing).rejects.toThrow("chat closed")
+    expect(resolutions(closed.events)).toEqual(["cancelled"])
   })
 
   it("refuses when Chrome isn't installed", async () => {
@@ -246,5 +247,54 @@ describe("Chrome extension install prompt", () => {
       "Google Chrome isn't installed"
     )
     expect(current.events).toHaveLength(0)
+  })
+})
+
+describe("Computer Use permission prompt", () => {
+  it("shows one card for concurrent calls and continues once the user grants access", async () => {
+    const current = fixture()
+    const first = current.broker.requestComputerUsePermissions("session", {})
+    const second = current.broker.requestComputerUsePermissions("session", {})
+    await current.nextQuestion()
+    expect(latestQuestions(current.events)[0]).toMatchObject({
+      presentation: "computerUsePermissions",
+      options: [{ label: "Continue" }]
+    })
+    await current.broker.answerQuestion("session", latestQuestionId(current.events), {
+      outcome: "answered",
+      answers: { computer_use_permissions: { answers: ["Continue"] } }
+    })
+    await expect(first).resolves.toBe(true)
+    await expect(second).resolves.toBe(true)
+    expect(
+      current.events.filter((event) => recordOrEmpty(event.payload).sessionUpdate === "question")
+    ).toHaveLength(1)
+  })
+
+  it("returns false when the user dismisses the card or it times out", async () => {
+    const dismissed = fixture()
+    const request = dismissed.broker.requestComputerUsePermissions("session", {})
+    await dismissed.nextQuestion()
+    await dismissed.broker.answerQuestion("session", latestQuestionId(dismissed.events), {
+      outcome: "cancelled"
+    })
+    await expect(request).resolves.toBe(false)
+
+    vi.useFakeTimers()
+    const idle = fixture()
+    const timedOut = idle.broker.requestComputerUsePermissions("session", {})
+    await idle.nextQuestion()
+    await vi.advanceTimersByTimeAsync(EXTENSION_INSTALL_PROMPT_MS)
+    await expect(timedOut).resolves.toBe(false)
+    expect(resolutions(idle.events)).toEqual(["cancelled"])
+  })
+
+  it("clears the card when the turn ends before the user answers", async () => {
+    const current = fixture()
+    const request = current.broker.requestComputerUsePermissions("session", {})
+    await current.nextQuestion()
+    await current.broker.finishTurn("session")
+    await expect(request).resolves.toBe(false)
+    expect(resolutions(current.events)).toEqual(["cancelled"])
   })
 })

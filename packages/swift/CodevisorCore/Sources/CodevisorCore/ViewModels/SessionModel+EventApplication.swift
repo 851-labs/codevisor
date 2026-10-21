@@ -38,12 +38,24 @@ extension SessionModel {
       goal = nil
     case let .question(request):
       pendingQuestion = request
+      if TranscriptSetupRequest.kind(of: request.questions) != nil {
+        applySetupUpdate(update, questionId: request.questionId)
+        closeActiveSection()
+        settleActiveItem()
+      }
     case let .questionResolved(resolution):
       if pendingQuestion?.questionId == resolution.questionId {
         pendingQuestion = nil
       }
       markActivePlanResumedIfNeeded()
-      if resolution.outcome == .answered {
+      if TranscriptSetupRequest.kind(of: resolution.questions) != nil {
+        applySetupUpdate(update, questionId: resolution.questionId)
+        if let continuation = resolution.assistantItemId.flatMap(UUID.init(uuidString:)), activeItem == nil {
+          startActiveBubble()
+          adoptActiveAssistantItemIdentity(continuation)
+          if !isSending { isSending = true }
+        }
+      } else if resolution.outcome == .answered {
         ensureAssistantTurn()
         guard case .assistant(var message) = activeItem else { return }
         TranscriptReducer.apply(update, to: &message.turn)
@@ -446,6 +458,23 @@ extension SessionModel {
       deadline > now
     else { return false }
     return true
+  }
+
+  func applySetupUpdate(_ update: SessionUpdate, questionId: String) {
+    let indices = (0..<itemCount).reversed()
+    let owner =
+      indices.first { index in
+        guard case let .assistant(message) = item(at: index) else { return false }
+        return message.turn.setupRequests.contains { $0.id == questionId }
+      }
+      ?? indices.first { index in
+        if case .assistant = item(at: index) { return true }
+        return false
+      }
+    guard let owner, case .assistant(var message) = item(at: owner) else { return }
+    TranscriptReducer.apply(update, to: &message.turn)
+    setItem(.assistant(message), at: owner)
+    transcriptProjectionRevision &+= 1
   }
 
   func ensureAssistantTurn() {

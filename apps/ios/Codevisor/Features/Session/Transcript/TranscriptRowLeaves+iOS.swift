@@ -58,6 +58,9 @@ extension TranscriptRowLeaves {
       setup: { phases in
         AnyView(SessionSetupView(phases: phases))
       },
+      setupRequest: { request, inBotConversation, controller in
+        AnyView(SetupRequestRow(request: request, inBotConversation: inBotConversation, controller: controller))
+      },
       errorRow: { message, rowID in
         AnyView(SessionErrorRow(controller: controller, message: message, rowID: rowID))
       }

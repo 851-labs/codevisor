@@ -11,7 +11,7 @@ extension ComputerUseBridge {
     options: [String: Any] = [:],
     budget: ComputerUseReadBudget = .unlimited
   ) throws -> [String: Any] {
-    try requireAccessibility(prompt: true)
+    try requireAccessibility()
     let app = try resolveApp(name)
     try ComputerUsePresentation.requireControlAllowed(
       sessionID: sessionID,

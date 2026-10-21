@@ -36,11 +36,16 @@ export interface BrowserSetupBroker {
     sessionId: string,
     request: ExtensionInstallRequest
   ) => Promise<ExtensionInstallOutcome>
+  readonly requestComputerUsePermissions: (
+    sessionId: string,
+    request: ExtensionInstallRequest
+  ) => Promise<boolean>
   readonly answerQuestion: (
     sessionId: string,
     questionId: string,
     answer: QuestionAnswer
   ) => Promise<boolean>
+  readonly finishTurn: (sessionId: string) => Promise<void>
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly close: () => Promise<void>
 }
@@ -55,6 +60,45 @@ const selectedAnswer = (
   return {
     ...(label === undefined ? {} : { label }),
     ...(note === undefined || note === "" ? {} : { note })
+  }
+}
+
+type PromptStop = "timeout" | "interrupted"
+
+const permissionPromptInterrupted =
+  "The Computer Use prompt was interrupted before the user answered."
+const permissionPromptClosed = "The chat closed before the user answered the Computer Use prompt."
+
+const computerUsePermissionsQuestion: QuestionSpec = {
+  id: "computer_use_permissions",
+  header: "Allow Computer Use",
+  question: "Turn on Accessibility for Codevisor on the Mac running this chat.",
+  options: [{ label: "Continue" }],
+  multiSelect: false,
+  allowsOther: false,
+  presentation: "computerUsePermissions"
+}
+
+const promptLimit = (deadline: number | undefined): number =>
+  Math.min(
+    EXTENSION_INSTALL_PROMPT_MS,
+    (deadline ?? Infinity) - DEADLINE_MARGIN_MS - performance.now()
+  )
+
+const answerWithin = async (
+  answer: Promise<Settled>,
+  limit: number,
+  signal: AbortSignal | undefined
+): Promise<Settled | PromptStop> => {
+  const { promise: stopped, resolve: stop } = Promise.withResolvers<PromptStop>()
+  const timer = setTimeout(() => stop("timeout"), limit)
+  const interrupt = () => stop("interrupted")
+  signal?.addEventListener("abort", interrupt, { once: true })
+  try {
+    return await Promise.race([answer, stopped])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener("abort", interrupt)
   }
 }
 
@@ -94,6 +138,17 @@ export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSet
       sessionUpdate: "question_resolved"
     }
     await emit(current.sessionId, resolved).catch(() => undefined)
+  }
+
+  const settlePending = async (
+    matches: (current: PendingQuestion) => boolean,
+    settled: Settled
+  ) => {
+    for (const [questionId, current] of pending) {
+      if (!matches(current)) continue
+      await resolveQuestion(questionId, "cancelled")
+      current.resolve(settled)
+    }
   }
 
   const installed = (sessionId: string): ExtensionInstallOutcome => {
@@ -170,10 +225,53 @@ export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSet
     }
   }
 
+  const permissionRequests = new Map<string, Promise<boolean>>()
+
+  const askForComputerUsePermissions = async (
+    sessionId: string,
+    { signal, deadline }: ExtensionInstallRequest
+  ): Promise<boolean> => {
+    signal?.throwIfAborted()
+    const limit = promptLimit(deadline)
+    if (limit <= 0) return false
+
+    const asked = await ask(sessionId, computerUsePermissionsQuestion)
+    const result = await answerWithin(asked.answer, limit, signal)
+    return settlePermissionAnswer(asked.questionId, result)
+  }
+
+  const settlePermissionAnswer = async (
+    questionId: string,
+    result: Settled | PromptStop
+  ): Promise<boolean> => {
+    if (result === "timeout" || result === "interrupted") {
+      await resolveQuestion(questionId, "cancelled")
+    }
+    if (result === "timeout") return false
+    if (result === "interrupted") throw new Error(permissionPromptInterrupted)
+    if (result.outcome === "closed") throw new Error(permissionPromptClosed)
+
+    return result.outcome === "answered"
+  }
+
+  const requestComputerUsePermissions = (
+    sessionId: string,
+    request: ExtensionInstallRequest
+  ): Promise<boolean> => {
+    const existing = permissionRequests.get(sessionId)
+    if (existing !== undefined) return existing
+    const created = askForComputerUsePermissions(sessionId, request).finally(() => {
+      permissionRequests.delete(sessionId)
+    })
+    permissionRequests.set(sessionId, created)
+    return created
+  }
+
   return {
     beginTurn: (sessionId, options) => provider.beginTurn(sessionId, options),
     setSink: (sessionId, sink) => sinks.set(sessionId, sink),
     requestExtensionInstall,
+    requestComputerUsePermissions,
     answerQuestion: async (sessionId, questionId, answer) => {
       const current = pending.get(questionId)
       if (current === undefined || current.sessionId !== sessionId) return false
@@ -191,17 +289,14 @@ export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSet
       current.resolve(answer)
       return true
     },
+    finishTurn: (sessionId) =>
+      settlePending((current) => current.sessionId === sessionId, { outcome: "cancelled" }),
     closeSession: async (sessionId) => {
+      await settlePending((current) => current.sessionId === sessionId, { outcome: "closed" })
       sinks.delete(sessionId)
-      for (const [questionId, current] of pending) {
-        if (current.sessionId !== sessionId) continue
-        pending.delete(questionId)
-        current.resolve({ outcome: "closed" })
-      }
     },
     close: async () => {
-      for (const current of pending.values()) current.resolve({ outcome: "closed" })
-      pending.clear()
+      await settlePending(() => true, { outcome: "closed" })
       sinks.clear()
     }
   }

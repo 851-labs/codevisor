@@ -52,10 +52,25 @@ public enum TranscriptReducer {
       turn.isThinking = false
       TranscriptEntryOrdering.applyContextCompaction(id: id, status: status, entries: &turn.entries)
 
-    case let .questionResolved(resolution):
-      TranscriptToolReduction.applyQuestion(resolution, to: &turn)
+    case let .question(request):
+      if let kind = TranscriptSetupRequest.kind(of: request.questions) {
+        turn.isThinking = false
+        turn.addSetupRequest(.init(id: request.questionId, kind: kind, state: .pending))
+      }
 
-    case .question, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
+    case let .questionResolved(resolution):
+      if let kind = TranscriptSetupRequest.kind(of: resolution.questions) {
+        turn.upsertSetupRequest(
+          .init(
+            id: resolution.questionId,
+            kind: kind,
+            state: resolution.outcome == .cancelled ? .declined : .setUp
+          ))
+      } else {
+        TranscriptToolReduction.applyQuestion(resolution, to: &turn)
+      }
+
+    case .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
       .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
       break
     }

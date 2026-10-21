@@ -51,7 +51,7 @@ extension ComputerUseBridge {
     guard ["auto", "window", "menu", "dialog", "menubar"].contains(requestedView) else {
       throw BridgeError("view must be auto, window, menu, dialog, or menubar")
     }
-    try requireAccessibility(prompt: true)
+    try requireAccessibility()
     let app = try resolveApp(name)
     try ComputerUsePresentation.requireControlAllowed(
       sessionID: sessionID, pid: app.processIdentifier, resuming: true)

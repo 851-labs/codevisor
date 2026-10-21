@@ -1,14 +1,40 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorCoreMac
 
 struct GeneralSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.controlActiveState) private var controlActiveState
+  @State private var permissions = ComputerUsePermissionsModel(
+    probes: AppPreview.isRunning ? .granted : .live
+  )
+  @State private var showsFullDiskAccessSetup = false
 
   var body: some View {
     Form {
       generalSection
+      permissionsSection
     }
     .formStyle(.grouped)
+    .sheet(isPresented: $showsFullDiskAccessSetup, onDismiss: permissions.refresh) {
+      FullDiskAccessSetupSheet(model: permissions)
+    }
+    .onAppear(perform: permissions.refresh)
+    .onChange(of: controlActiveState) { _, _ in permissions.refresh() }
+  }
+
+  private var permissionsSection: some View {
+    Section("Permissions") {
+      PermissionRow(
+        symbol: "internaldrive",
+        title: "Full Disk Access",
+        subtitle: "Agents can reach all your files",
+        grantedLabel: permissions.isFullDiskAccessGranted ? "Granted" : nil,
+        embedded: true
+      ) {
+        PermissionActionButton("Set Up…") { showsFullDiskAccessSetup = true }
+      }
+    }
   }
 
   private var generalSection: some View {

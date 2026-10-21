@@ -48,8 +48,6 @@ struct QuestionCardView: View {
   var body: some View {
     if let question, request.questions.count == 1, question.id == QuestionRequest.exitPlanModeId {
       PlanApprovalQuestionCard(controller: controller, question: question, maxHeight: maxHeight)
-    } else if let question, isBrowserExtensionPresentation(question) {
-      BrowserExtensionQuestionCard(controller: controller, question: question)
     } else {
       genericQuestionCard
     }
@@ -134,11 +132,6 @@ struct QuestionCardView: View {
   private var pageTransition: AnyTransition {
     guard !reduceMotion else { return .opacity }
     return .push(from: isPagingForward ? .trailing : .leading)
-  }
-
-  private func isBrowserExtensionPresentation(_ spec: QuestionSpec) -> Bool {
-    spec.presentation == .browserExtensionSetup
-      || spec.presentation == .browserExtensionWaiting
   }
 
   private var scrollBudget: CGFloat {
@@ -295,11 +288,7 @@ struct QuestionCardView: View {
             isAnswerFieldFocused = true
           } label: {
             Label("Add Note", systemImage: "text.bubble")
-              .font(.subheadline.weight(.medium))
-              .padding(.horizontal, 12)
-              .frame(minHeight: 30)
-              .background(Capsule().fill(Color.secondary.opacity(0.16)))
-              .expandedHitTarget(base: 30)
+              .capsuleActionLabel()
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)

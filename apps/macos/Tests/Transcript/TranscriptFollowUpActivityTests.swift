@@ -441,6 +441,7 @@ private final class ActivityFixture {
       workedItem: { _, _, _, _, _, _ in AnyView(EmptyView()) },
       attachmentThumbnail: { _ in AnyView(EmptyView()) },
       setup: { _ in AnyView(EmptyView()) },
+      setupRequest: { _, _, _ in AnyView(EmptyView()) },
       errorRow: { text, _ in AnyView(Text(text)) })
   }
 }

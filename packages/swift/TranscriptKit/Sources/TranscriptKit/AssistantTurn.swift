@@ -49,6 +49,7 @@ public struct AssistantTurn: Sendable, Equatable {
   public var entryPositions: [String: Int] = [:]
   public var callsAfterReasoning: Set<String> = []
   public var textStates: [String: TranscriptTextState] = [:]
+  public var setupRequests: [TranscriptSetupRequest] = []
   public var deferredDetailItemId: String?
   public var hasDeferredWorkedDetails: Bool
   public var detailRevision: Int
@@ -379,6 +380,19 @@ public struct AssistantTurn: Sendable, Equatable {
 
   public var generatedImageActivity: [ToolCall] {
     toolCalls.filter { $0.kind == .imageGeneration && $0.generatedImageAttachment == nil }
+  }
+
+  mutating func addSetupRequest(_ request: TranscriptSetupRequest) {
+    guard !setupRequests.contains(where: { $0.id == request.id }) else { return }
+    setupRequests.append(request)
+  }
+
+  mutating func upsertSetupRequest(_ request: TranscriptSetupRequest) {
+    guard let index = setupRequests.firstIndex(where: { $0.id == request.id }) else {
+      setupRequests.append(request)
+      return
+    }
+    setupRequests[index].state = request.state
   }
 
   mutating func receiveGeneratedImage(_ call: ToolCall) {

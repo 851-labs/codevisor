@@ -194,7 +194,8 @@ export const makeMcpGatewayOperations = (
   const finishTurn = async (sessionId: string) => {
     await Promise.all([
       ...[...automationProviders.values()].map((provider) => provider.finishTurn?.(sessionId)),
-      finishRemoteBrowserTurn(sessionId)
+      finishRemoteBrowserTurn(sessionId),
+      browserSetupBroker.finishTurn(sessionId)
     ])
   }
   const beginTurn: McpManager["beginTurn"] = async (sessionId, options) => {

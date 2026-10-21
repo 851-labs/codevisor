@@ -372,7 +372,9 @@ export const finishAssistantChatItem = (
   }
   sqlite
     .prepare(
-      `update chat_items set status = ?, completed_at = ?, updated_at = ?,
+      `update chat_items set status = ?,
+       completed_at = case when status = 'complete' and completed_at is not null then completed_at else ? end,
+       updated_at = ?,
        stop_reason = coalesce(?, stop_reason), stop_detail = coalesce(?, stop_detail),
        stop_kind = coalesce(?, stop_kind),
        retryable = ?,

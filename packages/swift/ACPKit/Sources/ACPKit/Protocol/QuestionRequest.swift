@@ -15,6 +15,7 @@ public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
 public enum QuestionPresentation: String, Sendable, Codable, Equatable {
   case browserExtensionSetup
   case browserExtensionWaiting
+  case computerUsePermissions
 }
 
 public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
@@ -111,18 +112,21 @@ public struct QuestionResolution: Sendable, Codable, Equatable {
   public var questions: [QuestionSpec]
   public var answers: [String: QuestionAnswerEntry]?
   public var statePosition: Int?
+  public var assistantItemId: String?
 
   public init(
     questionId: String,
     outcome: QuestionOutcome,
     questions: [QuestionSpec],
     answers: [String: QuestionAnswerEntry]? = nil,
-    statePosition: Int? = nil
+    statePosition: Int? = nil,
+    assistantItemId: String? = nil
   ) {
     self.questionId = questionId
     self.outcome = outcome
     self.questions = questions
     self.answers = answers
     self.statePosition = statePosition
+    self.assistantItemId = assistantItemId
   }
 }

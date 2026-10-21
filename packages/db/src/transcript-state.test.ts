@@ -14,6 +14,12 @@ const StatePayload = Schema.Struct({
 const payload = (entry: { payload: unknown }) =>
   Schema.decodeUnknownSync(StatePayload)(entry.payload)
 const live = (event: { payload: unknown }) => payload(event).statePosition
+const recordOf = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? Object.fromEntries(Object.entries(value)) : {}
+
+const setupQuestions = (questionId: string, presentation?: string) => [
+  { id: questionId, question: "Set up", options: [], allowsOther: false, presentation }
+]
 
 describe("persisted transcript state", () => {
   it("pages Unicode text and merged tool state after the source events are unavailable", async () => {
@@ -150,6 +156,236 @@ describe("persisted transcript state", () => {
         (entry) => payload(entry).sessionUpdate === "question_resolved"
       )!
       expect(payload(restored).statePosition).toBe(live(resolved))
+    } finally {
+      await run(db.close)
+    }
+  })
+
+  it("ends the worked section at a setup prompt and starts a new one when work resumes", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/setup-requests" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      const ask = (questionId: string, presentation?: string) =>
+        run(
+          db.appendEvent("session.output", session.id, {
+            sessionUpdate: "question",
+            questionId,
+            questions: setupQuestions(questionId, presentation)
+          })
+        )
+      const resolve = (questionId: string, outcome: string, presentation?: string) =>
+        run(
+          db.appendEvent("session.output", session.id, {
+            sessionUpdate: "question_resolved",
+            questionId,
+            outcome,
+            questions: setupQuestions(questionId, presentation)
+          })
+        )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await ask("plain")
+      await resolve("plain", "answered")
+      await ask("computer", "computerUsePermissions")
+      const declined = await resolve("computer", "cancelled", "computerUsePermissions")
+      await ask("chrome", "browserExtensionSetup")
+
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      const [first, second] = page.items
+      expect(page.items).toHaveLength(2)
+      expect(first).toMatchObject({
+        isGenerating: false,
+        setupRequests: [
+          { questionId: "computer", presentation: "computerUsePermissions", outcome: "cancelled" }
+        ]
+      })
+      expect(second).toMatchObject({
+        setupRequests: [{ questionId: "chrome", presentation: "browserExtensionSetup" }]
+      })
+      expect(payload(declined)).toMatchObject({ sessionUpdate: "question_resolved" })
+      expect(recordOf(declined.payload).assistantItemId).toBe(second!.id)
+
+      await resolve("chrome", "autoResolved", "browserExtensionSetup")
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "after",
+          content: { type: "text", text: "Opened it." }
+        })
+      )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+      const resumed = await run(db.getTranscriptPage(session.id, undefined, 8))
+      expect(resumed.items.map((item) => [item.isGenerating, item.text])).toEqual([
+        [false, ""],
+        [false, ""],
+        [false, "Opened it."]
+      ])
+      expect(resumed.items[1]?.setupRequests).toEqual([
+        { questionId: "chrome", presentation: "browserExtensionSetup", outcome: "autoResolved" }
+      ])
+    } finally {
+      await run(db.close)
+    }
+  })
+
+  it("reads an abandoned setup prompt as declined and keeps when its section ended", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/abandoned-setup" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question",
+          questionId: "computer",
+          questions: [
+            {
+              id: "computer",
+              question: "Allow",
+              options: [],
+              allowsOther: false,
+              presentation: "computerUsePermissions"
+            }
+          ]
+        })
+      )
+      const asked = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+
+      const abandoned = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
+      expect(asked.setupRequests).toEqual([
+        { questionId: "computer", presentation: "computerUsePermissions" }
+      ])
+      expect(abandoned.setupRequests).toEqual([
+        { questionId: "computer", presentation: "computerUsePermissions", outcome: "cancelled" }
+      ])
+      expect(asked.endedAt).toBeDefined()
+      expect(abandoned.endedAt).toBe(asked.endedAt)
+    } finally {
+      await run(db.close)
+    }
+  })
+
+  it("keeps a stopped turn closed when its setup prompt is cancelled afterwards", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/stopped-setup" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question",
+          questionId: "computer",
+          questions: setupQuestions("computer", "computerUsePermissions")
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          turnState: "ended",
+          stopReason: "cancelled"
+        })
+      )
+      const cancelled = await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question_resolved",
+          questionId: "computer",
+          outcome: "cancelled",
+          questions: setupQuestions("computer", "computerUsePermissions")
+        })
+      )
+
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.items).toHaveLength(1)
+      expect(page.items[0]).toMatchObject({
+        isGenerating: false,
+        setupRequests: [
+          { questionId: "computer", presentation: "computerUsePermissions", outcome: "cancelled" }
+        ]
+      })
+      expect(recordOf(cancelled.payload).assistantItemId).toBeUndefined()
+    } finally {
+      await run(db.close)
+    }
+  })
+
+  it("files a subagent's setup prompt with its parent tool without closing the current section", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/subagent-setup" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      const ask = (questionId: string, parentToolCallId?: string) =>
+        run(
+          db.appendEvent("session.output", session.id, {
+            sessionUpdate: "question",
+            questionId,
+            questions: setupQuestions(questionId, "computerUsePermissions"),
+            ...(parentToolCallId === undefined ? {} : { parentToolCallId })
+          })
+        )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "tool_call",
+          toolCallId: "task",
+          title: "Explore",
+          kind: "think",
+          status: "in_progress"
+        })
+      )
+      await ask("computer")
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question_resolved",
+          questionId: "computer",
+          outcome: "answered",
+          questions: setupQuestions("computer", "computerUsePermissions")
+        })
+      )
+      await ask("subagent", "task")
+
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.items.map((item) => item.isGenerating)).toEqual([false, true])
+      expect(page.items[0]?.setupRequests?.map((request) => request.questionId)).toEqual([
+        "computer",
+        "subagent"
+      ])
+    } finally {
+      await run(db.close)
+    }
+  })
+
+  it("shows a setup prompt that arrives after the turn ended without reopening the turn", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/late-setup" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "work",
+          content: { type: "text", text: "Working." }
+        })
+      )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+      const [finished] = (await run(db.getTranscriptPage(session.id, undefined, 8))).items
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question",
+          questionId: "late",
+          questions: setupQuestions("late", "computerUsePermissions")
+        })
+      )
+
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.pendingQuestion?.questionId).toBe("late")
+      expect(page.items).toHaveLength(2)
+      expect(page.items[0]).toMatchObject({ id: finished!.id, endedAt: finished!.endedAt })
+      expect(page.items[1]).toMatchObject({
+        isGenerating: false,
+        setupRequests: [{ questionId: "late", presentation: "computerUsePermissions" }]
+      })
     } finally {
       await run(db.close)
     }

@@ -24,6 +24,12 @@ import {
   listSubjectEvents
 } from "../test-support.js"
 
+const isQuestionResolution = (payload: unknown): boolean =>
+  typeof payload === "object" &&
+  payload !== null &&
+  "sessionUpdate" in payload &&
+  payload.sessionUpdate === "question_resolved"
+
 describe("durable session turns", () => {
   it("terminalizes orphaned durable state and restores the agent only when the chat connects", async () => {
     const { agents, services } = await makeServices("server-a")
@@ -370,6 +376,58 @@ describe("durable session turns", () => {
     const before = listSubjectEvents(services, session.id)
     await reconcileOrphanedSessionTurns(services, await run(makeEventFanout), "server-a")
     expect(listSubjectEvents(services, session.id)).toHaveLength(before.length)
+  })
+
+  it("cancels a setup prompt left waiting when the server restarts", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-setup-recovery-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        turnId: "waiting-turn",
+        turnState: "started"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question",
+        questionId: "computer-use",
+        questions: [
+          {
+            id: "computer_use_permissions",
+            question: "Allow",
+            options: [{ label: "Continue" }],
+            allowsOther: false,
+            presentation: "computerUsePermissions"
+          }
+        ]
+      })
+    )
+
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
+    )
+    runningServers.push(server)
+
+    const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
+    expect(page.pendingQuestion).toBeUndefined()
+    expect(page.items.flatMap((item) => item.setupRequests ?? [])).toEqual([
+      { questionId: "computer-use", presentation: "computerUsePermissions", outcome: "cancelled" }
+    ])
+    expect(
+      listSubjectEvents(services, session.id).some((event) => isQuestionResolution(event.payload))
+    ).toBe(true)
   })
 
   it("terminalizes an orphaned turn even when its agent session cannot be restored yet", async () => {

@@ -8,7 +8,9 @@ import {
   BackgroundTask,
   MessagePhase,
   QuestionAnswerEntry,
+  QuestionOutcome,
   QuestionPayload,
+  QuestionPresentation,
   SessionPlan,
   TurnStopKind
 } from "./session-updates.js"
@@ -197,6 +199,13 @@ export const TranscriptBodyResource = Schema.Struct({
 })
 export type TranscriptBodyResource = typeof TranscriptBodyResource.Type
 
+export const TranscriptSetupRequest = Schema.Struct({
+  questionId: Schema.String,
+  presentation: QuestionPresentation,
+  outcome: Schema.optional(QuestionOutcome)
+})
+export type TranscriptSetupRequest = typeof TranscriptSetupRequest.Type
+
 export const TranscriptItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -226,6 +235,7 @@ export const TranscriptItem = Schema.Struct({
   textGeneration: Schema.optional(Schema.Number),
   textRevision: Schema.optional(Schema.Number),
   textPosition: Schema.optional(Schema.Number),
+  setupRequests: Schema.optional(Schema.Array(TranscriptSetupRequest)),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

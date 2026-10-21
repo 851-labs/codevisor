@@ -42,6 +42,9 @@ final class AppRuntime {
         CommandLineTools.ensureInstalled()
       }
     }
+    if !environment.settings.hasCompletedOnboarding {
+      environment.settings.completeOnboarding(importExternalSessions: false)
+    }
     if !AppPreview.isRunning {
       let probes = ComputerUsePermissionProbes.live
       let allGranted = probes.isAccessibilityGranted() && probes.isScreenRecordingGranted()

@@ -37,7 +37,7 @@ extension ComposerBar {
       && initialFocusRequest == nil
       && goalEditFocusRequest == nil
       && previewFocusRequest == nil
-      && controller.activeQuestion == nil
+      && controller.composerQuestion == nil
       && !controller.isGoalEditing
       && !showsSlashCommandPopup
   }

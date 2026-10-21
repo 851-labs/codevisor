@@ -88,6 +88,7 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
         || turn.hasDeferredWorkedDetails
         || !(turn.planDocument?.isEmpty ?? true)
         || !(turn.stopDetail?.isEmpty ?? true)
+        || !turn.setupRequests.isEmpty
     }
   }
 }

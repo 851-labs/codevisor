@@ -282,3 +282,67 @@ describe("native Screen Sharing bridge", () => {
     }
   )
 })
+
+describe("Computer Use permission prompt", () => {
+  it.skipIf(process.platform !== "darwin")(
+    "asks for Accessibility once and retries the call after the user allows it",
+    async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "codevisor-bridge-test-"))
+      const socketPath = macComputerUseSocketPath(dataDir)
+      let trusted = false
+      const server = createServer((socket) => {
+        let pending = ""
+        socket.on("data", (data) => {
+          pending += data.toString()
+          let newline: number
+          while ((newline = pending.indexOf("\n")) >= 0) {
+            const request = expectRecord(JSON.parse(pending.slice(0, newline)), "bridge request")
+            pending = pending.slice(newline + 1)
+            const reply =
+              request.type === "tool" && !trusted
+                ? { id: request.id, error: "Enable Accessibility", code: "accessibilityRequired" }
+                : { id: request.id, result: { content: [{ type: "text", text: "Finder" }] } }
+            socket.write(`${JSON.stringify(reply)}\n`)
+          }
+        })
+      })
+      const provider = makeComputerUseProvider(dataDir)
+      try {
+        writeFileSync(join(dataDir, "computer-use-token"), "test-bridge-token", { mode: 0o600 })
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_SOCKET", undefined)
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_TOKEN", undefined)
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject)
+          server.listen(socketPath, resolve)
+        })
+        const allow = vi.fn(async () => {
+          trusted = true
+          return true
+        })
+        await expect(
+          provider.invoke({ sessionId: "allowed", requestPermissions: allow }, "get_app_state", {
+            app: "Finder"
+          })
+        ).resolves.toMatchObject({ content: [{ type: "text", text: "Finder" }] })
+        expect(allow).toHaveBeenCalledOnce()
+
+        trusted = false
+        await expect(
+          provider.invoke(
+            { sessionId: "declined", requestPermissions: async () => false },
+            "get_app_state",
+            { app: "Finder" }
+          )
+        ).resolves.toMatchObject({
+          isError: true,
+          content: [{ text: "The user didn't allow Computer Use on this Mac." }]
+        })
+      } finally {
+        await provider.close()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+        vi.unstubAllEnvs()
+        rmSync(dataDir, { recursive: true, force: true })
+      }
+    }
+  )
+})

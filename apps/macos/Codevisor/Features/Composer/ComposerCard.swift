@@ -51,7 +51,7 @@ struct ComposerCard: View {
 
   var body: some View {
     ZStack {
-      if let question = controller.activeQuestion {
+      if let question = controller.composerQuestion {
         QuestionPickerContent(
           controller: controller,
           request: question,
@@ -74,7 +74,7 @@ struct ComposerCard: View {
     )
     .overlay(alignment: .top) {
       ZStack(alignment: .top) {
-        if controller.activeQuestion == nil, showsSlashCommandPopup {
+        if controller.composerQuestion == nil, showsSlashCommandPopup {
           ComposerSlashCommandPopup(
             isLoading: isLoadingSlashCommands,
             matches: visibleSlashMatches,
@@ -93,7 +93,7 @@ struct ComposerCard: View {
       )
     }
     .overlay {
-      if controller.activeQuestion != nil, isQuestionResolving {
+      if controller.composerQuestion != nil, isQuestionResolving {
         ZStack {
           cardStyle.shape
             .fill(Color.windowBackgroundColor.opacity(0.72))
@@ -111,7 +111,7 @@ struct ComposerCard: View {
     }
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
-      value: controller.activeQuestion?.questionId
+      value: controller.composerQuestion?.questionId
     )
     .fileImporter(
       isPresented: $isPickingFiles,
@@ -121,7 +121,7 @@ struct ComposerCard: View {
       guard case let .success(urls) = result else { return }
       controller.attachments.attachFileURLs(urls)
     }
-    .onChange(of: controller.activeQuestion?.questionId) { _, _ in
+    .onChange(of: controller.composerQuestion?.questionId) { _, _ in
       didStartResolvingQuestion = false
     }
     .onChange(of: slashToken) { oldToken, newToken in

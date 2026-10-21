@@ -86,6 +86,7 @@ public func computerUsePermissionsGateNeeded(
   guard hasCompletedOnboarding, !setupSkipped else { return false }
   if reviewInProgress { return true }
   if allGranted { return false }
+  guard let permissionsReviewedVersion else { return false }
   return permissionsReviewedVersion != currentVersion
 }
 

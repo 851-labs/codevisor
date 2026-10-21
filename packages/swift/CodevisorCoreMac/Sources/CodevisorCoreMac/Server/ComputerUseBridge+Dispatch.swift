@@ -80,13 +80,13 @@ extension ComputerUseBridge {
       )
     }
     if tool == "await_change" {
-      try requireAccessibility(prompt: false)
+      try requireAccessibility()
       let app = try resolveApp(appName, launchIfNeeded: false)
       let timeout = (double(arguments["timeout_ms"]) ?? 500) / 1_000
       return textResult(try json(awaitChange(pid: app.processIdentifier, timeout: timeout)))
     }
     _ = try deliveryMode(arguments)
-    try requireAccessibility(prompt: true)
+    try requireAccessibility()
     let app = try resolveApp(appName, launchIfNeeded: false)
     try ComputerUsePresentation.requireControlAllowed(
       sessionID: sessionID,

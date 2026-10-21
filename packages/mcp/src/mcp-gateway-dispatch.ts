@@ -124,6 +124,25 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     )
   }
 
+  const computerUsePermissionPrompt = (
+    context: {
+      readonly sessionId: string
+      readonly signal?: AbortSignal | undefined
+      readonly deadline?: number | undefined
+    },
+    remote: GatewayOrigin | undefined
+  ): { readonly requestPermissions?: () => Promise<boolean> } => {
+    if (remote !== undefined) return {}
+
+    return {
+      requestPermissions: () =>
+        browserSetupBroker.requestComputerUsePermissions(context.sessionId, {
+          signal: context.signal,
+          deadline: context.deadline
+        })
+    }
+  }
+
   const invokeAutomationProvider = async (
     provider: AutomationToolProvider,
     context: {
@@ -149,6 +168,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
                 ? (await run(config.db.getSessionSummary(context.sessionId))).title
                 : `${remote.sessionTitle ?? "Agent"} (from ${remote.machineName})`,
             publishRecording,
+            ...computerUsePermissionPrompt(context, remote),
             ...(onApp === undefined ? {} : { onApp })
           }
         : provider.id === "browser"

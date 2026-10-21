@@ -43,6 +43,21 @@ struct TranscriptBotRowAssemblyTests {
     #expect(!rows.contains { $0.id.isActiveRow || $0.id == .startingAgent })
   }
 
+  @Test func showsTheLatestTurnsSetupRequestAsItsOwnBubbleBeforeTyping() throws {
+    var turn = AssistantTurn()
+    turn.setupRequests = [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .pending)]
+    let conversation = TranscriptBotConversation(
+      messages: [message("b1", .bot, "Let me look at Finder.", at: 0)], isWorking: true)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(AssistantMessage(turn: turn))], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(rows.map(\.id) == [.botTimestamp("b1"), .botMessage("b1"), .setupRequest("cu"), .botTyping])
+    #expect(rows[2].content == .setupRequest(turn.setupRequests[0], inBotConversation: true))
+  }
+
   @Test func dropsThePendingRowOnceTheServerEchoesTheSend() throws {
     let echoed = message(pendingID.uuidString.lowercased(), .user, "yes", at: 0)
 

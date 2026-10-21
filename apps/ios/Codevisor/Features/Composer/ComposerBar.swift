@@ -155,7 +155,7 @@ struct ComposerBar: View {
       }
     }
     .overlay(alignment: .top) {
-      if controller.activeQuestion == nil, showsSlashCommandPopup {
+      if controller.composerQuestion == nil, showsSlashCommandPopup {
         slashCommandPopup
           .offset(y: slashPaletteOffset)
           .zIndex(1)
@@ -290,7 +290,7 @@ extension ComposerBar {
 
   private var card: some View {
     Group {
-      if let question = controller.activeQuestion {
+      if let question = controller.composerQuestion {
         QuestionCardView(
           controller: controller,
           request: question,
@@ -329,7 +329,7 @@ extension ComposerBar {
     .geometryGroup()
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
-      value: controller.activeQuestion?.questionId
+      value: controller.composerQuestion?.questionId
     )
   }
 

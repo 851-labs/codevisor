@@ -208,6 +208,7 @@ public struct ServerSessionTransport: Sendable {
         detailRevision: item.revision
       )
       if let position = item.textPosition { turn.entryPositions["text:\(textId)"] = position }
+      turn.setupRequests = (item.setupRequests ?? []).compactMap(\.transcriptRequest)
       turn.textStates[":\(textId)"] = TranscriptTextState(
         generation: item.textGeneration ?? 0, revision: item.textRevision ?? 0,
         resource: item.textResource.flatMap { ($0.fields.first?.sizeBytes ?? 0) > item.text.utf16.count * 2 ? $0 : nil }

@@ -43,6 +43,26 @@ public struct TranscriptProjectionRequest: Hashable, Sendable {
 }
 
 public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
+  static func setupRequest(
+    _ request: TranscriptSetupRequest,
+    inBotConversation: Bool,
+    spacingAfter: CGFloat? = nil
+  ) -> TranscriptPresentationRow {
+    let revision =
+      switch request.state {
+      case .pending: 0
+      case .setUp: 1
+      case .declined: 2
+      }
+    return .init(
+      id: .setupRequest(request.id),
+      content: .setupRequest(request, inBotConversation: inBotConversation),
+      estimatedHeight: 60,
+      measurementRevision: revision,
+      spacingAfter: spacingAfter
+    )
+  }
+
   public enum ID: Hashable, Sendable {
     case message(UUID)
     case assistantPlanning(UUID)
@@ -69,6 +89,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case botTimestamp(String)
     case delivery(UUID)
     case botTyping
+    case setupRequest(String)
     case setup
     case startingAgent
     case backgroundTask
@@ -111,6 +132,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .botTimestamp(id): "bot:\(id):timestamp"
       case let .delivery(id): "message:\(id.uuidString):delivery"
       case .botTyping: "special:bot-typing"
+      case let .setupRequest(id): "setup-request:\(id)"
       case .setup: "special:setup"
       case .startingAgent: "special:starting-agent"
       case .backgroundTask: "special:background"
@@ -135,7 +157,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .setup, .startingAgent,
+        .activeMarkdown, .activeAttachment, .setupRequest, .setup, .startingAgent,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
         .statusError, .bottomSpacer:
         false
@@ -166,7 +188,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
         let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
         id
-      case .botMessage, .botTimestamp, .delivery, .botTyping, .setup, .startingAgent, .backgroundTask,
+      case .botMessage, .botTimestamp, .delivery, .botTyping, .setupRequest, .setup, .startingAgent,
+        .backgroundTask,
         .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
         nil
       }
@@ -195,6 +218,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case botTimestamp(Date)
     case delivery(UUID, TranscriptDelivery)
     case botTyping
+    case setupRequest(TranscriptSetupRequest, inBotConversation: Bool)
     case setup([SessionSetupPhase])
     case optimistic(UserMessage)
     case startingAgent

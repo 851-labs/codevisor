@@ -85,6 +85,13 @@ extension SessionModel {
       message.turn.startedAt = localStart
       carried = true
     }
+    let missingSetupRequests = current.turn.setupRequests.filter { request in
+      !message.turn.setupRequests.contains { $0.id == request.id }
+    }
+    if !missingSetupRequests.isEmpty {
+      message.turn.setupRequests += missingSetupRequests
+      carried = true
+    }
     return carried ? .assistant(message) : incoming
   }
 

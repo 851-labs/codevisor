@@ -13,6 +13,7 @@ struct ModelConfigChip: View {
   }
 
   private var noModelsLabel: String {
+    if controller.harnesses.isEmpty { return "Select a model" }
     let needsSignIn = !environment.configCache
       .signInRequired(forServer: controller.project.serverId).isEmpty
     if needsSignIn || controller.preparationState == .failed || !controller.hasModelMenu {

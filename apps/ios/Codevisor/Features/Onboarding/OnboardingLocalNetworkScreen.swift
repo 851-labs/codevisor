@@ -22,9 +22,6 @@ struct OnboardingLocalNetworkScreen: View {
         Button("Allow Local Network Access") { environment.setLocalNetworkAccess(.requested) }
           .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
           .accessibilityIdentifier("onboarding.localNetwork.allow")
-        Text("iOS will ask you to confirm.")
-          .font(.footnote)
-          .foregroundStyle(.secondary)
         Button("Set Up Later") { environment.setLocalNetworkAccess(.deferred) }
           .font(.body.weight(.semibold))
           .frame(maxWidth: .infinity, minHeight: 44)

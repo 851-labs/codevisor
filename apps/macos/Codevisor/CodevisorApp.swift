@@ -108,109 +108,103 @@ struct RootView: View {
   @State var panelLayout = AdaptivePanelLayout()
 
   var body: some View {
-    Group {
-      if environment.settings.hasCompletedOnboarding {
-        mainSplit
-      } else {
-        OnboardingView(
-          initialStep: OnboardingView.resumeStep(from: environment.settings)
-        ) { project in
-          requiresInitialNewChatProjectResolution = true
-          selection = .newChat(project.map { NewChatTarget($0) })
+    mainSplit
+      .environment(panelLayout)
+      .modifier(
+        ClientControlModifier(
+          name: Host.current().localizedName ?? "Codevisor Mac", platform: "macos",
+          context: clientControlContext, navigate: navigateClient, control: controlClient
+        )
+      )
+      .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
+      .environment(\.quickLook, quickLook)
+      .quickLookPreview(
+        Binding(
+          get: { quickLook.previewURL },
+          set: { quickLook.updatePreviewURL($0) }
+        )
+      )
+      .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
+      .overlay { ErrorBannerLayer() }
+      .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
+      .onChange(of: selection) { _, newValue in
+        panelLayout.dismissDrawer()
+        guard let store else { return }
+        if case let .session(serverId, sessionId) = newValue {
+          store.markOpened(sessionId, serverId: serverId)
+        } else if case let .bot(serverId, botId) = newValue,
+          let bot = environment.bots.bot(serverId: serverId, id: botId)
+        {
+          store.markOpened(bot.sessionId, serverId: serverId)
+        } else {
+          store.clearOpenSession()
         }
       }
-    }
-    .environment(panelLayout)
-    .modifier(
-      ClientControlModifier(
-        name: Host.current().localizedName ?? "Codevisor Mac", platform: "macos",
-        context: clientControlContext, navigate: navigateClient, control: controlClient
-      )
-    )
-    .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
-    .environment(\.quickLook, quickLook)
-    .quickLookPreview(
-      Binding(
-        get: { quickLook.previewURL },
-        set: { quickLook.updatePreviewURL($0) }
-      )
-    )
-    .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
-    .overlay { ErrorBannerLayer() }
-    .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
-    .onChange(of: selection) { _, newValue in
-      panelLayout.dismissDrawer()
-      guard let store else { return }
-      if case let .session(serverId, sessionId) = newValue {
-        store.markOpened(sessionId, serverId: serverId)
-      } else if case let .bot(serverId, botId) = newValue,
-        let bot = environment.bots.bot(serverId: serverId, id: botId)
-      {
-        store.markOpened(bot.sessionId, serverId: serverId)
-      } else {
-        store.clearOpenSession()
+      .onChange(of: botsEnabled) { _, enabled in
+        if !enabled, case .bot = selection { selection = .newChat(nil) }
       }
-    }
-    .onChange(of: botsEnabled) { _, enabled in
-      if !enabled, case .bot = selection { selection = .newChat(nil) }
-    }
-    .onChange(of: controlActiveState, initial: true) { _, state in
-      store?.setWindowFocused(state == .key)
-    }
-    .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
-      guard let sessionIdString = note.userInfo?["sessionId"] as? String,
-        let sessionId = UUID(uuidString: sessionIdString),
-        let serverId = note.userInfo?["serverId"] as? String
-      else { return }
-      openNotificationSession(sessionId, serverId: serverId)
-    }
-    .task { await reconcileSkippedPermissions(environment: environment) }
-    .overlay {
-      if environment.requiresPermissionsReview {
-        ComputerUsePermissionsGateView {
-          environment.settings.setPermissionsReviewedVersion(
-            AppUpdateModel.bundleVersion()
-          )
-          environment.settings.setPermissionsSetupSkipped(false)
-          environment.settings.setPermissionsReviewInProgress(false)
-          environment.requiresPermissionsReview = false
-        } onSkip: {
-          environment.settings.setPermissionsSetupSkipped(true)
-          environment.settings.setPermissionsReviewInProgress(false)
-          Task {
-            await McpFleet.disableLocally(
-              environment.configSync,
-              machines: environment.machines,
-              name: "Computer Use"
+      .onChange(of: controlActiveState, initial: true) { _, state in
+        store?.setWindowFocused(state == .key)
+      }
+      .onChange(of: environment.cloud.state.isSignedIn) { _, signedIn in
+        if signedIn, environment.localNetworkAccess == .unasked {
+          environment.setLocalNetworkAccess(.requested)
+        }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
+        guard let sessionIdString = note.userInfo?["sessionId"] as? String,
+          let sessionId = UUID(uuidString: sessionIdString),
+          let serverId = note.userInfo?["serverId"] as? String
+        else { return }
+        openNotificationSession(sessionId, serverId: serverId)
+      }
+      .task { await reconcileSkippedPermissions(environment: environment) }
+      .overlay {
+        if environment.requiresPermissionsReview {
+          ComputerUsePermissionsGateView {
+            environment.settings.setPermissionsReviewedVersion(
+              AppUpdateModel.bundleVersion()
             )
+            environment.settings.setPermissionsSetupSkipped(false)
+            environment.settings.setPermissionsReviewInProgress(false)
+            environment.requiresPermissionsReview = false
+          } onSkip: {
+            environment.settings.setPermissionsSetupSkipped(true)
+            environment.settings.setPermissionsReviewInProgress(false)
+            Task {
+              await McpFleet.disableLocally(
+                environment.configSync,
+                machines: environment.machines,
+                name: "Computer Use"
+              )
+            }
+            environment.requiresPermissionsReview = false
           }
-          environment.requiresPermissionsReview = false
+          .transition(.opacity)
         }
-        .transition(.opacity)
       }
-    }
-    .animation(.smooth(duration: 0.2), value: environment.requiresPermissionsReview)
-    .task {
-      if store == nil {
-        let created = SessionStore(environment: environment)
-        store = created
-        created.setWindowFocused(controlActiveState == .key)
-        ChromiumAutomationBridge.shared.addStore(created)
-      }
-      if !AppPreview.isRunning {
-        environment.localServer?.onUpdateRequested = { [environment] in
-          Task { @MainActor in
-            await environment.appUpdate.installUpdateUnattended()
+      .animation(.smooth(duration: 0.2), value: environment.requiresPermissionsReview)
+      .task {
+        if store == nil {
+          let created = SessionStore(environment: environment)
+          store = created
+          created.setWindowFocused(controlActiveState == .key)
+          ChromiumAutomationBridge.shared.addStore(created)
+        }
+        if !AppPreview.isRunning {
+          environment.localServer?.onUpdateRequested = { [environment] in
+            Task { @MainActor in
+              await environment.appUpdate.installUpdateUnattended()
+            }
           }
+          await environment.bootstrapCloud()
         }
-        await environment.bootstrapCloud()
       }
-    }
-    .modifier(UpdateCenterUpkeep())
-    .modifier(ChromiumBrowserHostSync())
-    .modifier(ServerDataUpgradePresentation())
-    .modifier(CloudAuthDeeplinkHandling())
-    .modifier(PluginInstallDeeplinkHandling())
+      .modifier(UpdateCenterUpkeep())
+      .modifier(ChromiumBrowserHostSync())
+      .modifier(ServerDataUpgradePresentation())
+      .modifier(CloudAuthDeeplinkHandling())
+      .modifier(PluginInstallDeeplinkHandling())
   }
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {

@@ -146,6 +146,7 @@ final public class SessionController {
   public var hasAcceptedFirstSend: Bool { hasSentFirst }
   public internal(set) var isSubmitting = false
   public internal(set) var isResolvingQuestion = false
+  public var presentedSetupRequest: TranscriptSetupRequest?
   public var onAgentSessionCreated: ((String) -> Void)?
   public var onTurnEnded: (() -> Void)?
   public internal(set) var liveTurnEndRevision: UInt64 = 0

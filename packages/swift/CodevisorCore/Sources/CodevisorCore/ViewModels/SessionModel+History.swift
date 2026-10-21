@@ -109,6 +109,9 @@ extension SessionModel {
         }
       }
       pendingQuestion = page.pendingQuestion
+      if let pending = page.pendingQuestion, TranscriptSetupRequest.kind(of: pending.questions) != nil {
+        applySetupUpdate(.question(pending), questionId: pending.questionId)
+      }
       pendingPlanApproval = page.pendingPlanApproval
       updateGateHarnessName = page.updateGateHarnessName
       autoResume = page.autoResume

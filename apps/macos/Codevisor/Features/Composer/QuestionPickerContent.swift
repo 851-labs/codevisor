@@ -20,7 +20,6 @@ struct QuestionPickerContent: View {
   @State var highlighted = 0
   @State var infoOption: String?
   @State var revealedNotes: Set<String> = []
-  @State var didOpenBrowserExtensions = false
   @State var anchor = AnchorBox()
 
   final class AnchorBox {
@@ -48,21 +47,17 @@ struct QuestionPickerContent: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       if let question {
-        if isBrowserExtensionPresentation(question) {
-          browserExtensionSetup(question)
-        } else {
-          if let message = request.message, !message.isEmpty {
-            Text(message)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-          header(question)
-          optionList(question)
-          if showsNoteField(question) {
-            noteField(question)
-          }
-          footer(question)
+        if let message = request.message, !message.isEmpty {
+          Text(message)
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
+        header(question)
+        optionList(question)
+        if showsNoteField(question) {
+          noteField(question)
+        }
+        footer(question)
       }
     }
     .disabled(isResolving)
@@ -94,46 +89,10 @@ struct QuestionPickerContent: View {
       selections = [:]
       notes = [:]
       highlighted = 0
-      didOpenBrowserExtensions = false
       didStartResolving = false
       focusPicker()
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Agent question")
-  }
-
-  func isBrowserExtensionPresentation(_ question: QuestionSpec) -> Bool {
-    question.presentation == .browserExtensionSetup
-      || question.presentation == .browserExtensionWaiting
-  }
-
-  var canInstallBrowserExtensionLocally: Bool {
-    controller.project.serverId == CodevisorMachine.local.id
-  }
-
-  private func browserExtensionSetup(_ question: QuestionSpec) -> some View {
-    BrowserExtensionQuestionContent(
-      controller: controller,
-      question: question,
-      canInstallLocally: canInstallBrowserExtensionLocally,
-      didOpenBrowserExtensions: $didOpenBrowserExtensions,
-      cancel: { cancel() },
-      performSetupAction: performBrowserSetupAction,
-      showDragStage: showBrowserExtensionDragStage
-    )
-  }
-
-  func performBrowserSetupAction(_ action: String) {
-    if action == "Open Extensions" {
-      showBrowserExtensionDragStage(true)
-    }
-    Task {
-      await controller.performBrowserExtensionSetupAction(action)
-    }
-  }
-
-  func showBrowserExtensionDragStage(_ isVisible: Bool) {
-    didOpenBrowserExtensions = isVisible
-    focusPicker()
   }
 }

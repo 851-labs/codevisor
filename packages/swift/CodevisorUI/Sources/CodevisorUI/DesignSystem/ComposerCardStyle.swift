@@ -21,6 +21,18 @@ public struct ComposerCardStyle: DynamicProperty {
     insetShape(by: 0)
   }
 
+  public var containerShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: cornerRadius)
+  }
+
+  public var buttonBorderShape: ButtonBorderShape {
+    #if os(macOS)
+      .capsule
+    #else
+      .automatic
+    #endif
+  }
+
   public func insetShape(by inset: CGFloat) -> ConcentricRectangle {
     ConcentricRectangle(
       corners: .concentric(minimum: .fixed(max(0, cornerRadius - inset))),

@@ -54,6 +54,8 @@ public struct ComposerNoticeCard: View {
     }
     .padding(ComposerCardStyle.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .containerShape(cardStyle.containerShape)
+    .buttonBorderShape(cardStyle.buttonBorderShape)
     .background {
       ZStack {
         cardStyle.shape.fill(Color.windowBackgroundColor)
@@ -62,67 +64,5 @@ public struct ComposerNoticeCard: View {
       }
     }
     .accessibilityElement(children: .contain)
-  }
-}
-
-private struct NoticeCardText: View {
-  let title: String
-  let detail: String
-  let systemImage: String
-  let accent: Color
-
-  var body: some View {
-    HStack(alignment: .center, spacing: 10) {
-      Image(systemName: systemImage)
-        .font(.title3)
-        .foregroundStyle(accent)
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.callout.weight(.semibold))
-          .foregroundStyle(.primary)
-        Text(detail)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      }
-      .fixedSize(horizontal: false, vertical: true)
-    }
-    .accessibilityElement(children: .combine)
-  }
-}
-
-private struct NoticeCardActions: View {
-  let actions: [ComposerNoticeCard.Action]
-  let fillsWidth: Bool
-
-  var body: some View {
-    HStack(spacing: 8) {
-      ForEach(actions.indices, id: \.self) { index in
-        NoticeCardButton(action: actions[index], fillsWidth: fillsWidth)
-      }
-    }
-  }
-}
-
-private struct NoticeCardButton: View {
-  let action: ComposerNoticeCard.Action
-  let fillsWidth: Bool
-
-  var body: some View {
-    if action.emphasis == .primary {
-      label.buttonStyle(.borderedProminent)
-    } else {
-      label.buttonStyle(.bordered).tint(.primary)
-    }
-  }
-
-  private var label: some View {
-    Button(action: action.perform) {
-      Text(action.title)
-        .lineLimit(1)
-        .frame(maxWidth: fillsWidth ? .infinity : nil)
-    }
-    .controlSize(.regular)
-    .fixedSize(horizontal: !fillsWidth, vertical: false)
   }
 }

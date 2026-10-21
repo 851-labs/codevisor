@@ -24,9 +24,9 @@ struct ModelConfigMenu: View {
         .frame(minWidth: 96)
         .help("Loading models")
         .accessibilityLabel("Loading models")
-    } else if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty || !settingsOptions.isEmpty {
+    } else if showsModelChip || !settingsOptions.isEmpty {
       HStack(spacing: 10) {
-        if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty {
+        if showsModelChip {
           modelButton(presentation)
         }
         if presentation.showsSettingsChip, !settingsOptions.isEmpty || presentation.showsSettingsSpinner {
@@ -35,6 +35,11 @@ struct ModelConfigMenu: View {
       }
     }
   }
+  private var showsModelChip: Bool {
+    !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty
+      || (controller.canChooseHarness && controller.harnesses.isEmpty)
+  }
+
   private func modelButton(_ presentation: ModelPickerPresentation) -> some View {
     Autocomplete.Menu(isPresented: $isPresented) {
       for group in modelGroups {
@@ -62,7 +67,7 @@ struct ModelConfigMenu: View {
       modelChipLabel(presentation)
     }
     .autocompleteSearchLabel("Search models")
-    .autocompleteEmptyMessage("No matching models")
+    .autocompleteEmptyMessage("No matching models", noItems: "No models available")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
     .hoverChipOverflow()
     .fixedSize(horizontal: false, vertical: true)

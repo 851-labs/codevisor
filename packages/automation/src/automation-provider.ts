@@ -16,6 +16,7 @@ export interface AutomationProviderContext {
   readonly deadline?: number | undefined
   readonly invokeBrowser?: (name: string, args: Record<string, unknown>) => Promise<unknown>
   readonly onApp?: (app: ComputerUseApp) => void
+  readonly requestPermissions?: () => Promise<boolean>
   readonly publishRecording?: (file: { readonly path: string; readonly name: string }) => Promise<{
     readonly fileId: string
     readonly path: string

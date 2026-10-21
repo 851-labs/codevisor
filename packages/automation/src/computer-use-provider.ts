@@ -89,7 +89,8 @@ const jsonLineClient = (
         if (request === undefined) continue
         pending.delete(message.id)
         request.cleanup()
-        if (typeof message.error === "string") request.reject(new Error(message.error))
+        if (typeof message.error === "string")
+          request.reject(Object.assign(new Error(message.error), { code: message.code }))
         else request.resolve(message.result)
       } catch {}
     }
@@ -250,6 +251,11 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
     false
   )
 }
+
+const computerUseDeclinedMessage = "The user didn't allow Computer Use on this Mac."
+
+const permissionRequired = (cause: unknown): boolean =>
+  cause instanceof Error && "code" in cause && cause.code === "accessibilityRequired"
 
 export const makeComputerUseProvider = (
   dataDir: string
@@ -422,6 +428,13 @@ export const makeComputerUseProvider = (
           ? await recordingArtifacts.enrich(result, context)
           : result
       } catch (cause) {
+        const { requestPermissions, ...retryContext } = context
+        if (requestPermissions !== undefined && permissionRequired(cause)) {
+          const allowed = await requestPermissions()
+          if (!allowed) return textToolResult(computerUseDeclinedMessage, true)
+
+          return provider.invoke(retryContext, toolName, args)
+        }
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },

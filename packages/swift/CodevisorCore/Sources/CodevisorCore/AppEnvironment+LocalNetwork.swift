@@ -6,6 +6,7 @@ public enum LocalNetworkAccess: String, Codable, Sendable {
   case deferred
 
   static let preferenceKey = "localNetwork.access"
+  static let requestedPreferenceKey = "localNetwork.requested"
 }
 
 extension AppEnvironment {
@@ -17,8 +18,19 @@ extension AppEnvironment {
     localNetworkAccess == .unasked
   }
 
+  public var hasRequestedLocalNetworkAccess: Bool {
+    let requested = ClientPreferences.shared.valueIfPresent(
+      forKey: LocalNetworkAccess.requestedPreferenceKey,
+      as: Bool.self
+    )
+    return localNetworkAccess == .requested || requested == true
+  }
+
   public func setLocalNetworkAccess(_ access: LocalNetworkAccess) {
     ClientPreferences.shared.set(access, forKey: LocalNetworkAccess.preferenceKey)
+    if access == .requested {
+      ClientPreferences.shared.set(true, forKey: LocalNetworkAccess.requestedPreferenceKey)
+    }
     cloud.directPaths.setAllowsDirectPaths(access == .requested)
   }
 

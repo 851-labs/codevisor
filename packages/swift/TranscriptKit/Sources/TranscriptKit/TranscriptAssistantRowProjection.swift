@@ -131,12 +131,17 @@ enum TranscriptAssistantRowProjection {
           to: &rows
         ) || projectedContent
     }
-    return appendAssistantResponse(
-      message,
-      waitingOnBackgroundTask: waitingOnBackgroundTask,
-      lifecycle: lifecycle,
-      to: &rows
-    ) || projectedContent
+    projectedContent =
+      appendAssistantResponse(
+        message,
+        waitingOnBackgroundTask: waitingOnBackgroundTask,
+        lifecycle: lifecycle,
+        to: &rows
+      ) || projectedContent
+    for request in message.turn.setupRequests {
+      rows.append(.setupRequest(request, inBotConversation: false))
+    }
+    return projectedContent || !message.turn.setupRequests.isEmpty
   }
 
   static func appendStopDetailEpilogueIfNeeded(

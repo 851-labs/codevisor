@@ -11,6 +11,22 @@ import type { HarnessDefinition } from "./types.js"
 
 export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"
 
+const DEVELOPMENT_TEST_HARNESS_ID = "codevisor-test-agent"
+
+const developmentTestHarness = executableHarness(
+  DEVELOPMENT_TEST_HARNESS_ID,
+  "Test Agent",
+  "testtube.2",
+  [DEVELOPMENT_TEST_HARNESS_ID],
+  DEVELOPMENT_TEST_HARNESS_ID,
+  ["acp"]
+)
+
+const developmentTestHarnesses = (env: NodeJS.ProcessEnv): ReadonlyArray<HarnessDefinition> => {
+  if (env.CODEVISOR_DEV_INSTANCE_ID === undefined) return []
+  return [developmentTestHarness]
+}
+
 export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   claudeCodeHarness,
   codexHarness,
@@ -321,5 +337,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       ]
     }
   }),
-  ...additionalAcpHarnesses
+  ...additionalAcpHarnesses,
+  ...developmentTestHarnesses(process.env)
 ]

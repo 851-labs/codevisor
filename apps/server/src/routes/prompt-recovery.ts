@@ -58,15 +58,18 @@ const reconcileSession = async (
   }
 }
 
+const isGeneratingAssistant = (item: TranscriptPage["items"][number] | undefined): boolean =>
+  item?.role === "assistant" && item.isGenerating
+
 const inspectSession = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<RecoverySnapshot> => {
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
   const active = page.items.at(-1)
-  const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
+  const hasOrphanedTurn = isGeneratingAssistant(active) || page.pendingQuestion !== undefined
   await run(
-    services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active.id : undefined)
+    services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active?.id : undefined)
   )
   const hasOrphanedTasks = page.backgroundTasks!.length > 0
   return { page, active, hasOrphanedTurn, hasOrphanedTasks }

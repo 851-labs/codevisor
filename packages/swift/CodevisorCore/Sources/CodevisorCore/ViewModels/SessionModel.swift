@@ -10,7 +10,7 @@ struct TranscriptDetailsCacheEntry {
 @MainActor
 @Observable
 public final class SessionModel {
-  public private(set) var transcriptProjectionRevision: UInt64 = 0
+  public internal(set) var transcriptProjectionRevision: UInt64 = 0
 
   public static let initialTranscriptPageSize = 8
   static let olderTranscriptPageSize = 16

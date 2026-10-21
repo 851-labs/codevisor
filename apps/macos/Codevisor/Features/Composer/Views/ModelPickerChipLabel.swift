@@ -7,29 +7,22 @@ struct ModelPickerChipLabel: View {
 
   var body: some View {
     HStack(spacing: 5) {
-      if let group {
-        if hasSelection {
-          HarnessIcon(
-            harnessId: group.id,
-            fallbackSymbolName: group.symbolName,
-            size: 13,
-            weight: .medium
-          )
-          .foregroundStyle(.secondary)
-          .frame(width: 16, height: 16)
-          .accessibilityHidden(true)
-        }
-
-        Text(title)
-          .foregroundStyle(hasSelection ? .primary : .secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-      } else {
-        Text("Select a harness")
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
+      if let group, hasSelection {
+        HarnessIcon(
+          harnessId: group.id,
+          fallbackSymbolName: group.symbolName,
+          size: 13,
+          weight: .medium
+        )
+        .foregroundStyle(.secondary)
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
       }
+
+      Text(title)
+        .foregroundStyle(group != nil && hasSelection ? .primary : .secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
     .contentShape(Rectangle())
   }

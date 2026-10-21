@@ -123,7 +123,8 @@ export type QuestionOption = typeof QuestionOption.Type
 
 export const QuestionPresentation = Schema.Literals([
   "browserExtensionSetup",
-  "browserExtensionWaiting"
+  "browserExtensionWaiting",
+  "computerUsePermissions"
 ])
 export type QuestionPresentation = typeof QuestionPresentation.Type
 

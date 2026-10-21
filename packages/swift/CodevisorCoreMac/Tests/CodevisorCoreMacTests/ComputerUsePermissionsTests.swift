@@ -24,7 +24,7 @@ struct ComputerUsePermissionsTests {
     )
   }
 
-  @Test("Gates launch only for onboarded installs missing permissions on a new version")
+  @Test("Gates launch only for installs that reviewed permissions before and lost them on a new version")
   func gateDecision() {
     #expect(
       !computerUsePermissionsGateNeeded(
@@ -45,7 +45,7 @@ struct ComputerUsePermissionsTests {
         allGranted: true
       ))
     #expect(
-      computerUsePermissionsGateNeeded(
+      !computerUsePermissionsGateNeeded(
         hasCompletedOnboarding: true,
         permissionsReviewedVersion: nil,
         setupSkipped: false,

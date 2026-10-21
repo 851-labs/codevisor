@@ -19,6 +19,7 @@ import { integer, rowReader } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
+import { setupQuestionPresentation } from "./setup-questions.js"
 import { projectSetupState } from "./setup-state.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
@@ -38,6 +39,20 @@ const questionResolutionDelivery = (
       .get(chatItemId, `question_resolved:${questionId}`)
   )
   return { ...update, statePosition: row.position }
+}
+
+const withSetupContinuation = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  questionItemId: string,
+  resolution: JsonRecord
+): JsonRecord => {
+  if (setupQuestionPresentation(resolution) === undefined) return resolution
+
+  const continuation = chatState(sqlite, sessionId).current_item_id
+  if (continuation === null || continuation === questionItemId) return resolution
+
+  return { ...resolution, assistantItemId: continuation }
 }
 
 const planDocumentDelivery = (
@@ -87,7 +102,8 @@ const materializeSessionDelivery = (
     update?.sessionUpdate === "question_resolved" &&
     typeof update.questionId === "string"
   ) {
-    deliveredPayload = questionResolutionDelivery(sqlite, chatItemId, update, update.questionId)
+    const resolution = questionResolutionDelivery(sqlite, chatItemId, update, update.questionId)
+    deliveredPayload = withSetupContinuation(sqlite, sessionId, chatItemId, resolution)
   }
   if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
     deliveredPayload = planDocumentDelivery(sqlite, chatItemId, subjectRevision, update)

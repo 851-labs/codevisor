@@ -7,6 +7,36 @@ extension SessionController {
 
   public var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
 
+  public var composerQuestion: QuestionRequest? {
+    guard let pendingQuestion, TranscriptSetupRequest.kind(of: pendingQuestion.questions) != nil else {
+      return activeQuestion
+    }
+    return planApprovalRequest
+  }
+
+  public func setupRequest(id: String) -> TranscriptSetupRequest? {
+    for item in [activeItem].compactMap(\.self) + settledConversation.reversed() {
+      if case let .assistant(message) = item,
+        let request = message.turn.setupRequests.first(where: { $0.id == id })
+      {
+        return request
+      }
+    }
+    return nil
+  }
+
+  public func completeSetupRequest(_ id: String) async {
+    guard let question = pendingQuestion, question.questionId == id, let spec = question.questions.first else {
+      return
+    }
+    await answerQuestion(answers: [spec.id: QuestionAnswerEntry(answers: [spec.options.first?.label ?? "Continue"])])
+  }
+
+  public func declineSetupRequest(_ id: String) async {
+    guard pendingQuestion?.questionId == id else { return }
+    await cancelQuestion()
+  }
+
   public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
     guard !isResolvingQuestion else { return }
     isResolvingQuestion = true

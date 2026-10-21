@@ -15,8 +15,13 @@ enum TranscriptBotRowAssembly {
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
+    var setupBubbles = setupRequests(in: input)[...]
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
+      while let next = setupBubbles.first, wasAsked(next.askedAt, before: message) {
+        rows.append(.setupRequest(next.request, inBotConversation: true, spacingAfter: groupTailSpacing))
+        setupBubbles.removeFirst()
+      }
       if let sentAt = message.sentAt, startsNewMoment(sentAt, after: previous) {
         rows.append(
           .init(
@@ -47,6 +52,9 @@ enum TranscriptBotRowAssembly {
           spacingAfter: groupTailSpacing
         ))
     }
+    for bubble in setupBubbles {
+      rows.append(.setupRequest(bubble.request, inBotConversation: true, spacingAfter: groupTailSpacing))
+    }
     if conversation.isWorking {
       rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 38))
     }
@@ -64,6 +72,21 @@ enum TranscriptBotRowAssembly {
       rows.append(.init(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height))
     }
     return rows
+  }
+
+  private static func wasAsked(_ askedAt: Date?, before message: TranscriptBotMessage) -> Bool {
+    guard let askedAt, let sentAt = message.sentAt else { return false }
+    return askedAt < sentAt
+  }
+
+  private static func setupRequests(
+    in input: TranscriptProjectionInput
+  ) -> [(askedAt: Date?, request: TranscriptSetupRequest)] {
+    (input.settledConversation + [input.activeItem].compactMap(\.self)).flatMap {
+      item -> [(askedAt: Date?, request: TranscriptSetupRequest)] in
+      guard case let .assistant(message) = item else { return [] }
+      return message.turn.setupRequests.map { (askedAt: message.turn.endedAt, request: $0) }
+    }
   }
 
   private static func row(

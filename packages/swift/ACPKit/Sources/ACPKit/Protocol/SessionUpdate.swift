@@ -83,7 +83,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case currentModeId, configOptions
     case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
     case cost, compactionId, status, goal, markdown, detailResource, stateRevision
-    case questionId, message, questions, autoResolutionMs, outcome, answers, statePosition
+    case questionId, message, questions, autoResolutionMs, outcome, answers, statePosition, assistantItemId
   }
 
   public init(from decoder: any Decoder) throws {
@@ -171,7 +171,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
           outcome: try container.decode(QuestionOutcome.self, forKey: .outcome),
           questions: try container.decode([QuestionSpec].self, forKey: .questions),
           answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers),
-          statePosition: try container.decodeIfPresent(Int.self, forKey: .statePosition)
+          statePosition: try container.decodeIfPresent(Int.self, forKey: .statePosition),
+          assistantItemId: try container.decodeIfPresent(String.self, forKey: .assistantItemId)
         ))
     default:
       throw DecodingError.dataCorruptedError(
@@ -279,6 +280,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       try container.encode(resolution.questions, forKey: .questions)
       try container.encodeIfPresent(resolution.answers, forKey: .answers)
       try container.encodeIfPresent(resolution.statePosition, forKey: .statePosition)
+      try container.encodeIfPresent(resolution.assistantItemId, forKey: .assistantItemId)
     }
   }
 
