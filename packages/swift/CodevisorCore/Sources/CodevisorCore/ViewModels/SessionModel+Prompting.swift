@@ -10,7 +10,11 @@ extension SessionModel {
     await send(UserMessage(text: text, attachments: attachments))
   }
 
-  public func send(_ outgoingMessage: UserMessage, startedAt: Date? = nil) async {
+  public func send(
+    _ outgoingMessage: UserMessage,
+    startedAt: Date? = nil,
+    delivery: ServerPromptDelivery = .steer
+  ) async {
     let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
     let message = UserMessage(
@@ -27,7 +31,7 @@ extension SessionModel {
       if presentsBotConversation {
         await sendToWorkingBot(message)
       } else {
-        await enqueueWhileSending(trimmed, attachments: message.attachments)
+        await sendWhileWorking(message, delivery: delivery)
       }
       return
     }
@@ -91,11 +95,11 @@ extension SessionModel {
   }
 
   @discardableResult
-  public func updateQueuedPrompt(id: String, text: String) async -> Bool {
+  public func updateQueuedPrompt(id: String, text: String, attachments: [Attachment]? = nil) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return false }
+    guard !trimmed.isEmpty || attachments?.isEmpty == false else { return false }
     do {
-      _ = try await transport.updateQueuedPrompt(id: id, text: trimmed)
+      _ = try await transport.updateQueuedPrompt(id: id, text: trimmed, attachments: attachments)
       return true
     } catch {
       errorMessage = serverErrorMessage(error)
@@ -106,9 +110,31 @@ extension SessionModel {
   @discardableResult
   public func reorderQueuedPrompts(ids: [String]) async -> Bool {
     guard ids.count == Set(ids).count else { return false }
+    let previous = queuedPrompts
+    applyQueuedPromptSnapshot(Self.queue(previous, orderedBy: ids))
     do {
       let queue = try await transport.reorderQueuedPrompts(ids: ids)
       applyQueuedPromptSnapshot(queue)
+      return true
+    } catch {
+      applyQueuedPromptSnapshot(previous)
+      errorMessage = serverErrorMessage(error)
+      return false
+    }
+  }
+
+  private static func queue(
+    _ queue: [ServerPromptQueueItem], orderedBy ids: [String]
+  ) -> [ServerPromptQueueItem] {
+    let byID = Dictionary(uniqueKeysWithValues: queue.map { ($0.id, $0) })
+    let ordered = ids.compactMap { byID[$0] }
+    return ordered + queue.filter { !ids.contains($0.id) }
+  }
+
+  @discardableResult
+  public func deleteQueuedPrompt(id: String) async -> Bool {
+    do {
+      try await transport.deleteQueuedPrompt(id: id)
       return true
     } catch {
       errorMessage = serverErrorMessage(error)
@@ -117,10 +143,12 @@ extension SessionModel {
   }
 
   @discardableResult
-  public func deleteQueuedPrompt(id: String) async -> Bool {
+  public func sendQueuedPromptNow(id: String) async -> Bool {
     do {
-      try await transport.deleteQueuedPrompt(id: id)
+      _ = try await transport.sendQueuedPromptNow(id: id)
       return true
+    } catch CodevisorServerClientError.httpStatus(404, _) {
+      return false
     } catch {
       errorMessage = serverErrorMessage(error)
       return false
@@ -447,12 +475,20 @@ extension SessionModel {
     }
   }
 
-  private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {
+  private func sendWhileWorking(_ message: UserMessage, delivery: ServerPromptDelivery) async {
     do {
-      _ = try await transport.prompt(text, attachments: attachments, clientId: promptClientId)
-      onPromptAccepted?(attachments.count, true)
+      let accepted = try await transport.prompt(
+        message.text,
+        attachments: message.attachments,
+        messageId: message.id.uuidString.lowercased(),
+        clientId: promptClientId,
+        delivery: delivery
+      )
+      onPromptAccepted?(message.attachments.count, !accepted.wasSteered)
+      if !accepted.wasSteered { onPromptNotSteered?(message.id) }
     } catch {
       errorMessage = serverErrorMessage(error)
+      onPromptNotSteered?(message.id)
     }
   }
 }

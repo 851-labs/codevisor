@@ -13,7 +13,6 @@ final class TranscriptPresentationSurface {
   private var retainedScrollView: VirtualizedTranscriptScrollView?
   private var visibilityOwners: Set<UUID> = []
   private(set) var composerHeight: CGFloat = 96
-  var isQueueExpanded = true
 
   init(controller: SessionController) {
     self.controller = controller

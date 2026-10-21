@@ -100,7 +100,11 @@ describe("agent runtime account handoff", () => {
     expect(order).toEqual(["close:start"])
     expect(replacementEmit).toBeUndefined()
     releaseClose?.()
-    await expect(replacement).resolves.toEqual({ configOptions: [], sessionId })
+    await expect(replacement).resolves.toEqual({
+      configOptions: [],
+      sessionId,
+      supportsSteering: false
+    })
     expect(order).toEqual(["close:start", "close:end", "load"])
     expect(oldEvents).toEqual([])
     expect(replacementEvents).toEqual([])

@@ -23,21 +23,32 @@ public struct ServerSessionRuntimeMetadata: Codable, Equatable, Sendable {
   public var modes: SessionModeState?
   public var configOptions: [SessionConfigOption]
   public var supportsGoals: Bool?
+  public var supportsSteering: Bool?
+}
+
+public enum ServerPromptDelivery: String, Codable, Sendable {
+  case steer
+  case queue
 }
 
 public struct ServerPromptAccepted: Decodable, Equatable, Sendable {
   public var accepted: Bool
   public var sessionId: String
   public var queueItemId: String?
+  public var delivered: String?
+
+  public var wasSteered: Bool { delivered == "steered" }
 
   public init(
     accepted: Bool,
     sessionId: String,
-    queueItemId: String? = nil
+    queueItemId: String? = nil,
+    delivered: String? = nil
   ) {
     self.accepted = accepted
     self.sessionId = sessionId
     self.queueItemId = queueItemId
+    self.delivered = delivered
   }
 }
 

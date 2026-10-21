@@ -23,7 +23,6 @@ struct ComposerCard: View {
   @State private var promptHistory: ComposerPromptHistory?
   @State private var isSlashMenuDismissed = false
   @State private var slashMenuContentHeight: CGFloat = 0
-  @State private var isStopButtonHovered = false
   @State private var didStartResolvingQuestion = false
   @State private var didAcceptSubmission = false
   @State private var isPickingFiles = false
@@ -140,13 +139,7 @@ private extension ComposerCard {
     VStack(alignment: .leading, spacing: 10) {
       VStack(alignment: .leading, spacing: 4) {
         if controller.isGoalEditing {
-          HStack(spacing: 6) {
-            Image(systemName: "target")
-              .font(.caption)
-            Text("Edit goal")
-              .font(.caption.weight(.semibold))
-          }
-          .foregroundStyle(.secondary)
+          ComposerModeLabel(systemImage: "target", title: "Edit goal")
         }
         if !controller.composerAttachments.isEmpty {
           ComposerAttachmentRow(controller: controller)
@@ -159,6 +152,7 @@ private extension ComposerCard {
             selection: $selection,
             topBleed: editorTopBleed,
             onSubmit: submitOrAcceptSlash,
+            onQueueSubmit: submitToQueue,
             onKeyCommand: handleKeyCommand,
             onPasteAttachments: handlePastedAttachments,
             onTextViewReady: { textView in
@@ -168,6 +162,9 @@ private extension ComposerCard {
           )
           .frame(height: editorHeight + editorTopBleed)
           .writingToolsAffordanceVisibility(.hidden)
+          .onChange(of: controller.editingQueuedPromptID) { _, _ in
+            selection = NSRange(location: (controller.composerText as NSString).length, length: 0)
+          }
           .disabled(
             isAcceptingSubmission
               || controller.isResolvingQuestion
@@ -194,6 +191,13 @@ private extension ComposerCard {
             goalEditBackButton
             sendButton
           }
+        } else if controller.isEditingQueuedPrompt {
+          attachButton
+          ComposerQueueEditControls(
+            canSave: hasComposerDraft && !isAcceptingSubmission,
+            onCancel: controller.cancelEditingQueuedPrompt,
+            onSave: saveQueueEdit
+          )
         } else {
           attachButton
           ModelConfigMenu(controller: controller)
@@ -243,6 +247,15 @@ private extension ComposerCard {
     .accessibilityHint("Keep the current goal. Keyboard shortcut: Escape")
   }
 
+  private func saveQueueEdit() {
+    guard !isAcceptingSubmission, hasComposerDraft else { return }
+    didAcceptSubmission = true
+    Task {
+      await controller.saveEditedQueuedPrompt()
+      didAcceptSubmission = false
+    }
+  }
+
   private var attachButton: some View {
     Button(action: pickFiles) {
       Image(systemName: "paperclip")
@@ -282,38 +295,10 @@ private extension ComposerCard {
     !controller.canStop || hasComposerDraft
   }
 
-  @ViewBuilder
   private var stopButton: some View {
-    if controller.isCancelling {
-      ProgressView()
-        .controlSize(.small)
-        .frame(width: 26, height: 26)
-        .help("Stopping…")
-    } else {
-      Button(action: stop) {
-        Image(systemName: "stop.fill")
-          .font(.system(size: 10, weight: .bold))
-          .frame(width: 26, height: 26)
-          .background(
-            Circle()
-              .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
-          )
-          .overlay(
-            Circle()
-              .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
-          )
-          .contentShape(Circle())
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
-      .onHover { isStopButtonHovered = $0 }
-      .help("Stop")
-      .accessibilityLabel("Stop")
+    ComposerStopButton(isCancelling: controller.isCancelling) {
+      Task { await controller.stop() }
     }
-  }
-
-  private func stop() {
-    Task { await controller.stop() }
   }
 
   @ViewBuilder
@@ -417,6 +402,8 @@ private extension ComposerCard {
     if isLoadingSlashCommands { return }
     if let command = selectedSlashCommand {
       acceptSlashCommand(command)
+    } else if controller.isEditingQueuedPrompt {
+      saveQueueEdit()
     } else if controller.isGoalComposerArmed {
       let hasGoal = !controller.composerText
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -434,16 +421,29 @@ private extension ComposerCard {
         didAcceptSubmission = false
       }
     } else {
-      guard controller.canSend, !isAppUpdateInProgress else { return }
-      didAcceptSubmission = true
-      if !reduceMotion, !controller.isSending || controller.presentsBotConversation {
-        sendSource.stage(controller: controller)
-      }
-      controller.promptClientId = clientControlId?.uuidString.lowercased()
-      Task {
-        await controller.send()
-        didAcceptSubmission = false
-      }
+      sendDraft(delivery: .steer)
+    }
+  }
+
+  private func submitToQueue() -> Bool {
+    guard controller.canQueueMessages, hasComposerDraft, !controller.isGoalComposerArmed,
+      !controller.isEditingQueuedPrompt,
+      selectedSlashCommand == nil, !isAcceptingSubmission
+    else { return false }
+    sendDraft(delivery: .queue)
+    return true
+  }
+
+  private func sendDraft(delivery: ServerPromptDelivery) {
+    guard controller.canSend, !isAppUpdateInProgress else { return }
+    didAcceptSubmission = true
+    if !reduceMotion, !controller.sendLandsInQueue(delivery) {
+      sendSource.stage(controller: controller)
+    }
+    controller.promptClientId = clientControlId?.uuidString.lowercased()
+    Task {
+      await controller.send(delivery: delivery)
+      didAcceptSubmission = false
     }
   }
 
@@ -472,6 +472,10 @@ private extension ComposerCard {
 
   private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
     if handleSlashMenuKeyCommand(command) {
+      return true
+    }
+    if controller.isEditingQueuedPrompt, command == .dismissSelection {
+      controller.cancelEditingQueuedPrompt()
       return true
     }
     if controller.isGoalComposerArmed, command == .dismissSelection {

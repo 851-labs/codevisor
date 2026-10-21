@@ -328,6 +328,23 @@ public struct ServerSessionTransport: Sendable {
     )
   }
 
+  public func prompt(
+    _ text: String,
+    attachments: [Attachment] = [],
+    messageId: String? = nil,
+    clientId: String? = nil,
+    delivery: ServerPromptDelivery
+  ) async throws -> ServerPromptAccepted {
+    try await client.promptSession(
+      id: sessionId,
+      text: text,
+      attachments: attachments.map(\.serverRef),
+      messageId: messageId,
+      clientId: clientId,
+      delivery: delivery
+    )
+  }
+
   public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
     try await client.uploadFile(name: name, mimeType: mimeType, data: data)
   }
@@ -344,8 +361,11 @@ public struct ServerSessionTransport: Sendable {
     try await client.fileData(sessionId: sessionId, path: path)
   }
 
-  public func updateQueuedPrompt(id: String, text: String) async throws -> ServerPromptQueueItem {
-    try await client.updateQueuedPrompt(sessionId: sessionId, queueItemId: id, text: text)
+  public func updateQueuedPrompt(
+    id: String, text: String, attachments: [Attachment]? = nil
+  ) async throws -> ServerPromptQueueItem {
+    try await client.updateQueuedPrompt(
+      sessionId: sessionId, queueItemId: id, text: text, attachments: attachments?.map(\.serverRef))
   }
 
   public func reorderQueuedPrompts(ids: [String]) async throws -> [ServerPromptQueueItem] {
@@ -354,6 +374,10 @@ public struct ServerSessionTransport: Sendable {
 
   public func deleteQueuedPrompt(id: String) async throws {
     try await client.deleteQueuedPrompt(sessionId: sessionId, queueItemId: id)
+  }
+
+  public func sendQueuedPromptNow(id: String) async throws -> ServerPromptAccepted {
+    try await client.sendQueuedPromptNow(sessionId: sessionId, queueItemId: id)
   }
 
   public func cancel() async throws {

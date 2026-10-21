@@ -373,6 +373,7 @@ public final class ConfigOptionCache {
       }
       if merged.modes == nil { merged.modes = previous.modes }
       if merged.supportsGoals == nil { merged.supportsGoals = previous.supportsGoals }
+      if merged.supportsSteering == nil { merged.supportsSteering = previous.supportsSteering }
       return merged
     }
   }

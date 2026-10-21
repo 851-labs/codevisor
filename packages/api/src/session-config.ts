@@ -120,6 +120,7 @@ export const HarnessCapability = Schema.Struct({
   modes: Schema.optional(SessionModeState),
   configOptions: Schema.Array(SessionConfigOption),
   supportsGoals: Schema.optional(Schema.Boolean),
+  supportsSteering: Schema.optional(Schema.Boolean),
   skills: Schema.optional(SessionSkills),
   unappliedConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })

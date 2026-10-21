@@ -302,7 +302,8 @@ export interface CodevisorDatabaseService
   readonly updatePromptQueueItem: (
     sessionId: string,
     queueItemId: string,
-    text: string
+    text: string,
+    attachments?: ReadonlyArray<AttachmentRef>
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly reorderPromptQueue: (
     sessionId: string,

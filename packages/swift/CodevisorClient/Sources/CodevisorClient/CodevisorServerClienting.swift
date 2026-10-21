@@ -218,6 +218,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
     clientId: String?
   ) async throws -> ServerPromptAccepted
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?, delivery: ServerPromptDelivery
+  ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
   func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata
   func filePreview(id: String) async throws -> Data
@@ -243,12 +247,15 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func fileData(sessionId: UUID, path: String) async throws -> Data
   func filePrefix(sessionId: UUID, path: String, length: Int) async throws -> Data
   func fileVersion(sessionId: UUID, path: String) async throws -> String?
-  func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
+  func updateQueuedPrompt(
+    sessionId: UUID, queueItemId: String, text: String, attachments: [ServerAttachmentRef]?
+  ) async throws -> ServerPromptQueueItem
   func reorderQueuedPrompts(
     sessionId: UUID,
     queueItemIds: [String]
   ) async throws -> [ServerPromptQueueItem]
   func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
+  func sendQueuedPromptNow(sessionId: UUID, queueItemId: String) async throws -> ServerPromptAccepted
   func cancelSession(id: UUID) async throws
   func setSessionMode(id: UUID, modeId: String) async throws
   func setSessionConfig(id: UUID, configId: String, value: String) async throws

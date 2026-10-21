@@ -75,11 +75,20 @@ describe("@codevisor/agent-runtime", () => {
     )
 
     expect(created).toBe("agent-gemini-1")
-    expect(inspected).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
-    expect(inspectedWithCloseFailure).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
-    expect(loaded).toEqual({ configOptions: [], sessionId: "agent-existing" })
-    expect(loadedAgain).toEqual({ configOptions: [], sessionId: "agent-existing" })
-    expect(reloadedElsewhere).toEqual({ configOptions: [], sessionId: "agent-existing" })
+    expect(inspected).toEqual({
+      configOptions: [],
+      sessionId: "agent-gemini-1",
+      supportsSteering: false
+    })
+    expect(inspectedWithCloseFailure).toEqual({
+      configOptions: [],
+      sessionId: "agent-gemini-1",
+      supportsSteering: false
+    })
+    const existing = { configOptions: [], sessionId: "agent-existing", supportsSteering: false }
+    expect(loaded).toEqual(existing)
+    expect(loadedAgain).toEqual(existing)
+    expect(reloadedElsewhere).toEqual(existing)
     expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
       args: ["--acp"],
@@ -386,7 +395,11 @@ describe("@codevisor/agent-runtime", () => {
 
     releaseTerminal?.()
     await cancellation
-    await expect(replacement).resolves.toEqual({ configOptions: [], sessionId })
+    await expect(replacement).resolves.toEqual({
+      configOptions: [],
+      sessionId,
+      supportsSteering: false
+    })
     expect(closeCount).toBe(1)
     expect(loadCount).toBe(1)
 

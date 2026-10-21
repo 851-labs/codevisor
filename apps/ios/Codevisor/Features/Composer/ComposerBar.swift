@@ -18,7 +18,7 @@ struct ComposerBar: View {
   var sendAnimationsStarted = 0
   var glassNamespace: Namespace.ID? = nil
   var onSendSourceFrameChange: ((CGRect) -> Void)? = nil
-  var onWillSend: ((String) -> Void)? = nil
+  var onWillSend: ((String, ServerPromptDelivery) -> Void)? = nil
 
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
@@ -230,6 +230,9 @@ struct ComposerBar: View {
       text = newValue
       selection = NSRange(location: (newValue as NSString).length, length: 0)
     }
+    .onChange(of: controller.isEditingQueuedPrompt) { _, isEditing in
+      goalEditFocusRequest = isEditing ? UUID() : nil
+    }
     .onChange(of: controller.isGoalEditing) { _, isEditing in
       if isEditing {
         setExpanded(false)
@@ -368,7 +371,8 @@ extension ComposerBar {
           },
           onHardwareReturn: {
             if canSend { submitOrAcceptSlashCommand() }
-          }
+          },
+          onHardwareQueue: hardwareQueueAction
         )
         .frame(height: isCompact ? 0 : editorHeight)
         .animation(editorFadeAnimation) { $0.opacity(isCompact ? 0 : 1) }
@@ -438,6 +442,8 @@ extension ComposerBar {
         sendButton
       }
       .transition(composerModeTransition)
+    } else if controller.isEditingQueuedPrompt {
+      queueEditToolbar.transition(composerModeTransition)
     } else {
       HStack(spacing: 10) {
         attachButton

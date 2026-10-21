@@ -176,6 +176,8 @@ final public class SessionController {
   var modeStateByHarness: [String: SessionModeState] = [:]
   var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
   var supportsGoalsByHarness: [String: Bool] = [:]
+  var supportsSteeringByHarness: [String: Bool] = [:]
+  var queuedPromptEdit: QueuedPromptEdit?
   var harnessCapabilityRequestRevision: UInt64 = 0
   var retargetRevision: UInt64 = 0
   public internal(set) var isResolvingModelConfiguration = false
@@ -355,6 +357,7 @@ public enum SessionControllerError: Error {
       controller.model = model
       for harness in harnesses {
         controller.supportsGoalsByHarness[harness.id] = true
+        controller.supportsSteeringByHarness[harness.id] = true
         controller.modeStateByHarness[harness.id] = SessionModeState(
           currentModeId: "default",
           availableModes: [

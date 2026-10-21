@@ -13,6 +13,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _eventBuffer: [ServerEventEnvelope] = []
   private var _eventContinuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
   private let lock = NSLock()
+  let promptDelivery = FakePromptDelivery()
 
   private var _runtimeRequests: [String] = []
 
@@ -36,7 +37,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _promptQueueResponse: [ServerPromptQueueItem] = []
   private var _promptQueueGate: AsyncStream<Void>?
   private var _promptQueueRequestCount = 0
-  private var _queueUpdates: [(id: String, text: String)] = []
+  private var _queueUpdates: [(id: String, text: String, attachments: [ServerAttachmentRef]?)] = []
   private var _queueReorders: [[String]] = []
   private var _queueDeletes: [String] = []
   private var _queueMutationFailuresRemaining = 0
@@ -187,7 +188,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { _promptQueueGate = gate }
   }
 
-  var queueUpdates: [(id: String, text: String)] {
+  var queueUpdates: [(id: String, text: String, attachments: [ServerAttachmentRef]?)] {
     lock.withLock { _queueUpdates }
   }
 
@@ -325,11 +326,12 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   func updateQueuedPrompt(
     sessionId: UUID,
     queueItemId: String,
-    text: String
+    text: String,
+    attachments: [ServerAttachmentRef]?
   ) async throws -> ServerPromptQueueItem {
     let shouldFail = lock.withLock {
       guard _queueMutationFailuresRemaining > 0 else {
-        _queueUpdates.append((queueItemId, text))
+        _queueUpdates.append((queueItemId, text, attachments))
         return false
       }
       _queueMutationFailuresRemaining -= 1

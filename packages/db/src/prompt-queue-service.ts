@@ -71,15 +71,20 @@ export const makePromptQueueService = (
         getSession(sessionId)
         return listPromptQueueSync(sqlite, sessionId)
       }),
-    updatePromptQueueItem: (rawSessionId, queueItemId, text) =>
+    updatePromptQueueItem: (rawSessionId, queueItemId, text, attachments) =>
       attempt("updatePromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         const now = isoTimestamp()
         const result = sqlite
-          .prepare(
-            "update prompt_queue_items set text = ?, updated_at = ? where session_id = ? and id = ?"
+          .prepare(updateQueuedPromptSql)
+          .run(
+            text,
+            attachments === undefined ? 0 : 1,
+            serializeAttachments(attachments),
+            now,
+            sessionId,
+            queueItemId
           )
-          .run(text, now, sessionId, queueItemId)
         if (result.changes === 0) {
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
@@ -183,3 +188,7 @@ const nextPendingQueueRowSql = `select * from prompt_queue_items
 
 const pendingQueueRowSql =
   "select * from prompt_queue_items where session_id = ? and state = 'pending' and id = ?"
+
+const updateQueuedPromptSql = `update prompt_queue_items
+  set text = ?, attachments = iif(?, ?, attachments), updated_at = ?
+  where session_id = ? and id = ?`

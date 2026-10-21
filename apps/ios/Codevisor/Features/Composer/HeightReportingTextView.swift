@@ -87,6 +87,7 @@ final class HeightReportingTextView: UITextView {
   var onResizePanCancelled: (() -> Void)?
   var onFocusRequestFulfilled: ((UUID) -> Void)?
   var onHardwareReturn: (() -> Void)?
+  var onHardwareQueue: (() -> Void)?
 
   override var keyCommands: [UIKeyCommand]? {
     let inherited = super.keyCommands ?? []
@@ -96,11 +97,23 @@ final class HeightReportingTextView: UITextView {
     let commandSend = UIKeyCommand(
       title: "Send Message", action: #selector(sendFromHardwareKeyboard), input: "\r", modifierFlags: .command)
     commandSend.wantsPriorityOverSystemBehavior = true
-    return inherited + [send, commandSend]
+    return inherited + [send, commandSend] + queueKeyCommands
+  }
+
+  private var queueKeyCommands: [UIKeyCommand] {
+    guard onHardwareQueue != nil else { return [] }
+    let queue = UIKeyCommand(
+      title: "Queue Message", action: #selector(queueFromHardwareKeyboard), input: "\r", modifierFlags: .shift)
+    queue.wantsPriorityOverSystemBehavior = true
+    return [queue]
   }
 
   @objc private func sendFromHardwareKeyboard() {
     onHardwareReturn?()
+  }
+
+  @objc private func queueFromHardwareKeyboard() {
+    onHardwareQueue?()
   }
 
   private var lastReportedHeight: CGFloat = 0

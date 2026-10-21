@@ -12,14 +12,7 @@ private struct PromptBody: Encodable {
   var attachments: [ServerAttachmentRef]?
   var messageId: String?
   var clientId: String?
-}
-
-private struct UpdateQueuedPromptBody: Encodable {
-  var text: String
-}
-
-private struct ReorderQueuedPromptsBody: Encodable {
-  var queueItemIds: [String]
+  var delivery: ServerPromptDelivery?
 }
 
 private struct CancelBody: Encodable {
@@ -345,9 +338,8 @@ extension CodevisorServerClient {
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
     clientId: String?
   ) async throws -> ServerPromptAccepted {
-    try await send(
-      "/v1/sessions/\(id.uuidString)/prompt",
-      method: "POST",
+    try await sendPrompt(
+      id: id,
       body: PromptBody(
         text: text,
         attachments: attachments.isEmpty ? nil : attachments,
@@ -355,6 +347,26 @@ extension CodevisorServerClient {
         clientId: clientId
       )
     )
+  }
+
+  public func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?, delivery: ServerPromptDelivery
+  ) async throws -> ServerPromptAccepted {
+    try await sendPrompt(
+      id: id,
+      body: PromptBody(
+        text: text,
+        attachments: attachments.isEmpty ? nil : attachments,
+        messageId: messageId,
+        clientId: clientId,
+        delivery: delivery
+      )
+    )
+  }
+
+  private func sendPrompt(id: UUID, body: PromptBody) async throws -> ServerPromptAccepted {
+    try await send("/v1/sessions/\(id.uuidString)/prompt", method: "POST", body: body)
   }
 
   public func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {
@@ -448,31 +460,6 @@ extension CodevisorServerClient {
       throw CodevisorServerClientError.invalidURL("fs/file")
     }
     return requestPath
-  }
-
-  public func updateQueuedPrompt(
-    sessionId: UUID, queueItemId: String, text: String
-  ) async throws -> ServerPromptQueueItem {
-    try await send(
-      "/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)",
-      method: "PATCH",
-      body: UpdateQueuedPromptBody(text: text)
-    )
-  }
-
-  public func reorderQueuedPrompts(
-    sessionId: UUID,
-    queueItemIds: [String]
-  ) async throws -> [ServerPromptQueueItem] {
-    try await send(
-      "/v1/sessions/\(sessionId.uuidString)/queue",
-      method: "PATCH",
-      body: ReorderQueuedPromptsBody(queueItemIds: queueItemIds)
-    )
-  }
-
-  public func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {
-    try await sendNoResponse("/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)", method: "DELETE")
   }
 
   public func cancelSession(id: UUID) async throws {

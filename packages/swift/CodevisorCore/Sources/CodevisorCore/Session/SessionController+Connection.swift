@@ -162,6 +162,7 @@ extension SessionController {
     configOptionsByHarness = [:]
     modeStateByHarness = [:]
     supportsGoalsByHarness = [:]
+    supportsSteeringByHarness = [:]
     pendingConfiguration.restoreValues([:])
     selectedHarnessId = nil
     if seedFromCachedServerCapabilities() {
@@ -322,6 +323,9 @@ extension SessionController {
       if !metadata.configOptions.isEmpty { configOptionsByHarness[harnessId] = metadata.configOptions }
       if let modes = metadata.modes { modeStateByHarness[harnessId] = modes }
       if let supportsGoals = metadata.supportsGoals { supportsGoalsByHarness[harnessId] = supportsGoals }
+      if let supportsSteering = metadata.supportsSteering {
+        supportsSteeringByHarness[harnessId] = supportsSteering
+      }
     }
     didLoadExistingRuntimeConfiguration = true
     didFinishExistingRuntimeConfiguration = true

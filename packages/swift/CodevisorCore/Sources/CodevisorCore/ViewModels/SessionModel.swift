@@ -149,6 +149,7 @@ public final class SessionModel {
   public var onPromptAccepted: ((_ attachmentCount: Int, _ isQueued: Bool) -> Void)?
   public var onLocalUserMessageAppended: ((UUID) -> Void)?
   public var onQueuedPromptPromoted: ((UUID?) -> Void)?
+  public var onPromptNotSteered: ((UUID) -> Void)?
 
   @ObservationIgnored public var promptClientId: String?
 

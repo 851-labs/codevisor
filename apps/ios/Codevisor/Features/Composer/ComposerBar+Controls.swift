@@ -127,18 +127,85 @@ extension ComposerBar {
     .accessibilityLabel("Attach files")
   }
 
+  @ViewBuilder
   var sendButton: some View {
+    if offersQueueOnSend {
+      Menu {
+        Button("Queue Message", systemImage: "text.append") {
+          submitComposer(delivery: .queue)
+        }
+      } label: {
+        sendButtonLabel
+      } primaryAction: {
+        submitOrAcceptSlashCommand()
+      }
+      .menuStyle(.button)
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .disabled(!canSend)
+      .accessibilityLabel("Steer")
+      .accessibilityHint("Adds your message to the running turn. Touch and hold to queue it instead.")
+    } else {
+      Button {
+        submitOrAcceptSlashCommand()
+      } label: {
+        sendButtonLabel
+      }
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .disabled(!canSend)
+      .accessibilityLabel(sendButtonAccessibilityLabel)
+      .accessibilityHint(controller.requiresModelSelection ? "Select a model" : "")
+    }
+  }
+
+  private var sendButtonLabel: some View {
+    Image(systemName: controller.isGoalEditing || controller.isEditingQueuedPrompt ? "checkmark" : "arrow.up")
+      .composerCircleActionLabel(.primary, isEnabled: canSend)
+  }
+
+  private var offersQueueOnSend: Bool {
+    controller.steersWhileWorking && !controller.isGoalEditing && !controller.isEditingQueuedPrompt
+      && slashMatches.isEmpty
+  }
+
+  private var sendButtonAccessibilityLabel: String {
+    if controller.isEditingQueuedPrompt { return "Save queued message" }
+    return controller.isGoalEditing ? "Save goal" : "Send"
+  }
+
+  var queueEditToolbar: some View {
+    HStack(spacing: 10) {
+      attachButton
+      Spacer(minLength: 0)
+      HStack(spacing: 6) {
+        queueEditCancelButton
+        sendButton
+      }
+    }
+  }
+
+  private var queueEditCancelButton: some View {
     Button {
-      submitOrAcceptSlashCommand()
+      withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+        controller.cancelEditingQueuedPrompt()
+      }
     } label: {
-      Image(systemName: controller.isGoalEditing ? "checkmark" : "arrow.up")
-        .composerCircleActionLabel(.primary, isEnabled: canSend)
+      Image(systemName: "xmark")
+        .composerCircleActionLabel(.neutral)
     }
     .buttonStyle(.plain)
     .pointerHighlight(Circle())
-    .disabled(!canSend)
-    .accessibilityLabel(controller.isGoalEditing ? "Save goal" : "Send")
-    .accessibilityHint(controller.requiresModelSelection ? "Select a model" : "")
+    .accessibilityLabel("Cancel editing")
+    .accessibilityHint("Keeps the queued message as it was and restores your draft")
+  }
+
+  var hardwareQueueAction: (() -> Void)? {
+    guard controller.canQueueMessages, !controller.isGoalComposerArmed, !controller.isEditingQueuedPrompt
+    else { return nil }
+    return {
+      if canSend, slashMatches.isEmpty { submitComposer(delivery: .queue) }
+    }
   }
 
   var goalModeChip: some View {
@@ -193,16 +260,27 @@ extension ComposerBar {
   }
 
   var goalEditCancelButton: some View {
+    composerCancelButton(
+      hint: "Keeps the current goal and restores your chat draft",
+      isDisabled: isClearingGoal
+    ) {
+      controller.exitGoalComposer()
+    }
+  }
+
+  private func composerCancelButton(
+    hint: String,
+    isDisabled: Bool = false,
+    action: @escaping () -> Void
+  ) -> some View {
     Button("Cancel") {
-      withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
-        controller.exitGoalComposer()
-      }
+      withAnimation(Motion.quick(reduceMotion: reduceMotion), action)
     }
     .buttonStyle(.bordered)
     .controlSize(.small)
-    .disabled(isClearingGoal)
+    .disabled(isDisabled)
     .expandedHitTarget(base: 30)
-    .accessibilityHint("Keeps the current goal and restores your chat draft")
+    .accessibilityHint(hint)
   }
 
   var clearGoalButton: some View {
@@ -267,7 +345,12 @@ extension ComposerBar {
     .accessibilityLabel("Stop")
   }
 
-  func submitComposer() {
+  func submitComposer(delivery: ServerPromptDelivery = .steer) {
+    if controller.isEditingQueuedPrompt {
+      controller.composerText = text
+      Task { await controller.saveEditedQueuedPrompt() }
+      return
+    }
     let outgoing = text
     let isSubmittingGoal = controller.isGoalComposerArmed
     IOSNavigationDiagnostics.record(
@@ -275,7 +358,7 @@ extension ComposerBar {
       "chars=\(outgoing.count) preservesFocus=\(preservesFocusAfterSend) role=\(textEditorHandoffRole)"
     )
     if !isSubmittingGoal {
-      onWillSend?(outgoing)
+      onWillSend?(outgoing, delivery)
     }
     controller.composerText = outgoing
     if !preservesFocusAfterSend {
@@ -292,7 +375,7 @@ extension ComposerBar {
       Task { await controller.submitGoalFromComposer() }
     } else {
       controller.promptClientId = clientControlId?.uuidString.lowercased()
-      Task { await controller.send() }
+      Task { await controller.send(delivery: delivery) }
     }
   }
 }

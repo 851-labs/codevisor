@@ -65,6 +65,7 @@ export interface AgentSessionMetadata {
   readonly modes?: SessionModeState
   readonly configOptions: ReadonlyArray<SessionConfigOption>
   readonly supportsGoals?: boolean
+  readonly supportsSteering?: boolean
   readonly skills?: SessionSkills
   readonly unappliedConfigSelections?: Readonly<Record<string, string>>
 }

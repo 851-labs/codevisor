@@ -202,6 +202,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     if (previous !== undefined && previous.handle !== handle) {
       void Effect.runPromise(previous.handle.close).catch(() => undefined)
     }
+    const described = withSteeringSupport(metadata, handle)
     sessions.set(sessionId, {
       chain: Promise.resolve(),
       cwd,
@@ -209,11 +210,11 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
       handle,
       harnessId,
       ...(account === undefined ? {} : { harnessAccountId: account.id }),
-      metadata,
+      metadata: described,
       phases: makeMessagePhases(),
       sink
     })
-    return metadata
+    return described
   }
 
   const sessionFor = (sessionId: string): Effect.Effect<ManagedSession, AgentRuntimeError> =>
@@ -242,3 +243,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
 }
 
 export type AgentRuntimeCore = ReturnType<typeof makeAgentRuntimeCore>
+
+export const withSteeringSupport = (
+  metadata: AgentSessionMetadata,
+  handle: AgentSessionHandle
+): AgentSessionMetadata => ({ ...metadata, supportsSteering: handle.steer !== undefined })

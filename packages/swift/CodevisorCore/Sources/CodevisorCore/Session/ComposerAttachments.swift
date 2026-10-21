@@ -40,6 +40,14 @@ public final class ComposerAttachments {
     items = staged
   }
 
+  func restoreDraft(_ staged: [ComposerAttachment]) {
+    items = staged
+    for attachment in staged where attachment.state == .uploading {
+      uploads.cancel(id: attachment.id)
+      startUpload(attachment)
+    }
+  }
+
   func prepareRestoredFiles() {
     reuploadAllAttachments()
     for attachment in items { prepareSentPreview(for: attachment) }

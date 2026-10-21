@@ -60,7 +60,8 @@ describe("session catalog routes", () => {
             { category: "model", currentValue: "gpt-5", id: "model" },
             { category: "thought_level", currentValue: "medium", id: "reasoning" }
           ],
-          supportsGoals: true
+          supportsGoals: true,
+          supportsSteering: true
         }
       ]
     })

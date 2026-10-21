@@ -168,6 +168,7 @@ struct ComposerAttachmentStrip: View {
 
 private struct ComposerAttachmentChip: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.attachmentImages) private var attachmentImages
   let attachment: ComposerAttachment
   let onRemove: () -> Void
   let onRetry: () -> Void
@@ -227,7 +228,18 @@ private struct ComposerAttachmentChip: View {
       guard !Task.isCancelled else { return }
       thumbnail = image
     }
+    .task(id: attachment.uploadedFileID) {
+      guard attachment.fileURL == nil, attachment.isImage, thumbnail == nil,
+        case let .uploaded(ref) = attachment.state
+      else { return }
+      thumbnail = await attachmentImages?.image(for: PreviewFile(attachment: ref.attachment))?.image
+    }
     .attachmentQuickLookPreview($quickLookURL)
+  }
+
+  private var previewHint: String {
+    if canPreview { return "Opens the attachment preview" }
+    return isBusy ? "Attachment is still loading" : ""
   }
 
   private var thumbnailView: some View {
@@ -251,11 +263,11 @@ private struct ComposerAttachmentChip: View {
     }
     .buttonStyle(.plain)
     .pointerHighlight(RoundedRectangle(cornerRadius: 16))
-    .disabled(!canPreview)
+    .allowsHitTesting(canPreview)
     .opacity(isFailed ? 0.5 : 1)
     .accessibilityLabel("Preview \(attachment.name)")
     .accessibilityValue(isFailed ? "Upload failed" : "")
-    .accessibilityHint(canPreview ? "Opens the attachment preview" : "Attachment is still loading")
+    .accessibilityHint(previewHint)
   }
 
   private var fileChip: some View {
@@ -277,13 +289,11 @@ private struct ComposerAttachmentChip: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .disabled(!canPreview)
+      .allowsHitTesting(canPreview)
       .opacity(isFailed ? 0.5 : 1)
       .accessibilityLabel("Preview \(attachment.name)")
       .accessibilityValue(isFailed ? "Upload failed" : "")
-      .accessibilityHint(
-        canPreview ? "Opens the attachment preview" : "Attachment is still loading"
-      )
+      .accessibilityHint(previewHint)
 
       if let reason = failureReason {
         fileRetryButton(reason: reason)

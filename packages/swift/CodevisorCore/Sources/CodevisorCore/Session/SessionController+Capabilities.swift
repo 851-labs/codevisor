@@ -233,6 +233,9 @@ extension SessionController {
         modeStateByHarness[capability.harness.id] = modes
       }
       supportsGoalsByHarness[capability.harness.id] = capability.supportsGoals ?? false
+      if let supportsSteering = capability.supportsSteering {
+        supportsSteeringByHarness[capability.harness.id] = supportsSteering
+      }
     }
     if acceptsNewChatDefaults {
       applyNewChatSelectionPolicy(capabilities)

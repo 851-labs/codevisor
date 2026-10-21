@@ -399,7 +399,8 @@ export const PromptAcceptedResponse = Schema.Struct({
 export type PromptAcceptedResponse = typeof PromptAcceptedResponse.Type
 
 export const UpdateQueuedPromptRequest = Schema.Struct({
-  text: Schema.String
+  text: Schema.String,
+  attachments: Schema.optional(Schema.Array(AttachmentRef))
 })
 export type UpdateQueuedPromptRequest = typeof UpdateQueuedPromptRequest.Type
 

@@ -135,6 +135,29 @@ describe("session action routes", () => {
       (
         await jsonRequest(
           server,
+          `/v1/sessions/${session.id}/queue/${queuedResponse.queueItemId}`,
+          {
+            body: JSON.stringify({
+              text: "queued with a missing file",
+              attachments: [
+                {
+                  fileId: "missing-file",
+                  name: "missing.png",
+                  mimeType: "image/png",
+                  sizeBytes: 1,
+                  kind: "image"
+                }
+              ]
+            }),
+            method: "PATCH"
+          }
+        )
+      ).status
+    ).toBe(422)
+    expect(
+      (
+        await jsonRequest(
+          server,
           `/v1/sessions/${session.id}/queue/${removedResponse.queueItemId}`,
           { method: "DELETE" }
         )

@@ -34,8 +34,11 @@ extension ChatScreen {
       if !presentsBotConversation, !controller.queuedPrompts.isEmpty {
         PromptQueueView(
           controller: controller,
-          isExpanded: $isQueueExpanded,
-          glassNamespace: composerGlassNamespace
+          glassNamespace: composerGlassNamespace,
+          onEditInComposer: { item in
+            controller.beginEditingQueuedPrompt(item)
+            focus.focusComposer()
+          }
         )
       }
       composerNoticeRail
@@ -70,7 +73,6 @@ extension ChatScreen {
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: isQueueExpanded)
   }
 
   @ViewBuilder

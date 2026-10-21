@@ -31,7 +31,6 @@ struct ChatScreen: View {
   @State var autoFollow: Bool
   @State var composerHeight: CGFloat
   @State var composerCardHeight: CGFloat = 0
-  @State var isQueueExpanded: Bool
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
   @State var isTranscriptMounted: Bool
@@ -78,7 +77,6 @@ struct ChatScreen: View {
       initialValue: controller.scrollState?.followMode.followsLatest ?? true
     )
     _composerHeight = State(initialValue: isReadOnly ? 0 : presentationSurface.composerHeight)
-    _isQueueExpanded = State(initialValue: presentationSurface.isQueueExpanded)
     _isTranscriptMounted = State(initialValue: isWarm)
     _isInitialTranscriptReady = State(initialValue: isWarm)
   }
@@ -88,9 +86,6 @@ struct ChatScreen: View {
       .onChange(of: controller.userSendSignal) { _, _ in
         autoFollow = true
         scrollCommand.token &+= 1
-      }
-      .onChange(of: isQueueExpanded) { _, isExpanded in
-        presentationSurface.isQueueExpanded = isExpanded
       }
       .overlay { initialLoadingOverlay }
       .overlay(alignment: .bottom) { bottomChromeOverlay }

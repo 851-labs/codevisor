@@ -3,7 +3,7 @@ import ACPKit
 import os
 
 extension SessionController {
-  public func send() async {
+  public func send(delivery: ServerPromptDelivery = .steer) async {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composerAttachments.isEmpty,
       !isConnecting,
@@ -34,7 +34,8 @@ extension SessionController {
       attachments = collected
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
-    let shouldAnimateTranscriptSend = !isSending || presentsBotConversation
+    let resolvedDelivery = resolvedDelivery(for: delivery)
+    let shouldAnimateTranscriptSend = !sendLandsInQueue(delivery)
     userSendSignal &+= 1
 
     if shouldAnimateTranscriptSend {
@@ -89,7 +90,7 @@ extension SessionController {
     if let model {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
+      await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -110,7 +111,7 @@ extension SessionController {
       status = .idle
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
+      await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -130,7 +131,7 @@ extension SessionController {
     userSendAnimationCoordinator.claim(request)
   }
 
-  private func cancelUserSendAnimation(for messageID: UUID) {
+  func cancelUserSendAnimation(for messageID: UUID) {
     guard let request = userSendAnimationRequest, request.messageID == messageID else { return }
     userSendAnimationCoordinator.cancel(request)
     userSendAnimationRequest = nil
@@ -237,8 +238,8 @@ extension SessionController {
   }
 
   @discardableResult
-  public func updateQueuedPrompt(id: String, text: String) async -> Bool {
-    await model?.updateQueuedPrompt(id: id, text: text) ?? false
+  public func updateQueuedPrompt(id: String, text: String, attachments: [Attachment]? = nil) async -> Bool {
+    await model?.updateQueuedPrompt(id: id, text: text, attachments: attachments) ?? false
   }
 
   @discardableResult
@@ -248,7 +249,10 @@ extension SessionController {
 
   @discardableResult
   public func deleteQueuedPrompt(id: String) async -> Bool {
-    await model?.deleteQueuedPrompt(id: id) ?? false
+    guard let model else { return false }
+    let deleted = await model.deleteQueuedPrompt(id: id)
+    if deleted, editingQueuedPromptID == id { cancelEditingQueuedPrompt() }
+    return deleted
   }
 
   public func setMode(_ modeId: String) async {

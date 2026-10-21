@@ -413,6 +413,15 @@ public extension CodevisorServerClienting {
     try await promptSession(id: id, text: text, attachments: attachments, messageId: messageId)
   }
 
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?, delivery _: ServerPromptDelivery
+  ) async throws -> ServerPromptAccepted {
+    try await promptSession(
+      id: id, text: text, attachments: attachments, messageId: messageId, clientId: clientId
+    )
+  }
+
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -489,7 +498,9 @@ public extension CodevisorServerClienting {
     ServerUpdateApplied(accepted: false, targetVersion: nil)
   }
 
-  func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
+  func updateQueuedPrompt(
+    sessionId: UUID, queueItemId: String, text: String, attachments: [ServerAttachmentRef]?
+  ) async throws -> ServerPromptQueueItem {
     ServerPromptQueueItem(
       id: queueItemId,
       sessionId: sessionId.uuidString,
@@ -507,6 +518,10 @@ public extension CodevisorServerClienting {
   }
 
   func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
+
+  func sendQueuedPromptNow(sessionId: UUID, queueItemId: String) async throws -> ServerPromptAccepted {
+    ServerPromptAccepted(accepted: true, sessionId: sessionId.uuidString, queueItemId: queueItemId)
+  }
 
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {}
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {

@@ -445,7 +445,7 @@ describe("@codevisor/agent-runtime", () => {
     expect(reloaded.modes?.currentModeId).toBe("plan")
     await expect(
       run(runtime.loadAgentSession("claude-code", "custom-2", "/tmp/project", () => undefined))
-    ).resolves.toEqual({ configOptions: [], sessionId: "custom-2" })
+    ).resolves.toEqual({ configOptions: [], sessionId: "custom-2", supportsSteering: false })
     expect(events).toEqual([
       { kind: "session.output", payload: { ok: true }, subjectId: "custom-1" },
       { kind: "session.output", payload: "raw", subjectId: "custom-1" },

@@ -67,6 +67,9 @@ const capabilityFromMetadata = (
     ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
     configOptions: metadata.configOptions,
     ...(metadata.supportsGoals === undefined ? {} : { supportsGoals: metadata.supportsGoals }),
+    ...(metadata.supportsSteering === undefined
+      ? {}
+      : { supportsSteering: metadata.supportsSteering }),
     ...(metadata.skills === undefined ? {} : { skills: metadata.skills }),
     ...(metadata.unappliedConfigSelections === undefined
       ? {}

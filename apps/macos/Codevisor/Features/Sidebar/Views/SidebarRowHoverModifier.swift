@@ -12,10 +12,7 @@ struct SidebarRowHoverModifier: ViewModifier {
     content
       .background(
         RoundedRectangle.sidebarRow
-          .fill(
-            isSelected
-              ? Color.primary.opacity(0.14)
-              : (showsHover ? Color.secondary.opacity(0.12) : .clear))
+          .fill(RowSelectionStyle.fill(isSelected: isSelected, isHovered: showsHover))
       )
       .onHover { isHovered = $0 }
   }
@@ -28,5 +25,5 @@ extension View {
 }
 
 extension RoundedRectangle {
-  static let sidebarRow = RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+  static let sidebarRow = RowSelectionStyle.shape
 }

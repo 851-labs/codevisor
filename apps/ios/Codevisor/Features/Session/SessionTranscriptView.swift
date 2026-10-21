@@ -366,8 +366,8 @@ struct SessionTranscriptView: View {
         onSendSourceFrameChange: { frame in
           sendAnimationSourceFrame = frame
         },
-        onWillSend: { text in
-          if controller.isSending, !controller.presentsBotConversation {
+        onWillSend: { text, delivery in
+          if controller.sendLandsInQueue(delivery) {
             TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
             if !reduceMotion {
               queueSendAnimation.stage(

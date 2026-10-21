@@ -31,6 +31,7 @@ struct ChatInputEditor: NSViewRepresentable {
   var maxHeight: CGFloat = 240
   var topBleed: CGFloat = 0
   var onSubmit: () -> Void
+  var onQueueSubmit: (() -> Bool)? = nil
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
   var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
   var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
@@ -43,6 +44,7 @@ struct ChatInputEditor: NSViewRepresentable {
       coordinator?.markedTextDidChange()
     }
     textView.onSubmit = { onSubmit() }
+    textView.onQueueSubmit = onQueueSubmit
     textView.onKeyCommand = onKeyCommand
     textView.onPasteAttachments = onPasteAttachments
     onTextViewReady?(textView)
@@ -93,6 +95,7 @@ struct ChatInputEditor: NSViewRepresentable {
     context.coordinator.isApplyingUpdate = true
     defer { context.coordinator.isApplyingUpdate = false }
     textView.onSubmit = { onSubmit() }
+    textView.onQueueSubmit = onQueueSubmit
     textView.onKeyCommand = onKeyCommand
     textView.onPasteAttachments = onPasteAttachments
     textView.isEditable = isEnabled
@@ -301,6 +304,7 @@ final class SubmittingTextView: NSTextView {
   }
 
   var onSubmit: (() -> Void)?
+  var onQueueSubmit: (() -> Bool)?
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
   var onPasteAttachments: (([PastedAttachment]) -> Bool)?
 
@@ -422,15 +426,24 @@ final class SubmittingTextView: NSTextView {
     }
     if event.keyCode == 36 || event.keyCode == 76 {
       guard isEditable else { return }
-      if event.modifierFlags.contains(.shift) {
-        super.keyDown(with: event)
-      } else {
-        if onKeyCommand?(.acceptSelection) != true {
-          onSubmit?()
-        }
-      }
+      handleReturn(event)
       return
     }
     super.keyDown(with: event)
+  }
+
+  private func handleReturn(_ event: NSEvent) {
+    let modifiers = event.modifierFlags
+    if modifiers.contains(.option) {
+      super.keyDown(with: event)
+      return
+    }
+    if modifiers.contains(.shift) {
+      if onQueueSubmit?() != true { super.keyDown(with: event) }
+      return
+    }
+    if onKeyCommand?(.acceptSelection) != true {
+      onSubmit?()
+    }
   }
 }

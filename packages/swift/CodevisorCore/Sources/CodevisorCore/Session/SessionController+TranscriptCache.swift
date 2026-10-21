@@ -27,6 +27,9 @@ extension SessionController {
       guard userSendAnimationRequest?.messageID != messageID else { return }
       requestUserSendAnimation(for: messageID)
     }
+    model.onPromptNotSteered = { [weak self] messageID in
+      self?.cancelUserSendAnimation(for: messageID)
+    }
     model.onQueuedPromptPromoted = { [weak self] messageID in
       guard let messageID else { return }
       self?.requestUserSendAnimation(for: messageID)

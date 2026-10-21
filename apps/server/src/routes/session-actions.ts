@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { PromptAcceptedResponse } from "@codevisor/api"
+import type { AttachmentRef, PromptAcceptedResponse } from "@codevisor/api"
 import {
   CancelRequest,
   PromptRequest,
@@ -99,7 +99,11 @@ export const routeSessionActions = async (
     const id = routeParam(queueItemRoute, "id")
     const queueId = routeParam(queueItemRoute, "queueId")
     const payload = await readSchema(request, UpdateQueuedPromptRequest)
-    const item = await run(services.db.updatePromptQueueItem(id, queueId, payload.text))
+    if (payload.attachments !== undefined)
+      await requireKnownAttachments(services, payload.attachments)
+    const item = await run(
+      services.db.updatePromptQueueItem(id, queueId, payload.text, payload.attachments)
+    )
     await publishPromptQueue(services.db, fanout, id)
     writeJson(response, 200, item)
     return true
@@ -154,14 +158,7 @@ export const routeSessionActions = async (
       return true
     }
     const attachments = payload.attachments ?? []
-    if (attachments.length > MAX_PROMPT_ATTACHMENTS) {
-      throw new HttpFailure(422, `A prompt may carry at most ${MAX_PROMPT_ATTACHMENTS} attachments`)
-    }
-    for (const attachment of attachments) {
-      if ((await run(services.db.getFileMetadata(attachment.fileId))) === undefined) {
-        throw new HttpFailure(422, `Unknown attachment file: ${attachment.fileId}`)
-      }
-    }
+    await requireKnownAttachments(services, attachments)
     if (actionKey !== undefined) {
       routeState.pendingPromptActions.add(actionKey)
     }
@@ -398,4 +395,18 @@ const actionIdKey = (sessionId: string, clientActionId: string | undefined): str
 
 const writeNoContent = (response: ServerResponse): void => {
   writeJson(response, 204, {})
+}
+
+const requireKnownAttachments = async (
+  services: CodevisorServerServices,
+  attachments: ReadonlyArray<AttachmentRef>
+): Promise<void> => {
+  if (attachments.length > MAX_PROMPT_ATTACHMENTS) {
+    throw new HttpFailure(422, `A prompt may carry at most ${MAX_PROMPT_ATTACHMENTS} attachments`)
+  }
+  for (const attachment of attachments) {
+    if ((await run(services.db.getFileMetadata(attachment.fileId))) === undefined) {
+      throw new HttpFailure(422, `Unknown attachment file: ${attachment.fileId}`)
+    }
+  }
 }

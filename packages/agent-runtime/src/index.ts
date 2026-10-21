@@ -2,7 +2,7 @@ import type { Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Cause, Effect } from "effect"
 
-import { makeAgentRuntimeCore } from "./agent-runtime-core.js"
+import { makeAgentRuntimeCore, withSteeringSupport } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { harnessCatalog } from "./harness-catalog.js"
@@ -219,7 +219,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         }
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return {
-          ...created.metadata,
+          ...withSteeringSupport(created.metadata, created.handle),
           configOptions,
           ...(Object.keys(unapplied).length === 0 ? {} : { unappliedConfigSelections: unapplied })
         }

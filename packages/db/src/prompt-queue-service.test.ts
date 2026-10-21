@@ -50,4 +50,31 @@ describe("prompt queue", () => {
     expect(await run(db.claimPromptQueueItem(session.id, second.id))).toBeUndefined()
     expect(await run(db.listPromptQueue(session.id))).toMatchObject([{ id: first.id }])
   })
+
+  it("keeps a queued prompt's attachments through a text edit and replaces them when given", async () => {
+    const { db, session } = await queueFixture()
+    const photo = {
+      fileId: "file-photo",
+      name: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 10,
+      kind: "image" as const
+    }
+    const notes = {
+      fileId: "file-notes",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      sizeBytes: 5,
+      kind: "file" as const
+    }
+    const item = await run(db.createPromptQueueItem(session.id, "look at this", [photo]))
+
+    const retitled = await run(db.updatePromptQueueItem(session.id, item.id, "look at this now"))
+    const swapped = await run(db.updatePromptQueueItem(session.id, item.id, "notes", [notes]))
+    const cleared = await run(db.updatePromptQueueItem(session.id, item.id, "no files", []))
+
+    expect(retitled.attachments).toEqual([photo])
+    expect(swapped.attachments).toEqual([notes])
+    expect(cleared.attachments).toBeUndefined()
+  })
 })

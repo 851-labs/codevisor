@@ -15,10 +15,7 @@ struct HoverableRow<Content: View>: View {
     content(revealsHoverContent)
       .background(
         RoundedRectangle.sidebarRow
-          .fill(
-            isSelected
-              ? Color.primary.opacity(0.14)
-              : (showsHoverBackground ? Color.secondary.opacity(0.12) : .clear))
+          .fill(RowSelectionStyle.fill(isSelected: isSelected, isHovered: showsHoverBackground))
       )
       .onHover { isHovered = $0 }
   }

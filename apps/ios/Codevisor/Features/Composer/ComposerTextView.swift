@@ -25,6 +25,7 @@ struct ComposerTextView: UIViewRepresentable {
   var onResizePanEnded: (CGFloat, CGFloat) -> Void
   var onResizePanCancelled: () -> Void
   var onHardwareReturn: (() -> Void)?
+  var onHardwareQueue: (() -> Void)?
 
   func makeUIView(context: Context) -> ComposerTextViewContainer {
     let container = ComposerTextViewContainer()
@@ -153,6 +154,7 @@ struct ComposerTextView: UIViewRepresentable {
     view.onResizePanEnded = onResizePanEnded
     view.onResizePanCancelled = onResizePanCancelled
     view.onHardwareReturn = onHardwareReturn
+    view.onHardwareQueue = onHardwareQueue
   }
 
   private func applyUndoably(_ edit: ComposerTextEdit, to view: UITextView) {

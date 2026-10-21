@@ -164,6 +164,7 @@ export const makeAgents = (): AgentRuntimeService & {
           ...(unapplied ? { unappliedConfigSelections: { model: "gpt-gone" } } : {}),
           sessionId: `inspect-${harnessId}`,
           supportsGoals: true,
+          supportsSteering: true,
           modes: {
             currentModeId: "default",
             availableModes: [{ id: "default", name: "Default" }]

@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ComposerAttachmentThumb: View {
   @Environment(\.quickLook) private var quickLook
+  @Environment(\.attachmentImages) private var attachmentImages
   let attachment: ComposerAttachment
   let onRemove: () -> Void
   let onRetry: () -> Void
@@ -79,6 +80,10 @@ struct ComposerAttachmentThumb: View {
         await attachmentPreviewImage(fileURL: fileURL, isVideo: isVideo, isPDF: isPDF)
       }.value
     }
+    .task(id: attachment.uploadedFileID) {
+      guard attachment.fileURL == nil, thumbnail == nil, let uploaded = uploadedPreviewFile else { return }
+      thumbnail = await attachmentImages?.image(for: uploaded)?.image
+    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(attachment.name)")
     .accessibilityAddTraits(.isButton)
@@ -89,6 +94,11 @@ struct ComposerAttachmentThumb: View {
         Button("Retry Upload", action: onRetry)
       }
     }
+  }
+
+  private var uploadedPreviewFile: PreviewFile? {
+    guard attachment.isImage, case let .uploaded(ref) = attachment.state else { return nil }
+    return PreviewFile(attachment: ref.attachment)
   }
 
   private func preview() {
