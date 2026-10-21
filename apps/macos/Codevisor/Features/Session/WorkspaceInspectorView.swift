@@ -177,71 +177,73 @@ struct WorkspaceInspectorView: View {
   }
 
   private var info: some View {
-    Form {
-      if let pullRequest {
-        Section("Pull Request", isExpanded: expansion("Pull Request")) {
-          row(.pullRequest(pullRequest.url)) {
-            Label {
-              Text("PR #\(pullRequest.number): \(pullRequest.title)")
-                .lineLimit(1)
-                .truncationMode(.tail)
-            } icon: {
-              pullRequest.statusImage
-                .resizable()
-                .scaledToFit()
-                .frame(width: 14, height: 14)
-                .foregroundStyle(pullRequest.statusColor)
-            }
-          }
-        }
-      }
-
-      Section("Details", isExpanded: expansion("Details")) {
-        detail("Project", systemImage: "folder", value: project.name)
-        if let branch {
-          detail("Branch", systemImage: "arrow.triangle.branch", value: branch)
-        }
-        if let worktree = workspace.worktreeName {
-          detail("Worktree", systemImage: "tree", value: worktree)
-        }
-        if let machineName {
-          detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
-        }
-        if showsBotTranscript {
-          row(.botTranscript) {
-            Label {
-              HStack {
-                Text("Show Full Transcript")
-                Spacer(minLength: 8)
-                Image(systemName: "arrow.up.forward.square")
-                  .foregroundStyle(.secondary)
+    ScrollView {
+      VStack(alignment: .leading, spacing: 10) {
+        if let pullRequest {
+          WorkspaceInspectorCard(title: "Pull Request", isExpanded: expansion("Pull Request")) {
+            row(.pullRequest(pullRequest.url)) {
+              Label {
+                Text("PR #\(pullRequest.number): \(pullRequest.title)")
+                  .lineLimit(1)
+                  .truncationMode(.tail)
+              } icon: {
+                pullRequest.statusImage
+                  .resizable()
+                  .scaledToFit()
+                  .frame(width: 14, height: 14)
+                  .foregroundStyle(pullRequest.statusColor)
               }
-            } icon: {
-              Image(systemName: "text.page")
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
             }
           }
-          .help("Show everything the bot did, including its tool calls and the messages it received")
-          .accessibilityIdentifier("bot.showFullTranscript")
+        }
+
+        WorkspaceInspectorCard(title: "Details", isExpanded: expansion("Details")) {
+          detail("Project", systemImage: "folder", value: project.name)
+          if let branch {
+            detail("Branch", systemImage: "arrow.triangle.branch", value: branch)
+          }
+          if let worktree = workspace.worktreeName {
+            detail("Worktree", systemImage: "tree", value: worktree)
+          }
+          if let machineName {
+            detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
+          }
+          if showsBotTranscript {
+            row(.botTranscript) {
+              Label {
+                HStack {
+                  Text("Show Full Transcript")
+                  Spacer(minLength: 8)
+                  Image(systemName: "arrow.up.forward.square")
+                    .foregroundStyle(.secondary)
+                }
+              } icon: {
+                Image(systemName: "text.page")
+                  .foregroundStyle(.secondary)
+                  .frame(width: 20)
+              }
+            }
+            .help("Show everything the bot did, including its tool calls and the messages it received")
+            .accessibilityIdentifier("bot.showFullTranscript")
+          }
+        }
+
+        if let machineStats, machineStats.serverId == workspace.serverId {
+          WorkspaceInspectorMachineSection(stats: machineStats.stats, isExpanded: expansion("Machine"))
+        }
+
+        if let usageChat, let limits = usage.limits(for: usageChat) {
+          WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
+        }
+
+        if let chatSessionId {
+          WorkspaceInspectorContextSection(
+            context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
+            isExpanded: expansion("Context"))
         }
       }
-
-      if let machineStats, machineStats.serverId == workspace.serverId {
-        WorkspaceInspectorMachineSection(stats: machineStats.stats, isExpanded: expansion("Machine"))
-      }
-
-      if let usageChat, let limits = usage.limits(for: usageChat) {
-        WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
-      }
-
-      if let chatSessionId {
-        WorkspaceInspectorContextSection(
-          context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
-          isExpanded: expansion("Context"))
-      }
+      .padding(.vertical, 10)
     }
-    .formStyle(.grouped)
     .task(
       id: chatSessionId.map {
         WorkspaceInspectorContextSection.LoadKey(sessionId: $0, usage: chatUsage, activity: activity)

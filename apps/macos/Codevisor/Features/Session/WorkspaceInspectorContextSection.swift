@@ -16,7 +16,7 @@ struct WorkspaceInspectorContextSection: View {
 
   var body: some View {
     if let context {
-      Section("Context", isExpanded: $isExpanded) {
+      WorkspaceInspectorCard(title: "Context", isExpanded: $isExpanded) {
         WorkspaceInspectorContextOverview(
           used: context.totalTokens,
           size: context.maxTokens,
@@ -28,7 +28,7 @@ struct WorkspaceInspectorContextSection: View {
         }
       }
     } else if let used = usage?.used, let size = usage?.size, size > 0 {
-      Section("Context", isExpanded: $isExpanded) {
+      WorkspaceInspectorCard(title: "Context", isExpanded: $isExpanded) {
         WorkspaceInspectorContextOverview(used: Double(used), size: Double(size), segments: [])
       }
     }

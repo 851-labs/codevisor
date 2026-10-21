@@ -9,7 +9,7 @@ struct WorkspaceInspectorMachineSection: View {
   @Binding var isExpanded: Bool
 
   var body: some View {
-    Section("Machine", isExpanded: $isExpanded) {
+    WorkspaceInspectorCard(title: "Machine", isExpanded: $isExpanded) {
       WorkspaceInspectorMachineLoad(
         title: "CPU", usedPercent: stats.cpu.usedPercent, history: stats.cpu.history,
         detail: "\(stats.cpu.cores) cores")
