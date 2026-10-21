@@ -1,3 +1,4 @@
+import ApplicationServices
 import CoreGraphics
 import Testing
 @testable import CodevisorCoreMac
@@ -22,6 +23,34 @@ struct ComputerUseObservationLabelTests {
     #expect(computerUseSettleWindow(sinceAction: 0) == 1.5)
     #expect(computerUseSettleWindow(sinceAction: 1) == 0.5)
     #expect(computerUseSettleWindow(sinceAction: 2) == 0)
+  }
+
+  @Test("Change observers hand HIServices the same process-lifetime notification name objects every time")
+  func changeNotificationsAreLongLived() {
+    let first = computerUseChangeNotifications.map { $0 as CFString }
+    let second = computerUseChangeNotifications.map { $0 as CFString }
+    #expect(zip(first, second).allSatisfy { $0 === $1 })
+  }
+
+  @Test("A change callback reaches only its own observer's signal, and nothing once that observer is torn down")
+  func changeCallbacksFollowTheirObserver() throws {
+    var created: AXObserver?
+    var other: AXObserver?
+    let pid = ProcessInfo.processInfo.processIdentifier
+    try #require(AXObserverCreate(pid, { _, _, _, _ in }, &created) == .success)
+    try #require(AXObserverCreate(pid, { _, _, _, _ in }, &other) == .success)
+    let observer = try #require(created)
+    let signal = ComputerUseChangeSignal(stopsOnFirstChange: false)
+    computerUseChangeSignals[observer] = signal
+
+    computerUseRecordChange(observer: observer, notification: kAXValueChangedNotification as CFString)
+    computerUseRecordChange(observer: try #require(other), notification: kAXTitleChangedNotification as CFString)
+    #expect(signal.notification == kAXValueChangedNotification)
+    #expect(signal.count == 1)
+
+    computerUseChangeSignals[observer] = nil
+    computerUseRecordChange(observer: observer, notification: kAXTitleChangedNotification as CFString)
+    #expect(signal.count == 1)
   }
 
   @Test("Hover-only actions are hidden from observations")
