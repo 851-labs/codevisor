@@ -63,10 +63,7 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
     SidebarRowStack(spacing: 1, channels: channels) {
       ForEach(displayed) { item in
         content(item.row)
-          .modifier(
-            SidebarRowFoldModifier(
-              phase: item.phase, channels: item.phase.fold == .leaving ? channels : SidebarFoldChannels())
-          )
+          .modifier(SidebarRowFoldModifier(phase: item.phase))
           .transition(item.phase.fold == .arriving ? .opacity : .identity)
       }
     }
@@ -138,19 +135,13 @@ nonisolated private struct SidebarRowPhaseKey: LayoutValueKey {
   static let defaultValue = SidebarRowPhase.kept
 }
 
-private struct SidebarRowFoldModifier: ViewModifier, Animatable {
+private struct SidebarRowFoldModifier: ViewModifier {
   let phase: SidebarRowPhase
-  var channels: SidebarFoldChannels
-
-  var animatableData: AnimatablePair<CGFloat, CGFloat> {
-    get { channels.progress }
-    set { channels.progress = newValue }
-  }
 
   func body(content: Content) -> some View {
     SidebarRowClip { content }
       .clipped()
-      .opacity(phase.fold == .leaving ? channels.shown(phase) : 1)
+      .opacity(phase.fold == .leaving ? 0 : 1)
       .allowsHitTesting(phase.fold != .leaving)
       .accessibilityHidden(phase.fold == .leaving)
       .zIndex(phase.fold == .kept ? 1 : 0)
