@@ -1,47 +1,6 @@
 import CodevisorUI
 import SwiftUI
 
-nonisolated private struct SidebarRowPhase: Equatable {
-  var fold: SidebarRowFold
-  var channel: Int
-
-  static let kept = SidebarRowPhase(fold: .kept, channel: 0)
-}
-
-nonisolated private struct SidebarFoldChannels: Equatable {
-  var progress = AnimatablePair<CGFloat, CGFloat>(0, 0)
-  var bases: (CGFloat, CGFloat) = (0, 0)
-
-  static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.progress == rhs.progress && lhs.bases == rhs.bases
-  }
-
-  func value(_ channel: Int) -> CGFloat { channel == 0 ? progress.first : progress.second }
-
-  func base(_ channel: Int) -> CGFloat { channel == 0 ? bases.0 : bases.1 }
-
-  var isFolding: Bool {
-    (0...1).contains { value($0) > base($0) && value($0) < base($0) + 1 }
-  }
-
-  func shown(_ phase: SidebarRowPhase) -> CGFloat {
-    let progress = min(1, max(0, value(phase.channel) - base(phase.channel)))
-    return switch phase.fold {
-    case .kept: 1
-    case .arriving: progress
-    case .leaving: 1 - progress
-    }
-  }
-
-  mutating func begin(_ channel: Int) {
-    if channel == 0 { bases.0 = progress.first } else { bases.1 = progress.second }
-  }
-
-  mutating func advance(_ channel: Int) {
-    if channel == 0 { progress.first += 1 } else { progress.second += 1 }
-  }
-}
-
 struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
   let rows: [Row]
   let id: (Row) -> ID
@@ -49,27 +8,27 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
   @ViewBuilder let content: (Row) -> Content
   @State private var shown: [Shown] = []
   @State private var isPrimed = false
-  @State private var channels = SidebarFoldChannels()
+  @State private var progress = SidebarFoldProgress()
   @State private var batch = 0
 
   private struct Shown: Identifiable {
     let id: ID
     var row: Row
-    var phase: SidebarRowPhase
+    var visibility: SidebarRowVisibility
   }
 
   var body: some View {
-    let displayed = isPrimed ? shown : rows.map { Shown(id: id($0), row: $0, phase: .kept) }
-    SidebarRowStack(spacing: 1, channels: channels) {
+    let displayed = isPrimed ? shown : rows.map { Shown(id: id($0), row: $0, visibility: .shown) }
+    SidebarRowStack(spacing: 1, progress: progress, batch: batch) {
       ForEach(displayed) { item in
         content(item.row)
-          .modifier(SidebarRowFoldModifier(phase: item.phase))
-          .transition(item.phase.fold == .arriving ? .opacity : .identity)
+          .modifier(SidebarRowFoldModifier(visibility: item.visibility))
+          .transition(item.visibility.isFolding && item.visibility.target == 1 ? .opacity : .identity)
       }
     }
     .animation(animation, value: displayed.map(\.id))
     .onAppear {
-      shown = rows.map { Shown(id: id($0), row: $0, phase: .kept) }
+      shown = rows.map { Shown(id: id($0), row: $0, visibility: .shown) }
       isPrimed = true
     }
     .onChange(of: rows) { previous, current in
@@ -79,88 +38,84 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
 
   private func refresh() {
     let current = Dictionary(rows.map { (id($0), $0) }, uniquingKeysWith: { first, _ in first })
-    shown = shown.map { Shown(id: $0.id, row: current[$0.id] ?? $0.row, phase: $0.phase) }
+    shown = shown.map { Shown(id: $0.id, row: current[$0.id] ?? $0.row, visibility: $0.visibility) }
   }
 
   private func reconcile() {
     guard let animation else {
-      shown = rows.map { Shown(id: id($0), row: $0, phase: .kept) }
+      shown = rows.map { Shown(id: id($0), row: $0, visibility: .shown) }
+      progress = SidebarFoldProgress()
       return
     }
-    let existing = Dictionary(shown.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let existing = Dictionary(shown.map { ($0.id, $0.row) }, uniquingKeysWith: { first, _ in first })
     let current = Dictionary(rows.map { (id($0), $0) }, uniquingKeysWith: { first, _ in first })
-    let present = shown.filter { $0.phase.fold != .leaving }
-    let steps = SidebarRowFold.plan(from: present.map(\.id), to: rows.map(id))
-    let folds = steps.contains { $0.fold != .kept }
-    let channel = (batch + 1) % 2
-    var entries: [Shown] = steps.compactMap { step in
-      guard let row = current[step.id] ?? existing[step.id]?.row else { return nil }
-      if step.fold == .kept, let phase = existing[step.id]?.phase, phase.fold == .arriving, phase.channel != channel {
-        return Shown(id: step.id, row: row, phase: phase)
-      }
-      let phase = step.fold == .kept ? SidebarRowPhase.kept : SidebarRowPhase(fold: step.fold, channel: channel)
-      return Shown(id: step.id, row: row, phase: phase)
+    let fold = progress.count
+    let placements = SidebarRowFold.plan(
+      from: shown.map { SidebarRowFold.Placement($0.id, $0.visibility) }, to: rows.map(id), fold: fold)
+    let entries: [Shown] = placements.compactMap { placement in
+      guard let row = current[placement.id] ?? existing[placement.id] else { return nil }
+      return Shown(id: placement.id, row: row, visibility: placement.visibility)
     }
-    entries = Self.keepingInFlight(shown, in: entries, freeing: folds ? channel : nil)
-    guard folds else {
+    guard entries.contains(where: { $0.visibility.terms.contains { $0.fold == fold } }) else {
       withAnimation(animation) { shown = entries }
       return
     }
     batch += 1
     let started = batch
-    channels.begin(channel)
-    withAnimation(animation, completionCriteria: .logicallyComplete) {
+    withAnimation(animation, completionCriteria: .removed) {
       shown = entries
-      channels.advance(channel)
+      progress.advance(fold)
     } completion: {
       if batch == started { settle() }
     }
   }
 
-  private static func keepingInFlight(_ shown: [Shown], in entries: [Shown], freeing channel: Int?) -> [Shown] {
-    let entryIDs = Set(entries.map(\.id))
-    let inFlight = shown.filter {
-      !entryIDs.contains($0.id) && $0.phase.fold == .leaving && $0.phase.channel != channel
-    }
-    return SidebarRowFold.interleave(inFlight, into: entries, by: shown.map(\.id), id: \.id)
-  }
-
   private func settle() {
-    guard shown.contains(where: { $0.phase.fold != .kept }) else { return }
-    shown = shown.filter { $0.phase.fold != .leaving }.map { Shown(id: $0.id, row: $0.row, phase: .kept) }
+    let settled = SidebarRowFold.settle(shown.map { SidebarRowFold.Placement($0.id, $0.visibility) })
+    let rows = Dictionary(shown.map { ($0.id, $0.row) }, uniquingKeysWith: { first, _ in first })
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      shown = settled.compactMap { placement in
+        rows[placement.id].map { Shown(id: placement.id, row: $0, visibility: .shown) }
+      }
+      progress = SidebarFoldProgress()
+    }
   }
 }
 
-nonisolated private struct SidebarRowPhaseKey: LayoutValueKey {
-  static let defaultValue = SidebarRowPhase.kept
+nonisolated private struct SidebarRowVisibilityKey: LayoutValueKey {
+  static let defaultValue = SidebarRowVisibility.shown
 }
 
 private struct SidebarRowFoldModifier: ViewModifier {
-  let phase: SidebarRowPhase
+  let visibility: SidebarRowVisibility
 
   func body(content: Content) -> some View {
+    let isLeaving = visibility.target == 0
     SidebarRowClip { content }
       .clipped()
-      .opacity(phase.fold == .leaving ? 0 : 1)
-      .allowsHitTesting(phase.fold != .leaving)
-      .accessibilityHidden(phase.fold == .leaving)
-      .zIndex(phase.fold == .kept ? 1 : 0)
-      .layoutValue(key: SidebarRowPhaseKey.self, value: phase)
+      .opacity(isLeaving ? 0 : 1)
+      .allowsHitTesting(!isLeaving)
+      .accessibilityHidden(isLeaving)
+      .zIndex(visibility.isFolding ? 0 : 1)
+      .layoutValue(key: SidebarRowVisibilityKey.self, value: visibility)
   }
 }
 
 private struct SidebarRowStack: Layout {
   var spacing: CGFloat
-  var channels: SidebarFoldChannels
+  var progress: SidebarFoldProgress
+  var batch: Int
 
-  var animatableData: AnimatablePair<CGFloat, CGFloat> {
-    get { channels.progress }
-    set { channels.progress = newValue }
+  var animatableData: SidebarFoldProgress {
+    get { progress }
+    set { progress = newValue }
   }
 
   struct Cache {
     var width: CGFloat?
-    var bases: [CGFloat] = []
+    var batch: Int?
     var sizes: [CGSize] = []
   }
 
@@ -186,12 +141,11 @@ private struct SidebarRowStack: Layout {
   }
 
   private func sizes(of subviews: Subviews, width: CGFloat?, cache: inout Cache) -> [CGSize] {
-    let bases = [channels.base(0), channels.base(1)]
-    if channels.isFolding, cache.bases == bases, cache.width == width, cache.sizes.count == subviews.count {
+    if progress.isFolding, cache.batch == batch, cache.width == width, cache.sizes.count == subviews.count {
       return cache.sizes
     }
     let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
-    cache = Cache(width: width, bases: bases, sizes: sizes)
+    cache = Cache(width: width, batch: batch, sizes: sizes)
     return sizes
   }
 
@@ -199,10 +153,10 @@ private struct SidebarRowStack: Layout {
     _ subviews: Subviews, width: CGFloat?, cache: inout Cache
   ) -> (frames: [CGRect], height: CGFloat) {
     let sizes = sizes(of: subviews, width: width, cache: &cache)
-    let phases = subviews.map { $0[SidebarRowPhaseKey.self] }
+    let visibilities = subviews.map { $0[SidebarRowVisibilityKey.self] }
     var blocks: [Range<Int>] = []
-    for index in phases.indices {
-      if let last = blocks.last, phases[index].fold != .kept, phases[last.lowerBound] == phases[index] {
+    for index in visibilities.indices {
+      if let last = blocks.last, visibilities[index].isFolding, visibilities[last.lowerBound] == visibilities[index] {
         blocks[blocks.count - 1] = last.lowerBound..<(index + 1)
       } else {
         blocks.append(index..<(index + 1))
@@ -212,16 +166,16 @@ private struct SidebarRowStack: Layout {
     var y: CGFloat = 0
     var gapTaken = false
     for (number, block) in blocks.enumerated() {
-      let phase = phases[block.lowerBound]
+      let visibility = visibilities[block.lowerBound]
       let hasPrevious = number > 0
-      guard phase.fold != .kept else {
+      guard visibility.isFolding else {
         if hasPrevious && !gapTaken { y += spacing }
         frames[block.lowerBound].origin.y = y
         y += sizes[block.lowerBound].height
         gapTaken = false
         continue
       }
-      let shown = channels.shown(phase)
+      let shown = visibility.value(at: progress)
       let lead = hasPrevious && !gapTaken ? spacing : 0
       let trail = !hasPrevious && number < blocks.count - 1 ? spacing : 0
       let height = block.map { sizes[$0].height }.reduce(0, +) + spacing * CGFloat(block.count - 1)
