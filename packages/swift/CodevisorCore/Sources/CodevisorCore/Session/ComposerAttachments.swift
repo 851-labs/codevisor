@@ -9,7 +9,9 @@ import os
 public final class ComposerAttachments {
   public private(set) var items: [ComposerAttachment] = [] { didSet { onChange() } }
   @ObservationIgnored private let uploads = AttachmentUploads()
-  @ObservationIgnored private let files: ComposerAttachmentFileStore
+  @ObservationIgnored var loaders: [UUID: ComposerAttachmentLoader] = [:]
+  @ObservationIgnored var loads: [UUID: Task<LoadedAttachmentFile, any Error>] = [:]
+  @ObservationIgnored let files: ComposerAttachmentFileStore
   @ObservationIgnored private let client: () -> (any CodevisorServerClienting)?
   @ObservationIgnored private let uploadLimitBytes: () -> Int
   @ObservationIgnored private let onChange: () -> Void
@@ -34,14 +36,17 @@ public final class ComposerAttachments {
 
   func clearAfterCollecting() {
     items = []
+    forgetLoaders(keeping: [])
   }
 
   func restore(_ staged: [ComposerAttachment]) {
     items = staged
+    forgetLoaders(keeping: Set(staged.map(\.id)))
   }
 
   func restoreDraft(_ staged: [ComposerAttachment]) {
     items = staged
+    forgetLoaders(keeping: Set(staged.map(\.id)))
     for attachment in staged where attachment.state == .uploading {
       uploads.cancel(id: attachment.id)
       startUpload(attachment)
@@ -135,6 +140,11 @@ public final class ComposerAttachments {
       message:
         "Couldn't read “\(metadata.name)”. Check that you have permission to open it, then try again."
     )
+  }
+
+  public func showLoadingPreview(_ data: Data, for id: UUID) {
+    guard let index = items.firstIndex(where: { $0.id == id }), items[index].fileURL == nil else { return }
+    items[index].loadingPreviewData = data
   }
 
   public func attachImageData(
@@ -265,7 +275,7 @@ public final class ComposerAttachments {
     }
   }
 
-  private func resolveLoadingAttachmentReportingFailure(
+  func resolveLoadingAttachmentReportingFailure(
     id: UUID,
     name: String,
     mimeType: String,
@@ -312,15 +322,22 @@ public final class ComposerAttachments {
 
   public func removeAttachment(id: UUID) {
     uploads.cancel(id: id)
+    loads.removeValue(forKey: id)?.cancel()
+    loaders[id] = nil
     items.removeAll { $0.id == id }
     files.remove(id: id)
   }
 
   public func retryAttachment(id: UUID) {
     guard let index = items.firstIndex(where: { $0.id == id }),
-      case .failed = items[index].state,
-      items[index].fileURL != nil
+      case .failed = items[index].state
     else { return }
+    if items[index].fileURL == nil, loaders[id] != nil {
+      items[index].state = .loading
+      startLoad(id: id)
+      return
+    }
+    guard items[index].fileURL != nil else { return }
     items[index].state = .uploading
     startUpload(items[index])
   }
@@ -357,7 +374,7 @@ public final class ComposerAttachments {
     }
   }
 
-  private func setAttachmentState(_ id: UUID, _ state: ComposerAttachment.State) {
+  func setAttachmentState(_ id: UUID, _ state: ComposerAttachment.State) {
     guard let index = items.firstIndex(where: { $0.id == id }) else { return }
     items[index].state = state
   }

@@ -15,6 +15,7 @@ public struct ComposerAttachment: Identifiable, Equatable {
   public var kind: Attachment.Kind
   public var fileURL: URL?
   public var sentPreviewData: Data?
+  public var loadingPreviewData: Data?
   public var state: State
 
   public init(
@@ -24,6 +25,7 @@ public struct ComposerAttachment: Identifiable, Equatable {
     kind: Attachment.Kind,
     fileURL: URL? = nil,
     sentPreviewData: Data? = nil,
+    loadingPreviewData: Data? = nil,
     state: State
   ) {
     self.id = id
@@ -32,6 +34,7 @@ public struct ComposerAttachment: Identifiable, Equatable {
     self.kind = kind
     self.fileURL = fileURL
     self.sentPreviewData = sentPreviewData
+    self.loadingPreviewData = loadingPreviewData
     self.state = state
   }
 

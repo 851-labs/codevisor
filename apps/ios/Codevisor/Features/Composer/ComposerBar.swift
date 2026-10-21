@@ -267,7 +267,7 @@ struct ComposerBar: View {
       guard !items.isEmpty else { return }
       let picked = items
       photoItems = []
-      Task { await ComposerAttachmentStaging.stage(photoItems: picked, into: controller) }
+      ComposerAttachmentStaging.stage(photoItems: picked, into: controller)
     }
     .fileImporter(
       isPresented: $isPickingFiles,

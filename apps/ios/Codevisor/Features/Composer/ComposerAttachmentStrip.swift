@@ -86,63 +86,100 @@ enum ComposerAttachmentStaging {
     }
   }
 
-  static func stage(photoItems items: [PhotosPickerItem], into controller: SessionController) async {
+  static func stage(photoItems items: [PhotosPickerItem], into controller: SessionController) {
+    let stamp = timestamp()
     for item in items {
-      guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-      let type = item.supportedContentTypes.first
-      let ext = type?.preferredFilenameExtension ?? "jpg"
-      let base = type?.conforms(to: .movie) == true ? "Video" : "Photo"
-      let name = "\(base) \(timestamp()).\(ext)"
-      let url = await Task.detached(priority: .userInitiated) {
-        writeTemporary(data: data, name: name)
-      }.value
-      if let url {
-        await attachTemporary(url, into: controller)
+      let pickedType = item.supportedContentTypes.first
+      let base = pickedType?.conforms(to: .movie) == true ? "Video" : "Photo"
+      let placeholder = metadata(base: base, stamp: stamp, type: pickedType)
+      let id = controller.attachments.attachLoading(
+        name: placeholder.name,
+        mimeType: placeholder.mimeType,
+        kind: placeholder.kind
+      ) { id, files in
+        guard let picked = try await item.loadTransferable(type: PickedMediaFile.self) else {
+          throw PickedMediaUnavailable()
+        }
+        defer { try? FileManager.default.removeItem(at: picked.url.deletingLastPathComponent()) }
+        let loaded = metadata(
+          base: base,
+          stamp: stamp,
+          type: UTType(filenameExtension: picked.url.pathExtension) ?? pickedType
+        )
+        return LoadedAttachmentFile(
+          fileURL: try files.stageCopy(of: picked.url, id: id, name: loaded.name),
+          name: loaded.name,
+          mimeType: loaded.mimeType,
+          kind: loaded.kind
+        )
+      }
+      if let id {
+        Task {
+          guard let preview = try? await item.loadTransferable(type: PickerPreviewImage.self) else { return }
+          controller.attachments.showLoadingPreview(preview.data, for: id)
+        }
       }
     }
   }
 
   static func stage(cameraImage image: UIImage, into controller: SessionController) {
     let name = "Photo \(timestamp()).jpg"
-    Task {
-      let url = await Task.detached(priority: .userInitiated) { () -> URL? in
-        guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
-        return writeTemporary(data: data, name: name)
-      }.value
-      if let url {
-        await attachTemporary(url, into: controller)
-      }
-    }
-  }
-
-  private static func attachTemporary(_ url: URL, into controller: SessionController) async {
-    await controller.attachments.attachFileURLs([url]).value
-    try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
-  }
-
-  private nonisolated static func writeTemporary(data: Data, name: String) -> URL? {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("ComposerAttachments", isDirectory: true)
-    do {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let url =
-        directory
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        .appendingPathComponent(name)
-      try FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+    controller.attachments.attachLoading(name: name, mimeType: "image/jpeg", kind: .image) { id, files in
+      guard let data = image.jpegData(compressionQuality: 0.9) else { throw PickedMediaUnavailable() }
+      return LoadedAttachmentFile(
+        fileURL: try files.stage(data: data, id: id, name: name),
+        name: name,
+        mimeType: "image/jpeg",
+        kind: .image
       )
-      try data.write(to: url, options: .atomic)
-      return url
-    } catch {
-      return nil
     }
+  }
+
+  private nonisolated static func metadata(
+    base: String,
+    stamp: String,
+    type: UTType?
+  ) -> (name: String, mimeType: String, kind: Attachment.Kind) {
+    let ext = type?.preferredFilenameExtension ?? (base == "Video" ? "mov" : "jpg")
+    return (
+      "\(base) \(stamp).\(ext)",
+      type?.preferredMIMEType ?? "application/octet-stream",
+      type?.conforms(to: .image) == true ? .image : .file
+    )
   }
 
   private static func timestamp() -> String {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
     return formatter.string(from: Date())
+  }
+}
+
+nonisolated private struct PickedMediaUnavailable: Error {}
+
+nonisolated private struct PickerPreviewImage: Transferable {
+  let data: Data
+
+  static var transferRepresentation: some TransferRepresentation {
+    DataRepresentation(importedContentType: UTType(importedAs: "com.apple.private.photos.thumbnail.standard")) {
+      PickerPreviewImage(data: $0)
+    }
+  }
+}
+
+nonisolated private struct PickedMediaFile: Transferable {
+  let url: URL
+
+  static var transferRepresentation: some TransferRepresentation {
+    FileRepresentation(importedContentType: .data) { received in
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ComposerAttachments", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let url = directory.appendingPathComponent(received.file.lastPathComponent)
+      try FileManager.default.copyItem(at: received.file, to: url)
+      return PickedMediaFile(url: url)
+    }
   }
 }
 
@@ -174,6 +211,7 @@ private struct ComposerAttachmentChip: View {
   let onRetry: () -> Void
 
   @State private var thumbnail: UIImage?
+  @State private var loadingPreview: UIImage?
   @State private var quickLookURL: URL?
 
   private var failureReason: String? {
@@ -228,6 +266,12 @@ private struct ComposerAttachmentChip: View {
       guard !Task.isCancelled else { return }
       thumbnail = image
     }
+    .task(id: attachment.loadingPreviewData) {
+      guard let data = attachment.loadingPreviewData, loadingPreview == nil else { return }
+      let image = await Task.detached(priority: .userInitiated) { UIImage(data: data) }.value
+      guard !Task.isCancelled else { return }
+      loadingPreview = image
+    }
     .task(id: attachment.uploadedFileID) {
       guard attachment.fileURL == nil, attachment.isImage, thumbnail == nil,
         case let .uploaded(ref) = attachment.state
@@ -247,8 +291,8 @@ private struct ComposerAttachmentChip: View {
       ZStack {
         RoundedRectangle(cornerRadius: 16)
           .fill(Color.secondary.opacity(0.12))
-        if let thumbnail {
-          Image(uiImage: thumbnail)
+        if let image = thumbnail ?? loadingPreview {
+          Image(uiImage: image)
             .resizable()
             .aspectRatio(contentMode: .fill)
         } else {
