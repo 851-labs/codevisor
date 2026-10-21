@@ -23,7 +23,18 @@
     }
 
     open func shouldConsumeVerticalScroll(_ event: NSEvent) -> Bool {
-      false
+      canConsumeVerticalDelta(event.scrollingDeltaY)
+    }
+
+    public func canConsumeVerticalDelta(_ deltaY: CGFloat) -> Bool {
+      guard hasVerticalScroller, deltaY != 0, let documentView else { return false }
+
+      let visibleRect = contentView.documentVisibleRect
+      let documentRect = documentView.bounds
+      if deltaY > 0 {
+        return visibleRect.minY > documentRect.minY + 0.5
+      }
+      return visibleRect.maxY < documentRect.maxY - 0.5
     }
 
     open override func scrollWheel(with event: NSEvent) {

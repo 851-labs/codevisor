@@ -177,20 +177,6 @@
       )
     }
 
-    override func shouldConsumeVerticalScroll(_ event: NSEvent) -> Bool {
-      canConsumeVerticalDelta(event.scrollingDeltaY)
-    }
-
-    func canConsumeVerticalDelta(_ deltaY: CGFloat) -> Bool {
-      guard hasVerticalScroller, deltaY != 0 else { return false }
-      let visibleRect = contentView.documentVisibleRect
-      let documentRect = outputTextView.bounds
-      if deltaY > 0 {
-        return visibleRect.minY > documentRect.minY + 0.5
-      }
-      return visibleRect.maxY < documentRect.maxY - 0.5
-    }
-
     private var visibleContentHeight: CGFloat {
       min(contentFittingSize.height, DiffViewportMetrics.maximumHeight)
     }

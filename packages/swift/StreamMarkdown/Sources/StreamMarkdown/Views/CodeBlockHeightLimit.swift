@@ -11,10 +11,14 @@ public struct CodeBlockHeightLimit<Content: View>: View {
 
   public var body: some View {
     if let maxHeight {
-      ScrollView(.vertical) { content }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: maxHeight)
-        .fixedSize(horizontal: false, vertical: true)
+      #if canImport(AppKit)
+        HeightLimitedScrollView(maxHeight: maxHeight, content: content)
+      #else
+        ScrollView(.vertical) { content }
+          .scrollBounceBehavior(.basedOnSize)
+          .frame(maxHeight: maxHeight)
+          .fixedSize(horizontal: false, vertical: true)
+      #endif
     } else {
       content
     }
