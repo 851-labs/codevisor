@@ -54,7 +54,6 @@ const archiveName = `Codevisor-Chrome-${version}.zip`
 const archivePath = join(outputDir, archiveName)
 const checksumPath = `${archivePath}.sha256`
 const productionRelay = "ws://127.0.0.1:49361/v1/browser-use/extension/socket"
-const listingDoc = "docs/chrome-web-store.md"
 const reviewedPermissions = [
   "alarms",
   "clipboardRead",
@@ -88,7 +87,7 @@ const assertReviewedPermissions = (manifest) => {
   if (added.length === 0) return
 
   throw new Error(
-    `Permissions without a store justification: ${added.join(", ")}. A new permission disables the store extension for every user until they accept it. Justify it in ${listingDoc}, then add it to the reviewed list in this script.`
+    `Permissions without a store justification: ${added.join(", ")}. A new permission disables the store extension for every user until they accept it. Justify it in the Chrome Web Store listing, then add it to the reviewed list in this script.`
   )
 }
 

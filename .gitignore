@@ -31,3 +31,5 @@ apps/macos/Codevisor/Resources/AppIconDevGenerated.icon/
 
 apps/cloud/src/generated/
 .dev.vars
+
+/docs/
