@@ -13,14 +13,20 @@ import {
   type MachineStatsReaders
 } from "./machine-stats.js"
 
-const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading> = []) => {
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading | undefined> = []) => {
   let now = Date.parse("2026-10-20T12:00:00.000Z")
   let tick: (() => void) | undefined
   let cancelled = 0
+  let gpuReads = 0
   const readers: MachineStatsReaders = {
     cores: () => 8,
     cpuTimes: () => cpu.shift() ?? { idle: 0, total: 0 },
-    gpu: async () => gpu.shift(),
+    gpu: async () => {
+      gpuReads += 1
+      return gpu.shift()
+    },
     memory: async () => ({ usedBytes: 6, totalBytes: 16 }),
     disk: async () => (disk ? { usedBytes: 200, totalBytes: 500 } : undefined),
     uptimeSeconds: () => 3_600
@@ -35,17 +41,18 @@ const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading> = [])
         tick = undefined
       }
     },
-    historyLength: 2,
-    idleMs: 10_000
+    historyLength: 2
   })
   return {
     stats,
-    advance: (ms: number) => {
+    advance: async (ms: number) => {
       now += ms
       tick?.()
+      await settle()
     },
     running: () => tick !== undefined,
-    cancelled: () => cancelled
+    cancelled: () => cancelled,
+    gpuReads: () => gpuReads
   }
 }
 
@@ -81,44 +88,40 @@ describe("machine stats", () => {
     expect(linuxUsedMemory("MemTotal: 16000 kB\n")).toBeUndefined()
   })
 
-  it("starts sampling on the first read, keeps recent CPU history, and stops once nobody reads", async () => {
+  it("samples from the moment it's created and keeps recent CPU history without being read", async () => {
     const { stats, advance, running, cancelled } = sampler([
       { idle: 0, total: 0 },
       { idle: 90, total: 100 },
       { idle: 140, total: 200 },
       { idle: 140, total: 300 }
     ])
-
-    const first = await stats.read()
-    expect(first).toEqual({
+    expect(running()).toBe(true)
+    expect(await stats.read()).toEqual({
       sampledAt: "2026-10-20T12:00:00.000Z",
       uptimeSeconds: 3_600,
       cpu: { cores: 8, history: [] },
       memory: { usedBytes: 6, totalBytes: 16 },
       disk: { usedBytes: 200, totalBytes: 500 }
     })
-    expect(running()).toBe(true)
 
-    advance(3_000)
-    advance(3_000)
-    advance(3_000)
+    await advance(3_000)
+    await advance(60_000)
+    await advance(3_000)
     const later = await stats.read()
     expect(later.cpu.usedPercent).toBe(100)
     expect(later.cpu.history).toEqual([
-      { at: "2026-10-20T12:00:06.000Z", usedPercent: 50 },
-      { at: "2026-10-20T12:00:09.000Z", usedPercent: 100 }
+      { at: "2026-10-20T12:01:03.000Z", usedPercent: 50 },
+      { at: "2026-10-20T12:01:06.000Z", usedPercent: 100 }
     ])
 
-    advance(10_000)
-    expect(running()).toBe(false)
-    expect(cancelled()).toBe(1)
     stats.stop()
+    expect(running()).toBe(false)
     expect(cancelled()).toBe(1)
   })
 
-  it("samples every few seconds by default and can stop before it starts", async () => {
+  it("samples every few seconds by default", () => {
     const intervals: Array<number> = []
-    const stats = makeMachineStatsSampler({
+    makeMachineStatsSampler({
       readers: {
         cores: () => 1,
         cpuTimes: () => ({ idle: 0, total: 0 }),
@@ -133,8 +136,6 @@ describe("machine stats", () => {
         return () => undefined
       }
     })
-    stats.stop()
-    await stats.read()
     expect(intervals).toEqual([3_000])
   })
 
@@ -163,16 +164,20 @@ describe("machine stats", () => {
         { idle: 50, total: 100 }
       ],
       true,
-      [{ usedPercent: 10, model: "Apple M1 Pro", cores: 16 }, { usedPercent: 40 }]
+      [
+        { usedPercent: 10, model: "Apple M1 Pro", cores: 16 },
+        { usedPercent: 40 },
+        { usedPercent: 70 }
+      ]
     )
+    await settle()
     expect((await stats.read()).gpu).toEqual({
       model: "Apple M1 Pro",
       cores: 16,
       usedPercent: 10,
       history: [{ at: "2026-10-20T12:00:00.000Z", usedPercent: 10 }]
     })
-    advance(3_000)
-    await Promise.resolve()
+    await advance(3_000)
     expect((await stats.read()).gpu).toEqual({
       usedPercent: 40,
       history: [
@@ -181,9 +186,26 @@ describe("machine stats", () => {
       ]
     })
 
-    advance(20_000)
-    stats.stop()
-    expect((await stats.read()).gpu).toBeUndefined()
+    const late = sampler([], true, [{ usedPercent: 70 }])
+    late.stats.stop()
+    await settle()
+    expect((await late.stats.read()).gpu).toBeUndefined()
+  })
+
+  it("stops probing a machine with no GPU but rides out a missed reading on one that has it", async () => {
+    const none = sampler([], true, [undefined])
+    await settle()
+    await none.advance(3_000)
+    await none.advance(3_000)
+    expect(none.gpuReads()).toBe(1)
+    expect((await none.stats.read()).gpu).toBeUndefined()
+
+    const flaky = sampler([], true, [{ usedPercent: 20 }, undefined, { usedPercent: 30 }])
+    await settle()
+    await flaky.advance(3_000)
+    await flaky.advance(3_000)
+    expect(flaky.gpuReads()).toBe(3)
+    expect((await flaky.stats.read()).gpu?.usedPercent).toBe(30)
   })
 
   it("leaves out the disk when it can't be read", async () => {
