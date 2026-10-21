@@ -50,6 +50,10 @@ export interface AcpAgentConnection {
     sessionId: string,
     input: string | PromptInput
   ) => Effect.Effect<AcpPromptResult, AgentRuntimeError>
+  readonly steer?: (
+    sessionId: string,
+    input: string | PromptInput
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

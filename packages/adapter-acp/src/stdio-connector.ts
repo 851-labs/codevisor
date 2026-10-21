@@ -28,7 +28,11 @@ import {
   type AcpMappedQuestion,
   type PendingAcpQuestion
 } from "./questions.js"
-import { sdkConnection, type AcpSdkConnectionCustomization } from "./sdk-connection.js"
+import {
+  advertisesSteering,
+  sdkConnection,
+  type AcpSdkConnectionCustomization
+} from "./sdk-connection.js"
 import { discoverSkillFolders, makeAcpSkillTracker } from "./skills.js"
 
 export interface AcpStdioExtensionContext {
@@ -251,6 +255,7 @@ export const makeStdioAcpConnectorWithOptions = (
           await terminate()
         },
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
+        steering: advertisesSteering(initialized),
         questions: { answerQuestion, cancelQuestions },
         skills,
         auth: {

@@ -10,11 +10,13 @@ import {
 } from "@codevisor/adapter-acp"
 import {
   adapterPromise,
+  normalizePromptInput,
+  withAttachmentNotes,
   type AgentSessionMetadata,
   type RuntimeEvent,
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
-import type { SessionGoal } from "@codevisor/api"
+import { isRecord, type SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
 
 import {
@@ -49,6 +51,16 @@ const withGrokMetadata = (
   supportsGoals: true
 })
 
+const INTERJECT_METHOD = "_x.ai/interject"
+
+const INTERJECT_FALLBACK_PREFIX = "interject-fallback-"
+
+const interjectQueued = (response: unknown): boolean => {
+  const outer = isRecord(response) ? response : {}
+  const result = isRecord(outer.result) ? outer.result : outer
+  return result.status === "queued"
+}
+
 const emitAll = (
   emit: (event: RuntimeEvent) => void,
   events: ReadonlyArray<RuntimeEvent>
@@ -65,6 +77,8 @@ const extendGrokConnection = (
   turnFailures: Map<string, AcpPromptResult>
 ): AcpAgentConnection => {
   const goalTurns = new Map<string, Promise<void>>()
+  const prompting = new Set<string>()
+  const cancelling = new Set<string>()
 
   const takeTurnFailure = (sessionId: string): AcpPromptResult | undefined => {
     const stop = turnFailures.get(sessionId)
@@ -82,6 +96,7 @@ const extendGrokConnection = (
   ): Promise<void> => {
     const turnId = randomUUID()
     turnFailures.delete(sessionId)
+    cancelling.delete(sessionId)
     emit(turnLifecycleEvent(sessionId, turnId, "started"))
     if (announceActivity) {
       emit({
@@ -113,7 +128,9 @@ const extendGrokConnection = (
     void turn
       .catch(() => undefined)
       .finally(() => {
-        if (goalTurns.get(sessionId) === turn) goalTurns.delete(sessionId)
+        if (goalTurns.get(sessionId) !== turn) return
+        goalTurns.delete(sessionId)
+        cancelling.delete(sessionId)
       })
     return turn
   }
@@ -123,6 +140,7 @@ const extendGrokConnection = (
     if (activeTurn === undefined) return false
     context.questions?.cancelQuestions(sessionId)
     normalizer.cancelTurn(sessionId)
+    cancelling.add(sessionId)
     await context.connection.agent.notify(acp.methods.agent.session.cancel, { sessionId })
     await activeTurn.catch(() => undefined)
     return true
@@ -204,8 +222,16 @@ const extendGrokConnection = (
     prompt: (sessionId, input) =>
       Effect.suspend(() => {
         turnFailures.delete(sessionId)
+        cancelling.delete(sessionId)
+        prompting.add(sessionId)
         return base.prompt(sessionId, input)
       }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            prompting.delete(sessionId)
+            cancelling.delete(sessionId)
+          })
+        ),
         Effect.catch((cause) => {
           const stop = takeTurnFailure(sessionId)
           return stop === undefined ? Effect.fail(cause) : Effect.succeed(stop)
@@ -215,9 +241,27 @@ const extendGrokConnection = (
           return result
         })
       ),
+    steer: (sessionId, input) =>
+      adapterPromise("steer", async () => {
+        const running = prompting.has(sessionId) || goalTurns.has(sessionId)
+        if (!running || cancelling.has(sessionId)) return false
+        const prompt = normalizePromptInput(input)
+        try {
+          return interjectQueued(
+            await context.connection.agent.request(INTERJECT_METHOD, {
+              sessionId,
+              text: withAttachmentNotes(prompt.text, prompt.attachments ?? []),
+              interjectionId: randomUUID()
+            })
+          )
+        } catch {
+          return false
+        }
+      }),
     cancel: (sessionId) =>
       Effect.gen(function* () {
         normalizer.cancelTurn(sessionId)
+        cancelling.add(sessionId)
         return yield* base.cancel(sessionId)
       }),
     setGoal,
@@ -237,6 +281,27 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
   const nativeConfigIds = new Map<string, ReadonlySet<string>>()
   const normalizer = new GrokStreamNormalizer()
   const subagents = new GrokSubagents()
+  const fallbackTurns = new Map<string, string>()
+
+  const startFallbackTurn = (params: unknown) => {
+    if (!isRecord(params) || typeof params.sessionId !== "string") return
+    const promptId = params.runningPromptId
+    if (typeof promptId !== "string" || !promptId.startsWith(INTERJECT_FALLBACK_PREFIX)) return
+    if (fallbackTurns.get(params.sessionId) === promptId) return
+    fallbackTurns.set(params.sessionId, promptId)
+    emit(turnLifecycleEvent(params.sessionId, promptId, "started"))
+  }
+
+  const endFallbackTurn = (params: unknown) => {
+    if (!isRecord(params) || typeof params.sessionId !== "string") return
+    const update = isRecord(params.update) ? params.update : {}
+    if (update.sessionUpdate !== "turn_completed") return
+    const promptId = fallbackTurns.get(params.sessionId)
+    if (promptId === undefined || update.prompt_id !== promptId) return
+    fallbackTurns.delete(params.sessionId)
+    const stopReason = typeof update.stop_reason === "string" ? update.stop_reason : "end_turn"
+    emit(turnLifecycleEvent(params.sessionId, promptId, "ended", { stopReason }))
+  }
 
   const planApproval = ({ params }: { readonly params: unknown }) => {
     const question = grokPlanApprovalQuestion(params)
@@ -276,12 +341,20 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
             const sessionId = subagents.sessionOf(params)
             if (sessionId !== undefined && subagents.isChildSession(sessionId)) return
             emitAll(emit, events)
+            endFallbackTurn(params)
             const mapped = grokGoalNotification(params, (goalSessionId) => goals.get(goalSessionId))
             if (mapped === undefined) return
             if (mapped.goal === undefined) goals.delete(mapped.sessionId)
             else goals.set(mapped.sessionId, mapped.goal)
             emit(mapped.event)
           }
+        )
+      }
+      for (const method of ["_x.ai/queue/changed", "x.ai/queue/changed"]) {
+        app.onNotification<unknown>(
+          method,
+          (params) => params,
+          ({ params }) => startFallbackTurn(params)
         )
       }
       for (const method of ["_x.ai/session/update", "x.ai/session/update"]) {

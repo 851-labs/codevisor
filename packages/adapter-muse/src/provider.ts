@@ -39,6 +39,7 @@ const SESSION_PAGES = 5
 
 const museSessionHandle = (chat: MuseChat): AgentSessionHandle => ({
   prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),
+  steer: (input) => adapterPromise("steer", () => chat.steer(input)),
   cancel: adapterPromise("cancel", async () => {
     await chat.cancel()
     return { runtimeState: "reusable" as const }

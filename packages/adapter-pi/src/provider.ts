@@ -29,6 +29,7 @@ export interface PiProviderConfig {
 
 const piSessionHandle = (session: PiSession): AgentSessionHandle => ({
   prompt: (input) => adapterPromise("prompt", () => session.prompt(input)),
+  steer: (input) => adapterPromise("steer", () => session.steer(input)),
   cancel: adapterPromise("cancel", async () => {
     await session.cancel()
     return { runtimeState: "reusable" as const }

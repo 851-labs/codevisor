@@ -56,6 +56,7 @@ describe("Muse provider", () => {
     const sent = client.nextRequest("turn/start")
     const prompted = run(handle.prompt("hi"))
     await sent
+    await expect(run(handle.steer!("and this"))).resolves.toBe(true)
     expect(await run(handle.cancel)).toEqual({ runtimeState: "reusable" })
     client.emit("turn/completed", {
       turnId: client.sent("turn/start")[0]!.commandId,

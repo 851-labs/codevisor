@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
+import type { AcpConnector } from "./connection.js"
 import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime steer", () => {
@@ -58,5 +59,35 @@ describe("@codevisor/agent-runtime steer", () => {
       run(runtime.loadAgentSession(harnessId, sessionId, "/tmp/project", () => undefined))
     expect((await load("claude-code", steerable)).supportsSteering).toBe(true)
     expect((await load("gemini", plain)).supportsSteering).toBe(false)
+  })
+
+  it("steers ACP sessions whose connection can steer", async () => {
+    const fake = makeConnector()
+    const steered: Array<readonly [string, unknown]> = []
+    const connector: AcpConnector = {
+      connect: (request, emit) =>
+        fake.connect(request, emit).pipe(
+          Effect.map((connection) =>
+            Object.assign(connection, {
+              steer: (sessionId: string, input: unknown) =>
+                Effect.sync(() => {
+                  steered.push([sessionId, input])
+                  return true
+                })
+            })
+          )
+        )
+    }
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
+    )
+    await expect(run(runtime.steer!(sessionId, "also check the tests"))).resolves.toBe(true)
+    expect(steered).toEqual([[expect.any(String), "also check the tests"]])
   })
 })

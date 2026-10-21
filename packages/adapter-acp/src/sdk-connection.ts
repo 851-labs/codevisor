@@ -7,6 +7,7 @@ import {
   summarizeProcessFailure,
   type AgentSessionMetadata,
   type AgentSessionSummary,
+  type PromptInput,
   type QuestionAnswer,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
@@ -74,10 +75,18 @@ export interface AcpSdkConnectionCustomization {
 export interface AcpSdkConnectionOptions {
   readonly terminate?: () => void | Promise<void>
   readonly promptCapabilities?: AcpPromptCapabilities
+  readonly steering?: boolean
   readonly questions?: AcpQuestionControls
   readonly skills?: AcpSkillTracker
   readonly auth?: AcpAuthControls
   readonly customization?: AcpSdkConnectionCustomization
+}
+
+export const STEERING_METHOD = "_session/steering"
+
+export const advertisesSteering = (initialized: { readonly _meta?: unknown } | undefined) => {
+  const meta = isRecord(initialized?._meta) ? initialized._meta : {}
+  return isRecord(meta.steering) && meta.steering.supported === true
 }
 
 /* v8 ignore start */
@@ -109,6 +118,7 @@ export const sdkConnection = (
   const promptCapabilities = options.promptCapabilities ?? {}
   const questions = options.questions
   const auth = options.auth ?? { methods: [], canLogout: false }
+  const prompting = new Map<string, number>()
 
   const withSkills = async (
     sessionId: string,
@@ -234,6 +244,7 @@ export const sdkConnection = (
       }),
     prompt: (sessionId, input) =>
       adapterPromise("prompt", async () => {
+        prompting.set(sessionId, (prompting.get(sessionId) ?? 0) + 1)
         try {
           const response = await connection.agent.request(acp.methods.agent.session.prompt, {
             prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
@@ -247,8 +258,33 @@ export const sdkConnection = (
           const usageLimit = usageLimitPromptStop(cause, options.customization?.isUsageLimitFailure)
           if (usageLimit === undefined) throw cause
           return usageLimit
+        } finally {
+          const remaining = (prompting.get(sessionId) ?? 1) - 1
+          if (remaining === 0) prompting.delete(sessionId)
+          else prompting.set(sessionId, remaining)
         }
       }),
+    ...(options.steering === true
+      ? {
+          steer: (sessionId: string, input: string | PromptInput) =>
+            adapterPromise("steer", async () => {
+              if (!prompting.has(sessionId)) return false
+              try {
+                const response = await connection.agent.request(STEERING_METHOD, {
+                  sessionId,
+                  prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
+                  _meta: { steering: { idleBehavior: "promptRequired" } }
+                })
+                return (
+                  isRecord(response) &&
+                  (response.outcome === "injected" || response.outcome === "startedNewTurn")
+                )
+              } catch {
+                return false
+              }
+            })
+        }
+      : {}),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {
         questions?.cancelQuestions(sessionId)

@@ -71,6 +71,11 @@ export class FakeMuseClient implements MuseClient {
       turnId: params.commandId,
       status: "accepted"
     }),
+    "turn/steer": (params: Record<string, unknown>) => ({
+      commandId: params.commandId,
+      status: "accepted",
+      turnId: params.expectedTurnId
+    }),
     "turn/interrupt": {},
     "session/setModel": {},
     "session/setReasoningEffort": {},

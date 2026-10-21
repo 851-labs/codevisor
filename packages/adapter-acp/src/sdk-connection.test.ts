@@ -2,7 +2,12 @@ import * as acp from "@agentclientprotocol/sdk"
 import { Effect, Result } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { sdkConnection, type AcpSdkConnectionCustomization } from "./sdk-connection.js"
+import {
+  advertisesSteering,
+  sdkConnection,
+  STEERING_METHOD,
+  type AcpSdkConnectionCustomization
+} from "./sdk-connection.js"
 
 const newSession = { sessionId: "s-1", configOptions: [] }
 
@@ -223,5 +228,83 @@ describe("sdkConnection.prompt", () => {
     const prompt = Effect.runPromise(connection.prompt("s-1", "hi"))
     await Effect.runPromise(connection.close)
     await expect(prompt).rejects.toMatchObject({ operation: "prompt" })
+  })
+})
+
+const steeringAgent = (outcome: () => unknown) => {
+  const prompted = Promise.withResolvers<void>()
+  const finish = Promise.withResolvers<acp.PromptResponse>()
+  const steers: Array<unknown> = []
+  const agent = acp
+    .agent({ name: "fake-agent" })
+    .onRequest(acp.methods.agent.session.prompt, () => {
+      prompted.resolve()
+      return finish.promise
+    })
+    .onRequest<unknown, unknown>(
+      STEERING_METHOD,
+      (params) => params,
+      ({ params }) => {
+        steers.push(params)
+        return outcome()
+      }
+    )
+  return { connection: acp.client({ name: "test" }).connect(agent), finish, prompted, steers }
+}
+
+describe("sdkConnection.steer", () => {
+  it("reads the steering advertisement from the top-level initialize _meta", () => {
+    expect(advertisesSteering({ _meta: { steering: { supported: true } } })).toBe(true)
+    expect(advertisesSteering({ _meta: { steering: { supported: "yes" } } })).toBe(false)
+    expect(advertisesSteering({ _meta: { steering: true } })).toBe(false)
+    expect(advertisesSteering({ _meta: null })).toBe(false)
+    expect(advertisesSteering(undefined)).toBe(false)
+  })
+
+  it("only steers agents that advertise it", async () => {
+    const agent = steeringAgent(() => ({ outcome: "injected" }))
+    const connection = sdkConnection(agent.connection, () => "")
+    expect(connection.steer).toBeUndefined()
+    await Effect.runPromise(connection.close)
+  })
+
+  it("injects into a running prompt and declines when idle or when the agent won't take it", async () => {
+    const outcomes: Array<() => unknown> = [
+      () => ({ outcome: "injected" }),
+      () => ({ outcome: "promptRequired", reason: "noRunningTurn" }),
+      () => ({ outcome: "startedNewTurn" }),
+      () => ({ outcome: "failed" }),
+      () => {
+        throw acp.RequestError.internalError(undefined, "Session ended")
+      }
+    ]
+    const agent = steeringAgent(() => outcomes.shift()!())
+    const connection = sdkConnection(agent.connection, () => "", {
+      promptCapabilities: {},
+      steering: true
+    })
+    const steer = (text: string) => Effect.runPromise(connection.steer!("s-1", text))
+
+    await expect(steer("too early")).resolves.toBe(false)
+    expect(agent.steers).toEqual([])
+    const prompt = Effect.runPromise(connection.prompt("s-1", "do work"))
+    await agent.prompted.promise
+    await expect(steer("also this")).resolves.toBe(true)
+    expect(agent.steers).toEqual([
+      {
+        sessionId: "s-1",
+        prompt: [{ text: "also this", type: "text" }],
+        _meta: { steering: { idleBehavior: "promptRequired" } }
+      }
+    ])
+    await expect(steer("turn just ended")).resolves.toBe(false)
+    await expect(steer("detached")).resolves.toBe(true)
+    await expect(steer("failed")).resolves.toBe(false)
+    await expect(steer("rejected")).resolves.toBe(false)
+    agent.finish.resolve({ stopReason: "end_turn" })
+    await expect(prompt).resolves.toEqual({ stopReason: "end_turn" })
+    await expect(steer("after")).resolves.toBe(false)
+    expect(agent.steers).toHaveLength(5)
+    await Effect.runPromise(connection.close)
   })
 })

@@ -42,6 +42,7 @@ export interface PiSession {
   readonly configOptions: () => Array<SessionConfigOption>
   readonly skills: SessionSkills | undefined
   readonly prompt: (input: string | PromptInput) => Promise<{ stopReason: string }>
+  readonly steer: (input: string | PromptInput) => Promise<boolean>
   readonly cancel: () => Promise<void>
   readonly setConfigOption: (configId: string, value: string) => Promise<Array<SessionConfigOption>>
   readonly answerQuestion: (questionId: string, answer: QuestionAnswer) => void
@@ -119,6 +120,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
   let levels: ReadonlyArray<string> = []
   let level: string | undefined
   let turn: Turn | undefined
+  let steering = 0
   const questions = new Map<string, OpenQuestion>()
   const mapper = makePiEventMapper(() => model?.contextWindow)
   let key = ""
@@ -184,7 +186,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         ask(event)
         return
       case "agent_start":
-        if (turn === undefined) startTurn("agent")
+        if (turn === undefined) startTurn(steering > 0 ? "user" : "agent")
         break
       case "thinking_level_changed":
         if (typeof event.level === "string") {
@@ -251,6 +253,23 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
         await endTurn(errorMessage(cause))
       }
       return finished
+    },
+    steer: async (input) => {
+      if (turn === undefined || turn.cancelled) return false
+      steering += 1
+      try {
+        const accepted = record(
+          await client.command("prompt", {
+            ...piPrompt(normalizePromptInput(input)),
+            streamingBehavior: "steer"
+          })
+        )
+        return typeof accepted.disposition === "string"
+      } catch {
+        return false
+      } finally {
+        steering -= 1
+      }
     },
     cancel: async () => {
       if (turn !== undefined) turn.cancelled = true

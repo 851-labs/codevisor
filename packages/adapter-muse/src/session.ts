@@ -47,6 +47,7 @@ interface Turn {
   readonly initiatedBy: "user" | "agent"
   museTurnId: string | undefined
   cancelled: boolean
+  foregroundDone: boolean
   resolve?: (result: { stopReason: string }) => void
 }
 
@@ -55,6 +56,7 @@ export interface MuseChat {
   readonly configOptions: () => Array<SessionConfigOption>
   readonly skills: SessionSkills | undefined
   readonly prompt: (input: string | PromptInput) => Promise<{ stopReason: string }>
+  readonly steer: (input: string | PromptInput) => Promise<boolean>
   readonly cancel: () => Promise<void>
   readonly setConfigOption: (configId: string, value: string) => Promise<Array<SessionConfigOption>>
   readonly answerQuestion: (questionId: string, answer: QuestionAnswer) => Promise<void>
@@ -107,13 +109,21 @@ export const startMuseChat = async (
   })
 
   const current = () => models.find((model) => model.modelId === modelId)
+  const museInput = (input: string | PromptInput) =>
+    turnInput(normalizePromptInput(input), skills?.skills ?? [])
   const currentOptions = () => configOptions({ models, modelId, effort })
   const send = (kind: EventKind, payload: Record<string, unknown>) =>
     emit({ kind, payload, subjectId: key })
   const announceOptions = () => void send("session.updated", { configOptions: currentOptions() })
 
   const startTurn = (initiatedBy: "user" | "agent", museTurnId?: string): Turn => {
-    const started: Turn = { id: randomUUID(), initiatedBy, museTurnId, cancelled: false }
+    const started: Turn = {
+      id: randomUUID(),
+      initiatedBy,
+      museTurnId,
+      cancelled: false,
+      foregroundDone: false
+    }
     turn = started
     void send("session.updated", { initiatedBy, turnId: started.id, turnState: "started" })
     return started
@@ -208,6 +218,9 @@ export const startMuseChat = async (
       case "turn/started":
         if (turn === undefined) startTurn("agent", text(event.turnId))
         else turn.museTurnId ??= text(event.turnId)
+        return
+      case "turn/foregroundCompleted":
+        if (turn !== undefined && turn.museTurnId === event.turnId) turn.foregroundDone = true
         return
       case "turn/completed":
       case "turn/unqueued": {
@@ -342,7 +355,7 @@ export const startMuseChat = async (
           await client.request("turn/start", {
             commandId: command,
             sessionId: key,
-            input: turnInput(normalizePromptInput(input), skills?.skills ?? [])
+            input: museInput(input)
           })
         )
         if (typeof accepted.turnId === "string") started.museTurnId = accepted.turnId
@@ -351,6 +364,30 @@ export const startMuseChat = async (
         await endTurn(signedOut ? signedOutOutcome : { stopDetail: messageOf(cause) })
       }
       return finished
+    },
+    steer: async (input) => {
+      const running = turn
+      if (
+        running === undefined ||
+        running.cancelled ||
+        running.foregroundDone ||
+        running.museTurnId === undefined
+      )
+        return false
+      try {
+        const accepted = record(
+          await client.request("turn/steer", {
+            commandId: commandId(),
+            sessionId: key,
+            expectedTurnId: running.museTurnId,
+            input: museInput(input)
+          })
+        )
+        return accepted.turnId === running.museTurnId
+      } catch (cause) {
+        if (cause instanceof MuseRequestError) return false
+        throw cause
+      }
     },
     cancel: async () => {
       if (turn === undefined) return

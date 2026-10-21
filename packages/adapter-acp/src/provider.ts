@@ -14,6 +14,7 @@ import {
   withoutEnv,
   type LoadedAgentSession,
   type ProviderEnvironment,
+  type PromptInput,
   type ProviderId,
   type QuestionAnswer,
   type RuntimeEmit,
@@ -192,6 +193,11 @@ const acpSessionHandle = (
       )
       return configOptions
     }),
+  ...(connection.steer === undefined
+    ? {}
+    : {
+        steer: (input: string | PromptInput) => connection.steer!(sessionId, input)
+      }),
   ...(connection.answerQuestion === undefined
     ? {}
     : {
