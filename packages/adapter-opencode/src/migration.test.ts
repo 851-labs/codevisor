@@ -6,6 +6,7 @@ import type { OpenCodeServer } from "./server.js"
 const server = (statuses: Array<unknown>) => {
   const fake = {
     url: "http://oc",
+    subscribe: vi.fn(),
     stop: vi.fn(async () => undefined),
     request: vi.fn(async (path: string) => {
       expect(path).toBe("/api/experimental/migration/v1")

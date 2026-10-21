@@ -152,4 +152,40 @@ describe("OpenCode 2 server", () => {
     await server.stop()
     expect(h.child.signals).toEqual(["SIGKILL"])
   })
+
+  it("streams server-sent events, split across chunks, until the stream ends", async () => {
+    const chunks = [
+      'data: {"type":"server.connected","data":{}}\n\n: keepalive\n\ndata: {"type":"session',
+      '.text.delta",\r\ndata: "data":{"delta":"hi"}}\r\n\r\ndata: {broken\n\nid: 7\n\n'
+    ]
+    const h = harness((url) => {
+      if (url.pathname === "/api/info") return json(200, {})
+      if (url.pathname !== "/api/event") return json(404)
+      return new Response(
+        new ReadableStream({
+          start: (controller) => {
+            for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk))
+            controller.close()
+          }
+        }),
+        { status: 200 }
+      )
+    })
+    const pending = h.start()
+    h.child.print('{"url":"http://127.0.0.1:4100"}')
+    const server = await pending
+    const events: Array<unknown> = []
+    for await (const event of server.subscribe(new AbortController().signal)) events.push(event)
+    expect(events).toEqual([
+      { type: "server.connected", data: {} },
+      { type: "session.text.delta", data: { delta: "hi" } }
+    ])
+    expect(new Headers(h.requests.at(-1)?.init.headers).get("accept")).toBe("text/event-stream")
+
+    const refused = harness((url) => (url.pathname === "/api/info" ? json(200, {}) : json(401)))
+    const starting = refused.start()
+    refused.child.print('{"url":"http://127.0.0.1:4100"}')
+    const unauthorized = (await starting).subscribe(new AbortController().signal)
+    await expect(unauthorized[Symbol.asyncIterator]().next()).rejects.toMatchObject({ status: 401 })
+  })
 })

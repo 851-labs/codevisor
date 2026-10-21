@@ -5,7 +5,7 @@ import type { OpenCodeServer } from "./server.js"
 
 const fakeServer = (url: string) => {
   const stop = vi.fn(async () => undefined)
-  return { url, request: vi.fn(), stop } satisfies OpenCodeServer
+  return { url, request: vi.fn(), subscribe: vi.fn(), stop } satisfies OpenCodeServer
 }
 
 const manualTimers = () => {

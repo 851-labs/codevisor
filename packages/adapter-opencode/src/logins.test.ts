@@ -18,6 +18,7 @@ const hold = (answers: (path: string, init?: { readonly method?: string }) => un
   })
   const server = {
     url: "http://oc",
+    subscribe: vi.fn(),
     stop: vi.fn(),
     request: vi.fn(async (path: string, init?: { readonly method?: string }) => {
       if (path === "/api/integration") return { data: [] }

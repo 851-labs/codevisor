@@ -4,6 +4,8 @@ import type { EventEmitter } from "node:events"
 
 import { isPlainRecord } from "@codevisor/api"
 
+import { serverSentEvents } from "./event-stream.js"
+
 export interface OpenCodeChild extends EventEmitter {
   readonly stdout: EventEmitter
   readonly stderr: EventEmitter
@@ -34,6 +36,7 @@ export interface OpenCodeServer {
     path: string,
     init?: { readonly method?: string; readonly body?: unknown; readonly location?: string }
   ) => Promise<unknown>
+  readonly subscribe: (signal: AbortSignal) => AsyncIterable<unknown>
   readonly stop: () => Promise<void>
 }
 
@@ -170,6 +173,21 @@ export const startOpenCodeServer = async (
     return decodeOpenCodeResponse(response, text)
   }
 
+  async function* subscribe(signal: AbortSignal): AsyncGenerator<unknown, void, undefined> {
+    const response = await request(new URL(`${url}/api/event`), {
+      method: "GET",
+      headers: { authorization, accept: "text/event-stream" },
+      signal
+    })
+    if (!response.ok || response.body === null) {
+      throw new OpenCodeServerError(
+        `OpenCode event stream failed (${response.status})`,
+        response.status
+      )
+    }
+    yield* serverSentEvents(response.body)
+  }
+
   for (let waited = 0; ; waited += READY_POLL_MS) {
     if (child.exitCode !== null) throw exitFailure(child.exitCode)
     try {
@@ -189,5 +207,5 @@ export const startOpenCodeServer = async (
     }
     await wait(READY_POLL_MS)
   }
-  return { url, request: call, stop }
+  return { url, request: call, subscribe, stop }
 }

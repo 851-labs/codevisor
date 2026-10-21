@@ -32,6 +32,7 @@ const scriptedServer = (answer: (path: string) => unknown) => {
       calls.push(path)
       return answer(path)
     },
+    subscribe: vi.fn(),
     stop: vi.fn(async () => markStopped())
   }
   return { server, calls, stopped }

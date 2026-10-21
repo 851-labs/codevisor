@@ -1,7 +1,10 @@
 import type { AcpRequestFailure } from "@codevisor/adapter-acp"
 
+export const isOpenCodeUsageLimitMessage = (message: string): boolean =>
+  usageLimitText.test(message)
+
 export const isOpenCodeUsageLimit = (failure: AcpRequestFailure): boolean =>
-  failure.code === internalErrorCode && usageLimitText.test(failure.message)
+  failure.code === internalErrorCode && isOpenCodeUsageLimitMessage(failure.message)
 
 const internalErrorCode = -32603
 

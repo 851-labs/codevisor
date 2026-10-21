@@ -9,7 +9,12 @@ it("lists a profile's providers from its own OpenCode 2 server, started once per
     data: [{ id: "anthropic", name: "Anthropic", methods: [{ type: "key" }], connections: [] }],
     location: init?.location
   }))
-  const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
+  const server = {
+    url: "http://oc",
+    request,
+    subscribe: vi.fn(),
+    stop: vi.fn(async () => undefined)
+  }
   const start = vi.fn(async (): Promise<OpenCodeServer> => server)
   const pool = makeOpenCodeServerPool()
   try {
@@ -50,7 +55,12 @@ it("replaces only Codevisor's own credentials when syncing a profile", async () 
       ? { data: [{ id: "codevisor-openai" }, { id: "codevisor-xai" }, { id: "users-own-key" }] }
       : undefined
   })
-  const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
+  const server = {
+    url: "http://oc",
+    request,
+    subscribe: vi.fn(),
+    stop: vi.fn(async () => undefined)
+  }
   const pool = makeOpenCodeServerPool()
   try {
     const accounts = makeOpenCode2Accounts({
@@ -93,7 +103,12 @@ it("signs a profile out of one provider, whichever credentials it holds", async 
         }
       : undefined
   })
-  const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
+  const server = {
+    url: "http://oc",
+    request,
+    subscribe: vi.fn(),
+    stop: vi.fn(async () => undefined)
+  }
   const pool = makeOpenCodeServerPool()
   try {
     const accounts = makeOpenCode2Accounts({
