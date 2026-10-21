@@ -1,9 +1,13 @@
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorCard<Content: View>: View {
   let title: String
   @Binding var isExpanded: Bool
   @ViewBuilder let content: Content
+  @Environment(\.controlActiveState) private var controlActiveState
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var isHovered = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -25,23 +29,27 @@ struct WorkspaceInspectorCard<Content: View>: View {
     Button {
       isExpanded.toggle()
     } label: {
-      HStack(spacing: 0) {
-        Image(systemName: "chevron.right")
-          .font(.caption2.weight(.semibold))
-          .scaleEffect(0.9)
-          .foregroundStyle(.tertiary)
-          .rotationEffect(.degrees(isExpanded ? 90 : 0))
-          .frame(width: 17.5)
+      HStack(spacing: 6) {
         Text(title)
           .font(.subheadline.weight(.semibold))
         Spacer(minLength: 0)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 11, weight: .semibold))
+          .animation(Motion.indicator(reduceMotion: reduceMotion)) { chevron in
+            chevron.rotationEffect(.degrees(isExpanded ? 90 : 0))
+          }
+          .frame(width: 16)
+          .foregroundStyle(isHovered && controlActiveState == .key ? AnyShapeStyle(.secondary) : AnyShapeStyle(.clear))
       }
       .foregroundStyle(.secondary)
       .frame(height: 14)
-      .padding(.leading, 2.5)
+      .padding(.leading, 20)
+      .padding(.trailing, 17.5)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .onHover { isHovered = $0 }
+    .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     .accessibilityLabel(title)
     .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     .accessibilityAddTraits(.isHeader)
