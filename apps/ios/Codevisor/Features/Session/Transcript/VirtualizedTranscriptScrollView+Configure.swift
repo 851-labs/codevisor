@@ -153,10 +153,15 @@ extension VirtualizedTranscriptScrollView {
         deferredActiveRowsRange = nil
         deferredProjectionRevision = nil
         activeRowsRange = resolution.activeRange
+        let bottomSpacerShiftOrigin =
+          layoutFingerprintChanged ? nil : bottomSpacerShrinkOrigin(to: resolution.rows)
         rebuiltRows = applyRows(
           resolution.rows,
           layoutFingerprintChanged: layoutFingerprintChanged
         )
+        if let bottomSpacerShiftOrigin {
+          animateBottomSpacerShift(from: bottomSpacerShiftOrigin)
+        }
         appliedProjectionRevision = newProjectionRevision
       }
     } else if activeRowsChanged, deferredRowsDuringScroll != nil {
@@ -208,5 +213,35 @@ extension VirtualizedTranscriptScrollView {
     checkForHistoryPrefetch()
     acknowledgeOlderHistoryPresentationIfPossible()
     setNeedsLayout()
+  }
+}
+
+extension VirtualizedTranscriptScrollView {
+  static let bottomSpacerShiftDuration: TimeInterval = 0.32
+
+  func bottomSpacerShrinkOrigin(to newRows: [TranscriptVirtualRow]) -> CGFloat? {
+    guard initialPositionApplied, !reduceMotion, !isNativeScrollInteractionActive,
+      !sendTransitions.isPushing, rows.count == newRows.count,
+      currentDistanceFromBottom() <= Self.atBottomThreshold,
+      let spacerIndex = rows.lastIndex(where: { $0.id == .bottomSpacer }),
+      newRows[spacerIndex].id == .bottomSpacer,
+      case let .bottomSpacer(oldHeight) = rows[spacerIndex].content,
+      case let .bottomSpacer(newHeight) = newRows[spacerIndex].content,
+      newHeight < oldHeight,
+      zip(rows, newRows).enumerated().allSatisfy({ $0.offset == spacerIndex || $0.element.0 == $0.element.1 })
+    else { return nil }
+    return contentOffset.y
+  }
+
+  func animateBottomSpacerShift(from previousTop: CGFloat) {
+    let shift = previousTop - contentOffset.y
+    guard abs(shift) > 0.5 else { return }
+    let animation = CASpringAnimation(perceptualDuration: Self.bottomSpacerShiftDuration, bounce: 0)
+    animation.keyPath = "bounds.origin"
+    animation.isAdditive = true
+    animation.fromValue = NSValue(cgPoint: CGPoint(x: 0, y: shift))
+    animation.toValue = NSValue(cgPoint: .zero)
+    animation.duration = animation.settlingDuration
+    layer.add(animation, forKey: "codevisor.bottom-spacer-shift")
   }
 }

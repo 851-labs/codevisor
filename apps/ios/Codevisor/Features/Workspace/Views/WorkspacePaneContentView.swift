@@ -67,6 +67,7 @@ struct WorkspacePaneContentView: View {
           onSendAnimationStarted: onSendAnimationStarted,
           onComposerWillSend: onComposerWillSend,
           preservesComposerFocusOnSend: preservesComposerFocusOnSend,
+          tracksKeyboardInset: !isNewChatPresentation,
           layoutNamespaceToken: layoutNamespaceToken,
           composerTextEditorHandoffRole: composerTextEditorHandoffRole,
           composerTextEditorHandoffID: composerTextEditorHandoffID

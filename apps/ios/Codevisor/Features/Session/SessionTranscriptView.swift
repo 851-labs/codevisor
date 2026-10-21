@@ -27,6 +27,7 @@ struct SessionTranscriptView: View {
   var onSendAnimationStarted: ((UserSendAnimationRequest) -> Void)? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   var preservesComposerFocusOnSend = false
+  var tracksKeyboardInset = true
   var topContentClearance: CGFloat = 0
   var layoutNamespaceToken: UUID? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
@@ -50,7 +51,10 @@ struct SessionTranscriptView: View {
   @State var transcriptWindowBottom: CGFloat = 0
   @State var chatAreaWindowBottom: CGFloat = 0
   @State var offeredChatWindowFrame: CGRect = .zero
-  @State var keyboardWindowTop: CGFloat?
+  @State var keyboardOverlap: CGFloat = 0
+  @State var keyboardFreeChatHeight: CGFloat = 0
+  @State var keyboardAvoidingChatHeight: CGFloat = 0
+  @State var keyboardInset = ChatKeyboardInset()
   @State var composerExpanded = false
   @State var attachmentImages: AttachmentImageStore?
   @State var quickLook = QuickLookController()
@@ -278,7 +282,7 @@ struct SessionTranscriptView: View {
     !composerExpanded && !isAtBottom && hasScrollableContent
   }
 
-  var chat: some View {
+  var chatLayers: some View {
     ZStack(alignment: .bottom) {
       Color.clear
         .onGeometryChange(for: CGFloat.self) {
@@ -318,17 +322,6 @@ struct SessionTranscriptView: View {
       } else {
         composerChrome
       }
-    }
-    .background {
-      ChatSurfaceBackground()
-        .ignoresSafeArea()
-    }
-    .background { chatAreaExtentProbe }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
-      updateKeyboardTop($0)
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) {
-      updateKeyboardTop($0)
     }
   }
 
@@ -422,27 +415,26 @@ extension SessionTranscriptView {
     max(160, visibleChatHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
   }
 
+  @ViewBuilder
+  var chat: some View {
+    if tracksKeyboardInset {
+      keyboardInsetChat
+    } else {
+      chatLayers
+        .background {
+          ChatSurfaceBackground()
+            .ignoresSafeArea()
+        }
+        .background { chatAreaExtentProbe }
+    }
+  }
+
   var visibleChatHeight: CGFloat {
     let offered = offeredChatWindowFrame
     guard offered.height > 0, let window = UIWindow.codevisorKeyWindow else { return availableHeight }
     let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
-    let visibleBottom = min(offered.maxY, safeBottom, keyboardWindowTop ?? .infinity)
+    let visibleBottom = min(offered.maxY, safeBottom)
     return min(availableHeight, max(0, visibleBottom - offered.minY))
-  }
-
-  func updateKeyboardTop(_ notification: Notification) {
-    guard
-      notification.name != UIResponder.keyboardWillHideNotification,
-      let screenFrame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
-        .cgRectValue,
-      let window = UIWindow.codevisorKeyWindow
-    else {
-      keyboardWindowTop = nil
-      return
-    }
-    let frame = window.convert(screenFrame, from: window.screen.coordinateSpace)
-    let docked = frame.width >= window.bounds.width - 1 && frame.minY < window.bounds.maxY
-    keyboardWindowTop = docked ? frame.minY : nil
   }
 
   var transcriptExtentProbe: some View {
