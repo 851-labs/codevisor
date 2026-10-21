@@ -119,12 +119,7 @@ extension SidebarView {
         }
         .padding(.horizontal, 10)
         .frame(width: frame.width, height: frame.height)
-        .background {
-          RoundedRectangle(cornerRadius: 6)
-            .fill(.regularMaterial)
-            .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-        }
-        .opacity(0.92)
+        .sidebarDragLift()
         .position(x: frame.midX, y: frame.midY)
         if let line = groupInsertionLine(for: groupDrag) {
           SidebarInsertionLine()
