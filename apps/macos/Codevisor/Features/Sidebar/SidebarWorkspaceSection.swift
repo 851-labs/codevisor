@@ -30,7 +30,7 @@ struct SidebarWorkspaceSection: View, Equatable {
 
   var body: some View {
     let content = SidebarRowContent(environment: environment, store: store, grouping: grouping, rowDetails: rowDetails)
-    if let listItem = content.listItem(for: item) {
+    if let listItem = content.listItem(for: item, includingArchived: true) {
       let workspace = listItem.workspace
       SidebarWorkspaceRow(
         name: workspace.name,
@@ -87,9 +87,9 @@ struct SidebarRowContent {
 
   private var list: ProjectListModel { environment.projectList }
 
-  func listItem(for item: WorkspaceSidebarItem) -> SidebarWorkspaceListItem? {
+  func listItem(for item: WorkspaceSidebarItem, includingArchived: Bool = false) -> SidebarWorkspaceListItem? {
     guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace,
-      !workspace.isArchived
+      includingArchived || !workspace.isArchived
     else { return nil }
     return SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
   }

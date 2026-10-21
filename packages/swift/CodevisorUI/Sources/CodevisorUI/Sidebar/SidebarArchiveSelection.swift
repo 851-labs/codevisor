@@ -3,13 +3,9 @@ public enum SidebarArchiveSelection<ID: Hashable>: Equatable {
   case select(ID)
   case clear
 
-  public static func after(
-    archiving archived: ID, selected: ID?, sections: [[ID]], leaving: Set<ID> = []
-  ) -> Self {
+  public static func after(archiving archived: ID, selected: ID?, sections: [[ID]]) -> Self {
     guard selected == archived else { return .unchanged }
-    let next = rowsLikeChromeTabs(closing: archived, in: sections).first {
-      $0 != archived && !leaving.contains($0)
-    }
+    let next = rowsLikeChromeTabs(closing: archived, in: sections).first { $0 != archived }
     return next.map(Self.select) ?? .clear
   }
 

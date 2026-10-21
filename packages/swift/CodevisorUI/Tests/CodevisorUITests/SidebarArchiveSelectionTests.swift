@@ -3,10 +3,9 @@ import Testing
 
 struct SidebarArchiveSelectionTests {
   private func next(
-    archiving archived: String, selected: String? = nil, in sections: [[String]], leaving: Set<String> = []
+    archiving archived: String, selected: String? = nil, in sections: [[String]]
   ) -> SidebarArchiveSelection<String> {
-    SidebarArchiveSelection.after(
-      archiving: archived, selected: selected ?? archived, sections: sections, leaving: leaving.union([archived]))
+    SidebarArchiveSelection.after(archiving: archived, selected: selected ?? archived, sections: sections)
   }
 
   @Test func selectsTheRowThatSlidesUpIntoItsPlace() {
@@ -29,10 +28,5 @@ struct SidebarArchiveSelectionTests {
   @Test func archivingAnUnselectedWorkspaceKeepsTheSelection() {
     #expect(next(archiving: "b", selected: "a", in: [["a", "b", "c"]]) == .unchanged)
     #expect(SidebarArchiveSelection.after(archiving: "b", selected: nil, sections: [["a", "b"]]) == .unchanged)
-  }
-
-  @Test func neverSelectsARowThatIsStillFoldingOut() {
-    #expect(next(archiving: "b", in: [["x", "a", "b"]], leaving: ["a"]) == .select("x"))
-    #expect(next(archiving: "b", in: [["a", "b"], ["c"]], leaving: ["a", "c"]) == .clear)
   }
 }

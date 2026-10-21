@@ -4,9 +4,7 @@ import SwiftUI
 
 extension SidebarView {
   var workspaceRegionRows: [SidebarRow] {
-    SidebarRows.derive(sidebarRowsState(hiding: folds.archiving)).filter {
-      $0.section == .pinned || $0.section == .list
-    }
+    SidebarRows.derive(sidebarRowsState()).filter { $0.section != .bots }
   }
 
   func workspaceRowList(_ rows: [SidebarRow]) -> some View {
@@ -24,8 +22,22 @@ extension SidebarView {
     switch row.kind {
     case let .section(.pinned, isExpanded):
       SidebarSectionHeader(title: "Pinned", isExpanded: isExpanded) { pinnedExpanded.toggle() }
-    case let .section(_, isExpanded):
+    case let .section(.list, isExpanded):
       SidebarSectionHeader(title: grouping.listTitle, isExpanded: isExpanded) { listExpanded.toggle() }
+    case let .section(.archived, isExpanded):
+      SidebarSectionHeader(title: "Archived", isExpanded: isExpanded) { toggleArchived() }
+    case let .workspace(item, .archived):
+      if let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace {
+        archivedRow(workspace, item: item)
+          .id(workspace.id)
+      }
+    case .showMoreArchived:
+      SidebarActionRow(
+        title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,
+        titleStyle: .secondary
+      ) {
+        archivedVisibleCount += sidebarArchivedPageSize
+      }
     case let .group(id, heading, isExpanded):
       groupHeadingRow(id: id, heading: heading, isExpanded: isExpanded)
     case let .workspace(item, placement):
@@ -46,7 +58,7 @@ extension SidebarView {
       .geometryGroup()
       .padding(.leading, Self.groupIndent * CGFloat(row.depth))
       .id(item.id)
-    case .bot, .newBot, .showMoreArchived:
+    case .section(.bots, _), .bot, .newBot:
       EmptyView()
     }
   }

@@ -6,10 +6,10 @@ extension SidebarView {
     SidebarRows.derive(sidebarRowsState())
   }
 
-  func sidebarRowsState(hiding hidden: Set<UUID> = []) -> SidebarRows.State {
+  func sidebarRowsState() -> SidebarRows.State {
     SidebarRows.State(
       bots: botsEnabled ? botEntries.map(SidebarRows.Bot.init) : nil, canCreateBots: canCreateBots,
-      groups: hidden.isEmpty ? workspaceGroups : workspaceGroups(listedSidebarItems.filter { !hidden.contains($0.id) }),
+      groups: workspaceGroups,
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         bots: botsExpanded, pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
