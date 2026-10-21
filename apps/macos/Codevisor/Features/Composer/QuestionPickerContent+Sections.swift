@@ -96,6 +96,7 @@ extension QuestionPickerContent {
             .multilineTextAlignment(.leading)
           Spacer(minLength: 0)
         }
+        .foregroundStyle(isHighlighted ? Color.white : Color.primary)
         .padding(.leading, 10)
         .padding(.trailing, info == nil ? 10 : 4)
         .padding(.vertical, 6)
@@ -115,7 +116,6 @@ extension QuestionPickerContent {
         .padding(.trailing, 6)
       }
     }
-    .foregroundStyle(isHighlighted ? Color.white : Color.primary)
     .background(
       RoundedRectangle(cornerRadius: 6)
         .fill(
