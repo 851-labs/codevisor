@@ -38,7 +38,6 @@ export interface MachineStatsSamplerOptions {
   readonly every?: (tick: () => void, ms: number) => () => void
   readonly intervalMs?: number
   readonly historyLength?: number
-  readonly idleMs?: number
 }
 
 export const cpuTimesOf = (
@@ -193,35 +192,28 @@ export const makeMachineStatsSampler = (
   /* v8 ignore stop */
   const intervalMs = options.intervalMs ?? 3_000
   const historyLength = options.historyLength ?? 100
-  const idleMs = options.idleMs ?? 60_000
-  let previous: CpuTimes = { idle: 0, total: 0 }
+  const isoNow = () => new Date(now()).toISOString()
+  let previous = readers.cpuTimes()
   let history: Array<MachineLoadSample> = []
   let gpu: GpuReading | undefined
   let gpuHistory: Array<MachineLoadSample> = []
-  let cancel: (() => void) | undefined
-  let lastReadAt = 0
-
-  const stop = (): void => {
-    cancel?.()
-    cancel = undefined
-    history = []
-    gpu = undefined
-    gpuHistory = []
-  }
+  let probesGpu = true
+  let stopped = false
 
   const sampleGpu = async (at: string): Promise<void> => {
+    if (!probesGpu) return
     const reading = await readers.gpu()
-    if (reading === undefined || cancel === undefined) return
+    if (stopped) return
+    if (reading === undefined) {
+      probesGpu = gpu !== undefined
+      return
+    }
     gpu = reading
     gpuHistory = [...gpuHistory, { at, usedPercent: reading.usedPercent }].slice(-historyLength)
   }
 
   const tick = (): void => {
-    if (now() - lastReadAt >= idleMs) {
-      stop()
-      return
-    }
-    const at = new Date(now()).toISOString()
+    const at = isoNow()
     const current = readers.cpuTimes()
     history = [...history, { at, usedPercent: cpuPercentBetween(previous, current) }].slice(
       -historyLength
@@ -230,19 +222,19 @@ export const makeMachineStatsSampler = (
     void sampleGpu(at)
   }
 
+  void sampleGpu(isoNow())
+  const cancel = every(tick, intervalMs)
+
   return {
-    stop,
+    stop: () => {
+      stopped = true
+      cancel()
+    },
     read: async () => {
-      lastReadAt = now()
-      if (cancel === undefined) {
-        previous = readers.cpuTimes()
-        cancel = every(tick, intervalMs)
-        await sampleGpu(new Date(now()).toISOString())
-      }
       const [memory, disk] = await Promise.all([readers.memory(), readers.disk()])
       const latest = history.at(-1)
       return {
-        sampledAt: new Date(now()).toISOString(),
+        sampledAt: isoNow(),
         uptimeSeconds: readers.uptimeSeconds(),
         cpu: {
           cores: readers.cores(),
