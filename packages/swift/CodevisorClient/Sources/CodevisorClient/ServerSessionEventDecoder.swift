@@ -187,7 +187,8 @@ enum ServerSessionEventDecoder {
           id: payload["messageId"]?.stringValue,
           text: text,
           attachments: attachments,
-          isEvent: payload["origin"]?.stringValue == "event"
+          isEvent: payload["origin"]?.stringValue == "event",
+          assistantItemId: payload["assistantItemId"]?.stringValue.flatMap(UUID.init(uuidString:))
         )
       ]
     default:

@@ -2,6 +2,7 @@ import type { EventKind } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
+import { chatState } from "./chat-items.js"
 import { cursorRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import type { JsonRecord } from "./event-payloads.js"
@@ -53,8 +54,18 @@ const planDocumentDelivery = (
   }
 }
 
+const steeredMessageDelivery = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  update: JsonRecord
+): JsonRecord => {
+  const assistantItemId = chatState(sqlite, sessionId).current_item_id
+  return assistantItemId === null ? update : { ...update, assistantItemId }
+}
+
 const materializeSessionDelivery = (
   sqlite: ServiceContext["sqlite"],
+  sessionId: string,
   chatItemId: string | undefined,
   subjectRevision: number,
   payload: unknown
@@ -80,6 +91,9 @@ const materializeSessionDelivery = (
   }
   if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
     deliveredPayload = planDocumentDelivery(sqlite, chatItemId, subjectRevision, update)
+  }
+  if (chatItemId !== undefined && update?.role === "user" && update.startsTurn !== true) {
+    deliveredPayload = steeredMessageDelivery(sqlite, sessionId, update)
   }
   return deliveredPayload
 }
@@ -129,6 +143,7 @@ export const makeEventsService = (
           chatItemId = projectChatEvent(sqlite, sessionEvent)
           deliveredPayload = materializeSessionDelivery(
             sqlite,
+            subjectId,
             chatItemId,
             subjectRevision,
             payload

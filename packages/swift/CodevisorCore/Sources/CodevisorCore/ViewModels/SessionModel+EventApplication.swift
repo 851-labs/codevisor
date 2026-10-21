@@ -168,10 +168,16 @@ extension SessionModel {
       )
       activeItem = .assistant(message)
       appliedUpdateCount += 1
-    case let .userMessage(id, text, attachments, isEvent):
+    case let .userMessage(id, text, attachments, isEvent, assistantItemId):
       appliedUpdateCount += 1
       let promotedFromQueue = consumeQueuePromotion(id: id)
-      appendRemoteUserIfNeeded(id: id, text: text, attachments: attachments, isEvent: isEvent)
+      appendRemoteUserIfNeeded(
+        id: id,
+        text: text,
+        attachments: attachments,
+        isEvent: isEvent,
+        assistantItemId: assistantItemId
+      )
       if promotedFromQueue, !isEvent {
         onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
       }
@@ -345,7 +351,8 @@ extension SessionModel {
     id: String? = nil,
     text: String,
     attachments: [Attachment] = [],
-    isEvent: Bool = false
+    isEvent: Bool = false,
+    assistantItemId: UUID? = nil
   ) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return }
@@ -373,6 +380,7 @@ extension SessionModel {
       pendingOptimisticUserMessageIDs.remove(user.id)
       return
     }
+    closeActiveSection()
     settleActiveItem()
     appendSettled(
       .user(
@@ -383,7 +391,17 @@ extension SessionModel {
           isEvent: isEvent
         )))
     startActiveBubble()
+    if let assistantItemId { adoptActiveAssistantItemIdentity(assistantItemId) }
     if !isSending { isSending = true }
+  }
+
+  private func closeActiveSection() {
+    guard case var .assistant(message) = activeItem, message.turn.isGenerating else { return }
+    message.turn.isGenerating = false
+    message.turn.isThinking = false
+    message.turn.retryStatus = nil
+    message.turn.endedAt = now()
+    activeItem = .assistant(message)
   }
 
   private func mergeRemoteEcho(at index: Int, attachments: [Attachment], isEvent: Bool) {

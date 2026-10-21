@@ -76,7 +76,8 @@ it("repairs stranded older rows without ending the latest user message", async (
     db.appendEvent("session.output", session.id, {
       role: "user",
       text: "later",
-      messageId: "later"
+      messageId: "later",
+      startsTurn: true
     })
   )
   sqlite.prepare("update chat_items set status = 'streaming' where id = ?").run(orphan.id)

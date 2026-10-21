@@ -2,8 +2,10 @@ import type Database from "better-sqlite3"
 
 import {
   chatRoute,
+  chatState,
   createChatItem,
   ensureAssistantChatItem,
+  finishAssistantChatItem,
   setChatRoute,
   upsertChatPart
 } from "./chat-items.js"
@@ -24,7 +26,36 @@ import { recordToolMedia } from "./tool-media-projection.js"
 
 const attachmentsRows = rowReader({ attachments: nullable(text) })
 
+const turnIdRows = rowReader({ turn_id: nullable(text) })
+
 type Conversation = NonNullable<ReturnType<typeof conversationEventPayload>>
+
+const steeredMessageOwner = (
+  sqlite: Database.Database,
+  sessionId: string,
+  itemId: string,
+  messageId: string
+): string | undefined => {
+  const earlier = chatRoute(sqlite, sessionId, `steered:${itemId}`)
+  if (earlier === undefined) return undefined
+  const owns =
+    sqlite
+      .prepare("select 1 from transcript_entries where item_id = ? and entry_key = ?")
+      .get(earlier, `message::${messageId}`) !== undefined
+  return owns ? earlier : steeredMessageOwner(sqlite, sessionId, earlier, messageId)
+}
+
+const assistantItemForMessage = (
+  sqlite: Database.Database,
+  sessionId: string,
+  createdAt: string,
+  messageId: unknown
+): string => {
+  const current = ensureAssistantChatItem(sqlite, sessionId, createdAt)
+  return typeof messageId === "string"
+    ? (steeredMessageOwner(sqlite, sessionId, current, messageId) ?? current)
+    : current
+}
 
 const finalizeAssistantMessage = (
   sqlite: Database.Database,
@@ -33,7 +64,7 @@ const finalizeAssistantMessage = (
   markdown: string,
   sessionId: string
 ): string => {
-  const itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+  const itemId = assistantItemForMessage(sqlite, sessionId, event.created_at, payload.messageId)
   upsertChatPart(sqlite, itemId, "text", markdown.slice(0, 24_000))
   const attachments = isAttachmentRefs(payload.attachments) ? payload.attachments : undefined
   sqlite
@@ -76,6 +107,10 @@ const projectUserOrSystemConversation = (
   conversation: Conversation
 ): string => {
   const existingUser = existingRetryUser(sqlite, sessionId, conversation)
+  const steeredItem =
+    existingUser === undefined && conversation.role === "user" && payload.startsTurn !== true
+      ? closeSteeredAssistant(sqlite, event, sessionId)
+      : undefined
   const itemId =
     existingUser?.id ??
     createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
@@ -85,10 +120,47 @@ const projectUserOrSystemConversation = (
       ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments }),
       ...(conversation.origin === undefined ? {} : { origin: conversation.origin })
     })
-  if (conversation.role === "user" && payload.startsTurn === true) {
+  if (steeredItem !== undefined) {
+    continueSteeredTurn(sqlite, event, sessionId, steeredItem)
+  } else if (conversation.role === "user" && payload.startsTurn === true) {
     ensureAssistantChatItem(sqlite, sessionId, event.created_at)
   }
   return itemId
+}
+
+const closeSteeredAssistant = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  sessionId: string
+): string | undefined => {
+  const current = chatState(sqlite, sessionId).current_item_id
+  if (current === null) return undefined
+  finishAssistantChatItem(sqlite, sessionId, current, event.created_at)
+  return current
+}
+
+const continueSteeredTurn = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  sessionId: string,
+  steeredItem: string
+): void => {
+  const turnId = turnIdRows.one(
+    sqlite.prepare("select turn_id from chat_items where id = ?").get(steeredItem)
+  ).turn_id
+  sqlite.prepare("update chat_items set turn_id = null where id = ?").run(steeredItem)
+  const itemId = createChatItem(sqlite, sessionId, "assistant", event.created_at, {
+    status: "streaming",
+    startedAt: event.created_at,
+    ...(turnId === null ? {} : { turnId })
+  })
+  sqlite
+    .prepare(
+      `update chat_item_routes set item_id = ?
+         where session_id = ? and item_id = ? and route_key like 'turn:%'`
+    )
+    .run(itemId, sessionId, steeredItem)
+  setChatRoute(sqlite, sessionId, `steered:${itemId}`, steeredItem)
 }
 
 const projectAssistantIdentity = (
@@ -97,7 +169,12 @@ const projectAssistantIdentity = (
   sessionId: string,
   conversation: Conversation
 ): string => {
-  const itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+  const itemId = assistantItemForMessage(
+    sqlite,
+    sessionId,
+    event.created_at,
+    conversation.messageId
+  )
   sqlite
     .prepare(
       `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
@@ -168,7 +245,7 @@ const projectWorkedDetail = (
     const itemId =
       (parent === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${parent}`)) ??
       (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
-      ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+      assistantItemForMessage(sqlite, sessionId, event.created_at, payload.messageId)
     sqlite
       .prepare(
         `update chat_items set has_details = max(has_details, ?), updated_at = ?,

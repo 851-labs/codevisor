@@ -27,6 +27,24 @@ struct ServerEventPromptOriginTests {
     #expect(typed == [.userMessage(id: "m1", text: eventText, attachments: [], isEvent: false)])
   }
 
+  @Test("Steered user output names the assistant item that continues the turn")
+  func steeredOutputAssistantItem() {
+    let itemId = UUID()
+    let events = ServerSessionEventDecoder.decode(
+      from: envelope(
+        kind: "session.output",
+        payload: .object([
+          "role": .string("user"), "messageId": .string("m2"), "text": .string("actually bham al"),
+          "assistantItemId": .string(itemId.uuidString.lowercased()),
+        ])
+      ))
+
+    #expect(
+      events == [
+        .userMessage(id: "m2", text: "actually bham al", attachments: [], assistantItemId: itemId)
+      ])
+  }
+
   @Test("Queued prompts keep the system origin so they can be hidden")
   func queueItemOrigin() {
     let events = ServerSessionEventDecoder.decode(

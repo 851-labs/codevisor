@@ -42,7 +42,8 @@ public enum SessionRuntimeState: String, Equatable, Sendable {
 public enum ServerSessionStreamEvent: Equatable, Sendable {
   case synchronization(SessionStreamSynchronization)
   case update(SessionUpdate)
-  case userMessage(id: String?, text: String, attachments: [Attachment], isEvent: Bool = false)
+  case userMessage(
+    id: String?, text: String, attachments: [Attachment], isEvent: Bool = false, assistantItemId: UUID? = nil)
   case assistantItemStarted(UUID)
   case assistantFinalized(markdown: String, messageId: String?, attachments: [Attachment])
   case queueUpdated([ServerPromptQueueItem])

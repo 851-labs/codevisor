@@ -10,6 +10,20 @@ const skillsSnapshot = (names: ReadonlyArray<string>) => ({
   skills: names.map((name) => ({ invocation: `/${name}`, name }))
 })
 
+const answerChunk = (messageId: string, text: string) => ({
+  sessionUpdate: "agent_message_chunk",
+  messageId,
+  content: { type: "text", text }
+})
+
+const searchTool = (toolCallId: string, status: string) => ({
+  sessionUpdate: "tool_call",
+  toolCallId,
+  title: toolCallId,
+  kind: "fetch",
+  status
+})
+
 describe("@codevisor/db", () => {
   it("uses monotonic per-session revisions independent of the global event log", async () => {
     const filename = tempDatabase()
@@ -329,6 +343,71 @@ describe("@codevisor/db", () => {
         stopDetail: "Claude isn't signed in. Sign in to continue.",
         stopKind: "authRequired"
       })
+    } finally {
+      await Effect.runPromise(db.close)
+    }
+  })
+
+  it("ends the running section at a steered message and continues the turn after it", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/steered-turn" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+      const append = (kind: "session.output" | "session.updated", payload: object) =>
+        run(db.appendEvent(kind, session.id, payload))
+
+      await append("session.output", {
+        role: "user",
+        messageId: "first",
+        startsTurn: true,
+        text: "weather in sf"
+      })
+      await append("session.updated", { turnId: "t1", turnState: "started" })
+      const before = await append("session.output", searchTool("search-sf", "in_progress"))
+      await append("session.output", answerChunk("sf-answer", "SF is foggy"))
+      const steer = await append("session.output", {
+        role: "user",
+        messageId: "steer",
+        text: "actually bham al"
+      })
+      const straggler = await append("session.output", searchTool("search-sf", "completed"))
+      const lateText = await append("session.output", answerChunk("sf-answer", " and mild."))
+      const after = await append("session.output", searchTool("search-bham", "completed"))
+      await append("session.output", answerChunk("bham-answer", "Birmingham is sunny."))
+      const ended = await append("session.updated", {
+        stopReason: "end_turn",
+        turnId: "t1",
+        turnState: "ended"
+      })
+
+      const items = (await run(db.getTranscriptPage(session.id, undefined, 8))).items
+      expect(items.map((item) => [item.role, item.isGenerating])).toEqual([
+        ["user", false],
+        ["assistant", false],
+        ["user", false],
+        ["assistant", false]
+      ])
+      const [, firstSection, steered, secondSection] = items
+      expect(firstSection).toMatchObject({
+        endedAt: steer.createdAt,
+        text: "SF is foggy and mild."
+      })
+      expect(firstSection?.stopReason).toBeUndefined()
+      expect(firstSection?.turnId).toBeUndefined()
+      expect(secondSection).toMatchObject({
+        turnId: "t1",
+        startedAt: steer.createdAt,
+        endedAt: ended.createdAt,
+        stopReason: "end_turn",
+        text: "Birmingham is sunny."
+      })
+      expect(steered?.messageId).toBe("steer")
+      expect(steer.payload).toMatchObject({ assistantItemId: secondSection?.id })
+      expect(before.payload).toMatchObject({ chatItemId: firstSection?.id })
+      expect(straggler.payload).toMatchObject({ chatItemId: firstSection?.id })
+      expect(lateText.payload).toMatchObject({ chatItemId: firstSection?.id })
+      expect(after.payload).toMatchObject({ chatItemId: secondSection?.id })
+      expect(ended.payload).toMatchObject({ chatItemId: secondSection?.id })
     } finally {
       await Effect.runPromise(db.close)
     }
