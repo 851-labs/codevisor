@@ -225,6 +225,32 @@ struct MachineControllerUpdateTests {
     }
   }
 
+  @Test("A rejected update request reports the server's reason without waiting", arguments: [true, false])
+  func remoteServerUpdateRequestRejected(serverAnswers: Bool) async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureApplyRejection(
+      CodevisorServerClientError.httpStatus(500, #"{"error":"Disk full"}"#), downtime: serverAnswers ? 0 : 1)
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel.fixture(),
+      clientFactory: { _ in fake },
+      updatePollInterval: .milliseconds(2),
+      updatePollAttempts: 5,
+      updateScheduler: clock.scheduler
+    )
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+
+    await controller.updateServer(machineId: "local")
+
+    let expectedAvailability: ServerAvailability = serverAnswers ? .ready : .failed("Disk full")
+    #expect(controller.serverUpdatePhase(for: "local") == .failed("Disk full"))
+    #expect(controller.availability(for: "local") == expectedAvailability)
+    #expect(clock.requestedIntervals.isEmpty)
+  }
+
   @Test("An unreachable restart times out once draining ends", arguments: [0, 12])
   func remoteServerUpdateTimesOut(drainPolls: Int) async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])

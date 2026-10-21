@@ -63,7 +63,8 @@ extension MachineControllerUpdateTests {
 
   private func makeMigrationFixture(
     fake: SyncFakeServerClient,
-    pollAttempts: Int
+    pollAttempts: Int,
+    pollInterval: Duration = .seconds(2)
   ) throws -> MigrationFixture {
     let remote = accountMachine("remote-a", name: "Remote")
     let clock = AdvancingServerUpdateScheduler()
@@ -71,6 +72,7 @@ extension MachineControllerUpdateTests {
       store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
+      updatePollInterval: pollInterval,
       updatePollAttempts: pollAttempts,
       updateScheduler: clock.scheduler
     )
@@ -129,6 +131,25 @@ extension MachineControllerUpdateTests {
     #expect(messages.contains("Moving worktrees"))
     #expect(controller.serverUpdatePhase(for: remote.id) == .idle)
     #expect(controller.connectionsById[remote.id]?.updateProgress == nil)
+  }
+
+  @Test("A migration that outlasts its maximum duration stops extending the wait")
+  func remoteMigrationPastMaximumDuration() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "1.0", latest: "2.0")
+    let step = ServerMigrationProgress(id: "layout", name: "Moving worktrees", completed: 0, total: 0)
+    fake.configureMigration(reports: Array(repeating: step, count: 30))
+    let fixture = try makeMigrationFixture(fake: fake, pollAttempts: 3, pollInterval: .seconds(60))
+    let (controller, clock, remote) = (fixture.controller, fixture.clock, fixture.remote)
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: remote.id)
+
+    await controller.updateServer(machineId: remote.id)
+
+    #expect(clock.requestedIntervals.count == 13)
+    #expect(
+      controller.serverUpdatePhase(for: remote.id)
+        == .failed("The server did not come back after updating. Check it on the machine directly."))
   }
 
   @Test("A failed data upgrade ends the wait with the server's reason")

@@ -349,6 +349,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var currentBuildNumber: Int?
   var targetBuildNumber: Int?
   var applyFailureMessage: String?
+  var applyRejection: (any Error)?
+  var applyRejectionDowntime = 0
   var lastApply: ServerUpdateApplyState?
   var _harnesses: [ServerHarness] = []
   var _pluginUpdates: [ServerPluginUpdateStatus] = []

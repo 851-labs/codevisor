@@ -76,6 +76,13 @@ extension SyncFakeServerClient {
     lock.withLock { applyFailureMessage = message }
   }
 
+  func configureApplyRejection(_ error: any Error, downtime: Int) {
+    lock.withLock {
+      applyRejection = error
+      applyRejectionDowntime = downtime
+    }
+  }
+
   var operationLog: [String] { lock.withLock { _operationLog } }
 
   func configureHarnesses(_ harnesses: [ServerHarness]) {
@@ -344,9 +351,13 @@ extension SyncFakeServerClient {
     }
   }
   func applyServerUpdate(channel: ServerUpdateChannel) async throws -> ServerUpdateApplied {
-    lock.withLock {
+    try lock.withLock {
       _appliedChannels.append(channel)
       _appliedUpdates += 1
+      if let applyRejection {
+        downtimeRemaining = applyRejectionDowntime
+        throw applyRejection
+      }
       if _busy {
         return ServerUpdateApplied(accepted: false, targetVersion: currentVersion, reason: "busy")
       }

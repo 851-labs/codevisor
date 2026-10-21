@@ -100,11 +100,11 @@ extension MachineControllerUpdateTests {
   func remoteServerUpdateNeverRestarted() {
     let before = ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: "a", buildNumber: 10)
     #expect(
-      MachineController.notConvergedMessage(initial: before, current: before, refreshed: nil)
+      ServerUpdateRun.notConvergedMessage(initial: before, current: before, refreshed: nil)
         == "The server is still running the previous version and never restarted. Check it on the machine directly.")
     let rebooted = ServerHealth(ok: true, version: "0.1.1", database: "ready", bootId: "b", buildNumber: 10)
     #expect(
-      MachineController.notConvergedMessage(initial: before, current: rebooted, refreshed: nil)
+      ServerUpdateRun.notConvergedMessage(initial: before, current: rebooted, refreshed: nil)
         == "The server restarted into 0.1.1, but a newer release is still available. Try updating again.")
   }
 }

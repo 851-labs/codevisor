@@ -63,11 +63,10 @@ extension MachineController {
       return nil
     }
     let failed = health.database == "failed"
-    let genericFailure = "The server couldn't finish updating its data."
     var migration =
       health.migration
       ?? ServerMigrationProgress(id: "data-upgrade", name: "Updating server data", completed: 0, total: 0)
-    if failed, migration.error == nil { migration.error = genericFailure }
+    if failed, migration.error == nil { migration.error = ServerUpdateRun.dataUpgradeFailureMessage }
     connection.dataUpgradeProgress = migration
     connection.status = MachineStatus(
       isReachable: false,
