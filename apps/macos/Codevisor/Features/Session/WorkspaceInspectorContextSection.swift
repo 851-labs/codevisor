@@ -1,7 +1,6 @@
 import ACPKit
 import CodevisorClient
 import CodevisorCore
-import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorContextSection: View {
@@ -26,9 +25,6 @@ struct WorkspaceInspectorContextSection: View {
         ForEach(active(in: context) + context.categories.filter { $0.isDeferred == true }, id: \.name) {
           category in
           WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
-        }
-        if !context.mcpTools.isEmpty {
-          WorkspaceInspectorContextTools(tools: context.mcpTools)
         }
       }
     } else if let used = usage?.used, let size = usage?.size, size > 0 {
@@ -117,49 +113,6 @@ private struct WorkspaceInspectorContextRow: View {
 
   private var percent: String {
     (category.tokens / maxTokens).formatted(.percent.precision(.fractionLength(1)))
-  }
-}
-
-private struct WorkspaceInspectorContextTools: View {
-  let tools: [ServerSessionContext.Tool]
-
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var isExpanded = false
-
-  var body: some View {
-    Button {
-      withAnimation(Motion.indicator(reduceMotion: reduceMotion)) { isExpanded.toggle() }
-    } label: {
-      HStack(spacing: 6) {
-        Image(systemName: "chevron.right")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .rotationEffect(.degrees(isExpanded ? 90 : 0))
-        Text("MCP tools")
-        Spacer(minLength: 8)
-        Text("\(tools.count)")
-          .foregroundStyle(.secondary)
-          .monospacedDigit()
-      }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-    if isExpanded {
-      ForEach(tools, id: \.name) { tool in
-        HStack(spacing: 8) {
-          Text(tool.name)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .foregroundStyle(tool.isLoaded == false ? .secondary : .primary)
-          Spacer(minLength: 8)
-          Text(WorkspaceInspectorContextTokens.format(tool.tokens))
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-        }
-        .help(tool.serverName)
-      }
-    }
   }
 }
 
