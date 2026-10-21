@@ -12,11 +12,11 @@ struct WorkspaceInspectorMachineSection: View {
     WorkspaceInspectorCard(title: "Machine", isExpanded: $isExpanded) {
       WorkspaceInspectorMachineLoad(
         title: "CPU", usedPercent: stats.cpu.usedPercent, history: stats.cpu.history,
-        detail: "\(stats.cpu.cores) cores")
+        detail: Self.detail(model: stats.cpu.model, cores: stats.cpu.cores))
       if let gpu = stats.gpu {
         WorkspaceInspectorMachineLoad(
           title: "GPU", usedPercent: gpu.usedPercent, history: gpu.history,
-          detail: [gpu.model, gpu.cores.map { "\($0) cores" }].compactMap { $0 }.joined(separator: " · "))
+          detail: Self.detail(model: gpu.model, cores: gpu.cores))
       }
       WorkspaceInspectorMachineUsageRow(title: "Memory", usage: stats.memory, style: .memory)
       if let disk = stats.disk {
@@ -24,6 +24,10 @@ struct WorkspaceInspectorMachineSection: View {
       }
       LabeledContent("Uptime", value: Self.uptimeText(stats.uptimeSeconds))
     }
+  }
+
+  private static func detail(model: String?, cores: Int?) -> String {
+    [model, cores.map { "\($0) cores" }].compactMap { $0 }.joined(separator: " · ")
   }
 
   static func uptimeText(_ seconds: Double) -> String {

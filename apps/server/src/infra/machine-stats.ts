@@ -20,6 +20,7 @@ export interface GpuReading {
 
 export interface MachineStatsReaders {
   readonly cores: () => number
+  readonly cpuModel: () => string | undefined
   readonly cpuTimes: () => CpuTimes
   readonly gpu: () => Promise<GpuReading | undefined>
   readonly memory: () => Promise<MachineStatsUsage>
@@ -59,6 +60,11 @@ export const cpuTimesOf = (
     }),
     { idle: 0, total: 0 }
   )
+
+export const cpuModelOf = (list: ReadonlyArray<{ readonly model: string }>): string | undefined =>
+  list[0]?.model.replace(/\s+/g, " ").trim() || undefined
+
+const withModel = (model: string | undefined) => (model === undefined ? {} : { model })
 
 export const cpuPercentBetween = (before: CpuTimes, after: CpuTimes): number => {
   const total = after.total - before.total
@@ -168,6 +174,7 @@ const systemDisk = async (): Promise<MachineStatsUsage | undefined> => {
 
 export const systemReaders: MachineStatsReaders = {
   cores: () => cpus().length,
+  cpuModel: () => cpuModelOf(cpus()),
   cpuTimes: () => cpuTimesOf(cpus()),
   gpu: systemGpu,
   memory: systemMemory,
@@ -237,6 +244,7 @@ export const makeMachineStatsSampler = (
         sampledAt: isoNow(),
         uptimeSeconds: readers.uptimeSeconds(),
         cpu: {
+          ...withModel(readers.cpuModel()),
           cores: readers.cores(),
           ...(latest === undefined ? {} : { usedPercent: latest.usedPercent }),
           history
@@ -245,7 +253,7 @@ export const makeMachineStatsSampler = (
           ? {}
           : {
               gpu: {
-                ...(gpu.model === undefined ? {} : { model: gpu.model }),
+                ...withModel(gpu.model),
                 ...(gpu.cores === undefined ? {} : { cores: gpu.cores }),
                 usedPercent: gpu.usedPercent,
                 history: gpuHistory
