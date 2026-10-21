@@ -1,4 +1,5 @@
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import { noteBotPrompt } from "./routes/bot-turns.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import {
   failureMessage,
@@ -9,6 +10,7 @@ import {
   type EventFanout,
   type RouteState
 } from "./server-context.js"
+import { forgetUpdatePause } from "./update-pauses.js"
 
 export const UPDATE_RESUME_STAGGER_MS = 3_000
 export const UPDATE_CONTINUE_PROMPT = "continue"
@@ -22,7 +24,7 @@ export interface UpdateResumer {
 
 export interface UpdateResumerDeps {
   readonly pausedTurns: PausedTurnStore
-  readonly continueSession: (sessionId: string) => Promise<void>
+  readonly continueSession: (turn: PausedTurn) => Promise<void>
   readonly staggerMs?: number | undefined
   readonly log?: ((line: string) => void) | undefined
 }
@@ -33,18 +35,18 @@ export const makeUpdateResumer = (deps: UpdateResumerDeps): UpdateResumer => {
   const log = deps.log ?? ((line: string) => console.log(line))
   const timers = new Map<string, NodeJS.Timeout>()
 
-  const fire = async (sessionId: string): Promise<void> => {
-    timers.delete(sessionId)
+  const fire = async (turn: PausedTurn): Promise<void> => {
+    timers.delete(turn.sessionId)
     try {
-      await continueSession(sessionId)
+      await continueSession(turn)
     } catch (cause) {
-      log(`Could not continue ${sessionId} after the update: ${failureMessage(cause)}`)
+      log(`Could not continue ${turn.sessionId} after the update: ${failureMessage(cause)}`)
     }
-    pausedTurns.remove(sessionId)
+    pausedTurns.remove(turn.sessionId)
   }
 
   const schedule = (turn: PausedTurn, slot: number): void => {
-    const timer = setTimeout(() => void fire(turn.sessionId), slot * staggerMs)
+    const timer = setTimeout(() => void fire(turn), slot * staggerMs)
     timer.unref()
     timers.set(turn.sessionId, timer)
   }
@@ -73,10 +75,12 @@ export const continueAfterUpdate = async (
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
-  sessionId: string
+  { sessionId, awaitsBotReply }: PausedTurn
 ): Promise<void> => {
+  forgetUpdatePause(services, sessionId)
   if (!(await canContinue(services, routeState, sessionId))) return
 
+  if (awaitsBotReply === true) noteBotPrompt(services, sessionId, "user")
   await queueContinueFirst(services, sessionId)
   void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
 }

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeFilePausedTurnStore, type PausedTurn } from "./paused-turns.js"
+import { drainPromptQueue } from "./routes/prompt-queue.js"
 import { makeEventFanout } from "./server-context.js"
 import {
   archiveSessionViaWorkspace,
@@ -13,7 +14,7 @@ import {
   run,
   tempDirs
 } from "./test-support.js"
-import { markTurnInterrupted, withInterruptedStop } from "./turn-interruptions.js"
+import { markPausingForUpdate, withUpdatePauseStop } from "./update-pauses.js"
 import {
   continueAfterUpdate,
   makeUpdateResumer,
@@ -37,7 +38,7 @@ const makeHarness = (path = makeStorePath()) => {
   const logs: Array<string> = []
   const resumer = makeUpdateResumer({
     pausedTurns,
-    continueSession: async (sessionId) => {
+    continueSession: async ({ sessionId }) => {
       if (sessionId === "broken") throw new Error("session is gone")
       continued.push(sessionId)
     },
@@ -72,7 +73,7 @@ describe("update resumer", () => {
     expect(harness.logs).toEqual(["Continuing 3 chat(s) paused for the update"])
   })
 
-  it("drops a chat's continue when the user sends it something first", async () => {
+  it("drops a chat's continue when the user stops it first", async () => {
     const harness = makeHarness()
     harness.pausedTurns.add(paused("a", "b"))
     harness.resumer.resume(harness.pausedTurns.read())
@@ -146,8 +147,11 @@ const makeChat = async () => {
   const queuedTexts = async () =>
     (await run(services.db.listPromptQueue(session.id))).map((item) => item.text)
   const continueChat = () =>
-    continueAfterUpdate(services, fanout, routeState, "server-a", session.id)
-  return { services, routeState, project, session, queuedTexts, continueChat }
+    continueAfterUpdate(services, fanout, routeState, "server-a", {
+      sessionId: session.id,
+      pausedAt
+    })
+  return { fanout, services, routeState, project, session, queuedTexts, continueChat }
 }
 
 describe("continuing a paused chat", () => {
@@ -163,6 +167,25 @@ describe("continuing a paused chat", () => {
     ])
   })
 
+  it("holds queued work for a chat until its continue fires", async () => {
+    const chat = await makeChat()
+    let pending = true
+    const routeState = {
+      ...chat.routeState,
+      restart: idleRouteState().restart,
+      updateResume: { ...chat.routeState.updateResume, isPending: () => pending }
+    }
+    const drain = () =>
+      drainPromptQueue(chat.services, chat.fanout, routeState, "server-a", chat.session.id)
+
+    await drain()
+    expect(await chat.queuedTexts()).toEqual(["queued earlier"])
+
+    pending = false
+    await drain()
+    expect(await chat.queuedTexts()).toEqual([])
+  })
+
   it("leaves a chat alone once it is running again or archived", async () => {
     const chat = await makeChat()
     chat.routeState.activeTurnSessions.add(chat.session.id)
@@ -175,19 +198,23 @@ describe("continuing a paused chat", () => {
     expect(await chat.queuedTexts()).toEqual(["queued earlier"])
   })
 
-  it("marks an interrupted turn's end without overriding a harness stop kind", async () => {
-    const { services } = await makeServices("server-a")
+  it("marks every turn end of a paused chat until its continue, without overriding a harness stop kind", async () => {
+    const chat = await makeChat()
+    const { services } = chat
+    const sessionId = chat.session.id
     const ended = { initiatedBy: "user", turnId: "turn-1", turnState: "ended" }
     const event = { kind: "session.updated" as const, subjectId: "agent", payload: ended }
-    expect(withInterruptedStop(services, "session", event, ended)).toBe(event)
+    const pausedEnd = { ...ended, stopKind: "pausedForUpdate" }
+    expect(withUpdatePauseStop(services, sessionId, event, ended)).toBe(event)
 
-    markTurnInterrupted(services, "session")
-    expect(withInterruptedStop(services, "session", event, ended).payload).toEqual({
-      ...ended,
-      stopKind: "interrupted"
-    })
+    markPausingForUpdate(services, sessionId)
+    expect(withUpdatePauseStop(services, sessionId, event, ended).payload).toEqual(pausedEnd)
+    expect(withUpdatePauseStop(services, sessionId, event, ended).payload).toEqual(pausedEnd)
     const signedOut = { ...ended, stopKind: "authRequired" }
     const signedOutEvent = { ...event, payload: signedOut }
-    expect(withInterruptedStop(services, "session", signedOutEvent, signedOut)).toBe(signedOutEvent)
+    expect(withUpdatePauseStop(services, sessionId, signedOutEvent, signedOut)).toBe(signedOutEvent)
+
+    await chat.continueChat()
+    expect(withUpdatePauseStop(services, sessionId, event, ended)).toBe(event)
   })
 })

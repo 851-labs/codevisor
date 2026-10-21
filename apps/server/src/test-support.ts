@@ -39,10 +39,10 @@ export * from "./test-support-stubs.js"
 export const idleRestartCoordinator = (): RestartCoordinator => {
   const startedAt = "2026-06-30T00:00:00.000Z"
   return {
-    state: () => ({ state: "idle", remaining: 0, startedAt }),
+    state: () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
     isGated: () => false,
-    begin: async () => ({ state: "drained", remaining: 0, startedAt }),
-    cancel: async () => ({ state: "idle", remaining: 0, startedAt }),
+    begin: async () => ({ state: "drained", remaining: 0, startedAt, pausedSessionIds: [] }),
+    cancel: async () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
     close: () => {}
   }
 }
@@ -301,15 +301,12 @@ export const archiveSessionViaWorkspace = async (
 
 export const start = async (
   auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false },
-  mcpConfig: Parameters<typeof makeServices>[1] = {}
+  mcpConfig: Parameters<typeof makeServices>[1] = {},
+  configOverrides: Partial<CodevisorServerConfig> = {}
 ) => {
   const { agents, services, spawner } = await makeServices("server-a", mcpConfig)
-  const server = await run(
-    startCodevisorServer(
-      services,
-      defaultServerConfig({ bootId: "test-boot", auth, id: "server-a", port: 0 })
-    )
-  )
+  const config = { bootId: "test-boot", auth, id: "server-a", port: 0, ...configOverrides }
+  const server = await run(startCodevisorServer(services, defaultServerConfig(config)))
   runningServers.push(server)
   return { agents, server, services, spawner }
 }

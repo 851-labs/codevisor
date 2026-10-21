@@ -12,6 +12,14 @@ import { hasLiveTurn, steerQueuedPrompt } from "./prompt-queue.js"
 
 export const defaultPromptDelivery: PromptDelivery = "steer"
 
+export const UPDATING_MESSAGE = "Codevisor is updating. Send this again once the update finishes."
+
+export const refuseWhileUpdating = (routeState: RouteState, sessionId: string): void => {
+  if (routeState.restart.isGated() || routeState.updateResume.isPending(sessionId)) {
+    throw new HttpFailure(409, UPDATING_MESSAGE, "updating")
+  }
+}
+
 export interface PromptDeliveryOutcome {
   readonly delivered: PromptDelivered
   readonly steerDeclined?: true

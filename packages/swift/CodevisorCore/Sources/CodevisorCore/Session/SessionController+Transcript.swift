@@ -223,6 +223,7 @@ extension SessionController {
       || !composerAttachments.isEmpty)
       && !isConnecting
       && isServerReady
+      && !isPausedForUpdate
       && !composerAttachments.contains { $0.state == .loading }
       && configurationValidationState == .ready
       && !requiresModelSelection

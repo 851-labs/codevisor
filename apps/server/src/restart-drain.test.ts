@@ -12,6 +12,8 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
+import { pauseForUpdate, restartStatePaths } from "./restart-test-support.js"
+import { UPDATING_MESSAGE } from "./routes/prompt-delivery.js"
 import type { CodevisorServerUpdater, RunningCodevisorServer } from "./server.js"
 import {
   archiveSessionViaWorkspace,
@@ -52,15 +54,6 @@ const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
     })
   }
   return { state, updater }
-}
-
-const statePaths = () => {
-  const root = mkdtempSync(join(tmpdir(), "codevisor-drain-state-"))
-  tempDirs.push(root)
-  return {
-    restartSnapshotPath: join(root, "restart-resume.json"),
-    pausedTurnsPath: join(root, "paused-for-update.json")
-  }
 }
 
 const pausedSessionIds = (path: string): ReadonlyArray<unknown> => {
@@ -155,9 +148,9 @@ describe("restart drain", () => {
     expect(stale.lastApply?.progress).toBeUndefined()
   })
 
-  it("pauses live turns at once, holds new prompts, and continues them after the restart", async () => {
+  it("pauses live turns at once, holds earlier queued prompts, and continues them after the restart", async () => {
     const { agents, services } = await makeServices("server-a")
-    const paths = statePaths()
+    const paths = restartStatePaths()
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { ...paths, updater })
     const sessionId = await openSession(server, "Paused")
@@ -174,7 +167,7 @@ describe("restart drain", () => {
     expect(agents.cancellations).toEqual(["agent-codex-repo"])
     expect(await lastAssistant(server, sessionId)).toMatchObject({
       stopReason: "cancelled",
-      stopKind: "interrupted"
+      stopKind: "pausedForUpdate"
     })
     expect(JSON.parse(readFileSync(paths.pausedTurnsPath, "utf8"))).toEqual({
       turns: [{ sessionId, turnId: "turn-1", pausedAt: expect.any(String) }]
@@ -222,7 +215,7 @@ describe("restart drain", () => {
 
   it("reloads snapshot sessions with held work but not idle, archived or missing ones", async () => {
     const { agents, services } = await makeServices("server-a")
-    const paths = statePaths()
+    const paths = restartStatePaths()
     const server = await startWithApp(services, undefined, paths)
     const sessionId = await openSession(server, "Held")
     await run(services.db.createPromptQueueItem(sessionId, "held prompt"))
@@ -273,7 +266,7 @@ describe("restart drain", () => {
 
   it("continues only the chats the update paused, not ones the user stopped", async () => {
     const { agents, services } = await makeServices("server-a")
-    const paths = statePaths()
+    const paths = restartStatePaths()
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { ...paths, updater })
     const running = await openSession(server, "Running", "running")
@@ -295,9 +288,9 @@ describe("restart drain", () => {
     expect(agents.prompts[2]).toEqual(["agent-codex-running", "continue"])
   })
 
-  it("a message the user sends first replaces that chat's continue", async () => {
+  it("refuses messages to a chat until its continue has fired", async () => {
     const { agents, services } = await makeServices("server-a")
-    const paths = statePaths()
+    const paths = restartStatePaths()
     const { state, updater } = makeUpdater()
     const server = await startWithApp(services, undefined, { ...paths, updater })
     const first = await openSession(server, "First", "first")
@@ -310,16 +303,19 @@ describe("restart drain", () => {
     await run(server.close)
 
     const restarted = await startWithApp(services, undefined, paths)
-    expect((await prompt(restarted, second, "what happened?")).status).toBe(202)
+    await waitFor(() => agents.prompts.length === 3)
+    expect(agents.prompts[2]).toEqual(["agent-codex-first", "continue"])
+    expect((await jsonRequest(restarted, "/v1/restart/drain")).body).toMatchObject({
+      state: "idle",
+      pausedSessionIds: [second]
+    })
 
-    expect(pausedSessionIds(paths.pausedTurnsPath)).not.toContain(second)
-    await waitFor(() => agents.prompts.length === 4)
-    expect(agents.prompts.slice(2)).toEqual(
-      expect.arrayContaining([
-        ["agent-codex-first", "continue"],
-        ["agent-codex-second", "what happened?"]
-      ])
-    )
+    expect(await prompt(restarted, second, "what happened?")).toEqual({
+      status: 409,
+      body: { error: UPDATING_MESSAGE, code: "updating" }
+    })
+    expect((await prompt(restarted, first, "carry on", "queue")).status).toBe(202)
+    expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([second])
   })
 
   it("cancelling a drain continues paused chats", async () => {
@@ -340,29 +336,45 @@ describe("restart drain", () => {
     expect(agents.prompts[1]?.[1]).toBe("continue")
   })
 
-  it("a prompt sent while the update pauses a chat replaces its continue", async () => {
+  it("refuses prompts, steers, queued sends, and goals while paused, and keeps the continue", async () => {
     const { agents, services } = await makeServices("server-a")
-    const paths = statePaths()
+    const paths = restartStatePaths()
     const server = await startWithApp(services, undefined, paths)
-    const sessionId = await openSession(server, "Held")
+    const sessionId = await openSession(server, "Paused")
+    const idle = await openSession(server, "Idle", "idle")
     expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
     await waitFor(() => agents.prompts.length === 1)
-    expect((await jsonRequest(server, "/v1/restart/drain", { method: "POST" })).status).toBe(202)
-    await waitFor(
-      async () => decodeDrain(await jsonRequest(server, "/v1/restart/drain")).state === "drained"
-    )
+    expect((await prompt(server, sessionId, "queued earlier", "queue")).status).toBe(202)
+    const [queued] = await run(services.db.listPromptQueue(sessionId))
+    await pauseForUpdate(server)
     expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([sessionId])
 
-    expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
-    await waitFor(async () =>
-      (await gateEvents(services, sessionId)).some((event) => field(event, "state") === "waiting")
-    )
-    expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([])
-    expect(agents.prompts).toHaveLength(1)
+    const refused = { status: 409, body: { error: UPDATING_MESSAGE, code: "updating" } }
+    expect(await prompt(server, sessionId, "steer this")).toEqual(refused)
+    expect(await prompt(server, sessionId, "queue this", "queue")).toEqual(refused)
+    expect(await prompt(server, idle, "start something")).toEqual(refused)
+    expect(
+      await jsonRequest(server, `/v1/sessions/${sessionId}/queue/${queued!.id}/send-now`, {
+        method: "POST"
+      })
+    ).toEqual(refused)
+    expect(
+      await jsonRequest(server, `/v1/sessions/${sessionId}/goal`, {
+        body: JSON.stringify({ objective: "ship it" }),
+        method: "POST"
+      })
+    ).toEqual(refused)
+    expect((await run(services.db.listPromptQueue(sessionId))).map((item) => item.text)).toEqual([
+      "queued earlier"
+    ])
+    expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([sessionId])
 
     await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
-    await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts[1]?.[1]).toBe("held prompt")
+    await waitFor(() => agents.prompts.length === 3)
+    expect(agents.prompts.slice(1).map(([, input]) => input)).toEqual([
+      "continue",
+      "queued earlier"
+    ])
   })
 
   it("reopens the gate when the updater fails after draining", async () => {
@@ -393,10 +405,7 @@ describe("restart drain", () => {
     expect((await jsonRequest(server, "/v1/update")).body).toMatchObject({
       lastApply: { state: "draining", message: "Pausing 1 chat for the update" }
     })
-    expect((await prompt(server, sessionId, "while pausing")).body).toMatchObject({
-      delivered: "queued",
-      steerDeclined: true
-    })
+    expect((await prompt(server, sessionId, "while pausing")).status).toBe(409)
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })).status).toBe(200)
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "PUT" })).status).toBe(404)
     agents.releasePrompt()

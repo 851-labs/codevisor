@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
+import { pauseForUpdate, restartStatePaths, stopServer } from "../restart-test-support.js"
+import { jsonRequest, listSubjectEvents, run, startWithApp, waitFor } from "../test-support.js"
 import { createBot, decodeBot, setUp, type Running } from "./bot-test-support.js"
 
 const decodePage = decode(BotConversationPage)
@@ -21,8 +22,8 @@ const prompt = (running: Running, sessionId: string, text: string, messageId?: s
     method: "POST"
   })
 
-const startBot = async () => {
-  const running = await setUp()
+const startBot = async (configOverrides: Parameters<typeof setUp>[0] = {}) => {
+  const running = await setUp(configOverrides)
   await running.addProject("api-project", "api")
   const bot = decodeBot(
     (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
@@ -276,5 +277,26 @@ describe("bot conversations", () => {
       )
     )
     expect(await transcript(running, bot.sessionId)).toEqual([])
+  })
+
+  it("still replies to the user when an update pauses the bot mid-turn", async () => {
+    const paths = restartStatePaths()
+    const { running, bot } = await startBot(paths)
+    await prompt(running, bot.sessionId, "prompt until cancelled")
+    await waitFor(() => running.agents.prompts.length === 1)
+
+    await pauseForUpdate(running.server)
+    await stopServer(running.server)
+    const restarted = { ...running, server: await startWithApp(running.services, undefined, paths) }
+
+    await waitFor(async () => (await transcript(restarted, bot.sessionId)).length === 2)
+    expect(running.agents.prompts.map(([, input]) => input)).toEqual([
+      expect.stringContaining("prompt until cancelled"),
+      "continue"
+    ])
+    expect(await transcript(restarted, bot.sessionId)).toEqual([
+      ["user", "prompt until cancelled"],
+      ["bot", "Echo: continue"]
+    ])
   })
 })

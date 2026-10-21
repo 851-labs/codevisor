@@ -12,6 +12,7 @@ extension MachineController {
     "mcp.updated",
     "bot.updated",
     "update.changed",
+    "restart.drain.updated",
     "sync.changed",
   ]
 
@@ -31,6 +32,9 @@ extension MachineController {
     let connection = connection(for: serverId)
     connection.eventSyncTask?.cancel()
     connection.eventSyncTask = Task { [weak self] in
+      if let drain = try? await client.restartDrainState(), !Task.isCancelled {
+        connection.restartDrain = drain
+      }
       do {
         for try await event in client.shellEventStream(
           since: max(0, initialCursor),
@@ -137,6 +141,12 @@ extension MachineController {
         let info = try? JSONDecoder().decode(ServerUpdateInfo.self, from: data)
       {
         connection(for: serverId).updateInfo = info
+      }
+    case "restart.drain.updated":
+      if let data = try? JSONEncoder().encode(event.payload),
+        let drain = try? JSONDecoder().decode(ServerRestartDrainState.self, from: data)
+      {
+        connection(for: serverId).restartDrain = drain
       }
     case "sync.changed":
       if let data = try? JSONEncoder().encode(event.payload),

@@ -8,6 +8,7 @@ public final class MachineConnection {
 
   public internal(set) var status: MachineStatus?
   public internal(set) var updateInfo: ServerUpdateInfo?
+  public internal(set) var restartDrain: ServerRestartDrainState?
   public internal(set) var availability: ServerAvailability?
   public internal(set) var navigationSyncState: NavigationSyncState?
   public internal(set) var updatePhase: ServerUpdatePhase = .idle
@@ -325,6 +326,10 @@ extension MachineController {
 
   public func availability(for machineId: String) -> ServerAvailability {
     connectionsById[machineId]?.availability ?? .waiting(.connecting)
+  }
+
+  public func isPausedForUpdate(machineId: String, sessionId: UUID?) -> Bool {
+    connectionsById[machineId]?.restartDrain?.pausesSending(sessionId: sessionId) ?? false
   }
 
   public func showsReconnectNotice(for machineId: String) -> Bool {

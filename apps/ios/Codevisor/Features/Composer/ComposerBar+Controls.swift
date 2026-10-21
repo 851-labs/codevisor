@@ -144,7 +144,11 @@ extension ComposerBar {
       .pointerHighlight(Circle())
       .disabled(!canSend)
       .accessibilityLabel("Steer")
-      .accessibilityHint("Adds your message to the running turn. Touch and hold to queue it instead.")
+      .accessibilityHint(
+        controller.isPausedForUpdate
+          ? "Codevisor is updating"
+          : "Adds your message to the running turn. Touch and hold to queue it instead."
+      )
     } else {
       Button {
         submitOrAcceptSlashCommand()
@@ -155,7 +159,7 @@ extension ComposerBar {
       .pointerHighlight(Circle())
       .disabled(!canSend)
       .accessibilityLabel(sendButtonAccessibilityLabel)
-      .accessibilityHint(controller.requiresModelSelection ? "Select a model" : "")
+      .accessibilityHint(sendButtonAccessibilityHint)
     }
   }
 
@@ -167,6 +171,11 @@ extension ComposerBar {
   private var offersQueueOnSend: Bool {
     controller.steersWhileWorking && !controller.isGoalEditing && !controller.isEditingQueuedPrompt
       && slashMatches.isEmpty
+  }
+
+  private var sendButtonAccessibilityHint: String {
+    if controller.isPausedForUpdate { return "Codevisor is updating" }
+    return controller.requiresModelSelection ? "Select a model" : ""
   }
 
   private var sendButtonAccessibilityLabel: String {

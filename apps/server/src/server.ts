@@ -16,7 +16,11 @@ import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import { forwardTerminalTitles } from "./infra/terminal-titles.js"
 import { startWorkspaceGitMonitor } from "./infra/workspace-git.js"
-import { makeFilePausedTurnStore, makeMemoryPausedTurnStore } from "./paused-turns.js"
+import {
+  makeFilePausedTurnStore,
+  makeMemoryPausedTurnStore,
+  observePausedTurns
+} from "./paused-turns.js"
 import {
   makeFileRestartSnapshotStore,
   makeMemoryRestartSnapshotStore,
@@ -78,14 +82,24 @@ export const makeCodevisorServerApp = (
     config.restartSnapshotPath === undefined
       ? makeMemoryRestartSnapshotStore()
       : makeFileRestartSnapshotStore(config.restartSnapshotPath)
-  const pausedTurns =
+  const publishRestartDrain = (): void => {
+    void appendAndPublish(
+      services.db,
+      fanout,
+      "restart.drain.updated",
+      "server",
+      restart.state()
+    ).catch(swallowError)
+  }
+  const pausedTurns = observePausedTurns(
     config.pausedTurnsPath === undefined
       ? makeMemoryPausedTurnStore()
-      : makeFilePausedTurnStore(config.pausedTurnsPath)
+      : makeFilePausedTurnStore(config.pausedTurnsPath),
+    publishRestartDrain
+  )
   const updateResume = makeUpdateResumer({
     pausedTurns,
-    continueSession: (sessionId) =>
-      continueAfterUpdate(services, fanout, routeState, config.id, sessionId)
+    continueSession: (turn) => continueAfterUpdate(services, fanout, routeState, config.id, turn)
   })
   const restart = makeRestartCoordinator({
     services,
@@ -94,7 +108,8 @@ export const makeCodevisorServerApp = (
     snapshot: restartSnapshot,
     pausedTurns,
     redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId),
-    resumePaused: () => updateResume.resume(pausedTurns.read())
+    resumePaused: () => updateResume.resume(pausedTurns.read()),
+    onChange: publishRestartDrain
   })
   const browserProxy = new BrowserProxy()
   const clientControl = new ClientControlBroker()
@@ -111,6 +126,7 @@ export const makeCodevisorServerApp = (
     updateResume
   }
   updateResume.resume(pausedTurns.read())
+  if (pausedTurns.read().length > 0) publishRestartDrain()
   void resumeSessionsAfterRestart(services, fanout, routeState, config.id, restartSnapshot).catch(
     swallowError
   )

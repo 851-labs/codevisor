@@ -179,6 +179,58 @@ struct MachineConnectionTests {
     }
   }
 
+  @Test("restart.drain.updated events pause sending on that machine until each paused chat resumes")
+  func restartDrainEventsPauseSending() async throws {
+    let remote = makeRemote("remote-a")
+    let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+    let (controller, _) = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    await controller.connectMachine(remote.id)
+    try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
+    let paused = UUID()
+    let idle = UUID()
+    #expect(!controller.isPausedForUpdate(machineId: remote.id, sessionId: idle))
+
+    remoteFake.emit(
+      kind: "restart.drain.updated",
+      subjectId: "server",
+      payload: .object([
+        "state": .string("drained"), "remaining": .number(0),
+        "startedAt": .string("2026-10-20T00:00:00.000Z"),
+        "pausedSessionIds": .array([.string(paused.uuidString.lowercased())]),
+      ])
+    )
+    try await waitForSync { controller.isPausedForUpdate(machineId: remote.id, sessionId: idle) }
+    #expect(controller.isPausedForUpdate(machineId: remote.id, sessionId: nil))
+    #expect(!controller.isPausedForUpdate(machineId: "local", sessionId: idle))
+
+    remoteFake.emit(
+      kind: "restart.drain.updated",
+      subjectId: "server",
+      payload: .object([
+        "state": .string("idle"), "remaining": .number(0),
+        "startedAt": .string("2026-10-20T00:01:00.000Z"),
+        "pausedSessionIds": .array([.string(paused.uuidString.lowercased())]),
+      ])
+    )
+    try await waitForSync { !controller.isPausedForUpdate(machineId: remote.id, sessionId: idle) }
+    #expect(controller.isPausedForUpdate(machineId: remote.id, sessionId: paused))
+
+    remoteFake.emit(
+      kind: "restart.drain.updated",
+      subjectId: "server",
+      payload: .object([
+        "state": .string("idle"), "remaining": .number(0),
+        "startedAt": .string("2026-10-20T00:01:00.000Z"),
+        "pausedSessionIds": .array([]),
+      ])
+    )
+    try await waitForSync { !controller.isPausedForUpdate(machineId: remote.id, sessionId: paused) }
+  }
+
   @Test("An update tracks on its own machine, not on the selected one")
   func updatePhaseIsPerMachine() async throws {
     let remote = makeRemote("remote-a")

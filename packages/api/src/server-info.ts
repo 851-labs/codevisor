@@ -81,7 +81,8 @@ export type UpdateInfo = typeof UpdateInfo.Type
 export const RestartDrainState = Schema.Struct({
   state: Schema.Literals(["idle", "draining", "drained"]),
   remaining: Schema.Number,
-  startedAt: Schema.String
+  startedAt: Schema.String,
+  pausedSessionIds: Schema.Array(Schema.String)
 })
 export type RestartDrainState = typeof RestartDrainState.Type
 

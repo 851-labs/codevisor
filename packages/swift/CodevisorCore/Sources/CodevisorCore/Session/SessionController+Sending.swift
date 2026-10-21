@@ -8,6 +8,7 @@ extension SessionController {
     guard !text.isEmpty || !composerAttachments.isEmpty,
       !isConnecting,
       isServerReady,
+      !isPausedForUpdate,
       configurationValidationState == .ready,
       !requiresModelSelection,
       !isSubmitting

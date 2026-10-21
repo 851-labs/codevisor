@@ -34,6 +34,7 @@ import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import {
   defaultPromptDelivery,
   deliverQueuedPrompt,
+  refuseWhileUpdating,
   sendQueuedPromptNow
 } from "./prompt-delivery.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
@@ -122,6 +123,7 @@ export const routeSessionActions = async (
   if (sendNowRoute !== undefined && request.method === "POST") {
     const id = routeParam(sendNowRoute, "id")
     const queueId = routeParam(sendNowRoute, "queueId")
+    refuseWhileUpdating(routeState, id)
     const outcome = await sendQueuedPromptNow(services, fanout, routeState, config.id, id, queueId)
     const result: PromptAcceptedResponse = {
       accepted: true,
@@ -152,6 +154,7 @@ export const routeSessionActions = async (
         return true
       }
     }
+    refuseWhileUpdating(routeState, promptSessionId)
     /* v8 ignore next 4 */
     if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
       writeJson(response, 202, { accepted: true, sessionId: promptSessionId })
@@ -179,7 +182,6 @@ export const routeSessionActions = async (
         agentSessionId === undefined ? "user" : "system"
       )
     )
-    routeState.updateResume.cancel(promptSessionId)
     if (toBot && agentSessionId === undefined) {
       await postBotMessage(services, fanout, promptSessionId, {
         id: queueItem.id,
@@ -305,6 +307,7 @@ export const routeSessionActions = async (
 
   const goalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/goal")
   if (goalSessionId !== undefined && request.method === "POST") {
+    refuseWhileUpdating(routeState, goalSessionId)
     const payload = await readSchema(request, SetGoalRequest)
     await writeIdempotentAction(services, response, goalSessionId, "goal", payload, async () => {
       const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)

@@ -7,14 +7,21 @@ import {
 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { archiveSessionViaWorkspace, jsonRequest, waitFor } from "../test-support.js"
+import { pauseForUpdate, restartStatePaths, stopServer } from "../restart-test-support.js"
+import {
+  archiveSessionViaWorkspace,
+  jsonRequest,
+  run,
+  startWithApp,
+  waitFor
+} from "../test-support.js"
 import { setUp, type Running } from "./bot-test-support.js"
 
 const post = (running: Running, path: string, body: Record<string, unknown>) =>
   jsonRequest(running.server, path, { body: JSON.stringify(body), method: "POST" })
 
-const startServer = async () => {
-  const running = await setUp()
+const startServer = async (configOverrides: Parameters<typeof setUp>[0] = {}) => {
+  const running = await setUp(configOverrides)
   await running.addProject("api-project", "api")
   return running
 }
@@ -250,5 +257,31 @@ describe("session event subscriptions", () => {
 
     expect(missing.status).toBe(404)
     expect(JSON.stringify(missing.body)).toContain("don't survive a server restart")
+  })
+
+  it("says nothing about an update pause and reports the turn once it really ends", async () => {
+    const paths = restartStatePaths()
+    const running = await startServer(paths)
+    const watcher = await createChat(running, "Watcher")
+    const worker = await createChat(running, "Fix login", { parentSessionId: watcher })
+    await subscribe(running, watcher, { targetSessionId: worker, once: true })
+    await holdTurn(running, worker)
+
+    await pauseForUpdate(running.server)
+    expect((await transcript(running, worker)).items.at(-1)).toMatchObject({
+      stopKind: "pausedForUpdate"
+    })
+    expect(await run(running.services.db.listPromptQueue(watcher))).toEqual([])
+    await stopServer(running.server)
+
+    const restarted = { ...running, server: await startWithApp(running.services, undefined, paths) }
+    await waitFor(() => eventPrompts(restarted).length === 1)
+
+    expect(running.agents.prompts.map(([, input]) => input)).toEqual([
+      "prompt until cancelled",
+      "continue",
+      expect.stringContaining(`type="session.turn_ended" sessionId="${worker}"`)
+    ])
+    expect(eventPrompts(restarted)[0]!.input).toContain('stopReason="end_turn"')
   })
 })

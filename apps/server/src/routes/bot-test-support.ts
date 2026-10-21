@@ -8,6 +8,7 @@ import { Bot, decode, Project } from "@codevisor/api"
 import { Schema } from "effect"
 import { expect, onTestFinished } from "vitest"
 
+import type { CodevisorServerConfig } from "../server.js"
 import { jsonRequest, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
@@ -25,9 +26,9 @@ const useWorktreesRoot = (): string => {
   return root
 }
 
-export const setUp = async () => {
+export const setUp = async (configOverrides: Partial<CodevisorServerConfig> = {}) => {
   useWorktreesRoot()
-  const running = await start()
+  const running = await start(undefined, {}, configOverrides)
   const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-bot-repos-")))
   tempDirs.push(repoRoot)
   const addProject = async (id: string, name: string): Promise<string> => {

@@ -70,6 +70,11 @@ export const noteBotPrompt = (
   if (origin !== "system") turnFor(services, sessionId).userPrompted = true
 }
 
+export const awaitsBotReply = (services: CodevisorServerServices, sessionId: string): boolean => {
+  const turn = turnsFor(services).get(sessionId.toLowerCase())
+  return turn !== undefined && turn.userPrompted && !turn.sent
+}
+
 export const takeBotTurn = (
   services: CodevisorServerServices,
   sessionId: string

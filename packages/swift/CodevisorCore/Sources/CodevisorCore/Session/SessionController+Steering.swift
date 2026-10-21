@@ -15,7 +15,7 @@ extension SessionController {
   }
 
   public var canSendQueuedPromptNow: Bool {
-    supportsSteering && !presentsBotConversation
+    supportsSteering && !presentsBotConversation && !isPausedForUpdate
   }
 
   public func sendLandsInQueue(_ delivery: ServerPromptDelivery) -> Bool {

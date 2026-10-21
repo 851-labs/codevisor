@@ -68,6 +68,7 @@ struct ComposerBar: View {
       && !controller.isSubmitting
       && !controller.isConnecting
       && controller.isServerReady
+      && !controller.isPausedForUpdate
       && (controller.isConnected || controller.selectedHarness != nil)
       && !controller.composerAttachments.contains { $0.state == .loading }
       && !isClearingGoal

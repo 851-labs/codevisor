@@ -31,6 +31,28 @@ struct ComposerServerAvailabilityTests {
     #expect(controller.pendingUserMessage == nil)
   }
 
+  @Test("A server paused for an update keeps the draft and rejects sending until it resumes")
+  func pausedForUpdateKeepsDraft() async {
+    let fixture = Fixture()
+    let controller = fixture.controller
+    fixture.machines.markReady(for: "macbook")
+    fixture.machines.connection(for: "macbook").restartDrain = ServerRestartDrainState(
+      state: "drained", remaining: 0, pausedSessionIds: [])
+    controller.composerText = "Continue my work"
+    var accepted = false
+    controller.onFirstSend = { _ in accepted = true }
+
+    #expect(controller.isPausedForUpdate)
+    #expect(!controller.canSend)
+    await controller.send()
+    #expect(!accepted)
+    #expect(controller.composerText == "Continue my work")
+
+    fixture.machines.connection(for: "macbook").restartDrain = ServerRestartDrainState(
+      state: "idle", remaining: 0, pausedSessionIds: [])
+    #expect(controller.canSend)
+  }
+
   @Test("Switching to a ready machine enables the same draft while the old machine stays offline")
   func switchToReadyMachine() async {
     let fixture = Fixture()

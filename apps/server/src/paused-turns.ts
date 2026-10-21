@@ -5,7 +5,8 @@ import { readJsonStateFile, removeJsonStateFile, writeJsonStateFile } from "./js
 export const PausedTurn = Schema.Struct({
   sessionId: Schema.String,
   turnId: Schema.optional(Schema.String),
-  pausedAt: Schema.String
+  pausedAt: Schema.String,
+  awaitsBotReply: Schema.optional(Schema.Boolean)
 })
 export type PausedTurn = typeof PausedTurn.Type
 
@@ -36,6 +37,22 @@ export const makeMemoryPausedTurnStore = (): PausedTurnStore => {
     }
   )
 }
+
+export const observePausedTurns = (
+  store: PausedTurnStore,
+  onChange: () => void
+): PausedTurnStore => ({
+  read: store.read,
+  add: (turns) => {
+    store.add(turns)
+    onChange()
+  },
+  remove: (sessionId) => {
+    const wasPaused = store.read().some((turn) => turn.sessionId === sessionId)
+    store.remove(sessionId)
+    if (wasPaused) onChange()
+  }
+})
 
 const pausedTurnStore = (
   load: () => ReadonlyArray<PausedTurn>,

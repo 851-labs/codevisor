@@ -184,14 +184,22 @@ public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
   public var state: String
   public var remaining: Int
   public var startedAt: String?
+  public var pausedSessionIds: [String]?
 
-  public init(state: String, remaining: Int, startedAt: String? = nil) {
+  public init(state: String, remaining: Int, startedAt: String? = nil, pausedSessionIds: [String]? = nil) {
     self.state = state
     self.remaining = remaining
     self.startedAt = startedAt
+    self.pausedSessionIds = pausedSessionIds
   }
 
   public var isDrained: Bool { state == "drained" }
+
+  public func pausesSending(sessionId: UUID?) -> Bool {
+    if state != "idle" { return true }
+    guard let sessionId, let pausedSessionIds else { return false }
+    return pausedSessionIds.contains { UUID(uuidString: $0) == sessionId }
+  }
 }
 
 public struct ServerUpdateApplied: Decodable, Equatable, Sendable {

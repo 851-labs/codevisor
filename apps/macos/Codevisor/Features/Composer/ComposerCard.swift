@@ -320,6 +320,7 @@ private extension ComposerCard {
       let isEnabled =
         !isAppUpdateInProgress
         && controller.isServerReady
+        && !controller.isPausedForUpdate
         && (controller.isGoalComposerArmed
           ? hasSubmittableContent
             && (controller.isConnected || controller.selectedHarness != nil)
@@ -332,11 +333,13 @@ private extension ComposerCard {
         isEnabled: isEnabled,
         help: isAppUpdateInProgress
           ? "Updating… you can send once the update finishes."
-          : isBlockedByCapabilities
-            ? "Connecting to harness…"
-            : controller.isConnecting
-              ? "Connecting… you can send once the agent is ready."
-              : controller.requiresModelSelection ? "Select a model" : "Send (↩)",
+          : controller.isPausedForUpdate
+            ? "Codevisor is updating"
+            : isBlockedByCapabilities
+              ? "Connecting to harness…"
+              : controller.isConnecting
+                ? "Connecting… you can send once the agent is ready."
+                : controller.requiresModelSelection ? "Select a model" : "Send (↩)",
         accessibilityLabel: "Send"
       ) {
         submitOrAcceptSlash()
@@ -413,6 +416,7 @@ private extension ComposerCard {
         controller.isConnected || controller.selectedHarness != nil,
         !controller.isConnecting,
         !controller.isConnectingToHarness,
+        !controller.isPausedForUpdate,
         !isAppUpdateInProgress
       else { return }
       didAcceptSubmission = true

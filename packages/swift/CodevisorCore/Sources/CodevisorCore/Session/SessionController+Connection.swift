@@ -9,6 +9,10 @@ extension SessionController {
 
   public var isServerReady: Bool { serverAvailability == .ready }
 
+  public var isPausedForUpdate: Bool {
+    machines?.isPausedForUpdate(machineId: project.serverId, sessionId: serverSession?.id) ?? false
+  }
+
   public var sessionCwdURL: URL {
     if let cwd = serverSession?.cwd { return URL(fileURLWithPath: cwd) }
     if let sessionCwdOverride { return URL(fileURLWithPath: sessionCwdOverride) }

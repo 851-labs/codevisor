@@ -15,6 +15,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
+import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import {
   erroredMessage,
@@ -99,6 +100,10 @@ export const makeSessionEventRouter = (
 
   const routeEvent = async (event: EventEnvelope, payload: Record<string, unknown>) => {
     if (event.kind === "session.updated" && payload.turnState === "ended") {
+      if (isUpdatePause(payload)) {
+        await outbox.flushHeld(event.subjectId)
+        return
+      }
       await onTurnEnded(event.subjectId, payload)
       return
     }

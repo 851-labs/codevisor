@@ -144,6 +144,10 @@ export const drainPromptQueue = async (
     await holdForRestartDrain(services, fanout, routeState, sessionId)
     return
   }
+  if (routeState.updateResume.isPending(sessionId)) {
+    await publishPromptQueue(services.db, fanout, sessionId)
+    return
+  }
   if (routeState.activePromptSessions.has(sessionId)) {
     await steerQueuedPrompts(services, fanout, routeState, serverId, sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)

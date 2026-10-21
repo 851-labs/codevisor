@@ -88,7 +88,8 @@ The result's `delivered` says what happened: `sent` (started a turn), `steered`,
 // → { accepted, sessionId, queueItemId, delivered: "queued" }
 ```
 
-- `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it: the harness can't steer (only some can), or Codevisor is holding prompts for an update. It runs after the turn. If it can't wait, `sessions.cancel` the turn.
+- `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it: the harness can't steer (only some can), or is updating. It runs after the turn. If it can't wait, `sessions.cancel` the turn.
+- While Codevisor itself is updating, `sessions.prompt` fails with an `updating` error. Chats the update paused continue on their own afterwards; send yours again once the update finishes.
 - `sessions.queue_send_now({ sessionId, queueId })` sends a queued prompt now: steered into the running turn, or moved to the front of the queue when steering isn't possible. It returns the same `delivered` field.
 - Conversational bots take every message into their running turn, so a prompt to one reports `steered` even when you asked to queue.
 - `sessions.queue_list`, `queue_update`, `queue_reorder`, and `queue_delete` manage what's still waiting.

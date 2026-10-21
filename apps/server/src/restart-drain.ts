@@ -2,6 +2,7 @@ import type { RestartDrainState } from "@codevisor/api"
 
 import { readJsonStateFile, removeJsonStateFile, writeJsonStateFile } from "./json-state-file.js"
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import { awaitsBotReply, conversationalBotForSession } from "./routes/bot-turns.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -10,8 +11,8 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "./server-context.js"
-import { forgetTurnInterruptions, markTurnInterrupted } from "./turn-interruptions.js"
 import { field } from "./unknown-values.js"
+import { forgetUpdatePauses, markPausingForUpdate } from "./update-pauses.js"
 
 export const DRAINED_WITHOUT_RESTART_GRACE_MS = 15 * 60_000
 export const PAUSE_SETTLE_MS = 15_000
@@ -82,6 +83,7 @@ export interface RestartCoordinatorDeps {
   readonly log?: ((line: string) => void) | undefined
   readonly redrain: (sessionId: string) => Promise<void>
   readonly resumePaused: () => void
+  readonly onChange?: (() => void) | undefined
 }
 
 export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoordinator => {
@@ -102,8 +104,13 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const state = (): RestartDrainState => ({
     state: phase,
     remaining: liveSessions().size,
-    startedAt
+    startedAt,
+    pausedSessionIds: pausedTurns.read().map((turn) => turn.sessionId)
   })
+
+  const changed = (): void => {
+    deps.onChange?.()
+  }
 
   const destructive = async (work: Promise<unknown>): Promise<void> => {
     destructiveWork = work
@@ -128,7 +135,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   }
 
   const interruptTurn = async ({ agentSessionId, turn }: PauseTarget): Promise<void> => {
-    markTurnInterrupted(services, turn.sessionId)
+    markPausingForUpdate(services, turn.sessionId)
     await run(services.agents.cancel(agentSessionId)).catch((cause: unknown) => {
       log(`Restart drain could not interrupt ${turn.sessionId}: ${failureMessage(cause)}`)
     })
@@ -209,6 +216,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       return coordinator.cancel()
     }
     phase = "drained"
+    changed()
     graceTimer = setTimeout(() => {
       log("Restart drain abandoned: the server never restarted")
       void coordinator.cancel()
@@ -226,6 +234,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       if (phase === "drained") return Promise.resolve(state())
       phase = "draining"
       startedAt = new Date().toISOString()
+      changed()
       const myGeneration = generation
       log(`Restart drain started: pausing ${liveSessions().size} live turn(s) before restarting`)
       const work = drain(myGeneration).finally(() => {
@@ -244,7 +253,8 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
         if (destructiveWork !== undefined) await destructiveWork.catch(swallowError)
         phase = "idle"
         startedAt = new Date().toISOString()
-        forgetTurnInterruptions(services)
+        changed()
+        forgetUpdatePauses(services)
         if (graceTimer !== undefined) {
           clearTimeout(graceTimer)
           graceTimer = undefined
@@ -254,6 +264,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
         } catch (cause) {
           log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
         }
+        deps.resumePaused()
         const held = [...turns.restartHeldSessions]
         turns.restartHeldSessions.clear()
         for (const sessionId of held) {
@@ -264,7 +275,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
           }).catch(swallowError)
           void redrain(sessionId).catch(swallowError)
         }
-        deps.resumePaused()
         log("Restart drain cancelled: prompts dispatch again")
         return state()
       })().finally(() => {
@@ -294,6 +304,13 @@ const agentSessionIdOf = (session: {
     ? session.id
     : session.agentSessionId
 
+const owesBotReply = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<boolean> =>
+  awaitsBotReply(services, sessionId) &&
+  (await conversationalBotForSession(services, sessionId)) !== undefined
+
 const pausedTurnOf = async (
   services: CodevisorServerServices,
   sessionId: string
@@ -301,5 +318,10 @@ const pausedTurnOf = async (
   const pausedAt = new Date().toISOString()
   const latest = (await run(services.db.getTranscriptPage(sessionId, undefined, 1))).items.at(-1)
   const turnId = latest?.isGenerating === true ? latest.turnId : undefined
-  return turnId === undefined ? { sessionId, pausedAt } : { sessionId, turnId, pausedAt }
+  return {
+    sessionId,
+    ...(turnId === undefined ? {} : { turnId }),
+    pausedAt,
+    ...((await owesBotReply(services, sessionId)) ? { awaitsBotReply: true } : {})
+  }
 }

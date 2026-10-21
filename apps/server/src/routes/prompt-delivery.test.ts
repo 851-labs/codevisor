@@ -11,6 +11,7 @@ import { makeEventFanout } from "../server.js"
 import {
   idleRouteState,
   jsonRequest,
+  listSubjectEvents,
   makeServices,
   run,
   tempDirs,
@@ -154,6 +155,30 @@ describe("prompt delivery", () => {
     expect(outcome).toEqual({ delivered: "sent" })
     await drainPromptQueue(services, fanout, state, "server-a", "chat")
     expect(agents.prompts.map(([, input]) => textOf(input))).toEqual(["after the agent's turn"])
+  })
+
+  it("holds a prompt that slips in as an update starts pausing chats, and announces it once", async () => {
+    const { agents, services, state, fanout } = await runningTurn()
+    const gated = { ...state, restart: { ...state.restart, isGated: () => true } }
+    const steer = await run(services.db.createPromptQueueItem("chat", "steer me"))
+
+    expect(
+      await deliverQueuedPrompt(services, fanout, gated, "server-a", "chat", steer.id, "steer")
+    ).toEqual({ delivered: "queued", steerDeclined: true })
+    gated.activeTurnSessions.delete("chat")
+    expect(
+      await deliverQueuedPrompt(services, fanout, gated, "server-a", "chat", steer.id, "steer")
+    ).toEqual({ delivered: "queued" })
+
+    await drainPromptQueue(services, fanout, gated, "server-a", "chat")
+    await drainPromptQueue(services, fanout, gated, "server-a", "chat")
+    expect(agents.steers).toEqual([])
+    expect(agents.prompts).toEqual([])
+    expect(
+      listSubjectEvents(services, "chat")
+        .filter((event) => event.kind === "session.updateGate.updated")
+        .map((event) => event.payload)
+    ).toEqual([{ harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" }])
   })
 
   it("rejects sending a prompt that is no longer queued", async () => {
