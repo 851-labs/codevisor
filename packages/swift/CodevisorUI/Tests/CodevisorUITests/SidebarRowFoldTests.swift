@@ -43,4 +43,15 @@ struct SidebarRowFoldTests {
   func reorderOnly() {
     #expect(plan(["a", "b", "c"], ["c", "a", "b"]) == ["c", "a", "b"])
   }
+
+  @Test("Rows still folding out from an earlier change keep their place when the next change lands")
+  func inFlightRowsKeepTheirPlace() {
+    #expect(
+      SidebarRowFold.interleave(["-b"], into: ["a", "c", "d"], by: ["a", "-b", "c", "d"]) { $0 }
+        == ["a", "-b", "c", "d"])
+    #expect(
+      SidebarRowFold.interleave(["-a", "-c"], into: ["d"], by: ["-a", "b", "-c", "d"]) { $0 }
+        == ["-a", "-c", "d"])
+    #expect(SidebarRowFold.interleave(["-x"], into: ["a"], by: ["a"]) { $0 } == ["a", "-x"])
+  }
 }

@@ -11,7 +11,7 @@ extension SidebarView {
     let sections = workspaceSections
     let next = SidebarArchiveSelection.after(
       archiving: workspace.id, selected: routesSelectedSession(workspace) ? workspace.id : nil,
-      sections: sections.map { $0.map(\.workspace.id) }, leaving: folds.archiving)
+      sections: sections.map { $0.map(\.workspace.id) })
     switch next {
     case .unchanged:
       return

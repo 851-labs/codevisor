@@ -37,34 +37,6 @@ final class SidebarFoldState {
   func endRelease(_ id: UUID, generation: Int) {
     if released[id] == generation { released[id] = nil }
   }
-
-  private(set) var archiving: Set<UUID> = []
-
-  func isArchiving(_ id: UUID) -> Bool {
-    archiving.contains(id)
-  }
-
-  func beginArchive(_ id: UUID) -> Bool {
-    archiving.insert(id).inserted
-  }
-
-  func endArchive(_ id: UUID) {
-    archiving.remove(id)
-  }
-
-  @ObservationIgnored private var arriving: Set<UUID> = []
-
-  func isArriving(_ id: UUID) -> Bool {
-    arriving.contains(id)
-  }
-
-  func arrive(_ id: UUID) {
-    arriving.insert(id)
-  }
-
-  func endArrival(_ id: UUID) {
-    arriving.remove(id)
-  }
 }
 
 struct SidebarStack: Layout {
@@ -120,13 +92,13 @@ struct SidebarFoldingList<Content: View>: View {
   @State private var released: CGFloat = 1
 
   init(
-    shows: Bool, appearsFolded: Bool = false, isReleasing: Bool = false,
+    shows: Bool, isReleasing: Bool = false,
     @ViewBuilder content: @escaping (SidebarFoldProgress) -> Content
   ) {
     self.shows = shows
     self.isReleasing = isReleasing
     self.content = content
-    _shown = State(initialValue: shows && !appearsFolded ? 1 : 0)
+    _shown = State(initialValue: shows ? 1 : 0)
   }
 
   var body: some View {
