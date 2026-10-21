@@ -5,22 +5,24 @@ import {
   attachTarget,
   booleanArgument,
   currentPage,
-  discardTargetState,
   jsonResult,
-  numberArgument,
   pageTargets,
-  stringArgument,
-  waitForCreatedTarget
+  stringArgument
 } from "./browser-cdp-engine.js"
-import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
-import { makeBrowserCursorRegistry } from "./browser-cursor.js"
+import type { BrowserRuntime, PageHandle, TargetInfo } from "./browser-cdp-engine.js"
+import { makeBrowserCursorRegistry, type BrowserCursorRegistry } from "./browser-cursor.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
-import { waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
 import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
 import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
 import { invokePageTools } from "./browser-use-invoke-page.js"
 import { invokePlaywrightTools } from "./browser-use-invoke-playwright.js"
+import {
+  blankPageUrl,
+  selectCreatedTarget,
+  tabTool,
+  type BrowserTabInvocation
+} from "./browser-use-invoke-tabs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import type { BrowserBackend } from "./browser-use-provider.js"
 import { isStringArray } from "./unknown-values.js"
@@ -30,6 +32,20 @@ export type {
   BrowserToolInvocation,
   BrowserToolSessionState
 } from "./browser-use-invoke-types.js"
+
+interface BrowserInvokerMemory {
+  readonly cursors: BrowserCursorRegistry
+  readonly names: Map<string, string>
+  readonly groups: Map<string, number>
+  readonly pointers: Map<string, PointerState>
+}
+
+interface BrowserSessionInvocation extends BrowserTabInvocation {
+  readonly backend: BrowserBackend
+  readonly memory: BrowserInvokerMemory
+}
+
+type BrowserSessionTool = (session: BrowserSessionInvocation) => Promise<CallToolResult>
 
 const toolHandlers = [
   invokeNavigationTools,
@@ -51,6 +67,323 @@ const TAB_GROUP_COLORS: ReadonlySet<string> = new Set([
   "orange"
 ])
 
+const maxSessionNameLength = 100
+const sessionGroupColor = "blue"
+const tabIdPattern = /^\d+$/
+const minHistoryResults = 1
+const maxHistoryResults = 1_000
+const defaultHistoryResults = 100
+
+export const runtimeKey = (context: AutomationProviderContext, backend: BrowserBackend): string => {
+  if (backend === "builtin") return `builtin:${context.sessionId}`
+  if (backend === "managed") return `managed:${context.projectId ?? "global"}`
+  return "extension"
+}
+
+export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
+  const memory: BrowserInvokerMemory = {
+    cursors: makeBrowserCursorRegistry(),
+    names: new Map(),
+    groups: new Map(),
+    pointers: new Map()
+  }
+  return (
+    context: AutomationProviderContext,
+    active: BrowserRuntime,
+    toolName: string,
+    args: Readonly<Record<string, unknown>>,
+    backendOverride?: BrowserBackend
+  ): Promise<CallToolResult> => {
+    try {
+      const backend = backendOverride ?? state.sessionBackends.get(context.sessionId) ?? "managed"
+      const sessionKey = `${runtimeKey(context, backend)}:${context.sessionId}`
+      const session = sessionInvocation({
+        active,
+        args,
+        backend,
+        memory,
+        sessionKey,
+        state,
+        toolName
+      })
+      const tool = sessionTool(toolName)
+      if (tool !== undefined) return tool(session)
+
+      return invokeOnPage(session)
+    } catch (cause) {
+      return Promise.reject(cause)
+    }
+  }
+}
+
+const sessionInvocation = (
+  call: Omit<BrowserSessionInvocation, "groupCreated" | "releaseInput">
+): BrowserSessionInvocation => {
+  const { memory, sessionKey } = call
+  const session: BrowserSessionInvocation = {
+    ...call,
+    groupCreated: () => groupCreatedTabs(session),
+    releaseInput: () => {
+      memory.cursors.release(sessionKey)
+      memory.pointers.delete(sessionKey)
+    }
+  }
+  return session
+}
+
+const sessionTool = (toolName: string): BrowserSessionTool | undefined => {
+  switch (toolName) {
+    case "nameSession":
+      return nameSession
+    case "tab_groups":
+      return tabGroups
+    case "user.history":
+      return userHistory
+    default:
+      return tabTool(toolName)
+  }
+}
+
+const invokeOnPage = async (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  const { active, args, sessionKey, state } = session
+  let page: PageHandle
+  if (typeof args.tabId === "string") {
+    requireOwnedTab(session, args.tabId)
+    const target = openTabWithId(await pageTargets(active), args.tabId)
+    page = {
+      target,
+      sessionId: await attachTarget(active, target.targetId),
+      snapshotKey: `${sessionKey}:${target.targetId}`
+    }
+  } else {
+    if (needsFirstTab(session)) {
+      const created = await createBlankTab(active)
+      selectCreatedTarget(state, sessionKey, created.targetId)
+    }
+    page = await currentPage(active, state.selectedTargets, sessionKey)
+  }
+
+  const invocation = pageInvocation(session, page)
+  for (const invoke of toolHandlers) {
+    const result = await invoke(invocation, state)
+    if (result !== undefined) return result
+  }
+  throw new Error(`Unknown Browser Use tool: ${session.toolName}`)
+}
+
+const requireOwnedTab = ({ sessionKey, state }: BrowserSessionInvocation, tabId: string): void => {
+  if (!state.sessionTargets.get(sessionKey)?.has(tabId))
+    throw new Error("This session does not own that tab. Claim an observed user tab first.")
+}
+
+const openTabWithId = (targets: TargetInfo[], tabId: string): TargetInfo => {
+  const target = targets.find((tab) => tab.targetId === tabId)
+  if (!target) throw new Error("The requested browser tab was closed; it will not be replaced.")
+  return target
+}
+
+const needsFirstTab = ({ sessionKey, state, toolName }: BrowserSessionInvocation): boolean =>
+  !state.selectedTargets.has(sessionKey) && toolName === "navigate"
+
+const createBlankTab = (active: BrowserRuntime) =>
+  active.connection.send<{ targetId: string }>("Target.createTarget", { url: blankPageUrl })
+
+const pageInvocation = (
+  { active, args, backend, memory, sessionKey, toolName }: BrowserSessionInvocation,
+  page: PageHandle
+): BrowserToolInvocation => ({
+  active,
+  args,
+  backend,
+  cursor: memory.cursors.cursorFor(active, page, sessionKey),
+  page,
+  pointer: pointerFor(memory.pointers, `${sessionKey}:${page.target.targetId}`),
+  toolName
+})
+
+const pointerFor = (pointers: Map<string, PointerState>, pointerKey: string): PointerState => {
+  const existing = pointers.get(pointerKey)
+  if (existing !== undefined) return existing
+
+  const created = initialPointerState()
+  pointers.set(pointerKey, created)
+  return created
+}
+
+const nameSession = async (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  const name = stringArgument(session.args, "name").trim()
+  if (invalidSessionName(name)) throw new Error("Session name must contain 1–100 characters")
+  session.memory.names.set(session.sessionKey, name)
+  await session.groupCreated()
+  return jsonResult({ name })
+}
+
+const invalidSessionName = (name: string): boolean => !name || name.length > maxSessionNameLength
+
+const groupCreatedTabs = async (session: BrowserSessionInvocation): Promise<void> => {
+  const { active, backend, memory, sessionKey, state } = session
+  const name = memory.names.get(sessionKey)
+  if (!name) return
+  if (backend !== "extension") return
+  const ids = createdTargetIds(state, sessionKey)
+  if (!ids.length) return
+
+  const listed = await listTabGroups(active)
+  const existing = liveGroupId(listed.groups, memory.groups.get(sessionKey))
+  if (existing === undefined) {
+    const created = await createTabGroup(active, ids, name)
+    memory.groups.set(sessionKey, created.group.id)
+  } else {
+    await active.connection.send("Codevisor.tabGroups.add", { groupId: existing, tabIds: ids })
+    await active.connection.send("Codevisor.tabGroups.update", { groupId: existing, title: name })
+  }
+}
+
+const createdTargetIds = (state: BrowserToolSessionState, sessionKey: string): string[] =>
+  [...(state.sessionTargets.get(sessionKey) ?? [])]
+    .filter(([, origin]) => origin === "created")
+    .map(([id]) => id)
+
+const listTabGroups = (active: BrowserRuntime) =>
+  active.connection.send<{ groups: { id: number }[] }>("Codevisor.tabGroups.list", {})
+
+const liveGroupId = (groups: { id: number }[], groupId: number | undefined) => {
+  if (groupId === undefined) return undefined
+  if (!groups.some((group) => group.id === groupId)) return undefined
+  return groupId
+}
+
+const createTabGroup = (active: BrowserRuntime, tabIds: string[], title: string) =>
+  active.connection.send<{ group: { id: number } }>("Codevisor.tabGroups.create", {
+    tabIds,
+    title,
+    color: sessionGroupColor
+  })
+
+type TabGroupSend = (
+  method: string,
+  params: Readonly<Record<string, unknown>>
+) => Promise<Readonly<Record<string, unknown>>>
+
+const tabGroups = (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  if (session.args.action === "ensure") return ensureTabGroup(session)
+  return changeTabGroups(session)
+}
+
+const changeTabGroups = async (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  requireExtensionBackend(session, "Tab groups are only available with the user Chrome backend")
+  const { args } = session
+  const action = stringArgument(args, "action")
+  const send = tabGroupSender(session)
+  switch (action) {
+    case "list":
+      return jsonResult(await send("list", {}))
+    case "create":
+      return jsonResult(await send("create", { tabIds: tabIds(args), ...appearance(args) }))
+    case "add":
+      return jsonResult(await send("add", { groupId: groupId(args), tabIds: tabIds(args) }))
+    case "update":
+      return jsonResult(await send("update", { groupId: groupId(args), ...appearance(args) }))
+    case "ungroup":
+      await send("ungroup", { tabIds: tabIds(args) })
+      return jsonResult({ ungrouped: tabIds(args) })
+    default:
+      throw new Error("tab_groups.action must be list, create, ensure, add, update, or ungroup")
+  }
+}
+
+const ensureTabGroup = async (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  requireExtensionBackend(session, "Tab groups are only available with the user Chrome backend")
+  const { args } = session
+  const send = tabGroupSender(session)
+  const title = stringArgument(args, "title")
+  const listed = (await send("list", {})) as {
+    groups?: ReadonlyArray<{ id: number; title?: string; tabIds?: ReadonlyArray<string> }>
+  }
+  const ids = tabIds(args)
+  const existing = (listed.groups ?? []).find((group) => group.title === title)
+  if (existing === undefined) {
+    return jsonResult({
+      ...(await send("create", { tabIds: ids, ...appearance(args) })),
+      created: true
+    })
+  }
+
+  const missing = ids.filter((id) => !(existing.tabIds ?? []).includes(id))
+  if (missing.length > 0) await send("add", { groupId: existing.id, tabIds: missing })
+  const { title: _title, ...restyle } = appearance(args)
+  return jsonResult({
+    ...(await send("update", { groupId: existing.id, ...restyle })),
+    created: false
+  })
+}
+
+const tabGroupSender =
+  ({ active }: BrowserSessionInvocation): TabGroupSend =>
+  (method, params) =>
+    active.connection.send(`Codevisor.tabGroups.${method}`, params)
+
+const tabIds = (args: Readonly<Record<string, unknown>>): string[] => {
+  const raw = args.tabIds
+  if (!isTabIdList(raw)) throw new Error("tabIds must be a non-empty array of tab ids from tabs")
+  return raw
+}
+
+const isTabIdList = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((id) => typeof id === "string" && tabIdPattern.test(id))
+
+const groupId = (args: Readonly<Record<string, unknown>>): number => {
+  const value = args.groupId
+  if (!isGroupId(value)) throw new Error("groupId must be the id of a group returned by tab_groups")
+  return value
+}
+
+const isGroupId = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0
+
+const appearance = (args: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  const properties: Record<string, unknown> = {}
+  if (args.title !== undefined) properties.title = stringArgument(args, "title")
+  if (args.color !== undefined) {
+    if (!isTabGroupColor(args.color)) {
+      throw new Error(`color must be one of ${[...TAB_GROUP_COLORS].join(", ")}`)
+    }
+    properties.color = args.color
+  }
+  if (args.collapsed !== undefined) properties.collapsed = booleanArgument(args, "collapsed")
+  return properties
+}
+
+const isTabGroupColor = (value: unknown): value is string =>
+  typeof value === "string" && TAB_GROUP_COLORS.has(value)
+
+interface HistoryResponse {
+  readonly entries?: Array<{ url?: string; title?: string; lastVisitTime?: number }>
+}
+
+const userHistory = async (session: BrowserSessionInvocation): Promise<CallToolResult> => {
+  requireExtensionBackend(session, "Browser history is only available with the user Chrome backend")
+  const raw = await session.active.connection.send<HistoryResponse>(
+    "Codevisor.getHistory",
+    historyQuery(session.args)
+  )
+  return jsonResult({ entries: visitedPages(raw) })
+}
+
+const historyQuery = (args: Readonly<Record<string, unknown>>) => ({
+  text: isStringArray(args.queries) ? args.queries.join(" ") : "",
+  ...(toTimestamp(args.from) === undefined ? {} : { startTime: toTimestamp(args.from) }),
+  ...(toTimestamp(args.to) === undefined ? {} : { endTime: toTimestamp(args.to) }),
+  maxResults: historyLimit(args.limit)
+})
+
+const historyLimit = (limit: unknown): number => {
+  if (typeof limit !== "number") return defaultHistoryResults
+  return Math.max(minHistoryResults, Math.min(maxHistoryResults, limit))
+}
+
 const toTimestamp = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value !== "string") return undefined
@@ -59,371 +392,15 @@ const toTimestamp = (value: unknown): number | undefined => {
   return parsed
 }
 
-export const runtimeKey = (context: AutomationProviderContext, backend: BrowserBackend): string =>
-  backend === "builtin"
-    ? `builtin:${context.sessionId}`
-    : backend === "managed"
-      ? `managed:${context.projectId ?? "global"}`
-      : "extension"
+const visitedPages = (raw: HistoryResponse) =>
+  (raw.entries ?? [])
+    .filter((entry): entry is typeof entry & { url: string } => typeof entry.url === "string")
+    .map((entry) => ({
+      url: entry.url,
+      dateVisited: new Date(entry.lastVisitTime ?? 0).toISOString(),
+      ...(typeof entry.title === "string" ? { title: entry.title } : {})
+    }))
 
-export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
-  const { selectedTargets, sessionBackends, sessionDispositions, sessionTargets } = state
-  const cursors = makeBrowserCursorRegistry()
-  const names = new Map<string, string>()
-  const groups = new Map<string, number>()
-  const pointers = new Map<string, PointerState>()
-  const pointerFor = (sessionKey: string): PointerState => {
-    const existing = pointers.get(sessionKey)
-    if (existing !== undefined) return existing
-    const created = initialPointerState()
-    pointers.set(sessionKey, created)
-    return created
-  }
-  return async (
-    context: AutomationProviderContext,
-    active: BrowserRuntime,
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
-    backendOverride?: BrowserBackend
-  ): Promise<CallToolResult> => {
-    const backend = backendOverride ?? sessionBackends.get(context.sessionId) ?? "managed"
-    const sessionKey = `${runtimeKey(context, backend)}:${context.sessionId}`
-    const groupCreated = async () => {
-      const name = names.get(sessionKey)
-      if (!name || backend !== "extension") return
-      const ids = [...(sessionTargets.get(sessionKey) ?? [])]
-        .filter(([, origin]) => origin === "created")
-        .map(([id]) => id)
-      if (!ids.length) return
-      const listed = await active.connection.send<{ groups: { id: number }[] }>(
-        "Codevisor.tabGroups.list",
-        {}
-      )
-      const existing = groups.get(sessionKey)
-      if (existing !== undefined && listed.groups.some((group) => group.id === existing)) {
-        await active.connection.send("Codevisor.tabGroups.add", { groupId: existing, tabIds: ids })
-        await active.connection.send("Codevisor.tabGroups.update", {
-          groupId: existing,
-          title: name
-        })
-      } else {
-        const result = await active.connection.send<{ group: { id: number } }>(
-          "Codevisor.tabGroups.create",
-          { tabIds: ids, title: name, color: "blue" }
-        )
-        groups.set(sessionKey, result.group.id)
-      }
-    }
-    if (toolName === "nameSession") {
-      const name = stringArgument(args, "name").trim()
-      if (!name || name.length > 100) throw new Error("Session name must contain 1–100 characters")
-      names.set(sessionKey, name)
-      await groupCreated()
-      return jsonResult({ name })
-    }
-    if (toolName === "finalizeTabs") {
-      if (args.native === true) {
-        const requestedKeepIds = args.keepIds === undefined ? [] : args.keepIds
-        if (!isStringArray(requestedKeepIds)) throw new Error("keepIds must be an array of tab ids")
-        const keepIds = new Set([
-          ...requestedKeepIds,
-          ...(sessionDispositions.get(sessionKey)?.keys() ?? [])
-        ])
-        const controlled = sessionTargets.get(sessionKey) ?? new Map()
-        const kept: string[] = []
-        const closed: string[] = []
-        const released: string[] = []
-        const failed: string[] = []
-        const remembered = new Map<string, "created" | "claimed" | "kept">()
-        for (const [targetId, origin] of controlled) {
-          const tabSessionId = active.sessions.get(targetId)
-          if (origin === "created" && !keepIds.has(targetId)) {
-            try {
-              await active.connection.send("Target.closeTarget", { targetId })
-              closed.push(targetId)
-            } catch {
-              failed.push(targetId)
-            }
-          } else {
-            if (tabSessionId !== undefined) {
-              await active.connection
-                .send("Target.detachFromTarget", { sessionId: tabSessionId })
-                .catch(() => undefined)
-            }
-            if (origin === "claimed") released.push(targetId)
-            else {
-              kept.push(targetId)
-              remembered.set(targetId, "kept")
-            }
-          }
-          discardTargetState(active, targetId)
-        }
-        await waitForTargetsClosed(active, closed)
-        if (remembered.size === 0) sessionTargets.delete(sessionKey)
-        else sessionTargets.set(sessionKey, remembered)
-        sessionDispositions.delete(sessionKey)
-        selectedTargets.delete(sessionKey)
-        cursors.release(sessionKey)
-        pointers.delete(sessionKey)
-        return jsonResult({
-          finalized: true,
-          kept,
-          closed,
-          released,
-          ...(failed.length === 0 ? {} : { failed })
-        })
-      }
-      const targetId = selectedTargets.get(sessionKey)
-      if (targetId === undefined) return jsonResult({ finalized: true, tabsClosed: false })
-      const tabSessionId = active.sessions.get(targetId)
-      if (args.close === true) {
-        await active.connection.send("Target.closeTarget", { targetId })
-      } else if (tabSessionId !== undefined) {
-        await active.connection.send("Target.detachFromTarget", { sessionId: tabSessionId })
-      }
-      discardTargetState(active, targetId)
-      sessionTargets.get(sessionKey)?.delete(targetId)
-      selectedTargets.delete(sessionKey)
-      cursors.release(sessionKey)
-      pointers.delete(sessionKey)
-      return jsonResult({ finalized: true, tabsClosed: args.close === true })
-    }
-    if (toolName === "markTab") {
-      const status = stringArgument(args, "status")
-      if (status !== "deliverable" && status !== "handoff") {
-        throw new Error("status must be deliverable or handoff")
-      }
-      const targetId = typeof args.id === "string" ? args.id : selectedTargets.get(sessionKey)
-      if (targetId === undefined) throw new Error("There is no selected tab to mark")
-      const dispositions = sessionDispositions.get(sessionKey) ?? new Map()
-      dispositions.set(targetId, status)
-      sessionDispositions.set(sessionKey, dispositions)
-      return jsonResult({ id: targetId, status })
-    }
-    if (toolName === "tabs") {
-      const action = stringArgument(args, "action")
-      let targets: TargetInfo[] | undefined
-      if (action === "new") {
-        const url = typeof args.url === "string" ? args.url : "about:blank"
-        const before = new Set((await pageTargets(active)).map((target) => target.targetId))
-        const created = await active.connection
-          .send<{ targetId: string }>("Target.createTarget", { url })
-          .catch(async (cause: unknown) => {
-            const owned = new Set([...sessionTargets.values()].flatMap((map) => [...map.keys()]))
-            const after = await pageTargets(active).catch(() => [])
-            for (const target of after) {
-              if (before.has(target.targetId) || owned.has(target.targetId)) continue
-              await active.connection
-                .send("Target.closeTarget", { targetId: target.targetId })
-                .catch(() => undefined)
-            }
-            throw cause
-          })
-        selectedTargets.set(sessionKey, created.targetId)
-        const controlled = sessionTargets.get(sessionKey) ?? new Map()
-        controlled.set(created.targetId, "created")
-        sessionTargets.set(sessionKey, controlled)
-        targets = await waitForCreatedTarget(active, created.targetId, url)
-        await groupCreated()
-      } else {
-        targets = await pageTargets(active)
-        if (action === "select") {
-          const id = typeof args.id === "string" ? args.id : undefined
-          const index = id === undefined ? numberArgument(args, "index") : undefined
-          const target =
-            id === undefined
-              ? targets[index!]
-              : targets.find((candidate) => candidate.targetId === id)
-          if (target === undefined) {
-            throw new Error(
-              id === undefined ? `No browser tab at index ${index}` : `No browser tab with id ${id}`
-            )
-          }
-          if (
-            (typeof args.title === "string" && args.title !== target.title) ||
-            (typeof args.url === "string" && args.url !== target.url)
-          )
-            throw new Error(
-              "The observed user tab changed. List user tabs again before claiming it."
-            )
-          selectedTargets.set(sessionKey, target.targetId)
-          const controlled = sessionTargets.get(sessionKey) ?? new Map()
-          if (!controlled.has(target.targetId)) controlled.set(target.targetId, "claimed")
-          sessionTargets.set(sessionKey, controlled)
-        } else if (action === "close") {
-          const selectedId = selectedTargets.get(sessionKey)
-          const id = typeof args.id === "string" ? args.id : undefined
-          const index = typeof args.index === "number" ? args.index : undefined
-          const target =
-            id !== undefined
-              ? targets.find((candidate) => candidate.targetId === id)
-              : index === undefined
-                ? (targets.find((candidate) => candidate.targetId === selectedId) ?? targets[0])
-                : targets[index]
-          if (target === undefined) throw new Error("There is no browser tab to close")
-          await active.connection.send("Target.closeTarget", { targetId: target.targetId })
-          if (selectedId === target.targetId) selectedTargets.delete(sessionKey)
-          discardTargetState(active, target.targetId)
-          sessionTargets.get(sessionKey)?.delete(target.targetId)
-        } else if (action !== "list")
-          throw new Error("tabs.action must be list, new, close, or select")
-      }
-      targets ??= await pageTargets(active)
-      const selectedId = selectedTargets.get(sessionKey)
-      const controlledTabs = sessionTargets.get(sessionKey)
-      if (args.scope === "session") {
-        targets = targets.filter((target) => controlledTabs?.has(target.targetId) === true)
-      }
-      return jsonResult({
-        tabs: targets.map((target, index) => ({
-          id: target.targetId,
-          index,
-          selected: target.targetId === selectedId,
-          ...(target.groupId === undefined ? {} : { groupId: target.groupId }),
-          ...(controlledTabs?.has(target.targetId) === true
-            ? { origin: controlledTabs.get(target.targetId) }
-            : {}),
-          title: target.title,
-          url: target.url
-        }))
-      })
-    }
-    if (toolName === "tab_groups") {
-      if (backend !== "extension") {
-        throw new Error("Tab groups are only available with the user Chrome backend")
-      }
-      const action = stringArgument(args, "action")
-      const tabIds = (): string[] => {
-        const raw = args.tabIds
-        if (
-          !Array.isArray(raw) ||
-          raw.length === 0 ||
-          !raw.every((value) => typeof value === "string" && /^\d+$/.test(value))
-        ) {
-          throw new Error("tabIds must be a non-empty array of tab ids from tabs")
-        }
-        return raw
-      }
-      const groupId = (): number => {
-        const value = args.groupId
-        if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-          throw new Error("groupId must be the id of a group returned by tab_groups")
-        }
-        return value
-      }
-      const appearance = (): Readonly<Record<string, unknown>> => {
-        const properties: Record<string, unknown> = {}
-        if (args.title !== undefined) properties.title = stringArgument(args, "title")
-        if (args.color !== undefined) {
-          if (typeof args.color !== "string" || !TAB_GROUP_COLORS.has(args.color)) {
-            throw new Error(`color must be one of ${[...TAB_GROUP_COLORS].join(", ")}`)
-          }
-          properties.color = args.color
-        }
-        if (args.collapsed !== undefined) properties.collapsed = booleanArgument(args, "collapsed")
-        return properties
-      }
-      const send = (method: string, params: Readonly<Record<string, unknown>>) =>
-        active.connection.send(`Codevisor.tabGroups.${method}`, params)
-      switch (action) {
-        case "list":
-          return jsonResult(await send("list", {}))
-        case "create":
-          return jsonResult(await send("create", { tabIds: tabIds(), ...appearance() }))
-        case "ensure": {
-          const title = stringArgument(args, "title")
-          const listed = (await send("list", {})) as {
-            groups?: ReadonlyArray<{ id: number; title?: string; tabIds?: ReadonlyArray<string> }>
-          }
-          const ids = tabIds()
-          const existing = (listed.groups ?? []).find((group) => group.title === title)
-          if (existing === undefined) {
-            return jsonResult({
-              ...(await send("create", { tabIds: ids, ...appearance() })),
-              created: true
-            })
-          }
-          const missing = ids.filter((id) => !(existing.tabIds ?? []).includes(id))
-          if (missing.length > 0) await send("add", { groupId: existing.id, tabIds: missing })
-          const { title: _title, ...restyle } = appearance()
-          return jsonResult({
-            ...(await send("update", { groupId: existing.id, ...restyle })),
-            created: false
-          })
-        }
-        case "add":
-          return jsonResult(await send("add", { groupId: groupId(), tabIds: tabIds() }))
-        case "update":
-          return jsonResult(await send("update", { groupId: groupId(), ...appearance() }))
-        case "ungroup":
-          await send("ungroup", { tabIds: tabIds() })
-          return jsonResult({ ungrouped: tabIds() })
-        default:
-          throw new Error("tab_groups.action must be list, create, ensure, add, update, or ungroup")
-      }
-    }
-    if (toolName === "user.history") {
-      if (backend !== "extension") {
-        throw new Error("Browser history is only available with the user Chrome backend")
-      }
-      const raw = await active.connection.send<{
-        entries?: Array<{ url?: string; title?: string; lastVisitTime?: number }>
-      }>("Codevisor.getHistory", {
-        text:
-          Array.isArray(args.queries) && args.queries.every((query) => typeof query === "string")
-            ? args.queries.join(" ")
-            : "",
-        ...(toTimestamp(args.from) === undefined ? {} : { startTime: toTimestamp(args.from) }),
-        ...(toTimestamp(args.to) === undefined ? {} : { endTime: toTimestamp(args.to) }),
-        maxResults: typeof args.limit === "number" ? Math.max(1, Math.min(1_000, args.limit)) : 100
-      })
-      return jsonResult({
-        entries: (raw.entries ?? [])
-          .filter((entry): entry is typeof entry & { url: string } => typeof entry.url === "string")
-          .map((entry) => ({
-            url: entry.url,
-            dateVisited: new Date(entry.lastVisitTime ?? 0).toISOString(),
-            ...(typeof entry.title === "string" ? { title: entry.title } : {})
-          }))
-      })
-    }
-
-    let page
-    if (typeof args.tabId === "string") {
-      if (!sessionTargets.get(sessionKey)?.has(args.tabId))
-        throw new Error("This session does not own that tab. Claim an observed user tab first.")
-      const target = (await pageTargets(active)).find((tab) => tab.targetId === args.tabId)
-      if (!target) throw new Error("The requested browser tab was closed; it will not be replaced.")
-      page = {
-        target,
-        sessionId: await attachTarget(active, target.targetId),
-        snapshotKey: `${sessionKey}:${target.targetId}`
-      }
-    } else {
-      if (!selectedTargets.has(sessionKey) && toolName === "navigate") {
-        const created = await active.connection.send<{ targetId: string }>("Target.createTarget", {
-          url: "about:blank"
-        })
-        selectedTargets.set(sessionKey, created.targetId)
-        const owned = sessionTargets.get(sessionKey) ?? new Map()
-        owned.set(created.targetId, "created")
-        sessionTargets.set(sessionKey, owned)
-      }
-      page = await currentPage(active, selectedTargets, sessionKey)
-    }
-    const invocation: BrowserToolInvocation = {
-      active,
-      args,
-      backend,
-      cursor: cursors.cursorFor(active, page, sessionKey),
-      page,
-      pointer: pointerFor(`${sessionKey}:${page.target.targetId}`),
-      toolName
-    }
-    for (const invoke of toolHandlers) {
-      const result = await invoke(invocation, state)
-      if (result !== undefined) return result
-    }
-    throw new Error(`Unknown Browser Use tool: ${toolName}`)
-  }
+const requireExtensionBackend = (session: BrowserSessionInvocation, message: string): void => {
+  if (session.backend !== "extension") throw new Error(message)
 }

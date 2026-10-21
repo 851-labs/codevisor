@@ -12,7 +12,11 @@ import { expectArray, expectBoolean, expectRecord, expectString } from "./unknow
 const harness = () => {
   const context = { projectId: "project", sessionId: "session" }
   const targets: Array<{ targetId: string; type: string; title: string; url: string }> = []
-  const sent: Array<{ method: string; params: Readonly<Record<string, unknown>> }> = []
+  const sent: Array<{
+    method: string
+    params: Readonly<Record<string, unknown>>
+    sessionId: string | undefined
+  }> = []
   const failClose = new Set<string>()
   let failCreate = false
   let created = 0
@@ -21,7 +25,7 @@ const harness = () => {
     params: Readonly<Record<string, unknown>> = {},
     sessionId?: string
   ) => {
-    sent.push({ method, params })
+    sent.push({ method, params, sessionId })
     switch (method) {
       case "Target.createTarget": {
         const targetId = `tab-${++created}`
@@ -40,6 +44,7 @@ const harness = () => {
       case "Target.attachToTarget":
         return { sessionId: `cdp:${String(params.targetId)}` }
       case "Runtime.evaluate": {
+        if (params.expression === "document.readyState") return { result: { value: "complete" } }
         const target = targets.find((candidate) => `cdp:${candidate.targetId}` === sessionId)
         return { result: { value: { title: target?.title ?? "", url: target?.url ?? "" } } }
       }
@@ -74,6 +79,8 @@ const harness = () => {
     call,
     newTab,
     closed,
+    sent,
+    state,
     targets,
     failClose,
     failCreate: () => {
@@ -98,6 +105,56 @@ describe("Browser tab lifecycle", () => {
     })
     expect(closed()).toEqual([scratch])
     expect(targets.map((target) => target.targetId)).toEqual([kept, deliverable])
+  })
+
+  it("creates a navigation tab before a concurrent claim of a user tab", async () => {
+    const { call, sent, state, targets } = harness()
+    targets.push({ targetId: "user", type: "page", title: "Inbox", url: "https://mail.test/" })
+
+    await Promise.all([
+      call("navigate", { url: "https://agent.test/" }),
+      call("tabs", { action: "select", id: "user" })
+    ])
+
+    expect(sent.slice(0, 3).map(({ method }) => method)).toEqual([
+      "Target.createTarget",
+      "Target.getTargets",
+      "Target.getTargets"
+    ])
+    expect(sent.find(({ method }) => method === "Page.navigate")?.sessionId).toBe("cdp:user")
+    expect(state.selectedTargets.get("managed:project:session")).toBe("user")
+    expect([...state.sessionTargets.get("managed:project:session")!]).toEqual([
+      ["tab-1", "created"],
+      ["user", "claimed"]
+    ])
+  })
+
+  it.each([
+    [
+      "context",
+      {
+        get sessionId(): string {
+          throw new Error("unreadable context")
+        }
+      },
+      {}
+    ],
+    [
+      "arguments",
+      { sessionId: "session" },
+      {
+        get action(): string {
+          throw new Error("unreadable arguments")
+        }
+      }
+    ]
+  ])("rejects instead of throwing when the %s can't be read", async (_, context, args) => {
+    const invoke = makeBrowserToolInvoker(browserToolSessionState())
+    let pending: Promise<unknown> | undefined
+    expect(() => {
+      pending = invoke(context, fakeBrowserRuntime(), "tabs", args)
+    }).not.toThrow()
+    await expect(pending).rejects.toThrow(/^unreadable/)
   })
 
   it("rejects a closed tab instead of routing to another open tab", async () => {

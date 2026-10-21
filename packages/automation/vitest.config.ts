@@ -35,6 +35,7 @@ export default defineConfig({
         "src/browser-use-invoke-navigation.ts",
         "src/browser-use-invoke-page.ts",
         "src/browser-use-invoke-playwright.ts",
+        "src/browser-use-invoke-tabs.ts",
         "src/browser-use-invoke.ts",
         "src/browser-use-provider.ts",
         "src/code-executor-source.ts",
