@@ -3,23 +3,39 @@ import CodevisorUI
 import SwiftUI
 
 extension SidebarView {
-  var workspaceRegionRows: [SidebarRow] {
-    SidebarRows.derive(sidebarRowsState()).filter { $0.section != .bots }
-  }
-
   func workspaceRowList(_ rows: [SidebarRow]) -> some View {
     let routed = routedWorkspace
     let actions = rowActions
+    let bots = Dictionary(botEntries.map { ($0.bot.id, $0.bot) }, uniquingKeysWith: { first, _ in first })
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
-      workspaceRegionRow(row, routed: routed, actions: actions)
+      workspaceRegionRow(row, routed: routed, bots: bots, actions: actions)
     }
   }
 
   @ViewBuilder
   private func workspaceRegionRow(
-    _ row: SidebarRow, routed: (serverId: String, id: UUID)?, actions: SidebarWorkspaceSection.Actions
+    _ row: SidebarRow, routed: (serverId: String, id: UUID)?, bots: [UUID: Bot],
+    actions: SidebarWorkspaceSection.Actions
   ) -> some View {
     switch row.kind {
+    case let .section(.bots, isExpanded):
+      SidebarSectionHeader(
+        title: "Bots",
+        isExpanded: isExpanded,
+        onToggle: { botsExpanded.toggle() },
+        add: SidebarSectionHeader.Add(help: "New Bot") { botEditor = .create }
+      )
+    case let .bot(entry, isExpanded):
+      if let bot = bots[entry.id] {
+        botRow(bot, isExpanded: isExpanded)
+      }
+    case .newBot:
+      SidebarActionRow(
+        title: "New bot", systemImage: "plus", isSelected: false, isHoverEnabled: !isReordering,
+        titleStyle: .secondary
+      ) {
+        botEditor = .create
+      }
     case let .section(.pinned, isExpanded):
       SidebarSectionHeader(title: "Pinned", isExpanded: isExpanded) { pinnedExpanded.toggle() }
     case let .section(.list, isExpanded):
@@ -58,8 +74,6 @@ extension SidebarView {
       .geometryGroup()
       .padding(.leading, Self.groupIndent * CGFloat(row.depth))
       .id(item.id)
-    case .section(.bots, _), .bot, .newBot:
-      EmptyView()
     }
   }
 

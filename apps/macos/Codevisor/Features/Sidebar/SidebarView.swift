@@ -19,7 +19,6 @@ struct SidebarView: View {
   @State var groupDrag: SidebarGroupDrag?
   @State var holdsGroupToggles = false
   @State var revealRequest = SidebarRevealRequest()
-  @State var folds = SidebarFoldState()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
@@ -74,12 +73,10 @@ struct SidebarView: View {
           workspaceGroupList(workspaceGroups)
         }
         .contextMenu { sidebarOptionsMenu }
-        .onChange(of: selectedWorkspaceID) { previous, current in
-          if let previous { release(previous) }
+        .onChange(of: selectedWorkspaceID) { _, current in
           if let current, revealRequest.take(current) { proxy.scrollTo(current) }
         }
-        .onChange(of: selectedBotID) { previous, current in
-          if let previous { release(previous) }
+        .onChange(of: selectedBotID) { _, current in
           if let current, revealRequest.take(current) { proxy.scrollTo(current) }
         }
       }
@@ -137,79 +134,13 @@ struct SidebarView: View {
 
   private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
     let headed = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }.map(\.id)
-    return SidebarStack(spacing: 1) {
-      botsSection
-      workspaceRowList(workspaceRegionRows)
-    }
-    .padding(.horizontal, 10)
-    .padding(.bottom, 8)
-    .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }
+    return workspaceRowList(sidebarRows)
+      .padding(.horizontal, 10)
+      .padding(.bottom, 8)
+      .onChange(of: headed) { _, ids in endGroupDrag(ifMissingFrom: ids) }
   }
 
   static let groupIndent: CGFloat = 8
-
-  func fold(_ section: String, _ change: () -> Void) {
-    let folds = folds
-    let generation = folds.begin(section)
-    change()
-    Task {
-      try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
-      folds.end(section, generation: generation)
-    }
-  }
-
-  func withReleasedRows(
-    _ visible: [WorkspaceSidebarItem], from items: [WorkspaceSidebarItem]
-  ) -> (items: [WorkspaceSidebarItem], releasing: Set<UUID>) {
-    let visibleIDs = Set(visible.map(\.id))
-    let releasing = Set(
-      items.lazy.map(\.id).filter { !visibleIDs.contains($0) && folds.isReleasing($0) })
-    guard !releasing.isEmpty else { return (visible, []) }
-    return (items.filter { visibleIDs.contains($0.id) || releasing.contains($0.id) }, releasing)
-  }
-
-  func release(_ id: UUID) {
-    let folds = folds
-    let generation = folds.release(id)
-    Task {
-      try? await Task.sleep(for: .seconds(Motion.listReflowDuration * 2))
-      folds.endRelease(id, generation: generation)
-    }
-  }
-
-  func workspaceList(
-    _ items: [WorkspaceSidebarItem], folding: Set<UUID>, releasing: Set<UUID>, shows: Bool
-  ) -> some View {
-    let routed = routedWorkspace
-    let pinned = Set(pinnedWorkspaceIDs)
-    let actions = rowActions
-    return SidebarFoldingList(shows: shows, isReleasing: !releasing.isEmpty) { progress in
-      ForEach(items) { item in
-        SidebarWorkspaceSection(
-          item: item, store: store, grouping: grouping, rowDetails: rowDetails,
-          isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
-          isPinned: pinned.contains(item.id.uuidString), isReordering: isReordering, actions: actions
-        )
-        .equatable()
-        .opacity(draggingID == item.id ? 0.4 : 1)
-        .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .named(Self.reorderSpace))
-        } action: { frame in
-          recordWorkspaceFrame(frame, for: item.id)
-        }
-        .onDisappear { forgetWorkspaceGeometry(for: item.id) }
-        .simultaneousGesture(reorderGesture(for: item.id))
-        .geometryGroup()
-        .sidebarFoldingRow(
-          releasing.contains(item.id) ? .releasing : folding.contains(item.id) ? .folding : .kept,
-          progress: progress, shows: shows
-        )
-        .transition(.identity)
-        .id(item.id)
-      }
-    }
-    .animation(folding.isEmpty ? Motion.listReflow(reduceMotion: reduceMotion) : nil, value: items.map(\.id))
-  }
 
   private var vibrantContent: some View {
     let open = openSettings

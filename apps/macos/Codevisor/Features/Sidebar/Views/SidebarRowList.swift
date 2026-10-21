@@ -70,6 +70,7 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
           .transition(item.phase.fold == .arriving ? .opacity : .identity)
       }
     }
+    .animation(animation, value: displayed.map(\.id))
     .onAppear {
       shown = rows.map { Shown(id: id($0), row: $0, phase: .kept) }
       isPrimed = true
@@ -244,5 +245,18 @@ private struct SidebarRowStack: Layout {
       gapTaken = trail > 0
     }
     return (frames, y)
+  }
+}
+
+struct SidebarRowClip: Layout {
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    guard let content = subviews.first else { return .zero }
+    let size = content.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+    return CGSize(width: size.width, height: min(size.height, proposal.height ?? size.height))
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    subviews.first?.place(
+      at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: nil))
   }
 }
