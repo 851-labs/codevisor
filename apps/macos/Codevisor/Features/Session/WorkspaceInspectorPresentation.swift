@@ -146,7 +146,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     case .info:
       await media.reload(tab, workspaceId: workspace.id, client: client)
       await reloadUsage(inspected)
-    case .media, .links, .sourceControl:
+    case .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
     }
   }
