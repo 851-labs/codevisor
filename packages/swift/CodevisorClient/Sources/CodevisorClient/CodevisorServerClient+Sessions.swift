@@ -369,6 +369,23 @@ extension CodevisorServerClient {
     )
   }
 
+  public func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?, delivery: ServerPromptDelivery?, clientActionId: String
+  ) async throws -> ServerPromptAccepted {
+    try await sendPrompt(
+      id: id,
+      body: PromptBody(
+        text: text,
+        clientActionId: clientActionId,
+        attachments: attachments.isEmpty ? nil : attachments,
+        messageId: messageId,
+        clientId: clientId,
+        delivery: delivery
+      )
+    )
+  }
+
   private func sendPrompt(id: UUID, body: PromptBody) async throws -> ServerPromptAccepted {
     try await send("/v1/sessions/\(id.uuidString)/prompt", method: "POST", body: body)
   }

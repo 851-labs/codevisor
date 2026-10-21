@@ -83,6 +83,27 @@ describe("prompt delivery", () => {
     expect(await queue()).toEqual([])
   })
 
+  it("takes a retried steer or queued prompt once when the first attempt already landed", async () => {
+    const { server, sessionId, queue, steered } = await sessionRunning("prompt until cancelled")
+    const steer = { text: "also check the tests", messageId: "steer-1", clientActionId: "steer-1" }
+    const queued = {
+      text: "next task",
+      delivery: "queue",
+      messageId: "queue-1",
+      clientActionId: "queue-1"
+    }
+
+    const firstSteer = await prompt(server, sessionId, steer)
+    const retriedSteer = await prompt(server, sessionId, steer)
+    await prompt(server, sessionId, queued)
+    const retriedQueue = await prompt(server, sessionId, queued)
+
+    expect(retriedSteer).toEqual(firstSteer)
+    expect(steered()).toEqual(["also check the tests"])
+    expect(retriedQueue.delivered).toBe("queued")
+    expect((await queue()).map((item) => item.text)).toEqual(["next task"])
+  })
+
   it("holds a queued prompt for after the turn until it is sent now", async () => {
     const { server, sessionId, queue, steered } = await sessionRunning("prompt until cancelled")
 

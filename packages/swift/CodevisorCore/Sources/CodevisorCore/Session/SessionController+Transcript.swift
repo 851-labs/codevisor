@@ -51,7 +51,9 @@ extension SessionController {
       status: projectionStatus,
       activityMessage: transcriptActivityOverride,
       botConversation: model?.transcriptBotConversation
-        ?? (presentsBotConversation ? TranscriptBotConversation(messages: [], isWorking: false) : nil)
+        ?? (presentsBotConversation ? TranscriptBotConversation(messages: [], isWorking: false) : nil),
+      outgoingMessages: model?.transcriptOutgoingMessages ?? [],
+      deliveries: model?.transcriptDeliveries ?? [:]
     )
   }
 
@@ -233,5 +235,13 @@ extension SessionController {
     guard !presentsBotConversation else { return }
     presentsBotConversation = true
     model?.presentBotConversation()
+  }
+
+  public func retryUnsentMessage(id: UUID) async {
+    await model?.retryUnsentMessage(id: id)
+  }
+
+  public func deleteUnsentMessage(id: UUID) {
+    model?.deleteUnsentMessage(id: id)
   }
 }

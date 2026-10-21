@@ -7,12 +7,15 @@ extension SessionModel {
   public var transcriptBotConversation: TranscriptBotConversation? {
     guard presentsBotConversation else { return nil }
     let sentIDs = Set(botMessages.map { $0.id.lowercased() })
+    let deliveries = transcriptDeliveries
     let unsent =
-      unsentBotMessages
+      outgoingMessages
+      .map(\.message)
       .filter { !sentIDs.contains($0.id.uuidString.lowercased()) }
       .map {
         TranscriptBotMessage(
-          id: $0.id.uuidString.lowercased(), sender: .user, text: $0.text, attachments: $0.attachments)
+          id: $0.id.uuidString.lowercased(), sender: .user, text: $0.text, attachments: $0.attachments,
+          delivery: deliveries[$0.id])
       }
     return TranscriptBotConversation(
       messages: botMessages.map(Self.transcriptBotMessage) + unsent,
@@ -56,39 +59,13 @@ extension SessionModel {
   }
 
   func upsertBotMessage(_ message: ServerBotMessage) {
+    if let id = UUID(uuidString: message.id) { confirmOutgoing(id) }
     if let index = botMessages.firstIndex(where: { $0.id == message.id }) {
       botMessages[index] = message
       return
     }
     let index = botMessages.firstIndex { $0.sequence > message.sequence } ?? botMessages.endIndex
     botMessages.insert(message, at: index)
-  }
-
-  func sendToWorkingBot(_ message: UserMessage) async -> Bool {
-    unsentBotMessages.append(message)
-    onLocalUserMessageAppended?(message.id)
-    do {
-      _ = try await transport.prompt(
-        message.text,
-        attachments: message.attachments,
-        messageId: message.id.uuidString.lowercased(),
-        clientId: promptClientId
-      )
-    } catch {
-      guard await botReceived(message) else {
-        errorMessage = serverErrorMessage(error)
-        return false
-      }
-    }
-    onPromptAccepted?(message.attachments.count, false)
-    return true
-  }
-
-  func botReceived(_ message: UserMessage) async -> Bool {
-    await refreshBotConversation()
-    unsentBotMessages.removeAll { $0.id == message.id }
-    let id = message.id.uuidString.lowercased()
-    return botMessages.contains { $0.id.lowercased() == id }
   }
 
   private static func transcriptBotMessage(_ message: ServerBotMessage) -> TranscriptBotMessage {

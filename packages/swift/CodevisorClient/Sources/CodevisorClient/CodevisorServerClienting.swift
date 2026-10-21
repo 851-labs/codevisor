@@ -222,6 +222,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
     clientId: String?, delivery: ServerPromptDelivery
   ) async throws -> ServerPromptAccepted
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?, delivery: ServerPromptDelivery?, clientActionId: String
+  ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
   func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata
   func filePreview(id: String) async throws -> Data

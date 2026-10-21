@@ -57,6 +57,61 @@ struct TranscriptBotRowAssemblyTests {
     #expect(rows.last?.isUserMessage == true)
   }
 
+  @Test func marksUnconfirmedMessagesUnderTheirBubbles() throws {
+    let failedID = UUID(uuidString: "6A1D2E8C-0000-4000-8000-000000000003")!
+    let conversation = TranscriptBotConversation(
+      messages: [
+        message("b1", .bot, "Hi", at: 0),
+        TranscriptBotMessage(id: userID.uuidString.lowercased(), sender: .user, text: "slow", delivery: .sending),
+        TranscriptBotMessage(id: failedID.uuidString.lowercased(), sender: .user, text: "lost", delivery: .failed),
+      ],
+      isWorking: false
+    )
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(
+      rows.map(\.id) == [
+        .botTimestamp("b1"),
+        .botMessage("b1"),
+        .message(userID),
+        .delivery(userID),
+        .message(failedID),
+        .delivery(failedID),
+      ])
+    #expect(rows[3].content == .delivery(userID, .sending))
+    #expect(rows[5].content == .delivery(failedID, .failed))
+    #expect(rows.filter(\.isUserMessage).map(\.spacingAfter) == [2, 2])
+  }
+
+  @Test func marksUnconfirmedMessagesInANormalChat() throws {
+    let steerID = UUID(uuidString: "6A1D2E8C-0000-4000-8000-000000000004")!
+    let input = TranscriptProjectionInput(
+      settledConversation: [.user(UserMessage(id: userID, text: "start"))],
+      pendingUserMessage: UserMessage(id: steerID, text: "also this"),
+      activeItem: nil,
+      setupPhases: [],
+      waitingBackgroundTaskDescription: nil,
+      waitingHarnessUpdateName: nil,
+      isLoadingInitialHistory: false,
+      serverWaitMessage: nil,
+      sessionErrorMessage: nil,
+      status: .idle,
+      outgoingMessages: [UserMessage(id: steerID, text: "also this")],
+      deliveries: [userID: .sending, steerID: .failed]
+    )
+
+    let rows = try TranscriptRowProjectionCache.project(input, options: .init(includesConnectingRow: false))
+
+    #expect(rows.map(\.id) == [.message(userID), .delivery(userID), .message(steerID), .delivery(steerID)])
+    #expect(rows[1].content == .delivery(userID, .sending))
+    #expect(rows[3].content == .delivery(steerID, .failed))
+    #expect(rows.map(\.spacingAfter) == [2, nil, 2, nil])
+  }
+
   @Test func keepsTheAgentTranscriptForTheFullTranscriptView() throws {
     let rows = try TranscriptRowProjectionCache.project(
       input(

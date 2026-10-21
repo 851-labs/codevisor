@@ -178,6 +178,7 @@ extension SessionModel {
         isEvent: isEvent,
         assistantItemId: assistantItemId
       )
+      if let echoed = id.flatMap(UUID.init(uuidString:)) { confirmOutgoing(echoed) }
       if promotedFromQueue, !isEvent {
         onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
       }
@@ -415,6 +416,9 @@ extension SessionModel {
   func applyQueuedPromptSnapshot(_ queue: [ServerPromptQueueItem]) {
     rememberRemovedQueueItems(in: queue)
     queuedPrompts = queue
+    for item in queue {
+      if let queued = UUID(uuidString: item.id) { confirmOutgoing(queued) }
+    }
     promptQueueRevision &+= 1
   }
 

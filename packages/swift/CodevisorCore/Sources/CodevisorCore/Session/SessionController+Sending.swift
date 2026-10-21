@@ -90,11 +90,8 @@ extension SessionController {
     if let model {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      let sent = await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
-      settleSend(sent, of: outgoingMessage, staged: staged)
-      if pendingUserMessage?.id == outgoingMessage.id {
-        pendingUserMessage = nil
-      }
+      await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
+      self.attachments.releaseStagedFiles(of: staged)
       return
     }
 
@@ -111,11 +108,8 @@ extension SessionController {
       status = .idle
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      let sent = await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
-      settleSend(sent, of: outgoingMessage, staged: staged)
-      if pendingUserMessage?.id == outgoingMessage.id {
-        pendingUserMessage = nil
-      }
+      await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
+      self.attachments.releaseStagedFiles(of: staged)
     } catch {
       let message = serverErrorMessage(error)
       restoreComposer()
@@ -123,14 +117,14 @@ extension SessionController {
     }
   }
 
-  private func settleSend(_ sent: Bool, of message: UserMessage, staged: [ComposerAttachment]) {
-    guard !sent, presentsBotConversation else {
-      attachments.releaseStagedFiles(of: staged)
-      return
+  private func submit(_ message: UserMessage, to model: SessionModel, delivery: ServerPromptDelivery) async {
+    let startedAt = pendingSendStartedAt
+    Task { [weak self] in
+      await model.send(message, startedAt: startedAt, delivery: delivery)
+      if self?.pendingUserMessage?.id == message.id {
+        self?.pendingUserMessage = nil
+      }
     }
-    cancelUserSendAnimation(for: message.id)
-    composerText = composerText.isEmpty ? message.text : message.text + "\n" + composerText
-    attachments.restore(staged + attachments.items)
   }
 
   func requestUserSendAnimation(for messageID: UUID) {

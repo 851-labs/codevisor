@@ -52,7 +52,8 @@ enum TranscriptRowAssembly {
     settled: [ConversationItem]
   ) -> UserMessage? {
     return input.pendingUserMessage.flatMap { pending in
-      settled.contains(where: { item in
+      guard !input.outgoingMessages.contains(where: { $0.id == pending.id }) else { return nil }
+      return settled.contains(where: { item in
         if case let .user(message) = item { return message.id == pending.id }
         return false
       }) ? nil : pending
@@ -146,6 +147,9 @@ enum TranscriptRowAssembly {
         presentsStopDetail: item.id == latestSettledAssistantID,
         to: &rows
       )
+      if case let .user(message) = item, let delivery = input.deliveries[message.id] {
+        appendDelivery(message.id, delivery, to: &rows)
+      }
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isUser(item) {
         appendSetupPhases(input.setupPhases, to: &rows)
       }
@@ -177,6 +181,20 @@ enum TranscriptRowAssembly {
     if !pendingIsOpeningRow, let message = pendingMessage {
       appendOptimisticMessage(message, to: &rows)
     }
+    for message in input.outgoingMessages {
+      TranscriptAssistantRowProjection.appendSettled(
+        .user(message), waitingOnBackgroundTask: nil, presentsStopDetail: false, to: &rows)
+      if let delivery = input.deliveries[message.id] {
+        appendDelivery(message.id, delivery, to: &rows)
+      }
+    }
+  }
+
+  private static func appendDelivery(
+    _ id: UUID, _ delivery: TranscriptDelivery, to rows: inout [TranscriptPresentationRow]
+  ) {
+    if let bubble = rows.popLast() { rows.append(bubble.spaced(TranscriptPresentationRow.deliveryGap)) }
+    rows.append(.delivery(id, delivery))
   }
 
   private static func appendWaitingRows(

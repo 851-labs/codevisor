@@ -30,6 +30,7 @@ struct SessionControllerFirstSendTests {
 
     release.finish()
     await send.value
+    await fixture.client.promptRequests.wait()
 
     #expect(fixture.promotions == 1)
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
@@ -71,9 +72,10 @@ struct SessionControllerFirstSendTests {
     let fixture = try Fixture()
     let staged = try attachment(in: fixture.controller.attachmentFiles)
     fixture.controller.attachments.restore([staged])
-    fixture.client.promptFailure = .httpStatus(503, "Please retry")
+    fixture.client.promptFailure = .httpStatus(422, "Please retry")
 
     await fixture.controller.send()
+    await awaitObserved { fixture.controller.model?.errorMessage != nil }
 
     #expect(fixture.promotions == 1)
     #expect(fixture.controller.hasAcceptedFirstSend)
@@ -89,28 +91,23 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
-  @Test("A bot message the server never took returns to the composer ahead of anything typed since")
-  func botSendFailureRestoresMessage() async throws {
+  @Test(
+    "The composer is free while a message is still being delivered, in bot and normal chats",
+    .timeLimit(.minutes(1)), arguments: [true, false])
+  func sendDoesNotHoldTheComposer(bot: Bool) async throws {
     let fixture = try Fixture()
-    let staged = try attachment(in: fixture.controller.attachmentFiles)
-    fixture.controller.attachments.restore([staged])
-    fixture.controller.presentBotConversation()
-    fixture.client.promptFailure = .httpStatus(502, "Machine unreachable")
+    if bot { fixture.controller.presentBotConversation() }
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     fixture.client.holdPrompts(until: gate)
-    let send = Task { await fixture.controller.send() }
+    defer { release.finish() }
+
+    await fixture.controller.send()
     await fixture.client.promptRequests.wait()
-    fixture.controller.composerText = "one more thing"
 
-    release.finish()
-    await send.value
-
-    #expect(fixture.controller.composerText == "Send this message\none more thing")
-    #expect(fixture.controller.composerAttachments == [staged])
-    #expect(FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
-    #expect(fixture.controller.pendingUserMessage == nil)
-    #expect(fixture.controller.userSendAnimationRequest == nil)
-    #expect(fixture.controller.transcriptProjectionInput.botConversation?.messages.isEmpty == true)
+    #expect(fixture.controller.composerText.isEmpty)
+    #expect(!fixture.controller.isSubmitting)
+    fixture.controller.composerText = "and one more"
+    #expect(fixture.controller.canSend)
     fixture.controller.model?.shutdown()
   }
 
@@ -216,6 +213,7 @@ struct SessionControllerFirstSendTests {
     #expect(controller.modelOption?.currentValue == "new")
     #expect(controller.pendingConfiguration.modeId == "plan")
     await controller.send()
+    await fixture.client.promptRequests.wait()
     #expect(
       fixture.client.runtimeRequests == [
         "mode:plan", "config:model:new", "config:effort:high", "config:speed:fast", "prompt",

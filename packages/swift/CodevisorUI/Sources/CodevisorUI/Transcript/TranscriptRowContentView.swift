@@ -133,6 +133,12 @@ public struct TranscriptRowContentView: View {
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
+    case let .delivery(id, delivery):
+      TranscriptDeliveryRow(
+        delivery: delivery,
+        retry: { Task { await controller.retryUnsentMessage(id: id) } },
+        delete: { controller.deleteUnsentMessage(id: id) }
+      )
     case .botTyping:
       TranscriptBotTypingRow()
     case let .setup(phases):

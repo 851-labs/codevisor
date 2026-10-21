@@ -8,7 +8,7 @@ import ACPKit
 
 @Observable
 final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendable {
-  private let sessionId: UUID
+  let sessionId: UUID
   private let projectId = UUID()
   private var _eventBuffer: [ServerEventEnvelope] = []
   private var _eventContinuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
@@ -71,6 +71,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var openSessionGate: AsyncStream<Void>?
   let openSessionRequests = TestSignal()
   var promptFailure: CodevisorServerClientError?
+  let sendAttempts = FakeSendAttempts()
   let promptRequests = TestSignal()
 
   func openSession(

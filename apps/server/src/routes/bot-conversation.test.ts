@@ -54,6 +54,26 @@ describe("bot conversations", () => {
     ).toHaveLength(2)
   })
 
+  it("takes a retried send once when the first attempt already landed", async () => {
+    const { running, bot } = await startBot()
+    const send = () =>
+      jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+        body: JSON.stringify({ text: "hello", messageId: "client-1", clientActionId: "client-1" }),
+        method: "POST"
+      })
+
+    await send()
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+    const retried = await send()
+
+    expect(retried.status).toBe(202)
+    expect(running.agents.prompts).toHaveLength(1)
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "hello"],
+      ["bot", "Echo: hello"]
+    ])
+  })
+
   it("falls back to the final reply on every turn, not just every other one", async () => {
     const { running, bot } = await startBot()
 

@@ -55,11 +55,29 @@ public final class SessionModel {
       if botMessages != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
-  var unsentBotMessages: [UserMessage] = [] {
+  var outgoingMessages: [OutgoingMessage] = [] {
     didSet {
-      if unsentBotMessages != oldValue { transcriptProjectionRevision &+= 1 }
+      if outgoingMessages != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
+  var acceptedMessageIDs: Set<UUID> = [] {
+    didSet {
+      if acceptedMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  var slowMessageIDs: Set<UUID> = [] {
+    didSet {
+      if slowMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  var failedMessageIDs: Set<UUID> = [] {
+    didSet {
+      if failedMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  var unreachedSend: UnreachedSend?
+  var sendRetryDelays: [Duration] = [.seconds(1), .seconds(3)]
+  var sendingNoticeDelay: Duration = .seconds(1)
   public internal(set) var hasOlderBotMessages = false
   public internal(set) var isLoadingOlderBotMessages = false
   public internal(set) var modelFallback: SessionModelFallback?

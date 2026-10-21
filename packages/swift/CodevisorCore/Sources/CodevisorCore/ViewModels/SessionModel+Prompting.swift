@@ -10,14 +10,13 @@ extension SessionModel {
     await send(UserMessage(text: text, attachments: attachments))
   }
 
-  @discardableResult
   public func send(
     _ outgoingMessage: UserMessage,
     startedAt: Date? = nil,
     delivery: ServerPromptDelivery = .steer
-  ) async -> Bool {
+  ) async {
     let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return false }
+    guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
     let message = UserMessage(
       id: outgoingMessage.id,
       text: trimmed,
@@ -28,14 +27,17 @@ extension SessionModel {
     errorMessage = nil
     harnessAuthenticationErrorMessage = nil
 
+    if presentsBotConversation {
+      await sendOutgoing(message, delivery: nil)
+      return
+    }
+
     if isSending {
-      if presentsBotConversation { return await sendToWorkingBot(message) }
-      await sendWhileWorking(message, delivery: delivery)
-      return true
+      await sendOutgoing(message, delivery: delivery)
+      return
     }
 
     settleActiveItem()
-    if presentsBotConversation { unsentBotMessages.append(message) }
     appendSettled(.user(message))
     pendingOptimisticUserMessageIDs.insert(message.id)
     startActiveBubble(startedAt: startedAt)
@@ -45,29 +47,23 @@ extension SessionModel {
 
     await startConsumer()
 
-    do {
-      _ = try await transport.prompt(
-        trimmed,
-        attachments: message.attachments,
-        messageId: message.id.uuidString.lowercased(),
-        clientId: promptClientId
-      )
-    } catch {
-      let received = presentsBotConversation ? await botReceived(message) : false
-      if !received {
-        await failSend(of: message, error)
-        return false
-      }
+    let actionID = message.id.uuidString.lowercased()
+    unreachedSend = nil
+    switch await deliver(message, delivery: nil, actionID: actionID) {
+    case .accepted:
+      slowMessageIDs.remove(message.id)
+      onPromptAccepted?(message.attachments.count, false)
+      await drain()
+    case let .failed(error):
+      slowMessageIDs.remove(message.id)
+      unreachedSend = UnreachedSend(messageID: message.id, actionID: actionID)
+      await drain()
+      pendingOptimisticUserMessageIDs.remove(message.id)
+      failTurn(serverErrorMessage(error))
     }
-    onPromptAccepted?(message.attachments.count, false)
-    await drain()
-    return true
   }
 
-  private func failSend(of message: UserMessage, _ error: any Error) async {
-    await drain()
-    pendingOptimisticUserMessageIDs.remove(message.id)
-    let detail = serverErrorMessage(error)
+  private func failTurn(_ detail: String) {
     errorMessage = detail
     finish(stopReason: nil, outcome: .failed, stopDetail: detail, retryable: true)
     endTurn()
@@ -84,20 +80,18 @@ extension SessionModel {
     noteProviderActivity()
     await startConsumer()
 
-    do {
-      _ = try await transport.prompt(
-        prompt.text,
-        attachments: prompt.attachments,
-        messageId: prompt.id.uuidString.lowercased(),
-        clientId: promptClientId
-      )
+    let actionID =
+      unreachedSend.flatMap { $0.messageID == prompt.id ? $0.actionID : nil } ?? UUID().uuidString.lowercased()
+    switch await deliver(prompt, delivery: nil, actionID: actionID) {
+    case .accepted:
+      slowMessageIDs.remove(prompt.id)
+      if unreachedSend?.messageID == prompt.id { unreachedSend = nil }
       await drain()
-    } catch {
+    case let .failed(error):
+      slowMessageIDs.remove(prompt.id)
+      unreachedSend = UnreachedSend(messageID: prompt.id, actionID: actionID)
       await drain()
-      let message = serverErrorMessage(error)
-      errorMessage = message
-      finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
-      endTurn()
+      failTurn(serverErrorMessage(error))
     }
   }
 
@@ -375,8 +369,11 @@ extension SessionModel {
     guard state != .cursor else { return }
     streamSynchronization = state
     streamReconnectNotice.update(isActive: state == .reconnecting)
-    if state == .caughtUp, presentsBotConversation {
-      Task { await refreshBotConversation() }
+    if state == .caughtUp {
+      Task {
+        if presentsBotConversation { await refreshBotConversation() }
+        await resendAfterReconnect()
+      }
     }
     if state != .reconnecting {
       clearConnectionRecoveryPresentation()
@@ -479,23 +476,6 @@ extension SessionModel {
       pendingQuestion = nil
     } catch {
       errorMessage = serverErrorMessage(error)
-    }
-  }
-
-  private func sendWhileWorking(_ message: UserMessage, delivery: ServerPromptDelivery) async {
-    do {
-      let accepted = try await transport.prompt(
-        message.text,
-        attachments: message.attachments,
-        messageId: message.id.uuidString.lowercased(),
-        clientId: promptClientId,
-        delivery: delivery
-      )
-      onPromptAccepted?(message.attachments.count, !accepted.wasSteered)
-      if !accepted.wasSteered { onPromptNotSteered?(message.id) }
-    } catch {
-      errorMessage = serverErrorMessage(error)
-      onPromptNotSteered?(message.id)
     }
   }
 }

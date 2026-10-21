@@ -1,6 +1,11 @@
 import ACPKit
 import Foundation
 
+public enum TranscriptDelivery: Equatable, Sendable {
+  case sending
+  case failed
+}
+
 public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public enum Sender: Equatable, Sendable {
     case user
@@ -13,13 +18,18 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public let text: String
   public let attachments: [Attachment]
   public let sentAt: Date?
+  public let delivery: TranscriptDelivery?
 
-  public init(id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil) {
+  public init(
+    id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil,
+    delivery: TranscriptDelivery? = nil
+  ) {
     self.id = id
     self.sender = sender
     self.text = text
     self.attachments = attachments
     self.sentAt = sentAt
+    self.delivery = delivery
   }
 }
 

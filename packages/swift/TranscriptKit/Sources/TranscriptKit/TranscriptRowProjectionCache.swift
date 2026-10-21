@@ -67,6 +67,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case active(UUID)
     case botMessage(String)
     case botTimestamp(String)
+    case delivery(UUID)
     case botTyping
     case setup
     case startingAgent
@@ -108,6 +109,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .active(id): "message:\(id.uuidString)"
       case let .botMessage(id): "bot:\(id)"
       case let .botTimestamp(id): "bot:\(id):timestamp"
+      case let .delivery(id): "message:\(id.uuidString):delivery"
       case .botTyping: "special:bot-typing"
       case .setup: "special:setup"
       case .startingAgent: "special:starting-agent"
@@ -131,7 +133,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
         .assistantChrome, .assistantMarkdown, .assistantAttachment, .botMessage, .botTimestamp:
         true
-      case .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
+      case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
         .activeMarkdown, .activeAttachment, .setup, .startingAgent,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
@@ -164,7 +166,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
         let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
         id
-      case .botMessage, .botTimestamp, .botTyping, .setup, .startingAgent, .backgroundTask,
+      case .botMessage, .botTimestamp, .delivery, .botTyping, .setup, .startingAgent, .backgroundTask,
         .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
         nil
       }
@@ -191,6 +193,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case active(ConversationItem)
     case botMessage(TranscriptBotMessage, isGroupTail: Bool)
     case botTimestamp(Date)
+    case delivery(UUID, TranscriptDelivery)
     case botTyping
     case setup([SessionSetupPhase])
     case optimistic(UserMessage)
