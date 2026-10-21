@@ -171,7 +171,6 @@ struct WorkspaceInspectorView: View {
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
     case .links:
       WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
-    case .sourceControl: WorkspaceInspectorSourceControlView(model: media, onOpen: onOpen, onRetry: onReload)
     case .files: WorkspaceInspectorFileTreeView(model: fileTree, activeFilePath: activeFilePath, onOpen: onOpen)
     }
   }

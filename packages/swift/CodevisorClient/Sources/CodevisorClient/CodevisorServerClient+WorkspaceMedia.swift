@@ -72,52 +72,7 @@ public struct ServerWorkspaceLinkPage: Codable, Equatable, Sendable {
   }
 }
 
-public struct ServerWorkspaceFileChange: Codable, Equatable, Sendable, Identifiable {
-  public enum Status: String, Codable, Sendable {
-    case added
-    case modified
-    case deleted
-  }
-
-  public let path: String
-  public let added: Int
-  public let removed: Int
-  public let status: Status?
-  public let uncommitted: Bool
-  public let changedAt: String?
-  public let sessionId: UUID?
-
-  public var id: String { path }
-
-  public init(
-    path: String, added: Int, removed: Int, status: Status? = nil, uncommitted: Bool,
-    changedAt: String? = nil, sessionId: UUID? = nil
-  ) {
-    self.path = path
-    self.added = added
-    self.removed = removed
-    self.status = status
-    self.uncommitted = uncommitted
-    self.changedAt = changedAt
-    self.sessionId = sessionId
-  }
-}
-
-public struct ServerWorkspaceFileChanges: Codable, Equatable, Sendable {
-  public let files: [ServerWorkspaceFileChange]
-  public let truncated: Bool
-
-  public init(files: [ServerWorkspaceFileChange], truncated: Bool = false) {
-    self.files = files
-    self.truncated = truncated
-  }
-}
-
 extension CodevisorServerClient {
-  public func workspaceFiles(workspaceId: UUID) async throws -> ServerWorkspaceFileChanges {
-    try await get("/v1/workspaces/\(workspaceId.uuidString)/files")
-  }
-
   public func workspaceMedia(
     workspaceId: UUID, before: String?, limit: Int
   ) async throws
@@ -157,10 +112,6 @@ extension CodevisorServerClient {
 }
 
 extension CodevisorServerClienting {
-  public func workspaceFiles(workspaceId: UUID) async throws -> ServerWorkspaceFileChanges {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
   public func workspaceMedia(
     workspaceId: UUID, before: String?, limit: Int
   ) async throws
