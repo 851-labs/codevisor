@@ -27,7 +27,8 @@ struct TranscriptRestorationTests {
     rows: [TranscriptVirtualRow],
     token: Int = 0,
     revision: UInt64 = 0,
-    preparing: Bool = false
+    preparing: Bool = false,
+    settles: Bool = true
   ) {
     let visibility = TranscriptWorkedRowsVisibilityCache().presentSettled(
       rows, sourceVersion: revision, disclosure: controller.disclosure
@@ -52,6 +53,7 @@ struct TranscriptRestorationTests {
         onBottomStateChange: { _ in }, onFollowStateChange: { _ in }, onNearTop: { false }
       )
     )
+    guard settles else { return }
     for _ in 0..<10 {
       view.layout()
       for host in view.mountedHosts.values { host.prepareForImmediatePresentation() }
@@ -131,6 +133,36 @@ struct TranscriptRestorationTests {
     configure(view, controller: controller, rows: rows)
     #expect(view.contentView.bounds.minY == top)
     #expect(view.currentViewportAnchor() == anchor)
+  }
+
+  @Test("A width change while away re-centers the rows when the same projection returns")
+  func warmReattachAfterWidthChange() {
+    let controller = controller()
+    let rows = (0..<3).map { _ in row(height: 60) }
+    let view = makeView()
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let container = NSView(frame: view.frame)
+    window.contentView = container
+    defer {
+      view.prepareForDismantle()
+      window.contentView = nil
+    }
+    configure(view, controller: controller, rows: rows)
+    container.addSubview(view)
+    view.layoutSubtreeIfNeeded()
+    view.removeFromSuperview()
+    view.prepareForPresentationAttachment()
+    view.setFrameSize(NSSize(width: 600, height: 500))
+    container.addSubview(view)
+    configure(view, controller: controller, rows: rows, preparing: true, settles: false)
+    view.layoutSubtreeIfNeeded()
+    configure(view, controller: controller, rows: rows, settles: false)
+    view.layoutSubtreeIfNeeded()
+    #expect(!view.mountedHosts.isEmpty)
+    for host in view.mountedHosts.values {
+      #expect(host.frame.width == view.effectiveRowWidth)
+      #expect(abs(host.frame.midX - view.contentView.bounds.midX) <= 0.5)
+    }
   }
 
   @Test("A fresh jump while the reopened projection loads still follows the bottom")

@@ -74,6 +74,7 @@ extension VirtualizedTranscriptScrollView {
       needsLayout = true
       return
     }
+    if isAwaitingWarmProjection, hasPendingViewportResize { needsLayout = true }
     isAwaitingWarmProjection = false
     guard !newIsPreparingInitialProjection else {
       needsLayout = true
