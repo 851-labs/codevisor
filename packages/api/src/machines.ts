@@ -65,6 +65,7 @@ export const MachineStats = Schema.Struct({
   sampledAt: Schema.String,
   uptimeSeconds: Schema.Number,
   cpu: Schema.Struct({
+    model: Schema.optional(Schema.String),
     cores: Schema.Number,
     usedPercent: Schema.optional(Schema.Number),
     history: Schema.Array(MachineLoadSample)

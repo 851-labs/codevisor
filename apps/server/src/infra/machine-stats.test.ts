@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  cpuModelOf,
   cpuPercentBetween,
   cpuTimesOf,
   darwinGpu,
@@ -22,6 +23,7 @@ const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading | unde
   let gpuReads = 0
   const readers: MachineStatsReaders = {
     cores: () => 8,
+    cpuModel: () => "Apple M1 Pro",
     cpuTimes: () => cpu.shift() ?? { idle: 0, total: 0 },
     gpu: async () => {
       gpuReads += 1
@@ -63,6 +65,11 @@ describe("machine stats", () => {
       { times: { user: 20, nice: 1, sys: 4, idle: 70, irq: 5 } }
     ])
     expect(times).toEqual({ idle: 150, total: 200 })
+    expect(cpuModelOf([{ model: "Intel(R) Core(TM)  i9 CPU @ 2.40GHz " }])).toBe(
+      "Intel(R) Core(TM) i9 CPU @ 2.40GHz"
+    )
+    expect(cpuModelOf([{ model: "" }])).toBeUndefined()
+    expect(cpuModelOf([])).toBeUndefined()
     expect(cpuPercentBetween({ idle: 0, total: 0 }, { idle: 75, total: 100 })).toBe(25)
     expect(cpuPercentBetween({ idle: 10, total: 100 }, { idle: 10, total: 100 })).toBe(0)
     expect(cpuPercentBetween({ idle: 50, total: 100 }, { idle: 0, total: 200 })).toBe(100)
@@ -99,7 +106,7 @@ describe("machine stats", () => {
     expect(await stats.read()).toEqual({
       sampledAt: "2026-10-20T12:00:00.000Z",
       uptimeSeconds: 3_600,
-      cpu: { cores: 8, history: [] },
+      cpu: { model: "Apple M1 Pro", cores: 8, history: [] },
       memory: { usedBytes: 6, totalBytes: 16 },
       disk: { usedBytes: 200, totalBytes: 500 }
     })
@@ -124,6 +131,7 @@ describe("machine stats", () => {
     makeMachineStatsSampler({
       readers: {
         cores: () => 1,
+        cpuModel: () => undefined,
         cpuTimes: () => ({ idle: 0, total: 0 }),
         gpu: async () => undefined,
         memory: async () => ({ usedBytes: 1, totalBytes: 2 }),

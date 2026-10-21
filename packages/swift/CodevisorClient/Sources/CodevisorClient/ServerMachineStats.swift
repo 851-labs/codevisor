@@ -12,6 +12,7 @@ public struct ServerMachineStats: Decodable, Equatable, Sendable {
   }
 
   public struct Cpu: Decodable, Equatable, Sendable {
+    public var model: String?
     public var cores: Int
     public var usedPercent: Double?
     public var history: [LoadSample]
