@@ -1,6 +1,6 @@
 # Custom symbols
 
-Source artwork for the custom SF Symbols in `Sources/CodevisorUI/Resources/Symbols.xcassets`. `harness-<id>.svg` is the logo for that harness; the `git-*` glyphs are [Octicons](https://github.com/primer/octicons) (MIT). Brand logos remain their owners' trademarks.
+Source artwork for the custom SF Symbols in `Sources/CodevisorUI/Resources/Symbols.xcassets`. `codevisor-mark.svg` is the Codevisor mark, `harness-<id>.svg` is the logo for that harness, and the `git-*` glyphs are [Octicons](https://github.com/primer/octicons) (MIT). Brand logos remain their owners' trademarks.
 
 Regenerate the catalog after adding or editing a source:
 

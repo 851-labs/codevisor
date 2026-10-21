@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 import UIKit
 
@@ -14,8 +15,8 @@ struct CodevisorAppIconView: View {
           .resizable()
           .interpolation(.high)
       case .missing:
-        Image("hunk")
-          .resizable()
+        CodevisorSymbol.codevisorMark.image
+          .font(.system(size: size * 0.69))
           .foregroundStyle(.tint)
       case nil:
         Color.clear

@@ -296,11 +296,8 @@ struct SessionTranscriptView: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
       transcriptExtentProbe
-      Image("hunk")
-        .resizable()
-        .renderingMode(.template)
-        .scaledToFit()
-        .frame(width: 130)
+      CodevisorSymbol.codevisorMark.image
+        .font(.system(size: 90))
         .foregroundStyle(Color.primary.opacity(0.08))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.bottom, composerHeight + 20)

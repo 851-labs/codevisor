@@ -101,10 +101,8 @@ extension HomeView {
       Label {
         Text("No Machine Connected")
       } icon: {
-        Image("hunk")
-          .resizable()
-          .scaledToFit()
-          .frame(width: 52, height: 52)
+        CodevisorSymbol.codevisorMark.image
+          .font(.system(size: 36))
           .foregroundStyle(.tertiary)
       }
     } description: {

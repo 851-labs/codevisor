@@ -145,10 +145,8 @@ struct UpdatesSettingsScreen: View {
   private func icon(for component: UpdateComponent) -> some View {
     switch component.kind {
     case .app, .server:
-      Image("CodevisorMark")
-        .resizable()
-        .scaledToFit()
-        .frame(width: 15, height: 15)
+      CodevisorSymbol.codevisorMark.image
+        .font(.system(size: 15))
     case .harness:
       HarnessGlyph(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
     case .plugin:

@@ -386,7 +386,7 @@ let package = Package(
         .copy("Resources/plugin-bridge.js"), .copy("Resources/BrowserRouting"),
         .copy("Resources/browser-navigation.js"),
         .process("Resources/FileIcons.xcassets"), .copy("Resources/FileIcons"),
-        .process("Resources/ToolIcons.xcassets"), .process("Resources/Symbols.xcassets"),
+        .process("Resources/Symbols.xcassets"),
         .copy("Resources/Octicons-LICENSE.txt"),
       ],
       swiftSettings: strictSwiftSettings

@@ -34,13 +34,8 @@ enum ToolIconMetrics {
 
 enum ToolIconKind {
   case symbol
-  case mark
   case tile
   case appIcon
-
-  init(symbol: String) {
-    self = symbol == ToolCallIcon.codevisorMark ? .mark : .symbol
-  }
 
   init(artwork: ToolCallIcon.Artwork) {
     switch artwork {
@@ -52,7 +47,6 @@ enum ToolIconKind {
   var opticalScale: CGFloat {
     switch self {
     case .symbol: 0.93
-    case .mark: 0.86
     case .tile: 0.86
     case .appIcon: 1.07
     }
