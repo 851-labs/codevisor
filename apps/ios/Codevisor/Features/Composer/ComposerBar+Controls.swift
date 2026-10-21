@@ -210,10 +210,11 @@ extension ComposerBar {
   }
 
   var hardwareQueueAction: (() -> Void)? {
-    guard controller.canQueueMessages, !controller.isGoalComposerArmed, !controller.isEditingQueuedPrompt
+    guard controller.canQueueMessages, !controller.isGoalComposerArmed, !controller.isEditingQueuedPrompt,
+      slashMatches.isEmpty
     else { return nil }
     return {
-      if canSend, slashMatches.isEmpty { submitComposer(delivery: .queue) }
+      if canSend { submitComposer(delivery: .queue) }
     }
   }
 

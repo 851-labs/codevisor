@@ -94,26 +94,23 @@ final class HeightReportingTextView: UITextView {
     guard onHardwareReturn != nil, markedTextRange == nil else { return inherited }
     let send = UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(sendFromHardwareKeyboard))
     send.wantsPriorityOverSystemBehavior = true
-    let commandSend = UIKeyCommand(
-      title: "Send Message", action: #selector(sendFromHardwareKeyboard), input: "\r", modifierFlags: .command)
-    commandSend.wantsPriorityOverSystemBehavior = true
-    return inherited + [send, commandSend] + queueKeyCommands
+    return inherited + [send, commandReturnKeyCommand]
   }
 
-  private var queueKeyCommands: [UIKeyCommand] {
-    guard onHardwareQueue != nil else { return [] }
-    let queue = UIKeyCommand(
-      title: "Queue Message", action: #selector(queueFromHardwareKeyboard), input: "\r", modifierFlags: .shift)
-    queue.wantsPriorityOverSystemBehavior = true
-    return [queue]
+  private var commandReturnKeyCommand: UIKeyCommand {
+    let title = onHardwareQueue == nil ? "Send Message" : "Queue Message"
+    let command = UIKeyCommand(
+      title: title, action: #selector(commandReturnFromHardwareKeyboard), input: "\r", modifierFlags: .command)
+    command.wantsPriorityOverSystemBehavior = true
+    return command
   }
 
   @objc private func sendFromHardwareKeyboard() {
     onHardwareReturn?()
   }
 
-  @objc private func queueFromHardwareKeyboard() {
-    onHardwareQueue?()
+  @objc private func commandReturnFromHardwareKeyboard() {
+    (onHardwareQueue ?? onHardwareReturn)?()
   }
 
   private var lastReportedHeight: CGFloat = 0

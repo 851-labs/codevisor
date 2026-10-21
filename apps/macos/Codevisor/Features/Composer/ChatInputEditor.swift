@@ -1,5 +1,6 @@
-import SwiftUI
 import AppKit
+import CodevisorCore
+import SwiftUI
 
 enum ComposerKeyCommand {
   case moveSelectionUp
@@ -433,17 +434,28 @@ final class SubmittingTextView: NSTextView {
   }
 
   private func handleReturn(_ event: NSEvent) {
-    let modifiers = event.modifierFlags
-    if modifiers.contains(.option) {
+    switch Self.returnAction(for: event) {
+    case .insertNewline:
       super.keyDown(with: event)
-      return
+    case .queue:
+      if onQueueSubmit?() != true { submitOrAcceptSelection() }
+    case .send:
+      submitOrAcceptSelection()
     }
-    if modifiers.contains(.shift) {
-      if onQueueSubmit?() != true { super.keyDown(with: event) }
-      return
-    }
+  }
+
+  private func submitOrAcceptSelection() {
     if onKeyCommand?(.acceptSelection) != true {
       onSubmit?()
     }
+  }
+
+  private static func returnAction(for event: NSEvent) -> ComposerReturnAction {
+    let modifiers = event.modifierFlags
+    return ComposerReturnAction(
+      shift: modifiers.contains(.shift),
+      option: modifiers.contains(.option),
+      command: modifiers.contains(.command)
+    )
   }
 }

@@ -34,6 +34,7 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case browserResetZoom
 
   case composerSend
+  case composerQueue
   case composerNewline
   case composerDismissSuggestions
 
@@ -194,9 +195,15 @@ enum ShortcutCatalog {
         .composerSend, "Send Message", ShortcutCombo(.return),
         category: .composer, context: "While the composer has focus"
       )
+    case .composerQueue:
+      ShortcutDefinition(
+        .composerQueue, "Queue Message", ShortcutCombo(.return, .command),
+        category: .composer, context: "While an agent is working"
+      )
     case .composerNewline:
       ShortcutDefinition(
         .composerNewline, "Insert Line Break", ShortcutCombo(.return, .shift),
+        alternates: [ShortcutCombo(.return, .option)],
         category: .composer, context: "While the composer has focus"
       )
     case .composerDismissSuggestions:
