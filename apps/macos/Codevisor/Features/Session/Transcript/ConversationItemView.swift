@@ -68,8 +68,8 @@ struct BotMessageView: View {
         text: content.text,
         attachments: []
       ) {
-        StreamingMarkdownView(content.text)
-          .frame(maxWidth: TranscriptBotMessageWidth.natural(of: content.text), alignment: .leading)
+        StreamingMarkdownView(content.markdown)
+          .transcriptBotMessageWidth(fitting: content.markdown)
       }
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0, inline: true) }
     }

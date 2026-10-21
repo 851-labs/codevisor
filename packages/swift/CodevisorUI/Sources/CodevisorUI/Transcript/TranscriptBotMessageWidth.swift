@@ -1,3 +1,4 @@
+import StreamMarkdown
 import SwiftUI
 
 #if canImport(UIKit)
@@ -30,5 +31,15 @@ public enum TranscriptBotMessageWidth {
       widest = max(widest, ceil(width + indent + codeSpans * 14 + (inFence ? 24 : 4)))
     }
     return max(widest, 1)
+  }
+}
+
+extension View {
+  public func transcriptBotMessageWidth(fitting markdown: String) -> some View {
+    let natural = TranscriptBotMessageWidth.natural(of: markdown)
+    return transformEnvironment(\.streamMarkdownTextLayoutWidth) { width in
+      width = width.map { min($0, natural) }
+    }
+    .frame(maxWidth: natural, alignment: .leading)
   }
 }
