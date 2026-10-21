@@ -5,14 +5,14 @@ import SwiftUI
 struct BotConversationScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.windowID) private var windowID
-  @Environment(\.hostedBotHeaderHeight) private var hostedHeaderHeight
+  @Environment(\.hostedBotHeaderWindowBottom) private var hostedHeaderWindowBottom
   let serverId: String
   let botId: UUID
   var showsHeader = true
   let onOpenDetails: (Bot) -> Void
   let onNewTab: (Bot) -> Void
   @State private var controller: SessionController?
-  @State private var headerHeight: CGFloat = 0
+  @State private var headerWindowBottom: CGFloat = 0
 
   private var bot: Bot? { environment.bots.bot(serverId: serverId, id: botId) }
 
@@ -29,10 +29,8 @@ struct BotConversationScreen: View {
           if showsHeader {
             ToolbarItem(placement: .principal) {
               BotConversationHeader(bot: bot) { onOpenDetails(bot) }
-                .onGeometryChange(for: CGFloat.self) {
-                  $0.size.height
-                } action: {
-                  headerHeight = $0
+                .background {
+                  WindowFrameProbe { headerWindowBottom = $0.maxY }
                 }
                 .frame(height: BotConversationHeader.barHeight, alignment: .top)
             }
@@ -59,8 +57,7 @@ struct BotConversationScreen: View {
           controller: controller
         ),
         preservesComposerFocusOnSend: true,
-        topContentClearance: BotConversationHeader.transcriptClearance(
-          forHeight: showsHeader ? headerHeight : hostedHeaderHeight)
+        topChromeWindowBottom: showsHeader ? headerWindowBottom : hostedHeaderWindowBottom
       )
       .id(bot.sessionId)
     } else if bot == nil {

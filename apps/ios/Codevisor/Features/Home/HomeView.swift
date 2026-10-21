@@ -43,7 +43,7 @@ struct HomeView: View {
   @State var pendingDeviceApproval: CloudDeviceApprovalRequest?
   @State var pendingPluginInstall: PendingPluginInstall?
   @State var botEditor: BotEditorTarget?
-  @State var botHeaderHeight: CGFloat = 0
+  @State var botHeaderWindowBottom: CGFloat = 0
   @State var deletingBot: Bot?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""

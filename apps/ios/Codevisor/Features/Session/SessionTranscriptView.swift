@@ -28,7 +28,7 @@ struct SessionTranscriptView: View {
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   var preservesComposerFocusOnSend = false
   var tracksKeyboardInset = true
-  var topContentClearance: CGFloat = 0
+  var topChromeWindowBottom: CGFloat = 0
   var layoutNamespaceToken: UUID? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var composerTextEditorHandoffID: UUID? = nil
@@ -409,7 +409,15 @@ struct SessionTranscriptView: View {
 
 extension SessionTranscriptView {
   var composerMaxHeight: CGFloat {
-    max(160, visibleChatHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
+    max(
+      160,
+      visibleChatHeight - topContentClearance - Self.composerBottomMargin - 6 - composerAccessoryHeight
+    )
+  }
+
+  var topContentClearance: CGFloat {
+    guard offeredChatWindowFrame.height > 0, topChromeWindowBottom > 0 else { return 0 }
+    return max(0, topChromeWindowBottom - offeredChatWindowFrame.minY)
   }
 
   @ViewBuilder

@@ -4,10 +4,6 @@ import SwiftUI
 struct BotConversationHeader: View {
   static let barHeight: CGFloat = 56
 
-  static func transcriptClearance(forHeight height: CGFloat) -> CGFloat {
-    max(0, height - barHeight)
-  }
-
   let bot: Bot
   let onOpenDetails: () -> Void
   @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 56
@@ -40,5 +36,5 @@ struct BotConversationHeader: View {
 }
 
 extension EnvironmentValues {
-  @Entry var hostedBotHeaderHeight: CGFloat = 0
+  @Entry var hostedBotHeaderWindowBottom: CGFloat = 0
 }
