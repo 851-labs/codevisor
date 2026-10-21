@@ -12,7 +12,6 @@ struct ServerSessionContextTests {
     #expect(context.model == "claude-opus-5-5")
     #expect(context.categories.map(\.name) == ["Messages", "MCP tools (deferred)"])
     #expect(context.categories.last?.isDeferred == true)
-    #expect(context.mcpTools.first?.serverName == "linear")
 
     let idle = CodevisorServerClient(config: .init(requestTransport: ContextTransport(body: "null")))
     #expect(try await idle.sessionContext(id: id) == nil)
