@@ -135,7 +135,8 @@ import {
   GatewayInvokeRequest,
   GatewayInvokeResponse,
   MachineInviteResponse,
-  MachinesResponse
+  MachinesResponse,
+  MachineStats
 } from "./machines.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
@@ -345,6 +346,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/jobs/:jobId/wait": WaitForExecutionJobResponse,
   "POST /v1/jobs/:jobId/cancel": ExecutionJob,
   "GET /v1/machines": MachinesResponse,
+  "GET /v1/machine/stats": MachineStats,
   "POST /v1/machines/invite": MachineInviteResponse,
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,

@@ -39,6 +39,7 @@ import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js
 import { makeLinkPreviewStore } from "./infra/link-previews.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { guessMachineIcon } from "./infra/machine-icon.js"
+import { makeMachineStatsSampler } from "./infra/machine-stats.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
@@ -355,6 +356,7 @@ export const runServe = (
           ...(mcp === undefined ? {} : { mcpSources: mcp.iconSources })
         }),
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
+        machineStats: makeMachineStatsSampler(),
         machines: machineLink,
         machineEnrollment,
         usageLimits: makeUsageLimitsCache({

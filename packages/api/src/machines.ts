@@ -48,3 +48,28 @@ export type GatewayInvokeRequest = typeof GatewayInvokeRequest.Type
 
 export const GatewayInvokeResponse = Schema.Struct({ result: Schema.Unknown })
 export type GatewayInvokeResponse = typeof GatewayInvokeResponse.Type
+
+export const MachineStatsUsage = Schema.Struct({
+  usedBytes: Schema.Number,
+  totalBytes: Schema.Number
+})
+export type MachineStatsUsage = typeof MachineStatsUsage.Type
+
+export const MachineCpuSample = Schema.Struct({
+  at: Schema.String,
+  usedPercent: Schema.Number
+})
+export type MachineCpuSample = typeof MachineCpuSample.Type
+
+export const MachineStats = Schema.Struct({
+  sampledAt: Schema.String,
+  uptimeSeconds: Schema.Number,
+  cpu: Schema.Struct({
+    cores: Schema.Number,
+    usedPercent: Schema.optional(Schema.Number),
+    history: Schema.Array(MachineCpuSample)
+  }),
+  memory: MachineStatsUsage,
+  disk: Schema.optional(MachineStatsUsage)
+})
+export type MachineStats = typeof MachineStats.Type

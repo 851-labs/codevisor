@@ -18,6 +18,7 @@ import { routeFs } from "./routes/fs.js"
 import { routeGatewayInvoke } from "./routes/gateway-invoke.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeLinkPreviews } from "./routes/link-previews.js"
+import { routeMachineStats } from "./routes/machine-stats.js"
 import { routeMachineMcps } from "./routes/mcp-machine.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeNetDirect } from "./routes/net-direct.js"
@@ -342,6 +343,9 @@ export const handleRequest = async (
       return
     }
     if (await routeLinkPreviews(services, request, response, url)) {
+      return
+    }
+    if (await routeMachineStats(services, request, response, url)) {
       return
     }
     if (await routeMcps(services, request, response, url)) {
