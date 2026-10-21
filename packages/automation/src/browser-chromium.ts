@@ -128,21 +128,51 @@ export const managedBrowserStartupTimeoutMs = 90_000
 
 const launchedProfiles = new Set<string>()
 
-export const launchManagedBrowser = async (
+interface LaunchedBrowser {
+  readonly connection: CdpConnection
+  readonly processHandle: ChildProcess
+}
+
+const managedUserAgents = new Map<string, string>()
+
+export const headedUserAgent = (version: {
+  readonly product: string
+  readonly userAgent: string
+}): string | undefined => {
+  if (version.userAgent.includes("HeadlessChrome/"))
+    return version.userAgent.replace("HeadlessChrome/", "Chrome/")
+  const product = /\/(\d+)\./.exec(version.product)?.[1]
+  const reported = /Chrome\/(\d+)\./.exec(version.userAgent)?.[1]
+  return product === reported ? version.userAgent : undefined
+}
+
+const stopLaunchedBrowser = async ({ connection, processHandle }: LaunchedBrowser) => {
+  const exited = new Promise<void>((resolve) => {
+    if (processHandle.exitCode !== null || processHandle.signalCode !== null) return resolve()
+    const kill = setTimeout(() => processHandle.kill("SIGKILL"), 2_000)
+    processHandle.once("exit", () => {
+      clearTimeout(kill)
+      resolve()
+    })
+  })
+  await connection.send("Browser.close").catch(() => processHandle.kill("SIGTERM"))
+  await exited
+  await connection.close().catch(() => undefined)
+}
+
+const closeInheritedBrowser = async (connection: CdpConnection) => {
+  await connection.sendOnce("Browser.close", {}, undefined, 5_000).catch(() => undefined)
+  const deadline = Date.now() + 5_000
+  while (!connection.closed && Date.now() < deadline) await delay(100)
+  await connection.close().catch(() => undefined)
+}
+
+const startManagedBrowser = async (
   executablePath: string,
-  profileDir: string
-): Promise<{
-  connection: CdpConnection
-  processHandle?: ChildProcess
-  inherited?: boolean
-}> => {
-  const existing = await connectExistingProfile(profileDir)
-  if (existing !== undefined) {
-    return {
-      connection: existing,
-      ...(launchedProfiles.has(profileDir) ? {} : { inherited: true })
-    }
-  }
+  profileDir: string,
+  headless: boolean,
+  userAgent: string | undefined
+): Promise<LaunchedBrowser> => {
   rmSync(join(profileDir, "DevToolsActivePort"), { force: true })
   launchedProfiles.add(profileDir)
   const processHandle = spawn(
@@ -161,7 +191,8 @@ export const launchManagedBrowser = async (
         uid: process.getuid?.(),
         containerized: linuxContainerRuntime()
       }),
-      ...(managedBrowserHeadless(process.platform, process.env) ? ["--headless=new"] : []),
+      ...(headless ? ["--headless=new"] : []),
+      ...(userAgent === undefined ? [] : [`--user-agent=${userAgent}`]),
       "--no-startup-window"
     ],
     { stdio: "ignore" }
@@ -188,6 +219,34 @@ export const launchManagedBrowser = async (
   throw new Error("Timed out waiting for Chromium's debugging endpoint")
 }
 
+export const launchManagedBrowser = async (
+  executablePath: string,
+  profileDir: string
+): Promise<{
+  connection: CdpConnection
+  processHandle?: ChildProcess
+}> => {
+  const existing = await connectExistingProfile(profileDir)
+  if (existing !== undefined) {
+    if (launchedProfiles.has(profileDir)) return { connection: existing }
+    await closeInheritedBrowser(existing)
+  }
+  if (!managedBrowserHeadless(process.env))
+    return startManagedBrowser(executablePath, profileDir, false, undefined)
+  for (let attempt = 0; ; attempt += 1) {
+    const userAgent = managedUserAgents.get(executablePath)
+    const launched = await startManagedBrowser(executablePath, profileDir, true, userAgent)
+    const version = await launched.connection
+      .send<{ product: string; userAgent: string }>("Browser.getVersion")
+      .catch(() => undefined)
+    const wanted = version === undefined ? undefined : headedUserAgent(version)
+    if (version === undefined || wanted === version.userAgent || attempt === 2) return launched
+    if (wanted === undefined) managedUserAgents.delete(executablePath)
+    else managedUserAgents.set(executablePath, wanted)
+    await stopLaunchedBrowser(launched)
+  }
+}
+
 export const userChromiumIsRunning = (): boolean => {
   if (process.env.CODEVISOR_BROWSER_CDP_URL !== undefined) return true
   if (process.platform !== "darwin" && process.platform !== "linux") return false
@@ -198,9 +257,5 @@ export const userChromiumIsRunning = (): boolean => {
   return names.some((name) => spawnSync("pgrep", ["-x", name], { stdio: "ignore" }).status === 0)
 }
 
-export const managedBrowserHeadless = (platform: string, env: NodeJS.ProcessEnv): boolean =>
-  env.CODEVISOR_BROWSER_HEADLESS === "1" ||
-  (env.CODEVISOR_BROWSER_HEADLESS !== "0" &&
-    platform === "linux" &&
-    !env.DISPLAY &&
-    !env.WAYLAND_DISPLAY)
+export const managedBrowserHeadless = (env: NodeJS.ProcessEnv): boolean =>
+  env.CODEVISOR_BROWSER_HEADLESS !== "0"

@@ -12,6 +12,7 @@ class ChromiumRuntime final {
   void SchedulePump(int64_t delay);
   void Shutdown(void (^completion)(void));
   bool HasRequestedShutdown() const { return shutdownCompletion_ != nil; }
+  bool IsPumping() const { return pumping_; }
   void BrowserDidOpen(CefRefPtr<CefBrowser> browser);
   void BrowserDidClose(CefRefPtr<CefBrowser> browser);
   void ObserveZoom(CVChromiumView *view);

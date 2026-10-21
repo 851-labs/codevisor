@@ -1,5 +1,11 @@
 import { AgentRuntimeError } from "@codevisor/agent-runtime"
-import type { AttachmentRef, EventEnvelope, PromptOrigin, PromptQueueItem } from "@codevisor/api"
+import type {
+  AttachmentRef,
+  ConnectedClient,
+  EventEnvelope,
+  PromptOrigin,
+  PromptQueueItem
+} from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
@@ -213,7 +219,9 @@ export const drainPromptQueue = async (
         item.id,
         item.text,
         item.attachments,
-        item.clientId,
+        item.clientId === undefined
+          ? undefined
+          : { clientId: item.clientId, platform: clientPlatform(routeState, item.clientId) },
         item.origin
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
@@ -376,6 +384,14 @@ const recordUserPrompt = (
   )
 }
 
+const clientPlatform = (
+  routeState: RouteState,
+  clientId: string
+): ConnectedClient["platform"] | undefined =>
+  routeState.clientControl
+    ?.list()
+    .find((client) => client.clientId.toLowerCase() === clientId.toLowerCase())?.platform
+
 const runPromptInBackground = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -384,7 +400,10 @@ const runPromptInBackground = async (
   queueItemId: string,
   text: string,
   attachments?: ReadonlyArray<AttachmentRef>,
-  clientId?: string,
+  client?: {
+    readonly clientId: string
+    readonly platform: ConnectedClient["platform"] | undefined
+  },
   origin?: PromptOrigin
 ): Promise<void> => {
   try {
@@ -396,9 +415,12 @@ const runPromptInBackground = async (
       origin,
       startsTurn: true
     })
-    await (clientId === undefined
+    await (client === undefined
       ? services.mcp?.beginTurn(sessionId)
-      : services.mcp?.beginTurn(sessionId, { clientId }))
+      : services.mcp?.beginTurn(sessionId, {
+          clientId: client.clientId,
+          ...(client.platform === undefined ? {} : { clientPlatform: client.platform })
+        }))
     await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     const input = await promptInput(

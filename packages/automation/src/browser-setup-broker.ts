@@ -2,31 +2,40 @@ import { randomUUID } from "node:crypto"
 
 import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import type { QuestionResolvedPayload, QuestionSpec } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
-import { Effect } from "effect"
 
-import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
+import type { BrowserClientPlatform, BrowserUseProvider } from "./browser-use-provider-types.js"
+
+export const EXTENSION_INSTALL_PROMPT_MS = 10 * 60_000
+const DEADLINE_MARGIN_MS = 1_000
+
+export type ExtensionInstallOutcome =
+  | { readonly outcome: "installed" }
+  | { readonly outcome: "dismissed"; readonly note?: string }
+  | { readonly outcome: "timeout" }
+
+export interface ExtensionInstallRequest {
+  readonly signal?: AbortSignal | undefined
+  readonly deadline?: number | undefined
+}
+
+type Settled = QuestionAnswer | { readonly outcome: "closed" }
 
 interface PendingQuestion {
   readonly sessionId: string
   readonly questions: ReadonlyArray<QuestionSpec>
-  readonly resolve: (answer: QuestionAnswer) => void
+  readonly resolve: (answer: Settled) => void
 }
-
-interface AskedQuestion {
-  readonly questionId: string
-  readonly answer: Promise<QuestionAnswer>
-}
-
-type BrowserChoice = BrowserBackend | "back"
 
 export interface BrowserSetupBroker {
-  readonly beginTurn: (sessionId: string) => Promise<void>
-  readonly setSink: (sessionId: string, sink: RuntimeEventSink) => void
-  readonly resolveBackend: (
+  readonly beginTurn: (
     sessionId: string,
-    requested?: BrowserBackend
-  ) => Promise<BrowserBackend>
+    options?: { readonly clientPlatform?: BrowserClientPlatform | undefined }
+  ) => Promise<void>
+  readonly setSink: (sessionId: string, sink: RuntimeEventSink) => void
+  readonly requestExtensionInstall: (
+    sessionId: string,
+    request: ExtensionInstallRequest
+  ) => Promise<ExtensionInstallOutcome>
   readonly answerQuestion: (
     sessionId: string,
     questionId: string,
@@ -35,8 +44,6 @@ export interface BrowserSetupBroker {
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly close: () => Promise<void>
 }
-
-const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
 const selectedAnswer = (
   answer: QuestionAnswer
@@ -51,21 +58,9 @@ const selectedAnswer = (
   }
 }
 
-const rejection = (answer: QuestionAnswer): Error => {
-  const note = selectedAnswer(answer).note
-  return new Error(
-    note === undefined ? "The user rejected Browser Use." : `The user rejected Browser Use: ${note}`
-  )
-}
-
-export const makeBrowserSetupBroker = (
-  db: Pick<CodevisorDatabaseService, "getBrowserPreference" | "setBrowserPreference">,
-  provider: BrowserUseProvider
-): BrowserSetupBroker => {
+export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSetupBroker => {
   const sinks = new Map<string, RuntimeEventSink>()
   const pending = new Map<string, PendingQuestion>()
-  const active = new Map<string, Promise<BrowserBackend>>()
-  const preferences = new Map<string, string | undefined>()
 
   const emit = async (sessionId: string, payload: unknown): Promise<void> => {
     const sink = sinks.get(sessionId)
@@ -73,23 +68,14 @@ export const makeBrowserSetupBroker = (
     await sink({ kind: "session.output", subjectId: sessionId, payload })
   }
 
-  const ask = async (
-    sessionId: string,
-    question: QuestionSpec,
-    message?: string
-  ): Promise<AskedQuestion> => {
+  const ask = async (sessionId: string, question: QuestionSpec) => {
     const questionId = `browser-setup:${randomUUID()}`
     const questions = [question]
-    const answer = new Promise<QuestionAnswer>((resolve) => {
+    const answer = new Promise<Settled>((resolve) => {
       pending.set(questionId, { sessionId, questions, resolve })
     })
     try {
-      await emit(sessionId, {
-        questionId,
-        questions,
-        sessionUpdate: "question",
-        ...(message === undefined ? {} : { message })
-      })
+      await emit(sessionId, { questionId, questions, sessionUpdate: "question" })
     } catch (cause) {
       pending.delete(questionId)
       throw cause
@@ -97,192 +83,97 @@ export const makeBrowserSetupBroker = (
     return { questionId, answer }
   }
 
-  const resolveAutomatically = async (questionId: string): Promise<boolean> => {
+  const resolveQuestion = async (questionId: string, outcome: "autoResolved" | "cancelled") => {
     const current = pending.get(questionId)
-    if (current === undefined) return false
+    if (current === undefined) return
     pending.delete(questionId)
     const resolved: QuestionResolvedPayload = {
-      outcome: "autoResolved",
+      outcome,
       questionId,
       questions: current.questions,
       sessionUpdate: "question_resolved"
     }
-    await emit(current.sessionId, resolved)
-    current.resolve({
-      outcome: "answered",
-      answers: { browser_preference: { answers: ["Use Codevisor Extension"] } }
-    })
-    return true
+    await emit(current.sessionId, resolved).catch(() => undefined)
   }
 
-  const remember = async (backend: BrowserBackend): Promise<BrowserBackend> => {
-    await run(db.setBrowserPreference(backend === "extension" ? "chrome" : backend))
-    return backend
+  const installed = (sessionId: string): ExtensionInstallOutcome => {
+    provider.setSessionBackend(sessionId, "extension")
+    return { outcome: "installed" }
   }
 
-  const waitForConnectionOrAnswer = async (
-    asked: AskedQuestion
-  ): Promise<"connected" | QuestionAnswer> => {
-    if (provider.status().extensionConnected) {
-      await resolveAutomatically(asked.questionId)
-      return "connected"
-    }
-    const { promise: connected, resolve } = Promise.withResolvers<"connected">()
-    const unsubscribe = provider.onExtensionConnectionChange((isConnected) => {
-      if (isConnected) resolve("connected")
-    })
-    const result = await Promise.race([asked.answer, connected])
-    unsubscribe()
-    if (result === "connected") await resolveAutomatically(asked.questionId)
-    return result
-  }
-
-  const chromeSetup = async (
+  const requestExtensionInstall = async (
     sessionId: string,
-    persistPreference = true
-  ): Promise<BrowserChoice> => {
-    const finish = (backend: BrowserBackend): Promise<BrowserBackend> =>
-      persistPreference ? remember(backend) : Promise.resolve(backend)
-    if (await provider.awaitExtensionReconnect()) return finish("extension")
-    let installerOpened = false
-    while (true) {
-      if (provider.status().extensionConnected) return finish("extension")
-      const setup = await ask(sessionId, {
-        id: "browser_preference",
-        header: installerOpened ? "Finish in Chrome" : "Connect Chrome",
-        question: "Drag the Codevisor extension into the Extensions page in Chrome.",
-        options: [
-          {
-            label: "Open Extensions",
-            description: "Open the Extensions page in Chrome."
-          }
-        ],
-        multiSelect: false,
-        allowsOther: false,
-        backOptionLabel: "Back",
-        presentation: installerOpened ? "browserExtensionWaiting" : "browserExtensionSetup"
-      })
-      const result = await waitForConnectionOrAnswer(setup)
-      if (result === "connected") return finish("extension")
-      if (result.outcome !== "answered") throw rejection(result)
-      switch (selectedAnswer(result).label) {
-        case "Back":
-          return "back"
-        case "Open Extensions":
-          await provider.openDevelopmentExtensionPage()
-          installerOpened = true
-          break
-        default:
-          throw rejection(result)
-      }
-    }
-  }
-
-  const choose = async (sessionId: string): Promise<BrowserBackend> => {
-    while (true) {
-      const chromeAvailable = provider.status().chromeAvailable
-      const choice = await ask(sessionId, {
-        id: "browser_preference",
-        header: "Browser Use",
-        question: "Which browser should I use?",
-        options: [
-          {
-            label: "Use Built-in Browser",
-            description:
-              "Use a Codevisor browser pane on this machine, with independent Chromium as fallback."
-          },
-          ...(chromeAvailable
-            ? [
-                {
-                  label: "Use Codevisor Extension",
-                  description:
-                    "Use Chrome on the machine running this chat and share task-relevant browser data."
-                }
-              ]
-            : []),
-          {
-            label: "Use Chromium",
-            description: "Use a separate browser managed by Codevisor."
-          }
-        ],
-        multiSelect: false,
-        allowsOther: false,
-        presentation: "browserChoice"
-      })
-      const answer = await choice.answer
-      if (answer.outcome !== "answered") throw rejection(answer)
-      switch (selectedAnswer(answer).label) {
-        case "Use Built-in Browser":
-          return remember("builtin")
-        case "Use Chromium":
-          return remember("managed")
-        case "Use Codevisor Extension": {
-          const configured = await chromeSetup(sessionId)
-          if (configured !== "back") return configured
-          break
-        }
-        default:
-          throw rejection(answer)
-      }
-    }
-  }
-
-  const resolveBackend = async (
-    sessionId: string,
-    requested?: BrowserBackend
-  ): Promise<BrowserBackend> => {
-    const session = provider.sessionBackend(sessionId)
-    if (
-      session !== undefined &&
-      requested === undefined &&
-      (session !== "extension" || provider.status().extensionConnected)
+    { signal, deadline }: ExtensionInstallRequest
+  ): Promise<ExtensionInstallOutcome> => {
+    if (provider.status().extensionConnected) return installed(sessionId)
+    if (!provider.status().chromeAvailable)
+      throw new Error("Google Chrome isn't installed on the machine running this chat.")
+    signal?.throwIfAborted()
+    const limit = Math.min(
+      EXTENSION_INSTALL_PROMPT_MS,
+      (deadline ?? Infinity) - DEADLINE_MARGIN_MS - performance.now()
     )
-      return session
-    if (requested === "managed" || requested === "builtin") {
-      provider.setSessionBackend(sessionId, requested)
-      return requested
-    }
-    const existing = active.get(sessionId)
-    if (existing !== undefined) return existing
-    const resolving = (async () => {
-      let backend: BrowserBackend
-      if (requested === "extension") {
-        const configured = await chromeSetup(sessionId, false)
-        backend = configured === "back" ? await choose(sessionId) : configured
-      } else {
-        const preference = preferences.has(sessionId)
-          ? preferences.get(sessionId)
-          : await run(db.getBrowserPreference)
-        if (preference === "managed") backend = "managed"
-        else if (preference === "chrome" && provider.status().extensionConnected) {
-          backend = "extension"
-        } else if (preference === "chrome" && provider.status().chromeAvailable) {
-          const configured = await chromeSetup(sessionId)
-          backend = configured === "back" ? await choose(sessionId) : configured
-        } else if (preference === "chrome") {
-          throw new Error(
-            "Codevisor Extension requires Chrome on the server machine. Choose Built-in Browser or Chromium in Browser Use settings."
-          )
-        } else backend = "builtin"
+    if (limit <= 0) return { outcome: "timeout" }
+    const { promise: stopped, resolve: stop } = Promise.withResolvers<
+      "connected" | "timeout" | "interrupted"
+    >()
+    const unsubscribe = provider.onExtensionConnectionChange((connected) => {
+      if (connected) stop("connected")
+    })
+    const timer = setTimeout(() => stop("timeout"), limit)
+    const interrupt = () => stop("interrupted")
+    signal?.addEventListener("abort", interrupt, { once: true })
+    try {
+      let waiting = false
+      while (true) {
+        if (provider.status().extensionConnected) return installed(sessionId)
+        const asked = await ask(sessionId, {
+          id: "browser_preference",
+          header: waiting ? "Finish in Chrome" : "Connect Chrome",
+          question: "Drag the Codevisor extension into the Extensions page in Chrome.",
+          options: [
+            {
+              label: "Open Extensions",
+              description: "Open the Extensions page in Chrome."
+            }
+          ],
+          multiSelect: false,
+          allowsOther: false,
+          presentation: waiting ? "browserExtensionWaiting" : "browserExtensionSetup"
+        })
+        const result = await Promise.race([asked.answer, stopped])
+        if (result === "connected") {
+          await resolveQuestion(asked.questionId, "autoResolved")
+          return installed(sessionId)
+        }
+        if (result === "timeout") {
+          await resolveQuestion(asked.questionId, "cancelled")
+          return { outcome: "timeout" }
+        }
+        if (result === "interrupted") {
+          await resolveQuestion(asked.questionId, "cancelled")
+          throw new Error("The Chrome extension prompt was interrupted before the user answered.")
+        }
+        if (result.outcome === "closed")
+          throw new Error("The chat closed before the user answered the Chrome extension prompt.")
+        if (result.outcome !== "answered") return { outcome: "dismissed" }
+        const { label, note } = selectedAnswer(result)
+        if (label !== "Open Extensions")
+          return { outcome: "dismissed", ...(note === undefined ? {} : { note }) }
+        await provider.openDevelopmentExtensionPage()
+        waiting = true
       }
-      provider.setSessionBackend(sessionId, backend)
-      return backend
-    })().finally(() => active.delete(sessionId))
-    active.set(sessionId, resolving)
-    return resolving
+    } finally {
+      clearTimeout(timer)
+      unsubscribe()
+      signal?.removeEventListener("abort", interrupt)
+    }
   }
 
   return {
-    beginTurn: async (sessionId) => {
-      const preference = await run(db.getBrowserPreference)
-      preferences.set(sessionId, preference)
-      await provider.beginTurn(
-        sessionId,
-        preference === "chrome" ? "extension" : preference === "managed" ? "managed" : "builtin"
-      )
-    },
+    beginTurn: (sessionId, options) => provider.beginTurn(sessionId, options),
     setSink: (sessionId, sink) => sinks.set(sessionId, sink),
-    resolveBackend,
+    requestExtensionInstall,
     answerQuestion: async (sessionId, questionId, answer) => {
       const current = pending.get(questionId)
       if (current === undefined || current.sessionId !== sessionId) return false
@@ -301,20 +192,16 @@ export const makeBrowserSetupBroker = (
       return true
     },
     closeSession: async (sessionId) => {
-      preferences.delete(sessionId)
       sinks.delete(sessionId)
       for (const [questionId, current] of pending) {
         if (current.sessionId !== sessionId) continue
         pending.delete(questionId)
-        current.resolve({ outcome: "cancelled" })
+        current.resolve({ outcome: "closed" })
       }
-      active.delete(sessionId)
     },
     close: async () => {
-      preferences.clear()
-      for (const current of pending.values()) current.resolve({ outcome: "cancelled" })
+      for (const current of pending.values()) current.resolve({ outcome: "closed" })
       pending.clear()
-      active.clear()
       sinks.clear()
     }
   }

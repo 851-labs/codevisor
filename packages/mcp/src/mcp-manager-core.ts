@@ -127,7 +127,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     [codevisorProvider.id, codevisorProvider]
   ])
   const extensionFlowSupported = config.serverKind !== "remote"
-  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider)
+  const browserSetupBroker = makeBrowserSetupBroker(browserProvider)
   const builtinProviderState = (
     id: BuiltinMcpId,
     enabled: boolean

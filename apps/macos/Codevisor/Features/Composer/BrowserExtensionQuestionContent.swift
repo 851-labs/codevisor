@@ -10,7 +10,6 @@ struct BrowserExtensionQuestionContent: View {
   let canInstallLocally: Bool
   @Binding var didOpenBrowserExtensions: Bool
   let cancel: () -> Void
-  let submitBack: (String) -> Void
   let performSetupAction: (String) -> Void
   let showDragStage: (Bool) -> Void
 
@@ -63,11 +62,6 @@ struct BrowserExtensionQuestionContent: View {
               showDragStage(false)
             }
           } else {
-            if let backOptionLabel = question.backOptionLabel {
-              navButton("arrow.left", help: "Back") {
-                submitBack(backOptionLabel)
-              }
-            }
             navButton("arrow.right", help: "Continue to Install Extension") {
               showDragStage(true)
             }
@@ -114,17 +108,10 @@ struct BrowserExtensionQuestionContent: View {
           .fill(Color.secondary.opacity(0.08))
       )
 
-      HStack(spacing: 8) {
-        waitingIndicator
-        Spacer(minLength: 8)
-        if let backOptionLabel = question.backOptionLabel {
-          ComposerNavigationButton(
-            systemImage: "arrow.left",
-            help: "Back to Browser Choices",
-            accessibilityLabel: "Back to Browser Choices"
-          ) {
-            submitBack(backOptionLabel)
-          }
+      if isWaiting {
+        HStack(spacing: 8) {
+          waitingIndicator
+          Spacer(minLength: 8)
         }
       }
     }

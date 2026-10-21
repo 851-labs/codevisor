@@ -10,7 +10,7 @@ import Observation
 final class ChromiumBrowserModel {
   let machineName: String
   let paneId: UUID
-  let isLocal: Bool
+  nonisolated let machineId: String
   let suggestions: BrowserSuggestions
   private(set) var webView: CVChromiumView?
   private(set) var url: URL?
@@ -34,7 +34,6 @@ final class ChromiumBrowserModel {
   @ObservationIgnored var automationInitialURL: String?
   @ObservationIgnored private var readyWaiters: [CheckedContinuation<CVChromiumView, Error>] = []
   @ObservationIgnored var onNavigate: ((String, String) -> Void)?
-  @ObservationIgnored private let machineId: String
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
@@ -50,12 +49,11 @@ final class ChromiumBrowserModel {
   @ObservationIgnored var onSelect: (() -> Void)?
 
   init(
-    paneId: UUID, machineId: String, machineName: String, initialURL: String?, isLocal: Bool = false,
+    paneId: UUID, machineId: String, machineName: String, initialURL: String?,
     client: any CodevisorServerClienting,
     resolveBaseURL: @escaping @MainActor () async -> URL?
   ) {
     self.paneId = paneId
-    self.isLocal = isLocal
     paneSync = BrowserPaneSync(paneId: paneId, client: client)
     self.machineId = machineId
     self.machineName = machineName
@@ -97,7 +95,7 @@ final class ChromiumBrowserModel {
         )
         wireView(view, token: token)
         webView = view
-        if isLocal { ChromiumAutomationBridge.shared.register(self) }
+        ChromiumAutomationBridge.shared.register(self)
         if needsBackgroundHost { hostInBackgroundIfNeeded(view) }
       } catch {
         guard !Task.isCancelled, generation == token else { return }
@@ -116,7 +114,7 @@ final class ChromiumBrowserModel {
     isLoading = true
     wireView(view, token: generation, adopted: true)
     webView = view
-    if isLocal { ChromiumAutomationBridge.shared.register(self) }
+    ChromiumAutomationBridge.shared.register(self)
     hostInBackgroundIfNeeded(view)
   }
 
@@ -196,7 +194,7 @@ final class ChromiumBrowserModel {
             self.synchronized = true
             self.paneSync.recordLoadedCookies(self.cookieSync)
             self.completeReady(.success(view))
-            if self.isLocal { ChromiumAutomationBridge.shared.register(self) }
+            ChromiumAutomationBridge.shared.register(self)
             return
           }
           try await self.cookieSync?.synchronize()
@@ -209,7 +207,7 @@ final class ChromiumBrowserModel {
               .absoluteString ?? "https://www.google.com/")
           self.automationInitialURL = nil
           self.completeReady(.success(view))
-          if self.isLocal { ChromiumAutomationBridge.shared.register(self) }
+          ChromiumAutomationBridge.shared.register(self)
         } catch {
           self.errorMessage = "Couldn’t synchronize browser state. \(error.localizedDescription)";
           self.completeReady(.failure(error))

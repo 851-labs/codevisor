@@ -311,7 +311,6 @@ export interface BrowserExtensionSocket extends CdpSocket {
   close(code?: number, reason?: string): void
 }
 
-export const EXTENSION_RECONNECT_GRACE_MS = 40_000
 export const EXTENSION_READY_PROBE_MS = 1_000
 
 const extensionReady = async (connection: CdpConnection): Promise<boolean> => {
@@ -332,7 +331,6 @@ export interface BrowserExtensionRelay {
   readonly connect: () => Promise<CdpConnection>
   readonly accept: (socket: BrowserExtensionSocket) => void
   readonly connected: () => boolean
-  readonly reconnected: () => Promise<boolean>
   readonly onConnectionChange: (listener: (connected: boolean) => void) => () => void
   readonly close: () => Promise<void>
 }
@@ -343,9 +341,7 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
     | undefined
   const waiters = new Set<(connection: CdpConnection) => void>()
   const listeners = new Set<(connected: boolean) => void>()
-  const reconnects = new Set<(connected: boolean) => void>()
   let closed = false
-  let droppedAt = Date.now()
   const notify = (connected: boolean) => {
     for (const listener of listeners) listener(connected)
   }
@@ -356,12 +352,10 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
     socket.once("close", () => {
       if (active !== next) return
       active = undefined
-      droppedAt = Date.now()
       notify(false)
     })
     for (const resolve of waiters) resolve(connection)
     waiters.clear()
-    for (const finish of reconnects) finish(true)
     notify(true)
     if (previous !== undefined) void previous.connection.close().catch(() => undefined)
   }
@@ -383,20 +377,6 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
       })
     },
     connected: () => active !== undefined,
-    reconnected: () => {
-      if (active !== undefined) return Promise.resolve(true)
-      const remaining = droppedAt + EXTENSION_RECONNECT_GRACE_MS - Date.now()
-      if (closed || remaining <= 0) return Promise.resolve(false)
-      return new Promise<boolean>((resolve) => {
-        const finish = (connected: boolean) => {
-          clearTimeout(timer)
-          reconnects.delete(finish)
-          resolve(connected)
-        }
-        const timer = setTimeout(() => finish(false), remaining)
-        reconnects.add(finish)
-      })
-    },
     onConnectionChange: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -405,7 +385,6 @@ export const makeBrowserExtensionRelay = (): BrowserExtensionRelay => {
       closed = true
       waiters.clear()
       listeners.clear()
-      for (const finish of reconnects) finish(false)
       const connection = active?.connection
       active = undefined
       if (connection !== undefined) await connection.close().catch(() => undefined)

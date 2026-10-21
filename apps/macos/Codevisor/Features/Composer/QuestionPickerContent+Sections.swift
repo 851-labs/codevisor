@@ -257,16 +257,11 @@ extension QuestionPickerContent {
             moveQuestion(1)
           }
         } else {
-          let isBrowserChoice = question.presentation == .browserChoice
           ComposerSubmitButton(
-            systemImage: isBrowserChoice ? "arrow.right" : "arrow.up",
+            systemImage: "arrow.up",
             isEnabled: isSubmittable,
-            help: isSubmittable
-              ? isBrowserChoice ? "Continue (↩)" : "Submit answers (↩)"
-              : isBrowserChoice
-                ? "Choose a browser to continue"
-                : "\"Other\" needs an answer below",
-            accessibilityLabel: isBrowserChoice ? "Continue" : "Submit answers"
+            help: isSubmittable ? "Submit answers (↩)" : "\"Other\" needs an answer below",
+            accessibilityLabel: "Submit answers"
           ) {
             submit()
           }

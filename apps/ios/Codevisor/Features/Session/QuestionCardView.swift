@@ -48,8 +48,6 @@ struct QuestionCardView: View {
   var body: some View {
     if let question, request.questions.count == 1, question.id == QuestionRequest.exitPlanModeId {
       PlanApprovalQuestionCard(controller: controller, question: question, maxHeight: maxHeight)
-    } else if let question, question.presentation == .browserChoice {
-      BrowserChoiceQuestionCard(controller: controller, question: question)
     } else if let question, isBrowserExtensionPresentation(question) {
       BrowserExtensionQuestionCard(controller: controller, question: question)
     } else {

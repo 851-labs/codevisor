@@ -201,7 +201,10 @@ export const makeMcpGatewayOperations = (
     if (options?.clientId === undefined) turnClientIds.delete(sessionId)
     else turnClientIds.set(sessionId, options.clientId)
     await builtinsReady
-    await browserSetupBroker.beginTurn(sessionId)
+    await browserSetupBroker.beginTurn(
+      sessionId,
+      options?.clientPlatform === undefined ? {} : { clientPlatform: options.clientPlatform }
+    )
   }
   return {
     close,

@@ -195,15 +195,12 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       const resolvedPaths = workspaceUploadPaths(args, workspaceRoot, toolName)
       safeArgs = { ...args, paths: resolvedPaths }
     }
-    if (provider.id === "browser") {
-      if (toolName === "use_backend") {
-        const requested = safeArgs.backend
-        if (requested === "managed" || requested === "extension" || requested === "builtin") {
-          await browserSetupBroker.resolveBackend(context.sessionId, requested)
-        }
-      } else if (toolName !== "backends" && toolName !== "connection_status") {
-        await browserSetupBroker.resolveBackend(context.sessionId)
-      }
+    if (provider.id === "browser" && toolName === "request_extension_install") {
+      const outcome = await browserSetupBroker.requestExtensionInstall(context.sessionId, {
+        signal: context.signal,
+        deadline: context.deadline
+      })
+      return { content: [{ type: "text", text: JSON.stringify(outcome) }] }
     }
     return provider.invoke(providerContext, toolName, safeArgs)
   }

@@ -1,8 +1,10 @@
+import { once } from "node:events"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it, vi } from "vitest"
+import { WebSocket } from "ws"
 
 import { makeEventFanout } from "../server.js"
 import {
@@ -58,7 +60,6 @@ describe("browser cleanup at turn completion", () => {
       expect(agents.prompts).toHaveLength(0)
       release.resolve()
       await waitFor(() => agents.prompts.length === 1)
-      await services.mcp.setBrowserPreference("builtin")
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         method: "POST",
         body: JSON.stringify({ text: "next response", clientId: "window-1" })
@@ -71,6 +72,35 @@ describe("browser cleanup at turn completion", () => {
       expect(prepare).toHaveBeenLastCalledWith(session.id, { clientId: "window-1" })
     } finally {
       release.resolve()
+      agents.releasePrompt()
+      await waitFor(
+        async () => (await run(services.db.listProcessingPromptQueue(session.id))).length === 0
+      )
+      prepare.mockRestore()
+    }
+  })
+  it("tells the browser which platform the prompting client runs on", async () => {
+    const { agents, server, services, workspace } = await setUpWorkspace()
+    const session = await createFirstSession(server, workspace)
+    const prepare = vi.spyOn(services.mcp, "beginTurn")
+    const phone = new WebSocket(`${server.url.replace("http", "ws")}/v1/clients/phone/socket`)
+    try {
+      await once(phone, "open")
+      phone.send(JSON.stringify({ type: "hello", name: "iPhone", platform: "ios" }))
+      const pong = once(phone, "pong")
+      phone.ping()
+      await pong
+      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        method: "POST",
+        body: JSON.stringify({ text: "from the phone", clientId: "PHONE" })
+      })
+      await waitFor(() => agents.prompts.length === 1)
+      expect(prepare).toHaveBeenLastCalledWith(session.id, {
+        clientId: "PHONE",
+        clientPlatform: "ios"
+      })
+    } finally {
+      phone.close()
       agents.releasePrompt()
       await waitFor(
         async () => (await run(services.db.listProcessingPromptQueue(session.id))).length === 0

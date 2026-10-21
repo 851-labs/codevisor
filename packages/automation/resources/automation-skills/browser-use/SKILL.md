@@ -1,6 +1,6 @@
 ---
 name: browser-use
-description: Control the user's browser or Codevisor's managed browser through Browser Use. Use whenever the user asks to open, navigate, inspect, click, type in, or otherwise interact with a website or browser tab.
+description: Drive a web browser through Browser Use (Codevisor's headless browser, the browser pane in the Codevisor Mac app, or the user's own Chrome). Use whenever the user asks to open, navigate, inspect, click, type in, or otherwise interact with a website or browser tab.
 ---
 
 # Browser Use
@@ -11,11 +11,19 @@ Explicit browser intent wins. If the user asks to open, show, navigate, visually
 
 ## Choose the browser
 
-Codevisor owns browser selection and any required setup. Call Browser Use normally; when no preference exists, it uses Built-in Browser. If the selected backend requires setup, Codevisor handles it and resumes the same tool call.
+There is no default browser. Pick one for the chat with `browser.use_backend({ backend })` before your first browser call; it stays selected until you pick another, so switch whenever a new task needs a different one. Browser calls fail until you pick.
 
-Only call `browser.use_backend` when the user explicitly requests a different browser. Use `{ backend: "builtin" }` for Codevisor browser panes (the default), `{ backend: "managed" }` for separate Chromium, and `{ backend: "extension" }` for Codevisor Extension in the user's Chrome. Built-in Browser only controls the client on the server machine; if it is unavailable, an independent Chromium browser runs there instead. After a disconnect, discard old tab IDs and snapshots, re-observe, and never blindly repeat an action whose outcome is unknown. Respect a rejected Browser Use call instead of retrying it.
+- `managed`: headless Chromium on the server. It has no window, so the user cannot see it. Use it for background work they don't need to watch or touch: research, reading docs, checking or testing a page, screenshots.
+- `builtin`: the browser pane in the Codevisor Mac app, on the Mac the user used most recently. The user can watch it and use it; if this chat isn't open there, its tabs run in the background and appear in the chat's pane when they open it. Use it when they should watch, take over, or log in on their Mac. With no Mac app connected, its calls run in the headless managed browser instead.
+- `extension`: the user's real Chrome, already signed in to their accounts. Use it when the task needs their existing sessions or a tab they already have open.
 
-Settings changes apply at the next response, when Codevisor also retries a previously unavailable local built-in browser. Remote client browsers cannot be controlled. Use `browser.connection_status` to check the requested backend, effective backend, connection state, and fallback reason when the expected tabs are missing. An unconnected backend has not been opened yet; an empty tab list alone does not identify which browser is in use. Browser bindings reset if the connection changes between responses, so reacquire tabs before continuing.
+Call `browser.status()` when you aren't sure what's available; don't guess. It shows each browser's state, whether the user can see it, and which one this chat is using. For `extension`: `connected` is ready; `installed_not_connected` or `not_connected` means ask the user to open Chrome; `not_installed` means the user hasn't added the Codevisor extension yet; `chrome_not_installed` means Chrome isn't on this machine.
+
+When the task needs the user's Chrome and the extension isn't connected (for example they ask you to use their browser), call `browser.request_extension_install()` in an `execute` call with `timeout_ms: 600000`, so the user has time to finish. It shows the user a card in the composer to add the extension and waits until they finish or dismiss it. Adding the extension can take the user a few minutes, so keep waiting until the call returns, even if your environment moves it to the background; ending your response while it is pending cancels the card. It returns `installed` (their Chrome is now this chat's browser), `dismissed` (respect it: use another browser or stop, and don't ask again in this response) or `timeout`. Don't show the card when another browser would do.
+
+If `status` says the user is on `ios`, they're talking from the iPhone app and can't see or use the Mac browsers from there. For a login, 2FA, or anything else they must do themselves, ask them to do it in the Codevisor app on their Mac (`builtin`) or in Chrome on their Mac (`extension`), then continue.
+
+After a disconnect, discard old tab IDs and snapshots, re-observe, and never blindly repeat an action whose outcome is unknown. Respect a rejected Browser Use call instead of retrying it. Browser bindings reset if the connection changes between responses, so reacquire tabs before continuing.
 
 ## Persistent browser cells
 

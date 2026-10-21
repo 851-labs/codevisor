@@ -97,6 +97,12 @@ describe("Browser Use direct CDP engine", () => {
         url: `http://127.0.0.1:${address.port}/`
       })
       expect(navigated.isError, JSON.stringify(navigated.content)).not.toBe(true)
+      const userAgent = await provider.invoke(context, "cdp.send", {
+        method: "Runtime.evaluate",
+        params: { expression: "navigator.userAgent", returnByValue: true }
+      })
+      expect(JSON.stringify(userAgent.content)).toContain("Chrome/")
+      expect(JSON.stringify(userAgent.content)).not.toContain("HeadlessChrome")
 
       const first = await provider.invoke(context, "snapshot", {})
       const firstText = first.content.find((block) => block.type === "text")

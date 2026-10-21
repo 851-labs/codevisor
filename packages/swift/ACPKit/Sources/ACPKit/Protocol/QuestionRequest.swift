@@ -13,7 +13,6 @@ public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
 }
 
 public enum QuestionPresentation: String, Sendable, Codable, Equatable {
-  case browserChoice
   case browserExtensionSetup
   case browserExtensionWaiting
 }
@@ -49,6 +48,21 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
     self.isSecret = isSecret
     self.backOptionLabel = backOptionLabel
     self.presentation = presentation
+  }
+}
+
+extension QuestionSpec {
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    header = try container.decodeIfPresent(String.self, forKey: .header)
+    question = try container.decode(String.self, forKey: .question)
+    options = try container.decode([QuestionOption].self, forKey: .options)
+    multiSelect = try container.decodeIfPresent(Bool.self, forKey: .multiSelect)
+    allowsOther = try container.decode(Bool.self, forKey: .allowsOther)
+    isSecret = try container.decodeIfPresent(Bool.self, forKey: .isSecret)
+    backOptionLabel = try container.decodeIfPresent(String.self, forKey: .backOptionLabel)
+    presentation = try? container.decodeIfPresent(QuestionPresentation.self, forKey: .presentation)
   }
 }
 

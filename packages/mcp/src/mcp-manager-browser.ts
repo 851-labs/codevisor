@@ -2,11 +2,11 @@ import type { BrowserPreviewSubscription, BrowserPreviewViewer } from "@codeviso
 
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
-import { run } from "./mcp-support.js"
 
 export type McpBrowserOperations = Pick<
   McpManager,
   | "acceptBrowserExtension"
+  | "acceptBrowserHost"
   | "answerQuestion"
   | "browserConfiguration"
   | "browserExtensionArchive"
@@ -16,7 +16,6 @@ export type McpBrowserOperations = Pick<
   | "openBrowserExtensionWebStore"
   | "openBrowserExtensionsPage"
   | "setBaseUrl"
-  | "setBrowserPreference"
   | "subscribeAutomationUse"
   | "subscribeBrowserPreview"
 >
@@ -27,21 +26,11 @@ const unavailablePreview = (viewer: BrowserPreviewViewer): BrowserPreviewSubscri
 }
 
 export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperations => {
-  const {
-    automationUse,
-    browserProvider,
-    browserSetupBroker,
-    config,
-    extensionFlowSupported,
-    state
-  } = core
+  const { automationUse, browserProvider, browserSetupBroker, extensionFlowSupported, state } = core
 
   const browserConfiguration: McpManager["browserConfiguration"] = async () => {
     const status = browserProvider.status()
     return {
-      ...(await run(config.db.getBrowserPreference).then((preferredBrowser) =>
-        preferredBrowser === undefined ? {} : { preferredBrowser }
-      )),
       chromeAvailable: status.chromeAvailable,
       chromeConnected: status.extensionConnected,
       managedAvailable: status.backend !== "missing",
@@ -62,11 +51,8 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
     answerQuestion: (sessionId, questionId, answer) =>
       browserSetupBroker.answerQuestion(sessionId, questionId, answer),
     acceptBrowserExtension: (socket) => browserProvider.acceptExtensionConnection(socket),
+    acceptBrowserHost: (socket) => browserProvider.acceptBrowserHost(socket),
     browserConfiguration,
-    setBrowserPreference: async (preference) => {
-      await run(config.db.setBrowserPreference(preference))
-      return browserConfiguration()
-    },
     openBrowserExtensionInstaller: async () => {
       await browserProvider.openDevelopmentExtensionInstaller()
       return browserConfiguration()

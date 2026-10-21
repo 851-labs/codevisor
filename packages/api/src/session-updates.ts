@@ -117,7 +117,6 @@ export const QuestionOption = Schema.Struct({
 export type QuestionOption = typeof QuestionOption.Type
 
 export const QuestionPresentation = Schema.Literals([
-  "browserChoice",
   "browserExtensionSetup",
   "browserExtensionWaiting"
 ])

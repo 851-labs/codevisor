@@ -1,14 +1,7 @@
 import { readFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { UpdateBrowserUseConfigurationRequest as UpdateBrowserUseConfigurationRequestSchema } from "@codevisor/api"
-
-import {
-  HttpFailure,
-  readSchema,
-  writeJson,
-  type CodevisorServerServices
-} from "../server-context.js"
+import { HttpFailure, writeJson, type CodevisorServerServices } from "../server-context.js"
 
 /* v8 ignore start */
 export const routeBrowserUse = async (
@@ -22,15 +15,6 @@ export const routeBrowserUse = async (
   if (manager === undefined) throw new HttpFailure(501, "Browser Use is unavailable")
   if (url.pathname === "/v1/browser-use" && request.method === "GET") {
     writeJson(response, 200, await manager.browserConfiguration())
-    return true
-  }
-  if (url.pathname === "/v1/browser-use" && request.method === "PATCH") {
-    const payload = await readSchema(request, UpdateBrowserUseConfigurationRequestSchema)
-    writeJson(
-      response,
-      200,
-      await manager.setBrowserPreference(payload.preferredBrowser ?? undefined)
-    )
     return true
   }
   if (url.pathname === "/v1/browser-use/extension/install" && request.method === "POST") {

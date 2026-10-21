@@ -2,8 +2,6 @@ import AppKit
 import CodevisorClient
 import CodevisorUI
 import Foundation
-import Network
-import OSLog
 import Synchronization
 
 @MainActor
@@ -16,13 +14,15 @@ final class ChromiumAutomationBridge {
   private final class WeakGroup {
     weak var value: PaneGroupModel?; init(_ value: PaneGroupModel) { self.value = value }
   }
+  private final class WeakStore {
+    weak var value: SessionStore?; init(_ value: SessionStore) { self.value = value }
+  }
   private var models: [String: WeakModel] = [:]
   private var groups: [WeakGroup] = []
-  private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Codevisor", category: "BrowserAutomation")
-  private var listener: NWListener?
-  private var token = ""
-  private nonisolated let hub = ChromiumAutomationHub()
+  private var stores: [WeakStore] = []
+  nonisolated let hub = ChromiumAutomationHub()
   nonisolated let controlled = Mutex<[UUID: Set<ObjectIdentifier>]>([:])
+  let hosts = ChromiumBrowserHosts()
 
   func isControlling(_ model: ChromiumBrowserModel) -> Bool {
     let identifier = ObjectIdentifier(model)
@@ -32,10 +32,12 @@ final class ChromiumAutomationBridge {
   func addGroup(_ group: PaneGroupModel) {
     groups.removeAll { $0.value == nil }
     groups.append(WeakGroup(group))
-    start()
+  }
+  func addStore(_ store: SessionStore) {
+    stores.removeAll { $0.value == nil }
+    stores.append(WeakStore(store))
   }
   func register(_ model: ChromiumBrowserModel) {
-    guard model.isLocal else { return }
     let id = model.paneId.uuidString.lowercased()
     let created = models[id]?.value == nil
     models[id] = WeakModel(model)
@@ -44,11 +46,11 @@ final class ChromiumAutomationBridge {
       guard let model else { return }
       Self.queue.async { hub.assumeIsolated { $0.event(message, model: model) } }
     }
-    if created { broadcast(.targetCreated(info(model))) }
+    if created { broadcast(.targetCreated(info(model), machineId: model.machineId)) }
   }
   func unregister(_ id: UUID) {
-    if models.removeValue(forKey: id.uuidString.lowercased()) != nil {
-      broadcast(.targetDestroyed(id.uuidString.lowercased()))
+    if let model = models.removeValue(forKey: id.uuidString.lowercased())?.value {
+      broadcast(.targetDestroyed(id.uuidString.lowercased(), machineId: model.machineId))
     }
   }
   private func broadcast(_ event: ChromiumAutomationHub.TargetEvent) {
@@ -60,78 +62,61 @@ final class ChromiumAutomationBridge {
       targetId: model.paneId.uuidString.lowercased(), title: model.title,
       url: model.url?.absoluteString ?? "about:blank")
   }
-  fileprivate func model(_ id: String) -> ChromiumBrowserModel? { models[id.lowercased()]?.value }
-  fileprivate var liveModels: [ChromiumBrowserModel] { models.values.compactMap { $0.value } }
-  fileprivate var targets: [ChromiumTargetInfo] { liveModels.map(info) }
-  private func group(_ session: String) -> PaneGroupModel? {
-    groups.compactMap { $0.value }.first { $0.canHostBrowserAutomation(sessionId: session) }
+  fileprivate func model(_ id: String, machineId: String) -> ChromiumBrowserModel? {
+    models[id.lowercased()]?.value.flatMap { $0.machineId == machineId ? $0 : nil }
   }
-  fileprivate func isAvailable(_ session: String) -> Bool { group(session) != nil }
-  fileprivate func createTarget(session: String, url: String) -> ChromiumBrowserModel? {
-    guard let model = group(session)?.createBrowserTab?(url) else { return nil }
-    register(model)
-    return model
+  fileprivate func liveModels(machineId: String) -> [ChromiumBrowserModel] {
+    models.values.compactMap { $0.value }.filter { $0.machineId == machineId }
   }
-  fileprivate func activate(_ targetId: String) -> Bool {
-    guard let model = model(targetId) else { return false }
+  fileprivate func targets(machineId: String) -> [ChromiumTargetInfo] {
+    liveModels(machineId: machineId).map(info)
+  }
+  private func group(_ session: String, machineId: String) -> PaneGroupModel? {
+    groups.compactMap { $0.value }.first {
+      $0.canHostBrowserAutomation(sessionId: session, machineId: machineId)
+    }
+  }
+  private var store: SessionStore? {
+    stores.removeAll { $0.value == nil }
+    return stores.lazy.compactMap(\.value).first { $0.isWindowFocused } ?? stores.first?.value
+  }
+  fileprivate func isAvailable(_ session: String, machineId: String) -> Bool {
+    group(session, machineId: machineId) != nil
+      || store?.canHostBackgroundBrowser(serverId: machineId, sessionId: session) == true
+  }
+  fileprivate func createTarget(session: String, machineId: String, url: String) -> ChromiumBrowserModel? {
+    let created =
+      group(session, machineId: machineId)?.createBrowserTab?(url)
+      ?? store?.createBackgroundBrowserTab(serverId: machineId, sessionId: session, url: url)
+    guard let created else { return nil }
+    register(created)
+    return created
+  }
+  fileprivate func activate(_ targetId: String, machineId: String) -> Bool {
+    guard let model = model(targetId, machineId: machineId) else { return false }
     model.onSelect?()
     return true
   }
-  fileprivate func close(_ targetId: String) -> Bool {
-    guard let model = model(targetId) else { return false }
+  fileprivate func close(_ targetId: String, machineId: String) -> Bool {
+    guard let model = model(targetId, machineId: machineId) else { return false }
     model.onClose?()
     return true
   }
-  fileprivate func closeUnusedTabs(_ targetIds: [String]) {
+  fileprivate func closeUnusedTabs(_ targetIds: [String], machineId: String) {
     for targetId in targetIds {
-      guard let model = model(targetId), !model.hasLoadedPage else { continue }
+      guard let model = model(targetId, machineId: machineId), !model.hasLoadedPage else { continue }
       model.onClose?()
     }
   }
 
-  private func start() {
-    guard listener == nil else { return }
-    do {
-      let directory = CodevisorAppVariant.serverDataDirectoryURL()
-      let tokenURL = directory.appendingPathComponent("browser-use-token")
-      if let existing = try? String(contentsOf: tokenURL, encoding: .utf8), !existing.isEmpty {
-        token = existing
-      } else {
-        token = UUID().uuidString + UUID().uuidString
-        try Data(token.utf8).write(to: tokenURL, options: .atomic)
-      }
-      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenURL.path)
-      var hash: UInt32 = 2166136261
-      for byte in directory.path.utf8 { hash = (hash ^ UInt32(byte)) &* 16777619 }
-      let path = "/tmp/codevisor-browser-\(getuid())-\(String(hash, radix: 16)).sock"
-      unlink(path)
-      let parameters = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
-      parameters.requiredLocalEndpoint = .unix(path: path)
-      let server = try NWListener(using: parameters)
-      let secret = token
-      let hub = hub
-      server.newConnectionHandler = { [weak self] connection in
-        guard let self else { connection.cancel(); return }
-        let client = ChromiumAutomationConnection(connection: connection, bridge: self, hub: hub, token: secret)
-        hub.assumeIsolated { $0.add(client) }
-        client.assumeIsolated { $0.start() }
-      }
-      server.stateUpdateHandler = { [weak self, weak server] state in
-        Task { @MainActor [weak self, weak server] in
-          guard let self, let server, self.listener === server else { return }
-          if case .ready = state { chmod(path, 0o600) }
-          if case .failed(let error) = state {
-            self.log.error("Local browser listener failed: \(error.localizedDescription, privacy: .public)")
-            server.cancel()
-            self.listener = nil
-          }
-        }
-      }
-      listener = server
-      server.start(queue: Self.queue)
-    } catch {
-      log.error("Couldn’t start local browser automation: \(error.localizedDescription, privacy: .public)")
-    }
+  func openChannel(
+    _ channel: String, machineId: String, outbox: @escaping @Sendable (ChromiumBrowserHostFrame) -> Void
+  ) -> ChromiumAutomationConnection {
+    let connection = ChromiumAutomationConnection(
+      channel: channel, machineId: machineId, bridge: self, hub: hub, outbox: outbox)
+    let hub = hub
+    Self.queue.async { hub.assumeIsolated { $0.add(connection) } }
+    return connection
   }
 }
 
@@ -160,10 +145,10 @@ extension ChromiumBrowserModel {
   }
 }
 
-private actor ChromiumAutomationHub {
+actor ChromiumAutomationHub {
   nonisolated enum TargetEvent: Sendable {
-    case targetCreated(ChromiumTargetInfo)
-    case targetDestroyed(String)
+    case targetCreated(ChromiumTargetInfo, machineId: String)
+    case targetDestroyed(String, machineId: String)
   }
   nonisolated var unownedExecutor: UnownedSerialExecutor { ChromiumAutomationBridge.queue.asUnownedSerialExecutor() }
   private var connections: [UUID: ChromiumAutomationConnection] = [:]
@@ -174,19 +159,22 @@ private actor ChromiumAutomationHub {
   func event(_ data: Data, model: ChromiumBrowserModel) {
     guard !connections.isEmpty, let message = BrowserProtocolMessage(data), let method = message.string("method")
     else { return }
-    for connection in connections.values {
+    let machineId = model.machineId
+    for connection in connections.values where connection.machineId == machineId {
       connection.assumeIsolated { $0.event(message, method: method, model: model) }
     }
   }
 
   func broadcast(_ event: TargetEvent) {
-    let message: [String: Any] =
+    let (message, machineId): ([String: Any], String) =
       switch event {
-      case .targetCreated(let info): ["method": "Target.targetCreated", "params": ["targetInfo": info.json]]
-      case .targetDestroyed(let id): ["method": "Target.targetDestroyed", "params": ["targetId": id]]
+      case .targetCreated(let info, let machineId):
+        (["method": "Target.targetCreated", "params": ["targetInfo": info.json]], machineId)
+      case .targetDestroyed(let id, let machineId):
+        (["method": "Target.targetDestroyed", "params": ["targetId": id]], machineId)
       }
     guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
-    for connection in connections.values {
+    for connection in connections.values where connection.machineId == machineId {
       connection.assumeIsolated { if $0.authenticated { $0.send(data) } }
     }
   }
@@ -211,7 +199,7 @@ private nonisolated struct ChromiumAutomationRequest {
   }
 }
 
-private actor ChromiumAutomationConnection {
+actor ChromiumAutomationConnection {
   private nonisolated struct Attachment {
     var model: ChromiumBrowserModel
     var native: String
@@ -224,15 +212,13 @@ private actor ChromiumAutomationConnection {
   private static let viewportMethods: Set<String> = [
     "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Emulation.setTouchEmulationEnabled",
   ]
-  private static let lineLimit = 64 * 1024 * 1024
-
   nonisolated let id = UUID()
+  nonisolated let channel: String
+  nonisolated let machineId: String
   nonisolated var unownedExecutor: UnownedSerialExecutor { ChromiumAutomationBridge.queue.asUnownedSerialExecutor() }
-  private let connection: NWConnection
   private let bridge: ChromiumAutomationBridge
   private let hub: ChromiumAutomationHub
-  private let token: String
-  private var lines = BrowserProtocolLineBuffer()
+  private let outbox: @Sendable (ChromiumBrowserHostFrame) -> Void
   private(set) var authenticated = false
   private var session = ""
   private var sessions: [String: Attachment] = [:] {
@@ -246,8 +232,11 @@ private actor ChromiumAutomationConnection {
   private var createdTabs: [String] = []
   private var closed = false
 
-  init(connection: NWConnection, bridge: ChromiumAutomationBridge, hub: ChromiumAutomationHub, token: String) {
-    self.connection = connection; self.bridge = bridge; self.hub = hub; self.token = token
+  init(
+    channel: String, machineId: String, bridge: ChromiumAutomationBridge, hub: ChromiumAutomationHub,
+    outbox: @escaping @Sendable (ChromiumBrowserHostFrame) -> Void
+  ) {
+    self.channel = channel; self.machineId = machineId; self.bridge = bridge; self.hub = hub; self.outbox = outbox
   }
 
   private func publishControl() {
@@ -258,49 +247,29 @@ private actor ChromiumAutomationConnection {
     bridge.controlled.withLock { $0[id] = models }
   }
 
-  func start() {
-    connection.stateUpdateHandler = { [weak self] state in
-      switch state {
-      case .failed, .cancelled: self?.assumeIsolated { $0.close() }
-      default: break
-      }
-    }
-    connection.start(queue: ChromiumAutomationBridge.queue)
-    receive()
-  }
-  private func close() {
+  func close(notifyingHost: Bool = true) {
     guard !closed else { return }
     closed = true
-    connection.cancel()
+    if notifyingHost { outbox(.close(channel: channel)) }
     for attached in sessions.values {
       let model = attached.model, native = attached.native
       Task { @MainActor in _ = try? await model.webView?.cdp("Target.detachFromTarget", ["sessionId": native]) }
     }
     sessions.removeAll(); childSessions.removeAll()
-    let created = createdTabs, bridge = bridge
+    let created = createdTabs, bridge = bridge, machineId = machineId
     createdTabs.removeAll()
-    if !created.isEmpty { Task { @MainActor in bridge.closeUnusedTabs(created) } }
+    if !created.isEmpty { Task { @MainActor in bridge.closeUnusedTabs(created, machineId: machineId) } }
     hub.assumeIsolated { $0.remove(id) }
   }
-  private func receive() {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, ended, error in
-      self?.assumeIsolated { $0.didReceive(data, ended: ended || error != nil) }
-    }
-  }
-  private func didReceive(_ data: Data?, ended: Bool) {
+  func receive(_ data: Data) {
     guard !closed else { return }
-    for line in lines.append(data ?? Data()) {
-      guard let request = ChromiumAutomationRequest(line) else { close(); return }
-      handle(request)
-    }
-    if lines.pendingCount > Self.lineLimit || ended { close() } else { receive() }
+    guard let request = ChromiumAutomationRequest(data) else { return close() }
+    handle(request)
   }
 
   func send(_ data: Data) {
     guard !closed else { return }
-    var line = data
-    line.append(0x0A)
-    connection.send(content: line, completion: .contentProcessed { _ in })
+    outbox(.data(channel: channel, payload: data))
   }
   private func send(_ message: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
@@ -318,12 +287,11 @@ private actor ChromiumAutomationConnection {
     guard let method = request.method else { return reply(request.id, error: "Missing browser method") }
     let params = request.params
     if !authenticated {
-      guard method == "Codevisor.connect", params["token"] as? String == token,
-        let session = params["sessionId"] as? String
-      else { return reply(request.id, error: "Authentication failed") }
+      guard method == "Codevisor.connect", let session = params["sessionId"] as? String
+      else { return reply(request.id, error: "Connect a chat before using the browser") }
       self.session = session; authenticated = true
-      let bridge = bridge, id = request.id
-      Task { reply(id, result: ["available": await bridge.isAvailable(session)]) }
+      let bridge = bridge, id = request.id, machineId = machineId
+      Task { reply(id, result: ["available": await bridge.isAvailable(session, machineId: machineId)]) }
       return
     }
     if let sessionId = request.sessionId, !Self.browserMethods.contains(method) {
@@ -382,37 +350,41 @@ private actor ChromiumAutomationConnection {
   private func dispatch(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
     switch method {
     case "Codevisor.synchronizeCookies":
-      for model in await bridge.liveModels { try await model.synchronizeCookies() }
+      for model in await bridge.liveModels(machineId: machineId) { try await model.synchronizeCookies() }
       return [:]
     case "Target.setDiscoverTargets":
       if params["discover"] as? Bool == true { _ = try await targets() }
       return [:]
     case "Target.getTargets": return ["targetInfos": try await targets()]
     case "Target.createTarget":
-      guard let model = await bridge.createTarget(session: session, url: params["url"] as? String ?? "about:blank")
-      else { throw ChromiumProtocolError("This workspace is no longer open in Codevisor") }
+      guard
+        let model = await bridge.createTarget(
+          session: session, machineId: machineId, url: params["url"] as? String ?? "about:blank")
+      else { throw ChromiumProtocolError("This chat isn't available in the Codevisor app") }
       let targetId = model.paneId.uuidString.lowercased()
       createdTabs.append(targetId)
       do {
         _ = try await model.readyView()
       } catch {
-        await bridge.closeUnusedTabs([targetId])
+        await bridge.closeUnusedTabs([targetId], machineId: machineId)
         throw error
       }
       return ["targetId": targetId]
     case "Target.activateTarget":
       let targetId = params["targetId"] as? String ?? ""
       if let owner = popupOwners[targetId] { return try await owner.readyView().cdp(method, params) }
-      guard await bridge.activate(targetId) else { throw ChromiumProtocolError("Browser tab closed") }
+      guard await bridge.activate(targetId, machineId: machineId) else {
+        throw ChromiumProtocolError("Browser tab closed")
+      }
       return [:]
     case "Target.closeTarget":
       let targetId = params["targetId"] as? String ?? ""
       if let owner = popupOwners[targetId] { return try await owner.readyView().cdp(method, params) }
-      return ["success": await bridge.close(targetId)]
+      return ["success": await bridge.close(targetId, machineId: machineId)]
     case "Target.attachToTarget":
       let targetId = params["targetId"] as? String ?? ""
       let popup = popupOwners[targetId] != nil
-      guard let model = await bridge.model(targetId) ?? popupOwners[targetId] else {
+      guard let model = await bridge.model(targetId, machineId: machineId) ?? popupOwners[targetId] else {
         throw ChromiumProtocolError("Browser tab closed")
       }
       let view = try await model.readyView()
@@ -442,7 +414,7 @@ private actor ChromiumAutomationConnection {
     }
   }
   private func targets() async throws -> [[String: Any]] {
-    let models = await bridge.liveModels
+    let models = await bridge.liveModels(machineId: machineId)
     var ready: CVChromiumView?
     var failure: Error?
     for model in models {
@@ -474,7 +446,7 @@ private actor ChromiumAutomationConnection {
     }
     let live = Set(infos.compactMap { $0["targetId"] as? String })
     popupOwners = popupOwners.filter { live.contains($0.key) }
-    return (await bridge.targets).map(\.json)
+    return (await bridge.targets(machineId: machineId)).map(\.json)
       + infos.filter { ($0["targetId"] as? String).flatMap { popupOwners[$0] } != nil }.map(popupInfo)
   }
   private func popupInfo(_ info: [String: Any]) -> [String: Any] {

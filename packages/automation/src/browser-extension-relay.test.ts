@@ -14,7 +14,6 @@ import {
   CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL,
   createBrowserExtensionArchive,
   EXTENSION_READY_PROBE_MS,
-  EXTENSION_RECONNECT_GRACE_MS,
   makeBrowserExtensionRelay,
   openBrowserExtensionDevelopmentFolder,
   openBrowserExtensionDevelopmentInstaller,
@@ -299,62 +298,29 @@ class FakeExtensionSocket extends EventEmitter implements BrowserExtensionSocket
   }
 }
 
-describe("browser extension relay reconnect grace", () => {
+describe("browser extension relay readiness", () => {
   afterEach(() => {
     vi.useRealTimers()
-  })
-
-  it("waits for the extension to reconnect after the server starts or the socket drops", async () => {
-    vi.useFakeTimers()
-    const relay = makeBrowserExtensionRelay()
-    const afterStart = vi.fn()
-    const started = relay.reconnected().then(afterStart)
-    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS - 1)
-    expect(afterStart).not.toHaveBeenCalled()
-    const socket = new FakeExtensionSocket()
-    relay.accept(socket)
-    await started
-    expect(afterStart).toHaveBeenCalledWith(true)
-
-    await vi.advanceTimersByTimeAsync(60_000)
-    socket.close()
-    const afterDrop = vi.fn()
-    const dropped = relay.reconnected().then(afterDrop)
-    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS - 1)
-    expect(afterDrop).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    await dropped
-    expect(afterDrop).toHaveBeenCalledWith(false)
-    await relay.close()
   })
 
   it("reports the extension connected only once it answers commands", async () => {
     vi.useFakeTimers()
     const relay = makeBrowserExtensionRelay()
     const socket = new FakeExtensionSocket(1)
-    const connected = vi.fn()
-    const reconnected = relay.reconnected().then(connected)
+    const { promise: ready, resolve } = Promise.withResolvers<void>()
+    const connected = vi.fn((value: boolean) => {
+      if (value) resolve()
+    })
+    relay.onConnectionChange(connected)
     relay.accept(socket)
     await vi.advanceTimersByTimeAsync(EXTENSION_READY_PROBE_MS - 1)
     expect(relay.connected()).toBe(false)
     expect(connected).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(1)
-    await reconnected
+    await ready
     expect(connected).toHaveBeenCalledWith(true)
     expect(socket.received).toEqual(["Target.getTargets", "Target.getTargets"])
     await relay.close()
-  })
-
-  it("does not wait once the grace has passed or the relay is closed", async () => {
-    vi.useFakeTimers()
-    const relay = makeBrowserExtensionRelay()
-    await vi.advanceTimersByTimeAsync(EXTENSION_RECONNECT_GRACE_MS)
-    await expect(relay.reconnected()).resolves.toBe(false)
-
-    const fresh = makeBrowserExtensionRelay()
-    const pending = fresh.reconnected()
-    await fresh.close()
-    await expect(pending).resolves.toBe(false)
   })
 })

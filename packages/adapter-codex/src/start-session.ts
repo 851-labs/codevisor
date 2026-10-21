@@ -21,6 +21,8 @@ import {
 } from "./skills.js"
 import { CodexTitleGenerator } from "./title-generation.js"
 
+const GATEWAY_TOOL_TIMEOUT_SEC = 660
+
 export interface CodexStartSessionDeps {
   readonly connect: (
     definition: HarnessDefinition,
@@ -76,7 +78,8 @@ export const makeStartSession = ({
               [toolGateway.name]: {
                 url: toolGateway.url,
                 bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
-                default_tools_approval_mode: "approve"
+                default_tools_approval_mode: "approve",
+                tool_timeout_sec: GATEWAY_TOOL_TIMEOUT_SEC
               }
             }
           })

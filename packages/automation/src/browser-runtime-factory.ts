@@ -14,24 +14,10 @@ import {
   systemChromePath
 } from "./browser-chromium.js"
 import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
-import { connectNativeBrowser } from "./browser-native-connection.js"
+import type { BrowserHostConnection } from "./browser-host-registry.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
 import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
-
-const closeBlankPages = async (connection: CdpConnection): Promise<void> => {
-  const { targetInfos } = await connection
-    .send<{ targetInfos: ReadonlyArray<{ targetId: string; type: string; url: string }> }>(
-      "Target.getTargets"
-    )
-    .catch(() => ({ targetInfos: [] }))
-  for (const target of targetInfos) {
-    if (target.type !== "page" || target.url !== "about:blank") continue
-    await connection
-      .send("Target.closeTarget", { targetId: target.targetId })
-      .catch(() => undefined)
-  }
-}
 
 const profileKey = (context: AutomationProviderContext): string =>
   createHash("sha256")
@@ -40,17 +26,16 @@ const profileKey = (context: AutomationProviderContext): string =>
     .slice(0, 24)
 
 export const makeBrowserRuntimeFactory = (options: {
-  dataDir: string
   db: CodevisorDatabaseService | undefined
   profilesDir: string
   browsersDir: string
   downloadsDir: string
   fallbackReasons: Map<string, string>
   ensureSetup: () => Promise<void>
+  connectNative: (sessionId: string) => Promise<BrowserHostConnection>
   connectExtension: () => Promise<CdpConnection>
 }) => {
-  const { dataDir, db, profilesDir, browsersDir, downloadsDir, fallbackReasons, ensureSetup } =
-    options
+  const { db, profilesDir, browsersDir, downloadsDir, fallbackReasons, ensureSetup } = options
 
   let fallbackLaunch: Promise<unknown> = Promise.resolve()
 
@@ -63,13 +48,12 @@ export const makeBrowserRuntimeFactory = (options: {
     let processHandle: ChildProcess | undefined
     let owned = false
     let native = false
-    let inherited = false
     if (backend === "extension") {
       connection = await options.connectExtension()
     } else {
       const local =
         backend === "builtin" && !fallbackReasons.has(context.sessionId)
-          ? await connectNativeBrowser(dataDir, context.sessionId)
+          ? await options.connectNative(context.sessionId)
           : undefined
       if (local?.connection) {
         connection = local.connection
@@ -93,7 +77,6 @@ export const makeBrowserRuntimeFactory = (options: {
         connection = launched.connection
         processHandle = launched.processHandle
         owned = launched.processHandle !== undefined
-        inherited = launched.inherited === true
       }
     }
     try {
@@ -116,7 +99,6 @@ export const makeBrowserRuntimeFactory = (options: {
       processHandle?.kill("SIGTERM")
       throw cause
     }
-    if (inherited) await closeBlankPages(connection)
     const active: BrowserRuntime = {
       connection,
       native,

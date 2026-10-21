@@ -9,6 +9,7 @@ export type {
 } from "./browser-preview.js"
 export * from "./computer-use-provider.js"
 export * from "./browser-extension-relay.js"
+export * from "./browser-host-registry.js"
 export * from "./browser-setup-broker.js"
 export * from "./code-executor.js"
 export * from "./codevisor-provider.js"

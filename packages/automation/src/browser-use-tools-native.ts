@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
-import { objectSchema, targetProperties, tool } from "./browser-use-tool-schema.js"
+import { objectSchema, tablessTool, targetProperties, tool } from "./browser-use-tool-schema.js"
 
 export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool(
@@ -14,17 +14,20 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
     "Name this browser session; agent-created Chrome tabs are grouped under this name.",
     objectSchema({ name: { type: "string" } }, ["name"])
   ),
-  tool("backends", "List Codevisor Browser Use backends and current availability."),
-  tool(
-    "connection_status",
-    "Return the selected backend and its connection phase without waiting for a browser picker."
+  tablessTool(
+    "status",
+    "Show which browsers are available right now and whether the user can see each: managed (headless, never visible), builtin (this chat's browser pane in the Codevisor Mac app) and extension (the user's own Chrome: connected, installed but not connected, or not installed). Also reports the browser selected for this chat. Fast; never waits or prompts."
   ),
-  tool(
+  tablessTool(
     "use_backend",
-    "Select the Browser Use backend for this session. extension connects to the user's open Chrome through Codevisor's bundled relay; managed uses Codevisor's isolated Chromium fallback. The connection response is always nonblocking.",
-    objectSchema({ backend: { type: "string", enum: ["managed", "extension", "builtin"] } }, [
+    "Pick the browser for this chat; it stays selected until you pick another. There is no default: browser calls fail until you pick one. managed: headless Chromium with no window, the user cannot see it; use it for background work they don't need to watch. builtin: the browser pane in the Codevisor Mac app, which the user can watch and use; use it when they should watch, take over, or log in. extension: the user's real Chrome, already signed in to their accounts; use it when the task needs their existing sessions.",
+    objectSchema({ backend: { type: "string", enum: ["managed", "builtin", "extension"] } }, [
       "backend"
     ])
+  ),
+  tablessTool(
+    "request_extension_install",
+    'Show the user a card in the chat composer to add the Codevisor extension to their Chrome, then wait until they finish or dismiss it (up to 10 minutes, or the execute timeout if shorter, so run it with timeout_ms 600000). Call it only when the task needs the user\'s own Chrome and browser.status reports the extension as not_installed or not connected. Returns { outcome: "installed" | "dismissed" | "timeout" }; on installed, extension becomes this chat\'s browser. The user may take a few minutes: keep waiting until the call returns, even if your environment moves it to the background, and don\'t end your response while it is pending, because that cancels the card.'
   ),
   tool(
     "tabs",

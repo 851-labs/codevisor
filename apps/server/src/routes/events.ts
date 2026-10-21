@@ -129,6 +129,15 @@ export const handleUpgrade = async (
       spliceVNCSocket(config.screenSharingVNC, url, request, socket, head, webSocketServer)
       return
     }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/v1/browser-use/host/socket" &&
+      services.mcp !== undefined
+    ) {
+      const mcp = services.mcp
+      accept((webSocket) => mcp.acceptBrowserHost(webSocket))
+      return
+    }
     const clientId = matchRoute(url.pathname, "/v1/clients/:id/socket")
     if (request.method === "GET" && clientId !== undefined && clientControl !== undefined) {
       accept((webSocket) => {

@@ -79,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     if chromiumShutdownComplete { return .terminateNow }
     if chromiumShutdownInProgress { return .terminateCancel }
+    if CVChromiumIsPumping() {
+      sender.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
+      return .terminateCancel
+    }
     let skip = skipsNextConfirmation
     skipsNextConfirmation = false
     guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateBrowsers(sender) }

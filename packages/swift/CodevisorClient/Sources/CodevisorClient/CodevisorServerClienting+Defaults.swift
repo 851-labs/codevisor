@@ -354,9 +354,6 @@ public extension CodevisorServerClienting {
   func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
     .init(chromeAvailable: false, chromeConnected: false, managedAvailable: true)
   }
-  func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
     throw CodevisorServerClientError.invalidResponse
   }

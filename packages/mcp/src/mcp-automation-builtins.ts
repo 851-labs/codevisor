@@ -114,11 +114,13 @@ export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider =
     sessionBackend: () => undefined,
     setSessionBackend: () => undefined,
     beginTurn: async () => undefined,
+    acceptBrowserHost: (socket) => {
+      socket.close(1011, detail)
+    },
     acceptExtensionConnection: (socket) => {
       socket.close()
     },
     onExtensionConnectionChange: () => () => undefined,
-    awaitExtensionReconnect: async () => false,
     openDevelopmentExtensionFolder: unavailable,
     openDevelopmentExtensionPage: unavailable,
     openDevelopmentExtensionInstaller: unavailable,

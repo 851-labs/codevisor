@@ -15,6 +15,11 @@ import { browserKeyDescription } from "./browser-keyboard.js"
 import { browserUseTools } from "./browser-use-provider.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
+const toolProperties = (name: string) =>
+  Object.keys(
+    browserUseTools.find((candidate) => candidate.name === name)?.inputSchema.properties ?? {}
+  )
+
 const directories: string[] = []
 
 afterEach(() => {
@@ -101,17 +106,17 @@ describe("Browser Use tool contract", () => {
 
   it("exposes a native-style nonblocking tab lifecycle", () => {
     expect(browserUseTools.map((candidate) => candidate.name)).toEqual(
-      expect.arrayContaining([
-        "connection_status",
-        "openTabs",
-        "claimTab",
-        "finalizeTabs",
-        "tab_info"
-      ])
+      expect.arrayContaining(["status", "openTabs", "claimTab", "finalizeTabs", "tab_info"])
     )
     for (const tool of browserUseTools) {
       expect(tool.inputSchema.additionalProperties).toBe(false)
     }
+  })
+
+  it("offers tabId only on tools that act on a tab", () => {
+    for (const name of ["status", "use_backend", "request_extension_install"])
+      expect(toolProperties(name)).not.toContain("tabId")
+    expect(toolProperties("snapshot")).toContain("tabId")
   })
 
   it("exposes the native Browser Playwright locator operations", () => {

@@ -37,14 +37,13 @@ extension QuestionPickerContent {
   }
 
   func showsNoteField(_ question: QuestionSpec) -> Bool {
-    guard question.presentation != .browserChoice, !isOtherSelected(question) else { return false }
+    guard !isOtherSelected(question) else { return false }
     return revealedNotes.contains(question.id)
       || !(notes[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   func showsAddNoteButton(_ question: QuestionSpec) -> Bool {
-    question.presentation != .browserChoice && !isOtherSelected(question)
-      && !showsNoteField(question)
+    !isOtherSelected(question) && !showsNoteField(question)
   }
 
   func revealNote(_ question: QuestionSpec) {

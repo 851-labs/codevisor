@@ -41,9 +41,7 @@ struct QuestionPickerContent: View {
     request.questions.allSatisfy { question in
       let selected = selections[question.id, default: []]
       let note = (notes[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-      let hasValidOther = !selected.contains(Self.otherToken) || !note.isEmpty
-      let hasBrowserChoice = question.presentation != .browserChoice || !selected.isEmpty
-      return hasValidOther && hasBrowserChoice
+      return !selected.contains(Self.otherToken) || !note.isEmpty
     }
   }
 
@@ -120,7 +118,6 @@ struct QuestionPickerContent: View {
       canInstallLocally: canInstallBrowserExtensionLocally,
       didOpenBrowserExtensions: $didOpenBrowserExtensions,
       cancel: { cancel() },
-      submitBack: { submitDirectAnswer(question, label: $0) },
       performSetupAction: performBrowserSetupAction,
       showDragStage: showBrowserExtensionDragStage
     )

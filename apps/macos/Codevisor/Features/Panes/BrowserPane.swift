@@ -9,15 +9,20 @@ final class BrowserPane: Pane {
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
   var onFocusChanged: ((Bool) -> Void)?
   let model: ChromiumBrowserModel
+  var wiring: ((ChromiumBrowserModel) -> Void)? {
+    didSet { ChromiumBrowserModels.shared.wire(self) }
+  }
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
-    model = ChromiumBrowserModel(
-      paneId: descriptor.id, machineId: context.machine.id, machineName: context.machine.name,
-      initialURL: descriptor.browserURL ?? "https://www.google.com/", isLocal: context.machine.isLocal,
-      client: context.client ?? CodevisorServerClient(config: context.machine.serverConfig),
-      resolveBaseURL: context.resolveHTTPBaseURL ?? { context.machine.baseURL }
-    )
+    model = ChromiumBrowserModels.shared.acquire(descriptor.id) {
+      ChromiumBrowserModel(
+        paneId: descriptor.id, machineId: context.machine.id, machineName: context.machine.name,
+        initialURL: descriptor.browserURL ?? "https://www.google.com/",
+        client: context.client ?? CodevisorServerClient(config: context.machine.serverConfig),
+        resolveBaseURL: context.resolveHTTPBaseURL ?? { context.machine.baseURL }
+      )
+    }
   }
 
   func makeView() -> AnyView {
@@ -27,6 +32,6 @@ final class BrowserPane: Pane {
     model.webView?.focusPage()
   }
   func visibilityChanged(_ visible: Bool) { model.setVisible(visible) }
-  func willDelete() async { model.teardown() }
-  func detach() { model.teardown() }
+  func willDelete() async { ChromiumBrowserModels.shared.release(self) }
+  func detach() { ChromiumBrowserModels.shared.release(self) }
 }

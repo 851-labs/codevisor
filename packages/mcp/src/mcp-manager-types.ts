@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import type {
-  BrowserPreference,
   BrowserUseConfiguration,
   ComposerSkill,
   CreateMcpServerRequest,
@@ -13,6 +12,7 @@ import type {
 } from "@codevisor/api"
 import type {
   AutomationToolProvider,
+  BrowserClientPlatform,
   BrowserPreviewSubscription,
   BrowserPreviewViewer,
   BrowserUseProvider
@@ -123,6 +123,7 @@ export interface McpManager {
     answer: QuestionAnswer
   ) => Promise<boolean>
   readonly acceptBrowserExtension: (socket: WebSocket) => void
+  readonly acceptBrowserHost: (socket: WebSocket) => void
   readonly subscribeBrowserPreview: (
     sessionId: string,
     viewer: BrowserPreviewViewer
@@ -132,9 +133,6 @@ export interface McpManager {
     listener: (tool: AutomationTool) => void
   ) => () => void
   readonly browserConfiguration: () => Promise<BrowserUseConfiguration>
-  readonly setBrowserPreference: (
-    preference: BrowserPreference | undefined
-  ) => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionInstaller: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionFolder: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionsPage: () => Promise<BrowserUseConfiguration>
@@ -144,7 +142,10 @@ export interface McpManager {
   readonly finishTurn: (sessionId: string) => Promise<void>
   readonly beginTurn: (
     sessionId: string,
-    options?: { readonly clientId?: string | undefined }
+    options?: {
+      readonly clientId?: string | undefined
+      readonly clientPlatform?: BrowserClientPlatform | undefined
+    }
   ) => Promise<void>
   readonly invokeRemoteGatewayCall: (
     origin: GatewayOrigin,

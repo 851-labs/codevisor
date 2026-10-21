@@ -6,7 +6,6 @@ import {
   CreateWorktreeRequest,
   PromoteWorkspacePaneToChatRequest,
   ReorderWorkspacePanesRequest,
-  UpdateBrowserUseConfigurationRequest,
   UpdateProjectRequest,
   UpdateWorkspacePaneRequest,
   UpdateWorkspaceRequest,
@@ -147,18 +146,9 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "settings.browser_get",
-    "Get server-owned Browser Use settings and availability.",
+    "Get Browser Use availability on the server machine: Chrome, the extension, and managed Chromium.",
     "GET",
     "/v1/browser-use"
-  ),
-  apiTool(
-    "settings.browser_update",
-    "Update the server's preferred Browser Use backend.",
-    "PATCH",
-    "/v1/browser-use",
-    {
-      body: UpdateBrowserUseConfigurationRequest
-    }
   ),
   apiTool(
     "filesystem.list",

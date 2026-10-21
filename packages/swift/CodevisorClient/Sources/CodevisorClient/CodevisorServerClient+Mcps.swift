@@ -98,10 +98,6 @@ private struct UpdateMcpEnabledBody: Encodable {
   var enabled: Bool
 }
 
-private struct UpdateBrowserUseConfigurationBody: Encodable {
-  var preferredBrowser: String
-}
-
 private struct DetectMcpAuthBody: Encodable {
   var url: String
 }
@@ -113,14 +109,6 @@ extension CodevisorServerClient {
 
   public func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
     try await get("/v1/browser-use")
-  }
-
-  public func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration {
-    try await send(
-      "/v1/browser-use",
-      method: "PATCH",
-      body: UpdateBrowserUseConfigurationBody(preferredBrowser: preference)
-    )
   }
 
   public func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {

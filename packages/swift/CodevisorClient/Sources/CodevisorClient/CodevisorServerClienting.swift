@@ -85,7 +85,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws
   func listMcpServers() async throws -> [ServerMcpServer]
   func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration
-  func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration
   func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration
   func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration
   func openBrowserExtensionsPage() async throws -> ServerBrowserUseConfiguration

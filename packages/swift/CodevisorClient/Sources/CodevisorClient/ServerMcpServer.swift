@@ -32,7 +32,6 @@ public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
-  public var preferredBrowser: String?
   public var chromeAvailable: Bool
   public var chromeConnected: Bool
   public var managedAvailable: Bool
@@ -42,14 +41,12 @@ public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
   public var supportsExtensionFlow: Bool { extensionFlowSupported ?? true }
 
   public init(
-    preferredBrowser: String? = nil,
     chromeAvailable: Bool,
     chromeConnected: Bool,
     managedAvailable: Bool,
     extensionFlowSupported: Bool? = nil,
     developmentExtensionPath: String? = nil
   ) {
-    self.preferredBrowser = preferredBrowser
     self.chromeAvailable = chromeAvailable
     self.chromeConnected = chromeConnected
     self.managedAvailable = managedAvailable

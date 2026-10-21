@@ -254,6 +254,27 @@ extension SessionStore {
     }
   }
 
+  private func backgroundBrowserTarget(serverId: String, sessionId: String) -> (ChatSession, Project)? {
+    guard let id = UUID(uuidString: sessionId),
+      let session = environment.projectList.session(id, serverId: serverId),
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == serverId && $0.id == session.projectId
+      })
+    else { return nil }
+    return (session, project)
+  }
+
+  func canHostBackgroundBrowser(serverId: String, sessionId: String) -> Bool {
+    backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) != nil
+  }
+
+  func createBackgroundBrowserTab(serverId: String, sessionId: String, url: String) -> ChromiumBrowserModel? {
+    guard let (session, project) = backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) else {
+      return nil
+    }
+    return createBrowserTab(for: session, project: project, url: url)
+  }
+
   private func createBrowserTab(
     for session: ChatSession, project: Project, url: String
   ) -> ChromiumBrowserModel? {

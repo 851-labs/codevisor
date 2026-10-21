@@ -277,7 +277,6 @@ describe("gateway machines and execution annotations", () => {
         }
       })
     })
-    await manager.setBrowserPreference("managed")
     await listenWithMachines(manager)
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-site" }))
     const session = await run(db.createSession({ harnessId: "codex", projectId: project.id }))

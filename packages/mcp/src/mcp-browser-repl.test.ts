@@ -59,7 +59,6 @@ it("preserves browser cells and applies gateway upload validation and attachment
       }
     })
   })
-  await manager.setBrowserPreference("managed")
   await mkdir(join(directory, "workspace"))
   await writeFile(join(directory, "outside.txt"), "outside")
   const project = await run(db.createProject({ folderPath: join(directory, "workspace") }))

@@ -32,6 +32,9 @@ class Application final : public CefApp, public CefBrowserProcessHandler {
   void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> command) override {
     command->AppendSwitch("disable-chrome-login-prompt");
     command->AppendSwitch("disable-quic");
+    command->AppendSwitch("disable-background-timer-throttling");
+    command->AppendSwitch("disable-renderer-backgrounding");
+    command->AppendSwitch("disable-backgrounding-occluded-windows");
   }
   void OnScheduleMessagePumpWork(int64_t delay) override {
     dispatch_async(dispatch_get_main_queue(), ^{ ChromiumRuntime::Shared().SchedulePump(delay); });
@@ -141,4 +144,7 @@ void ChromiumRuntime::PublishZoom() {
 }
 void CVShutdownChromium(void (^completion)(void)) {
   ChromiumRuntime::Shared().Shutdown(completion);
+}
+BOOL CVChromiumIsPumping(void) {
+  return ChromiumRuntime::Shared().IsPumping();
 }

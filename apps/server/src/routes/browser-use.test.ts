@@ -5,7 +5,7 @@ import { WebSocket } from "ws"
 import { jsonRequest, start } from "../test-support.js"
 
 describe("browser-use routes", () => {
-  it("persists Browser Use selection and tracks the live Chrome relay", async () => {
+  it("has no stored browser choice and tracks the live Chrome relay", async () => {
     const { server } = await start()
     const initial = await jsonRequest(server, "/v1/browser-use")
     expect(initial.status).toBe(200)
@@ -30,22 +30,15 @@ describe("browser-use routes", () => {
         .toString("utf8")
     ).toBe("PNG")
 
-    const selected = await jsonRequest(server, "/v1/browser-use", {
-      method: "PATCH",
-      body: JSON.stringify({ preferredBrowser: "managed" })
-    })
-    expect(selected.body).toMatchObject({ preferredBrowser: "managed" })
-    expect((await jsonRequest(server, "/v1/browser-use")).body).toMatchObject({
-      preferredBrowser: "managed"
-    })
+    expect(initial.body).not.toHaveProperty("preferredBrowser")
     expect(
       (
         await jsonRequest(server, "/v1/browser-use", {
           method: "PATCH",
-          body: JSON.stringify({ preferredBrowser: "firefox" })
+          body: JSON.stringify({ preferredBrowser: "managed" })
         })
       ).status
-    ).toBe(400)
+    ).toBe(404)
 
     const extension = async (): Promise<WebSocket> => {
       const socket = new WebSocket(
@@ -72,5 +65,17 @@ describe("browser-use routes", () => {
       chromeConnected: true
     })
     socket.close()
+  })
+
+  it("hands Mac app browser host sockets to the host registry", async () => {
+    const { server } = await start()
+    const host = new WebSocket(`${server.url.replace("http:", "ws:")}/v1/browser-use/host/socket`)
+    const closed = new Promise<number>((resolve) => host.once("close", resolve))
+    await new Promise<void>((resolve, reject) => {
+      host.once("open", resolve)
+      host.once("error", reject)
+    })
+    host.send("not a hello")
+    expect(await closed).toBe(1008)
   })
 })

@@ -6,7 +6,6 @@ import type {
   ArchivedWorktree,
   AttachmentKind,
   AttachmentRef,
-  BrowserPreference,
   CreateProjectRequest,
   CreateSessionRequest,
   DataUpgradeProgress,
@@ -435,10 +434,6 @@ export interface CodevisorDatabaseService
   readonly setBrowserNavigation: (
     paneId: string,
     navigation: BrowserNavigation
-  ) => Effect.Effect<void, DatabaseError>
-  readonly getBrowserPreference: Effect.Effect<BrowserPreference | undefined, DatabaseError>
-  readonly setBrowserPreference: (
-    preference: BrowserPreference | undefined
   ) => Effect.Effect<void, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>

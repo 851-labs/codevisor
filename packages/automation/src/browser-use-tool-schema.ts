@@ -97,3 +97,9 @@ export const tool = (
     }
   }
 })
+
+export const tablessTool = (
+  name: string,
+  description: string,
+  inputSchema: ObjectSchema = objectSchema()
+): Tool => ({ name, description, inputSchema: { ...inputSchema } })

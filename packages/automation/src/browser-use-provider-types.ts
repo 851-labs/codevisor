@@ -1,10 +1,12 @@
 import type { WebSocket } from "ws"
 
 import type { AutomationToolProvider } from "./automation-provider.js"
+import type { BrowserHostSocket } from "./browser-host-registry.js"
 import type { BrowserPreviewSubscription, BrowserPreviewViewer } from "./browser-preview.js"
 
 export type BrowserBackend = "managed" | "extension" | "builtin"
 export type BrowserExtensionSetupMode = "development" | "webStore"
+export type BrowserClientPlatform = "macos" | "ios"
 
 export interface BrowserUseProviderStatus extends Readonly<Record<string, unknown>> {
   readonly extensionConnected: boolean
@@ -19,10 +21,13 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly status: () => BrowserUseProviderStatus
   readonly sessionBackend: (sessionId: string) => BrowserBackend | undefined
   readonly setSessionBackend: (sessionId: string, backend: BrowserBackend) => void
-  readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
+  readonly beginTurn: (
+    sessionId: string,
+    options?: { readonly clientPlatform?: BrowserClientPlatform | undefined }
+  ) => Promise<void>
+  readonly acceptBrowserHost: (socket: BrowserHostSocket) => void
   readonly acceptExtensionConnection: (socket: WebSocket) => void
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
-  readonly awaitExtensionReconnect: () => Promise<boolean>
   readonly openDevelopmentExtensionFolder: () => Promise<void>
   readonly openDevelopmentExtensionPage: () => Promise<void>
   readonly openDevelopmentExtensionInstaller: () => Promise<void>

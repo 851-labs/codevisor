@@ -192,8 +192,10 @@ struct RootView: View {
     .animation(.smooth(duration: 0.2), value: environment.requiresPermissionsReview)
     .task {
       if store == nil {
-        store = SessionStore(environment: environment)
-        store?.setWindowFocused(controlActiveState == .key)
+        let created = SessionStore(environment: environment)
+        store = created
+        created.setWindowFocused(controlActiveState == .key)
+        ChromiumAutomationBridge.shared.addStore(created)
       }
       if !AppPreview.isRunning {
         environment.localServer?.onUpdateRequested = { [environment] in
@@ -205,6 +207,7 @@ struct RootView: View {
       }
     }
     .modifier(UpdateCenterUpkeep())
+    .modifier(ChromiumBrowserHostSync())
     .modifier(ServerDataUpgradePresentation())
     .modifier(CloudAuthDeeplinkHandling())
     .modifier(PluginInstallDeeplinkHandling())

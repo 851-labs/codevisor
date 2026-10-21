@@ -212,25 +212,25 @@ struct ProtocolCodableTests {
       json:
         #"{"sessionUpdate":"question_resolved","questionId":"q-2","outcome":"cancelled","questions":[]}"#
     )
-    let browserChoiceQuestion = SessionUpdate.question(
-      QuestionRequest(
-        questionId: "browser-choice",
-        questions: [
-          QuestionSpec(
-            id: "browser_preference",
-            question: "Which browser should I use?",
-            options: [QuestionOption(label: "Use Codevisor Browser")],
-            allowsOther: false,
-            presentation: .browserChoice
-          )
-        ]
-      ))
-    try roundTrip(browserChoiceQuestion)
-    try assertWire(
-      browserChoiceQuestion,
-      json:
-        #"{"sessionUpdate":"question","questionId":"browser-choice","questions":[{"id":"browser_preference","question":"Which browser should I use?","options":[{"label":"Use Codevisor Browser"}],"allowsOther":false,"presentation":"browserChoice"}]}"#
-    )
+    let retiredPresentation = try JSONDecoder().decode(
+      SessionUpdate.self,
+      from: Data(
+        #"{"sessionUpdate":"question","questionId":"browser-choice","questions":[{"id":"browser_preference","question":"Which browser should I use?","options":[{"label":"Use Chromium"}],"allowsOther":false,"presentation":"browserChoice"}]}"#
+          .utf8))
+    #expect(
+      retiredPresentation
+        == .question(
+          QuestionRequest(
+            questionId: "browser-choice",
+            questions: [
+              QuestionSpec(
+                id: "browser_preference",
+                question: "Which browser should I use?",
+                options: [QuestionOption(label: "Use Chromium")],
+                allowsOther: false
+              )
+            ]
+          )))
   }
 
   @Test("Context compaction preserves server wire tags, statuses and omitted IDs")

@@ -2,7 +2,6 @@ import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
@@ -18,7 +17,6 @@ import {
   browserExtensionArchivePath,
   browserExtensionInstallation,
   chromeBrowserAvailable,
-  CODEVISOR_BROWSER_EXTENSION_ID,
   makeBrowserExtensionRelay,
   openBrowserExtensionDevelopmentFolder,
   openBrowserExtensionDevelopmentInstaller,
@@ -26,7 +24,7 @@ import {
   openBrowserExtensionWebStore,
   prepareBrowserExtension
 } from "./browser-extension-relay.js"
-import { extensionConnectionReply } from "./browser-extension-status.js"
+import { makeBrowserHostRegistry, type BrowserHostRegistry } from "./browser-host-registry.js"
 import { makeBrowserPreviews } from "./browser-preview.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
@@ -37,13 +35,26 @@ import {
   runtimeKey,
   type BrowserAssetInventory
 } from "./browser-use-invoke.js"
+import {
+  browserExtensionState,
+  browserStatusReport,
+  chromeNotConnectedResult,
+  builtinLostResult,
+  noBrowserSelectedResult,
+  type BuiltinBrowserState
+} from "./browser-use-status.js"
 import { browserUseTools } from "./browser-use-tools.js"
 
 export { browserUseTools } from "./browser-use-tools.js"
 
-export type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider-types.js"
+export type {
+  BrowserBackend,
+  BrowserClientPlatform,
+  BrowserUseProvider
+} from "./browser-use-provider-types.js"
 import type {
   BrowserBackend,
+  BrowserClientPlatform,
   BrowserExtensionSetupMode,
   BrowserUseProvider
 } from "./browser-use-provider-types.js"
@@ -52,7 +63,8 @@ const extensionEndpoint = (): string | undefined => process.env.CODEVISOR_BROWSE
 
 export const makeBrowserUseProvider = (
   dataDir: string,
-  db?: CodevisorDatabaseService
+  db?: CodevisorDatabaseService,
+  hosts: BrowserHostRegistry = makeBrowserHostRegistry()
 ): BrowserUseProvider => {
   const repls = makeBrowserRepls()
   const contexts = new Map<string, AutomationProviderContext>()
@@ -68,6 +80,7 @@ export const makeBrowserUseProvider = (
   const retiredRuntimes = new Set<BrowserRuntime>()
   const runtimes = new Map<string, Promise<BrowserRuntime>>()
   const sessionBackends = new Map<string, BrowserBackend>()
+  const clientPlatforms = new Map<string, BrowserClientPlatform>()
   const selectedTargets = new Map<string, string>()
   const sessionTargets = new Map<string, Map<string, "created" | "claimed">>()
   const sessionDispositions = new Map<string, Map<string, "deliverable" | "handoff">>()
@@ -100,7 +113,7 @@ export const makeBrowserUseProvider = (
       extensionAvailable: extension.bundled,
       extensionInstalled: extension.installed,
       extensionInstallationState: extension.installationState,
-      extensionConnected: extensionEndpoint() !== undefined || extensionRelay.connected(),
+      extensionConnected: extensionConnected(),
       extensionSetupMode,
       chromeAvailable: chromeBrowserAvailable(),
       developmentExtensionPath,
@@ -128,13 +141,13 @@ export const makeBrowserUseProvider = (
   }
 
   const createRuntime = makeBrowserRuntimeFactory({
-    dataDir,
     db,
     profilesDir,
     browsersDir,
     downloadsDir,
     fallbackReasons,
     ensureSetup,
+    connectNative: hosts.connect,
     connectExtension: () => {
       const endpoint = extensionEndpoint()
       return endpoint === undefined ? extensionRelay.connect() : CdpConnection.connect(endpoint)
@@ -169,41 +182,46 @@ export const makeBrowserUseProvider = (
     return created
   }
 
-  const extensionConnectionResult = (): CallToolResult =>
-    extensionConnectionReply(extensionEndpoint() !== undefined || extensionRelay.connected())
+  const extensionConnected = () => extensionEndpoint() !== undefined || extensionRelay.connected()
 
-  const connectionStatus = async (context: AutomationProviderContext) => {
-    const requestedBackend = sessionBackends.get(context.sessionId)
-    const active =
-      requestedBackend &&
-      (await runtimes.get(runtimeKey(context, requestedBackend))?.catch(() => undefined))
-    const connected =
-      requestedBackend === "extension"
-        ? extensionEndpoint() !== undefined || extensionRelay.connected()
-        : active !== undefined && !active.connection.closed
+  const builtinState = (context: AutomationProviderContext): BuiltinBrowserState => {
+    const { host, lostHost } = hosts.state(context.sessionId)
+    const fallback = fallbackReasons.get(context.sessionId)
     return {
-      requestedBackend: requestedBackend ?? "unconfigured",
-      backend:
-        requestedBackend === "extension"
-          ? "extension"
-          : active
-            ? active.native
-              ? "builtin"
-              : requestedBackend === "builtin"
-                ? "managed"
-                : requestedBackend
-            : "unconnected",
-      connected,
-      connectionState: connected ? "connected" : "disconnected",
-      localOnly: true,
-      ...(requestedBackend === "builtin" && fallbackReasons.has(context.sessionId)
-        ? {
-            fallbackReason: fallbackReasons.get(context.sessionId),
-            retry: "The local built-in browser is checked again at the next response."
-          }
-        : {})
+      ready: fallback === undefined && host !== undefined,
+      ...(host === undefined ? {} : { host: host.name }),
+      ...(lostHost === undefined ? {} : { lostHost }),
+      ...(fallback === undefined && host !== undefined
+        ? {}
+        : { reason: fallback ?? "No Codevisor Mac app is connected to this server." })
     }
   }
+
+  const dropNativeRuntime = async (context: AutomationProviderContext, active: BrowserRuntime) => {
+    const key = runtimeKey(context, "builtin")
+    if (runtimes.has(key)) runtimes.delete(key)
+    for (const dispose of active.eventDisposers) dispose()
+    await active.connection.close()
+    const handles = `${key}:${context.sessionId}`
+    selectedTargets.delete(handles)
+    sessionTargets.delete(handles)
+    sessionDispositions.delete(handles)
+    await repls.reset(context.sessionId)
+    return builtinLostResult(hosts.state(context.sessionId))
+  }
+
+  const browserStatus = async (context: AutomationProviderContext) =>
+    browserStatusReport({
+      selected: sessionBackends.get(context.sessionId),
+      platform: clientPlatforms.get(context.sessionId),
+      managedError: setupError,
+      builtin: builtinState(context),
+      extension: browserExtensionState({
+        connected: extensionConnected(),
+        chromeAvailable: chromeBrowserAvailable(),
+        installationState: browserExtensionInstallation().installationState
+      })
+    })
 
   const discardSessionHandles = async (sessionId: string) => {
     await repls.reset(sessionId)
@@ -230,37 +248,32 @@ export const makeBrowserUseProvider = (
     status,
     sessionBackend: (sessionId) => sessionBackends.get(sessionId),
     setSessionBackend: (sessionId, backend) => sessionBackends.set(sessionId, backend),
-    beginTurn: async (sessionId, backend) => {
-      const previous = sessionBackends.get(sessionId)
-      sessionBackends.set(sessionId, backend)
+    beginTurn: async (sessionId, options) => {
+      if (options?.clientPlatform === undefined) clientPlatforms.delete(sessionId)
+      else clientPlatforms.set(sessionId, options.clientPlatform)
       const context = contexts.get(sessionId)
-      let changed = previous !== backend
-      if (context && backend === "builtin") {
-        const key = runtimeKey(context, backend)
-        const current = await runtimes.get(key)?.catch(() => undefined)
-        if (!current && fallbackReasons.has(sessionId)) changed = true
-        fallbackReasons.delete(sessionId)
-        if (current && (!current.native || current.connection.closed)) {
-          const native = await createRuntime(context, "builtin", true)
-          if (native || current.connection.closed) {
-            runtimes.delete(key)
-            retiredRuntimes.add(current)
-            if (native) runtimes.set(key, Promise.resolve(native))
-            changed = true
-          }
+      if (context === undefined || sessionBackends.get(sessionId) !== "builtin") return
+      const key = runtimeKey(context, "builtin")
+      const current = await runtimes.get(key)?.catch(() => undefined)
+      let changed = !current && fallbackReasons.has(sessionId)
+      fallbackReasons.delete(sessionId)
+      if (current && (!current.native || current.connection.closed)) {
+        const native = await createRuntime(context, "builtin", true)
+        if (native || current.connection.closed) {
+          runtimes.delete(key)
+          retiredRuntimes.add(current)
+          if (native) runtimes.set(key, Promise.resolve(native))
+          changed = true
         }
       }
       if (changed) await discardSessionHandles(sessionId)
     },
+    acceptBrowserHost: hosts.accept,
     acceptExtensionConnection: (socket) => {
       runtimes.delete("extension")
       extensionRelay.accept(socket)
     },
     onExtensionConnectionChange: extensionRelay.onConnectionChange,
-    awaitExtensionReconnect: async () =>
-      extensionEndpoint() !== undefined ||
-      (browserExtensionInstallation().installationState !== "not_installed" &&
-        (await extensionRelay.reconnected())),
     openDevelopmentExtensionFolder: () =>
       openBrowserExtensionDevelopmentFolder(developmentExtensionPath),
     openDevelopmentExtensionPage: () =>
@@ -289,53 +302,9 @@ export const makeBrowserUseProvider = (
             return browserResultValue(await provider.invoke(context, name, nested))
           }
         )
-      if (toolName === "backends") {
-        const extension = browserExtensionInstallation()
-        const current = await connectionStatus(context)
-        return jsonResult({
-          preferred: sessionBackends.get(context.sessionId),
-          current,
-          builtin: {
-            available:
-              current.backend === "builtin"
-                ? current.connected
-                : fallbackReasons.has(context.sessionId)
-                  ? false
-                  : null,
-            fallback: "managed",
-            localOnly: true
-          },
-          managed: { available: status().backend !== "missing", engine: "codevisor-cdp" },
-          extension: {
-            available: extension.bundled,
-            bundled: extension.bundled,
-            installed: extension.installed,
-            installationState: extension.installationState,
-            browserOpen: userChromiumIsRunning(),
-            connectionState:
-              extensionEndpoint() !== undefined || extensionRelay.connected()
-                ? "connected"
-                : "needs_setup",
-            connected: extensionEndpoint() !== undefined || extensionRelay.connected(),
-            engine: "codevisor-cdp-relay",
-            extensionId: CODEVISOR_BROWSER_EXTENSION_ID,
-            installPath: developmentExtensionPath,
-            detail:
-              "Codevisor's composer handles extension setup. A connected relay is the authoritative readiness signal."
-          }
-        })
-      }
-      if (toolName === "connection_status") {
-        const backend = sessionBackends.get(context.sessionId)
-        if (backend === undefined)
-          return jsonResult({
-            backend: "unconfigured",
-            connectionState: "needs_selection",
-            connected: false
-          })
-        if (backend === "extension") return extensionConnectionResult()
-        return jsonResult(await connectionStatus(context))
-      }
+      if (toolName === "status") return jsonResult(await browserStatus(context))
+      if (toolName === "request_extension_install")
+        return textToolResult("The install prompt is shown through the Codevisor gateway", true)
       if (toolName === "use_backend") {
         const backend = args.backend
         if (backend !== "managed" && backend !== "extension" && backend !== "builtin") {
@@ -348,20 +317,20 @@ export const makeBrowserUseProvider = (
           return textToolResult("The Codevisor Chrome extension resources are missing", true)
         }
         sessionBackends.set(context.sessionId, backend)
-        if (backend === "extension") return extensionConnectionResult()
-        return jsonResult(await connectionStatus(context))
+        return jsonResult(await browserStatus(context))
       }
       if (!browserUseTools.some((candidate) => candidate.name === toolName)) {
         return textToolResult(`Unknown Browser Use tool: ${toolName}`, true)
       }
-      const backend = sessionBackends.get(context.sessionId) ?? "builtin"
-      sessionBackends.set(context.sessionId, backend)
+      const backend = sessionBackends.get(context.sessionId)
       if (
         toolName === "finalizeTabs" &&
         args.native === true &&
-        !sessionTargets.has(`${runtimeKey(context, backend)}:${context.sessionId}`)
+        (backend === undefined ||
+          !sessionTargets.has(`${runtimeKey(context, backend)}:${context.sessionId}`))
       )
         return jsonResult({ finalized: true, kept: [], closed: [], released: [] })
+      if (backend === undefined) return noBrowserSelectedResult(await browserStatus(context))
       let effectiveTool = toolName
       let effectiveArgs = args
       if (toolName === "openTabs") {
@@ -376,12 +345,13 @@ export const makeBrowserUseProvider = (
           url: args.url
         }
       }
-      if (
-        backend === "extension" &&
-        extensionEndpoint() === undefined &&
-        !extensionRelay.connected()
-      )
-        return textToolResult("Chrome is not connected to Codevisor", true)
+      if (backend === "extension" && !extensionConnected())
+        return chromeNotConnectedResult(await browserStatus(context))
+      if (backend === "builtin") {
+        const previous = await runtimes.get(runtimeKey(context, backend))?.catch(() => undefined)
+        if (previous?.native === true && previous.connection.closed)
+          return dropNativeRuntime(context, previous)
+      }
       let active: BrowserRuntime | undefined
       try {
         active = await runtime(context, backend)
@@ -406,23 +376,8 @@ export const makeBrowserUseProvider = (
         if (
           active?.native &&
           (active.connection.closed || /timed out|disconnected/i.test(String(cause)))
-        ) {
-          fallbackReasons.set(
-            context.sessionId,
-            "The local built-in browser disconnected during an action."
-          )
-          runtimes.delete(runtimeKey(context, backend))
-          for (const dispose of active.eventDisposers) dispose()
-          await active.connection.close()
-          const key = `${runtimeKey(context, backend)}:${context.sessionId}`
-          selectedTargets.delete(key)
-          sessionTargets.delete(key)
-          sessionDispositions.delete(key)
-          return textToolResult(
-            "The built-in browser disconnected. The next browser call will use independent Chromium on this server. The interrupted action was NOT retried; its outcome may be unknown. Discard old tab IDs, locators and snapshots, then open or observe a new tab before continuing.",
-            true
-          )
-        }
+        )
+          return dropNativeRuntime(context, active)
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },
@@ -441,7 +396,9 @@ export const makeBrowserUseProvider = (
       contexts.delete(sessionId)
       await repls.reset(sessionId)
       sessionBackends.delete(sessionId)
+      clientPlatforms.delete(sessionId)
       fallbackReasons.delete(sessionId)
+      hosts.forgetSession(sessionId)
       const suffix = `:${sessionId}`
       const keys = new Set(
         [...selectedTargets.keys(), ...sessionTargets.keys(), ...sessionDispositions.keys()].filter(
@@ -486,6 +443,7 @@ export const makeBrowserUseProvider = (
       retiredRuntimes.clear()
       runtimes.clear()
       stopRelayLifecycle()
+      hosts.close()
       await extensionRelay.close()
       await Promise.all(
         active.map(async (pending) => {

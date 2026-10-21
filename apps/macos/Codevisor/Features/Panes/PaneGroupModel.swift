@@ -88,9 +88,9 @@ final class PaneGroupModel: Identifiable {
     }
   }
 
-  func canHostBrowserAutomation(sessionId requested: String) -> Bool {
+  func canHostBrowserAutomation(sessionId requested: String, machineId: String) -> Bool {
     guard createBrowserTab != nil, let descriptor = state.panes.first,
-      makeContext(descriptor).machine.isLocal
+      makeContext(descriptor).machine.id == machineId
     else { return false }
     return sessionId?.uuidString.lowercased() == requested.lowercased()
       || state.panes.contains { $0.chatSessionId?.uuidString.lowercased() == requested.lowercased() }
@@ -212,21 +212,22 @@ final class PaneGroupModel: Identifiable {
   }
 
   func wireBrowser(_ browser: BrowserPane) {
-    browser.model.onOpenLink = { [weak self, weak browser] url, destination, popup in
-      guard let self, let browser else { return false }
-      return self.openBrowserLink?(browser.id, url, destination, popup) ?? false
-    }
-    browser.model.onClose = { [weak self, weak browser] in if let browser { self?.closePane(id: browser.id) } }
-    browser.model.onSelect = { [weak self, weak browser] in if let browser { self?.select(id: browser.id) } }
-    browser.model.onNavigate = { [weak self, weak browser] url, title in
-      guard let self, let browser,
-        let index = self.state.panes.firstIndex(where: { $0.id == browser.id }),
-        self.state.panes[index].browserURL != url || self.state.panes[index].name != title
-      else { return }
-      self.state.panes[index].browserURL = url
-      self.state.panes[index].name = title
-      self.persist()
-      self.onPaneChanged?(self.state.panes[index])
+    let id = browser.id
+    browser.wiring = { [weak self] model in
+      model.onOpenLink = { [weak self] url, destination, popup in
+        self?.openBrowserLink?(id, url, destination, popup) ?? false
+      }
+      model.onClose = { [weak self] in self?.closePane(id: id) }
+      model.onSelect = { [weak self] in self?.select(id: id) }
+      model.onNavigate = { [weak self] url, title in
+        guard let self, let index = self.state.panes.firstIndex(where: { $0.id == id }),
+          self.state.panes[index].browserURL != url || self.state.panes[index].name != title
+        else { return }
+        self.state.panes[index].browserURL = url
+        self.state.panes[index].name = title
+        self.persist()
+        self.onPaneChanged?(self.state.panes[index])
+      }
     }
   }
 

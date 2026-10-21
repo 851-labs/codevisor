@@ -16,8 +16,6 @@ struct BrowserExtensionQuestionCard: View {
       header
 
       handoffContent
-
-      footer
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Finish Chrome setup on the computer")
@@ -63,27 +61,5 @@ struct BrowserExtensionQuestionCard: View {
       ComposerCardStyle().insetShape(by: ComposerCardStyle.contentPadding)
         .fill(HierarchicalShapeStyle.quaternary.opacity(0.6))
     )
-  }
-
-  private var footer: some View {
-    HStack {
-      if let backOptionLabel = question.backOptionLabel {
-        Button {
-          Task {
-            await controller.answerQuestion(answers: [
-              question.id: QuestionAnswerEntry(answers: [backOptionLabel])
-            ])
-          }
-        } label: {
-          Image(systemName: "arrow.left")
-            .composerCircleActionLabel(.secondary)
-        }
-        .buttonStyle(.plain)
-        .pointerHighlight(Circle())
-        .accessibilityLabel("Back to Browser Choices")
-        .accessibilityHint("Returns to the browser choices")
-      }
-      Spacer(minLength: 0)
-    }
   }
 }

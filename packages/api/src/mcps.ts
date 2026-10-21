@@ -31,11 +31,7 @@ export const McpConnectionState = Schema.Literals([
 ])
 export type McpConnectionState = typeof McpConnectionState.Type
 
-export const BrowserPreference = Schema.Literals(["chrome", "managed", "builtin"])
-export type BrowserPreference = typeof BrowserPreference.Type
-
 export const BrowserUseConfiguration = Schema.Struct({
-  preferredBrowser: Schema.optional(BrowserPreference),
   chromeAvailable: Schema.Boolean,
   chromeConnected: Schema.Boolean,
   managedAvailable: Schema.Boolean,
@@ -43,11 +39,6 @@ export const BrowserUseConfiguration = Schema.Struct({
   developmentExtensionPath: Schema.optional(Schema.String)
 })
 export type BrowserUseConfiguration = typeof BrowserUseConfiguration.Type
-
-export const UpdateBrowserUseConfigurationRequest = Schema.Struct({
-  preferredBrowser: Schema.NullOr(BrowserPreference)
-})
-export type UpdateBrowserUseConfigurationRequest = typeof UpdateBrowserUseConfigurationRequest.Type
 
 export const McpServer = Schema.Struct({
   id: Schema.String,
