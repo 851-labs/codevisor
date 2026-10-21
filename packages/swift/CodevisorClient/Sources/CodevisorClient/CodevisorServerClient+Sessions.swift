@@ -158,6 +158,10 @@ extension CodevisorServerClient {
     try await get("/v1/sessions/\(id.uuidString)/context")
   }
 
+  public func machineStats() async throws -> ServerMachineStats {
+    try await get("/v1/machine/stats")
+  }
+
   public func openSession(
     _ session: ChatSession,
     project: Project?,

@@ -174,6 +174,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func listSessions() async throws -> [ServerSession]
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
   func sessionContext(id: UUID) async throws -> ServerSessionContext?
+  func machineStats() async throws -> ServerMachineStats
   func openSession(
     _ session: ChatSession,
     project: Project?,

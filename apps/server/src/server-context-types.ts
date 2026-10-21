@@ -131,6 +131,7 @@ export interface CodevisorServerServices {
   readonly syncBlobs?: import("@codevisor/sync").BlobStore
   readonly toolIcons?: import("./infra/tool-icons.js").ToolIconStore
   readonly linkPreviews?: import("./infra/link-previews.js").LinkPreviewStore
+  readonly machineStats?: import("./infra/machine-stats.js").MachineStatsSampler
   readonly machines?: import("./infra/machine-link.js").MachineLink
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
   readonly usageLimits?: UsageLimitsCache

@@ -471,6 +471,10 @@ public extension CodevisorServerClienting {
     nil
   }
 
+  func machineStats() async throws -> ServerMachineStats {
+    throw CodevisorServerClientError.httpStatus(404, "")
+  }
+
   @discardableResult
   func setSessionGoal(
     id: UUID,
