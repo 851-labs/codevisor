@@ -67,7 +67,7 @@ struct ModelConfigChip: View {
     } label: {
       HStack(spacing: 5) {
         if hasSelection, let harnessId = controller.pendingModelPick?.harnessId ?? controller.activeHarnessId {
-          HarnessIconView(harnessId: harnessId, size: 14)
+          HarnessGlyph(harnessId: harnessId, fallbackSymbolName: "cpu")
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }

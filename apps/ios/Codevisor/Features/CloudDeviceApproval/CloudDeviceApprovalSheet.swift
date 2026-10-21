@@ -158,7 +158,7 @@ struct CloudDeviceApprovalSheet: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if cloud.supportsGitHubSignIn {
-          CloudSignInProviderButton(title: "Sign in with GitHub", icon: .asset("GitHubMark")) {
+          CloudSignInProviderButton(title: "Sign in with GitHub", icon: .symbol(.gitHubMark)) {
             startSignIn(.github)
           }
         }

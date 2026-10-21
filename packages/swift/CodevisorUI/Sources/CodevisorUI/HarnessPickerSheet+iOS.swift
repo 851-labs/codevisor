@@ -2,14 +2,13 @@
   import CodevisorCore
   import SwiftUI
 
-  struct HarnessPickerSheet<Icon: View>: View {
+  struct HarnessPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     @State private var selection: String?
 
     let harnesses: [HarnessFleet.CatalogEntry]
     let add: (HarnessFleet.CatalogEntry) -> Void
-    @ViewBuilder let icon: (String, String) -> Icon
 
     private var filteredHarnesses: [HarnessFleet.CatalogEntry] {
       let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -56,7 +55,7 @@
             selection = harness.id
           } label: {
             HStack(spacing: 12) {
-              icon(harness.id, harness.symbolName)
+              HarnessGlyph(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 22)
                 .frame(width: 24, height: 24)
                 .accessibilityHidden(true)
               Text(harness.name)

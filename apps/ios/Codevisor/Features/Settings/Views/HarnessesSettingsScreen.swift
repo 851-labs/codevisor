@@ -19,7 +19,7 @@ struct HarnessesSettingsScreen: View {
           pendingSignIn = HarnessSignInRequest(serverId: machineId, harnessId: harnessId, startsSignIn: startsSignIn)
         }
       ) { id, symbol in
-        HarnessIconView(harnessId: id, fallbackSymbolName: symbol, size: 22)
+        HarnessGlyph(harnessId: id, fallbackSymbolName: symbol, size: 22)
       }
     }
     .navigationTitle("Harnesses")
@@ -34,10 +34,8 @@ struct HarnessesSettingsScreen: View {
     .harnessSignInSheet(request: $pendingSignIn)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        HarnessAddButton(model: globalModel) { id, symbol in
-          HarnessIconView(harnessId: id, fallbackSymbolName: symbol, size: 22)
-        }
-        .labelStyle(.iconOnly)
+        HarnessAddButton(model: globalModel)
+          .labelStyle(.iconOnly)
       }
     }
   }

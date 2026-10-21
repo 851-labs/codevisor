@@ -35,7 +35,7 @@ public struct HarnessGlobalSection<Icon: View>: View {
       }
     } footer: {
       #if os(macOS)
-        HarnessAddButton(model: model, icon: icon)
+        HarnessAddButton(model: model)
       #endif
     }
   }

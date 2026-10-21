@@ -186,10 +186,7 @@ struct WorkspaceInspectorView: View {
                   .lineLimit(1)
                   .truncationMode(.tail)
               } icon: {
-                pullRequest.statusImage
-                  .resizable()
-                  .scaledToFit()
-                  .frame(width: 14, height: 14)
+                pullRequest.statusSymbol.image
                   .foregroundStyle(pullRequest.statusColor)
               }
             }

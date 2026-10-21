@@ -1,30 +1,28 @@
 import SwiftUI
 import AppKit
+import CodevisorUI
 
 struct HarnessIcon: View {
   let harnessId: String
   var fallbackSymbolName: String = "sparkle"
   var size: CGFloat = 13
+  var weight: NSFont.Weight = .regular
 
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     let _ = colorScheme
-    if let sized = Self.sizedImage(named: "harness-\(harnessId)", size: size) {
-      Image(nsImage: sized)
+    if let symbol = Self.rasterizedSymbol(harnessId: harnessId, size: size, weight: weight) {
+      Image(nsImage: symbol)
         .renderingMode(.template)
     } else {
-      MenuSymbolIcon(systemName: fallbackSymbolName, size: size)
+      MenuSymbolIcon(systemName: fallbackSymbolName, size: size, weight: weight)
     }
   }
 
-  private static func sizedImage(named name: String, size: CGFloat) -> NSImage? {
-    MenuIconRasterizer.tinted(cacheKey: "catalog:\(name)@\(size)") {
-      guard let image = NSImage(named: name) else { return nil }
-      return MenuIconRasterizer.labelTintedBitmap(
-        drawing: image,
-        size: NSSize(width: size, height: size)
-      )
+  private static func rasterizedSymbol(harnessId: String, size: CGFloat, weight: NSFont.Weight) -> NSImage? {
+    MenuSymbolIcon.rasterized(cacheKey: "harness:\(harnessId)@\(size)/\(weight.rawValue)", size: size, weight: weight) {
+      CodevisorSymbol.harnessImage(harnessId)
     }
   }
 }
@@ -32,25 +30,32 @@ struct HarnessIcon: View {
 struct MenuSymbolIcon: View {
   let systemName: String
   var size: CGFloat = 13
+  var weight: NSFont.Weight = .regular
 
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     let _ = colorScheme
-    if let symbol = Self.rasterizedSymbol(named: systemName, size: size) {
+    if let symbol = Self.rasterizedSymbol(named: systemName, size: size, weight: weight) {
       Image(nsImage: symbol)
         .renderingMode(.template)
     } else {
       Image(systemName: systemName)
-        .font(.system(size: size - 1))
+        .font(.system(size: size))
     }
   }
 
-  static func rasterizedSymbol(named name: String, size: CGFloat) -> NSImage? {
-    MenuIconRasterizer.tinted(cacheKey: "symbol:\(name)@\(size)") {
-      guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil),
-        let configured = symbol.withSymbolConfiguration(
-          NSImage.SymbolConfiguration(pointSize: size - 1, weight: .medium)
+  static func rasterizedSymbol(named name: String, size: CGFloat, weight: NSFont.Weight) -> NSImage? {
+    rasterized(cacheKey: "symbol:\(name)@\(size)/\(weight.rawValue)", size: size, weight: weight) {
+      NSImage(systemSymbolName: name, accessibilityDescription: nil)
+    }
+  }
+
+  static func rasterized(cacheKey: String, size: CGFloat, weight: NSFont.Weight, symbol: () -> NSImage?) -> NSImage? {
+    MenuIconRasterizer.tinted(cacheKey: cacheKey) {
+      guard
+        let configured = symbol()?.withSymbolConfiguration(
+          NSImage.SymbolConfiguration(pointSize: size, weight: weight)
         )
       else { return nil }
       return MenuIconRasterizer.labelTintedBitmap(drawing: configured, size: configured.size)

@@ -8,7 +8,7 @@ enum CloudSignInButtonMetrics {
 
 public struct CloudSignInProviderButton: View {
   public enum Icon {
-    case asset(String)
+    case symbol(CodevisorSymbol)
     case system(String)
   }
 
@@ -37,18 +37,13 @@ public struct CloudSignInProviderButton: View {
     .accessibilityLabel(title)
   }
 
-  @ViewBuilder
   private var iconView: some View {
-    switch icon {
-    case let .asset(name):
-      Image(name)
-        .renderingMode(.template)
-        .resizable()
-        .scaledToFit()
-    case let .system(name):
-      Image(systemName: name)
-        .font(.system(size: CloudSignInButtonMetrics.fontSize, weight: .medium))
-    }
+    let image =
+      switch icon {
+      case let .symbol(symbol): symbol.image
+      case let .system(name): Image(systemName: name)
+      }
+    return image.font(.system(size: CloudSignInButtonMetrics.fontSize, weight: .medium))
   }
 }
 
