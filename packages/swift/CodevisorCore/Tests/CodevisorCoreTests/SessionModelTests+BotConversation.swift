@@ -47,6 +47,72 @@ extension SessionModelTests {
     #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", followUpID])
   }
 
+  @Test("A bot message the server never took leaves the feed whether or not the bot was working")
+  func botMessageServerNeverTookIsNotShownAsSent() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.initialTranscriptPage = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 0)
+    client.botConversationPage = ServerBotConversationPage(
+      messages: [botFeedMessage("b1", .bot, "Hi there", sequence: 1, sessionId: sessionId)],
+      hasMore: false,
+      working: false
+    )
+    client.promptFailure = .httpStatus(502, "Machine unreachable")
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+    model.presentBotConversation()
+    await model.loadHistoryForInitialDisplay()
+    await settleUntil { model.botMessages.count == 1 && !client.sessionEventSinceValues.isEmpty }
+
+    #expect(await !model.send(UserMessage(text: "are you there?")))
+    #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1"])
+    #expect(model.transcriptBotConversation?.isWorking == false)
+
+    client.emit(
+      botEnvelope(
+        1, sessionId, "session.updated",
+        [
+          "chatItemId": .string(UUID().uuidString),
+          "turnId": .string("turn-bot"),
+          "turnState": .string("started"),
+        ]))
+    await settleUntil { model.isSending }
+
+    #expect(await !model.send(UserMessage(text: "hello?")))
+    #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1"])
+    #expect(model.errorMessage == "Machine unreachable")
+    model.shutdown()
+  }
+
+  @Test("A bot message the server took stays sent when only its acknowledgement was lost")
+  func botMessageWithLostAcknowledgementStaysSent() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.initialTranscriptPage = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 0)
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+    model.presentBotConversation()
+    await model.loadHistoryForInitialDisplay()
+    await settleUntil { !client.sessionEventSinceValues.isEmpty }
+    let message = UserMessage(text: "ship it")
+    let id = message.id.uuidString.lowercased()
+    client.botConversationPage = ServerBotConversationPage(
+      messages: [botFeedMessage(id, .user, "ship it", sequence: 1, sessionId: sessionId)],
+      hasMore: false,
+      working: true
+    )
+    client.promptFailure = .httpStatus(504, "Timed out")
+
+    #expect(await model.send(message))
+    #expect(model.transcriptBotConversation?.messages.map(\.id) == [id])
+    #expect(model.errorMessage == nil)
+    model.shutdown()
+  }
+
   private func botFeedMessage(
     _ id: String, _ sender: ServerBotMessageSender, _ text: String, sequence: Int, sessionId: UUID
   ) -> ServerBotMessage {

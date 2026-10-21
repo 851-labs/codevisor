@@ -90,8 +90,8 @@ extension SessionController {
     if let model {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
-      self.attachments.releaseStagedFiles(of: staged)
+      let sent = await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
+      settleSend(sent, of: outgoingMessage, staged: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }
@@ -111,8 +111,8 @@ extension SessionController {
       status = .idle
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
-      self.attachments.releaseStagedFiles(of: staged)
+      let sent = await model.send(outgoingMessage, startedAt: pendingSendStartedAt, delivery: resolvedDelivery)
+      settleSend(sent, of: outgoingMessage, staged: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }
@@ -121,6 +121,16 @@ extension SessionController {
       restoreComposer()
       handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
     }
+  }
+
+  private func settleSend(_ sent: Bool, of message: UserMessage, staged: [ComposerAttachment]) {
+    guard !sent, presentsBotConversation else {
+      attachments.releaseStagedFiles(of: staged)
+      return
+    }
+    cancelUserSendAnimation(for: message.id)
+    composerText = composerText.isEmpty ? message.text : message.text + "\n" + composerText
+    attachments.restore(staged + attachments.items)
   }
 
   func requestUserSendAnimation(for messageID: UUID) {

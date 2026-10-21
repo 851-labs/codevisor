@@ -10,13 +10,14 @@ extension SessionModel {
     await send(UserMessage(text: text, attachments: attachments))
   }
 
+  @discardableResult
   public func send(
     _ outgoingMessage: UserMessage,
     startedAt: Date? = nil,
     delivery: ServerPromptDelivery = .steer
-  ) async {
+  ) async -> Bool {
     let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
+    guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return false }
     let message = UserMessage(
       id: outgoingMessage.id,
       text: trimmed,
@@ -28,12 +29,9 @@ extension SessionModel {
     harnessAuthenticationErrorMessage = nil
 
     if isSending {
-      if presentsBotConversation {
-        await sendToWorkingBot(message)
-      } else {
-        await sendWhileWorking(message, delivery: delivery)
-      }
-      return
+      if presentsBotConversation { return await sendToWorkingBot(message) }
+      await sendWhileWorking(message, delivery: delivery)
+      return true
     }
 
     settleActiveItem()
@@ -54,16 +52,25 @@ extension SessionModel {
         messageId: message.id.uuidString.lowercased(),
         clientId: promptClientId
       )
-      onPromptAccepted?(message.attachments.count, false)
-      await drain()
     } catch {
-      await drain()
-      pendingOptimisticUserMessageIDs.remove(message.id)
-      let message = serverErrorMessage(error)
-      errorMessage = message
-      finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
-      endTurn()
+      let received = presentsBotConversation ? await botReceived(message) : false
+      if !received {
+        await failSend(of: message, error)
+        return false
+      }
     }
+    onPromptAccepted?(message.attachments.count, false)
+    await drain()
+    return true
+  }
+
+  private func failSend(of message: UserMessage, _ error: any Error) async {
+    await drain()
+    pendingOptimisticUserMessageIDs.remove(message.id)
+    let detail = serverErrorMessage(error)
+    errorMessage = detail
+    finish(stopReason: nil, outcome: .failed, stopDetail: detail, retryable: true)
+    endTurn()
   }
 
   public func retryResponse(to prompt: UserMessage) async {

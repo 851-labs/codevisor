@@ -64,7 +64,7 @@ extension SessionModel {
     botMessages.insert(message, at: index)
   }
 
-  func sendToWorkingBot(_ message: UserMessage) async {
+  func sendToWorkingBot(_ message: UserMessage) async -> Bool {
     unsentBotMessages.append(message)
     onLocalUserMessageAppended?(message.id)
     do {
@@ -74,11 +74,21 @@ extension SessionModel {
         messageId: message.id.uuidString.lowercased(),
         clientId: promptClientId
       )
-      onPromptAccepted?(message.attachments.count, false)
     } catch {
-      unsentBotMessages.removeAll { $0.id == message.id }
-      errorMessage = serverErrorMessage(error)
+      guard await botReceived(message) else {
+        errorMessage = serverErrorMessage(error)
+        return false
+      }
     }
+    onPromptAccepted?(message.attachments.count, false)
+    return true
+  }
+
+  func botReceived(_ message: UserMessage) async -> Bool {
+    await refreshBotConversation()
+    unsentBotMessages.removeAll { $0.id == message.id }
+    let id = message.id.uuidString.lowercased()
+    return botMessages.contains { $0.id.lowercased() == id }
   }
 
   private static func transcriptBotMessage(_ message: ServerBotMessage) -> TranscriptBotMessage {

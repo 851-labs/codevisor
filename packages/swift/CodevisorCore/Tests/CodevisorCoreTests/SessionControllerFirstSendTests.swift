@@ -89,6 +89,31 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
+  @Test("A bot message the server never took returns to the composer ahead of anything typed since")
+  func botSendFailureRestoresMessage() async throws {
+    let fixture = try Fixture()
+    let staged = try attachment(in: fixture.controller.attachmentFiles)
+    fixture.controller.attachments.restore([staged])
+    fixture.controller.presentBotConversation()
+    fixture.client.promptFailure = .httpStatus(502, "Machine unreachable")
+    let (gate, release) = AsyncStream.makeStream(of: Void.self)
+    fixture.client.holdPrompts(until: gate)
+    let send = Task { await fixture.controller.send() }
+    await fixture.client.promptRequests.wait()
+    fixture.controller.composerText = "one more thing"
+
+    release.finish()
+    await send.value
+
+    #expect(fixture.controller.composerText == "Send this message\none more thing")
+    #expect(fixture.controller.composerAttachments == [staged])
+    #expect(FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
+    #expect(fixture.controller.pendingUserMessage == nil)
+    #expect(fixture.controller.userSendAnimationRequest == nil)
+    #expect(fixture.controller.transcriptProjectionInput.botConversation?.messages.isEmpty == true)
+    fixture.controller.model?.shutdown()
+  }
+
   @Test("Setup failure restores the submitted draft and attachments like macOS")
   func setupFailureRestoresDraft() async throws {
     let fixture = try Fixture()

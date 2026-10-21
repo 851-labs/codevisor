@@ -61,7 +61,7 @@ struct SessionModelTests {
 
     releasePrompt.yield()
     releasePrompt.finish()
-    await send.value
+    _ = await send.value
   }
 
   @Test("The prompt carries the optimistic message id; the echo reconciles by identity")

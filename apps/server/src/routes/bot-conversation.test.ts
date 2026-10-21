@@ -54,6 +54,45 @@ describe("bot conversations", () => {
     ).toHaveLength(2)
   })
 
+  it("falls back to the final reply on every turn, not just every other one", async () => {
+    const { running, bot } = await startBot()
+
+    await prompt(running, bot.sessionId, "hello")
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+    await prompt(running, bot.sessionId, "are you there")
+    await waitFor(() => running.agents.prompts.length === 2)
+
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 4)
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "hello"],
+      ["bot", "Echo: hello"],
+      ["user", "are you there"],
+      ["bot", "Echo: are you there"]
+    ])
+  })
+
+  it("skips the fallback only on the turn where the bot already replied", async () => {
+    const { running, bot } = await startBot()
+
+    await prompt(running, bot.sessionId, "slow prompt")
+    await waitFor(() => running.agents.prompts.length === 1)
+    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
+      body: JSON.stringify({ text: "On it" }),
+      method: "POST"
+    })
+    running.agents.releasePrompt()
+    await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
+    await prompt(running, bot.sessionId, "hello")
+
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 4)
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "slow prompt"],
+      ["bot", "On it"],
+      ["user", "hello"],
+      ["bot", "Echo: hello"]
+    ])
+  })
+
   it("keeps the bot's name when its harness titles the chat", async () => {
     const { running, bot } = await startBot()
     await prompt(running, bot.sessionId, "hello")

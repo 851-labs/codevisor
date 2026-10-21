@@ -57,7 +57,8 @@ export const postBotMessage = async (
   if (created) {
     await appendAndPublish(services.db, fanout, "bot.message", sessionId, { message })
   }
-  if (record.sender === "bot") turnFor(services, sessionId).sent = true
+  const turn = turnsFor(services).get(sessionId.toLowerCase())
+  if (record.sender === "bot" && turn !== undefined) turn.sent = true
   return message
 }
 
