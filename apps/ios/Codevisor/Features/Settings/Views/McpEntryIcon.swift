@@ -6,11 +6,7 @@ struct McpEntryIcon: View {
 
   var body: some View {
     if entry.kind == "codevisor" {
-      Image("CodevisorMark")
-        .resizable()
-        .renderingMode(.template)
-        .aspectRatio(contentMode: .fit)
-        .frame(width: 16, height: 16)
+      CodevisorSymbol.codevisorMark.image
     } else if entry.isBuiltIn {
       Image(systemName: symbolName)
     } else {

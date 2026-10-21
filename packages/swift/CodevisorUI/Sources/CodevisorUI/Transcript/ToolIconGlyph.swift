@@ -7,17 +7,17 @@ struct ToolIconGlyph: View {
   @Environment(\.toolIconSide) private var side
 
   var body: some View {
-    let size = ToolIconKind(symbol: symbol).size(in: side)
+    let size = ToolIconKind.symbol.size(in: side)
+    image
+      .font(.system(size: size, weight: ToolIconMetrics.symbolWeight))
+      .symbolRenderingMode(.monochrome)
+  }
+
+  private var image: Image {
     if symbol == ToolCallIcon.codevisorMark {
-      Image("CodevisorMark", bundle: .module)
-        .renderingMode(.template)
-        .resizable()
-        .aspectRatio(contentMode: .fit)
-        .frame(width: size, height: size)
+      CodevisorSymbol.codevisorMark.image
     } else {
       Image(systemName: symbol)
-        .font(.system(size: size, weight: ToolIconMetrics.symbolWeight))
-        .symbolRenderingMode(.monochrome)
     }
   }
 }
