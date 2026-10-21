@@ -12,7 +12,7 @@ enum TranscriptRowTextProjection {
       return [message.text]
     case let .optimistic(message):
       return message.text.isEmpty ? [] : [message.text]
-    case let .botMessage(message, _):
+    case let .botMessage(message, _, _):
       return message.text.isEmpty ? [] : [message.text]
     case let .active(item):
       guard let message = item.userPrompt, !message.text.isEmpty else { return [] }

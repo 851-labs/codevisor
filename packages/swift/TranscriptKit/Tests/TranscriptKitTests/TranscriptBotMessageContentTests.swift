@@ -1,9 +1,8 @@
 import Foundation
 import MarkdownCore
 import Testing
-import TranscriptKit
 
-@testable import CodevisorUI
+@testable import TranscriptKit
 
 struct TranscriptBotMessageContentTests {
   private func content(_ text: String) -> TranscriptBotMessageContent {
@@ -41,5 +40,14 @@ struct TranscriptBotMessageContentTests {
   func fencedCode() {
     let code = "```\n• not a list\nsecond\n```"
     #expect(content(code).markdown == code)
+  }
+
+  @Test("Cached content is replaced when a message's text changes")
+  func cacheFollowsEdits() {
+    let cache = TranscriptBotMessageContentCache()
+    let original = TranscriptBotMessage(id: "m", sender: .bot, text: "One")
+    #expect(cache.content(for: original).blocks == [.paragraph("One")])
+    let edited = TranscriptBotMessage(id: "m", sender: .bot, text: "Two")
+    #expect(cache.content(for: edited).blocks == [.paragraph("Two")])
   }
 }

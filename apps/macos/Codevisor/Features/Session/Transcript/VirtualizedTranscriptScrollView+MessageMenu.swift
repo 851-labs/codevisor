@@ -42,7 +42,7 @@ extension VirtualizedTranscriptScrollView {
     switch rowByKey[key]?.content {
     case let .message(.user(message), _) where !message.isEvent: (message.id.uuidString, message.text)
     case let .optimistic(message): (message.id.uuidString, message.text)
-    case let .botMessage(message, _) where message.sender != .notice: (message.id, message.text)
+    case let .botMessage(message, _, _) where message.sender != .notice: (message.id, message.text)
     default: nil
     }
   }

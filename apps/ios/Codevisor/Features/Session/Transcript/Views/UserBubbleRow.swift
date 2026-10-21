@@ -26,17 +26,14 @@ struct UserBubbleRow: View {
 }
 
 struct BotBubbleRow: View {
-  private let content: TranscriptBotMessageContent
-
-  init(message: TranscriptBotMessage) {
-    content = TranscriptBotMessageContent(message)
-  }
+  let id: String
+  let content: TranscriptBotMessageContent
 
   var body: some View {
     VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
       MessageBubbleView(side: .leading, text: content.text, attachments: []) {
-        StreamingMarkdownView(content.markdown)
-          .transcriptBotMessageWidth(fitting: content.markdown)
+        MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: id)
+          .transcriptBotMessageWidth(fitting: content)
       }
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0, inline: true) }
     }

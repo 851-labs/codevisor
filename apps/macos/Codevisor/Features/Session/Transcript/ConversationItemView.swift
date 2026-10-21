@@ -53,12 +53,7 @@ struct UserMessageView: View {
 
 struct BotMessageView: View {
   let message: TranscriptBotMessage
-  private let content: TranscriptBotMessageContent
-
-  init(message: TranscriptBotMessage) {
-    self.message = message
-    content = TranscriptBotMessageContent(message)
-  }
+  let content: TranscriptBotMessageContent
 
   var body: some View {
     VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
@@ -68,8 +63,8 @@ struct BotMessageView: View {
         text: content.text,
         attachments: []
       ) {
-        StreamingMarkdownView(content.markdown)
-          .transcriptBotMessageWidth(fitting: content.markdown)
+        MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
+          .transcriptBotMessageWidth(fitting: content)
       }
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0, inline: true) }
     }

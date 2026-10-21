@@ -191,7 +191,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case markdownChunk(TranscriptMarkdownChunk)
     case assistantAttachment(TranscriptAssistantAttachment)
     case active(ConversationItem)
-    case botMessage(TranscriptBotMessage, isGroupTail: Bool)
+    case botMessage(TranscriptBotMessage, TranscriptBotMessageContent, isGroupTail: Bool)
     case botTimestamp(Date)
     case delivery(UUID, TranscriptDelivery)
     case botTyping

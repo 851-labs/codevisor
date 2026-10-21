@@ -81,7 +81,8 @@ enum TranscriptBotRowAssembly {
     }
     return .init(
       id: .botMessage(message.id),
-      content: .botMessage(message, isGroupTail: isGroupTail),
+      content: .botMessage(
+        message, TranscriptBotMessageContentCache.shared.content(for: message), isGroupTail: isGroupTail),
       estimatedHeight: estimatedHeight(for: message),
       measurementRevision: message.text.hashValue ^ message.attachments.count,
       spacingAfter: spacing

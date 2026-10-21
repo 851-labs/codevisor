@@ -93,6 +93,24 @@
       geometry = MarkdownTableGeometry(columnWidths: widths, rowHeights: heights)
     }
 
+    static func naturalWidth(
+      headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]], theme: MarkdownTheme
+    ) -> CGFloat {
+      let count = max(headers.count, rows.map(\.count).max() ?? 0)
+      var natural = [CGFloat](repeating: 1, count: count)
+      for (row, values) in ([headers] + rows).enumerated() {
+        for column in 0..<count {
+          let key = CellKey(
+            text: column < values.count ? values[column] : "",
+            isHeader: row == 0,
+            alignment: column < alignments.count ? alignments[column] : .none
+          )
+          natural[column] = max(natural[column], ceil(attributedText(key, theme: theme, images: [:]).size().width))
+        }
+      }
+      return natural.reduce(0, +) + MarkdownTableMetrics.horizontalPadding * 2 * CGFloat(count)
+    }
+
     private static func attributedText(
       _ key: CellKey, theme: MarkdownTheme, images: [String: MarkdownImageResource]
     ) -> NSAttributedString {

@@ -1,16 +1,18 @@
 import Foundation
-import TranscriptKit
+import MarkdownCore
 
-public struct TranscriptBotMessageContent {
+public struct TranscriptBotMessageContent: Equatable, Sendable {
   public let text: String
   public let markdown: String
   public let files: [PreviewFile]
+  public let blocks: [MarkdownBlock]
 
   public init(_ message: TranscriptBotMessage) {
     let segments = assistantMarkdownSegments(message.text, attachments: message.attachments)
     text = Self.markdown(in: segments).trimmingCharacters(in: .whitespacesAndNewlines)
     markdown = Self.bubbleMarkdown(text)
     files = Self.unique(Self.files(in: segments))
+    blocks = MarkdownParser().parse(markdown)
   }
 
   static func bubbleMarkdown(_ text: String) -> String {
@@ -55,5 +57,45 @@ public struct TranscriptBotMessageContent {
   private static func unique(_ files: [PreviewFile]) -> [PreviewFile] {
     var seen = Set<String>()
     return files.filter { seen.insert($0.id).inserted }
+  }
+}
+
+final class TranscriptBotMessageContentCache: @unchecked Sendable {
+  private struct Entry {
+    let text: String
+    let attachments: [Attachment]
+    let content: TranscriptBotMessageContent
+  }
+
+  static let shared = TranscriptBotMessageContentCache()
+  private let lock = NSLock()
+  private var entries: [String: Entry] = [:]
+  private var order: [String] = []
+  private let limit: Int
+
+  init(limit: Int = 2_048) {
+    self.limit = max(1, limit)
+  }
+
+  func content(for message: TranscriptBotMessage) -> TranscriptBotMessageContent {
+    if let entry = lock.withLock({ entries[message.id] }),
+      entry.text == message.text, entry.attachments == message.attachments
+    {
+      return entry.content
+    }
+    let content = TranscriptBotMessageContent(message)
+    lock.withLock {
+      if entries.updateValue(
+        Entry(text: message.text, attachments: message.attachments, content: content), forKey: message.id) == nil
+      {
+        order.append(message.id)
+      }
+      if order.count > limit {
+        let evicted = order.prefix(order.count - limit / 2)
+        for id in evicted { entries.removeValue(forKey: id) }
+        order.removeFirst(evicted.count)
+      }
+    }
+    return content
   }
 }

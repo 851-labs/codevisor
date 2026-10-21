@@ -132,7 +132,7 @@ struct TranscriptBotRowAssemblyTests {
 
   private func groupTails(_ rows: [TranscriptPresentationRow]) -> [String: Bool] {
     rows.reduce(into: [:]) { tails, row in
-      if case let .botMessage(message, isGroupTail) = row.content { tails[message.id] = isGroupTail }
+      if case let .botMessage(message, _, isGroupTail) = row.content { tails[message.id] = isGroupTail }
     }
   }
 
