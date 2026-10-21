@@ -6,7 +6,7 @@ struct WorkspaceInspectorUsageSection: View {
   @Binding var isExpanded: Bool
 
   var body: some View {
-    Section("Usage", isExpanded: $isExpanded) {
+    WorkspaceInspectorCard(title: "Usage", isExpanded: $isExpanded) {
       if let account = limits.accountEmail ?? limits.accountLabel {
         HStack(spacing: 12) {
           Text("Account")
