@@ -150,7 +150,7 @@ struct UpdatesSettingsScreen: View {
         .scaledToFit()
         .frame(width: 15, height: 15)
     case .harness:
-      HarnessIconView(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
+      HarnessGlyph(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
     case .plugin:
       Image(systemName: "puzzlepiece.extension")
     }

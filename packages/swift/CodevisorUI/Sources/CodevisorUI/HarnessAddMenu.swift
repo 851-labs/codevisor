@@ -3,11 +3,10 @@
   import CodevisorCore
   import SwiftUI
 
-  struct HarnessAddMenu<Icon: View>: View {
+  struct HarnessAddMenu: View {
     @Binding var isPresented: Bool
     let harnesses: [HarnessFleet.CatalogEntry]
     let add: @MainActor (HarnessFleet.CatalogEntry) -> Void
-    @ViewBuilder let icon: (String, String) -> Icon
 
     var body: some View {
       Autocomplete.Menu(isPresented: $isPresented) {
@@ -19,7 +18,7 @@
               add(harness)
             }
           ) {
-            icon(harness.id, harness.symbolName).frame(width: 18, height: 18)
+            CodevisorSymbol.harness(harness.id, fallback: harness.symbolName)
           } label: {
             Text(harness.name)
           }

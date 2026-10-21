@@ -1,42 +1,22 @@
 import SwiftUI
 
-#if canImport(UIKit)
-  import UIKit
-#else
-  import AppKit
-#endif
-
 public struct HarnessGlyph: View {
   let harnessId: String?
   let fallbackSymbolName: String
-  let size: CGFloat
+  let size: CGFloat?
 
-  public init(harnessId: String?, fallbackSymbolName: String = "sparkle", size: CGFloat) {
+  public init(harnessId: String?, fallbackSymbolName: String = "sparkle", size: CGFloat? = nil) {
     self.harnessId = harnessId
     self.fallbackSymbolName = fallbackSymbolName
     self.size = size
   }
 
-  private var assetName: String? {
-    guard let harnessId, !harnessId.isEmpty else { return nil }
-    let name = "harness-\(harnessId)"
-    #if canImport(UIKit)
-      return UIImage(named: name) == nil ? nil : name
-    #else
-      return NSImage(named: name) == nil ? nil : name
-    #endif
-  }
-
   public var body: some View {
-    if let assetName {
-      Image(assetName)
-        .resizable()
-        .renderingMode(.template)
-        .scaledToFit()
-        .frame(width: size, height: size)
+    let image = CodevisorSymbol.harness(harnessId, fallback: fallbackSymbolName)
+    if let size {
+      image.font(.system(size: size))
     } else {
-      Image(systemName: fallbackSymbolName)
-        .font(.system(size: size - 1, weight: .medium))
+      image
     }
   }
 }

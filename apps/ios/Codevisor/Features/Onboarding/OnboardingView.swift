@@ -179,7 +179,7 @@ private struct ConnectMachineStep: View {
         if cloud.supportsGitHubSignIn {
           CloudSignInProviderButton(
             title: "Sign in with GitHub",
-            icon: .asset("GitHubMark")
+            icon: .symbol(.gitHubMark)
           ) { startCloudSignIn() }
         }
 

@@ -97,7 +97,7 @@ struct CloudAccountAuthenticationSections: View {
   @ViewBuilder
   private func providerIcon(_ provider: CloudSignInProvider) -> some View {
     if provider == .github {
-      Image("GitHubMark").renderingMode(.template).resizable().scaledToFit()
+      CodevisorSymbol.gitHubMark.image.font(.system(size: 20))
     } else if provider == .email {
       Image(systemName: "envelope").font(.system(size: 20))
     } else {
@@ -108,7 +108,7 @@ struct CloudAccountAuthenticationSections: View {
   private var providerButtons: some View {
     VStack(spacing: 12) {
       if cloud.supportsGitHubSignIn && (!link || cloud.linkedProviders?.contains(.github) == false) {
-        CloudSignInProviderButton(title: "Sign in with GitHub", icon: .asset("GitHubMark")) {
+        CloudSignInProviderButton(title: "Sign in with GitHub", icon: .symbol(.gitHubMark)) {
           start(.github)
         }
       }

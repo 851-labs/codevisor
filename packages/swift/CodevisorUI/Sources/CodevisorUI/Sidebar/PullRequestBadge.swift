@@ -18,10 +18,8 @@ public struct PullRequestBadge: View {
     Button {
       openURL(pullRequest.url)
     } label: {
-      pullRequest.statusImage
-        .resizable()
-        .scaledToFit()
-        .frame(width: size, height: size)
+      pullRequest.statusSymbol.image
+        .font(.system(size: size))
         .foregroundStyle(pullRequest.statusColor)
         .frame(width: slot, height: slot)
         .contentShape(Rectangle())
@@ -55,16 +53,12 @@ public struct PullRequestBadge: View {
 }
 
 extension ServerGitPullRequest {
-  public var statusIconName: String {
+  public var statusSymbol: CodevisorSymbol {
     switch state {
-    case .open: isDraft ? "octicon-git-pull-request-draft" : "octicon-git-pull-request"
-    case .merged: "octicon-git-merge"
-    case .closed: "octicon-git-pull-request-closed"
+    case .open: isDraft ? .gitPullRequestDraft : .gitPullRequest
+    case .merged: .gitMerge
+    case .closed: .gitPullRequestClosed
     }
-  }
-
-  public var statusImage: Image {
-    Image(statusIconName, bundle: .module)
   }
 
   public var statusColor: Color {

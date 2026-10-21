@@ -133,7 +133,7 @@ extension OnboardingView {
             if environment.cloud.supportsGitHubSignIn {
               CloudSignInProviderButton(
                 title: "Sign in with GitHub",
-                icon: .asset("GitHubMark")
+                icon: .symbol(.gitHubMark)
               ) { startCloudSignIn() }
             }
             if environment.cloud.developmentAccountAvailable {

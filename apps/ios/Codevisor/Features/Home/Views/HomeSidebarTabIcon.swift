@@ -16,7 +16,7 @@ struct HomeSidebarTabIcon: View {
     } else {
       switch row.icon {
       case let .chat(harnessId, fallbackSymbolName):
-        HarnessIconView(harnessId: harnessId, fallbackSymbolName: fallbackSymbolName, size: size)
+        HarnessGlyph(harnessId: harnessId, fallbackSymbolName: fallbackSymbolName)
           .foregroundStyle(glyphStyle)
       case .terminal:
         symbol("terminal")

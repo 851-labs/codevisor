@@ -171,7 +171,9 @@ struct PaneTabIcon: View {
       )
       .frame(width: 12, height: 12)
     } else if kind == .subagent {
-      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: systemImage)
+      HarnessIcon(
+        harnessId: subagentHarnessId ?? "", fallbackSymbolName: systemImage, size: Typography.IconSize.chrome,
+        weight: .medium)
     } else if kind == .document, let documentPath {
       FileIcon(path: documentPath, size: 14)
     } else {

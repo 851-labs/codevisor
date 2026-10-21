@@ -117,7 +117,7 @@ struct ModelPickerSheet: View {
               }
             } header: {
               HStack(spacing: 6) {
-                HarnessIconView(harnessId: group.id, size: 14)
+                HarnessGlyph(harnessId: group.id, fallbackSymbolName: "cpu")
                 Text(group.name)
               }
             }

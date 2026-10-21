@@ -1,12 +1,6 @@
 import CodevisorTheming
 import SwiftUI
 
-#if os(macOS)
-  import AppKit
-#else
-  import UIKit
-#endif
-
 public struct HarnessSignInInvitation<Action: View>: View {
   #if os(iOS)
     @Environment(\.self) private var environment
@@ -37,11 +31,9 @@ public struct HarnessSignInInvitation<Action: View>: View {
 
   private var content: some View {
     VStack(spacing: 20) {
-      icon
-        .resizable()
-        .renderingMode(.template)
-        .scaledToFit()
-        .frame(width: 44, height: 44)
+      CodevisorSymbol.harness(harnessId, fallback: "terminal")
+        .font(.system(size: 40))
+        .frame(height: 44)
         .foregroundStyle(.primary)
         .accessibilityHidden(true)
 
@@ -72,16 +64,6 @@ public struct HarnessSignInInvitation<Action: View>: View {
     }
     .frame(maxWidth: 320)
     .padding(24)
-  }
-
-  private var icon: Image {
-    let name = "harness-\(harnessId)"
-    #if os(macOS)
-      if let image = NSImage(named: name) { return Image(nsImage: image) }
-    #else
-      if let image = UIImage(named: name) { return Image(uiImage: image) }
-    #endif
-    return Image(systemName: "terminal")
   }
 
   #if os(iOS)

@@ -1,14 +1,12 @@
 import CodevisorCore
 import SwiftUI
 
-public struct HarnessAddButton<Icon: View>: View {
+public struct HarnessAddButton: View {
   @Environment(AppEnvironment.self) private var environment
   @Bindable private var model: HarnessGlobalModel
-  private let icon: (String, String) -> Icon
 
-  public init(model: HarnessGlobalModel, @ViewBuilder icon: @escaping (String, String) -> Icon) {
+  public init(model: HarnessGlobalModel) {
     self.model = model
-    self.icon = icon
   }
 
   public var body: some View {
@@ -17,8 +15,7 @@ public struct HarnessAddButton<Icon: View>: View {
         HarnessAddMenu(
           isPresented: $model.showsPicker,
           harnesses: availableHarnesses,
-          add: { model.add($0, in: environment) },
-          icon: icon
+          add: { model.add($0, in: environment) }
         )
       #else
         Button {
@@ -56,8 +53,7 @@ public struct HarnessAddButton<Icon: View>: View {
     private var picker: some View {
       HarnessPickerSheet(
         harnesses: availableHarnesses,
-        add: { model.add($0, in: environment) },
-        icon: icon
+        add: { model.add($0, in: environment) }
       )
     }
   #endif

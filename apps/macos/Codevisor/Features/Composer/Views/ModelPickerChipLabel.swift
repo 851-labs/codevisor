@@ -12,7 +12,8 @@ struct ModelPickerChipLabel: View {
           HarnessIcon(
             harnessId: group.id,
             fallbackSymbolName: group.symbolName,
-            size: 14
+            size: 13,
+            weight: .medium
           )
           .foregroundStyle(.secondary)
           .frame(width: 16, height: 16)
