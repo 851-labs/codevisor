@@ -162,7 +162,10 @@ afterEach(async () => {
 export const makeServices = async (
   serverId = "test",
   mcpConfig: Partial<
-    Pick<McpManagerConfig, "executionTimers" | "packagedSkills" | "skillSource">
+    Pick<
+      McpManagerConfig,
+      "executionTimers" | "oauthClock" | "oauthVault" | "packagedSkills" | "skillSource"
+    >
   > = {}
 ) => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-server-"))

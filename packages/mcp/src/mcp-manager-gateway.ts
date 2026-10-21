@@ -43,7 +43,7 @@ export const makeMcpGatewayOperations = (
     connections,
     gatewayBearerToken,
     gateways,
-    refreshTimers,
+    oauthRetries,
     sessionGatewayIds,
     state,
     turnClientIds
@@ -173,8 +173,8 @@ export const makeMcpGatewayOperations = (
   const close: McpManager["close"] = async () => {
     unsubscribePluginTools?.()
     unsubscribeSkills?.()
-    /* v8 ignore next */
-    for (const timer of refreshTimers.values()) clearTimeout(timer)
+    for (const cancel of oauthRetries.values()) cancel()
+    oauthRetries.clear()
     await Promise.all([...connections.keys()].map(closeConnection))
     await browserSetupBroker.close()
     await Promise.all([...automationProviders.values()].map((provider) => provider.close()))

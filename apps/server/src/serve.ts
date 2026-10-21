@@ -42,6 +42,7 @@ import { guessMachineIcon } from "./infra/machine-icon.js"
 import { makeMachineStatsSampler } from "./infra/machine-stats.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
+import { mcpCredentialVault } from "./infra/shared-account-storage.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
@@ -301,6 +302,7 @@ export const runServe = (
         machine,
         remoteInvoker: machineLink.invoke,
         serverKind: resolvedKind,
+        oauthVault: mcpCredentialVault(dirname(databasePath)),
         packagedSkills,
         ...(skills === undefined ? {} : { skillSource: skills }),
         ...(plugins === undefined ? {} : { pluginTools: plugins })

@@ -158,13 +158,26 @@ describe("credential refresh coordination", () => {
       ).result.status
     ).toBe("uncertain")
     expect(
-      coordinateCredential(started, { action: "release", operationId: acquire.operationId }, "a", 2)
-        .result.status
+      coordinateCredential(
+        started,
+        { action: "release", operationId: acquire.operationId },
+        "a",
+        CREDENTIAL_RESERVATION_MS
+      ).result.status
     ).toBe("uncertain")
     expect(
       coordinateCredential(started, { action: "start", operationId: acquire.operationId }, "a", 2)
         .result.status
     ).toBe("uncertain")
+    const released = coordinateCredential(
+      started,
+      { action: "release", operationId: acquire.operationId },
+      "a",
+      2
+    )
+    expect(released.result.status).toBe("ready")
+    expect(released.record?.operation).toBeUndefined()
+    expect(released.record?.generation).toBe(started?.generation)
   })
 
   it("allows the owner to finish and retry a lost commit response", () => {

@@ -41,7 +41,7 @@ describe("encrypted shared credential vault", () => {
     ).toBe("claude-code")
   })
 
-  it.each(["codex", "pi", "opencode", "grok-build"] as const)(
+  it.each(["codex", "pi", "opencode", "grok-build", "mcp"] as const)(
     "serializes two machines refreshing %s and publishes both tokens in one generation",
     async (harnessId) => {
       const f = fixture()

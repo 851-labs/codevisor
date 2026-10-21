@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
 
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
-import { OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js"
 
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -11,7 +10,9 @@ import { reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
 type OAuthRuntime = ReturnType<typeof makeMcpOAuthRuntime>
 
 export interface McpOAuthFlowDeps {
+  readonly hasUsableCredential: OAuthRuntime["hasUsableCredential"]
   readonly oauthProvider: OAuthRuntime["oauthProvider"]
+  readonly revokeCredential: OAuthRuntime["revokeCredential"]
   readonly validateOAuthConnection: OAuthRuntime["validateOAuthConnection"]
 }
 
@@ -22,6 +23,7 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
   const {
     callbackUrl,
     closeConnection,
+    emitCredentialsRotated,
     publicServer,
     record,
     replaceSecrets,
@@ -29,7 +31,13 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     secrets
   } = core
   const { state } = core
-  const { oauthProvider, validateOAuthConnection } = deps
+  const { hasUsableCredential, oauthProvider, revokeCredential, validateOAuthConnection } = deps
+
+  const validateInBackground = (id: string): void => {
+    void validateOAuthConnection(id).catch((cause: unknown) =>
+      reportBackgroundFailure(`OAuth validation failed for MCP ${id}`, cause)
+    )
+  }
 
   const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl) => {
     if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
@@ -38,6 +46,14 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       throw new Error("This MCP server is not configured for OAuth")
     }
     await closeConnection(id)
+    if (await hasUsableCredential(id)) {
+      await saveRecord(await record(id), {
+        connectionState: "needsAuthorization",
+        detail: undefined
+      })
+      validateInBackground(id)
+      return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
+    }
     const redirectUrl = callbackUrl()
     const oauthState = `${id}.${randomUUID()}`
     await replaceSecrets(id, (value) => ({
@@ -45,30 +61,13 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
     }))
     const provider = oauthProvider(id, redirectUrl)
-    const authorize = () =>
-      auth(provider, {
-        serverUrl: requireHttpUrl(server.url),
-        ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
-      })
-    let result: Awaited<ReturnType<typeof auth>>
-    try {
-      result = await authorize()
-    } catch (cause) {
-      if (!(cause instanceof OAuthError)) throw cause
-      await provider.invalidateCredentials?.("tokens")
-      result = await authorize()
+    const result = await auth(provider, {
+      serverUrl: requireHttpUrl(server.url),
+      ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
+    })
+    if (result !== "REDIRECT" || provider.authorizationUrl === undefined) {
+      throw new Error("OAuth did not return a URL")
     }
-    if (result === "AUTHORIZED") {
-      await saveRecord(await record(id), {
-        connectionState: "needsAuthorization",
-        detail: undefined
-      })
-      void validateOAuthConnection(id).catch((cause: unknown) =>
-        reportBackgroundFailure(`OAuth validation failed for MCP ${id}`, cause)
-      )
-      return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
-    }
-    if (provider.authorizationUrl === undefined) throw new Error("OAuth did not return a URL")
     await saveRecord(await record(id), {
       connectionState: "needsAuthorization",
       detail: undefined
@@ -96,22 +95,25 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       connectionState: "needsAuthorization",
       detail: undefined
     })
-    void validateOAuthConnection(id).catch((cause: unknown) =>
-      reportBackgroundFailure(`OAuth validation failed for MCP ${id}`, cause)
-    )
+    validateInBackground(id)
     return publicServer(await record(id))
   }
 
   const disconnectOAuth: McpManager["disconnectOAuth"] = async (id) => {
     await closeConnection(id)
+    await revokeCredential(id)
     const current = await replaceSecrets(id, (value) => ({
       ...value,
       oauth: {
         state: `${id}.${randomUUID()}`,
+        credential: null,
+        registrations: value.oauth?.registrations,
+        discoveryState: value.oauth?.discoveryState,
         configuredClientId: value.oauth?.configuredClientId,
         configuredClientSecret: value.oauth?.configuredClientSecret
       }
     }))
+    emitCredentialsRotated(id)
     return publicServer(
       await saveRecord(current, {
         connectionState: "needsAuthorization",

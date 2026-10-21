@@ -4,6 +4,7 @@ import type { CoordinatedCredential, CredentialCoordinationResult } from "@codev
 
 import { refreshFailedLine, refreshSucceededLine } from "./shared-credential-refresh-log.js"
 import {
+  OAuthRefreshUnavailable,
   SharedCredentialError,
   isSharedTokenBundle,
   type CredentialCoordinator,
@@ -93,7 +94,7 @@ const ownRecord = (
 }
 
 const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
-  ["pi", "opencode", "grok-build"].includes(harnessId) ? 6 * 60_000 : 60_000
+  ["pi", "opencode", "grok-build", "mcp"].includes(harnessId) ? 6 * 60_000 : 60_000
 
 export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) => {
   const now = config.now ?? Date.now
@@ -147,7 +148,9 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       return next
     } catch (cause) {
       log(refreshFailedLine(reference, bundle, cause))
-      throw new SharedCredentialError("reauthenticate")
+      throw cause instanceof SharedCredentialError
+        ? cause
+        : new SharedCredentialError("reauthenticate")
     }
   }
   const commitUnderLease = async (
@@ -237,7 +240,14 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       }
       const started = await config.coordinate(reference.id, { action: "start", operationId })
       if (started.status !== "acquired") throw new SharedCredentialError("reauthenticate")
-      const rotated = await rotate(reference, bundle)
+      let rotated: SharedTokenBundle
+      try {
+        rotated = await rotate(reference, bundle)
+      } catch (cause) {
+        if (cause instanceof OAuthRefreshUnavailable)
+          await config.coordinate(reference.id, { action: "release", operationId })
+        throw cause
+      }
       if (hasDifferentCredentialAccount(rotated, bundle)) {
         throw new SharedCredentialError("reauthenticate")
       }

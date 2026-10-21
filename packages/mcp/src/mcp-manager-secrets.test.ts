@@ -21,6 +21,7 @@ import {
   testManager
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import { bundleWithAccess, memoryOAuthVault } from "./mcp-oauth-vault-test-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -180,8 +181,9 @@ describe("MCP manager secrets and replication", () => {
     expect((await manager.staticSecrets(full.id)).bearerToken).toBeUndefined()
   })
 
-  it("owns, exports, imports, and demotes OAuth material for replication", async () => {
-    const { manager } = await testManager({ serverId: "test" })
+  it("exposes and adopts the synced OAuth credential reference", async () => {
+    const shared = memoryOAuthVault()
+    const { manager } = await testManager({ serverId: "test", oauthVault: shared.vault })
     const server = await manager.create({
       authType: "oauth",
       enabled: false,
@@ -189,8 +191,6 @@ describe("MCP manager secrets and replication", () => {
       transport: "http",
       url: "https://oauth-sync.example.com/mcp"
     })
-
-    expect(await manager.oauthSyncState(server.id)).toBeUndefined()
     const plain = await manager.create({
       authType: "none",
       enabled: false,
@@ -198,31 +198,41 @@ describe("MCP manager secrets and replication", () => {
       transport: "http",
       url: "https://plain.example.com/mcp"
     })
-    expect(await manager.oauthSyncState(plain.id)).toBeUndefined()
+    expect(await manager.oauthCredential(server.id)).toBeUndefined()
+    expect(await manager.oauthCredential(plain.id)).toBeUndefined()
 
-    const material = JSON.stringify({
-      tokens: { access_token: "at-1", refresh_token: "rt-1", token_type: "bearer" },
-      tokensSavedAt: 1_111
+    const credential = shared.seed(bundleWithAccess("at-1"))
+    await manager.setOAuthCredential(server.id, credential)
+    await manager.setOAuthCredential(server.id, { ...credential })
+    expect(await manager.oauthCredential(server.id)).toEqual(credential)
+
+    await manager.setOAuthCredential(server.id, null)
+    expect(await manager.oauthCredential(server.id)).toBeNull()
+    expect((await manager.list()).find((entry) => entry.id === server.id)).toMatchObject({
+      connectionState: "needsAuthorization",
+      detail: "OAuth Sync was signed out on another of your machines. Authorize it again."
     })
-    await manager.importOAuthMaterial(server.id, { owner: "test", material })
-    const owned = await manager.oauthSyncState(server.id)
-    expect(owned?.owner).toBe("test")
-    expect(owned?.rotatedAtMs).toBe(1_111)
-    expect(JSON.parse(owned?.material ?? "{}").tokens.access_token).toBe("at-1")
+  })
 
-    const rotated = JSON.stringify({
-      tokens: { access_token: "at-2", refresh_token: "rt-2", token_type: "bearer" },
-      tokensSavedAt: 2_222
+  it("keeps newer credentials when a write starts from an older snapshot", async () => {
+    const shared = memoryOAuthVault()
+    const { manager } = await testManager({ serverId: "test", oauthVault: shared.vault })
+    const server = await manager.create({
+      authType: "oauth",
+      enabled: false,
+      name: "Snapshot",
+      transport: "http",
+      url: "https://snapshot.example.com/mcp"
     })
-    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: rotated })
-    const mirrored = await manager.oauthSyncState(server.id)
-    expect(mirrored?.owner).toBe("other-machine")
-    expect(JSON.parse(mirrored?.material ?? "{}").tokens.access_token).toBe("at-2")
+    const first = shared.seed(bundleWithAccess("at-1"))
+    const second = shared.seed(bundleWithAccess("at-2"))
+    await manager.setOAuthCredential(server.id, first)
+    const editing = manager.update(server.id, { headers: { "X-Team": "core" } })
+    await manager.setOAuthCredential(server.id, second)
+    await editing
 
-    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: rotated })
-    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "not json" })
-    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "null" })
-    expect((await manager.oauthSyncState(server.id))?.owner).toBe("other-machine")
+    expect(await manager.staticSecrets(server.id)).toEqual({ headers: { "X-Team": "core" } })
+    expect(await manager.oauthCredential(server.id)).toEqual(second)
   })
 
   it("subscribes to the rotation source until unsubscribed", async () => {
@@ -239,8 +249,8 @@ describe("MCP manager secrets and replication", () => {
       makeComputerProvider: () => unavailableComputerProvider("Not used in this test")
     })
     const { subscribeCredentialsRotated } = makeMcpReplicationOperations(core, {
-      scheduleRefresh: vi.fn(),
-      connect: vi.fn(async () => undefined)
+      adoptSyncedCredential: vi.fn(async () => undefined),
+      migrateLegacyGrant: vi.fn(async () => undefined)
     })
     const listener = vi.fn()
     const unsubscribe = subscribeCredentialsRotated(listener)

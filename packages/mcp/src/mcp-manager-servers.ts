@@ -53,8 +53,9 @@ export const makeMcpServerOperations = (
     key,
     publicServer,
     record,
+    cancelOAuthRetry,
     refreshBuiltinProviderStates,
-    refreshTimers,
+    replaceSecrets,
     saveRecord,
     secrets,
     state
@@ -180,7 +181,9 @@ export const makeMcpServerOperations = (
     })
     const nextSecrets = updatedSecrets(currentSecrets, request)
     const nextAuthType = request.authType ?? current.authType
-    const oauthIsAuthorized = nextSecrets.oauth?.tokens !== undefined
+    const oauthIsAuthorized =
+      (nextSecrets.oauth?.credential ?? undefined) !== undefined ||
+      nextSecrets.oauth?.tokens !== undefined
     const needsAuthorization = nextAuthType === "oauth" && !oauthIsAuthorized
     const enabled = request.enabled ?? current.enabled
     const args = request.args ?? current.args
@@ -208,6 +211,9 @@ export const makeMcpServerOperations = (
       connectionState = current.connectionState
     }
     const resetsState = definitionChanged || (!enabled && wasLive)
+    if (JSON.stringify(nextSecrets) !== JSON.stringify(currentSecrets)) {
+      await replaceSecrets(id, (latest) => updatedSecrets(latest, request))
+    }
     const saved = await saveRecord(current, {
       name: request.name ?? current.name,
       url,
@@ -218,10 +224,7 @@ export const makeMcpServerOperations = (
       oauthScope,
       connectionState,
       toolCount: resetsState ? 0 : current.toolCount,
-      detail: resetsState ? undefined : current.detail,
-      ...(JSON.stringify(nextSecrets) === JSON.stringify(currentSecrets)
-        ? {}
-        : { secretCipher: encryptSecrets(key, nextSecrets) })
+      detail: resetsState ? undefined : current.detail
     })
     if (
       saved.enabled &&
@@ -259,10 +262,7 @@ export const makeMcpServerOperations = (
     const current = await record(id)
     if (!current.canRemove) throw new Error(`${current.name} cannot be removed`)
     await closeConnection(id)
-    const timer = refreshTimers.get(id)
-    /* v8 ignore next */
-    if (timer !== undefined) clearTimeout(timer)
-    refreshTimers.delete(id)
+    cancelOAuthRetry(id)
     await run(config.db.deleteMcpServer(id))
     emitServerChanged(id)
     await refreshGatewayInventories()

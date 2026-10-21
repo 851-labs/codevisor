@@ -3,19 +3,16 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path"
 
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js"
-import {
-  type OAuthClientInformationMixed,
-  OAuthClientInformationFullSchema,
-  OAuthClientInformationSchema,
-  OAuthMetadataSchema,
-  OAuthProtectedResourceMetadataSchema,
-  type OAuthTokens,
-  OAuthTokensSchema,
-  OpenIdProviderDiscoveryMetadataSchema
+import type {
+  OAuthClientInformationMixed,
+  OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js"
-import { z } from "zod"
+
+import type { McpCredentialReference } from "./mcp-oauth-grant.js"
 
 export interface StoredOAuth {
+  readonly credential?: McpCredentialReference | null | undefined
+  readonly registrations?: Readonly<Record<string, OAuthClientInformationMixed>> | undefined
   readonly clientInformation?: OAuthClientInformationMixed | undefined
   readonly tokens?: OAuthTokens | undefined
   readonly tokensSavedAt?: number | undefined
@@ -33,37 +30,6 @@ export interface StoredSecrets {
   readonly headers?: Record<string, string> | undefined
   readonly bearerToken?: string | undefined
   readonly oauth?: StoredOAuth | undefined
-}
-
-const OAuthDiscoveryStateSchema = z.object({
-  authorizationServerUrl: z.string(),
-  resourceMetadataUrl: z.string().exactOptional(),
-  resourceMetadata: OAuthProtectedResourceMetadataSchema.exactOptional(),
-  authorizationServerMetadata: z
-    .union([OAuthMetadataSchema, OpenIdProviderDiscoveryMetadataSchema])
-    .exactOptional()
-})
-
-const ReplicatedOAuthSchema = z.object({
-  clientInformation: z
-    .union([OAuthClientInformationFullSchema, OAuthClientInformationSchema])
-    .optional(),
-  tokens: OAuthTokensSchema.optional(),
-  tokensSavedAt: z.number().optional(),
-  discoveryState: OAuthDiscoveryStateSchema.optional(),
-  configuredClientId: z.string().optional(),
-  configuredClientSecret: z.string().optional()
-})
-
-export const parseReplicatedOAuth = (material: string): StoredOAuth | undefined => {
-  let decoded: unknown
-  try {
-    decoded = JSON.parse(material)
-  } catch {
-    return undefined
-  }
-  const parsed = ReplicatedOAuthSchema.safeParse(decoded)
-  return parsed.success ? parsed.data : undefined
 }
 
 export const loadEncryptionKey = (dataDir: string): Buffer => {

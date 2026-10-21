@@ -2,7 +2,7 @@ import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
-import { field } from "../unknown-values.js"
+import { field, isRecord } from "../unknown-values.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 
 const makeMachine = async (serverId: string, nowMs: number) => {
@@ -28,17 +28,15 @@ const serverNamed = async (machine: Machine, name: string) => {
   return found
 }
 
-const oauthMaterial = (token: string, savedAt: number) =>
-  JSON.stringify({
-    tokens: { access_token: token, refresh_token: `r-${token}`, token_type: "bearer" },
-    tokensSavedAt: savedAt
-  })
+const credentialReference = (seed: string) => ({
+  id: `credential-${seed}-0123456789`,
+  key: seed.repeat(43)
+})
 
-const scopedEnvelopeOwner = async (machine: Machine) => {
-  const entries = await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
-  const scoped = entries.find((entry) => entry.key === "Scoped")
-  return field(field(scoped?.value, "oauth"), "owner")
-}
+const scopedEntryValue = async (machine: Machine) =>
+  (await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))).find(
+    (entry) => entry.key === "Scoped"
+  )?.value
 
 describe("config sync hardening", () => {
   it(
@@ -148,7 +146,94 @@ describe("config sync hardening", () => {
   )
 
   it(
-    "simultaneous OAuth ownership claims resolve to one stable owner",
+    "keeps a synced sign-in when an older machine writes the entry without one",
+    { timeout: 30_000 },
+    async () => {
+      const a = await makeMachine("keep-oauth-a", 4_000_000)
+      const b = await makeMachine("keep-oauth-b", 4_000_100)
+      await a.mcp.create({
+        authType: "oauth",
+        enabled: false,
+        name: "Scoped",
+        transport: "http",
+        url: "https://oauth.example/mcp"
+      })
+      const signedIn = credentialReference("a")
+      await a.mcp.setOAuthCredential((await serverNamed(a, "Scoped")).id, signedIn)
+      const published = await reconcileMcps(a)
+      const publishedValue = published.changedEntries.find((entry) => entry.key === "Scoped")?.value
+      if (!isRecord(publishedValue)) throw new Error("Scoped was not published")
+      const { oauthCredential: _credential, ...withoutCredential } = publishedValue
+      await run(
+        a.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
+          {
+            key: "Scoped",
+            value: { ...withoutCredential, enabled: true },
+            timestamp: { wallMs: 9_000_000, counter: 0, deviceId: "older-build" }
+          }
+        ])
+      )
+
+      const repaired = await reconcileMcps(a)
+      expect(repaired.status.applied).toEqual(["Scoped"])
+      expect(repaired.status.published).toEqual(["Scoped"])
+      expect((await serverNamed(a, "Scoped")).enabled).toBe(true)
+      expect(await a.mcp.oauthCredential((await serverNamed(a, "Scoped")).id)).toEqual(signedIn)
+      await gossip(repaired, b)
+      await reconcileMcps(b)
+      expect(await b.mcp.oauthCredential((await serverNamed(b, "Scoped")).id)).toEqual(signedIn)
+      expect((await reconcileMcps(a)).changedEntries).toEqual([])
+      expect((await reconcileMcps(b)).changedEntries).toEqual([])
+    }
+  )
+
+  it(
+    "keeps an older machine's own sign-in field intact so it does not republish during a rollout",
+    { timeout: 30_000 },
+    async () => {
+      const a = await makeMachine("rollout-new", 5_000_000)
+      await a.mcp.create({
+        authType: "oauth",
+        enabled: false,
+        name: "Scoped",
+        transport: "http",
+        url: "https://oauth.example/mcp"
+      })
+      const signedIn = credentialReference("a")
+      await a.mcp.setOAuthCredential((await serverNamed(a, "Scoped")).id, signedIn)
+      const published = await reconcileMcps(a)
+      const publishedValue = published.changedEntries.find((entry) => entry.key === "Scoped")?.value
+      if (!isRecord(publishedValue)) throw new Error("Scoped was not published")
+      const { oauthCredential: _credential, ...config } = publishedValue
+      const legacyEnvelope = { owner: "old-owner", rotatedAtMs: 7, material: "{}" }
+      const fromOldOwner = { ...config, oauth: legacyEnvelope }
+      await run(
+        a.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
+          {
+            key: "Scoped",
+            value: fromOldOwner,
+            timestamp: { wallMs: 9_000_000, counter: 0, deviceId: "old-build" }
+          }
+        ])
+      )
+
+      const repaired = await reconcileMcps(a)
+      expect(repaired.status.published).toEqual(["Scoped"])
+      expect(await scopedEntryValue(a)).toEqual({ ...fromOldOwner, oauthCredential: signedIn })
+      expect((await reconcileMcps(a)).changedEntries).toEqual([])
+
+      await a.mcp.update((await serverNamed(a, "Scoped")).id, { enabled: true })
+      await reconcileMcps(a)
+      expect(await scopedEntryValue(a)).toEqual({
+        ...fromOldOwner,
+        enabled: true,
+        oauthCredential: signedIn
+      })
+    }
+  )
+
+  it(
+    "simultaneous sign-ins on two machines converge on one credential",
     { timeout: 30_000 },
     async () => {
       const a = await makeMachine("hard-oauth-a", 3_000_000)
@@ -156,7 +241,7 @@ describe("config sync hardening", () => {
 
       await a.mcp.create({
         authType: "oauth",
-        enabled: true,
+        enabled: false,
         name: "Scoped",
         transport: "http",
         url: "https://oauth.example/mcp"
@@ -165,14 +250,8 @@ describe("config sync hardening", () => {
       await gossip(seeded, b)
       await reconcileMcps(b)
 
-      await a.mcp.importOAuthMaterial((await serverNamed(a, "Scoped")).id, {
-        owner: "hard-oauth-a",
-        material: oauthMaterial("at-a", 1_000)
-      })
-      await b.mcp.importOAuthMaterial((await serverNamed(b, "Scoped")).id, {
-        owner: "hard-oauth-b",
-        material: oauthMaterial("at-b", 2_000)
-      })
+      await a.mcp.setOAuthCredential((await serverNamed(a, "Scoped")).id, credentialReference("a"))
+      await b.mcp.setOAuthCredential((await serverNamed(b, "Scoped")).id, credentialReference("b"))
       const claimA = await reconcileMcps(a)
       const claimB = await reconcileMcps(b)
       expect(claimA.status.published).toEqual(["Scoped"])
@@ -183,17 +262,11 @@ describe("config sync hardening", () => {
       await reconcileMcps(a)
       await reconcileMcps(b)
 
-      const ownerOnA = await scopedEnvelopeOwner(a)
-      const ownerOnB = await scopedEnvelopeOwner(b)
-      expect(ownerOnA).toBe(ownerOnB)
-      expect(["hard-oauth-a", "hard-oauth-b"]).toContain(ownerOnA)
-      const stateA = await a.mcp.oauthSyncState((await serverNamed(a, "Scoped")).id)
-      const stateB = await b.mcp.oauthSyncState((await serverNamed(b, "Scoped")).id)
-      expect(stateA?.owner).toBe(ownerOnA)
-      expect(stateB?.owner).toBe(ownerOnA)
-      expect(stateA?.material).toBe(stateB?.material)
-      const winningToken = ownerOnA === "hard-oauth-a" ? "at-a" : "at-b"
-      expect(stateA?.material).toContain(winningToken)
+      const onA = await a.mcp.oauthCredential((await serverNamed(a, "Scoped")).id)
+      const onB = await b.mcp.oauthCredential((await serverNamed(b, "Scoped")).id)
+      expect(onA).toEqual(onB)
+      expect([credentialReference("a"), credentialReference("b")]).toContainEqual(onA)
+      expect(field(await scopedEntryValue(a), "oauthCredential")).toEqual(onA)
 
       for (const machine of [a, b]) {
         expect((await reconcileMcps(machine)).changedEntries).toEqual([])

@@ -86,7 +86,7 @@ export const coordinateCredential = (
     }
     return result("ready")
   }
-  if (command.action === "release" && !pending.started) {
+  if (command.action === "release" && (!pending.started || pending.deadline > now)) {
     delete record.operation
     return result("ready")
   }

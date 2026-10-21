@@ -13,10 +13,11 @@ const SHARED_OAUTH_HARNESSES = [
 ] as const
 
 export type SharedOAuthHarness = (typeof SHARED_OAUTH_HARNESSES)[number]
+export type SharedCredentialKind = SharedOAuthHarness | "mcp"
 
 export interface SharedTokenBundle {
   readonly authMethod?: "apiKey"
-  readonly harnessId: SharedOAuthHarness
+  readonly harnessId: SharedCredentialKind
   readonly subject: string
   readonly organizationId?: string
   readonly email?: string
@@ -36,7 +37,8 @@ const isOptionalString = (value: unknown): boolean =>
 
 export const isSharedTokenBundle = (value: unknown): value is SharedTokenBundle =>
   isRecord(value) &&
-  SHARED_OAUTH_HARNESSES.some((harnessId) => harnessId === value.harnessId) &&
+  (value.harnessId === "mcp" ||
+    SHARED_OAUTH_HARNESSES.some((harnessId) => harnessId === value.harnessId)) &&
   typeof value.subject === "string" &&
   typeof value.accessToken === "string" &&
   Number.isFinite(value.expiresAt) &&
@@ -75,6 +77,12 @@ export class SharedCredentialError extends Error {
             ? "This account has been signed out."
             : "Sign in again to reconnect this account on your machines."
     )
+  }
+}
+
+export class OAuthRefreshUnavailable extends SharedCredentialError {
+  constructor(readonly detail: string) {
+    super("offline")
   }
 }
 

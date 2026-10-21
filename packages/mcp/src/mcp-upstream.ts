@@ -2,8 +2,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
-import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
+import {
+  NodeStreamableHttpTransport,
+  type StreamableHttpAuthorization
+} from "./mcp-http-transport.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
+import { connectionSecretsSignature } from "./mcp-secret-update.js"
 import { errorMessage, requireHttpUrl, type UpstreamConnection } from "./mcp-support.js"
 
 export interface ConnectUpstreamOptions {
@@ -37,7 +41,10 @@ const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>
   return tools
 }
 
-export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
+export const makeConnectUpstream = (
+  core: McpManagerCore,
+  oauthAuthorization: (id: string) => StreamableHttpAuthorization
+): ConnectUpstream => {
   const { connectionLocks, connections, record, saveRecord, secrets, state } = core
 
   return async (id, options = {}) => {
@@ -70,8 +77,11 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         stored.bearerToken === undefined || stored.bearerToken === ""
           ? undefined
           : stored.bearerToken
-      const accessToken = bearer ?? stored.oauth?.tokens?.access_token
-      if (server.authType === "oauth" && accessToken === undefined) {
+      const signedIn =
+        bearer !== undefined ||
+        (stored.oauth?.credential ?? undefined) !== undefined ||
+        stored.oauth?.tokens !== undefined
+      if (server.authType === "oauth" && !signedIn) {
         if (server.connectionState !== "needsAuthorization") {
           await saveRecord(server, {
             connectionState: "needsAuthorization",
@@ -98,7 +108,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
             })
           : new NodeStreamableHttpTransport(
               new URL(requireHttpUrl(server.url)),
-              accessToken,
+              bearer === undefined && server.authType === "oauth" ? oauthAuthorization(id) : bearer,
               stored.headers
             )
       let phase = "initialize"
@@ -116,7 +126,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
             latest.url,
             latest.command,
             latest.authType,
-            latest.secretCipher,
+            connectionSecretsSignature(secrets(latest)),
             latest.oauthScope,
             JSON.stringify(latest.args)
           ].join("\0") !==
@@ -125,7 +135,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
               server.url,
               server.command,
               server.authType,
-              server.secretCipher,
+              connectionSecretsSignature(stored),
               server.oauthScope,
               JSON.stringify(server.args)
             ].join("\0")
@@ -158,13 +168,14 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         )
         const updated = await record(id)
         checkOwner()
-        /* v8 ignore next */
-        const needsAuthorization = server.authType === "oauth" && accessToken === undefined
-        await saveRecord(updated, {
-          /* v8 ignore next */
-          connectionState: needsAuthorization ? "needsAuthorization" : "error",
-          detail: errorMessage(cause)
-        })
+        if (
+          updated.authType === "oauth" &&
+          (updated.connectionState === "expired" ||
+            updated.connectionState === "needsAuthorization")
+        ) {
+          throw cause
+        }
+        await saveRecord(updated, { connectionState: "error", detail: errorMessage(cause) })
         throw cause
       }
     })()

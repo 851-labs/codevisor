@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest"
 import { makeServices, run } from "../test-support.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 
-const oauthSeed = (name: string, oauth: unknown) => ({
+const VALID_ID = "credential-0123456789"
+const VALID_KEY = "k".repeat(43)
+
+const oauthSeed = (name: string, oauthCredential: unknown) => ({
   authType: "oauth",
   enabled: false,
   name,
-  oauth,
+  oauthCredential,
   transport: "http",
   url: `https://${name.toLowerCase()}.example.com/mcp`
 })
@@ -102,26 +105,29 @@ describe("config sync malformed values", () => {
         },
         {
           key: "OAuthy2",
-          value: oauthSeed("OAuthy2", { owner: 1, rotatedAtMs: 1, material: "{}" }),
+          value: oauthSeed("OAuthy2", { id: 1, key: VALID_KEY }),
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         },
         {
           key: "OAuthy3",
-          value: oauthSeed("OAuthy3", { owner: "x", rotatedAtMs: "y", material: "{}" }),
+          value: oauthSeed("OAuthy3", { id: "short", key: VALID_KEY }),
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         },
         {
           key: "OAuthy4",
-          value: oauthSeed("OAuthy4", { owner: "x", rotatedAtMs: 1, material: 2 }),
+          value: oauthSeed("OAuthy4", { id: VALID_ID, key: "short" }),
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         },
         {
           key: "OAuthMine",
-          value: oauthSeed("OAuthMine", {
-            owner: "server-c",
-            rotatedAtMs: 1,
-            material: JSON.stringify({ tokens: { access_token: "mine" }, tokensSavedAt: 1 })
-          }),
+          value: {
+            ...oauthSeed("OAuthMine", undefined),
+            oauth: {
+              owner: "server-c",
+              rotatedAtMs: 1,
+              material: JSON.stringify({ tokens: { access_token: "mine" }, tokensSavedAt: 1 })
+            }
+          },
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         },
         {
@@ -157,7 +163,7 @@ describe("config sync malformed values", () => {
     ])
     for (const name of ["OAuthy1", "OAuthy2", "OAuthy3", "OAuthy4", "OAuthMine"]) {
       const id = (await services.mcp.list()).find((server) => server.name === name)?.id ?? ""
-      expect(await services.mcp.oauthSyncState(id)).toBeUndefined()
+      expect(await services.mcp.oauthCredential(id)).toBeUndefined()
     }
     expect(
       (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.args

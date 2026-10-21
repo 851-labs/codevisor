@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 
 import {
   OAuthRefreshRejected,
+  OAuthRefreshUnavailable,
   SharedCredentialError,
   type SharedCredentialReference,
   type SharedTokenBundle
@@ -33,6 +34,7 @@ const refreshPrefix = (reference: SharedCredentialReference, presented: SharedTo
 const failureOutcome = (cause: unknown): string => {
   if (cause instanceof OAuthRefreshRejected)
     return `rejected HTTP ${cause.status} ${cause.code ?? "without an error code"}`
+  if (cause instanceof OAuthRefreshUnavailable) return `unavailable (${cause.detail})`
   if (cause instanceof SharedCredentialError) return `failed (${cause.reason})`
   return `network failure (${cause instanceof Error ? cause.name : "unknown"})`
 }

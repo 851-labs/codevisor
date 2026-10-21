@@ -1,5 +1,5 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { McpManager } from "@codevisor/mcp"
+import type { McpCredentialReference, McpManager } from "@codevisor/mcp"
 import {
   freeSyncKey,
   latestSyncTimestamp,
@@ -9,6 +9,7 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
+import { field } from "../unknown-values.js"
 import { appliedValuesByKey } from "./applied-values.js"
 
 export const MCPS_SYNC_NAMESPACE = "mcps"
@@ -36,26 +37,18 @@ interface SyncedMcpValue {
   readonly bearerToken?: string | undefined
   readonly headers?: Readonly<Record<string, string>> | undefined
   readonly env?: Readonly<Record<string, string>> | undefined
-  readonly oauth?: SyncedOAuthEnvelope | undefined
+  readonly oauthCredential?: McpCredentialReference | null | undefined
 }
 
-interface SyncedOAuthEnvelope {
-  readonly owner: string
-  readonly rotatedAtMs: number
-  readonly material: string
-}
-
-const oauthEnvelope = (value: unknown): SyncedOAuthEnvelope | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const candidate = value as Partial<SyncedOAuthEnvelope>
-  if (typeof candidate.owner !== "string") return undefined
-  if (typeof candidate.rotatedAtMs !== "number") return undefined
-  if (typeof candidate.material !== "string") return undefined
-  return {
-    owner: candidate.owner,
-    rotatedAtMs: candidate.rotatedAtMs,
-    material: candidate.material
-  }
+const oauthCredential = (value: unknown): McpCredentialReference | null | undefined => {
+  if (value === null) return null
+  if (typeof value !== "object") return undefined
+  const candidate = value as Partial<McpCredentialReference>
+  if (typeof candidate.id !== "string" || !/^[a-zA-Z0-9_-]{16,100}$/.test(candidate.id))
+    return undefined
+  if (typeof candidate.key !== "string" || !/^[a-zA-Z0-9_-]{43}$/.test(candidate.key))
+    return undefined
+  return { id: candidate.id, key: candidate.key }
 }
 
 interface StaticMcpSecrets {
@@ -115,6 +108,11 @@ const syncedValue = (server: McpLike, secrets: StaticMcpSecrets): SyncedMcpValue
 
 const fingerprint = (value: SyncedMcpValue): string => JSON.stringify(value)
 
+const withLegacyOAuth = (value: SyncedMcpValue, replicated: unknown): object => {
+  const legacy = field(replicated, "oauth")
+  return legacy === undefined ? value : { ...value, oauth: legacy }
+}
+
 const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const candidate = value as Partial<SyncedMcpValue>
@@ -131,8 +129,10 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
   const isHttp = candidate.transport === "http"
   const headers = isHttp ? stringRecord(candidate.headers) : undefined
   const env = isHttp ? undefined : stringRecord(candidate.env)
-  const oauth =
-    isHttp && candidate.authType === "oauth" ? oauthEnvelope(candidate.oauth) : undefined
+  const credential =
+    isHttp && candidate.authType === "oauth"
+      ? oauthCredential(candidate.oauthCredential)
+      : undefined
   return {
     name: candidate.name,
     transport: candidate.transport,
@@ -149,7 +149,7 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
       : {}),
     ...(headers === undefined ? {} : { headers }),
     ...(env === undefined ? {} : { env }),
-    ...(oauth === undefined ? {} : { oauth })
+    ...(credential === undefined ? {} : { oauthCredential: credential })
   }
 }
 
@@ -189,14 +189,11 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   for (const [name, server] of Array.from(localByName)) {
     const existing = replicaByKey.get(name)
     const wanted = existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
-    const oauthState =
-      server.authType === "oauth" ? await deps.mcp.oauthSyncState(server.id) : undefined
-    const ownedOAuth =
-      oauthState !== undefined && oauthState.owner === deps.serverId ? oauthState : undefined
-    const envelope = ownedOAuth ?? wanted?.oauth
+    const credential =
+      server.authType === "oauth" ? await deps.mcp.oauthCredential(server.id) : undefined
     let value: SyncedMcpValue = {
       ...syncedValue(server, await deps.mcp.staticSecrets(server.id)),
-      ...(envelope === undefined ? {} : { oauth: envelope })
+      ...(credential === undefined ? {} : { oauthCredential: credential })
     }
     if (appliedByKey.get(name) === fingerprint(value)) continue
     let key = name
@@ -216,7 +213,11 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       value = { ...value, name: key }
       renamed.push({ from: name, to: key })
     }
-    replicaWrites.push({ key, value, timestamp: stamp() })
+    replicaWrites.push({
+      key,
+      value: withLegacyOAuth(value, key === name ? existing?.value : undefined),
+      timestamp: stamp()
+    })
     appliedWrites.push({ key, value: fingerprint(value), timestamp: stamp() })
     appliedByKey.set(key, fingerprint(value))
     published.push(key)
@@ -234,6 +235,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       ? (await run(deps.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, replicaWrites))).changed
       : []
   const merged = await run(deps.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
+  const repairWrites: Array<SyncEntryRecord> = []
 
   for (const entry of merged) {
     const name = entry.key
@@ -251,13 +253,20 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       }
       continue
     }
-    const wanted = parseSyncedValue(entry.value)
-    if (wanted === undefined) continue
-    if (wanted.oauth !== undefined && wanted.oauth.owner !== deps.serverId) {
-      const holder = localByName.get(name)
-      if (holder !== undefined) {
-        await deps.mcp.importOAuthMaterial(holder.id, wanted.oauth)
-      }
+    const received = parseSyncedValue(entry.value)
+    if (received === undefined) continue
+    let wanted = received
+    const held =
+      local !== undefined && received.authType === "oauth"
+        ? await deps.mcp.oauthCredential(local.id)
+        : undefined
+    if (received.oauthCredential === undefined && held !== undefined && held !== null) {
+      wanted = { ...received, oauthCredential: held }
+      repairWrites.push({
+        key: name,
+        value: withLegacyOAuth(wanted, entry.value),
+        timestamp: stamp()
+      })
     }
     const wantedFingerprint = fingerprint(wanted)
     if (appliedByKey.get(name) === wantedFingerprint) continue
@@ -275,8 +284,8 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
         ...(wanted.headers === undefined ? {} : { headers: wanted.headers }),
         ...(wanted.env === undefined ? {} : { env: wanted.env })
       })
-      if (wanted.oauth !== undefined && wanted.oauth.owner !== deps.serverId) {
-        await deps.mcp.importOAuthMaterial(created.id, wanted.oauth)
+      if (wanted.oauthCredential !== undefined) {
+        await deps.mcp.setOAuthCredential(created.id, wanted.oauthCredential)
       }
     } else {
       const wantedHeaders = wanted.headers ?? {}
@@ -306,16 +315,27 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
               )
             })
       })
+      if (wanted.oauthCredential !== undefined) {
+        await deps.mcp.setOAuthCredential(local.id, wanted.oauthCredential)
+      }
     }
     appliedWrites.push({ key: name, value: wantedFingerprint, timestamp: stamp() })
     appliedByKey.set(name, wantedFingerprint)
     applied.push(name)
   }
 
+  const repairedEntries =
+    repairWrites.length > 0
+      ? (await run(deps.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, repairWrites))).changed
+      : []
+  for (const repair of repairWrites) published.push(repair.key)
   if (appliedWrites.length > 0) {
     await run(deps.db.mergeSyncEntries(MCPS_APPLIED_NAMESPACE, appliedWrites))
   }
-  return { status: { published, applied, removed, renamed }, changedEntries }
+  return {
+    status: { published, applied, removed, renamed },
+    changedEntries: [...changedEntries, ...repairedEntries]
+  }
 }
 
 export interface AccountsRosterDeps {

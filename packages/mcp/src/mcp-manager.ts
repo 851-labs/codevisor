@@ -20,10 +20,11 @@ export type { ExecutionTimers } from "./mcp-gateway-execution.js"
 export type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
+export type { McpOAuthClock } from "./mcp-oauth-clock.js"
 
 export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const core = makeMcpManagerCore(config)
-  const connectUpstream = makeConnectUpstream(core)
+  const connectUpstream = makeConnectUpstream(core, (id) => oauthRuntime.upstreamAuthorization(id))
   const jobs = makeExecutionJobs({
     dataDir: config.dataDir,
     timers: config.executionTimers ?? systemExecutionTimers
@@ -65,20 +66,22 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     )
   })
 
-  const { oauthProvider, scheduleRefresh, validateOAuthConnection } = makeMcpOAuthRuntime({
+  const oauthRuntime = makeMcpOAuthRuntime({
     callbackUrl: core.callbackUrl,
+    cancelOAuthRetry: core.cancelOAuthRetry,
+    clock: core.oauthClock,
     closeConnection: core.closeConnection,
     connectUpstream,
-    onRotated: core.emitCredentialsRotated,
+    hasConnection: (id) => core.connections.has(id),
+    oauthRetries: core.oauthRetries,
+    onCredentialChanged: core.emitCredentialsRotated,
     record: core.record,
     refreshGatewayInventories,
-    refreshLocks: core.refreshLocks,
-    refreshRetryAttempts: core.refreshRetryAttempts,
-    refreshTimers: core.refreshTimers,
     replaceSecrets: core.replaceSecrets,
     saveRecord: core.saveRecord,
     secrets: core.secrets,
-    selfServerId: core.selfServerId
+    selfServerId: core.selfServerId,
+    vault: config.oauthVault
   })
 
   const serverOperations = makeMcpServerOperations(core, {
@@ -90,8 +93,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     composerSkills: composerSkillsFor,
     detectAuth: detectMcpAuth,
     ...serverOperations,
-    ...makeMcpReplicationOperations(core, { scheduleRefresh, connect: serverOperations.connect }),
-    ...makeMcpOAuthFlows(core, { oauthProvider, validateOAuthConnection }),
+    ...makeMcpReplicationOperations(core, oauthRuntime),
+    ...makeMcpOAuthFlows(core, oauthRuntime),
     ...makeMcpGatewayOperations(core, {
       createGatewayConnection,
       finishRemoteBrowserTurn,
@@ -119,8 +122,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     .then((servers) => {
       for (const server of servers) {
         const oauth = core.secrets(server).oauth
-        if (oauth?.tokens === undefined) continue
-        scheduleRefresh(server, oauth.tokens)
+        if (oauth?.tokens === undefined && (oauth?.credential ?? undefined) === undefined) continue
+        void oauthRuntime.migrateLegacyGrant(server.id)
         if (server.enabled && server.connectionState === "needsAuthorization") {
           /* v8 ignore next */
           void serverOperations.connect(server.id).catch(() => undefined)

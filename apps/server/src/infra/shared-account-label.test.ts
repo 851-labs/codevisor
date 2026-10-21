@@ -1,7 +1,7 @@
 import type { SharedOAuthHarness, SharedTokenBundle } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 
-import { sharedAccountLabel } from "./shared-account-store.js"
+import { sharedAccountFor, sharedAccountLabel } from "./shared-account-store.js"
 
 const bundle = (
   fields: Pick<SharedTokenBundle, "harnessId"> & Partial<SharedTokenBundle>
@@ -38,5 +38,12 @@ describe("shared account names", () => {
         sharedAccountLabel(bundle({ harnessId, ...(authMethod ? { authMethod } : {}) }))
       )
     ).toEqual(["Google", "ChatGPT", "Meta", "Claude"])
+  })
+
+  it("never turns an MCP server sign-in into a harness account", () => {
+    const credential = { id: "credential-0123456789", key: "k".repeat(43) }
+    expect(() =>
+      sharedAccountFor(bundle({ harnessId: "mcp" }), credential, undefined, "machine")
+    ).toThrow("An MCP sign-in is not a harness account")
   })
 })

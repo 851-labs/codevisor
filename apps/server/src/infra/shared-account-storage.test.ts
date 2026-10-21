@@ -3,13 +3,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
-import { claudeKeychainService } from "@codevisor/harness-manager"
+import {
+  claudeKeychainService,
+  OAuthRefreshUnavailable,
+  SharedCredentialError,
+  type SharedTokenBundle
+} from "@codevisor/harness-manager"
 import { afterEach, expect, it, vi } from "vitest"
 
 import {
   discoverNativeAccount,
   forgetNativeProfileLogin,
+  mcpCredentialVault,
   nativeClaudeMachine,
+  rotateMcpCredential,
   sharedAccountVault
 } from "./shared-account-storage.js"
 const execute = vi.hoisted(() =>
@@ -185,4 +192,38 @@ it("drives a development server's Claude Code login through its throwaway config
   ])
   expect(stdin).toEqual([expect.stringContaining(`-s "${service}" -X "`)])
   expect(await machine.read()).toBeUndefined()
+})
+
+const mcpBundle: SharedTokenBundle = {
+  harnessId: "mcp",
+  subject: "https://tracker.example/mcp",
+  accessToken: "mcp-access",
+  refreshToken: "mcp-refresh",
+  expiresAt: 0,
+  ownership: "managed",
+  credential: {
+    authorizationServerUrl: "https://auth.tracker.example",
+    client: { client_id: "registered" }
+  }
+}
+
+it("refreshes MCP sign-ins only through the MCP token endpoint", async () => {
+  await expect(rotateMcpCredential({ ...mcpBundle, harnessId: "codex" })).rejects.toBeInstanceOf(
+    SharedCredentialError
+  )
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("fetch failed")
+    })
+  )
+  const ambiguous = await rotateMcpCredential(mcpBundle).catch((cause: unknown) => cause)
+  expect(ambiguous).toBeInstanceOf(TypeError)
+  expect(ambiguous).not.toBeInstanceOf(OAuthRefreshUnavailable)
+})
+
+it("keeps MCP sign-ins in this machine's coordinator when no cloud is configured", async () => {
+  const vault = mcpCredentialVault(await directory())
+  const reference = await vault.create({ ...mcpBundle, expiresAt: Date.now() + 3_600_000 })
+  expect((await vault.token(reference)).accessToken).toBe("mcp-access")
 })

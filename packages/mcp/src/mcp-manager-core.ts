@@ -22,6 +22,7 @@ import {
 import { makeAutomationUse } from "./mcp-automation-use.js"
 import type { GatewayRuntime } from "./mcp-gateway.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
+import type { McpOAuthClock } from "./mcp-oauth-clock.js"
 import {
   decryptSecrets,
   encryptSecrets,
@@ -37,6 +38,15 @@ export interface McpManagerState {
 }
 
 const DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:49361"
+
+export const systemOAuthClock: McpOAuthClock = {
+  now: () => Date.now(),
+  setTimeout: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs)
+    handle.unref?.()
+    return () => clearTimeout(handle)
+  }
+}
 
 const visibleSignature = (server: McpServerRecord): string =>
   JSON.stringify([
@@ -62,9 +72,25 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     .digest("base64url")
   const connections = new Map<string, UpstreamConnection>()
   const connectionLocks = new Map<string, Promise<UpstreamConnection>>()
-  const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const refreshLocks = new Map<string, Promise<void>>()
-  const refreshRetryAttempts = new Map<string, number>()
+  const oauthRetries = new Map<string, () => void>()
+  const oauthClock = config.oauthClock ?? systemOAuthClock
+  const recordWrites = new Map<string, Promise<void>>()
+  const serializedWrite = <A>(id: string, write: () => Promise<A>): Promise<A> => {
+    const written = (recordWrites.get(id) ?? Promise.resolve()).then(write)
+    const settled = written.then(
+      () => undefined,
+      () => undefined
+    )
+    recordWrites.set(id, settled)
+    void settled.then(() => {
+      if (recordWrites.get(id) === settled) recordWrites.delete(id)
+    })
+    return written
+  }
+  const cancelOAuthRetry = (id: string): void => {
+    oauthRetries.get(id)?.()
+    oauthRetries.delete(id)
+  }
   const selfServerId = config.serverId ?? "local"
   const rotationListeners = new Set<(id: string) => void>()
   /* v8 ignore next 3 */
@@ -221,9 +247,9 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     }
   }
 
-  const saveRecord = async (
+  const writeRecord = async (
     server: McpServerRecord,
-    patch: Partial<McpServerRecord> = {}
+    patch: Partial<McpServerRecord>
   ): Promise<McpServerRecord> => {
     const url = patch.url ?? server.url
     const command = patch.command ?? server.command
@@ -255,6 +281,23 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     }
     return saved
   }
+
+  const latestRecord = async (id: string): Promise<McpServerRecord> => {
+    const value = await run(config.db.getMcpServer(id))
+    if (value === undefined) throw new Error(`MCP server not found: ${id}`)
+    return value
+  }
+
+  const saveRecord = (
+    server: McpServerRecord,
+    patch: Partial<McpServerRecord> = {}
+  ): Promise<McpServerRecord> =>
+    serializedWrite(server.id, async () => {
+      if (patch.secretCipher !== undefined) return writeRecord(server, patch)
+      const { secretCipher } = await latestRecord(server.id)
+      const { secretCipher: _stale, ...visible } = server
+      return writeRecord(secretCipher === undefined ? visible : { ...visible, secretCipher }, patch)
+    })
 
   const refreshBuiltinProviderStates = async (): Promise<void> => {
     await builtinsReady
@@ -290,8 +333,14 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     id: string,
     mutate: (current: StoredSecrets) => StoredSecrets
   ): Promise<McpServerRecord> => {
-    const current = await record(id)
-    return saveRecord(current, { secretCipher: encryptSecrets(key, mutate(secrets(current))) })
+    await builtinsReady
+    return serializedWrite(id, async () => {
+      const current = await latestRecord(id)
+      const stored = secrets(current)
+      const next = mutate(stored)
+      if (next === stored) return current
+      return writeRecord(current, { secretCipher: encryptSecrets(key, next) })
+    })
   }
 
   const closeConnection = async (id: string): Promise<void> => {
@@ -313,6 +362,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     builtinProviderState,
     builtinsReady,
     callbackUrl,
+    cancelOAuthRetry,
     changeListeners,
     closeConnection,
     codeExecutor,
@@ -326,12 +376,11 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     gatewayBearerToken,
     gateways,
     key,
+    oauthClock,
     publicServer,
     record,
     refreshBuiltinProviderStates,
-    refreshLocks,
-    refreshRetryAttempts,
-    refreshTimers,
+    oauthRetries,
     replaceSecrets,
     rotationListeners,
     saveRecord,

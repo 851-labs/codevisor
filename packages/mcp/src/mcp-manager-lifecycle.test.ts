@@ -10,11 +10,25 @@ import {
   workingUpstream
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import {
+  bundleWithAccess,
+  memoryOAuthVault,
+  seedLegacyOAuth
+} from "./mcp-oauth-vault-test-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
 const initializeCount = (requests: ReadonlyArray<{ method: string }>): number =>
   requests.filter((request) => request.method === "initialize").length
+
+const legacyOAuth = (owner: string) => ({
+  refreshOwner: owner,
+  tokens: { access_token: "at", refresh_token: "rt", token_type: "bearer", expires_in: 3600 },
+  tokensSavedAt: 10,
+  clientInformation: { client_id: "registered", redirect_uris: ["http://127.0.0.1:1/cb"] },
+  redirectUrl: "http://127.0.0.1:1/cb",
+  discoveryState: { authorizationServerUrl: "https://auth.legacy.example.test" }
+})
 
 describe("MCP manager lifecycle", () => {
   it("an old tools handshake cannot replace a newly configured upstream", async () => {
@@ -187,8 +201,9 @@ describe("MCP manager lifecycle", () => {
     })
   })
 
-  it("adopts refresh ownership of tokens recorded under a former identity", async () => {
-    const { manager } = await testManager({ serverId: "test" })
+  it("moves its own legacy sign-in into the shared vault and leaves another machine's mirror", async () => {
+    const { vault } = memoryOAuthVault()
+    const { db, directory, manager } = await testManager({ serverId: "test", oauthVault: vault })
     const legacy = await manager.create({
       authType: "oauth",
       enabled: false,
@@ -203,23 +218,36 @@ describe("MCP manager lifecycle", () => {
       transport: "http",
       url: "https://foreign.example.test/mcp"
     })
-    const material = JSON.stringify({
-      tokens: { access_token: "at", refresh_token: "rt", token_type: "bearer" },
-      tokensSavedAt: 10
-    })
-    await manager.importOAuthMaterial(legacy.id, { owner: "local", material })
-    await manager.importOAuthMaterial(foreign.id, { owner: "other-machine", material })
+    await seedLegacyOAuth(db, directory, legacy.id, legacyOAuth("local"))
+    await seedLegacyOAuth(db, directory, foreign.id, legacyOAuth("other-machine"))
 
     expect(await manager.adoptOAuthOwnership("test")).toEqual([])
     expect(await manager.adoptOAuthOwnership("local")).toEqual([legacy.id])
-    expect((await manager.oauthSyncState(legacy.id))?.owner).toBe("test")
-    expect((await manager.oauthSyncState(foreign.id))?.owner).toBe("other-machine")
+    expect(await manager.oauthCredential(legacy.id)).toEqual(
+      await vault.create.mock.results[0]?.value
+    )
+    expect(vault.create).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        accessToken: "at",
+        refreshToken: "rt",
+        expiresAt: 3_600_010,
+        credential: expect.objectContaining({
+          authorizationServerUrl: "https://auth.legacy.example.test",
+          client: expect.objectContaining({ client_id: "registered" })
+        })
+      })
+    )
+    expect(await manager.oauthCredential(foreign.id)).toBeUndefined()
     expect(await manager.adoptOAuthOwnership("local")).toEqual([])
   })
 
-  it("connects a mirror with imported OAuth material, on import and on boot", async () => {
+  it("connects with a synced credential, on adoption and on boot", async () => {
     const upstream = await workingUpstream()
-    const { db, directory, manager } = await testManager({ serverId: "mirror" })
+    const shared = memoryOAuthVault()
+    const { db, directory, manager } = await testManager({
+      serverId: "mirror",
+      oauthVault: shared.vault
+    })
     const created = await manager.create({
       authType: "oauth",
       name: "Sentry",
@@ -227,10 +255,6 @@ describe("MCP manager lifecycle", () => {
       url: upstream.url
     })
     expect(created.connectionState).toBe("needsAuthorization")
-    const material = JSON.stringify({
-      tokens: { access_token: "at", refresh_token: "rt", token_type: "bearer", expires_in: 3600 },
-      tokensSavedAt: 10
-    })
     const idle = await manager.create({
       authType: "oauth",
       enabled: false,
@@ -238,8 +262,9 @@ describe("MCP manager lifecycle", () => {
       transport: "http",
       url: upstream.url
     })
-    await manager.importOAuthMaterial(idle.id, { owner: "owner-machine", material })
-    await manager.importOAuthMaterial(created.id, { owner: "owner-machine", material })
+    const credential = shared.seed(bundleWithAccess("at"))
+    await manager.setOAuthCredential(idle.id, credential)
+    await manager.setOAuthCredential(created.id, credential)
     expect(await connectionStateSettles(manager, created.id, "connected")).toBe("connected")
     expect((await manager.list()).find((server) => server.id === idle.id)?.connectionState).toBe(
       "needsAuthorization"
@@ -266,7 +291,12 @@ describe("MCP manager lifecycle", () => {
     )
     await manager.close()
     managers.splice(managers.indexOf(manager), 1)
-    const rebooted = makeMcpManager({ db, dataDir: directory, serverId: "mirror" })
+    const rebooted = makeMcpManager({
+      db,
+      dataDir: directory,
+      serverId: "mirror",
+      oauthVault: shared.vault
+    })
     managers.push(rebooted)
     expect(await connectionStateSettles(rebooted, created.id, "connected")).toBe("connected")
   })

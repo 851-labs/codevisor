@@ -25,6 +25,8 @@ import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
+import type { McpOAuthClock } from "./mcp-oauth-clock.js"
+import type { McpCredentialReference, McpOAuthVault } from "./mcp-oauth-grant.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
 
 export type { AutomationTool } from "./mcp-automation-use.js"
@@ -73,17 +75,10 @@ export interface McpManager {
     readonly headers?: Readonly<Record<string, string>>
     readonly env?: Readonly<Record<string, string>>
   }>
-  readonly oauthSyncState: (id: string) => Promise<
-    | {
-        readonly owner: string
-        readonly rotatedAtMs: number
-        readonly material: string
-      }
-    | undefined
-  >
-  readonly importOAuthMaterial: (
+  readonly oauthCredential: (id: string) => Promise<McpCredentialReference | null | undefined>
+  readonly setOAuthCredential: (
     id: string,
-    incoming: { readonly owner: string; readonly material: string }
+    credential: McpCredentialReference | null
   ) => Promise<void>
   readonly subscribeCredentialsRotated: (listener: (id: string) => void) => () => void
   readonly adoptOAuthOwnership: (legacyOwner: string) => Promise<ReadonlyArray<string>>
@@ -173,6 +168,8 @@ export interface McpManagerConfig {
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly pluginTools?: PluginToolSource
   readonly executionTimers?: ExecutionTimers
+  readonly oauthClock?: McpOAuthClock
+  readonly oauthVault?: McpOAuthVault
   readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
   readonly makeComputerProvider?:
     | (() => AutomationToolProvider & {

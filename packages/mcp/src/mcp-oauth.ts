@@ -1,27 +1,53 @@
 import type { McpServerRecord } from "@codevisor/db"
-import { auth, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
-import type { OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
+import {
+  discoverOAuthServerInfo,
+  selectResourceURL
+} from "@modelcontextprotocol/sdk/client/auth.js"
+import type {
+  OAuthClientInformationMixed,
+  OAuthTokens
+} from "@modelcontextprotocol/sdk/shared/auth.js"
 
-import type { StoredSecrets } from "./mcp-secret-store.js"
+import type { StreamableHttpAuthorization } from "./mcp-http-transport.js"
+import type { McpOAuthClock } from "./mcp-oauth-clock.js"
+import {
+  type McpCredentialReference,
+  mcpCredentialFailure,
+  type McpGrant,
+  type McpOAuthVault,
+  mcpTokenBundle
+} from "./mcp-oauth-grant.js"
+import { configuredClient, makeOAuthProvider, registeredClient } from "./mcp-oauth-provider.js"
+import type { StoredOAuth, StoredSecrets } from "./mcp-secret-store.js"
 import { errorMessage, reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
 
-const MAX_TIMER_DELAY_MS = 2_147_000_000
+const FIRST_RETRY_DELAY_MS = 30_000
+const MAX_RETRY_DELAY_MS = 15 * 60_000
 
-export const boundedMcpTimerDelay = (delay: number): number =>
-  Math.min(Math.max(1, delay), MAX_TIMER_DELAY_MS)
+const ownsLegacyTokens = (oauth: StoredOAuth | undefined, selfServerId: string): boolean =>
+  oauth?.refreshOwner === undefined || oauth.refreshOwner === selfServerId
+
+const legacyExpiry = (oauth: StoredOAuth): number => {
+  const expiresIn = oauth.tokens?.expires_in
+  if (expiresIn === undefined) return Number.MAX_SAFE_INTEGER
+  return (oauth.tokensSavedAt ?? 0) + expiresIn * 1000
+}
+
+class McpAuthorizationError extends Error {}
 
 export interface McpOAuthRuntimeDeps {
   readonly callbackUrl: () => string
+  readonly cancelOAuthRetry: (id: string) => void
+  readonly clock: McpOAuthClock
   readonly closeConnection: (id: string) => Promise<void>
   readonly connectUpstream: (
     id: string,
     options?: { readonly allowDisabled?: boolean; readonly preserveState?: boolean }
   ) => Promise<unknown>
+  readonly hasConnection: (id: string) => boolean
+  readonly oauthRetries: Map<string, () => void>
   readonly record: (id: string) => Promise<McpServerRecord>
   readonly refreshGatewayInventories: () => Promise<void>
-  readonly refreshLocks: Map<string, Promise<void>>
-  readonly refreshRetryAttempts: Map<string, number>
-  readonly refreshTimers: Map<string, ReturnType<typeof setTimeout>>
   readonly replaceSecrets: (
     id: string,
     mutate: (current: StoredSecrets) => StoredSecrets
@@ -32,191 +58,364 @@ export interface McpOAuthRuntimeDeps {
   ) => Promise<McpServerRecord>
   readonly secrets: (server: McpServerRecord) => StoredSecrets
   readonly selfServerId: string
-  readonly onRotated: (serverId: string) => void
+  readonly vault: McpOAuthVault | undefined
+  readonly onCredentialChanged: (serverId: string) => void
 }
 
 export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
   const {
     callbackUrl,
+    cancelOAuthRetry,
+    clock,
     closeConnection,
     connectUpstream,
+    oauthRetries,
     record,
     refreshGatewayInventories,
-    refreshLocks,
-    refreshRetryAttempts,
-    refreshTimers,
     replaceSecrets,
     saveRecord,
-    secrets
+    secrets,
+    selfServerId
   } = deps
+  const backoffs = new Map<string, { readonly until: number; readonly attempt: number }>()
+  const lastTokens = new Map<string, { readonly accessToken: string; readonly expiresAt: number }>()
+  const migrations = new Map<string, Promise<McpCredentialReference | undefined>>()
 
-  /* v8 ignore start */
-  const oauthProvider = (
-    serverId: string,
-    savedRedirectUrl?: string
-  ): OAuthClientProvider & { authorizationUrl?: URL } => {
-    const redirectUrl = savedRedirectUrl ?? callbackUrl()
-    const provider: OAuthClientProvider & { authorizationUrl?: URL } = {
-      redirectUrl,
-      get clientMetadata(): OAuthClientMetadata {
-        return {
-          client_name: "Codevisor",
-          redirect_uris: [redirectUrl],
-          grant_types: ["authorization_code", "refresh_token"],
-          response_types: ["code"],
-          token_endpoint_auth_method: "none",
-          scope: undefined
-        }
-      },
-      state: async () => secrets(await record(serverId)).oauth?.state ?? "",
-      clientInformation: async () => {
-        const oauth = secrets(await record(serverId)).oauth
-        if (oauth?.clientInformation !== undefined) return oauth.clientInformation
-        if (oauth?.configuredClientId === undefined) return undefined
-        return {
-          client_id: oauth.configuredClientId,
-          ...(oauth.configuredClientSecret === undefined
-            ? {}
-            : { client_secret: oauth.configuredClientSecret })
-        }
-      },
-      saveClientInformation: async (clientInformation) => {
-        await replaceSecrets(serverId, (value) => ({
-          ...value,
-          oauth: { ...value.oauth, clientInformation }
-        }))
-      },
-      tokens: async () => secrets(await record(serverId)).oauth?.tokens,
-      saveTokens: async (tokens) => {
-        const saved = await replaceSecrets(serverId, (value) => ({
-          ...value,
-          oauth: {
-            ...value.oauth,
-            tokens,
-            tokensSavedAt: Date.now(),
-            refreshOwner: deps.selfServerId
-          }
-        }))
-        scheduleRefresh(saved, tokens)
-        deps.onRotated(serverId)
-      },
-      redirectToAuthorization: (authorizationUrl) => {
-        provider.authorizationUrl = authorizationUrl
-      },
-      saveCodeVerifier: async (codeVerifier) => {
-        await replaceSecrets(serverId, (value) => ({
-          ...value,
-          oauth: { ...value.oauth, codeVerifier }
-        }))
-      },
-      codeVerifier: async () => {
-        const value = secrets(await record(serverId)).oauth?.codeVerifier
-        if (value === undefined) throw new Error("OAuth code verifier is missing")
-        return value
-      },
-      saveDiscoveryState: async (discoveryState) => {
-        await replaceSecrets(serverId, (value) => ({
-          ...value,
-          oauth: { ...value.oauth, discoveryState }
-        }))
-      },
-      discoveryState: async () => secrets(await record(serverId)).oauth?.discoveryState,
-      invalidateCredentials: async (scope) => {
-        await replaceSecrets(serverId, (value) => {
-          if (scope === "all") return { ...value, oauth: undefined }
-          if (scope === "tokens") return { ...value, oauth: { ...value.oauth, tokens: undefined } }
-          if (scope === "verifier") {
-            return { ...value, oauth: { ...value.oauth, codeVerifier: undefined } }
-          }
-          if (scope === "discovery") {
-            return { ...value, oauth: { ...value.oauth, discoveryState: undefined } }
-          }
-          return { ...value, oauth: { ...value.oauth, clientInformation: undefined } }
-        })
+  const requireVault = (): McpOAuthVault => {
+    if (deps.vault === undefined) throw new Error("MCP sign-in storage is unavailable")
+    return deps.vault
+  }
+
+  const oauthProvider = makeOAuthProvider({
+    callbackUrl,
+    record,
+    replaceSecrets,
+    secrets,
+    saveTokens: (serverId, redirectUrl, tokens) => establishGrant(serverId, redirectUrl, tokens)
+  })
+
+  const grantFor = async (
+    server: McpServerRecord,
+    oauth: StoredOAuth,
+    client: OAuthClientInformationMixed
+  ): Promise<McpGrant> => {
+    const serverUrl = new URL(requireHttpUrl(server.url))
+    let discovery = oauth.discoveryState
+    if (discovery === undefined) {
+      const discovered = await discoverOAuthServerInfo(serverUrl)
+      discovery = {
+        authorizationServerUrl: discovered.authorizationServerUrl,
+        ...(discovered.resourceMetadata === undefined
+          ? {}
+          : { resourceMetadata: discovered.resourceMetadata }),
+        ...(discovered.authorizationServerMetadata === undefined
+          ? {}
+          : { authorizationServerMetadata: discovered.authorizationServerMetadata })
       }
     }
-    return provider
-  }
-
-  const scheduleRefresh = (server: McpServerRecord, tokens: OAuthTokens): void => {
-    const existing = refreshTimers.get(server.id)
-    if (existing !== undefined) clearTimeout(existing)
-    const owner = secrets(server).oauth?.refreshOwner
-    if (owner !== undefined && owner !== deps.selfServerId) return
-    if (tokens.refresh_token === undefined || tokens.expires_in === undefined) return
-    const savedAt = secrets(server).oauth?.tokensSavedAt ?? Date.now()
-    const elapsed = Math.max(0, Date.now() - savedAt)
-    const jitter = Math.floor(Math.random() * 30_000)
-    const delay = Math.max(1_000, tokens.expires_in * 1000 - elapsed - 120_000 - jitter)
-    const timerDelay = boundedMcpTimerDelay(delay)
-    const timer = setTimeout(() => {
-      if (delay <= MAX_TIMER_DELAY_MS) {
-        void refreshOAuth(server.id).catch((cause: unknown) =>
-          reportBackgroundFailure(`OAuth refresh failed for MCP ${server.id}`, cause)
-        )
-        return
-      }
-      void record(server.id)
-        .then((current) => {
-          const currentTokens = secrets(current).oauth?.tokens
-          if (currentTokens !== undefined) scheduleRefresh(current, currentTokens)
-        })
-        .catch(() => undefined)
-    }, timerDelay)
-    timer.unref?.()
-    refreshTimers.set(server.id, timer)
-  }
-
-  const scheduleRefreshRetry = (id: string): void => {
-    const attempt = (refreshRetryAttempts.get(id) ?? 0) + 1
-    refreshRetryAttempts.set(id, attempt)
-    const delay = Math.min(15 * 60_000, 30_000 * 2 ** Math.min(attempt - 1, 5))
-    const timer = setTimeout(
-      () =>
-        void refreshOAuth(id).catch((cause: unknown) =>
-          reportBackgroundFailure(`OAuth refresh retry failed for MCP ${id}`, cause)
-        ),
-      delay + Math.random() * 10_000
+    const resource = await selectResourceURL(
+      serverUrl,
+      oauthProvider(server.id),
+      discovery.resourceMetadata
     )
-    timer.unref?.()
-    refreshTimers.set(id, timer)
-  }
-
-  const performRefreshOAuth = async (id: string): Promise<void> => {
-    const current = await record(id)
-    if (current.authType !== "oauth") return
-    try {
-      const result = await auth(oauthProvider(id, secrets(current).oauth?.redirectUrl), {
-        serverUrl: requireHttpUrl(current.url),
-        ...(current.oauthScope === undefined ? {} : { scope: current.oauthScope })
-      })
-      if (result !== "AUTHORIZED") throw new Error("OAuth reauthorization is required")
-      refreshRetryAttempts.delete(id)
-      const updated = await record(id)
-      await saveRecord(updated, { connectionState: "connected", detail: undefined })
-      await closeConnection(id)
-      await refreshGatewayInventories()
-    } catch (cause) {
-      const updated = await record(id)
-      await saveRecord(updated, {
-        connectionState: "expired",
-        detail: `Authorization refresh failed: ${errorMessage(cause)}`
-      })
-      await refreshGatewayInventories()
-      scheduleRefreshRetry(id)
+    return {
+      authorizationServerUrl: discovery.authorizationServerUrl,
+      ...(discovery.authorizationServerMetadata === undefined
+        ? {}
+        : { authorizationServerMetadata: discovery.authorizationServerMetadata }),
+      ...(resource === undefined ? {} : { resource }),
+      client
     }
   }
 
-  const refreshOAuth = async (id: string): Promise<void> => {
-    const existing = refreshLocks.get(id)
-    if (existing !== undefined) return existing
-    const refreshing = performRefreshOAuth(id).finally(() => refreshLocks.delete(id))
-    refreshLocks.set(id, refreshing)
-    return refreshing
+  const adoptCredential = async (id: string, credential: McpCredentialReference) => {
+    backoffs.delete(id)
+    lastTokens.delete(id)
+    cancelOAuthRetry(id)
+    return replaceSecrets(id, (value) => ({
+      ...value,
+      oauth: {
+        ...value.oauth,
+        credential,
+        tokens: undefined,
+        tokensSavedAt: undefined,
+        refreshOwner: undefined,
+        clientInformation: undefined
+      }
+    }))
   }
-  /* v8 ignore stop */
 
-  /* v8 ignore start */
+  const establishGrant = async (
+    id: string,
+    redirectUrl: string,
+    tokens: OAuthTokens
+  ): Promise<void> => {
+    const vault = requireVault()
+    const server = await record(id)
+    const oauth = secrets(server).oauth ?? {}
+    const client = registeredClient(oauth, redirectUrl)
+    if (client === undefined) throw new Error("OAuth client registration is missing")
+    const grant = await grantFor(server, oauth, client)
+    const credential = await vault.create(
+      mcpTokenBundle(requireHttpUrl(server.url), grant, tokens, clock.now())
+    )
+    await adoptCredential(id, credential)
+    deps.onCredentialChanged(id)
+  }
+
+  const performMigration = async (id: string): Promise<McpCredentialReference | undefined> => {
+    const server = await record(id)
+    const oauth = secrets(server).oauth
+    const tokens = oauth?.tokens
+    if (
+      deps.vault === undefined ||
+      oauth === undefined ||
+      tokens === undefined ||
+      (oauth.credential ?? undefined) !== undefined ||
+      !ownsLegacyTokens(oauth, selfServerId)
+    ) {
+      return undefined
+    }
+    const client = oauth.clientInformation ?? configuredClient(oauth)
+    if (client === undefined) return undefined
+    try {
+      const grant = await grantFor(server, oauth, client)
+      const credential = await deps.vault.create({
+        ...mcpTokenBundle(requireHttpUrl(server.url), grant, tokens, clock.now()),
+        expiresAt: legacyExpiry(oauth)
+      })
+      await replaceSecrets(id, (value) => ({
+        ...value,
+        oauth: {
+          ...value.oauth,
+          ...(value.oauth?.redirectUrl === undefined || configuredClient(value.oauth) !== undefined
+            ? {}
+            : {
+                registrations: {
+                  ...value.oauth.registrations,
+                  [value.oauth.redirectUrl]: client
+                }
+              })
+        }
+      }))
+      await adoptCredential(id, credential)
+      deps.onCredentialChanged(id)
+      return credential
+    } catch (cause) {
+      reportBackgroundFailure(`Moving the ${server.name} sign-in to shared storage failed`, cause)
+      return undefined
+    }
+  }
+
+  const migrateLegacyGrant = (id: string): Promise<McpCredentialReference | undefined> => {
+    const pending = migrations.get(id)
+    if (pending !== undefined) return pending
+    const migrating = performMigration(id).finally(() => migrations.delete(id))
+    migrations.set(id, migrating)
+    return migrating
+  }
+
+  const markState = async (
+    id: string,
+    connectionState: "expired" | "needsAuthorization",
+    detail: string
+  ): Promise<void> => {
+    const current = await record(id)
+    if (current.connectionState === connectionState && current.detail === detail) return
+    await saveRecord(current, {
+      connectionState,
+      detail,
+      ...(connectionState === "needsAuthorization" ? { toolCount: 0 } : {})
+    })
+    await refreshGatewayInventories()
+  }
+
+  const scheduleRetry = (id: string, attempt: number): void => {
+    cancelOAuthRetry(id)
+    const delay = Math.min(MAX_RETRY_DELAY_MS, FIRST_RETRY_DELAY_MS * 2 ** (attempt - 1))
+    backoffs.set(id, { until: clock.now() + delay, attempt })
+    oauthRetries.set(
+      id,
+      clock.setTimeout(() => {
+        oauthRetries.delete(id)
+        backoffs.set(id, { until: clock.now(), attempt })
+        void accessToken(id).catch(() => undefined)
+      }, delay)
+    )
+  }
+
+  const recovered = async (id: string): Promise<void> => {
+    if (backoffs.has(id)) {
+      backoffs.delete(id)
+      cancelOAuthRetry(id)
+    }
+    const current = await record(id)
+    if (current.connectionState !== "expired") return
+    const connected = deps.hasConnection(id)
+    await saveRecord(current, {
+      connectionState: connected ? "connected" : "disconnected",
+      detail: undefined
+    })
+    if (current.enabled && !connected) void connectUpstream(id).catch(() => undefined)
+    await refreshGatewayInventories()
+  }
+
+  const signedOut = async (
+    server: McpServerRecord,
+    credential: McpCredentialReference,
+    detail: string
+  ): Promise<McpAuthorizationError> => {
+    lastTokens.delete(server.id)
+    backoffs.delete(server.id)
+    cancelOAuthRetry(server.id)
+    let cleared = false
+    await replaceSecrets(server.id, (value) => {
+      if (value.oauth?.credential?.id !== credential.id) return value
+      cleared = true
+      return { ...value, oauth: { ...value.oauth, credential: null } }
+    })
+    await markState(server.id, "needsAuthorization", detail)
+    if (cleared) deps.onCredentialChanged(server.id)
+    return new McpAuthorizationError(detail)
+  }
+
+  const accessToken = async (id: string, rejectedAccessToken?: string): Promise<string> => {
+    const server = await record(id)
+    const oauth = secrets(server).oauth
+    const credential = oauth?.credential ?? (await migrateLegacyGrant(id))
+    const reauthorize = `${server.name} needs authorization. Authorize it in Codevisor's MCP settings.`
+    if (credential === undefined || credential === null) {
+      const legacy = oauth?.tokens
+      if (
+        legacy !== undefined &&
+        legacy.access_token !== rejectedAccessToken &&
+        clock.now() < legacyExpiry(oauth ?? {})
+      ) {
+        return legacy.access_token
+      }
+      await markState(id, "needsAuthorization", reauthorize)
+      throw new McpAuthorizationError(reauthorize)
+    }
+    const backoff = backoffs.get(id)
+    if (backoff !== undefined && clock.now() < backoff.until) {
+      const last = lastTokens.get(id)
+      if (
+        last !== undefined &&
+        last.accessToken !== rejectedAccessToken &&
+        clock.now() < last.expiresAt
+      ) {
+        return last.accessToken
+      }
+      throw new McpAuthorizationError(
+        `Couldn't renew the ${server.name} sign-in. Codevisor retries automatically.`
+      )
+    }
+    const vault = requireVault()
+    try {
+      const token = await vault.token(credential, rejectedAccessToken)
+      lastTokens.set(id, token)
+      await recovered(id)
+      return token.accessToken
+    } catch (cause) {
+      const failure = mcpCredentialFailure(cause)
+      if (failure === "busy") {
+        throw new McpAuthorizationError(
+          `The ${server.name} sign-in is being renewed on another of your machines. Try again in a moment.`
+        )
+      }
+      if (failure === "unavailable") {
+        scheduleRetry(id, (backoff?.attempt ?? 0) + 1)
+        const detail = `Couldn't renew the ${server.name} sign-in (${errorMessage(cause)}). Codevisor retries automatically.`
+        await markState(id, "expired", detail)
+        throw new McpAuthorizationError(detail)
+      }
+      if (failure === "reauthorize") {
+        const detail = `The ${server.name} sign-in can't be used on this machine. Authorize it again.`
+        await markState(id, "needsAuthorization", detail)
+        throw new McpAuthorizationError(detail)
+      }
+      if (failure === "rejected") {
+        await vault
+          .revoke(credential)
+          .catch((revokeFailure: unknown) =>
+            reportBackgroundFailure(`Revoking the ${server.name} sign-in failed`, revokeFailure)
+          )
+      }
+      throw await signedOut(
+        server,
+        credential,
+        `The ${server.name} sign-in expired or was revoked. Authorize it again.`
+      )
+    }
+  }
+
+  const upstreamAuthorization = (id: string): StreamableHttpAuthorization => ({
+    accessToken: () => accessToken(id),
+    recoverUnauthorized: async (rejectedAccessToken) => {
+      try {
+        const renewed = await accessToken(id, rejectedAccessToken)
+        return renewed === rejectedAccessToken
+          ? { retry: false, reason: "The MCP server rejected its renewed sign-in" }
+          : { retry: true }
+      } catch (cause) {
+        return { retry: false, reason: errorMessage(cause) }
+      }
+    }
+  })
+
+  const adoptSyncedCredential = async (
+    id: string,
+    credential: McpCredentialReference | null
+  ): Promise<void> => {
+    const current = await record(id)
+    const held = secrets(current).oauth?.credential
+    if (held === credential || (held != null && held.id === credential?.id)) return
+    if (credential === null) {
+      await replaceSecrets(id, (value) => ({
+        ...value,
+        oauth: { ...value.oauth, credential: null }
+      }))
+      lastTokens.delete(id)
+      backoffs.delete(id)
+      cancelOAuthRetry(id)
+      await closeConnection(id)
+      await markState(
+        id,
+        "needsAuthorization",
+        `${current.name} was signed out on another of your machines. Authorize it again.`
+      )
+      return
+    }
+    const adopted = await adoptCredential(id, credential)
+    if (adopted.enabled && !deps.hasConnection(id)) {
+      void connectUpstream(id).catch(() => undefined)
+    }
+  }
+
+  const revokeCredential = async (id: string): Promise<void> => {
+    const credential = secrets(await record(id)).oauth?.credential
+    lastTokens.delete(id)
+    backoffs.delete(id)
+    cancelOAuthRetry(id)
+    if (credential == null || deps.vault === undefined) return
+    await deps.vault
+      .revoke(credential)
+      .catch((cause: unknown) =>
+        reportBackgroundFailure(`Revoking the MCP ${id} sign-in failed`, cause)
+      )
+  }
+
+  const hasUsableCredential = async (id: string): Promise<boolean> => {
+    const credential = secrets(await record(id)).oauth?.credential
+    if (credential == null || deps.vault === undefined) return false
+    try {
+      await deps.vault.token(credential)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const validateOAuthConnection = async (id: string): Promise<void> => {
     try {
       await connectUpstream(id, { allowDisabled: true, preserveState: true })
@@ -236,7 +435,14 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
     }
     await refreshGatewayInventories()
   }
-  /* v8 ignore stop */
 
-  return { oauthProvider, scheduleRefresh, validateOAuthConnection }
+  return {
+    adoptSyncedCredential,
+    hasUsableCredential,
+    migrateLegacyGrant,
+    oauthProvider,
+    revokeCredential,
+    upstreamAuthorization,
+    validateOAuthConnection
+  }
 }

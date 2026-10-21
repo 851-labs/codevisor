@@ -44,19 +44,23 @@ export const sharedAccountFor = (
   previous: SharedHarnessAccount | undefined,
   serverId: string,
   label?: string
-): SharedHarnessAccount => ({
-  id: sharedOAuthIdentity(bundle),
-  harnessId: bundle.harnessId,
-  label: previous?.label ?? sharedAccountLabel(bundle, label),
-  subject: bundle.subject,
-  ...(bundle.email ? { email: bundle.email } : {}),
-  ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
-  createdAt: previous?.createdAt ?? Date.now(),
-  credential,
-  ...(bundle.ownership === "external"
-    ? { sourceMachineId: serverId, sourceExpiresAt: bundle.expiresAt }
-    : {})
-})
+): SharedHarnessAccount => {
+  const harnessId = bundle.harnessId
+  if (harnessId === "mcp") throw new Error("An MCP sign-in is not a harness account")
+  return {
+    id: sharedOAuthIdentity(bundle),
+    harnessId,
+    label: previous?.label ?? sharedAccountLabel(bundle, label),
+    subject: bundle.subject,
+    ...(bundle.email ? { email: bundle.email } : {}),
+    ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
+    createdAt: previous?.createdAt ?? Date.now(),
+    credential,
+    ...(bundle.ownership === "external"
+      ? { sourceMachineId: serverId, sourceExpiresAt: bundle.expiresAt }
+      : {})
+  }
+}
 
 export const sharedHarness = (id: string): id is SharedOAuthHarness =>
   id === "claude-code" || id === "codex" || id === "muse-code" || id === "antigravity"

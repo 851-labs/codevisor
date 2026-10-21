@@ -17,6 +17,13 @@ const messageFromSseBlock = (block: string): unknown => {
   }
 }
 
+export interface StreamableHttpAuthorization {
+  readonly accessToken: () => Promise<string | undefined>
+  readonly recoverUnauthorized: (
+    rejectedAccessToken: string | undefined
+  ) => Promise<{ readonly retry: true } | { readonly retry: false; readonly reason: string }>
+}
+
 export class NodeStreamableHttpTransport implements Transport {
   onclose?: () => void
   onerror?: (error: Error) => void
@@ -28,7 +35,7 @@ export class NodeStreamableHttpTransport implements Transport {
 
   constructor(
     private readonly url: URL,
-    private readonly accessToken?: string,
+    private readonly authorization?: string | StreamableHttpAuthorization,
     private readonly customHeaders: Readonly<Record<string, string>> = {}
   ) {}
 
@@ -42,12 +49,7 @@ export class NodeStreamableHttpTransport implements Transport {
   }
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
-    const response = await fetch(this.url, {
-      method: "POST",
-      headers: this.headers("application/json, text/event-stream"),
-      body: JSON.stringify(message),
-      signal: this.controller?.signal ?? null
-    })
+    const response = await this.post(message)
     const sessionId = response.headers.get("mcp-session-id")
     if (sessionId !== null) this.sessionId = sessionId
     if (!response.ok) {
@@ -80,12 +82,31 @@ export class NodeStreamableHttpTransport implements Transport {
     this.onclose?.()
   }
 
-  private headers(accept: string): Headers {
+  private async post(message: JSONRPCMessage): Promise<Response> {
+    const authorization = this.authorization
+    const attempt = async (accessToken: string | undefined): Promise<Response> =>
+      fetch(this.url, {
+        method: "POST",
+        headers: this.headers("application/json, text/event-stream", accessToken),
+        body: JSON.stringify(message),
+        signal: this.controller?.signal ?? null
+      })
+    if (typeof authorization !== "object") return attempt(authorization)
+    const accessToken = await authorization.accessToken()
+    const response = await attempt(accessToken)
+    if (response.status !== 401) return response
+    await response.body?.cancel()
+    const recovery = await authorization.recoverUnauthorized(accessToken)
+    if (!recovery.retry) throw new Error(`Streamable HTTP error 401: ${recovery.reason}`)
+    return attempt(await authorization.accessToken())
+  }
+
+  private headers(accept: string, accessToken: string | undefined): Headers {
     const headers = new Headers(this.customHeaders)
     headers.set("accept", accept)
     headers.set("content-type", "application/json")
-    if (this.accessToken !== undefined) {
-      headers.set("authorization", `Bearer ${this.accessToken}`)
+    if (accessToken !== undefined) {
+      headers.set("authorization", `Bearer ${accessToken}`)
     }
     if (this.sessionId !== undefined) headers.set("mcp-session-id", this.sessionId)
     if (this.protocolVersion !== undefined) {

@@ -131,6 +131,12 @@ struct McpServerEditorSheet: View {
                   text: $clientSecret,
                   prompt: Text("Optional client secret")
                 )
+                Text(
+                  "With your own client ID, register each machine's Codevisor callback (http://127.0.0.1:49361/v1/mcps/oauth/callback on a Mac) as a redirect URI with the provider."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
               }
               .padding(.top, 8)
             }

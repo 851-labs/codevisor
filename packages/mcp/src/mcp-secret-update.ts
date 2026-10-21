@@ -57,8 +57,7 @@ export const connectionSecretsSignature = (stored: StoredSecrets): string =>
         ? undefined
         : {
             configuredClientId: stored.oauth.configuredClientId,
-            configuredClientSecret: stored.oauth.configuredClientSecret,
-            tokens: stored.oauth.tokens
+            configuredClientSecret: stored.oauth.configuredClientSecret
           }
   })
 

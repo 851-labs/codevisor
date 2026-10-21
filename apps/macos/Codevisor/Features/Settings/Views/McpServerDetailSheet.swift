@@ -127,8 +127,8 @@ struct McpServerDetailSheet: View {
     case "connecting": return "Connecting…"
     case "needsSetup": return server.detail ?? "Browser setup required"
     case "unavailable": return server.detail ?? "Unavailable on this machine"
-    case "needsAuthorization": return "Authorization required"
-    case "expired": return "Sign-in expired"
+    case "needsAuthorization": return server.detail ?? "Authorization required"
+    case "expired": return server.detail ?? "Sign-in expired"
     case "error": return server.detail ?? "Connection failed"
     default: return server.enabled ? "Not connected" : "Disabled"
     }

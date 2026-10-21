@@ -6,6 +6,9 @@ import {
   atomicWriteJson,
   forgetClaudeProfileLogin,
   makeSharedCredentialVault,
+  OAuthRefreshRejected,
+  OAuthRefreshUnavailable,
+  SharedCredentialError,
   readClaudeMachineLogin,
   readNativeOAuth,
   refreshSharedOAuth,
@@ -15,8 +18,11 @@ import {
 import type {
   ClaudeMachineLoginOptions,
   CredentialCoordinator,
-  SharedOAuthHarness
+  SharedCredentialVaultConfig,
+  SharedOAuthHarness,
+  SharedTokenBundle
 } from "@codevisor/harness-manager"
+import { McpRefreshRejected, McpRefreshUnavailable, refreshMcpOAuth } from "@codevisor/mcp"
 import { Schema } from "effect"
 
 import { errorCode } from "../unknown-values.js"
@@ -26,13 +32,18 @@ import { makeCredentialCoordinator } from "./credential-coordinator.js"
 
 const Receipt = Schema.Struct({ operationId: Schema.String, sealed: Schema.String })
 
-export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordinator) => {
+export const sharedAccountVault = (
+  dataDir: string,
+  provided?: CredentialCoordinator,
+  options: Partial<Pick<SharedCredentialVaultConfig, "rotate" | "now">> = {}
+) => {
   const coordinator = makeCredentialCoordinator({ dataDir })
   const path = (id: string) => join(dataDir, "shared-credentials", `${id}.receipt.json`)
   return makeSharedCredentialVault({
     coordinate: provided ?? coordinator,
     ...(provided ? {} : { readCached: coordinator.cached }),
     rotate: refreshSharedOAuth,
+    ...options,
     log: (line) => console.error(line),
     receipt: {
       read: async (id) => {
@@ -58,6 +69,31 @@ export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordin
     }
   })
 }
+
+export const rotateMcpCredential = async (
+  bundle: SharedTokenBundle,
+  now: () => number = Date.now
+): Promise<SharedTokenBundle> => {
+  if (bundle.harnessId !== "mcp" || bundle.ownership !== "managed")
+    throw new SharedCredentialError("reauthenticate")
+  try {
+    return await refreshMcpOAuth({ ...bundle, harnessId: "mcp", ownership: "managed" }, { now })
+  } catch (cause) {
+    if (cause instanceof McpRefreshRejected) throw new OAuthRefreshRejected(400, cause.code)
+    if (cause instanceof McpRefreshUnavailable) throw new OAuthRefreshUnavailable(cause.detail)
+    throw cause
+  }
+}
+
+export const mcpCredentialVault = (
+  dataDir: string,
+  provided?: CredentialCoordinator,
+  now: () => number = Date.now
+) =>
+  sharedAccountVault(dataDir, provided, {
+    rotate: (bundle) => rotateMcpCredential(bundle, now),
+    now
+  })
 
 const nativeExec: ClaudeMachineLoginOptions["exec"] = (command, args, { input, ...options }) =>
   new Promise((resolve, reject) => {

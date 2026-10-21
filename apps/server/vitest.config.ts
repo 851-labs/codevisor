@@ -19,6 +19,7 @@ export default defineConfig({
         "src/cli/support-test-support.ts",
         "src/routes/harness-auth-test-support.ts",
         "src/infra/shared-accounts-test-support.ts",
+        "src/infra/mcp-oauth-test-support.ts",
         "src/routes/session-test-support.ts",
         "src/routes/bot-test-support.ts",
         "src/routes/gateway-test-support.ts",

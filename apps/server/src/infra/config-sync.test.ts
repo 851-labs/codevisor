@@ -22,6 +22,11 @@ const mcpValue = (name: string, url: string) => ({
   authType: "none"
 })
 
+const credentialReference = (seed: string) => ({
+  id: `credential-${seed}-0123456789`,
+  key: seed.repeat(43)
+})
+
 const elsewhereAt = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
 describe("config sync", () => {
@@ -136,47 +141,44 @@ describe("config sync", () => {
       expect((await mcpA.staticSecrets(localToolIdA)).env).toBeUndefined()
 
       const scopedIdA = (await mcpA.list()).find((server) => server.name === "Scoped")?.id ?? ""
-      await mcpA.importOAuthMaterial(scopedIdA, {
-        owner: "server-a",
-        material: JSON.stringify({
-          tokens: { access_token: "at-1", refresh_token: "rt-1", token_type: "bearer" },
-          tokensSavedAt: 1_000
-        })
-      })
-      expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-a")
+      const signedInA = credentialReference("a")
+      await mcpA.setOAuthCredential(scopedIdA, signedInA)
       const oauthA = await reconcileMcps(a)
       expect(oauthA.status.published).toEqual(["Scoped"])
       const scoped = oauthA.changedEntries.find((entry) => entry.key === "Scoped")
-      expect(field(field(scoped?.value, "oauth"), "owner")).toBe("server-a")
+      expect(field(scoped?.value, "oauthCredential")).toEqual(signedInA)
+      expect(JSON.stringify(scoped?.value)).not.toContain("access")
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, oauthA.changedEntries))
       await reconcileMcps(b)
       const scopedIdB = (await mcpB.list()).find((server) => server.name === "Scoped")?.id ?? ""
-      expect((await mcpB.oauthSyncState(scopedIdB))?.owner).toBe("server-a")
+      expect(await mcpB.oauthCredential(scopedIdB)).toEqual(signedInA)
       await reconcileMcps(b)
       expect((await reconcileMcps(b)).changedEntries).toEqual([])
 
-      await mcpB.importOAuthMaterial(scopedIdB, {
-        owner: "server-b",
-        material: JSON.stringify({
-          tokens: { access_token: "at-2", refresh_token: "rt-2", token_type: "bearer" },
-          tokensSavedAt: 2_000
-        })
-      })
-      const takeoverB = await reconcileMcps(b)
-      expect(takeoverB.status.published).toEqual(["Scoped"])
-      await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, takeoverB.changedEntries))
+      const signedInB = credentialReference("b")
+      await mcpB.setOAuthCredential(scopedIdB, signedInB)
+      const resignedB = await reconcileMcps(b)
+      expect(resignedB.status.published).toEqual(["Scoped"])
+      await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, resignedB.changedEntries))
       await reconcileMcps(a)
-      expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-b")
+      expect(await mcpA.oauthCredential(scopedIdA)).toEqual(signedInB)
 
       const { services: machineC } = await makeServices("server-c2")
       if (machineC.mcp === undefined) throw new Error("mcp unavailable")
       const c = { db: machineC.db, mcp: machineC.mcp, serverId: "server-c2" }
-      await run(machineC.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, takeoverB.changedEntries))
+      await run(machineC.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, resignedB.changedEntries))
       const freshC = await reconcileMcps(c)
       expect(freshC.status.applied).toEqual(["Scoped"])
       const scopedIdC =
         (await machineC.mcp.list()).find((server) => server.name === "Scoped")?.id ?? ""
-      expect((await machineC.mcp.oauthSyncState(scopedIdC))?.owner).toBe("server-b")
+      expect(await machineC.mcp.oauthCredential(scopedIdC)).toEqual(signedInB)
+
+      await mcpA.setOAuthCredential(scopedIdA, null)
+      const signedOutA = await reconcileMcps(a)
+      expect(signedOutA.status.published).toEqual(["Scoped"])
+      await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, signedOutA.changedEntries))
+      await reconcileMcps(b)
+      expect(await mcpB.oauthCredential(scopedIdB)).toBeNull()
 
       const idA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
       await mcpA.remove(idA)
