@@ -22,6 +22,7 @@
     private var selectionRepaintTracker = SelectionRepaintTracker()
     private var isTrackingMouseSelection = false
     private var linkHoverTrackingArea: NSTrackingArea?
+    private let linkScan = TextStorageLinkScan()
     private var pendingServerFileLinkClick: PendingServerFileLinkClick?
     private(set) var hoveredLinkRange: NSRange?
 
@@ -56,19 +57,7 @@
 
     private var textStorageContainsLinks: Bool {
       guard let textStorage, textStorage.length > 0 else { return false }
-      var found = false
-      textStorage.enumerateAttributes(
-        in: NSRange(location: 0, length: textStorage.length),
-        options: [.longestEffectiveRangeNotRequired]
-      ) { attributes, _, stop in
-        if attributes[.link] != nil
-          || attributes[.streamMarkdownServerFileLink] != nil
-        {
-          found = true
-          stop.pointee = true
-        }
-      }
-      return found
+      return linkScan.containsLinks(in: textStorage)
     }
 
     public override func mouseMoved(with event: NSEvent) {

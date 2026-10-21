@@ -6,7 +6,6 @@ struct FileMarkdownPreview: View {
   let document: FileDocumentModel
   let openFile: (String) -> Bool
   private let imageLoader: MarkdownImageLoader
-  @Environment(\.codeHighlightTheme) private var highlight
 
   init(document: FileDocumentModel, client: any CodevisorServerClienting, openFile: @escaping (String) -> Bool) {
     self.document = document; self.openFile = openFile
@@ -40,13 +39,12 @@ struct FileMarkdownPreview: View {
 
   var body: some View {
     ScrollView {
-      StreamingMarkdownView(document.text)
+      StreamingMarkdownView(markdownBody)
         .frame(maxWidth: 860, alignment: .leading)
         .padding(28)
         .frame(maxWidth: .infinity)
     }
     .environment(\.markdownImageLoader, imageLoader)
-    .environment(\.markdownTheme, makeMarkdownTheme(highlight: highlight.map { ($0.key, $0.json) }))
     .markdownLinkHandler { url in
       guard
         let target = FileDocumentLocation.navigationTarget(
@@ -54,5 +52,9 @@ struct FileMarkdownPreview: View {
       else { return false }
       return openFile(target)
     }
+  }
+
+  private var markdownBody: String {
+    String(MarkdownFrontmatter.removing(from: document.text))
   }
 }

@@ -32,6 +32,18 @@ struct MarkdownDocumentTests {
     #expect(!MarkdownDocumentPath.isMarkdown("/workspace/readme.txt"))
   }
 
+  @Test(arguments: [
+    ("---\nname: code-style\ndescription: Rules\n---\n\n# Code style\n", "\n# Code style\n"),
+    ("\u{FEFF}---\r\ntitle: A\r\n...\r\nBody", "Body"),
+    ("--- \n---\n", ""),
+    ("---\nname: unclosed\n\n# Title", "---\nname: unclosed\n\n# Title"),
+    ("# Title\n\n---\nname: later\n---\n", "# Title\n\n---\nname: later\n---\n"),
+    ("----\nname: rule\n----\n", "----\nname: rule\n----\n"),
+  ])
+  func removesLeadingFrontmatter(text: String, expected: String) {
+    #expect(MarkdownFrontmatter.removing(from: text) == expected)
+  }
+
   @MainActor
   @Test func persistsAndSyncsDocumentIdentity() throws {
     let id = UUID()

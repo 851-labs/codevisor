@@ -29,4 +29,22 @@ enum StreamMarkdownTextLayout {
     let naturalWidth = naturalWidth()
     return min(max(1, availableWidth ?? naturalWidth), naturalWidth)
   }
+
+  static func displayedWidth(
+    currentWidth: CGFloat,
+    rowLayoutWidth: CGFloat?,
+    fillsWidth: Bool,
+    naturalWidth: @autoclosure () -> CGFloat
+  ) -> CGFloat? {
+    let followsDisplayedFrame = fillsWidth && rowLayoutWidth == nil
+    guard followsDisplayedFrame else {
+      return resolvedWidth(
+        proposalWidth: nil,
+        rowLayoutWidth: rowLayoutWidth,
+        fillsWidth: fillsWidth,
+        naturalWidth: naturalWidth()
+      )
+    }
+    return currentWidth > 1 ? currentWidth : nil
+  }
 }

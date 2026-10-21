@@ -47,9 +47,7 @@
         latestAnimationEnd: prepared.latestAnimationEnd,
         activeAnimationRanges: prepared.activeAnimationRanges
       )
-      _ = view.contentHeight(
-        forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
-      )
+      layOutAtDisplayedWidth(view, text: prepared.text, context: context)
       return view
     }
 
@@ -66,9 +64,7 @@
         latestAnimationEnd: prepared.latestAnimationEnd,
         activeAnimationRanges: prepared.activeAnimationRanges
       )
-      _ = textView.contentHeight(
-        forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
-      )
+      layOutAtDisplayedWidth(textView, text: prepared.text, context: context)
     }
 
     public func sizeThatFits(
@@ -95,6 +91,22 @@
         width: width,
         height: uiView.contentHeight(forWidth: width)
       )
+    }
+
+    private func layOutAtDisplayedWidth(
+      _ view: SelectableTextKitView,
+      text: NSAttributedString,
+      context: Context
+    ) {
+      guard
+        let width = StreamMarkdownTextLayout.displayedWidth(
+          currentWidth: view.frame.width,
+          rowLayoutWidth: rowLayoutWidth,
+          fillsWidth: fillsWidth,
+          naturalWidth: context.coordinator.measurer.naturalWidth(for: text)
+        )
+      else { return }
+      _ = view.contentHeight(forWidth: width)
     }
 
     private func resolvedWidth(

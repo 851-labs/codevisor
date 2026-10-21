@@ -270,6 +270,27 @@ struct SelectableTextViewTests {
     #expect(view.selectedRange() == NSRange(location: 4, length: 2))
   }
 
+  @Test("Link hover tracking follows content edits")
+  func linkHoverTrackingFollowsEdits() {
+    let linked = NSMutableAttributedString(string: "Read the docs")
+    linked.addAttribute(.link, value: URL(string: "https://example.com")!, range: NSRange(location: 5, length: 8))
+    let view = SelectableTextKitView()
+    let hoverAreas = {
+      view.updateTrackingAreas()
+      return view.trackingAreas.filter { $0.options.contains(.mouseMoved) }.count
+    }
+
+    view.setContent(NSAttributedString(string: "Plain text"))
+    let plain = hoverAreas()
+    view.setContent(linked)
+    let withLink = hoverAreas()
+    view.setContent(NSAttributedString(string: "Plain again"))
+    let afterRemoval = hoverAreas()
+
+    #expect(withLink == plain + 1)
+    #expect(afterRemoval == plain)
+  }
+
   @Test("Hovering a link adds and removes an underline without changing its content")
   func linkHoverUnderline() {
     let text = NSMutableAttributedString(string: "Read the docs")
