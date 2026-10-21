@@ -2,36 +2,39 @@ import SwiftUI
 
 extension SessionTranscriptView {
   var keyboardInsetChat: some View {
-    ZStack {
-      Color.clear
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: { height in
-          keyboardAvoidingChatHeight = height
-          adoptKeyboardOverlap(measuredKeyboardOverlap)
-        }
-        .background { ChatKeyboardInsetAnchor(inset: keyboardInset) }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-      Color.clear
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: { height in
-          keyboardFreeChatHeight = height
-          adoptKeyboardOverlap(measuredKeyboardOverlap)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .ignoresSafeArea(.keyboard)
-      chatLayers
-        .background { chatAreaExtentProbe }
-        .padding(.bottom, keyboardOverlap)
-        .background {
-          ChatSurfaceBackground()
-            .ignoresSafeArea()
-        }
-        .ignoresSafeArea(.keyboard)
-    }
+    Color.clear
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: { height in
+        keyboardFreeChatHeight = height
+        adoptKeyboardOverlap(measuredKeyboardOverlap)
+      }
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+      .overlay {
+        chatLayers
+          .background { chatAreaExtentProbe }
+          .padding(.bottom, keyboardOverlap)
+          .background {
+            ChatSurfaceBackground()
+              .ignoresSafeArea()
+          }
+      }
+      .ignoresSafeArea(.keyboard)
+      .background { keyboardAvoidingChatProbe }
+  }
+
+  var keyboardAvoidingChatProbe: some View {
+    Color.clear
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: { height in
+        keyboardAvoidingChatHeight = height
+        adoptKeyboardOverlap(measuredKeyboardOverlap)
+      }
+      .background { ChatKeyboardInsetAnchor(inset: keyboardInset) }
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 
   var measuredKeyboardOverlap: CGFloat {
