@@ -3,8 +3,6 @@
 
   @MainActor
   public final class StaticTextSurfaceView: NSView, TranscriptTextSurface {
-    static let hoverRestDelay: Duration = .milliseconds(180)
-
     var linkAction: MarkdownLinkAction? {
       didSet { liveView?.linkAction = linkAction }
     }
@@ -14,7 +12,7 @@
     private let highlights = StaticTextHighlightLayer()
     private var forwardsSelectionToCoordinator = false
     private var forwardsEventsToLiveView = false
-    private var hoverRestTask: Task<Void, Never>?
+    private var hoveredLink: NSRange?
 
     public override var isFlipped: Bool { true }
 
@@ -24,6 +22,9 @@
       layerContentsRedrawPolicy = .onSetNeedsDisplay
       textLayer.contentsGravity = .topLeft
       textLayer.anchorPoint = .zero
+      textLayer.zPosition = 1
+      textLayer.actions = Self.disabledActions
+      highlights.actions = Self.disabledActions
       layer?.addSublayer(highlights)
       layer?.addSublayer(textLayer)
     }
@@ -37,6 +38,7 @@
       guard prepared !== self.prepared else { return }
       detachLiveView()
       self.prepared = prepared
+      hoveredLink = nil
       installTextContents()
       redrawHighlights()
       attachLiveViewForAssistiveTechnologies()
@@ -60,7 +62,7 @@
     public var transcriptSelectionHighlight: NSRange? {
       didSet {
         guard transcriptSelectionHighlight != oldValue else { return }
-        liveView?.transcriptSelectionHighlight = transcriptSelectionHighlight
+        if liveDrawsText { liveView?.transcriptSelectionHighlight = transcriptSelectionHighlight }
         redrawHighlights()
       }
     }
@@ -68,7 +70,7 @@
     public var transcriptFindHighlights: TranscriptFindHighlights? {
       didSet {
         guard transcriptFindHighlights != oldValue else { return }
-        liveView?.transcriptFindHighlights = transcriptFindHighlights
+        if liveDrawsText { liveView?.transcriptFindHighlights = transcriptFindHighlights }
         redrawHighlights()
       }
     }
@@ -95,7 +97,8 @@
 
     public override func draw(_ dirtyRect: NSRect) {
       guard let prepared, prepared.image == nil, liveView == nil else { return }
-      highlights.drawInline(in: prepared, selection: transcriptSelectionHighlight, find: transcriptFindHighlights)
+      highlights.drawInline(
+        in: prepared, selection: transcriptSelectionHighlight, find: transcriptFindHighlights, hoveredLink: hoveredLink)
       let glyphs = prepared.layout.manager.glyphRange(for: prepared.layout.container)
       let origin = NSPoint(x: prepared.inset, y: prepared.inset)
       prepared.layout.manager.drawBackground(forGlyphRange: glyphs, at: origin)
@@ -124,13 +127,13 @@
     }
 
     public override func mouseMoved(with event: NSEvent) {
-      guard let point = unoccludedLocation(of: event) else { return }
+      guard let point = unoccludedLocation(of: event) else { return updateHoveredLink(nil) }
       cursor(at: point).set()
-      scheduleLiveViewAfterHoverRest()
+      updateHoveredLink(StaticTextHitTesting.linkRange(in: prepared, at: point))
     }
 
     public override func mouseExited(with event: NSEvent) {
-      hoverRestTask?.cancel()
+      updateHoveredLink(nil)
       guard !forwardsEventsToLiveView else { return }
       detachLiveView()
     }
@@ -190,7 +193,7 @@
       CATransaction.setDisableActions(true)
       textLayer.contents = prepared?.image
       textLayer.contentsScale = prepared?.scale ?? window?.backingScaleFactor ?? 2
-      textLayer.isHidden = liveView != nil || prepared?.image == nil
+      textLayer.isHidden = prepared?.image == nil
       CATransaction.commit()
       needsLayout = true
       needsDisplay = true
@@ -206,6 +209,7 @@
         in: prepared,
         selection: transcriptSelectionHighlight,
         find: transcriptFindHighlights,
+        hoveredLink: hoveredLink,
         isKeyWindow: window?.isKeyWindow ?? false,
         appearance: effectiveAppearance
       )
@@ -222,16 +226,6 @@
       return convert(event.locationInWindow, from: nil)
     }
 
-    private func scheduleLiveViewAfterHoverRest() {
-      hoverRestTask?.cancel()
-      guard liveView == nil, prepared != nil else { return }
-      hoverRestTask = Task { [weak self] in
-        try? await Task.sleep(for: Self.hoverRestDelay)
-        guard !Task.isCancelled, let self, NSEvent.pressedMouseButtons == 0 else { return }
-        self.attachLiveView()
-      }
-    }
-
     private func forwardToLiveView(_ event: NSEvent, deliver: (SelectableTextKitView, NSEvent) -> Void) {
       guard let live = attachLiveView() else { return }
       forwardsEventsToLiveView = event.type == .leftMouseDown
@@ -243,28 +237,44 @@
       if let liveView { return liveView }
       guard let prepared else { return nil }
       let live = SelectableTextKitView(preparedLayout: prepared.layout)
+      live.drawsGlyphs = liveDrawsText
       live.linkAction = linkAction
-      live.transcriptSelectionHighlight = transcriptSelectionHighlight
-      live.transcriptFindHighlights = transcriptFindHighlights
+      if liveDrawsText {
+        live.transcriptSelectionHighlight = transcriptSelectionHighlight
+        live.transcriptFindHighlights = transcriptFindHighlights
+      }
       live.frame = liveFrame
       liveView = live
       addSubview(live)
-      textLayer.isHidden = true
-      highlights.isHidden = true
+      guard liveDrawsText else { return live }
+      live.display()
       needsDisplay = true
+      displayIfNeeded()
       return live
     }
 
     private func detachLiveView() {
-      hoverRestTask?.cancel()
       guard let liveView, !Self.requiresLiveText else { return }
       liveView.removeFromSuperview()
       self.liveView = nil
-      textLayer.isHidden = prepared?.image == nil
-      highlights.isHidden = false
-      redrawHighlights()
+      guard prepared?.image == nil else { return }
       needsDisplay = true
+      displayIfNeeded()
     }
+
+    private func updateHoveredLink(_ range: NSRange?) {
+      guard range != hoveredLink else { return }
+      hoveredLink = range
+      redrawHighlights()
+    }
+
+    private var liveDrawsText: Bool { prepared?.image == nil }
+
+    private static let disabledActions: [String: any CAAction] = Dictionary(
+      uniqueKeysWithValues: [
+        "contents", "hidden", "bounds", "position", "contentsScale", "opacity", "onOrderIn", "onOrderOut",
+      ]
+      .map { ($0, NSNull()) })
 
     private func attachLiveViewForAssistiveTechnologies() {
       guard Self.requiresLiveText else { return }

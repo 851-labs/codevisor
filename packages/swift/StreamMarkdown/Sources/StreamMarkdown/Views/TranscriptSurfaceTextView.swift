@@ -187,9 +187,14 @@
       return (textStorage.string as NSString).substring(with: clamped)
     }
 
+    var drawsGlyphs = true {
+      didSet { needsDisplay = true }
+    }
+
     open override func draw(_ dirtyRect: NSRect) {
       drawTranscriptFindHighlights()
       drawTranscriptSelectionHighlight()
+      guard drawsGlyphs else { return }
       super.draw(dirtyRect)
     }
 

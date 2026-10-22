@@ -31,11 +31,47 @@
     }
 
     static func link(in prepared: PreparedStaticText?, at viewPoint: NSPoint) -> Any? {
+      linkHit(in: prepared, at: viewPoint)?.value
+    }
+
+    static func linkRange(in prepared: PreparedStaticText?, at viewPoint: NSPoint) -> NSRange? {
+      linkHit(in: prepared, at: viewPoint)?.range
+    }
+
+    static func underlineRects(in prepared: PreparedStaticText, for range: NSRange) -> [NSRect] {
+      let layout = prepared.layout
+      let clamped = NSIntersectionRange(range, NSRange(location: 0, length: layout.text.length))
+      guard clamped.length > 0 else { return [] }
+      let glyphs = layout.manager.glyphRange(forCharacterRange: clamped, actualCharacterRange: nil)
+      var rects: [NSRect] = []
+      layout.manager.enumerateLineFragments(forGlyphRange: glyphs) { line, _, _, lineGlyphs, _ in
+        let segment = NSIntersectionRange(lineGlyphs, glyphs)
+        guard segment.length > 0 else { return }
+        let character = layout.manager.characterIndexForGlyph(at: segment.location)
+        let font = layout.text.attribute(.font, at: character, effectiveRange: nil) as? NSFont
+        let baseline = line.minY + layout.manager.location(forGlyphAt: segment.location).y
+        let thickness = max(1, font?.underlineThickness ?? 1)
+        let bounds = layout.manager.boundingRect(forGlyphRange: segment, in: layout.container)
+        rects.append(
+          NSRect(
+            x: bounds.minX + prepared.inset,
+            y: baseline - (font?.underlinePosition ?? -1.5) - thickness / 2 + prepared.inset,
+            width: bounds.width,
+            height: thickness))
+      }
+      return rects
+    }
+
+    private static func linkHit(
+      in prepared: PreparedStaticText?, at viewPoint: NSPoint
+    ) -> (value: Any, range: NSRange)? {
       guard let prepared, prepared.text.length > 0, isOverText(prepared, at: viewPoint) else { return nil }
       let index = insertionIndex(in: prepared, at: viewPoint)
       for candidate in [index, index - 1] where candidate >= 0 && candidate < prepared.text.length {
-        let attributes = prepared.text.attributes(at: candidate, effectiveRange: nil)
-        if let link = attributes[.link] ?? attributes[.streamMarkdownServerFileLink] { return link }
+        for key in [NSAttributedString.Key.link, .streamMarkdownServerFileLink] {
+          var range = NSRange()
+          if let value = prepared.text.attribute(key, at: candidate, effectiveRange: &range) { return (value, range) }
+        }
       }
       return nil
     }

@@ -5,11 +5,12 @@
     private let selection = CAShapeLayer()
     private let otherMatches = CAShapeLayer()
     private let currentMatch = CAShapeLayer()
+    private let linkUnderline = CAShapeLayer()
 
     override init() {
       super.init()
       anchorPoint = .zero
-      [otherMatches, currentMatch, selection].forEach { shape in
+      [otherMatches, currentMatch, selection, linkUnderline].forEach { shape in
         shape.anchorPoint = .zero
         addSublayer(shape)
       }
@@ -29,16 +30,21 @@
       in prepared: PreparedStaticText,
       selection range: NSRange?,
       find: TranscriptFindHighlights?,
+      hoveredLink: NSRange?,
       isKeyWindow: Bool,
       appearance: NSAppearance
     ) {
       CATransaction.begin()
       CATransaction.setDisableActions(true)
-      [selection, otherMatches, currentMatch].forEach { $0.frame = bounds }
+      [selection, otherMatches, currentMatch, linkUnderline].forEach { $0.frame = bounds }
       appearance.performAsCurrentDrawingAppearance {
         selection.fillColor = StaticTextHighlightColors.selection(isKeyWindow: isKeyWindow).cgColor
         otherMatches.fillColor = StaticTextHighlightColors.match(isCurrent: false, appearance: appearance).cgColor
         currentMatch.fillColor = StaticTextHighlightColors.match(isCurrent: true, appearance: appearance).cgColor
+        linkUnderline.fillColor = NSColor.linkColor.cgColor
+      }
+      linkUnderline.path = hoveredLink.map {
+        Self.path(StaticTextHitTesting.underlineRects(in: prepared, for: $0), rounded: false)
       }
       selection.path = range.map { Self.path(StaticTextHitTesting.rects(in: prepared, for: $0), rounded: false) }
       otherMatches.path = Self.path(Self.matchRects(in: prepared, find: find, current: false), rounded: true)
@@ -47,7 +53,13 @@
     }
 
     @MainActor
-    func drawInline(in prepared: PreparedStaticText, selection range: NSRange?, find: TranscriptFindHighlights?) {
+    func drawInline(
+      in prepared: PreparedStaticText, selection range: NSRange?, find: TranscriptFindHighlights?, hoveredLink: NSRange?
+    ) {
+      if let hoveredLink {
+        NSColor.linkColor.setFill()
+        StaticTextHitTesting.underlineRects(in: prepared, for: hoveredLink).forEach { $0.fill() }
+      }
       let appearance = NSAppearance.currentDrawing()
       StaticTextHighlightColors.match(isCurrent: false, appearance: appearance).setFill()
       Self.matchRects(in: prepared, find: find, current: false).forEach { Self.roundedPath($0).fill() }
