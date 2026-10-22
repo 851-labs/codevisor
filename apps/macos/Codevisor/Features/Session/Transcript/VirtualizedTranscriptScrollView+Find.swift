@@ -110,7 +110,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
         stamps[key] = stamp
         if host is TranscriptMarkdownRowHost, find.highlightStamps[key] == stamp { continue }
         let surfaces = selectionSurfaces(in: host)
-        let highlights = find.engine.highlights(forRow: key, surfaceTexts: surfaces.map(\.string))
+        let highlights = find.engine.highlights(forRow: key, surfaceTexts: surfaces.map(\.transcriptString))
         for (surface, highlight) in zip(surfaces, highlights) {
           surface.transcriptFindHighlights = highlight
         }
@@ -175,7 +175,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
 
   private func findMatchSurfaceRect(
     _ match: TranscriptFindMatch
-  ) -> (TranscriptSurfaceTextView, NSRect)? {
+  ) -> ((any TranscriptTextSurface), NSRect)? {
     guard let host = mountedHosts[match.rowKey] else { return nil }
     for surface in selectionSurfaces(in: host) {
       guard let range = surface.transcriptFindHighlights?.currentRange else { continue }

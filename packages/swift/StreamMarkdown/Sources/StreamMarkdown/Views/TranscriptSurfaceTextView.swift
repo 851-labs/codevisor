@@ -3,11 +3,11 @@
 
   @MainActor
   public protocol TranscriptSelectionCoordinating: AnyObject {
-    func beginTranscriptSelection(with event: NSEvent, in surface: NSTextView) -> Bool
+    func beginTranscriptSelection(with event: NSEvent, in surface: any TranscriptTextSurface) -> Bool
     func continueTranscriptSelection(with event: NSEvent)
     func endTranscriptSelection(with event: NSEvent)
     func clearTranscriptSelection()
-    func transcriptSelectionMenu(for surface: NSTextView, with event: NSEvent) -> NSMenu?
+    func transcriptSelectionMenu(for surface: any TranscriptTextSurface, with event: NSEvent) -> NSMenu?
   }
 
   extension NSView {
@@ -256,6 +256,18 @@
         }
       }
       return rects
+    }
+  }
+
+  extension TranscriptSurfaceTextView: TranscriptTextSurface {
+    public var transcriptText: NSAttributedString { textStorage ?? NSAttributedString() }
+
+    public var acceptsTranscriptSelection: Bool { isSelectable && !isEditable }
+
+    public func transcriptCharacterIndex(at viewPoint: NSPoint) -> Int {
+      let index = characterIndexForInsertion(at: viewPoint)
+      guard index != NSNotFound else { return 0 }
+      return min(max(0, index), transcriptTextLength)
     }
   }
 #endif

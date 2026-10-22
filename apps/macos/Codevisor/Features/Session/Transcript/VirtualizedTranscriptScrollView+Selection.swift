@@ -32,9 +32,8 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     textSelection.selection?.resolve { virtualLayout.indexByKey[$0] }
   }
 
-  func beginTranscriptSelection(with event: NSEvent, in surface: NSTextView) -> Bool {
+  func beginTranscriptSelection(with event: NSEvent, in surface: any TranscriptTextSurface) -> Bool {
     guard initialPresentationGate.isReady,
-      let surface = surface as? TranscriptSurfaceTextView,
       let point = selectionPoint(in: surface, atWindowPoint: event.locationInWindow)
     else { return false }
     startSelectionGesture(at: point, event: event)
@@ -163,7 +162,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   ) -> TranscriptSelectionState.PointRange {
     guard granularity != .character,
       let surface = selectionSurface(at: point),
-      let storage = surface.textStorage, storage.length > 0
+      case let storage = surface.transcriptText, storage.length > 0
     else { return (point, point) }
     let index = min(max(0, point.offset), storage.length)
     let range =
@@ -186,7 +185,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       if let cached = textSelection.endpointTexts[key] {
         texts[key] = cached
       } else if let host = mountedHosts[key] {
-        texts[key] = selectionSurfaces(in: host).map(\.string)
+        texts[key] = selectionSurfaces(in: host).map(\.transcriptString)
       }
     }
     textSelection.endpointTexts = texts
@@ -232,7 +231,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   }
 
   func selectionPoint(
-    in surface: TranscriptSurfaceTextView,
+    in surface: any TranscriptTextSurface,
     atWindowPoint windowPoint: NSPoint
   ) -> TranscriptSelectionPoint? {
     guard let (key, host) = mountedRowHost(containing: surface) else { return nil }
@@ -257,19 +256,18 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     return nil
   }
 
-  private func selectionSurface(at point: TranscriptSelectionPoint) -> TranscriptSurfaceTextView? {
+  private func selectionSurface(at point: TranscriptSelectionPoint) -> (any TranscriptTextSurface)? {
     guard let host = mountedHosts[point.rowKey] else { return nil }
     let surfaces = selectionSurfaces(in: host)
     guard surfaces.indices.contains(point.surface) else { return nil }
     return surfaces[point.surface]
   }
 
-  func selectionSurfaces(in host: NSView) -> [TranscriptSurfaceTextView] {
-    var found: [(view: TranscriptSurfaceTextView, frame: NSRect, order: Int)] = []
+  func selectionSurfaces(in host: NSView) -> [any TranscriptTextSurface] {
+    var found: [(view: any TranscriptTextSurface, frame: NSRect, order: Int)] = []
     func visit(_ view: NSView) {
       guard !view.isHidden else { return }
-      if let surface = view as? TranscriptSurfaceTextView {
-        guard surface.isSelectable, !surface.isEditable else { return }
+      if let surface = view as? any TranscriptTextSurface, surface.acceptsTranscriptSelection {
         found.append((surface, host.convert(surface.bounds, from: surface), found.count))
         return
       }
@@ -333,7 +331,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
   func selectedTranscriptText() -> String? {
     guard let span = resolvedSelectionSpan, !span.isEmpty else { return nil }
     enum Source {
-      case mounted([TranscriptSurfaceTextView])
+      case mounted([any TranscriptTextSurface])
       case text([String])
     }
     var sources: [Int: Source] = [:]
@@ -477,19 +475,9 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       let hit = window.contentView?.hitTest(event.locationInWindow),
       hit.isDescendant(of: self)
     else { return }
-    if hit is TranscriptSurfaceTextView || hit is NSScroller || hit === transcriptDocumentView {
+    if hit is any TranscriptTextSurface || hit is NSScroller || hit === transcriptDocumentView {
       return
     }
     clearTranscriptSelection()
-  }
-}
-
-extension TranscriptSurfaceTextView {
-  fileprivate var transcriptTextLength: Int { textStorage?.length ?? 0 }
-
-  fileprivate func transcriptCharacterIndex(at viewPoint: NSPoint) -> Int {
-    let index = characterIndexForInsertion(at: viewPoint)
-    guard index != NSNotFound else { return 0 }
-    return min(max(0, index), transcriptTextLength)
   }
 }

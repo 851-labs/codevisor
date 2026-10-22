@@ -85,7 +85,7 @@ struct TranscriptContentLayoutTests {
   }
 
   @Test("A native settled renderer verifies a height inherited from another surface")
-  func nativeRendererVerifiesCachedHeight() {
+  func nativeRendererVerifiesCachedHeight() async {
     let host = TranscriptMarkdownRowHost(frame: NSRect(x: 0, y: 0, width: 320, height: 16))
     let text = String(repeating: "A settled transcript sentence. ", count: 40)
     let chunk = TranscriptMarkdownChunk(
@@ -97,6 +97,8 @@ struct TranscriptContentLayoutTests {
     host.onHeightChange = { heights.append($0) }
     let style = TranscriptMarkdownRowStyle(markdown: .default)
     host.setContent(chunk, streamID: "response", style: style, linkAction: nil, knownHeight: 16)
+    await StaticTextCache.shared.waitUntilIdle()
+    host.requestContentMeasurement(forceReport: false)
     #expect((heights.last ?? 0) > 16)
     #expect(host.isPresentationReady)
     let reports = heights.count

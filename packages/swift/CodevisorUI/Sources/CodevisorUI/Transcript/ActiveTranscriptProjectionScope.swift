@@ -12,6 +12,8 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   @State private var publishedProjectionKey: TaskKey?
   @State private var projectionStaging = ProjectionStaging()
   @State private var projectionWorker = TranscriptActiveProjectionWorker()
+  @State private var framedStaging = ActiveTranscriptProjectionStaging()
+  @State private var presentObserver: UUID?
 
   public init(
     controller: SessionController,
@@ -24,6 +26,61 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   }
 
   public var body: some View {
+    #if os(macOS)
+      framedBody
+    #else
+      legacyBody
+    #endif
+  }
+
+  private var framedBody: some View {
+    let isAwaitingFirstProjection =
+      projectedItem != nil && publishedProjectionKey?.projectedID != projectedItem?.id
+    return content(
+      activeRows, activeRowsVersion, isAwaitingFirstProjection, isAwaitingFirstProjection,
+      activeTextRestorationID
+    )
+    .background {
+      ActiveTranscriptProjectionSubmitter(
+        controller: controller,
+        projectedItem: projectedItem,
+        worker: projectionWorker,
+        staging: framedStaging
+      )
+    }
+    .onAppear { observePresentedFrames() }
+    .onDisappear { stopObservingPresentedFrames() }
+  }
+
+  private func observePresentedFrames() {
+    guard presentObserver == nil else { return }
+    let staging = framedStaging
+    let publish = publishFramedProjection
+    presentObserver = controller.presentationClock.addPresentObserver {
+      guard let ready = staging.takePublishable() else { return }
+      publish(ready)
+    }
+  }
+
+  private func stopObservingPresentedFrames() {
+    if let presentObserver { controller.presentationClock.removePresentObserver(presentObserver) }
+    presentObserver = nil
+    projectionWorker.cancel()
+  }
+
+  private func publishFramedProjection(_ ready: ActiveTranscriptReadyProjection) {
+    activeRows = ready.rows
+    activeTextRestorationID = ready.restorationID
+    activeRowsVersion &+= 1
+    publishedProjectionKey = TaskKey(
+      revision: ready.key.revision,
+      projectedID: ready.key.projectedID,
+      waitingDescription: ready.key.waitingDescription
+    )
+  }
+
+  @ViewBuilder
+  private var legacyBody: some View {
     let presentationFrame = controller.transcriptPresentationFrameRevision
     let projectionKey = taskKey
     let isActiveProjectionPending =

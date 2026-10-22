@@ -23,7 +23,7 @@ struct TranscriptFollowUpActivityTests {
       fixture.controller.transcriptProjectionInput, options: options)
     let firstActive = TranscriptActiveRowProjection.rows(for: .assistant(completed))
     fixture.configure(rows: firstRows, activeRows: firstActive, rowsRevision: 1, activeRevision: 1)
-    try fixture.present()
+    try await fixture.present()
 
     let followUp = UserMessage(text: "Follow-up message")
     var assistant = AssistantMessage(turn: AssistantTurn(isGenerating: true))
@@ -35,13 +35,13 @@ struct TranscriptFollowUpActivityTests {
       fixture.controller.transcriptProjectionInput, options: options)
     let request = UserSendAnimationRequest(token: 7, messageID: followUp.id)
     fixture.configure(rows: nextRows, activeRows: firstActive, rowsRevision: 2, activeRevision: 1, sendRequest: request)
-    try fixture.present()
+    try await fixture.present()
     let userHost = try #require(fixture.view.mountedHosts[TranscriptVirtualRow.ID.message(followUp.id).layoutKey])
     try #require(userHost.layer?.animation(forKey: TranscriptSendAnimationKeys.lift) != nil)
     fixture.configure(
       rows: nextRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(assistant)),
       rowsRevision: 2, activeRevision: 2, sendRequest: request)
-    try fixture.present()
+    try await fixture.present()
 
     var completions = fixture.sendCompletions.makeAsyncIterator()
     #expect(await completions.next() == request.token)
@@ -69,7 +69,7 @@ struct TranscriptFollowUpActivityTests {
     projection.fireFrame()
     let firstActive = try #require(await publications.next())
     fixture.configure(rows: firstRows, activeRows: firstActive, rowsRevision: 1, activeRevision: 1)
-    try fixture.present()
+    try await fixture.present()
 
     completed.turn.isGenerating = false
     fixture.model.activeItem = .assistant(completed)
@@ -93,13 +93,13 @@ struct TranscriptFollowUpActivityTests {
     let nextActive = try #require(await publications.next())
     #expect(nextActive.contains { $0.id.messageID == assistant.id })
     fixture.configure(rows: projection.inputs.rows, activeRows: nextActive, rowsRevision: 2, activeRevision: 2)
-    try fixture.present()
+    try await fixture.present()
     try fixture.expectActivity(for: assistant.id)
     #expect(assistant.turn.entries.isEmpty)
   }
 
   @Test("A previous response's animation stops suppressing a quiet follow-up", arguments: [false, true])
-  func previousAnimationRetires(previousResponseLeavesViewport: Bool) throws {
+  func previousAnimationRetires(previousResponseLeavesViewport: Bool) async throws {
     let fixture = ActivityFixture(reportsPreviousAnimation: true)
     defer { fixture.tearDown() }
     let options = TranscriptProjectionOptions(includesConnectingRow: false, bottomSpacerHeight: 100)
@@ -113,7 +113,7 @@ struct TranscriptFollowUpActivityTests {
     fixture.configure(
       rows: firstRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(completed)),
       rowsRevision: 1, activeRevision: 1)
-    try fixture.present()
+    try await fixture.present()
     try #require(fixture.visibility.hasActiveEntranceAnimation)
     #expect(!fixture.view.rows.contains { $0.id == .activeChrome(completed.id, .activity) })
     try fixture.expectActivity(for: completed.id)
@@ -136,7 +136,7 @@ struct TranscriptFollowUpActivityTests {
     fixture.configure(
       rows: nextRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(assistant)),
       rowsRevision: 2, activeRevision: 2)
-    try fixture.present()
+    try await fixture.present()
     if previousResponseLeavesViewport {
       #expect(
         fixture.view.mountedHosts[firstMarkdown.layoutKey]?.frame.intersects(fixture.view.contentView.bounds) != true)
@@ -179,7 +179,7 @@ struct TranscriptFollowUpActivityTests {
       options: options)
     let firstActive = TranscriptActiveRowProjection.rows(for: .assistant(completed))
     fixture.configure(rows: firstRows, activeRows: firstActive, rowsRevision: 1, activeRevision: 1)
-    try fixture.present()
+    try await fixture.present()
 
     let followUp = UserMessage(text: "Follow-up message")
     var assistant = AssistantMessage(turn: AssistantTurn(isGenerating: true))
@@ -198,9 +198,9 @@ struct TranscriptFollowUpActivityTests {
     } else {
       fixture.configure(rows: nextRows, activeRows: firstActive, rowsRevision: 2, activeRevision: 1)
     }
-    try fixture.present()
+    try await fixture.present()
     fixture.configure(rows: nextRows, activeRows: nextActive, rowsRevision: 2, activeRevision: 2)
-    try fixture.present()
+    try await fixture.present()
     try fixture.expectActivity(for: assistant.id)
 
     if !scenario.thinkingArrivesBeforeProjection {
@@ -209,7 +209,7 @@ struct TranscriptFollowUpActivityTests {
       fixture.configure(
         rows: nextRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(assistant)),
         rowsRevision: 2, activeRevision: 3)
-      try fixture.present()
+      try await fixture.present()
       try fixture.expectActivity(for: assistant.id)
     }
 
@@ -218,14 +218,14 @@ struct TranscriptFollowUpActivityTests {
     fixture.configure(
       rows: nextRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(canonical)),
       rowsRevision: 2, activeRevision: 4)
-    try fixture.present()
+    try await fixture.present()
     let canonicalRows = try await cache.rows(
       for: fixture.controller.transcriptProjectionKey, input: fixture.controller.transcriptProjectionInput,
       options: options)
     fixture.configure(
       rows: canonicalRows, activeRows: TranscriptActiveRowProjection.rows(for: .assistant(canonical)),
       rowsRevision: 3, activeRevision: 4)
-    try fixture.present()
+    try await fixture.present()
     try fixture.expectActivity(for: canonical.id)
     #expect(canonical.turn.entries.isEmpty)
   }
@@ -382,14 +382,29 @@ private final class ActivityFixture {
         onSendAnimationCompleted: { [sendCompletionContinuation] in sendCompletionContinuation.yield($0.token) }))
   }
 
-  func present() throws {
+  func present() async throws {
+    drainFrames()
+    while !view.initialPresentationGate.isReady, await preparedPendingText() {
+      drainFrames()
+    }
+    try #require(view.initialPresentationGate.isReady)
+  }
+
+  private func drainFrames() {
     view.layoutSubtreeIfNeeded()
     view.updateMountedRows()
     while view.displayFrameRequested || !view.pendingMeasuredHeights.isEmpty {
       view.surfaceController.presentFrame(at: 0, adapter: view)
       view.layoutSubtreeIfNeeded()
     }
-    try #require(view.initialPresentationGate.isReady)
+  }
+
+  private func preparedPendingText() async -> Bool {
+    let unready = view.mountedHosts.values.filter { !$0.isPresentationReady }
+    guard !unready.isEmpty else { return false }
+    await StaticTextCache.shared.waitUntilIdle()
+    unready.forEach { $0.requestContentMeasurement(forceReport: false) }
+    return unready.contains { $0.isPresentationReady }
   }
 
   func expectActivity(for assistantID: UUID) throws {

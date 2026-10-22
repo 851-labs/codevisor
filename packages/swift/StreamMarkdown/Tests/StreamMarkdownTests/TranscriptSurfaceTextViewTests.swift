@@ -16,7 +16,7 @@ private final class SelectionHost: NSView, TranscriptSelectionCoordinating {
     return true
   }
 
-  func beginTranscriptSelection(with _: NSEvent, in _: NSTextView) -> Bool { false }
+  func beginTranscriptSelection(with _: NSEvent, in _: any TranscriptTextSurface) -> Bool { false }
   func continueTranscriptSelection(with _: NSEvent) {}
   func endTranscriptSelection(with _: NSEvent) {}
 
@@ -25,7 +25,7 @@ private final class SelectionHost: NSView, TranscriptSelectionCoordinating {
     clearCount += 1
   }
 
-  func transcriptSelectionMenu(for _: NSTextView, with event: NSEvent) -> NSMenu? {
+  func transcriptSelectionMenu(for _: any TranscriptTextSurface, with event: NSEvent) -> NSMenu? {
     menuEvents.append(event)
     guard hasSelection else { return nil }
     let menu = NSMenu()

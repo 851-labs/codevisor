@@ -10,6 +10,7 @@ public final class TranscriptPresentationClock {
   @ObservationIgnored private var electedDriver: TranscriptFrameDriverToken?
   @ObservationIgnored private var framePending = false
   @ObservationIgnored private var fallbackTask: Task<Void, Never>?
+  @ObservationIgnored private var presentObservers: [UUID: @MainActor () -> Void] = [:]
   @ObservationIgnored private let present: () -> Void
   @ObservationIgnored private let preferPending: () -> Void
   @ObservationIgnored private let reschedulePending: () -> Void
@@ -84,6 +85,21 @@ public final class TranscriptPresentationClock {
     framePending = false
     present()
     revision &+= 1
+    notifyPresentObservers()
+  }
+
+  public func addPresentObserver(_ observer: @escaping @MainActor () -> Void) -> UUID {
+    let id = UUID()
+    presentObservers[id] = observer
+    return id
+  }
+
+  public func removePresentObserver(_ id: UUID) {
+    presentObservers.removeValue(forKey: id)
+  }
+
+  private func notifyPresentObservers() {
+    for observer in presentObservers.values { observer() }
   }
 
   @discardableResult
@@ -109,6 +125,7 @@ public final class TranscriptPresentationClock {
       self.framePending = false
       self.present()
       self.revision &+= 1
+      self.notifyPresentObservers()
     }
     return true
   }

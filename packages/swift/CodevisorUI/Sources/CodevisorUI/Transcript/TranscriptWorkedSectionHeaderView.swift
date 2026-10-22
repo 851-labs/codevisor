@@ -63,10 +63,26 @@ public final class TranscriptWorkedRowsVisibilityCache {
 
 @MainActor
 public enum TranscriptWorkedRowsVisibility {
+  public static func presentActive(
+    _ rows: [TranscriptPresentationRow],
+    disclosure: TranscriptDisclosureStore,
+    controller: SessionController
+  ) -> TranscriptWorkedRowsPresentation {
+    present(rows, disclosure: disclosure, ticking: controller.activeWorkedTicking)
+  }
+
   public static func present(
     _ rows: [TranscriptPresentationRow],
     disclosure: TranscriptDisclosureStore,
     activeItem: ConversationItem?
+  ) -> TranscriptWorkedRowsPresentation {
+    present(rows, disclosure: disclosure, ticking: TranscriptActiveWorkedTicking(activeItem))
+  }
+
+  public static func present(
+    _ rows: [TranscriptPresentationRow],
+    disclosure: TranscriptDisclosureStore,
+    ticking: TranscriptActiveWorkedTicking?
   ) -> TranscriptWorkedRowsPresentation {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
@@ -81,9 +97,7 @@ public enum TranscriptWorkedRowsVisibility {
       }
       switch membership.role {
       case let .header(defaultExpanded, isFixedExpanded):
-        let isLive =
-          turn(for: row, activeItem: activeItem).map { $0.workedSectionTicks(membership.identity.kind) }
-          ?? isFixedExpanded
+        let isLive = ticks(row, kind: membership.identity.kind, ticking: ticking) ?? isFixedExpanded
         let expanded =
           isLive
           || disclosure.isExpanded(
@@ -132,19 +146,16 @@ public enum TranscriptWorkedRowsVisibility {
     )
   }
 
-  private static func turn(
-    for row: TranscriptPresentationRow,
-    activeItem: ConversationItem?
-  ) -> AssistantTurn? {
+  private static func ticks(
+    _ row: TranscriptPresentationRow,
+    kind: TranscriptWorkedSectionKind,
+    ticking: TranscriptActiveWorkedTicking?
+  ) -> Bool? {
     switch row.content {
     case let .assistantWorkedHeader(header):
-      header.message.turn
+      header.message.turn.workedSectionTicks(kind)
     case let .activeWorkedHeader(header):
-      if case let .assistant(message)? = activeItem, message.id == header.messageID {
-        message.turn
-      } else {
-        nil
-      }
+      ticking?.ticks(kind, messageID: header.messageID)
     default:
       nil
     }

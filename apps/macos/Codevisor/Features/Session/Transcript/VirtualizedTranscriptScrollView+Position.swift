@@ -211,7 +211,6 @@ extension VirtualizedTranscriptScrollView {
     } else {
       updateMountedRows()
     }
-    layoutMountedTextViewportsIfNeeded()
 
     let atBottom = distance <= Self.atBottomThreshold
     let isRecentUserMovement =

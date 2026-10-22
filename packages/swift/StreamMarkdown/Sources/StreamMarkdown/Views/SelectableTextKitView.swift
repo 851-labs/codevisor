@@ -243,6 +243,14 @@
       let previousText = representedText
       representedText = text
       measuredWidth = -1
+      if let previousText, let textStorage,
+        let edit = StreamingTextEdit.plan(from: previousText, to: text)
+      {
+        edit.apply(text, to: textStorage)
+        restoreSelection(selection, in: text)
+        redrawActiveStreamingText(at: CACurrentMediaTime())
+        return
+      }
       if let previousText,
         text.length >= previousText.length,
         text.string.hasPrefix(previousText.string),
@@ -261,10 +269,14 @@
       } else {
         textStorage?.setAttributedString(text)
       }
+      restoreSelection(selection, in: text)
+      needsDisplay = true
+    }
+
+    private func restoreSelection(_ selection: NSRange, in text: NSAttributedString) {
       let location = min(selection.location, text.length)
       let length = min(selection.length, text.length - location)
       setSelectedRange(NSRange(location: location, length: length))
-      needsDisplay = true
     }
 
     public override func viewDidMoveToWindow() {

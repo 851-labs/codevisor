@@ -35,6 +35,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     installVerticalClipMask()
     contentHost.translatesAutoresizingMaskIntoConstraints = false
     contentController.sizingOptions = [.intrinsicContentSize]
+    contentController.safeAreaRegions = []
     contentHost.setContentHuggingPriority(.required, for: .vertical)
     contentHost.setContentCompressionResistancePriority(.required, for: .vertical)
     addSubview(contentHost)

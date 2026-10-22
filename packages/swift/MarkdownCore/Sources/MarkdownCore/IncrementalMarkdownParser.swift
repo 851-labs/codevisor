@@ -12,7 +12,7 @@ public struct IncrementalMarkdownParser: Sendable {
   private var blocks: [MarkdownBlock] = []
   private var reusableBlockCount = 0
   private var reparseStart = 0
-  private var containsReferenceSyntax = false
+  private var containsReferenceDefinition = false
   public private(set) var parsedByteCount = 0
 
   public init() {}
@@ -23,9 +23,11 @@ public struct IncrementalMarkdownParser: Sendable {
       return blocks
     }
     let appending = source.utf8.starts(with: self.source.utf8)
-    let suffix = appending ? source.utf8.dropFirst(self.source.utf8.count) : source.utf8[...]
-    containsReferenceSyntax = (appending && containsReferenceSyntax) || suffix.contains(91)
-    let start = appending && !containsReferenceSyntax ? reparseStart : 0
+    let changedLines = appending ? Self.lineStart(before: self.source.utf8.count, in: source) : 0
+    containsReferenceDefinition =
+      (appending && containsReferenceDefinition)
+      || Self.containsDefinitionMarker(source.utf8.dropFirst(changedLines))
+    let start = appending && !containsReferenceDefinition ? reparseStart : 0
     let prefixCount = start > 0 ? reusableBlockCount : 0
     let tail = String(decoding: source.utf8.dropFirst(start), as: UTF8.self)
     let parsed = MarkdownParser().parseDocument(tail)
@@ -35,5 +37,19 @@ public struct IncrementalMarkdownParser: Sendable {
     reparseStart = start + parsed.reparseStart
     self.source = source
     return blocks
+  }
+
+  private static let newline = UInt8(ascii: "\n")
+  private static let closingBracket = UInt8(ascii: "]")
+  private static let colon = UInt8(ascii: ":")
+
+  private static func lineStart(before offset: Int, in source: String) -> Int {
+    let prefix = source.utf8.prefix(offset)
+    guard let newline = prefix.lastIndex(of: newline) else { return 0 }
+    return prefix.distance(from: prefix.startIndex, to: newline) + 1
+  }
+
+  private static func containsDefinitionMarker(_ bytes: Substring.UTF8View) -> Bool {
+    zip(bytes, bytes.dropFirst()).contains { $0 == closingBracket && $1 == colon }
   }
 }

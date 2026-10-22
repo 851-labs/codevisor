@@ -4,9 +4,8 @@ import StreamMarkdown
 import TranscriptKit
 
 extension VirtualizedTranscriptScrollView {
-  func transcriptSelectionMenu(for surface: NSTextView, with event: NSEvent) -> NSMenu? {
+  func transcriptSelectionMenu(for surface: any TranscriptTextSurface, with event: NSEvent) -> NSMenu? {
     guard initialPresentationGate.isReady,
-      let surface = surface as? TranscriptSurfaceTextView,
       let point = selectionPoint(in: surface, atWindowPoint: event.locationInWindow)
     else { return nil }
     let isInSelection = transcriptSelection(contains: point)

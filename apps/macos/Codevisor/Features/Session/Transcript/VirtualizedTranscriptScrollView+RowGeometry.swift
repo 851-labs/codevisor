@@ -15,12 +15,6 @@ extension VirtualizedTranscriptScrollView {
     }
   }
 
-  func layoutMountedTextViewportsIfNeeded() {
-    for host in mountedHosts.values {
-      (host as? TranscriptMarkdownRowHost)?.layoutTextViewportsIfNeeded()
-    }
-  }
-
   func position(host: TranscriptMountedRowHost, at index: Int) {
     position(host: host, frame: rowFrame(at: index))
   }

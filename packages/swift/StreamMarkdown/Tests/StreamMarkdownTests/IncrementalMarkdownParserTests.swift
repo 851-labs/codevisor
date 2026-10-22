@@ -47,6 +47,24 @@ struct IncrementalMarkdownParserTests {
     #expect(parser.parsedByteCount == defined.utf8.count)
   }
 
+  @Test func inlineLinksKeepStreamingIncremental() {
+    var parser = IncrementalMarkdownParser()
+    let prefix = String(repeating: "See [the docs](https://example.com) and `code[0]`.\n\n", count: 64)
+    _ = parser.parse(prefix + "Tail")
+    let source = prefix + "Tail grows"
+    #expect(parser.parse(source) == MarkdownParser().parse(source))
+    #expect(parser.parsedByteCount == "Tail grows".utf8.count)
+  }
+
+  @Test func definitionCompletedAcrossChunksReparsesTheWholeDocument() {
+    var parser = IncrementalMarkdownParser()
+    let body = "[later] text\n\nAnother paragraph\n\n[later]"
+    _ = parser.parse(body)
+    let defined = body + ": https://example.com\n"
+    #expect(parser.parse(defined) == MarkdownParser().parse(defined))
+    #expect(parser.parsedByteCount == defined.utf8.count)
+  }
+
   @Test func generatedContainerTransitionsMatchFullParsing() {
     let lines = [
       "plain **text**", "", "# heading", "---", "===", "- item", "  continuation",

@@ -162,7 +162,6 @@ extension VirtualizedTranscriptScrollView {
     if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
       updateMountedRows(rangeOverride: initialRestoreRange)
     }
-    layoutMountedTextViewportsIfNeeded()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     updateCollapsibleEarlierHistory()

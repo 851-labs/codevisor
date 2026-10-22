@@ -19,7 +19,9 @@
     private let divider = NSBox()
     private let fillColor: NSColor
     private let scrollView = TranscriptHorizontalScrollView()
-    private let codeTextView = TranscriptSurfaceTextView(usingTextLayoutManager: true)
+    private let staticSurface = StaticTextSurfaceView()
+    private var staticPreparation: Task<Void, Never>?
+    private var staticText: (text: AttributedString, isHighlighted: Bool)?
     private var highlightTask: Task<Void, Never>?
     private var copyResetTask: Task<Void, Never>?
     private var contentSize = CGSize(width: 1, height: 1)
@@ -33,7 +35,6 @@
       fillColor = NSColor(theme.codeBackground)
       super.init(frame: .zero)
       configureChrome()
-      configureTextView()
       installInitialText()
       beginHighlightingIfNeeded()
     }
@@ -41,6 +42,7 @@
     deinit {
       highlightTask?.cancel()
       copyResetTask?.cancel()
+      staticPreparation?.cancel()
     }
 
     @available(*, unavailable)
@@ -48,8 +50,13 @@
       fatalError("init(coder:) has not been implemented")
     }
 
+    override var isContentReady: Bool { staticSurface.prepared != nil }
+
     override func contentHeight(forWidth _: CGFloat) -> CGFloat {
-      Self.headerHeight + Self.dividerHeight + contentSize.height
+      if staticSurface.prepared == nil, let staticText {
+        install(staticText.text, isHighlighted: staticText.isHighlighted)
+      }
+      return Self.headerHeight + Self.dividerHeight + contentSize.height
     }
 
     override func layout() {
@@ -77,7 +84,7 @@
         width: bounds.width,
         height: contentSize.height
       )
-      codeTextView.frame = NSRect(origin: .zero, size: contentSize)
+      staticSurface.frame = NSRect(origin: .zero, size: contentSize)
     }
 
     override var wantsUpdateLayer: Bool { true }
@@ -121,38 +128,12 @@
       scrollView.hasVerticalScroller = false
       scrollView.horizontalScrollElasticity = .automatic
       scrollView.verticalScrollElasticity = .none
-      scrollView.documentView = codeTextView
+      scrollView.documentView = staticSurface
 
       addSubview(languageLabel)
       addSubview(copyButton)
       addSubview(divider)
       addSubview(scrollView)
-    }
-
-    private func configureTextView() {
-      codeTextView.isEditable = false
-      codeTextView.isSelectable = true
-      codeTextView.isRichText = true
-      codeTextView.drawsBackground = false
-      codeTextView.textContainerInset = NSSize(
-        width: Self.contentInset,
-        height: Self.contentInset
-      )
-      codeTextView.isHorizontallyResizable = true
-      codeTextView.isVerticallyResizable = true
-      codeTextView.minSize = .zero
-      codeTextView.maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude,
-        height: CGFloat.greatestFiniteMagnitude
-      )
-      codeTextView.focusRingType = .none
-      codeTextView.textContainer?.lineFragmentPadding = 0
-      codeTextView.textContainer?.widthTracksTextView = false
-      codeTextView.textContainer?.heightTracksTextView = false
-      codeTextView.textContainer?.size = NSSize(
-        width: CGFloat.greatestFiniteMagnitude,
-        height: CGFloat.greatestFiniteMagnitude
-      )
     }
 
     private func installInitialText() {
@@ -161,8 +142,8 @@
         language: language,
         code: code
       )
-      let text = CodeHighlightResultCache.shared.value(for: key) ?? AttributedString(code)
-      install(text)
+      let highlighted = CodeHighlightResultCache.shared.value(for: key)
+      install(highlighted ?? AttributedString(code), isHighlighted: highlighted != nil)
     }
 
     private func beginHighlightingIfNeeded() {
@@ -186,23 +167,84 @@
       }
     }
 
-    func install(_ text: AttributedString) {
-      let native = nativeCodeAttributedString(
-        text,
-        foreground: NSColor(theme.codeForeground)
-      )
-      codeTextView.textStorage?.setAttributedString(native)
-      if measurementCount == 0, let manager = codeTextView.textLayoutManager {
-        manager.ensureLayout(for: manager.documentRange)
-        let bounds = manager.usageBoundsForTextContainer
-        contentSize = CGSize(
-          width: max(1, ceil(bounds.width) + Self.contentInset * 2),
-          height: max(1, ceil(bounds.height) + Self.contentInset * 2)
-        )
-        measurementCount += 1
+    func install(_ text: AttributedString, isHighlighted: Bool = true) {
+      staticText = (text, isHighlighted)
+      let surface = staticSurface
+      let request = staticRequest(for: text, isHighlighted: isHighlighted)
+      if let prepared = StaticTextCache.shared.cached(request.key) {
+        showStatic(prepared, in: surface)
+        return
       }
+      if contentSize.height <= 1 {
+        contentSize = CGSize(width: max(1, bounds.width), height: StaticTextEstimate.height(ofCode: code))
+      }
+      let preparation = StaticTextCache.shared.startPreparing(request)
+      staticPreparation?.cancel()
+      staticPreparation = Task { [weak self, weak surface] in
+        guard let prepared = await preparation.value, !Task.isCancelled,
+          let self, let surface
+        else { return }
+        self.showStatic(prepared, in: surface)
+        self.onContentChange?()
+      }
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      guard window != nil, staticSurface.prepared == nil, let staticText else { return }
+      install(staticText.text, isHighlighted: staticText.isHighlighted)
+    }
+
+    private func showStatic(_ prepared: PreparedStaticText, in surface: StaticTextSurfaceView) {
+      surface.show(prepared)
+      guard prepared.size != contentSize else { return }
+      contentSize = prepared.size
+      measurementCount += 1
       needsLayout = true
-      needsDisplay = true
+    }
+
+    private func staticRequest(for text: AttributedString, isHighlighted: Bool) -> StaticTextRequest {
+      Self.staticRequest(
+        id: id, code: code, text: text, isHighlighted: isHighlighted, theme: theme,
+        scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
+        appearance: effectiveAppearance.name)
+    }
+
+    static func prefetch(
+      id: String, language: String?, code: String, theme: MarkdownTheme, scale: CGFloat, appearance: NSAppearance.Name
+    ) {
+      let key = CodeHighlightResultCache.Key(themeKey: theme.codeThemeKey, language: language, code: code)
+      let highlighted = CodeHighlightResultCache.shared.value(for: key)
+      let request = staticRequest(
+        id: id, code: code, text: highlighted ?? AttributedString(code), isHighlighted: highlighted != nil,
+        theme: theme, scale: scale, appearance: appearance)
+      guard StaticTextCache.shared.cached(request.key) == nil else { return }
+      StaticTextCache.shared.startPreparing(request)
+    }
+
+    private static func staticRequest(
+      id: String,
+      code: String,
+      text: AttributedString,
+      isHighlighted: Bool,
+      theme: MarkdownTheme,
+      scale: CGFloat,
+      appearance: NSAppearance.Name
+    ) -> StaticTextRequest {
+      var hasher = Hasher()
+      hasher.combine(id)
+      hasher.combine(code)
+      hasher.combine(isHighlighted)
+      hasher.combine(theme.renderFingerprint)
+      let foreground = theme.codeForeground
+      return StaticTextRequest(
+        identity: hasher.finalize(),
+        layout: .natural(inset: contentInset),
+        scale: scale,
+        appearance: appearance
+      ) {
+        nativeCodeAttributedString(text, foreground: NSColor(foreground))
+      }
     }
 
     @objc private func copyCode() {

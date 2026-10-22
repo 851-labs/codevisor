@@ -57,6 +57,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var pendingDisclosureCollapseOrigins: [String: CGFloat]?
   var pendingDisclosureContainerOrigins: [(view: NSView, viewportY: CGFloat)] = []
   let markdownHostCache = TranscriptMarkdownHostCache()
+  let markdownPrefetcher = TranscriptMarkdownPrefetcher()
   let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
   var windowPlanner: TranscriptWindowPlanner {
     TranscriptWindowPlanner(
@@ -320,7 +321,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     } else {
       layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
     }
-    layoutMountedTextViewportsIfNeeded()
     updateCollapsibleEarlierHistory()
     layoutBottomFadeMask()
   }

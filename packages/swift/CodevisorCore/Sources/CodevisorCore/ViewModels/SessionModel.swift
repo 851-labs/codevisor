@@ -21,12 +21,15 @@ public final class SessionModel {
   public internal(set) var activeItem: ConversationItem? {
     didSet {
       activeItemRevision &+= 1
+      let ticking = TranscriptActiveWorkedTicking(activeItem)
+      if ticking != activeWorkedTicking { activeWorkedTicking = ticking }
       if activeItem?.id != oldValue?.id, hasActiveItem {
         transcriptProjectionRevision &+= 1
       }
     }
   }
   public private(set) var activeItemRevision: UInt64 = 0
+  public private(set) var activeWorkedTicking: TranscriptActiveWorkedTicking?
   public internal(set) var hasActiveItem = false {
     didSet {
       if hasActiveItem != oldValue { transcriptProjectionRevision &+= 1 }

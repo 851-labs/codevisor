@@ -192,7 +192,7 @@ struct SettledMarkdownViewTests {
   }
 
   @Test("Native code blocks preserve the established visible height")
-  func codeBlockHeightParity() {
+  func codeBlockHeightParity() async {
     let code = "let answer = 42\nprint(answer)"
     let established = NSHostingView(
       rootView: CodeBlockView(
@@ -210,6 +210,7 @@ struct SettledMarkdownViewTests {
       code: code,
       theme: .default
     )
+    await StaticTextCache.shared.waitUntilIdle()
 
     let delta = abs(
       established.fittingSize.height
@@ -283,14 +284,17 @@ struct SettledMarkdownViewTests {
   }
 
   @Test("Syntax colors do not remeasure immutable code geometry")
-  func codeHighlightKeepsMeasuredGeometry() {
+  func codeHighlightKeepsMeasuredGeometry() async {
     let code = "let answer = 42\nprint(answer)"
     let native = NativeMarkdownCodeBlockView(
       id: "highlight-geometry", language: "swift", code: code, theme: .default)
+    await StaticTextCache.shared.waitUntilIdle()
     let height = native.contentHeight(forWidth: 500)
     var highlighted = AttributedString(code)
     highlighted.foregroundColor = .red
     native.install(highlighted)
+    await StaticTextCache.shared.waitUntilIdle()
+    _ = native.contentHeight(forWidth: 500)
     #expect(native.measurementCount == 1)
     #expect(native.contentHeight(forWidth: 500) == height)
   }
@@ -366,51 +370,5 @@ struct SettledMarkdownViewTests {
     }
     #expect(text.length > 0)
     #expect(uncovered == 0)
-  }
-
-  @Test("Prose laid out off screen draws once its row moves into view")
-  func offscreenLayoutCoversVisibleTextAfterMove() throws {
-    final class FlippedView: NSView {
-      override var isFlipped: Bool { true }
-    }
-    func textView(in view: NSView) -> MarkdownTextKit2View? {
-      if let text = view as? MarkdownTextKit2View { return text }
-      return view.subviews.lazy.compactMap { textView(in: $0) }.first
-    }
-
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-      styleMask: [.borderless], backing: .buffered, defer: false
-    )
-    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
-    let document = FlippedView(frame: NSRect(x: 0, y: 0, width: 400, height: 4000))
-    scrollView.documentView = document
-    window.contentView?.addSubview(scrollView)
-
-    let row = FlippedView(frame: NSRect(x: 0, y: 2000, width: 360, height: 1))
-    let view = SettledMarkdownView()
-    row.addSubview(view)
-    document.addSubview(row)
-    view.setContent(
-      blocks: [.paragraph(String(repeating: "Prose that wraps across many lines. ", count: 60))],
-      theme: .default,
-      streamID: "offscreen-row",
-      linkAction: nil
-    )
-    let height = view.contentHeight(forWidth: 360)
-    row.setFrameSize(NSSize(width: 360, height: height))
-    view.frame = row.bounds
-    window.contentView?.layoutSubtreeIfNeeded()
-    window.displayIfNeeded()
-
-    row.setFrameOrigin(.zero)
-    view.layoutTextViewportsIfNeeded()
-
-    let text = try #require(textView(in: view))
-    let visible = text.visibleRect.intersection(text.bounds)
-    let controller = try #require(text.textLayoutManager?.textViewportLayoutController)
-    #expect(!visible.isEmpty)
-    #expect(controller.viewportRange != nil)
-    #expect(controller.viewportBounds.contains(visible))
   }
 }

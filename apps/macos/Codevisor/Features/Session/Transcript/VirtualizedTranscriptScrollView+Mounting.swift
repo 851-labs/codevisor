@@ -36,6 +36,7 @@ extension VirtualizedTranscriptScrollView {
     defer { isUpdatingMountedRows = false }
     let reconciliation = reconcileVirtualWindow(rangeOverride: rangeOverride)
     let mountPlan = reconciliation.mountPlan
+    prefetchMarkdownRows(near: mountPlan)
     let usesFrameBudget = presentationDisplayLink != nil && !inLiveResize
     let budgetsInitialWindow = usesFrameBudget && !initialPresentationGate.isReady
     if budgetsInitialWindow, initialMountWorkStartedAt == nil {
@@ -206,6 +207,18 @@ extension VirtualizedTranscriptScrollView {
     }
     sendTransitions.hostDidMount(host, key: key)
     return true
+  }
+
+  func prefetchMarkdownRows(near plan: TranscriptVirtualWindowMountPlan) {
+    let indices = plan.visibleIndices + plan.runwayIndices
+    guard let range = TranscriptMarkdownPrefetcher.window(around: indices, rowCount: rows.count) else { return }
+    markdownPrefetcher.prefetch(
+      rows[range],
+      rowWidth: rowFrame(at: range.lowerBound).width,
+      style: markdownRowStyle,
+      scale: window?.backingScaleFactor ?? 2,
+      appearance: effectiveAppearance.name
+    )
   }
 
   func defersActivePlaceholderPresentation(for row: TranscriptVirtualRow) -> Bool {

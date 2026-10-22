@@ -26,10 +26,10 @@ extension ChatScreen {
             sourceVersion: projectedRowsVersion,
             disclosure: controller.disclosure
           )
-          let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
+          let visibleActiveRows = TranscriptWorkedRowsVisibility.presentActive(
             activeRows,
             disclosure: controller.disclosure,
-            activeItem: controller.activeItem
+            controller: controller
           )
           NativeTranscriptView(
             presentationSurface: presentationSurface,

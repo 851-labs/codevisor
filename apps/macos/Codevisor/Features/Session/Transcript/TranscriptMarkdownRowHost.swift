@@ -78,10 +78,6 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     return true
   }
 
-  func layoutTextViewportsIfNeeded() {
-    markdownView.layoutTextViewportsIfNeeded()
-  }
-
   override func prepareForImmediatePresentation() {
     if !presentationReady { measureAndLayout() }
     layoutSubtreeIfNeeded()
@@ -109,15 +105,16 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     let contentHeight = markdownView.contentHeight(forWidth: geometry.contentFrame.width)
     let height = ceil(geometry.topInset + contentHeight + geometry.bottomInset)
     let previouslyReportedHeight = reportedHeight
+    let becameReady = !presentationReady && markdownView.isContentReady
     reportedHeight = height
-    presentationReady = true
+    presentationReady = markdownView.isContentReady
     markdownView.frame = NSRect(
       x: geometry.contentFrame.minX,
       y: geometry.topInset,
       width: geometry.contentFrame.width,
       height: contentHeight
     )
-    if previouslyReportedHeight.map({ abs($0 - height) > 0.5 }) ?? true {
+    if becameReady || previouslyReportedHeight.map({ abs($0 - height) > 0.5 }) ?? true {
       onHeightChange?(height)
     }
   }
@@ -136,6 +133,14 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
   private func contentGeometry(
     for chunk: TranscriptMarkdownChunk,
     style: TranscriptMarkdownRowStyle
+  ) -> (contentFrame: NSRect, topInset: CGFloat, bottomInset: CGFloat) {
+    Self.contentGeometry(for: chunk, style: style, rowWidth: bounds.width)
+  }
+
+  static func contentGeometry(
+    for chunk: TranscriptMarkdownChunk,
+    style: TranscriptMarkdownRowStyle,
+    rowWidth: CGFloat
   ) -> (contentFrame: NSRect, topInset: CGFloat, bottomInset: CGFloat) {
     let fragmentIndent =
       chunk.fragment.map {
@@ -161,7 +166,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       NSRect(
         x: leading,
         y: 0,
-        width: max(1, bounds.width - leading - planInset),
+        width: max(1, rowWidth - leading - planInset),
         height: 1
       ),
       topInset,

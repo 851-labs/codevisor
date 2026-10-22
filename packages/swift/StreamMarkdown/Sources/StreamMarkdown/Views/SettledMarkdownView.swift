@@ -92,21 +92,58 @@
       return measuredHeight
     }
 
-    public func layoutTextViewportsIfNeeded() {
-      contentViews.forEach { $0.layoutTextViewportIfNeeded() }
+    public static func prefetch(
+      blocks: [MarkdownBlock],
+      theme: MarkdownTheme,
+      streamID: String,
+      width: CGFloat,
+      scale: CGFloat,
+      appearance: NSAppearance.Name
+    ) {
+      guard !blocks.isEmpty else { return }
+      if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
+        StaticMarkdownTextContentView.prefetch(
+          blocks: blocks, theme: theme, streamID: streamID, width: width, scale: scale, appearance: appearance)
+        return
+      }
+      for (index, block) in blocks.enumerated() {
+        prefetch(block, id: "\(streamID).\(index)", theme: theme, width: width, scale: scale, appearance: appearance)
+      }
     }
+
+    private static func prefetch(
+      _ block: MarkdownBlock,
+      id: String,
+      theme: MarkdownTheme,
+      width: CGFloat,
+      scale: CGFloat,
+      appearance: NSAppearance.Name
+    ) {
+      switch block {
+      case .heading, .paragraph, .bulletList, .orderedList, .blockQuote, .list:
+        StaticMarkdownTextContentView.prefetch(
+          blocks: [block], theme: theme, streamID: id, width: width, scale: scale, appearance: appearance)
+      case let .codeBlock(language, code, _):
+        NativeMarkdownCodeBlockView.prefetch(
+          id: id, language: language, code: code, theme: theme, scale: scale, appearance: appearance)
+      case .table, .thematicBreak:
+        break
+      }
+    }
+
+    public var isContentReady: Bool { contentViews.allSatisfy(\.isContentReady) }
 
     public static func plainTextSurfaces(
       blocks: [MarkdownBlock],
       theme: MarkdownTheme
     ) -> [String] {
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
-        return [NativeMarkdownTextContentView.attributedText(for: blocks, theme: theme).string]
+        return [SettledMarkdownText.attributedText(for: blocks, theme: theme).string]
       }
       return blocks.compactMap { block in
         switch block {
         case .heading, .paragraph, .bulletList, .orderedList, .blockQuote, .list:
-          return NativeMarkdownTextContentView.attributedText(for: [block], theme: theme).string
+          return SettledMarkdownText.attributedText(for: [block], theme: theme).string
         case let .codeBlock(_, code, _):
           return code
         case let .table(headers, _, rows):
@@ -149,34 +186,20 @@
       imageLoader: MarkdownImageLoader
     ) -> [NativeMarkdownContentView] {
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
-        return [
-          NativeMarkdownTextContentView(
-            blocks: blocks,
-            theme: theme,
-            linkAction: linkAction
-          )
-        ]
+        return [textContentView(blocks: blocks, theme: theme, streamID: streamID, linkAction: linkAction)]
       }
 
       return blocks.enumerated().map { index, block in
         let blockID = "\(streamID).\(index)"
         switch block {
         case .heading, .paragraph, .bulletList, .orderedList, .blockQuote:
-          return NativeMarkdownTextContentView(
-            blocks: [block],
-            theme: theme,
-            linkAction: linkAction
-          )
+          return textContentView(blocks: [block], theme: theme, streamID: blockID, linkAction: linkAction)
         case let .list(list):
           precondition(
             MarkdownTextRunRenderer.canRenderFlattenedList(list),
             "Complex lists must be structurally projected before native rendering"
           )
-          return NativeMarkdownTextContentView(
-            blocks: [block],
-            theme: theme,
-            linkAction: linkAction
-          )
+          return textContentView(blocks: [block], theme: theme, streamID: blockID, linkAction: linkAction)
         case let .codeBlock(language, code, _):
           return NativeMarkdownCodeBlockView(
             id: blockID,
@@ -201,6 +224,16 @@
   }
 
   @MainActor
+  private func textContentView(
+    blocks: [MarkdownBlock],
+    theme: MarkdownTheme,
+    streamID: String,
+    linkAction: MarkdownLinkAction?
+  ) -> NativeMarkdownContentView {
+    StaticMarkdownTextContentView(blocks: blocks, theme: theme, streamID: streamID, linkAction: linkAction)
+  }
+
+  @MainActor
   class NativeMarkdownContentView: NSView {
     var onContentChange: (() -> Void)?
     var linkAction: MarkdownLinkAction? {
@@ -212,65 +245,7 @@
     }
     func tableBleedLimitDidChange() {}
     func contentHeight(forWidth _: CGFloat) -> CGFloat { 1 }
-    func layoutTextViewportIfNeeded() {}
-  }
-
-  @MainActor
-  private final class NativeMarkdownTextContentView: NativeMarkdownContentView {
-    private let textView = MarkdownTextKit2View()
-
-    init(
-      blocks: [MarkdownBlock],
-      theme: MarkdownTheme,
-      linkAction: MarkdownLinkAction?
-    ) {
-      super.init(frame: .zero)
-      self.linkAction = linkAction
-      textView.linkAction = linkAction
-      textView.setContent(Self.attributedText(for: blocks, theme: theme))
-      addSubview(textView)
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-      fatalError("init(coder:) has not been implemented")
-    }
-
-    override func linkActionDidChange() {
-      textView.linkAction = linkAction
-    }
-
-    override func contentHeight(forWidth width: CGFloat) -> CGFloat {
-      textView.contentHeight(forWidth: width)
-    }
-
-    override func layoutTextViewportIfNeeded() {
-      textView.layoutViewportIfNeeded()
-    }
-
-    override func layout() {
-      super.layout()
-      textView.frame = bounds
-    }
-
-    static func attributedText(
-      for blocks: [MarkdownBlock],
-      theme: MarkdownTheme
-    ) -> NSAttributedString {
-      let key = MarkdownTextRunCache.Key(
-        blocks: blocks,
-        themeFingerprint: theme.renderFingerprint,
-        foregroundColor: .init(theme.textForeground)
-      )
-      if let cached = MarkdownTextRunCache.shared.value(for: key) { return cached }
-      let value = MarkdownTextRunRenderer.attributedString(
-        for: blocks,
-        theme: theme,
-        foregroundColor: theme.textForeground
-      )
-      MarkdownTextRunCache.shared.store(value, for: key)
-      return value
-    }
+    var isContentReady: Bool { true }
   }
 
   @MainActor

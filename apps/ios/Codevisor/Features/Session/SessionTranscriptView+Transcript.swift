@@ -28,10 +28,10 @@ extension SessionTranscriptView {
         sourceVersion: projectedRowsVersion,
         disclosure: disclosure
       )
-      let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
+      let visibleActiveRows = TranscriptWorkedRowsVisibility.presentActive(
         activeRows,
         disclosure: disclosure,
-        activeItem: controller.activeItem
+        controller: controller
       )
       NativeTranscriptView(
         presentationSurface: presentationSurface,
