@@ -6,7 +6,7 @@ import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, waitFor } from "../test-support.js"
-import { createBot, decodeBot, setUp, type Running } from "./bot-test-support.js"
+import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-test-support.js"
 
 const decodePage = decode(BotConversationPage)
 
@@ -153,26 +153,7 @@ describe("bot conversation edges", () => {
     ])
   })
 
-  it("posts a stopped turn's reason and stays quiet when the turn had nothing to say", async () => {
-    const { running, bot } = await startBot()
-    const agentSessionId = await holdTurn(running, bot.sessionId)
-
-    await endTurn(running, agentSessionId, { stopReason: "end_turn" })
-    await endTurn(running, agentSessionId, {
-      stopReason: "refusal",
-      stopKind: "usageLimit",
-      stopDetail: "You've hit your usage limit"
-    })
-
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-    expect(await transcript(running, bot.sessionId)).toEqual([
-      ["user", "prompt until cancelled"],
-      ["notice", "You've hit your usage limit"]
-    ])
-    await cancel(running, bot.sessionId)
-  })
-
-  it("falls back to the final reply's attachments when the bot never sent a message", async () => {
+  it("posts a stopped turn's reason but none of the bot's own reply", async () => {
     const { running, bot } = await startBot()
     const image = await storeImage(running)
     const agentSessionId = await holdTurn(running, bot.sessionId)
@@ -190,12 +171,17 @@ describe("bot conversation edges", () => {
       }
     })
     await endTurn(running, agentSessionId, { stopReason: "end_turn" })
+    await endTurn(running, agentSessionId, {
+      stopReason: "refusal",
+      stopKind: "usageLimit",
+      stopDetail: "You've hit your usage limit"
+    })
 
     await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-    expect((await conversation(running, bot.sessionId)).messages[1]).toMatchObject({
-      sender: "bot",
-      attachments: [{ fileId: image.fileId }]
-    })
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "prompt until cancelled"],
+      ["notice", "You've hit your usage limit"]
+    ])
     await cancel(running, bot.sessionId)
   })
 
@@ -208,7 +194,7 @@ describe("bot conversation edges", () => {
       attachments: [image],
       messageId: "client-1"
     })
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+    await waitFor(() => endedTurns(running, bot.sessionId) === 1)
     await prompt(running, bot.sessionId, { text: "what is this", messageId: "client-1" })
     await waitFor(() => running.agents.prompts.length === 2)
 

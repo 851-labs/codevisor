@@ -18,10 +18,9 @@ import {
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { captureAssistantFile } from "./assistant-files.js"
-import { conversationalBotForSession, postBotMessage, takeBotTurn } from "./bot-turns.js"
+import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
 import { attribute } from "./session-event-messages.js"
-import { finalAssistantText } from "./session-event-router.js"
 
 const PAGE_LIMIT = 50
 const MAX_PAGE_LIMIT = 200
@@ -118,31 +117,6 @@ export const agentMessageEvent = async (
   ].join("\n")
 }
 
-const settleBotTurn = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  sessionId: string,
-  turn: ReturnType<typeof takeBotTurn>,
-  payload: Record<string, unknown>
-): Promise<void> => {
-  if (typeof payload.stopKind === "string" && typeof payload.stopDetail === "string") {
-    await postBotMessage(services, fanout, sessionId, {
-      sender: "notice",
-      text: payload.stopDetail
-    })
-    return
-  }
-  if (turn === undefined || !turn.userPrompted || turn.sent) return
-  if (payload.stopReason === "cancelled") return
-  const final = await finalAssistantText(services, sessionId)
-  if (final.text.length === 0 && final.attachments === undefined) return
-  await postBotMessage(services, fanout, sessionId, {
-    sender: "bot",
-    text: final.text,
-    ...(final.attachments === undefined ? {} : { attachments: final.attachments })
-  })
-}
-
 export const makeBotConversationListener =
   (services: CodevisorServerServices, fanout: EventFanout) =>
   (event: EventEnvelope): void => {
@@ -151,7 +125,6 @@ export const makeBotConversationListener =
       const message = String(payload.message)
       void (async () => {
         if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
-        takeBotTurn(services, event.subjectId)
         await postBotMessage(services, fanout, event.subjectId, {
           sender: "notice",
           text: `Couldn't reply: ${message}`
@@ -160,9 +133,10 @@ export const makeBotConversationListener =
       return
     }
     if (event.kind !== "session.updated" || payload.turnState !== "ended") return
-    const turn = takeBotTurn(services, event.subjectId)
+    if (typeof payload.stopKind !== "string" || typeof payload.stopDetail !== "string") return
+    const notice = payload.stopDetail
     void (async () => {
       if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
-      await settleBotTurn(services, fanout, event.subjectId, turn, payload)
+      await postBotMessage(services, fanout, event.subjectId, { sender: "notice", text: notice })
     })().catch(swallowError)
   }

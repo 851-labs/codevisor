@@ -9,7 +9,7 @@ import { Schema } from "effect"
 import { expect, onTestFinished } from "vitest"
 
 import type { CodevisorServerConfig } from "../server.js"
-import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
 export const git = async (args: ReadonlyArray<string>, cwd: string): Promise<string> =>
@@ -50,6 +50,13 @@ export const setUp = async (configOverrides: Partial<CodevisorServerConfig> = {}
 }
 
 export type Running = Awaited<ReturnType<typeof setUp>>
+
+export const endedTurns = (running: Running, sessionId: string) =>
+  listSubjectEvents(running.services, sessionId).filter(
+    (event) =>
+      event.kind === "session.updated" &&
+      JSON.stringify(event.payload).includes('"turnState":"ended"')
+  ).length
 
 export const createBot = (running: Running, body: Record<string, unknown>) =>
   jsonRequest(running.server, "/v1/bots", {

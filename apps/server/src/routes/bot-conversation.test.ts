@@ -4,9 +4,8 @@ import { join } from "node:path"
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { pauseForUpdate, restartStatePaths, stopServer } from "../restart-test-support.js"
-import { jsonRequest, listSubjectEvents, run, startWithApp, waitFor } from "../test-support.js"
-import { createBot, decodeBot, setUp, type Running } from "./bot-test-support.js"
+import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
+import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-test-support.js"
 
 const decodePage = decode(BotConversationPage)
 
@@ -22,8 +21,8 @@ const prompt = (running: Running, sessionId: string, text: string, messageId?: s
     method: "POST"
   })
 
-const startBot = async (configOverrides: Parameters<typeof setUp>[0] = {}) => {
-  const running = await setUp(configOverrides)
+const startBot = async () => {
+  const running = await setUp()
   await running.addProject("api-project", "api")
   const bot = decodeBot(
     (await createBot(running, { projectIds: ["api-project"], conversational: true })).body
@@ -32,7 +31,7 @@ const startBot = async (configOverrides: Parameters<typeof setUp>[0] = {}) => {
 }
 
 describe("bot conversations", () => {
-  it("records the user's message at once and falls back to the final reply when nothing was sent", async () => {
+  it("records the user's message at once and posts none of the bot's own replies", async () => {
     const { running, bot } = await startBot()
     expect(bot.conversational).toBe(true)
     expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
@@ -41,18 +40,15 @@ describe("bot conversations", () => {
 
     await prompt(running, bot.sessionId, "hello", "client-1")
 
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-    expect(await transcript(running, bot.sessionId)).toEqual([
-      ["user", "hello"],
-      ["bot", "Echo: hello"]
-    ])
+    await waitFor(() => endedTurns(running, bot.sessionId) === 1)
+    expect(await transcript(running, bot.sessionId)).toEqual([["user", "hello"]])
     const [sent] = (await conversation(running, bot.sessionId)).messages
     expect(sent?.id).toBe("client-1")
     expect(
       listSubjectEvents(running.services, bot.sessionId).filter(
         (event) => event.kind === "bot.message"
       )
-    ).toHaveLength(2)
+    ).toHaveLength(1)
   })
 
   it("takes a retried send once when the first attempt already landed", async () => {
@@ -64,53 +60,35 @@ describe("bot conversations", () => {
       })
 
     await send()
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+    await waitFor(() => endedTurns(running, bot.sessionId) === 1)
     const retried = await send()
 
     expect(retried.status).toBe(202)
     expect(running.agents.prompts).toHaveLength(1)
-    expect(await transcript(running, bot.sessionId)).toEqual([
-      ["user", "hello"],
-      ["bot", "Echo: hello"]
-    ])
+    expect(await transcript(running, bot.sessionId)).toEqual([["user", "hello"]])
   })
 
-  it("falls back to the final reply on every turn, not just every other one", async () => {
-    const { running, bot } = await startBot()
-
-    await prompt(running, bot.sessionId, "hello")
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-    await prompt(running, bot.sessionId, "are you there")
-    await waitFor(() => running.agents.prompts.length === 2)
-
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 4)
-    expect(await transcript(running, bot.sessionId)).toEqual([
-      ["user", "hello"],
-      ["bot", "Echo: hello"],
-      ["user", "are you there"],
-      ["bot", "Echo: are you there"]
-    ])
-  })
-
-  it("skips the fallback only on the turn where the bot already replied", async () => {
+  it("posts exactly the messages the bot sends", async () => {
     const { running, bot } = await startBot()
 
     await prompt(running, bot.sessionId, "slow prompt")
     await waitFor(() => running.agents.prompts.length === 1)
-    await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
-      body: JSON.stringify({ text: "On it" }),
-      method: "POST"
-    })
+    for (const text of ["On it", "Done"]) {
+      await jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/messages`, {
+        body: JSON.stringify({ text }),
+        method: "POST"
+      })
+    }
     running.agents.releasePrompt()
-    await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
+    await waitFor(() => endedTurns(running, bot.sessionId) === 1)
     await prompt(running, bot.sessionId, "hello")
 
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 4)
+    await waitFor(() => endedTurns(running, bot.sessionId) === 2)
     expect(await transcript(running, bot.sessionId)).toEqual([
       ["user", "slow prompt"],
       ["bot", "On it"],
-      ["user", "hello"],
-      ["bot", "Echo: hello"]
+      ["bot", "Done"],
+      ["user", "hello"]
     ])
   })
 
@@ -269,34 +247,7 @@ describe("bot conversations", () => {
     )?.[1]
     expect(report).toContain(`sessionId="${childId}" title="Fix login" stopReason="end_turn"`)
     expect(report).toContain("Echo: fix it")
-    await waitFor(() =>
-      listSubjectEvents(running.services, bot.sessionId).some(
-        (event) =>
-          event.kind === "session.updated" &&
-          JSON.stringify(event.payload).includes('"turnState":"ended"')
-      )
-    )
+    await waitFor(() => endedTurns(running, bot.sessionId) === 1)
     expect(await transcript(running, bot.sessionId)).toEqual([])
-  })
-
-  it("still replies to the user when an update pauses the bot mid-turn", async () => {
-    const paths = restartStatePaths()
-    const { running, bot } = await startBot(paths)
-    await prompt(running, bot.sessionId, "prompt until cancelled")
-    await waitFor(() => running.agents.prompts.length === 1)
-
-    await pauseForUpdate(running.server)
-    await stopServer(running.server)
-    const restarted = { ...running, server: await startWithApp(running.services, undefined, paths) }
-
-    await waitFor(async () => (await transcript(restarted, bot.sessionId)).length === 2)
-    expect(running.agents.prompts.map(([, input]) => input)).toEqual([
-      expect.stringContaining("prompt until cancelled"),
-      "continue"
-    ])
-    expect(await transcript(restarted, bot.sessionId)).toEqual([
-      ["user", "prompt until cancelled"],
-      ["bot", "Echo: continue"]
-    ])
   })
 })

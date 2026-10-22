@@ -1,4 +1,4 @@
-import type { Bot, BotMessage, PromptOrigin } from "@codevisor/api"
+import type { Bot, BotMessage } from "@codevisor/api"
 import type { AppendBotMessageRecord } from "@codevisor/db"
 
 import {
@@ -7,33 +7,6 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-
-interface BotTurn {
-  userPrompted: boolean
-  sent: boolean
-}
-
-const botTurns = new WeakMap<CodevisorServerServices, Map<string, BotTurn>>()
-
-const turnsFor = (services: CodevisorServerServices): Map<string, BotTurn> => {
-  let turns = botTurns.get(services)
-  if (turns === undefined) {
-    turns = new Map()
-    botTurns.set(services, turns)
-  }
-  return turns
-}
-
-const turnFor = (services: CodevisorServerServices, sessionId: string): BotTurn => {
-  const turns = turnsFor(services)
-  const key = sessionId.toLowerCase()
-  let turn = turns.get(key)
-  if (turn === undefined) {
-    turn = { userPrompted: false, sent: false }
-    turns.set(key, turn)
-  }
-  return turn
-}
 
 export const conversationalBotForSession = async (
   services: CodevisorServerServices,
@@ -57,31 +30,5 @@ export const postBotMessage = async (
   if (created) {
     await appendAndPublish(services.db, fanout, "bot.message", sessionId, { message })
   }
-  const turn = turnsFor(services).get(sessionId.toLowerCase())
-  if (record.sender === "bot" && turn !== undefined) turn.sent = true
   return message
-}
-
-export const noteBotPrompt = (
-  services: CodevisorServerServices,
-  sessionId: string,
-  origin: PromptOrigin | undefined
-): void => {
-  if (origin !== "system") turnFor(services, sessionId).userPrompted = true
-}
-
-export const awaitsBotReply = (services: CodevisorServerServices, sessionId: string): boolean => {
-  const turn = turnsFor(services).get(sessionId.toLowerCase())
-  return turn !== undefined && turn.userPrompted && !turn.sent
-}
-
-export const takeBotTurn = (
-  services: CodevisorServerServices,
-  sessionId: string
-): BotTurn | undefined => {
-  const turns = turnsFor(services)
-  const key = sessionId.toLowerCase()
-  const turn = turns.get(key)
-  turns.delete(key)
-  return turn
 }

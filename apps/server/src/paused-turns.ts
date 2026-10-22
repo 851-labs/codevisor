@@ -5,8 +5,7 @@ import { readJsonStateFile, removeJsonStateFile, writeJsonStateFile } from "./js
 export const PausedTurn = Schema.Struct({
   sessionId: Schema.String,
   turnId: Schema.optional(Schema.String),
-  pausedAt: Schema.String,
-  awaitsBotReply: Schema.optional(Schema.Boolean)
+  pausedAt: Schema.String
 })
 export type PausedTurn = typeof PausedTurn.Type
 

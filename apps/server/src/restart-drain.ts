@@ -4,7 +4,6 @@ import { makePauseFinalizer } from "./pause-finalizer.js"
 import { allChats, sameScope, scopeIncludes, widenScope, type PauseScope } from "./pause-scope.js"
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
 import type { RestartSnapshotStore } from "./restart-snapshot.js"
-import { awaitsBotReply, conversationalBotForSession } from "./routes/bot-turns.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -338,13 +337,6 @@ const agentSessionIdOf = (session: {
     ? session.id
     : session.agentSessionId
 
-const owesBotReply = async (
-  services: CodevisorServerServices,
-  sessionId: string
-): Promise<boolean> =>
-  awaitsBotReply(services, sessionId) &&
-  (await conversationalBotForSession(services, sessionId)) !== undefined
-
 const pausedTurnOf = async (
   services: CodevisorServerServices,
   sessionId: string
@@ -355,7 +347,6 @@ const pausedTurnOf = async (
   return {
     sessionId,
     ...(turnId === undefined ? {} : { turnId }),
-    pausedAt,
-    ...((await owesBotReply(services, sessionId)) ? { awaitsBotReply: true } : {})
+    pausedAt
   }
 }

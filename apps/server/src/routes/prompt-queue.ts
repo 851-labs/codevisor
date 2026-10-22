@@ -22,7 +22,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { conversationalBotForSession, noteBotPrompt } from "./bot-turns.js"
+import { conversationalBotForSession } from "./bot-turns.js"
 import { transcriptOrigin } from "./prompt-origin.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
@@ -307,7 +307,6 @@ const steerClaimedPrompt = async (
     return false
   }
 
-  noteBotPrompt(services, sessionId, item.origin)
   await recordUserPrompt(services, fanout, serverId, sessionId, {
     messageId: item.id,
     text: item.text,
@@ -409,7 +408,6 @@ const runPromptInBackground = async (
   origin?: PromptOrigin
 ): Promise<void> => {
   try {
-    noteBotPrompt(services, sessionId, origin)
     await recordUserPrompt(services, fanout, serverId, sessionId, {
       messageId: queueItemId,
       text,

@@ -1,5 +1,4 @@
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
-import { noteBotPrompt } from "./routes/bot-turns.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import {
   failureMessage,
@@ -75,12 +74,11 @@ export const continueAfterUpdate = async (
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
-  { sessionId, awaitsBotReply }: PausedTurn
+  { sessionId }: PausedTurn
 ): Promise<void> => {
   forgetUpdatePause(services, sessionId)
   if (!(await canContinue(services, routeState, sessionId))) return
 
-  if (awaitsBotReply === true) noteBotPrompt(services, sessionId, "user")
   await queueContinueFirst(services, sessionId)
   void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
 }

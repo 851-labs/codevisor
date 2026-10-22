@@ -31,7 +31,7 @@ export interface SessionEventRouter {
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
 }
 
-export const finalAssistantText = async (
+const finalAssistantText = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<{ readonly text: string; readonly attachments?: ReadonlyArray<AttachmentRef> }> => {
