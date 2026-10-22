@@ -9,6 +9,10 @@ if [[ ! -f "$source_icon" ]]; then
   print -u2 "error: source icon not found at $source_icon"
   exit 1
 fi
+if ! command -v oxipng >/dev/null; then
+  print -u2 "error: oxipng not found. Install it with: brew install oxipng"
+  exit 1
+fi
 
 source_width="$(sips -g pixelWidth "$source_icon" 2>/dev/null | awk '/pixelWidth/ { print $2 }')"
 source_height="$(sips -g pixelHeight "$source_icon" 2>/dev/null | awk '/pixelHeight/ { print $2 }')"
@@ -27,5 +31,6 @@ for size in 16 32 128; do
   sips --resampleHeightWidth "$size" "$size" "$work_directory/source.png" \
     --out "$destination/$size.png" >/dev/null
 done
+oxipng --quiet --opt 6 --strip safe "$destination"/{16,32,128}.png
 
 print "Updated Chrome extension icons from $source_icon"
