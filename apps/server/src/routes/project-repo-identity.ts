@@ -27,6 +27,11 @@ export const discoverRepoUrl = async (
   return url
 }
 
+const changedRepoUrl = (url: string | undefined, project: Project): string | undefined => {
+  if (url === undefined || url === project.repoUrl) return undefined
+  return url
+}
+
 export const reconcileProjectRepoUrls = async (
   db: CodevisorDatabaseService,
   serverId: string,
@@ -42,14 +47,15 @@ export const reconcileProjectRepoUrls = async (
     }
     const exists = (await stat(location.folderPath).catch(() => undefined))?.isDirectory() === true
     const isGitRepository = exists && (await isGitWorkTree(location.folderPath))
-    const url = isGitRepository ? await discoverRepoUrl(location.folderPath, env) : undefined
+    let url: string | undefined
+    if (isGitRepository) url = await discoverRepoUrl(location.folderPath, env)
     const locationChanged = isGitRepository !== location.isGitRepository
-    const remoteChanged = url !== undefined && url !== project.repoUrl
-    if (!locationChanged && !remoteChanged) return project
+    const changedUrl = changedRepoUrl(url, project)
+    if (!locationChanged && changedUrl === undefined) return project
     try {
       if (locationChanged) await run(db.setProjectLocationGitState(location.id, isGitRepository))
       let base: Project
-      if (remoteChanged) base = await run(db.setProjectRepoUrl(project.id, url))
+      if (changedUrl !== undefined) base = await run(db.setProjectRepoUrl(project.id, changedUrl))
       else base = project
       const updated = {
         ...base,

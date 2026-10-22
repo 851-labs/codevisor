@@ -284,14 +284,13 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
       }
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined
       const key = `site:${theme}:${parsed.origin}`
-      return cached(key, async () => ({
-        asset:
-          (await favicon(parsed.origin, theme)) ??
-          (isPublicHost(parsed.hostname)
-            ? await imageAt(publicFaviconUrl(parsed.hostname))
-            : undefined),
-        source: "favicon"
-      }))
+      return cached(key, async () => {
+        let asset = await favicon(parsed.origin, theme)
+        if (asset === undefined && isPublicHost(parsed.hostname)) {
+          asset = await imageAt(publicFaviconUrl(parsed.hostname))
+        }
+        return { asset, source: "favicon" }
+      })
     },
     app: async (bundleId, path) => {
       const loadIcon = options.appIcon

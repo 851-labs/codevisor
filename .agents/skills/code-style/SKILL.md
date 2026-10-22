@@ -605,9 +605,15 @@ final class ConnectionStatus {
 - **No effect-choosing ternaries** (rule 4): `codevisor/no-effect-ternary`
   fails a ternary with an `await`, `yield`, or assignment in a branch
   (nested functions don't count), and a ternary whose value is discarded. It
-  doesn't judge calls, so `a ? f() : g()` is still yours to review.
+  doesn't judge calls, so `a ? f() : g()` is still yours to review. Write
+  `a ?? (c ? await f() : undefined)` as `let x = a` then
+  `if (x === undefined && c) x = await f()`. Only when `a`'s type allows
+  null, start from `let x = a ?? undefined`, so a null `a` still comes out
+  as `undefined`.
 - **Named SQL** (rule 5): `codevisor/named-sql` fails a SQL string literal
-  passed straight to `.prepare()`, `.exec()`, `.run()`, or `.query()`. Tests,
+  passed straight to `.prepare()`, `.exec()`, `.run()`, or `.query()`. When
+  a statement needs a runtime identifier, build it in a named function that
+  quotes the identifier, like `dropTriggerSql(name)`. Tests,
   test support, and the `packages/db` migration and upgrade files are
   excluded by path in `.oxlintrc.json`.
 - **File size** (rule 13, S1): oxlint `max-lines` 500; SwiftLint

@@ -62,6 +62,9 @@ export const agySessionSummaries = (
     return [{ sessionId, cwd, updatedAt, ...(title ? { title } : {}) }]
   })
 
+const recentSummariesSql =
+  "SELECT * FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 500"
+
 /* v8 ignore start */
 export const readSummaries: SummaryReader = async (path) => {
   const { default: Database } = await import("better-sqlite3")
@@ -72,10 +75,7 @@ export const readSummaries: SummaryReader = async (path) => {
     return []
   }
   try {
-    return database
-      .prepare("SELECT * FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 500")
-      .all()
-      .filter(isPlainRecord)
+    return database.prepare(recentSummariesSql).all().filter(isPlainRecord)
   } catch {
     return []
   } finally {

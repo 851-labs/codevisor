@@ -147,14 +147,13 @@ const createProject = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateProjectRequestSchema)
-  const repoUrl =
-    payload.repoUrl ??
-    (existingDirectory(payload.folderPath) === undefined
-      ? undefined
-      : await discoverRepoUrl(
-          payload.folderPath,
-          await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-        ))
+  let repoUrl = payload.repoUrl
+  if (repoUrl === undefined && existingDirectory(payload.folderPath) !== undefined) {
+    repoUrl = await discoverRepoUrl(
+      payload.folderPath,
+      await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+    )
+  }
   const project = await run(
     services.db.createProject({
       ...payload,

@@ -185,9 +185,11 @@ const sessionRevision = (db: Database.Database, sessionId: string): number =>
 
 const dropNavigationTriggers = (db: Database.Database): void => {
   for (const trigger of nameRows.all(db.prepare(navigationTriggersSql).all())) {
-    db.exec(`drop trigger ${quotedIdentifier(trigger.name)}`)
+    db.exec(dropTriggerSql(trigger.name))
   }
 }
+
+const dropTriggerSql = (name: string): string => `drop trigger ${quotedIdentifier(name)}`
 
 const quotedIdentifier = (name: string): string => `"${name.replaceAll('"', '""')}"`
 

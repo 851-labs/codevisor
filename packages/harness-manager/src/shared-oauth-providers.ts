@@ -170,11 +170,10 @@ export const readNativeOAuth = async (options: {
   }
   if (document === undefined) return undefined
   if (harnessId === "codex") return parseCodexOAuth(document, ownership)
-  const settings =
-    (await jsonFile(join(directory, ".claude.json"))) ??
-    (options.isDefault && options.env.HOME
-      ? await jsonFile(join(options.env.HOME, ".claude.json"))
-      : undefined)
+  let settings = await jsonFile(join(directory, ".claude.json"))
+  if (settings === undefined && options.isDefault && options.env.HOME) {
+    settings = await jsonFile(join(options.env.HOME, ".claude.json"))
+  }
   return parseClaudeOAuth(document, settings, ownership)
 }
 

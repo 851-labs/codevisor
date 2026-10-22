@@ -45,9 +45,8 @@ const writeEntries = async (entries) => {
   const prepared = await Promise.all(
     entries.map(async (entry) => {
       const blob = clipboardEntry(entry)
-      return entry.mimeType.startsWith("text/")
-        ? { mimeType: entry.mimeType, text: await blob.text() }
-        : { mimeType: entry.mimeType, blob }
+      if (!entry.mimeType.startsWith("text/")) return { mimeType: entry.mimeType, blob }
+      return { mimeType: entry.mimeType, text: await blob.text() }
     })
   )
   return runClipboardEvent("copy", (clipboardData) => {
