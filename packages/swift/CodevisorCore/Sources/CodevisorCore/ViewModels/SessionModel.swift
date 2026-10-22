@@ -141,10 +141,9 @@ public final class SessionModel {
   public internal(set) var persistedSetupPhases: [SessionSetupPhase] = [] {
     didSet { if persistedSetupPhases != oldValue { transcriptProjectionRevision &+= 1 } }
   }
-  public internal(set) var hasOlderHistory = false
-  public internal(set) var isLoadingOlderHistory = false
-  @ObservationIgnored var olderHistoryCursor: String?
-  @ObservationIgnored var usesPaginatedHistory = false
+  let historyPaging = SessionHistoryPaging()
+  public var hasOlderHistory: Bool { historyPaging.hasOlderPages }
+  public var isLoadingOlderHistory: Bool { historyPaging.isLoadingOlderPage }
   @ObservationIgnored var transcriptDetailsCache: [String: TranscriptDetailsCacheEntry] = [:]
   @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
   @ObservationIgnored var settledIndexById: [UUID: Int] = [:]
@@ -263,6 +262,137 @@ public final class SessionModel {
       let spawn = call.kind == .agent ? call : subagentSpawn(taskId: task.id)
       guard let spawn, seen.insert(spawn.toolCallId).inserted else { return nil }
       return spawn
+    }
+  }
+
+  func loadHistoryOnce(
+    preloaded: TranscriptHistoryPage?,
+    defersPromptQueue: Bool,
+    preservingContent: Bool = false
+  ) async -> SessionHistoryLoadOutcome {
+    promptQueue.cancelLoad()
+    let fetch = SessionHistoryFetch(transport: transport)
+    do {
+      let first = try await fetch.firstPage(preloaded: preloaded)
+      historyPaging.isPaginated = true
+      if appliedStateIsCurrent(through: first.eventCursor) {
+        await skipHistorySnapshot(at: first.eventCursor, preservingContent: preservingContent)
+      } else {
+        try await reloadHistory(from: first, with: fetch, preservingContent: preservingContent)
+      }
+      await loadPromptQueue(deferred: defersPromptQueue)
+      return .loaded
+    } catch {
+      return historyLoadOutcome(for: error)
+    }
+  }
+
+  private func skipHistorySnapshot(at cursor: Int, preservingContent: Bool) async {
+    Log.session.notice(
+      "Skipped a history snapshot at cursor \(cursor, privacy: .public); live stream already applied through \(String(describing: self.serverEventCursor), privacy: .public)"
+    )
+    await followLiveStream(preservingContent: preservingContent)
+  }
+
+  private func reloadHistory(
+    from first: TranscriptHistoryPage, with fetch: SessionHistoryFetch, preservingContent: Bool
+  ) async throws {
+    var page = try await fetch.completePage(first)
+    if preservingContent { page = try await fetch.hydratingDetails(of: page, shownIn: conversation) }
+    try Task.checkCancellation()
+
+    showHistory(page, preservingContent: preservingContent)
+    await followLiveStream(preservingContent: preservingContent)
+    restoreActiveTranscriptDetails()
+  }
+
+  private func showHistory(_ page: TranscriptHistoryPage, preservingContent: Bool) {
+    let shown = preservingContent ? conversation : nil
+    showConversation(of: page, keepingOlderPagesOf: shown)
+    restorePersistedState(from: page)
+    restorePendingQuestion(page.pendingQuestion)
+    restoreSessionStatus(from: page)
+    resumeGeneratingTurn()
+    serverEventCursor = page.eventCursor
+  }
+
+  private func showConversation(of page: TranscriptHistoryPage, keepingOlderPagesOf shown: [ConversationItem]?) {
+    let retained = SessionHistoryPaging.olderItems(in: shown, before: page)
+    if retained == nil { historyPaging.adopt(page) }
+    setConversation((retained ?? []) + page.conversation)
+  }
+
+  private func restorePersistedState(from page: TranscriptHistoryPage) {
+    if let persistedUsage = page.usage { usage = persistedUsage }
+    persistedSetupPhases = page.setupPhases
+    if let skills = page.skills { availableSkills = skills }
+    for update in page.stateUpdates { restoreHistoryState(update) }
+  }
+
+  private func restoreHistoryState(_ update: SessionUpdate) {
+    if case let .configOptionUpdate(saved) = update, !configOptions.isEmpty {
+      configOptions = SavedConfigSelections(saved: saved).restored(onto: configOptions)
+    } else {
+      apply(.update(update))
+    }
+  }
+
+  private func restorePendingQuestion(_ question: QuestionRequest?) {
+    pendingQuestion = question
+    guard let question, TranscriptSetupRequest.kind(of: question.questions) != nil else { return }
+    applySetupUpdate(.question(question), questionId: question.questionId)
+  }
+
+  private func restoreSessionStatus(from page: TranscriptHistoryPage) {
+    pendingPlanApproval = page.pendingPlanApproval
+    updateGateHarnessName = page.updateGateHarnessName
+    autoResume = page.autoResume
+    if let tasks = page.backgroundTasks { backgroundTasks = tasks }
+    goal = page.goal
+    sessionPlan = page.sessionPlan
+  }
+
+  private func resumeGeneratingTurn() {
+    isSending = lastTurnIsGenerating
+    if isSending { noteProviderActivity() }
+  }
+
+  private func followLiveStream(preservingContent: Bool) async {
+    if preservingContent { applySynchronization(.catchingUp) }
+    await startConsumer()
+  }
+
+  private func historyLoadOutcome(for error: any Error) -> SessionHistoryLoadOutcome {
+    if isTaskCancellation(error) { return .cancelled }
+    let retryable: Bool
+    if let serverError = error as? CodevisorServerClientError {
+      switch serverError {
+      case let .httpStatus(status, _):
+        retryable = status == 408 || status == 425 || status == 429 || status >= 500
+      case .invalidURL, .invalidResponse, .invalidDate, .invalidUUID:
+        retryable = false
+      }
+    } else {
+      retryable = true
+    }
+    return .failed(message: serverErrorMessage(error), retryable: retryable)
+  }
+
+  private func loadPromptQueue(deferred: Bool) async {
+    if deferred {
+      promptQueue.scheduleLoad(keepingAlive: self)
+    } else {
+      await promptQueue.load()
+    }
+  }
+
+  private var lastTurnIsGenerating: Bool {
+    if case let .assistant(message) = activeItem {
+      if message.turn.isGenerating { return true }
+    }
+    return settledConversation.reversed().contains { item in
+      if case let .assistant(message) = item { return message.turn.isGenerating }
+      return false
     }
   }
 

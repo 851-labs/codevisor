@@ -64,4 +64,29 @@ extension SessionModelTests {
     #expect(resumed.isGenerating)
     #expect(resumed.workedSectionTitle(.planning, now: clock.now) == "Working for 5s")
   }
+
+  @Test("A setup question waiting in history shows as pending on its turn")
+  func historyRestoresPendingSetupRequest() async throws {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    var page = cancellationTranscriptPage(
+      sessionId: sessionId, isGenerating: false, stopReason: "end_turn", text: "Needs access")
+    let question = QuestionRequest(
+      questionId: "cu",
+      questions: [QuestionSpec(id: "c", question: "Allow", presentation: .computerUsePermissions)])
+    page.pendingQuestion = question
+    client.initialTranscriptPage = page
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+
+    await model.loadHistoryForInitialDisplay()
+
+    #expect(model.pendingQuestion == question)
+    guard case let .assistant(message)? = model.conversation.last else {
+      Issue.record("Expected the asking turn"); return
+    }
+    #expect(message.turn.setupRequests == [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .pending)])
+  }
 }

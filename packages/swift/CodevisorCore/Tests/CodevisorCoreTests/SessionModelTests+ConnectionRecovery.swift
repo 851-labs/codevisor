@@ -153,8 +153,8 @@ extension SessionModelTests {
     }
     let cachedTurn = cachedMessage.turn
     model.setConversation([older, .assistant(AssistantMessage(id: assistantId, turn: cachedTurn))])
-    model.hasOlderHistory = true
-    model.olderHistoryCursor = "older-page"
+    model.historyPaging.hasOlderPages = true
+    model.historyPaging.olderPageCursor = "older-page"
 
     page.eventCursor = 3
     page.items[0].revision = 3
@@ -169,7 +169,7 @@ extension SessionModelTests {
     #expect(model.serverEventCursor == 3)
     #expect(model.conversation.first == older)
     #expect(model.hasOlderHistory)
-    #expect(model.olderHistoryCursor == "older-page")
+    #expect(model.historyPaging.olderPageCursor == "older-page")
     #expect(!model.isSending)
     guard case let .assistant(recovered)? = model.conversation.last else {
       Issue.record("Expected recovered assistant"); return
@@ -182,6 +182,49 @@ extension SessionModelTests {
 }
 
 extension SessionModelTests {
+  @Test("Recovery refreshes the work of a turn the user already opened before showing it")
+  func recoveryRefreshesOpenedWork() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    var page = cancellationTranscriptPage(
+      sessionId: sessionId, isGenerating: false,
+      stopReason: "end_turn", eventCursor: 2, text: "Finished answer")
+    page.items[0].hasDetails = true
+    let itemId = page.items[0].id
+    func details(revision: Int, toolCallId: String) -> ServerTranscriptItemDetails {
+      ServerTranscriptItemDetails(
+        itemId: itemId, revision: revision, eventCursor: revision,
+        entries: [
+          ServerTranscriptEntry(
+            key: "tool:\(toolCallId)", position: 2, revision: revision,
+            payload: toolCallEnvelope(id: revision, sessionId: sessionId, toolCallId: toolCallId, status: "completed")
+              .payload)
+        ])
+    }
+    client.initialTranscriptPage = page
+    client.transcriptDetailsByItem[itemId] = details(revision: 2, toolCallId: "first-edit")
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistoryForInitialDisplay()
+    #expect(await model.loadTranscriptDetails(itemId: itemId))
+
+    page.eventCursor = 3
+    page.items[0].revision = 3
+    client.initialTranscriptPage = page
+    client.transcriptDetailsByItem[itemId] = details(revision: 3, toolCallId: "second-edit")
+    await model.reconcileFromServer()
+
+    #expect(client.transcriptDetailRequestCount == 2)
+    #expect(model.serverEventCursor == 3)
+    guard case let .assistant(message)? = model.conversation.last else {
+      Issue.record("Expected recovered assistant"); return
+    }
+    #expect(message.turn.allToolCalls.map(\.toolCallId) == ["second-edit"])
+    #expect(message.turn.hasHydratedWorkedDetails)
+  }
+
   @Test("A missing detail page does not block live synchronization and can be retried")
   func missingActiveDetailsKeepRecoveryGate() async {
     let sessionId = UUID()

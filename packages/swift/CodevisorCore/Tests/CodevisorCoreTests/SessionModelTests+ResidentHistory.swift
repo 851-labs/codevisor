@@ -90,3 +90,50 @@ extension SessionModelTests {
     #expect(client.transcriptPageRequests.map(\.before) == [nil, "10", nil, "30"])
   }
 }
+
+extension SessionModelTests {
+  @Test("A failed initial load surfaces the server's message")
+  func failedInitialLoadSurfacesError() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.failNextTranscriptPages(
+      1, with: CodevisorServerClientError.httpStatus(500, #"{"error":"Transcript store unavailable"}"#))
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+
+    await model.loadHistoryForInitialDisplay()
+
+    #expect(model.errorMessage == "Transcript store unavailable")
+    #expect(model.conversation.isEmpty)
+  }
+
+  @Test("A failed older page keeps its cursor so scrolling up can retry it")
+  func failedOlderPageCanBeRetried() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let item = ServerTranscriptItem(
+      id: UUID().uuidString, sessionId: sessionId.uuidString, sequence: 1,
+      role: .user, text: "Newest", createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z", isGenerating: false,
+      hasDetails: false, revision: 1)
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [item], nextBefore: "1", hasMore: true, eventCursor: 1)
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistoryForInitialDisplay()
+    client.failNextTranscriptPages(
+      1, with: CodevisorServerClientError.httpStatus(503, #"{"error":"Try again shortly"}"#))
+
+    #expect(await model.loadOlderHistory() == 0)
+
+    #expect(model.errorMessage == "Try again shortly")
+    #expect(model.hasOlderHistory)
+    #expect(!model.isLoadingOlderHistory)
+    #expect(await model.loadOlderHistory() == 0)
+    #expect(client.transcriptPageRequests.map(\.before) == [nil, "1", "1"])
+  }
+}

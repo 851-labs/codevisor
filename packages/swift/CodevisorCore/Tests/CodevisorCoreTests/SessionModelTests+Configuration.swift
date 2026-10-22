@@ -153,6 +153,79 @@ extension SessionModelTests {
     #expect(model.configOptions.first { $0.id == "effort" }?.currentValue == "xhigh")
     #expect(client.configUpdates.isEmpty)
   }
+
+  @Test("History keeps a selection the catalog no longer offers and replays the other saved updates")
+  func historySkipsUnofferedSelection() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let currentOptions = [
+      SessionConfigOption(
+        id: "effort",
+        name: "Reasoning",
+        category: "thought_level",
+        currentValue: "high",
+        options: [
+          SessionConfigSelectOption(value: "low", name: "Low"),
+          SessionConfigSelectOption(value: "high", name: "High"),
+        ]
+      ),
+      SessionConfigOption(
+        id: "mode",
+        name: "Mode",
+        currentValue: "ask",
+        options: [
+          SessionConfigSelectOption(value: "ask", name: "Ask"),
+          SessionConfigSelectOption(value: "code", name: "Code"),
+        ]
+      ),
+    ]
+    var savedEffort = currentOptions[0]
+    savedEffort.currentValue = "xhigh"
+    let commands = [AvailableCommand(name: "deploy", description: "Ship the build")]
+    var page = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 1)
+    page.stateUpdates = [.configOptionUpdate([savedEffort]), .availableCommandsUpdate(commands)]
+    client.initialTranscriptPage = page
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString,
+      configOptions: currentOptions
+    )
+    defer { model.shutdown() }
+
+    await model.loadHistoryForInitialDisplay()
+
+    #expect(model.configOptions == currentOptions)
+    #expect(model.availableCommands == commands)
+  }
+
+  @Test("History adopts saved config options when the session has no catalog yet")
+  func historyAdoptsSavedConfigWithoutCatalog() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let savedOptions = [
+      SessionConfigOption(
+        id: "effort",
+        name: "Reasoning",
+        currentValue: "low",
+        options: [
+          SessionConfigSelectOption(value: "low", name: "Low"),
+          SessionConfigSelectOption(value: "high", name: "High"),
+        ]
+      )
+    ]
+    var page = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 1)
+    page.stateUpdates = [.configOptionUpdate(savedOptions)]
+    client.initialTranscriptPage = page
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+    defer { model.shutdown() }
+
+    await model.loadHistoryForInitialDisplay()
+
+    #expect(model.configOptions == savedOptions)
+  }
 }
 
 extension SessionModelTests {

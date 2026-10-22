@@ -30,103 +30,6 @@ extension SessionModel {
     await loadHistoryOnce(preloaded: nil, defersPromptQueue: false, preservingContent: true)
   }
 
-  private func loadHistoryOnce(
-    preloaded: TranscriptHistoryPage?,
-    defersPromptQueue: Bool,
-    preservingContent: Bool = false
-  ) async -> SessionHistoryLoadOutcome {
-    promptQueue.cancelLoad()
-    do {
-      var page: TranscriptHistoryPage
-      if let preloaded {
-        page = preloaded
-      } else {
-        page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
-      }
-      usesPaginatedHistory = true
-      if appliedStateIsCurrent(through: page.eventCursor) {
-        Log.session.notice(
-          "Skipped a history snapshot at cursor \(page.eventCursor, privacy: .public); live stream already applied through \(String(describing: self.serverEventCursor), privacy: .public)"
-        )
-        if preservingContent { applySynchronization(.catchingUp) }
-        await startConsumer()
-        await loadPromptQueue(deferred: defersPromptQueue)
-        return .loaded
-      }
-      page = try await transport.completeHistoryPage(page, limit: Self.initialTranscriptPageSize)
-      if preservingContent {
-        let hydratedIDs = Set(
-          conversation.compactMap { item -> UUID? in
-            guard case let .assistant(message) = item, message.turn.hasHydratedWorkedDetails else { return nil }
-            return message.id
-          })
-        for index in page.conversation.indices {
-          guard case let .assistant(message) = page.conversation[index],
-            let itemID = message.turn.deferredDetailItemId,
-            message.turn.isGenerating || hydratedIDs.contains(message.id)
-          else { continue }
-          let (_, events) = try await transport.transcriptDetailEvents(itemId: itemID)
-          page.conversation[index] = .assistant(
-            AssistantMessage(id: message.id, turn: Self.hydratedTranscriptTurn(message, events: events))
-          )
-        }
-      }
-      try Task.checkCancellation()
-      let prefix =
-        preservingContent
-        ? page.conversation.first.flatMap { first in
-          conversation.firstIndex(where: { $0.id == first.id }).map { Array(conversation.prefix($0)) }
-        } : nil
-      if prefix == nil {
-        olderHistoryCursor = page.nextBefore
-        hasOlderHistory = page.hasMore
-      }
-      setConversation((prefix ?? []) + page.conversation)
-      if let persistedUsage = page.usage {
-        usage = persistedUsage
-      }
-      persistedSetupPhases = page.setupPhases
-      if let skills = page.skills {
-        availableSkills = skills
-      }
-      for update in page.stateUpdates {
-        if case let .configOptionUpdate(saved) = update, !configOptions.isEmpty {
-          configOptions = configOptions.map { current in
-            guard let selection = saved.first(where: { $0.id == current.id }),
-              current.options.contains(where: { $0.value == selection.currentValue })
-            else { return current }
-            var restored = current
-            restored.currentValue = selection.currentValue
-            return restored
-          }
-        } else {
-          apply(.update(update))
-        }
-      }
-      pendingQuestion = page.pendingQuestion
-      if let pending = page.pendingQuestion, TranscriptSetupRequest.kind(of: pending.questions) != nil {
-        applySetupUpdate(.question(pending), questionId: pending.questionId)
-      }
-      pendingPlanApproval = page.pendingPlanApproval
-      updateGateHarnessName = page.updateGateHarnessName
-      autoResume = page.autoResume
-      if let tasks = page.backgroundTasks { backgroundTasks = tasks }
-      goal = page.goal
-      sessionPlan = page.sessionPlan
-      isSending = lastTurnIsGenerating
-      if isSending { noteProviderActivity() }
-      serverEventCursor = page.eventCursor
-      if preservingContent { applySynchronization(.catchingUp) }
-      await startConsumer()
-      restoreActiveTranscriptDetails()
-      await loadPromptQueue(deferred: defersPromptQueue)
-      return .loaded
-    } catch {
-      return historyLoadOutcome(for: error)
-    }
-
-  }
-
   func appliedStateIsCurrent(through cursor: Int) -> Bool {
     guard let applied = serverEventCursor,
       applied < ServerSessionTransport.liveOnlyEventCursor,
@@ -140,43 +43,19 @@ extension SessionModel {
     errorMessage = message
   }
 
-  private func historyLoadOutcome(for error: any Error) -> SessionHistoryLoadOutcome {
-    if isTaskCancellation(error) { return .cancelled }
-    let retryable: Bool
-    if let serverError = error as? CodevisorServerClientError {
-      switch serverError {
-      case let .httpStatus(status, _):
-        retryable = status == 408 || status == 425 || status == 429 || status >= 500
-      case .invalidURL, .invalidResponse, .invalidDate, .invalidUUID:
-        retryable = false
-      }
-    } else {
-      retryable = true
-    }
-    return .failed(message: serverErrorMessage(error), retryable: retryable)
-  }
-
-  private func loadPromptQueue(deferred: Bool) async {
-    if deferred {
-      promptQueue.scheduleLoad(keepingAlive: self)
-    } else {
-      await promptQueue.load()
-    }
-  }
-
   @discardableResult
   public func loadOlderHistory() async -> Int {
-    guard usesPaginatedHistory, !isLoadingOlderHistory else { return 0 }
-    isLoadingOlderHistory = true
-    defer { isLoadingOlderHistory = false }
+    guard historyPaging.canLoadOlderPage else { return 0 }
+    historyPaging.isLoadingOlderPage = true
+    defer { historyPaging.isLoadingOlderPage = false }
     do {
-      while hasOlderHistory, let cursor = olderHistoryCursor {
+      while historyPaging.hasOlderPages, let cursor = historyPaging.olderPageCursor {
         let anchor = conversation.first?.id
         let page = try await transport.completeHistoryPage(
           transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
           before: cursor, limit: Self.olderTranscriptPageSize)
         try Task.checkCancellation()
-        guard olderHistoryCursor == cursor, conversation.first?.id == anchor else { continue }
+        guard historyPaging.olderPageCursor == cursor, conversation.first?.id == anchor else { continue }
         let existing = Set(conversation.map(\.id))
         let unique = page.conversation
           .map(restoringCachedTranscriptDetails)
@@ -185,8 +64,7 @@ extension SessionModel {
           }
         settledConversation.insert(contentsOf: unique, at: 0)
         rebuildSettledIndex()
-        olderHistoryCursor = page.nextBefore
-        hasOlderHistory = page.hasMore
+        historyPaging.adopt(page)
         return unique.count
       }
       return 0
@@ -195,16 +73,6 @@ extension SessionModel {
         errorMessage = serverErrorMessage(error)
       }
       return 0
-    }
-  }
-
-  private var lastTurnIsGenerating: Bool {
-    if case let .assistant(message) = activeItem {
-      if message.turn.isGenerating { return true }
-    }
-    return settledConversation.reversed().contains { item in
-      if case let .assistant(message) = item { return message.turn.isGenerating }
-      return false
     }
   }
 }
