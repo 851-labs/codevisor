@@ -17,7 +17,7 @@ struct CloudPresenceRosterTests {
     client.machinesResult = .success([m1, m2])
     controller.reconcilePresence(with: [m1, m2])
 
-    await controller.presenceRefreshTask?.value
+    await controller.presence.task?.value
     #expect(controller.machines.contains { $0.deviceId == "m2" })
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
@@ -29,13 +29,13 @@ struct CloudPresenceRosterTests {
     let restCallsBefore = client.machineTokens.count
 
     controller.reconcilePresence(with: [online])
-    #expect(controller.presenceRefreshTask == nil)
+    #expect(controller.presence.task == nil)
     #expect(client.machineTokens.count == restCallsBefore)
 
     let offline = testMachine("m1", online: false)
     client.machinesResult = .success([offline])
     controller.reconcilePresence(with: [offline])
-    await controller.presenceRefreshTask?.value
+    await controller.presence.task?.value
     #expect(controller.machines.first?.online == false)
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
@@ -50,7 +50,7 @@ struct CloudPresenceRosterTests {
     after.tunnel = CloudTunnelInfo(endpointId: "new-endpoint")
     client.machinesResult = .success([after])
     controller.reconcilePresence(with: [after])
-    await controller.presenceRefreshTask?.value
+    await controller.presence.task?.value
     #expect(controller.machines.first?.tunnel?.endpointId == "new-endpoint")
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
@@ -67,7 +67,7 @@ struct CloudPresenceRosterTests {
     controller.reconcilePresence(with: [m1, m2])
     controller.reconcilePresence(with: [m1, m2, m3])
 
-    await controller.presenceRefreshTask?.value
+    await controller.presence.task?.value
     #expect(controller.machines.count == 3)
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
@@ -78,8 +78,17 @@ struct CloudPresenceRosterTests {
     let restCallsBefore = client.machineTokens.count
 
     controller.reconcilePresence(with: [testMachine("m1")])
-    #expect(controller.presenceRefreshTask == nil)
+    #expect(controller.presence.task == nil)
     #expect(client.machineTokens.count == restCallsBefore)
     #expect(controller.machines.isEmpty)
+  }
+
+  @Test("A machine listed twice in the roster is compared by its first entry")
+  func duplicateRosterEntryUsesFirst() {
+    let online = testMachine("m1", online: true)
+    let offline = testMachine("m1", online: false)
+
+    #expect(!CloudPresenceRefresh.reachabilityDiffers(known: [online, offline], reported: [online]))
+    #expect(CloudPresenceRefresh.reachabilityDiffers(known: [online, offline], reported: [offline]))
   }
 }

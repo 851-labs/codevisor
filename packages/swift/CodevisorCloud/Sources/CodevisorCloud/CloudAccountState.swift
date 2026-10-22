@@ -7,4 +7,9 @@ public enum CloudAccountState: Equatable, Sendable {
     if case .signedIn = self { return true }
     return false
   }
+
+  var userEmail: String? {
+    guard case let .signedIn(email) = self else { return nil }
+    return email
+  }
 }

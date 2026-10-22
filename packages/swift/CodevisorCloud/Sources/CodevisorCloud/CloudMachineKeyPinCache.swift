@@ -1,3 +1,4 @@
+import CodevisorClient
 import Foundation
 import Observation
 
@@ -10,6 +11,7 @@ final class CloudMachineKeyPinCache {
   }
 
   private(set) var pins: [String: String]?
+  private(set) var changedKeys: Set<String> = []
   @ObservationIgnored private(set) var generation: UInt64 = 0
   @ObservationIgnored private let store: any CloudCredentialStore
   @ObservationIgnored private let read: @Sendable () async throws -> [String: String]
@@ -63,6 +65,42 @@ final class CloudMachineKeyPinCache {
     return changed
   }
 
+  func reconcileChangedKeys(_ machines: [CloudMachine]) throws {
+    let changed = try reconcile(machines)
+    for deviceId in changed.subtracting(changedKeys) {
+      Log.cloud.error(
+        "Machine \(deviceId, privacy: .public) presented a key that conflicts with its pin; refusing relay channels until the user re-trusts it"
+      )
+    }
+    if changedKeys != changed {
+      changedKeys = changed
+    }
+  }
+
+  func trust(_ machine: CloudMachine) {
+    guard var pins else { return }
+    pins[machine.deviceId] = machine.publicKey
+    guard persist(pins) else { return }
+    changedKeys.remove(machine.deviceId)
+    Log.cloud.log("User re-trusted the changed key for machine \(machine.deviceId, privacy: .public)")
+  }
+
+  func removePin(deviceId: String) {
+    guard var pins else { return }
+    guard pins.removeValue(forKey: deviceId) != nil else { return }
+    guard persist(pins) else { return }
+    changedKeys.remove(deviceId)
+  }
+
+  func clear() throws {
+    try save([:])
+    changedKeys = []
+  }
+
+  func forgetChangedKeys() {
+    changedKeys = []
+  }
+
   func verifiedKey(for machine: CloudMachine) -> String? {
     guard let pinned = pins?[machine.deviceId] else { return nil }
     return pinned == machine.publicKey ? machine.publicKey : nil
@@ -79,5 +117,16 @@ final class CloudMachineKeyPinCache {
     loading?.task.cancel()
     loading = nil
     pins = nil
+  }
+
+  private func persist(_ pins: [String: String]) -> Bool {
+    do {
+      try save(pins)
+      return true
+    } catch {
+      Log.cloud.error(
+        "Failed to persist machine key pins: \(String(describing: error), privacy: .public)")
+      return false
+    }
   }
 }

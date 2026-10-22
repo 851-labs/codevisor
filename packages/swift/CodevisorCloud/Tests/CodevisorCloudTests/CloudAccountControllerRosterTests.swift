@@ -37,13 +37,39 @@ struct CloudAccountControllerRosterTests {
     #expect(client.discoverCount == 0)
 
     gate.signal()
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     #expect(controller.isRosterVerified)
     #expect(controller.state == .signedIn(userEmail: "fresh@example.com"))
     #expect(controller.machines.map(\.deviceId) == ["m1", "m2"])
     #expect(store.loadRoster()?.machines.map(\.deviceId) == ["m1", "m2"])
     #expect(store.loadRoster()?.userEmail == "fresh@example.com")
+  }
+
+  @Test("A launch cancelled during validation stays incomplete until the next bootstrap")
+  func cancelledLaunchStaysIncomplete() async throws {
+    let client = FakeCloudClient()
+    let gate = TestSignal()
+    client.sessionGate = gate
+    client.sessions["t"] = CloudSessionUser(userId: "u1", email: "fresh@example.com")
+    client.machinesResult = .success([testMachine("m1")])
+    let store = InMemoryCloudCredentialStore(token: "t")
+    let (controller, _, _) = makeController(client: client, store: store)
+
+    let launch = Task { await controller.bootstrap() }
+    #expect(await waitUntil { controller.state == .validating })
+    launch.cancel()
+    gate.signal()
+    await launch.value
+
+    #expect(controller.state == .signedIn(userEmail: "fresh@example.com"))
+    #expect(controller.isRosterVerified)
+    #expect(!controller.hasCompletedBootstrap)
+
+    await controller.bootstrap()
+
+    #expect(controller.hasCompletedBootstrap)
+    #expect(controller.machines.map(\.deviceId) == ["m1"])
   }
 
   @Test("A network error keeps the cached session and retries with backoff until verified")
@@ -57,7 +83,7 @@ struct CloudAccountControllerRosterTests {
     let (controller, _, _) = makeController(client: client, store: store, retryClock: clock)
 
     await controller.bootstrap()
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     #expect(controller.state == .signedIn(userEmail: "cached@example.com"))
     #expect(controller.machines.map(\.deviceId) == ["m1"])
@@ -66,32 +92,32 @@ struct CloudAccountControllerRosterTests {
     #expect(store.loadRoster() == cachedRoster())
 
     await clock.waitForSleep(.seconds(1))
-    var retry = controller.validationRetryTask
+    var retry = controller.validation.retryTask
     clock.advance(by: .seconds(1))
     await retry?.value
-    await controller.validationTask?.value
+    await controller.validation.task?.value
     #expect(controller.state.isSignedIn)
     await clock.waitForSleep(.seconds(2))
 
     client.sessionError = nil
     client.machinesResult = .failure(CloudAccountClientError.httpStatus(503))
-    retry = controller.validationRetryTask
+    retry = controller.validation.retryTask
     clock.advance(by: .seconds(2))
     await retry?.value
-    await controller.validationTask?.value
+    await controller.validation.task?.value
     #expect(controller.state.isSignedIn)
     #expect(!controller.isRosterVerified)
     await clock.waitForSleep(.seconds(4))
 
     client.machinesResult = .success([testMachine("m1"), testMachine("m2")])
-    retry = controller.validationRetryTask
+    retry = controller.validation.retryTask
     clock.advance(by: .seconds(4))
     await retry?.value
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     #expect(controller.isRosterVerified)
     #expect(controller.machines.map(\.deviceId) == ["m1", "m2"])
-    #expect(controller.validationRetryTask == nil)
+    #expect(controller.validation.retryTask == nil)
     #expect(clock.pendingCount == 0)
   }
 
@@ -106,16 +132,16 @@ struct CloudAccountControllerRosterTests {
       retryClock: clock
     )
     await controller.bootstrap()
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     var requested: [Int: Int] = [:]
     for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
       requested[seconds, default: 0] += 1
       await clock.waitForSleep(.seconds(seconds), count: requested[seconds, default: 1])
-      let retry = controller.validationRetryTask
+      let retry = controller.validation.retryTask
       clock.advance(by: .seconds(seconds))
       await retry?.value
-      await controller.validationTask?.value
+      await controller.validation.task?.value
     }
     #expect(controller.state.isSignedIn)
     #expect(clock.requestCount(.seconds(60)) >= 2)
@@ -132,13 +158,13 @@ struct CloudAccountControllerRosterTests {
 
     await controller.bootstrap()
     #expect(controller.state.isSignedIn)
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     #expect(controller.state == .signedOut)
     #expect(controller.machines.isEmpty)
     #expect(try store.token() == nil)
     #expect(store.loadRoster() == nil)
-    #expect(controller.validationRetryTask == nil)
+    #expect(controller.validation.retryTask == nil)
   }
 
   @Test("A 401 from the machine list also signs out and clears the roster")
@@ -150,12 +176,12 @@ struct CloudAccountControllerRosterTests {
     let (controller, _, _) = makeController(client: client, store: store)
 
     await controller.bootstrap()
-    await controller.validationTask?.value
+    await controller.validation.task?.value
 
     #expect(controller.state == .signedOut)
     #expect(try store.token() == nil)
     #expect(store.loadRoster() == nil)
-    #expect(controller.validationRetryTask == nil)
+    #expect(controller.validation.retryTask == nil)
   }
 
   @Test("A successful refresh persists the roster and marks it verified")
@@ -202,7 +228,7 @@ struct CloudAccountControllerRosterTests {
       retryClock: clock
     )
     await controller.bootstrap()
-    await controller.validationTask?.value
+    await controller.validation.task?.value
     await clock.waitForSleep(.seconds(1))
 
     client.sessionError = nil
@@ -212,7 +238,7 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.machines.map(\.deviceId) == ["m2"])
     #expect(store.loadRoster()?.machines.map(\.deviceId) == ["m2"])
     #expect(clock.pendingCount == 0)
-    #expect(controller.validationRetryTask == nil)
+    #expect(controller.validation.retryTask == nil)
 
     let sessionCalls = client.sessionTokens.count
     await controller.retryIfUnverified()

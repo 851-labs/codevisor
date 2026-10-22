@@ -14,7 +14,7 @@ struct CloudAccountSignOutTests {
     #expect(localServer.connects.count == 1)
 
     controller.signOut()
-    await controller.localDeregistrationTask?.value
+    await controller.localRegistration.deregistrationTask?.value
 
     #expect(localServer.disconnects == 1)
     #expect(client.removals == ["local-device-1"])
@@ -27,7 +27,7 @@ struct CloudAccountSignOutTests {
 
     client.machinesResult = .failure(CloudAccountClientError.httpStatus(401))
     await controller.refreshMachines()
-    await controller.localDeregistrationTask?.value
+    await controller.localRegistration.deregistrationTask?.value
 
     #expect(!controller.state.isSignedIn)
     #expect(localServer.disconnects == 0)
@@ -76,16 +76,58 @@ struct CloudAccountSignOutTests {
     )
 
     controller.signOut()
-    await controller.localDeregistrationTask?.value
+    await controller.localRegistration.deregistrationTask?.value
 
     #expect(localServer.disconnects == 0)
     #expect(client.removals.isEmpty)
+  }
+
+  @Test("Sign-out without a session disconnects an app-managed machine but revokes nothing")
+  func signOutWithoutSessionRevokesNothing() async {
+    let (controller, client, _) = makeController()
+    let localServer = FakeLocalServerClient(
+      registration: ServerCloudRegistration(
+        connected: true,
+        deviceId: "local-device-1",
+        state: "connected",
+        managedBy: "app"
+      )
+    )
+    controller.localServerClient = localServer
+
+    controller.signOut()
+    await controller.localRegistration.deregistrationTask?.value
+
+    #expect(localServer.disconnects == 1)
+    #expect(client.removals.isEmpty)
+  }
+
+  @Test("A connected registration that reports no device id is neither adopted nor replaced")
+  func registrationWithoutDeviceIdIsIgnored() async {
+    let client = FakeCloudClient()
+    client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+    let (controller, _, store) = makeController(client: client)
+    var resolved: [String] = []
+    controller.onLocalMachineRegistrationResolved = { resolved.append($0) }
+    let localServer = FakeLocalServerClient(
+      registration: ServerCloudRegistration(connected: true, state: "connected", managedBy: "app")
+    )
+    controller.localServerClient = localServer
+    try? store.saveToken("dev-token")
+
+    await controller.bootstrap()
+    await awaitLocalRegistration(controller)
+
+    #expect(controller.state.isSignedIn)
+    #expect(resolved.isEmpty)
+    #expect(localServer.connects.isEmpty)
+    #expect(localServer.disconnects == 0)
   }
 }
 
 @MainActor
 func awaitLocalRegistration(_ controller: CloudAccountController) async {
-  while let task = controller.localRegistrationTask {
+  while let task = controller.localRegistration.task {
     _ = await task.value
   }
 }

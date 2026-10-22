@@ -143,6 +143,10 @@ final class CloudLoopbackBridgePool {
 
   func removeAll() { for id in machineIds { remove(id) } }
 
+  func removeAll(except kept: Set<String>) {
+    for id in machineIds where !kept.contains(id) { remove(id) }
+  }
+
   nonisolated private static func probe(_ url: URL) async -> Health {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.timeoutIntervalForRequest = 5

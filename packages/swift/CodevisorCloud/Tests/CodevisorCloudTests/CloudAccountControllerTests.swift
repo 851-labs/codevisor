@@ -195,7 +195,7 @@ struct CloudAccountControllerTests {
 
     #expect(controller.state == .signedIn(userEmail: nil))
     #expect(!controller.isRosterVerified)
-    #expect(controller.validationRetryTask != nil)
+    #expect(controller.validation.retryTask != nil)
     #expect(try store.token() == "kept")
     controller.signOut()
   }

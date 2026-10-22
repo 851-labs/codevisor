@@ -9,24 +9,21 @@ public final class CloudAccountController {
 
   public internal(set) var state: CloudAccountState = .signedOut
   public internal(set) var machines: [CloudMachine] = []
-  public private(set) var machinesWithChangedKeys: Set<String> = []
-  public internal(set) var hasCompletedBootstrap = false
-  public internal(set) var isRosterVerified = false
   public var lastError: String?
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
   var authenticationRevision: UInt64 = 0
-  public internal(set) var authProviders: [String]?
 
-  public var supportsGitHubSignIn: Bool {
-    authProviders?.contains("github") ?? true
-  }
-
-  public var supportsAppleSignIn: Bool {
-    authProviders?.contains("apple") == true
-  }
+  public var authProviders: [String]? { providerDiscovery.advertised }
+  public var supportsGitHubSignIn: Bool { providerDiscovery.offersGitHub }
+  public var supportsAppleSignIn: Bool { providerDiscovery.offersApple }
+  public var hasCompletedBootstrap: Bool { validation.hasCompletedBootstrap }
+  public var isRosterVerified: Bool { validation.isRosterVerified }
+  public var machinesWithChangedKeys: Set<String> { machineKeyPins.changedKeys }
+  public var customServerURL: URL? { credentialCache.current.serverURL }
+  var storedToken: String? { credentialCache.current.token }
 
   public var developmentAccountAvailable: Bool {
-    authProviders?.contains("dev") == true && customServerURL == nil
+    providerDiscovery.offersDevelopmentAccount && customServerURL == nil
   }
 
   public typealias ClientFactory = @Sendable (URL) -> any CloudAccountClienting
@@ -34,34 +31,21 @@ public final class CloudAccountController {
 
   let clientFactory: ClientFactory
   let credentialStore: any CloudCredentialStore
+  let credentialCache: CloudCredentialCache
   let machineKeyPins: CloudMachineKeyPinCache
+  let validation: CloudSessionValidation
+  let presence: CloudPresenceRefresh
+  private let providerDiscovery = CloudAuthProviders()
+  let localRegistration = CloudLocalMachineRegistration()
+  private let hubLink: CloudHubLink
   private let environmentCloud: CodevisorAppVariant.DevelopmentCloud?
-  private let hubConnectionFactory: HubConnectionFactory
-  @ObservationIgnored private var hub: CloudHubConnection?
   public let directPaths: CloudDirectPathController
   private let loopbackPool = CloudLoopbackBridgePool()
   @ObservationIgnored public var onSignedOut: (() -> Void)?
   @ObservationIgnored public var onMachinesRefreshed: (() -> Void)?
   @ObservationIgnored public var onLocalMachineRegistrationResolved: ((String) -> Void)?
   @ObservationIgnored public var localServerClient: (any CodevisorServerClienting)?
-  struct LocalRegistrationResolution: Sendable {
-    let deviceId: String
-    let didConnect: Bool
-  }
-
   @ObservationIgnored var accountSyncRegistrations: [String: Task<Bool, Never>] = [:]
-  @ObservationIgnored var localRegistrationTask: Task<LocalRegistrationResolution?, Never>?
-  @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?
-  @ObservationIgnored private let presenceSleep: @Sendable (Duration) async throws -> Void
-  @ObservationIgnored var presenceRefreshTask: Task<Void, Never>?
-  @ObservationIgnored let retryClock: any Clock<Duration>
-  @ObservationIgnored var validationTask: Task<Void, Never>?
-  @ObservationIgnored var validationRetryTask: Task<Void, Never>?
-  @ObservationIgnored var validationGeneration: UInt64 = 0
-  @ObservationIgnored var validationFailures = 0
-  @ObservationIgnored var cachedCredentials: StoredCredentials?
-  @ObservationIgnored var credentialWriteGeneration: UInt64 = 0
-  var credentialRevision: UInt64 = 0
 
   public init(
     clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
@@ -74,13 +58,17 @@ public final class CloudAccountController {
     presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     retryClock: any Clock<Duration> = ContinuousClock()
   ) {
-    self.presenceSleep = presenceSleep
-    self.retryClock = retryClock
+    self.presence = CloudPresenceRefresh(sleep: presenceSleep)
     self.clientFactory = clientFactory
     self.credentialStore = credentialStore
-    self.machineKeyPins = CloudMachineKeyPinCache(store: credentialStore)
+    let credentialCache = CloudCredentialCache(store: credentialStore)
+    let machineKeyPins = CloudMachineKeyPinCache(store: credentialStore)
+    self.credentialCache = credentialCache
+    self.machineKeyPins = machineKeyPins
+    self.validation = CloudSessionValidation(
+      clock: retryClock, credentials: credentialCache, pins: machineKeyPins, rosterStore: credentialStore)
     self.environmentCloud = environmentCloud
-    self.hubConnectionFactory = hubConnectionFactory
+    self.hubLink = CloudHubLink(factory: hubConnectionFactory)
     self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
   }
 
@@ -93,11 +81,15 @@ public final class CloudAccountController {
   }
 
   public func refreshAuthProviders() async {
-    do {
-      authProviders = try await client.discover().authProviders
-    } catch {
-      Log.cloud.error("Cloud discovery failed: \(String(describing: error), privacy: .public)")
-    }
+    await providerDiscovery.refresh(using: client)
+  }
+
+  public func bootstrap() async {
+    await validation.bootstrap(for: self)
+  }
+
+  public func retryIfUnverified() async {
+    await validation.retryIfUnverified(for: self)
   }
 
   public func completeSignIn(ott: String) async {
@@ -112,32 +104,15 @@ public final class CloudAccountController {
   }
 
   func adoptSession(_ obtainToken: () async throws -> String) async {
-    authenticationRevision &+= 1
-    let revision = authenticationRevision
-    let server = serverURL
-    state = .validating
-    linkedProviders = nil
-    lastError = nil
-    cancelSessionValidation()
-    isRosterVerified = false
+    let attempt = startSignInAttempt()
     let client = client
     do {
       let token = try await obtainToken()
-      guard authenticationRevision == revision, serverURL == server else { return }
-      await discardHubForCredentialChange()
-      guard authenticationRevision == revision, serverURL == server else { return }
-      try saveStoredToken(token)
-      let user = (try? await client.session(token: token)) ?? nil
-      guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
-      state = .signedIn(userEmail: user?.email)
-      if case let .failed(error) = await performMachineRefresh(), !Self.isSessionRejection(error) {
-        scheduleSessionValidationRetry()
-      }
+      guard isCurrent(attempt) else { return }
+      try await signIn(with: token, attempt: attempt, client: client)
     } catch {
-      guard authenticationRevision == revision, serverURL == server else { return }
-      Log.cloud.error("Cloud sign-in failed: \(String(describing: error), privacy: .public)")
-      state = .signedOut
-      lastError = error.localizedDescription
+      guard isCurrent(attempt) else { return }
+      signInFailed(error)
     }
   }
 
@@ -149,84 +124,6 @@ public final class CloudAccountController {
     endSession(deregisterLocalMachine: false)
   }
 
-  private func endSession(deregisterLocalMachine: Bool) {
-    authenticationRevision &+= 1
-    linkedProviders = nil
-    lastError = nil
-    let token = storedToken
-    let localClient = localServerClient
-    let accountClient = client
-    clearSessionCredential()
-    discardSessionRosterAndTransports()
-    if deregisterLocalMachine, let localClient {
-      scheduleLocalMachineDeregistration(token: token, localClient: localClient, accountClient: accountClient)
-    }
-    refreshAuthProvidersIfUnknown()
-    onSignedOut?()
-  }
-
-  private func clearSessionCredential() {
-    localRegistrationTask?.cancel()
-    localRegistrationTask = nil
-    do {
-      try removeStoredToken()
-    } catch {
-      Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
-    }
-  }
-
-  private func discardSessionRosterAndTransports() {
-    machines = []
-    cancelSessionValidation()
-    isRosterVerified = false
-    credentialStore.clearRoster()
-    machinesWithChangedKeys = []
-    state = .signedOut
-    machineKeyPins.invalidate()
-    presenceRefreshTask?.cancel()
-    presenceRefreshTask = nil
-    stopAllLoopbackBridges()
-    directPaths.dropAll()
-    if let hub {
-      self.hub = nil
-      Task { await hub.shutdown() }
-    }
-  }
-
-  private func scheduleLocalMachineDeregistration(
-    token: String?,
-    localClient: any CodevisorServerClienting,
-    accountClient: any CloudAccountClienting
-  ) {
-    localDeregistrationTask = Task {
-      do {
-        let registration = try await localClient.cloudRegistration()
-        guard registration.managedBy == "app", let deviceId = registration.deviceId else {
-          return
-        }
-        try await localClient.disconnectCloud()
-        if let token {
-          try? await accountClient.removeMachine(deviceId: deviceId, token: token)
-        }
-        Log.cloud.log("Deregistered this machine from the cloud account on sign-out")
-      } catch {
-        Log.cloud.error(
-          "Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
-      }
-    }
-  }
-
-  private func discardHubForCredentialChange() async {
-    machineKeyPins.invalidate()
-    stopAllLoopbackBridges()
-    directPaths.dropAll()
-    presenceRefreshTask?.cancel()
-    presenceRefreshTask = nil
-    guard let hub else { return }
-    self.hub = nil
-    await hub.shutdown()
-  }
-
   public func refreshMachines() async {
     await performMachineRefresh()
   }
@@ -236,57 +133,14 @@ public final class CloudAccountController {
     guard state.isSignedIn, let token = storedToken else { return .skipped }
     let pinGeneration = machineKeyPins.generation
     do {
-      try await machineKeyPins.prepare()
-      let accountClient = client
-      var refreshedMachines = try await accountClient.machines(token: token)
-      if let localClient = localServerClient {
-        let registrationTask = beginLocalMachineRegistration(
-          token: token,
-          localClient: localClient
-        )
-        if let resolution = await registrationTask.value,
-          resolution.didConnect
-        {
-          do {
-            refreshedMachines = try await accountClient.machines(token: token)
-          } catch {
-            Log.cloud.debug(
-              "Post-registration machine refresh failed: \(String(describing: error), privacy: .public)"
-            )
-          }
-        }
-      }
-      guard state.isSignedIn, machineKeyPins.generation == pinGeneration, !Task.isCancelled else {
-        return .skipped
-      }
-      try reconcileMachineKeyPins(refreshedMachines)
-      machines = refreshedMachines
-      didVerifyRoster()
-      if let hub {
-        await hub.reconcileAuthoritativeMachines(refreshedMachines)
-      }
-      #if DEBUG || NAVIGATION_DIAGNOSTICS
-        let machineSummary = machines.map { machine in
-          "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
-        }.joined(separator: ",")
-        Log.cloud.notice(
-          "CLOUDDBG machines.refresh server=\(self.serverURL.absoluteString, privacy: .public) count=\(self.machines.count) machines=[\(machineSummary, privacy: .public)]"
-        )
-      #endif
-      pruneLoopbackBridges()
-      reconcileDirectPaths()
-      lastError = nil
-      onMachinesRefreshed?()
+      let refreshed = try await fetchMachines(token: token)
+      guard refreshIsCurrent(pinGeneration: pinGeneration) else { return .skipped }
+      try await adoptRefreshedMachines(refreshed)
       return .succeeded
     } catch is CancellationError {
       return .skipped
     } catch {
-      Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
-      lastError = error.localizedDescription
-      if case CloudAccountClientError.httpStatus(401) = error {
-        sessionEnded()
-      }
-      return .failed(error)
+      return machineRefreshFailed(error)
     }
   }
 
@@ -294,28 +148,13 @@ public final class CloudAccountController {
     guard state.isSignedIn, let token = storedToken, let localClient = localServerClient else {
       return
     }
-    guard localRegistrationTask == nil else { return }
-    let registrationTask = beginLocalMachineRegistration(
-      token: token,
-      localClient: localClient
-    )
-    Task { [weak self] in
-      guard let resolution = await registrationTask.value,
-        resolution.didConnect,
-        !Task.isCancelled,
-        let self
-      else { return }
-      await self.refreshMachines()
-    }
+    localRegistration.registerIfIdle(for: self, token: token, localClient: localClient)
   }
 
   public func updateMachine(deviceId: String, name: String, icon: String?) async {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let token = storedToken else { return }
-    if let index = machines.firstIndex(where: { $0.deviceId == deviceId }) {
-      machines[index].name = trimmed
-      if let icon { machines[index].icon = icon }
-    }
+    renameLocally(deviceId: deviceId, name: trimmed, icon: icon)
     do {
       try await client.updateMachine(deviceId: deviceId, name: trimmed, icon: icon, token: token)
     } catch {
@@ -327,10 +166,7 @@ public final class CloudAccountController {
 
   public func remove(deviceId: String) async {
     guard let token = storedToken else { return }
-    machines.removeAll { $0.deviceId == deviceId }
-    stopLoopbackBridge(deviceId: deviceId)
-    directPaths.drop(deviceId: deviceId)
-    removeMachineKeyPin(deviceId: deviceId)
+    forgetLocally(deviceId: deviceId)
     do {
       try await client.removeMachine(deviceId: deviceId, token: token)
     } catch {
@@ -343,85 +179,246 @@ public final class CloudAccountController {
   public func setCustomServer(_ url: URL?) async throws {
     guard let url else {
       signOut()
-      try saveCustomServerURL(nil)
-      try clearMachineKeyPins()
+      try credentialCache.saveServerURL(nil)
+      try machineKeyPins.clear()
       return
     }
-    let info = try await clientFactory(url).discover()
-    guard info.service == CloudInstanceInfo.expectedService else {
-      throw CloudAccountClientError.notACloudInstance
-    }
+    let info = try await cloudInstance(at: url)
     signOut()
-    try saveCustomServerURL(url)
-    authProviders = info.authProviders
-    try clearMachineKeyPins()
+    try credentialCache.saveServerURL(url)
+    providerDiscovery.adopt(info.authProviders)
+    try machineKeyPins.clear()
   }
 
   public func hubConnection() -> CloudHubConnection? {
     guard state.isSignedIn else { return nil }
-    if let hub { return hub }
-    let hub = hubConnectionFactory(serverURL, credentialStore)
-    self.hub = hub
-    Task { [weak self] in
-      guard let self else { return }
-      await hub.setMachinesChangedHandler { [weak self] transportMachines in
-        guard let self else { return }
-        Task { @MainActor in
-          self.reconcilePresence(with: transportMachines)
-        }
-      }
-      await hub.setTunnelConfigHandler { [weak self] config in
-        Task { @MainActor in
-          guard let self else { return }
-          self.directPaths.onTunnelConfigured = { [weak self] in self?.reconcileDirectPaths() }
-          self.directPaths.configureTunnel(config)
-        }
-      }
-      await hub.connect()
-    }
-    return hub
+    return hubLink.connection(for: self)
   }
 
   func reconcilePresence(with transportMachines: [CloudMachine]) {
-    guard state.isSignedIn else { return }
-    guard presenceDiffers(from: transportMachines) else { return }
-    guard presenceRefreshTask == nil else { return }
-    let sleep = presenceSleep
-    presenceRefreshTask = Task { [weak self] in
-      try? await sleep(.milliseconds(300))
-      guard let self, !Task.isCancelled else { return }
-      self.presenceRefreshTask = nil
-      await self.refreshMachines()
-    }
-  }
-
-  private func presenceDiffers(from transportMachines: [CloudMachine]) -> Bool {
-    func reach(_ machine: CloudMachine) -> String {
-      "\(machine.online)|\(machine.tunnel?.endpointId ?? "")"
-    }
-    let known = Dictionary(
-      machines.map { ($0.deviceId, reach($0)) },
-      uniquingKeysWith: { first, _ in first }
-    )
-    return transportMachines.contains(where: { known[$0.deviceId] != reach($0) })
+    presence.reconcile(transportMachines, for: self)
   }
 
   public func reconnectHub() async {
     guard state.isSignedIn else { return }
     directPaths.networkChanged()
-    if let hub {
-      await hub.reconnect()
-    }
+    await hubLink.reconnect()
     await refreshMachines()
     Task { [weak self] in await self?.recoverLoopbackBridges() }
   }
 
-  private func stopLoopbackBridge(deviceId: String) {
-    loopbackPool.remove(deviceId)
+  func verifiedMachineKey(for machine: CloudMachine) -> String? {
+    machineKeyPins.verifiedKey(for: machine)
   }
 
-  private func stopAllLoopbackBridges() {
+  func tunnelConfigured(_ config: CloudTunnelConfig) {
+    directPaths.onTunnelConfigured = { [weak self] in self?.reconcileDirectPaths() }
+    directPaths.configureTunnel(config)
+  }
+
+  public func signInURL(scheme: String, provider: CloudSignInProvider = .github) -> URL {
+    CloudAuthLinks.signIn(server: serverURL, scheme: scheme, provider: provider)
+  }
+
+  public func connectAccountURL(provider: CloudSignInProvider, scheme: String) async -> URL? {
+    guard state.isSignedIn, let token = storedToken else { return nil }
+    let server = serverURL
+    do {
+      let ott = try await client.generateOneTimeToken(token: token)
+      guard storedToken == token, serverURL == server else { return nil }
+      return CloudAuthLinks.connectAccount(server: server, provider: provider, scheme: scheme, ott: ott)
+    } catch {
+      guard storedToken == token, serverURL == server else { return nil }
+      lastError = error.localizedDescription
+      return nil
+    }
+  }
+
+  public func deleteAccount() async {
+    guard state.isSignedIn, let token = storedToken else { return }
+    let server = serverURL
+    lastError = nil
+    do {
+      try await client.deleteAccount(token: token)
+      guard storedToken == token, serverURL == server else { return }
+      signOut()
+    } catch {
+      guard storedToken == token, serverURL == server else { return }
+      lastError = error.localizedDescription
+    }
+  }
+
+  public func trustChangedMachineKey(deviceId: String) {
+    guard let machine = machines.first(where: { $0.deviceId == deviceId }) else { return }
+    machineKeyPins.trust(machine)
+  }
+
+  private struct SignInAttempt {
+    let revision: UInt64
+    let server: URL
+  }
+
+  private func startSignInAttempt() -> SignInAttempt {
+    authenticationRevision &+= 1
+    let attempt = SignInAttempt(revision: authenticationRevision, server: serverURL)
+    state = .validating
+    linkedProviders = nil
+    lastError = nil
+    validation.unverify()
+    return attempt
+  }
+
+  private func isCurrent(_ attempt: SignInAttempt) -> Bool {
+    authenticationRevision == attempt.revision && serverURL == attempt.server
+  }
+
+  private func signIn(with token: String, attempt: SignInAttempt, client: any CloudAccountClienting) async throws {
+    await discardHubForCredentialChange()
+    guard isCurrent(attempt) else { return }
+    try credentialCache.saveToken(token)
+    let user = (try? await client.session(token: token)) ?? nil
+    guard isCurrent(attempt), storedToken == token else { return }
+    state = .signedIn(userEmail: user?.email)
+    if await performMachineRefresh().needsValidationRetry {
+      validation.scheduleRetry(for: self)
+    }
+  }
+
+  private func signInFailed(_ error: any Error) {
+    Log.cloud.error("Cloud sign-in failed: \(String(describing: error), privacy: .public)")
+    state = .signedOut
+    lastError = error.localizedDescription
+  }
+
+  private func endSession(deregisterLocalMachine: Bool) {
+    authenticationRevision &+= 1
+    linkedProviders = nil
+    lastError = nil
+    let token = storedToken
+    let localClient = localServerClient
+    let accountClient = client
+    clearSessionCredential()
+    discardSessionRoster()
+    discardSessionTransports()
+    if deregisterLocalMachine, let localClient {
+      localRegistration.deregister(token: token, localClient: localClient, accountClient: accountClient)
+    }
+    providerDiscovery.refreshIfUnknown(for: self)
+    onSignedOut?()
+  }
+
+  private func clearSessionCredential() {
+    localRegistration.cancel()
+    do {
+      try credentialCache.removeToken()
+    } catch {
+      Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  private func discardSessionRoster() {
+    machines = []
+    validation.discardRoster()
+    machineKeyPins.forgetChangedKeys()
+    state = .signedOut
+  }
+
+  private func discardSessionTransports() {
+    machineKeyPins.invalidate()
+    presence.cancel()
     loopbackPool.removeAll()
+    directPaths.dropAll()
+    hubLink.shutDownInBackground()
+  }
+
+  private func discardHubForCredentialChange() async {
+    machineKeyPins.invalidate()
+    loopbackPool.removeAll()
+    directPaths.dropAll()
+    presence.cancel()
+    await hubLink.shutDown()
+  }
+
+  private func fetchMachines(token: String) async throws -> [CloudMachine] {
+    try await machineKeyPins.prepare()
+    let accountClient = client
+    let fetched = try await accountClient.machines(token: token)
+    guard let localClient = localServerClient else { return fetched }
+    let registration = localRegistration.begin(for: self, token: token, localClient: localClient)
+    guard let resolution = await registration.value, resolution.didConnect else { return fetched }
+    return await refetchMachines(token: token, accountClient: accountClient) ?? fetched
+  }
+
+  private func refetchMachines(token: String, accountClient: any CloudAccountClienting) async -> [CloudMachine]? {
+    do {
+      return try await accountClient.machines(token: token)
+    } catch {
+      Log.cloud.debug(
+        "Post-registration machine refresh failed: \(String(describing: error), privacy: .public)"
+      )
+      return nil
+    }
+  }
+
+  private var currentRoster: CachedRoster {
+    CachedRoster(serverURL: serverURL.absoluteString, userEmail: state.userEmail, machines: machines)
+  }
+
+  private func refreshIsCurrent(pinGeneration: UInt64) -> Bool {
+    state.isSignedIn && machineKeyPins.generation == pinGeneration && !Task.isCancelled
+  }
+
+  private func adoptRefreshedMachines(_ refreshed: [CloudMachine]) async throws {
+    try machineKeyPins.reconcileChangedKeys(refreshed)
+    machines = refreshed
+    validation.rosterVerified(currentRoster)
+    await hubLink.reconcileAuthoritativeMachines(refreshed)
+    logRefreshedMachines()
+    loopbackPool.removeAll(except: Set(machines.map(\.deviceId)))
+    reconcileDirectPaths()
+    lastError = nil
+    onMachinesRefreshed?()
+  }
+
+  private func logRefreshedMachines() {
+    #if DEBUG || NAVIGATION_DIAGNOSTICS
+      let machineSummary = machines.map { machine in
+        "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
+      }.joined(separator: ",")
+      Log.cloud.notice(
+        "CLOUDDBG machines.refresh server=\(self.serverURL.absoluteString, privacy: .public) count=\(self.machines.count) machines=[\(machineSummary, privacy: .public)]"
+      )
+    #endif
+  }
+
+  private func machineRefreshFailed(_ error: any Error) -> MachineRefreshOutcome {
+    Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
+    lastError = error.localizedDescription
+    if CloudSessionValidation.isSessionRejection(error) {
+      sessionEnded()
+    }
+    return .failed(error)
+  }
+
+  private func renameLocally(deviceId: String, name: String, icon: String?) {
+    guard let index = machines.firstIndex(where: { $0.deviceId == deviceId }) else { return }
+    machines[index].name = name
+    if let icon { machines[index].icon = icon }
+  }
+
+  private func forgetLocally(deviceId: String) {
+    machines.removeAll { $0.deviceId == deviceId }
+    loopbackPool.remove(deviceId)
+    directPaths.drop(deviceId: deviceId)
+    machineKeyPins.removePin(deviceId: deviceId)
+  }
+
+  private func cloudInstance(at url: URL) async throws -> CloudInstanceInfo {
+    let info = try await clientFactory(url).discover()
+    guard info.service == CloudInstanceInfo.expectedService else {
+      throw CloudAccountClientError.notACloudInstance
+    }
+    return info
   }
 
   private func recoverLoopbackBridges() async {
@@ -430,64 +427,6 @@ public final class CloudAccountController {
       for machine in machines where active.contains(machine.deviceId) {
         group.addTask { _ = await self.recoverLoopbackBridge(for: machine) }
       }
-    }
-  }
-
-  private func pruneLoopbackBridges() {
-    let known = Set(machines.map(\.deviceId))
-    for deviceId in loopbackPool.machineIds where !known.contains(deviceId) {
-      stopLoopbackBridge(deviceId: deviceId)
-    }
-  }
-}
-
-extension CloudAccountController {
-  func reconcileMachineKeyPins(_ machines: [CloudMachine]) throws {
-    let changed = try machineKeyPins.reconcile(machines)
-    for deviceId in changed.subtracting(machinesWithChangedKeys) {
-      Log.cloud.error(
-        "Machine \(deviceId, privacy: .public) presented a key that conflicts with its pin; refusing relay channels until the user re-trusts it"
-      )
-    }
-    if machinesWithChangedKeys != changed {
-      machinesWithChangedKeys = changed
-    }
-  }
-
-  func verifiedMachineKey(for machine: CloudMachine) -> String? {
-    machineKeyPins.verifiedKey(for: machine)
-  }
-
-  public func trustChangedMachineKey(deviceId: String) {
-    guard let machine = machines.first(where: { $0.deviceId == deviceId }) else { return }
-    guard var pins = machineKeyPins.pins else { return }
-    pins[deviceId] = machine.publicKey
-    guard persistMachineKeyPins(pins) else { return }
-    machinesWithChangedKeys.remove(deviceId)
-    Log.cloud.log("User re-trusted the changed key for machine \(deviceId, privacy: .public)")
-  }
-
-  func removeMachineKeyPin(deviceId: String) {
-    guard var pins = machineKeyPins.pins else { return }
-    guard pins.removeValue(forKey: deviceId) != nil else { return }
-    guard persistMachineKeyPins(pins) else { return }
-    machinesWithChangedKeys.remove(deviceId)
-  }
-
-  func clearMachineKeyPins() throws {
-    try machineKeyPins.save([:])
-    machinesWithChangedKeys = []
-  }
-
-  @discardableResult
-  private func persistMachineKeyPins(_ pins: [String: String]) -> Bool {
-    do {
-      try machineKeyPins.save(pins)
-      return true
-    } catch {
-      Log.cloud.error(
-        "Failed to persist machine key pins: \(String(describing: error), privacy: .public)")
-      return false
     }
   }
 }

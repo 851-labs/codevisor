@@ -73,6 +73,45 @@ struct CloudMachineKeyPinCacheTests {
     #expect(try memory.pinnedMachineKeys() == cache.pins)
   }
 
+  @Test("Trusting or forgetting a machine before pins load writes nothing")
+  func editsBeforeLoad() {
+    let store = CountingCredentialStore(base: InMemoryCloudCredentialStore())
+    let cache = CloudMachineKeyPinCache(store: store)
+
+    cache.trust(testMachine("machine"))
+    cache.removePin(deviceId: "machine")
+
+    #expect(store.pinCounts.writes == 0)
+    #expect(cache.pins == nil)
+  }
+
+  @Test("Forgetting a machine that was never pinned writes nothing")
+  func removeUnknownPin() async throws {
+    let store = CountingCredentialStore(base: InMemoryCloudCredentialStore())
+    let cache = CloudMachineKeyPinCache(store: store)
+    try await cache.prepare()
+
+    cache.removePin(deviceId: "unknown")
+
+    #expect(store.pinCounts.writes == 0)
+  }
+
+  @Test("Clearing pins also forgets which machines changed keys")
+  func clearForgetsChangedKeys() async throws {
+    let memory = InMemoryCloudCredentialStore()
+    try memory.savePinnedMachineKeys(["machine": "trusted"])
+    let cache = CloudMachineKeyPinCache(store: memory)
+    try await cache.prepare()
+    try cache.reconcileChangedKeys([testMachine("machine", publicKey: "replacement")])
+    #expect(cache.changedKeys == ["machine"])
+
+    try cache.clear()
+
+    #expect(cache.changedKeys.isEmpty)
+    #expect(cache.pins == [:])
+    #expect(try memory.pinnedMachineKeys() == [:])
+  }
+
   @Test("A delayed read cannot restore pins after sign-out or a server change")
   func invalidationDuringRead() async {
     let entered = TestSignal()
