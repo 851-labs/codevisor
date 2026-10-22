@@ -163,21 +163,18 @@ extension ComputerUseBridge {
     holdSeconds: TimeInterval = 0
   ) throws -> String {
     if global {
-      let down: CGEventType =
-        button == "right" ? .rightMouseDown : button == "middle" ? .otherMouseDown : .leftMouseDown
-      let up: CGEventType = button == "right" ? .rightMouseUp : button == "middle" ? .otherMouseUp : .leftMouseUp
-      let mouseButton: CGMouseButton = button == "right" ? .right : button == "middle" ? .center : .left
+      let events = ComputerUseMouseEvents(button: button)
       let source = try computerUseEventSource()
       for index in 1...count {
         try postMouseEvent(
-          type: .mouseMoved, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: 0)
+          type: .mouseMoved, source: source, point: point, button: events.button, pid: pid, global: true, clickState: 0)
         try postMouseEvent(
-          type: down, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index,
-          flags: flags)
+          type: events.down, source: source, point: point, button: events.button, pid: pid, global: true,
+          clickState: index, flags: flags)
         if holdSeconds > 0 { Thread.sleep(forTimeInterval: holdSeconds) }
         try postMouseEvent(
-          type: up, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index,
-          flags: flags)
+          type: events.up, source: source, point: point, button: events.button, pid: pid, global: true,
+          clickState: index, flags: flags)
       }
       return "cgevent_global"
     }
@@ -195,12 +192,7 @@ extension ComputerUseBridge {
         windowFrame: windowFrame
       )
     }
-    let eventTypes: (down: CGEventType, up: CGEventType, button: CGMouseButton)
-    switch button.lowercased() {
-    case "right": eventTypes = (.rightMouseDown, .rightMouseUp, .right)
-    case "middle": eventTypes = (.otherMouseDown, .otherMouseUp, .center)
-    default: eventTypes = (.leftMouseDown, .leftMouseUp, .left)
-    }
+    let eventTypes = ComputerUseMouseEvents(button: button.lowercased())
     let source = try computerUseEventSource()
     let groupID = Int64(DispatchTime.now().uptimeNanoseconds & UInt64(Int64.max))
     for clickIndex in 1...max(1, count) {
@@ -451,16 +443,15 @@ extension ComputerUseBridge {
   ) throws {
     let direction = ["u": "up", "d": "down", "l": "left", "r": "right"][direction] ?? direction
     let magnitude = Int32(min(Double(Int32.max), max(1, (12 * pages).rounded())))
-    let vertical: Int32 = direction == "up" ? magnitude : direction == "down" ? -magnitude : 0
-    let horizontal: Int32 = direction == "left" ? magnitude : direction == "right" ? -magnitude : 0
+    let wheels = ComputerUseScrollWheels(direction: direction, magnitude: magnitude)
     let source = try computerUseEventSource()
     guard
       let event = CGEvent(
         scrollWheelEvent2Source: source,
         units: .line,
         wheelCount: 2,
-        wheel1: vertical,
-        wheel2: horizontal,
+        wheel1: wheels.vertical,
+        wheel2: wheels.horizontal,
         wheel3: 0
       )
     else { throw BridgeError("Unable to create scroll event") }

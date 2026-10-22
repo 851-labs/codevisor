@@ -36,7 +36,9 @@ import ScreenSharingDiagnostics
         let options = try ProbeOptions(arguments: arguments)
         try ScreenSharingFieldTrials.process.install(options.fieldTrialSelection)
         let app = NSApplication.shared
-        app.setActivationPolicy(options.captureOwnedWindow ? .accessory : options.headless ? .prohibited : .regular)
+        let policy: NSApplication.ActivationPolicy =
+          if options.captureOwnedWindow { .accessory } else if options.headless { .prohibited } else { .regular }
+        app.setActivationPolicy(policy)
         let runner = ProbeRunner(options: options)
         Task { @MainActor in
           do { try await runner.run(); exit(EXIT_SUCCESS) } catch {

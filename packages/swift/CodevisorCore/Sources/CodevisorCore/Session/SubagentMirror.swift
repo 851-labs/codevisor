@@ -194,9 +194,7 @@ public final class SubagentMirror {
   ) -> ConversationItem {
     let live = isLatest && isRunning
     let last = run.last ?? AssistantTurn()
-    let endedAt =
-      live
-      ? nil : !isLatest ? last.endedAt : last.isGenerating ? observedFinishAt : last.endedAt ?? observedFinishAt
+    let endedAt = runEndedAt(last, isLatest: isLatest, live: live)
     return
       (.assistant(
         AssistantMessage(
@@ -205,6 +203,13 @@ public final class SubagentMirror {
             of: SubagentTranscript(
               entries: run.entries, isThinking: last.subagents[run.lastRunId ?? toolCallId]?.isThinking ?? false),
             isRunning: live, startedAt: run.first?.startedAt, endedAt: endedAt, subagents: last.subagents))))
+  }
+
+  private func runEndedAt(_ last: AssistantTurn, isLatest: Bool, live: Bool) -> Date? {
+    if live { return nil }
+    if !isLatest { return last.endedAt }
+    if last.isGenerating { return observedFinishAt }
+    return last.endedAt ?? observedFinishAt
   }
 
   private func appendPendingRun(

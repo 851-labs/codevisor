@@ -307,8 +307,11 @@ private final class CodecRunner: @unchecked Sendable {
     var value: Unmanaged<CFTypeRef>?
     let status = VTSessionCopyProperty(session, key: key, allocator: nil, valueOut: &value)
     let result = value?.takeRetainedValue() as? Bool
-    metrics.label(
-      label, status == noErr ? (result == true ? "confirmed" : "not confirmed") : "required; query status \(status)")
+    metrics.label(label, Self.hardwareLabel(status: status, result: result))
+  }
+  private static func hardwareLabel(status: OSStatus, result: Bool?) -> String {
+    guard status == noErr else { return "required; query status \(status)" }
+    return result == true ? "confirmed" : "not confirmed"
   }
   private func property(_ key: CFString, _ value: CFTypeRef) throws {
     guard let encoder else { throw ScreenSharingError.invalid("Missing encoder.") }

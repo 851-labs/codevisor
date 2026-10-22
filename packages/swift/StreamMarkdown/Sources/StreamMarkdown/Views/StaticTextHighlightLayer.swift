@@ -104,9 +104,12 @@
 
     static func match(isCurrent: Bool, appearance: NSAppearance) -> NSColor {
       let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-      return isCurrent
-        ? .systemOrange.withAlphaComponent(isDark ? 0.75 : 0.85)
-        : .systemYellow.withAlphaComponent(isDark ? 0.35 : 0.5)
+      return match(isCurrent: isCurrent, isDark: isDark)
+    }
+
+    static func match(isCurrent: Bool, isDark: Bool) -> NSColor {
+      if isCurrent { return .systemOrange.withAlphaComponent(isDark ? 0.75 : 0.85) }
+      return .systemYellow.withAlphaComponent(isDark ? 0.35 : 0.5)
     }
   }
 #endif

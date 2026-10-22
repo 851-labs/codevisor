@@ -77,6 +77,11 @@ struct HomeView: View {
   var machines: MachineController { environment.machines }
   var projectList: ProjectListModel { environment.projectList }
 
+  var clientPresentation: String? {
+    if presentedSettingsDestination != nil { return "settings" }
+    return presentedNewChatFlow == nil ? nil : "new_chat"
+  }
+
   var clientBlockingPresentation: String? {
     if showsOnboarding.wrappedValue { return "onboarding" }
     if pendingHarnessSignIn != nil { return "harness_sign_in" }

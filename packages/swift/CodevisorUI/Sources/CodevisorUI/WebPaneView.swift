@@ -86,7 +86,15 @@ private struct WebPaneOrigin: Equatable {
     else { return nil }
     self.scheme = scheme
     self.host = host
-    self.port = url.port ?? (scheme == "https" ? 443 : scheme == "http" ? 80 : -1)
+    self.port = url.port ?? Self.defaultPort(scheme: scheme)
+  }
+
+  private static func defaultPort(scheme: String) -> Int {
+    switch scheme {
+    case "https": 443
+    case "http": 80
+    default: -1
+    }
   }
 }
 

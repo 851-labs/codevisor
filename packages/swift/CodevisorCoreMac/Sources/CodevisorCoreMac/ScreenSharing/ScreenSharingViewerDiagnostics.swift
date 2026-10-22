@@ -28,6 +28,12 @@ public final class ScreenSharingViewerDiagnostics {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
+  nonisolated static func webRTCRoute(candidateTypes: some Collection<String>, transport: String) -> String {
+    guard !candidateTypes.isEmpty else { return "Connecting" }
+    let path = candidateTypes.contains("relay") ? "Relay" : "Direct"
+    return path + (transport.isEmpty ? "" : " · " + transport)
+  }
+
   func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
     let vncTransport = statistics["vnc.transport"]
     let frames = metrics.counters["presentedFrames", default: 0]
@@ -67,9 +73,7 @@ public final class ScreenSharingViewerDiagnostics {
     let transport =
       (statistics.first { $0.key.hasSuffix(".relayProtocol") }
       ?? statistics.first { $0.key.hasSuffix(".protocol") })?.value.uppercased() ?? ""
-    route =
-      types.isEmpty
-      ? "Connecting" : (types.contains("relay") ? "Relay" : "Direct") + (transport.isEmpty ? "" : " · " + transport)
+    route = Self.webRTCRoute(candidateTypes: types, transport: transport)
     decodeMilliseconds = metrics.timings["decode"]?.p95Ms
   }
 }

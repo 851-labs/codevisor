@@ -353,8 +353,14 @@
       return VNCBenchReport.Machine(
         model: String(decoding: model.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self),
         system: "\(version.majorVersion).\(version.minorVersion)",
-        power: battery.contains("AC Power") ? "AC" : battery.contains("Battery Power") ? "battery" : "unknown",
+        power: powerSource(battery),
         load: loads[0])
+    }
+
+    private static func powerSource(_ battery: String) -> String {
+      if battery.contains("AC Power") { return "AC" }
+      if battery.contains("Battery Power") { return "battery" }
+      return "unknown"
     }
 
     private static func summary(_ metrics: [VNCBenchMetric: Double]) -> String {

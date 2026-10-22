@@ -23,6 +23,14 @@ package enum RFBZRLEDecoder {
     guard cursor.atEnd else { throw RFBError.malformed("ZRLE trailing bytes") }
   }
 
+  private static func packedPaletteBits(paletteSize: UInt8) -> Int {
+    switch paletteSize {
+    case 2: 1
+    case ...4: 2
+    default: 4
+    }
+  }
+
   private static func decodeTile(
     _ cursor: inout Cursor, width: Int, height: Int, origin: UnsafeMutablePointer<UInt8>, stride: Int
   ) throws {
@@ -40,7 +48,7 @@ package enum RFBZRLEDecoder {
       for index in 0..<count { store(pixel, at: index) }
     case 2...16:
       let palette = try (0..<Int(subencoding)).map { _ in try cursor.cpixel() }
-      let bits = subencoding == 2 ? 1 : (subencoding <= 4 ? 2 : 4)
+      let bits = packedPaletteBits(paletteSize: subencoding)
       let mask = UInt8((1 << bits) - 1)
       for row in 0..<height {
         var byte: UInt8 = 0

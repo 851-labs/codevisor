@@ -10,6 +10,7 @@ public struct ScreenSharingAdaptiveQuality {
   private var candidateSince: TimeInterval = 0
   private static let scale = [1.0, 1.0, 0.75, 0.5]
   private static let rate = [1.0, 0.5, 0.3, 0.15]
+  private static let framesPerSecond = [60, 30, 30, 20]
 
   public init(configuration: ScreenSharingVideoConfiguration, fullQualityBitrate: Int? = nil, warmUp: TimeInterval = 0)
   {
@@ -42,7 +43,7 @@ public struct ScreenSharingAdaptiveQuality {
     return try? ScreenSharingVideoConfiguration(
       width: max(64, Int(Double(original.width) * scale) / 2 * 2),
       height: max(64, Int(Double(original.height) * scale) / 2 * 2),
-      framesPerSecond: min(original.framesPerSecond, level == 0 ? 60 : level == 3 ? 20 : 30),
+      framesPerSecond: min(original.framesPerSecond, Self.framesPerSecond[level]),
       bitrate: original.bitrate)
   }
 }

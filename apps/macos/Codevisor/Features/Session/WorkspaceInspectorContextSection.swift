@@ -118,9 +118,14 @@ private struct WorkspaceInspectorContextRow: View {
 
 enum WorkspaceInspectorContextTokens {
   static func format(_ tokens: Double) -> String {
-    let (value, suffix): (Double, String) =
-      tokens >= 1_000_000 ? (tokens / 1_000_000, "M") : tokens >= 1_000 ? (tokens / 1_000, "k") : (tokens, "")
+    let (value, suffix) = scaled(tokens)
     return value.formatted(.number.precision(.fractionLength(0...1))) + suffix
+  }
+
+  private nonisolated static func scaled(_ tokens: Double) -> (Double, String) {
+    if tokens >= 1_000_000 { return (tokens / 1_000_000, "M") }
+    if tokens >= 1_000 { return (tokens / 1_000, "k") }
+    return (tokens, "")
   }
 }
 

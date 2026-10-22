@@ -24,22 +24,14 @@
       switch input {
       case .move(let pointer, let modifiers):
         let button = buttons.sorted().first
-        let type: CGEventType =
-          button == 0
-          ? .leftMouseDragged
-          : button == 1
-            ? .rightMouseDragged
-            : button == 2 ? .otherMouseDragged : .mouseMoved
+        let type = Self.moveType(heldButton: button)
         emit(
           CGEvent(
             mouseEventSource: source, mouseType: type, mouseCursorPosition: location(pointer),
             mouseButton: CGMouseButton(rawValue: UInt32(button ?? 0)) ?? .left), modifiers: modifiers)
       case .button(let pointer, let button, let down, let clicks, let modifiers):
         if down { buttons.insert(button) } else { buttons.remove(button) }
-        let type: CGEventType =
-          button == 0
-          ? (down ? .leftMouseDown : .leftMouseUp)
-          : button == 1 ? (down ? .rightMouseDown : .rightMouseUp) : (down ? .otherMouseDown : .otherMouseUp)
+        let type = Self.buttonType(button: button, down: down)
         let event = CGEvent(
           mouseEventSource: source, mouseType: type, mouseCursorPosition: location(pointer),
           mouseButton: CGMouseButton(rawValue: UInt32(button)) ?? .left)
@@ -78,6 +70,23 @@
       CGPoint(
         x: displayBounds.minX + min(displayBounds.width - 0.001, pointer.x * displayBounds.width),
         y: displayBounds.minY + min(displayBounds.height - 0.001, pointer.y * displayBounds.height))
+    }
+
+    private nonisolated static func moveType(heldButton: UInt8?) -> CGEventType {
+      switch heldButton {
+      case 0?: .leftMouseDragged
+      case 1?: .rightMouseDragged
+      case 2?: .otherMouseDragged
+      default: .mouseMoved
+      }
+    }
+
+    private nonisolated static func buttonType(button: UInt8, down: Bool) -> CGEventType {
+      switch button {
+      case 0: down ? .leftMouseDown : .leftMouseUp
+      case 1: down ? .rightMouseDown : .rightMouseUp
+      default: down ? .otherMouseDown : .otherMouseUp
+      }
     }
 
     private func emit(_ event: CGEvent?, modifiers: UInt8) {

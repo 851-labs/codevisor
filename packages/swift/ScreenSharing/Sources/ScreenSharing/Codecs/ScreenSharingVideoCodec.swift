@@ -84,7 +84,11 @@ struct ScreenSharingHEVCFormat: Equatable {
 
   var dynamicRange: ScreenSharingDynamicRange? {
     guard lumaDepth == chromaDepth else { return nil }
-    return lumaDepth == 8 ? .standard : lumaDepth == 10 ? .high : nil
+    switch lumaDepth {
+    case 8: return .standard
+    case 10: return .high
+    default: return nil
+    }
   }
 
   var codec: ScreenSharingVideoCodec? {

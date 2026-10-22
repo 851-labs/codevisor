@@ -69,6 +69,11 @@ struct ProbeOptions {
       jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: lowLatencyPlayout,
       playoutDelayBoundsMs: playoutDelayBoundsMs)
   }
+  var sourceDescription: String {
+    if mode == .receive { return "remote" }
+    if captureOwnedWindow { return "ScreenCaptureKit owned window" }
+    return (displayID != nil || capturePicker) ? "ScreenCaptureKit" : "synthetic"
+  }
 
   let jitterWindowFrames: Int?
   let lowLatencyPlayout: Bool

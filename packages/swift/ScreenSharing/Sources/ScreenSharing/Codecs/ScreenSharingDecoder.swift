@@ -239,10 +239,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       } else if hardwareStatus != kVTPropertyNotSupportedErr {
         try check(hardwareStatus, "Query decoder hardware")
       }
-      metrics.label(
-        "decoderHardware",
-        !Self.requiresHardware
-          ? "simulator (software)" : hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
+      metrics.label("decoderHardware", Self.hardwareLabel(status: hardwareStatus))
       format = description
       parameterSets = parameters
       metrics.label("decoder", "VideoToolbox \(codec.rawValue) \(Self.requiresHardware ? "hardware" : "software")")
@@ -255,6 +252,11 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     #else
       true
     #endif
+  }
+
+  private static func hardwareLabel(status: OSStatus) -> String {
+    guard requiresHardware else { return "simulator (software)" }
+    return status == noErr ? "confirmed" : "required; query unsupported"
   }
 
   private func check(_ status: OSStatus, _ operation: String) throws {

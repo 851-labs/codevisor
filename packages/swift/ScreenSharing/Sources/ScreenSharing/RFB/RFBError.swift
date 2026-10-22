@@ -39,6 +39,12 @@ public struct RFBProtocolVersion: Sendable, Equatable, Comparable, CustomStringC
   }
   public static func < (lhs: Self, rhs: Self) -> Bool { (lhs.major, lhs.minor) < (rhs.major, rhs.minor) }
 
+  var negotiated: RFBProtocolVersion {
+    if self >= .v3_8 { return .v3_8 }
+    if self >= .v3_7 { return .v3_7 }
+    return .v3_3
+  }
+
   public static func parse(_ bytes: [UInt8]) -> RFBProtocolVersion? {
     guard bytes.count == 12, bytes.starts(with: Array("RFB ".utf8)), bytes[7] == UInt8(ascii: "."),
       bytes[11] == UInt8(ascii: "\n"), let major = Int(String(decoding: bytes[4..<7], as: UTF8.self)),

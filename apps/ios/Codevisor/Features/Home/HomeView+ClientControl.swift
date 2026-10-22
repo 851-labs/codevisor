@@ -26,7 +26,7 @@ extension HomeView {
     context.page = ClientPageContext(
       page: navigation.clientPage,
       settingsSection: presentedSettingsDestination == nil ? nil : clientSettingsSection,
-      presentation: presentedSettingsDestination != nil ? "settings" : (presentedNewChatFlow == nil ? nil : "new_chat")
+      presentation: clientPresentation
     )
     if let blocked = clientBlockingPresentation { context.page?.presentation = blocked }
     return context

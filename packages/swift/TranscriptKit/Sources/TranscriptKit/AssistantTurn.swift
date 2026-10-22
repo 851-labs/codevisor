@@ -220,14 +220,17 @@ public struct AssistantTurn: Sendable, Equatable {
   public func workedSectionDuration(_ kind: TranscriptWorkedSectionKind) -> TimeInterval? {
     let end: Date? =
       switch kind {
-      case .planning:
-        !isSplitByPlan
-          ? endedAt
-          : planProposedAt ?? (planResumedAt == nil && workedItemsAfterPlan.isEmpty ? endedAt : nil)
+      case .planning: planningEnd
       case .implementation: endedAt
       }
     guard let start = workedSectionStart(kind), let end else { return nil }
     return max(0, end.timeIntervalSince(start))
+  }
+
+  private var planningEnd: Date? {
+    guard isSplitByPlan else { return endedAt }
+    if let planProposedAt { return planProposedAt }
+    return planResumedAt == nil && workedItemsAfterPlan.isEmpty ? endedAt : nil
   }
 
   public func workedSectionTitle(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {

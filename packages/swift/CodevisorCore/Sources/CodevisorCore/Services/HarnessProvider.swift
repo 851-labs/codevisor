@@ -39,6 +39,14 @@ public struct HarnessProviderMethod: Identifiable, Equatable, Sendable {
 public struct HarnessProviderPrompt: Identifiable, Equatable, Sendable {
   public enum Kind: Equatable, Sendable {
     case text, secret, select
+
+    init(piPromptType type: String) {
+      switch type {
+      case "select": self = .select
+      case "secret": self = .secret
+      default: self = .text
+      }
+    }
   }
 
   public struct Option: Identifiable, Equatable, Sendable {
@@ -191,7 +199,7 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
       prompt: flow.prompt.map { prompt in
         HarnessProviderPrompt(
           id: prompt.id,
-          kind: prompt.type == "select" ? .select : prompt.type == "secret" ? .secret : .text,
+          kind: .init(piPromptType: prompt.type),
           message: prompt.message, placeholder: prompt.placeholder,
           options: prompt.options.map { .init(value: $0.id, label: $0.label) })
       })

@@ -423,8 +423,8 @@ struct NewChatView: View {
   private static func title(from prompt: String) -> String {
     let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
-    return firstLine.count > 48
-      ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New session" : firstLine)
+    if firstLine.count > 48 { return String(firstLine.prefix(48)) + "…" }
+    return firstLine.isEmpty ? "New session" : firstLine
   }
 }
 

@@ -57,12 +57,17 @@ public struct McpFormValues {
       args: transport == "stdio" ? arguments : nil,
       env: transport == "stdio" && !environment.isEmpty ? environment : nil,
       headers: transport == "http" && !headers.isEmpty ? headers : nil,
-      authType: transport == "http" ? (authSelection == "auto" ? nil : authSelection) : "none",
+      authType: createAuthType,
       bearerToken: transport == "http" ? bearerToken : nil,
       oauthScope: transport == "http" ? oauthScope : nil,
       oauthClientId: transport == "http" ? oauthClientId : nil,
       oauthClientSecret: transport == "http" ? oauthClientSecret : nil
     )
+  }
+
+  private var createAuthType: String? {
+    guard transport == "http" else { return "none" }
+    return authSelection == "auto" ? nil : authSelection
   }
 
   public var updateBody: UpdateMcpServerBody {

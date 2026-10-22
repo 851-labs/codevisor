@@ -214,11 +214,7 @@
       let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
       for (index, range) in highlights.ranges.enumerated() {
         let isCurrent = index == highlights.currentIndex
-        let color: NSColor =
-          isCurrent
-          ? NSColor.systemOrange.withAlphaComponent(isDark ? 0.75 : 0.85)
-          : NSColor.systemYellow.withAlphaComponent(isDark ? 0.35 : 0.5)
-        color.setFill()
+        StaticTextHighlightColors.match(isCurrent: isCurrent, isDark: isDark).setFill()
         for rect in transcriptTextRects(for: range) {
           NSBezierPath(roundedRect: rect.insetBy(dx: -1, dy: 0), xRadius: 3, yRadius: 3).fill()
         }

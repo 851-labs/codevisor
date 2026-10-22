@@ -139,13 +139,15 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
   private func checkLimits() {
     condition.lock()
     let elapsed = startedAt.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
-    let reason =
-      elapsed >= Double(options.maximumDuration)
-      ? "duration_limit"
-      : computerUseRecordingFileSize(fileURL) >= 100 * 1024 * 1024 ? "size_limit" : nil
+    let reason = limitReason(elapsed: elapsed)
     let active = state == "recording"
     condition.unlock()
     if active, let reason { try? stop(reason: reason) }
+  }
+
+  private func limitReason(elapsed: TimeInterval) -> String? {
+    if elapsed >= Double(options.maximumDuration) { return "duration_limit" }
+    return computerUseRecordingFileSize(fileURL) >= 100 * 1024 * 1024 ? "size_limit" : nil
   }
 
   func fail(_ error: Error) {

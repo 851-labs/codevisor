@@ -84,8 +84,7 @@ private struct WorkspaceInspectorUsageWindowRow: View {
     var parts: [String] = []
     if let pace {
       let reserve = Int(pace.reservePercent.rounded())
-      parts.append(
-        reserve == 0 ? "On pace" : reserve > 0 ? "\(reserve)% in reserve" : "\(-reserve)% in deficit")
+      parts.append(paceLabel(reserve: reserve))
       switch pace.outlook {
       case .lastsUntilReset:
         parts.append("Lasts until reset")
@@ -98,6 +97,12 @@ private struct WorkspaceInspectorUsageWindowRow: View {
     }
     return parts.isEmpty
       ? nil : parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · ")
+  }
+
+  private nonisolated static func paceLabel(reserve: Int) -> String {
+    if reserve == 0 { return "On pace" }
+    if reserve > 0 { return "\(reserve)% in reserve" }
+    return "\(-reserve)% in deficit"
   }
 
   private static func moment(_ date: Date, now: Date) -> String {

@@ -188,7 +188,17 @@
     }
   }
 
-  enum ScreenshotSessionStatus: Int { case idle, unread, inProgress }
+  enum ScreenshotSessionStatus: Int {
+    case idle, unread, inProgress
+
+    nonisolated var sidebarState: SessionSidebarState {
+      switch self {
+      case .idle: .idle
+      case .unread: .unread
+      case .inProgress: .inProgress
+      }
+    }
+  }
 
   struct ScreenshotSidebarSection: Identifiable {
     let id: UUID

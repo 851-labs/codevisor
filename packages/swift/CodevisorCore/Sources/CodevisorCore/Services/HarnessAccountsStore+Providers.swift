@@ -44,7 +44,7 @@ public extension HarnessAccountsStore {
       let credential = credentials.first { $0.id == id }
       if var provider = catalog.first(where: { $0.id == id }) {
         if provider.credentialType != "oauth" {
-          provider.credentialType = credential == nil ? nil : (credential?.canReplaceKey == true ? "api" : "wellknown")
+          provider.credentialType = credential.map { $0.canReplaceKey ? "api" : "wellknown" }
         }
         return provider
       }

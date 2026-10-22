@@ -28,8 +28,11 @@ import ScreenSharingDiagnostics
       guard let report = options.reportURL else { return }
       for name in newly {
         let sidecar: String? =
-          name == "anyCallbackIncludingInvalidOrMissingStatus"
-          ? "first-callback" : name == "acceptedCapturedFrames" ? "first-frame" : nil
+          switch name {
+          case "anyCallbackIncludingInvalidOrMissingStatus": "first-callback"
+          case "acceptedCapturedFrames": "first-frame"
+          default: nil
+          }
         guard let sidecar else { continue }
         let record: [String: Any] = [
           "metric": name, "observedAtSeconds": elapsedSeconds, "tick": (firstObservation?.ticks ?? 1) - 1,

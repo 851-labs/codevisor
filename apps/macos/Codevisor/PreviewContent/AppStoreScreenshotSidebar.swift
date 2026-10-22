@@ -55,7 +55,7 @@
         id: id, projectId: AppStoreScreenshotData.projectID,
         serverId: AppStoreScreenshotData.machineID, harnessId: harnessId,
         title: title, createdAt: AppStoreScreenshotData.date, updatedAt: AppStoreScreenshotData.date,
-        sidebarState: status == .inProgress ? .inProgress : (status == .unread ? .unread : .idle),
+        sidebarState: status.sidebarState,
         unreadCount: status == .unread ? 1 : 0
       )
     }

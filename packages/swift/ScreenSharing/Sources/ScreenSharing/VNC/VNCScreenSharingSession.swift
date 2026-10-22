@@ -255,7 +255,7 @@
       guard let version = RFBProtocolVersion.parse(try await stream.bytes(12)), version >= .v3_3 else {
         throw RFBError.protocolMismatch("no RFB greeting")
       }
-      let chosen: RFBProtocolVersion = version >= .v3_8 ? .v3_8 : (version >= .v3_7 ? .v3_7 : .v3_3)
+      let chosen = version.negotiated
       try await transport.write(chosen.encoded)
       if chosen == .v3_3 { return [UInt8(clamping: try await stream.u32())] }
       return try await stream.bytes(Int(try await stream.u8()))

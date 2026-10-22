@@ -225,8 +225,7 @@
       return Entry(
         workspace: workspace(100 + index, names[index], serverId: project.serverId, rows: []),
         projectId: project.id, branch: names[index],
-        pullRequest: index.isMultiple(of: 3)
-          ? pullRequest(400 + index, names[index], state: index.isMultiple(of: 2) ? .merged : .closed) : nil
+        pullRequest: archivedPullRequest(index, title: names[index])
       )
     }
 
@@ -256,7 +255,12 @@
       )
     }
 
-    private static func pullRequest(
+    private nonisolated static func archivedPullRequest(_ index: Int, title: String) -> ServerGitPullRequest? {
+      guard index.isMultiple(of: 3) else { return nil }
+      return pullRequest(400 + index, title, state: index.isMultiple(of: 2) ? .merged : .closed)
+    }
+
+    private nonisolated static func pullRequest(
       _ number: Int, _ title: String, state: ServerGitPullRequest.State, isDraft: Bool = false,
       checks: ServerGitPullRequest.Checks = .none
     ) -> ServerGitPullRequest {

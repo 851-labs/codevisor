@@ -37,8 +37,13 @@ public struct RigConfiguration: Sendable {
       }
       if trimmed.hasPrefix("workload:") || trimmed.hasPrefix("virtual:") || trimmed.hasPrefix("virtual-desktop:") {
         let kind =
-          trimmed.hasPrefix("virtual-desktop:")
-          ? "virtual-desktop" : trimmed.hasPrefix("virtual:") ? "virtual" : "workload"
+          if trimmed.hasPrefix("virtual-desktop:") {
+            "virtual-desktop"
+          } else if trimmed.hasPrefix("virtual:") {
+            "virtual"
+          } else {
+            "workload"
+          }
         let spec = trimmed.dropFirst(kind.count + 1)
         let parts = spec.split(separator: "@", omittingEmptySubsequences: false)
         let size = parts.first.map { $0.split(separator: "x", omittingEmptySubsequences: false) } ?? []

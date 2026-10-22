@@ -11,7 +11,7 @@ extension ProbeOptions {
     guard flags.intersection(["--loopback", "--send", "--receive"]).count <= 1 else {
       throw ScreenSharingError.invalid("Choose one probe mode.")
     }
-    mode = flags.contains("--send") ? .send : flags.contains("--receive") ? .receive : .loopback
+    mode = if flags.contains("--send") { .send } else if flags.contains("--receive") { .receive } else { .loopback }
     func integer(_ key: String, fallback: Int) throws -> Int {
       guard let value = values[key] else { return fallback }
       guard let parsed = Int(value) else { throw ScreenSharingError.invalid("Invalid \(key).") }

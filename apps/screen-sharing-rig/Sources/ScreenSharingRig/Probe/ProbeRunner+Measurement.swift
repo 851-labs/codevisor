@@ -266,11 +266,7 @@ import ScreenSharingDiagnostics
         && idleResetPassed
       let report = ProbeReport(
         mode: options.mode, configuration: options.configuration,
-        source: options.mode == .receive
-          ? "remote"
-          : options.captureOwnedWindow
-            ? "ScreenCaptureKit owned window"
-            : (options.displayID != nil || options.capturePicker) ? "ScreenCaptureKit" : "synthetic",
+        source: options.sourceDescription,
         startedAtSeconds: startedAtSeconds, elapsedSeconds: elapsed,
         passed: passed, renderingEnabled: receiver != nil && !options.headless, sender: sent,
         receiver: received,

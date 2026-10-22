@@ -16,7 +16,7 @@ public enum RFBHandshake {
       throw RFBError.protocolMismatch(
         serverVersion.map { "unsupported version \($0.major).\($0.minor)" } ?? "no RFB greeting")
     }
-    let version: RFBProtocolVersion = serverVersion >= .v3_8 ? .v3_8 : (serverVersion >= .v3_7 ? .v3_7 : .v3_3)
+    let version = serverVersion.negotiated
     try await transport.write(version.encoded)
 
     let security: RFBSecurityType
