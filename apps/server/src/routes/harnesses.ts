@@ -22,6 +22,7 @@ import { field } from "../unknown-values.js"
 import { routeHarnessAuth } from "./harness-auth-routes.js"
 import { discoverHarnesses } from "./harness-discovery.js"
 import { conflictFrom } from "./harness-errors.js"
+import type { RouteContext } from "./route-context.js"
 
 export {
   discoverCapabilities,
@@ -29,15 +30,9 @@ export {
   discoverHarnessesFromStoredAuthState
 } from "./harness-discovery.js"
 
-export const routeHarnesses = async (
-  services: CodevisorServerServices,
-  config: CodevisorServerConfig,
-  fanout: EventFanout,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> => {
-  if (await routeHarnessAuth(services, request, response, url)) {
+export const routeHarnesses = async (route: RouteContext): Promise<boolean> => {
+  const { services, config, fanout, request, response, url } = route
+  if (await routeHarnessAuth(route)) {
     return true
   }
   if (request.method === "GET" && url.pathname === "/v1/harnesses")

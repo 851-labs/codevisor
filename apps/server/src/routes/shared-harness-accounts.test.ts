@@ -96,6 +96,20 @@ it("requires both the shared service and authentication support", async () => {
   ).toBe(501)
 })
 
+it("refuses shared account actions on a machine that syncs accounts but has no harness authentication", async () => {
+  const { services } = await makeServices()
+  const m = await fleet().machine("a")
+  const server = await startWithApp({ ...services, sharedAccounts: m.shared })
+  const response = await jsonRequest(server, "/v1/harnesses/codex/shared-accounts", {
+    method: "POST",
+    body: JSON.stringify({ action: "list" })
+  })
+  expect(response).toEqual({
+    status: 501,
+    body: { error: "Update this machine to sync accounts" }
+  })
+})
+
 it("reconciles received credentials and protects the loopback gateway at the real server router", async () => {
   const f = fleet(),
     a = await f.machine("source"),

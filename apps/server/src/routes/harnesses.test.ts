@@ -16,7 +16,7 @@ import {
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
-import { makeAuthFixture } from "./harness-auth-test-support.js"
+import { fakeHarnessAuth, makeAuthFixture } from "./harness-auth-test-support.js"
 import { sessionEventSink } from "./session-events.js"
 
 describe("harness routes", () => {
@@ -55,6 +55,22 @@ describe("harness routes", () => {
         `${method} ${path}`
       ).toBe(501)
     }
+  })
+
+  it("returns 501 for OpenCode sign-in flows when the auth service cannot also cancel them", async () => {
+    const { services } = await makeServices("server-a")
+    const openCodeLoginFlow = vi.fn()
+    const server = await startWithApp({
+      ...services,
+      auth: fakeHarnessAuth({ openCodeLoginFlow, subscribe: () => () => undefined })
+    })
+    for (const method of ["GET", "DELETE"]) {
+      expect(
+        await jsonRequest(server, "/v1/harnesses/opencode/auth-flows/flow-open", { method }),
+        method
+      ).toEqual({ status: 501, body: { error: "Harness authentication unavailable" } })
+    }
+    expect(openCodeLoginFlow).not.toHaveBeenCalled()
   })
 
   it("drives Pi, OpenCode, and account routes through the auth service", async () => {

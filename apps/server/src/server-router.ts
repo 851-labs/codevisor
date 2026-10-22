@@ -109,8 +109,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   routeWorkspaces,
   ({ services, config, fanout, routeState, request, response, url }) =>
     routeBots(services, config, fanout, routeState, request, response, url),
-  ({ services, config, fanout, request, response, url }) =>
-    routeHarnesses(services, config, fanout, request, response, url),
+  routeHarnesses,
   ({ services, request, response, url }) => routeBrowserUse(services, request, response, url),
   ({ services, config, fanout, request, response, url }) =>
     routeMachineMcps(services, config, fanout, request, response, url),

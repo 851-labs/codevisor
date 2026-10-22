@@ -1,218 +1,180 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-
-import { providerOAuthSupported } from "@codevisor/harness-manager"
-import { Schema } from "effect"
+import type { HarnessAccountRecord } from "@codevisor/db"
+import type { SharedOAuthHarness } from "@codevisor/harness-manager"
 
 import { sharedHarness } from "../infra/shared-account-store.js"
+import { HttpFailure, run, writeJson } from "../server-context.js"
+import { routeGrokAccounts } from "./grok-shared-accounts.js"
+import { providerAccountsFor, routeProviderAccounts } from "./provider-shared-accounts.js"
+import { methodRouteId, rejectSyncThrows } from "./route-context.js"
+import type { RouteContext } from "./route-context.js"
 import {
-  HttpFailure,
-  matchRoute,
-  readSchema,
-  writeJson,
-  run,
-  type CodevisorServerServices
-} from "../server-context.js"
+  cancelSignIn,
+  disableCaching,
+  readSharedAccountAction,
+  requireAccountOf
+} from "./shared-account-actions.js"
+import type {
+  AccountActionRequest,
+  SharedAccountAction,
+  SharedAccountActionName,
+  SharedAccountsRoute
+} from "./shared-account-actions.js"
 
-const Action = Schema.Struct({
-  action: Schema.Literals([
-    "list",
-    "create",
-    "rename",
-    "remove",
-    "activate",
-    "probe",
-    "login",
-    "answer",
-    "cancel",
-    "logout",
-    "inherit",
-    "providers"
-  ]),
-  accountId: Schema.optional(Schema.String),
-  label: Schema.optional(Schema.String),
-  methodId: Schema.optional(Schema.String),
-  apiKey: Schema.optional(Schema.String),
-  flowId: Schema.optional(Schema.String),
-  code: Schema.optional(Schema.String),
-  providerId: Schema.optional(Schema.String),
-  inputs: Schema.optional(Schema.Record(Schema.String, Schema.String))
-})
+type SyncedActionName = Exclude<SharedAccountActionName, "list" | "create" | "inherit">
 
-export const routeSharedHarnessAccounts = async (
-  services: CodevisorServerServices,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> => {
-  const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id/shared-accounts")
-  if (!harnessId || request.method !== "POST") return false
-  const shared = services.sharedAccounts
-  const auth = services.auth
-  if (!shared || !auth) throw new HttpFailure(501, "Update this machine to sync accounts")
-  const input = await readSchema(request, Action)
-  response.setHeader("Cache-Control", "no-store")
-  if (harnessId === "grok-build") {
-    if (["create", "rename", "inherit", "answer", "providers"].includes(input.action))
-      throw new HttpFailure(400, "Unknown Grok account action")
-    if (input.action === "list") {
-      writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
-      return true
-    }
-    const account = input.accountId
-      ? await run(services.db.getHarnessAccount(input.accountId))
-      : undefined
-    if (!account || account.harnessId !== harnessId) throw new HttpFailure(404, "Account not found")
-    switch (input.action) {
-      case "probe":
-        writeJson(response, 200, { account: await auth.probeAccount(account.id, true, true) })
-        break
-      case "login":
-        writeJson(response, 201, {
-          flow: await auth.beginLogin(account.id, input.methodId, input.apiKey, true)
-        })
-        break
-      case "activate":
-        writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
-        break
-      case "logout":
-      case "remove":
-        writeJson(response, 200, { account: await auth.logout(account.id, true) })
-        break
-      case "cancel":
-        if (!input.flowId) throw new HttpFailure(400, "Choose a sign-in attempt")
-        await auth.cancelLogin(input.flowId)
-        writeJson(response, 200, {})
-        break
-    }
-    return true
-  }
-  if (harnessId === "pi" || harnessId === "opencode") {
-    const profile = input.accountId ?? "default"
-    const findProfile = async () =>
-      (await run(services.db.listHarnessAccounts("opencode"))).find((row) =>
-        profile === "default" ? row.profileKind === "default" : row.id === profile
-      )
-    let account = harnessId === "opencode" ? await findProfile() : undefined
-    if (harnessId === "opencode" && !account && auth.sharedOpenCodeProfiles) {
-      const saved = (await run(services.db.getSyncEntries("harness-credentials"))).find(
-        (entry) => entry.key === "profiles:opencode" && entry.deleted !== true
-      )
-      if (typeof saved?.value === "string") {
-        await auth.sharedOpenCodeProfiles(saved.value)
-        account = await findProfile()
-      }
-    }
-    if (harnessId === "opencode" && !account)
-      throw new HttpFailure(404, "OpenCode profile not found")
-    const accountId = account?.id ?? "default"
-    if (input.action === "providers") {
-      const configured = await shared.providers.configured(harnessId, accountId, true)
-      if (harnessId === "pi") {
-        if (!auth.piProviders) throw new HttpFailure(501, "Pi authentication unavailable")
-        const providers = (await auth.piProviders()).map((provider) => ({
-          ...provider,
-          credentialType: configured.includes(provider.id) ? "oauth" : undefined
-        }))
-        writeJson(response, 200, { piProviders: providers })
-      } else {
-        if (!auth.openCodeProviders)
-          throw new HttpFailure(501, "OpenCode authentication unavailable")
-        const providers = (await auth.openCodeProviders(accountId)).map((provider) => ({
-          ...provider,
-          methods: provider.methods.filter(
-            (method) => method.type !== "oauth" || providerOAuthSupported("opencode", provider.id)
-          ),
-          credentialType: configured.includes(provider.id) ? "oauth" : undefined
-        }))
-        writeJson(response, 200, { openCodeProviders: providers })
-      }
-    } else if (input.action === "login") {
-      if (!input.providerId || !providerOAuthSupported(harnessId, input.providerId))
-        throw new HttpFailure(400, "This provider does not support shared OAuth")
-      if (harnessId === "pi") {
-        if (!auth.beginPiLogin || input.methodId !== "oauth")
-          throw new HttpFailure(400, "Choose an OAuth method")
-        writeJson(response, 201, {
-          piFlow: await auth.beginPiLogin(input.providerId, "oauth", true)
-        })
-      } else {
-        if (!auth.beginOpenCodeLogin || !input.methodId)
-          throw new HttpFailure(400, "Choose an OAuth method")
-        writeJson(response, 201, {
-          openCodeFlow: await auth.beginOpenCodeLogin(
-            accountId,
-            input.providerId,
-            input.methodId,
-            input.inputs,
-            undefined,
-            true
-          )
-        })
-      }
-    } else if (input.action === "logout" || input.action === "remove") {
-      if (!input.providerId) throw new HttpFailure(400, "Choose a provider")
-      await shared.providers.remove(harnessId, accountId, input.providerId, true)
-      writeJson(response, 200, {})
-    } else throw new HttpFailure(400, "Unknown provider account action")
-    return true
-  }
-  if (!sharedHarness(harnessId))
+type SyncedActionHandler = (request: AccountActionRequest<SyncedActionName>) => Promise<boolean>
+
+export const routeSharedHarnessAccounts = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchSharedAccounts(route))
+
+const dispatchSharedAccounts = (route: RouteContext): Promise<boolean> => {
+  const harnessId = methodRouteId(route, "POST", "/v1/harnesses/:id/shared-accounts")
+  if (harnessId === undefined) return Promise.resolve(false)
+
+  const accounts = sharedAccountsRoute(route, harnessId)
+  if (harnessId === "grok-build") return routeGrokAccounts(accounts)
+
+  const provider = providerAccountsFor(harnessId)
+  if (provider !== undefined) return routeProviderAccounts(accounts, provider)
+  return routeSyncedAccounts(accounts)
+}
+
+const sharedAccountsRoute = (
+  { services, request, response }: RouteContext,
+  harnessId: string
+): SharedAccountsRoute => {
+  const { sharedAccounts, auth } = services
+  if (!sharedAccounts) throw syncUnavailable()
+  if (!auth) throw syncUnavailable()
+  return { services, request, response, harnessId, shared: sharedAccounts, auth }
+}
+
+const syncUnavailable = (): HttpFailure =>
+  new HttpFailure(501, "Update this machine to sync accounts")
+
+const routeSyncedAccounts = async (accounts: SharedAccountsRoute): Promise<boolean> => {
+  const input = await readSharedAccountAction(accounts.request)
+  disableCaching(accounts.response)
+
+  if (!sharedHarness(accounts.harnessId)) {
     throw new HttpFailure(400, "This harness uses provider-specific account settings")
-  if (input.action === "list") {
-    writeJson(response, 200, { accounts: await shared.accounts(harnessId, true) })
-    return true
   }
-  if (input.action === "create") {
-    writeJson(response, 201, { account: await shared.create(harnessId, input.label) })
-    return true
-  }
-  if (input.action === "inherit") {
-    await shared.inherit(harnessId)
-    writeJson(response, 200, { accounts: await shared.accounts(harnessId) })
-    return true
-  }
+  if (input.action === "list") return listAccounts(accounts)
+  if (input.action === "create") return createAccount(accounts, accounts.harnessId, input)
+  if (input.action === "inherit") return inheritAccounts(accounts)
+
   const id = input.accountId
-  const account = id ? await run(services.db.getHarnessAccount(id)) : undefined
-  if (!account || account.harnessId !== harnessId) throw new HttpFailure(404, "Account not found")
-  switch (input.action) {
-    case "activate":
-      if (!(await shared.activate(harnessId, account.id, true)))
-        throw new HttpFailure(404, "Shared account not found")
-      writeJson(response, 200, { accounts: await shared.accounts(harnessId, true) })
-      break
-    case "rename":
-      if (!input.label?.trim()) throw new HttpFailure(400, "Enter an account name")
-      writeJson(response, 200, { account: await shared.rename(account.id, input.label) })
-      break
-    case "remove":
-    case "logout":
-      writeJson(response, 200, { account: await shared.logout(account.id, true) })
-      break
-    case "probe":
-      writeJson(response, 200, { account: await shared.probe(account.id, true) })
-      break
-    case "login":
-      if (input.methodId === "apiKey") {
-        await shared.saveApiKey(account.id, input.apiKey ?? "")
-        writeJson(response, 200, {
-          flow: { id: account.id, accountId: account.id, kind: "complete" }
-        })
-      } else
-        writeJson(response, 201, {
-          flow: await auth.beginLogin(account.id, input.methodId, input.apiKey)
-        })
-      break
-    case "answer":
-      if (!input.flowId || !input.code) throw new HttpFailure(400, "Enter the sign-in code")
-      writeJson(response, 200, { flow: await auth.answerLogin(input.flowId, input.code) })
-      break
-    case "cancel":
-      if (!input.flowId) throw new HttpFailure(400, "Sign-in not found")
-      await auth.cancelLogin(input.flowId)
-      writeJson(response, 200, {})
-      break
-    case "providers":
-      throw new HttpFailure(400, "This harness has account settings")
-  }
+  let account: HarnessAccountRecord | undefined
+  if (id) account = await run(accounts.services.db.getHarnessAccount(id))
+  return routeAccountAction({
+    ...accounts,
+    input,
+    account: requireAccountOf(account, accounts.harnessId)
+  })
+}
+
+const routeAccountAction: SyncedActionHandler = (request) =>
+  syncedActions[request.input.action](request)
+
+const listAccounts = async ({
+  shared,
+  harnessId,
+  response
+}: SharedAccountsRoute): Promise<boolean> => {
+  writeJson(response, 200, { accounts: await shared.accounts(harnessId, true) })
   return true
+}
+
+const createAccount = async (
+  { shared, response }: SharedAccountsRoute,
+  harnessId: SharedOAuthHarness,
+  input: SharedAccountAction
+): Promise<boolean> => {
+  writeJson(response, 201, { account: await shared.create(harnessId, input.label) })
+  return true
+}
+
+const inheritAccounts = async ({
+  shared,
+  harnessId,
+  response
+}: SharedAccountsRoute): Promise<boolean> => {
+  await shared.inherit(harnessId)
+  writeJson(response, 200, { accounts: await shared.accounts(harnessId) })
+  return true
+}
+
+const activateAccount: SyncedActionHandler = async ({ shared, harnessId, response, account }) => {
+  if (!(await shared.activate(harnessId, account.id, true))) {
+    throw new HttpFailure(404, "Shared account not found")
+  }
+
+  writeJson(response, 200, { accounts: await shared.accounts(harnessId, true) })
+  return true
+}
+
+const renameAccount: SyncedActionHandler = async ({ shared, response, input, account }) => {
+  if (!input.label?.trim()) throw new HttpFailure(400, "Enter an account name")
+
+  writeJson(response, 200, { account: await shared.rename(account.id, input.label) })
+  return true
+}
+
+const logoutAccount: SyncedActionHandler = async ({ shared, response, account }) => {
+  writeJson(response, 200, { account: await shared.logout(account.id, true) })
+  return true
+}
+
+const probeAccount: SyncedActionHandler = async ({ shared, response, account }) => {
+  writeJson(response, 200, { account: await shared.probe(account.id, true) })
+  return true
+}
+
+const signIn: SyncedActionHandler = (request) => {
+  if (request.input.methodId === "apiKey") return saveApiKey(request)
+  return beginLogin(request)
+}
+
+const saveApiKey: SyncedActionHandler = async ({ shared, response, input, account }) => {
+  await shared.saveApiKey(account.id, input.apiKey ?? "")
+  writeJson(response, 200, {
+    flow: { id: account.id, accountId: account.id, kind: "complete" }
+  })
+  return true
+}
+
+const beginLogin: SyncedActionHandler = async ({ auth, response, input, account }) => {
+  writeJson(response, 201, {
+    flow: await auth.beginLogin(account.id, input.methodId, input.apiKey)
+  })
+  return true
+}
+
+const answerSignIn: SyncedActionHandler = async ({ auth, response, input }) => {
+  if (!input.flowId) throw signInCodeRequired()
+  if (!input.code) throw signInCodeRequired()
+
+  writeJson(response, 200, { flow: await auth.answerLogin(input.flowId, input.code) })
+  return true
+}
+
+const cancelLogin: SyncedActionHandler = (request) =>
+  cancelSignIn(request, request.input, "Sign-in not found")
+
+const refuseProviders: SyncedActionHandler = () => {
+  throw new HttpFailure(400, "This harness has account settings")
+}
+
+const signInCodeRequired = (): HttpFailure => new HttpFailure(400, "Enter the sign-in code")
+
+const syncedActions: Record<SyncedActionName, SyncedActionHandler> = {
+  activate: activateAccount,
+  rename: renameAccount,
+  remove: logoutAccount,
+  logout: logoutAccount,
+  probe: probeAccount,
+  login: signIn,
+  answer: answerSignIn,
+  cancel: cancelLogin,
+  providers: refuseProviders
 }
