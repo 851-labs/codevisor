@@ -75,9 +75,8 @@ export const sessionEventSink =
         }
       }
       const images = toolImageCandidates(payload)
-      return images.size > 0
-        ? persistToolImages(services, event, payload, images).then(deliver)
-        : deliver(event)
+      if (images.size > 0) return persistToolImages(services, event, payload, images).then(deliver)
+      return deliver(event)
     }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
       executionAnnotator(services).endSession(sessionId)

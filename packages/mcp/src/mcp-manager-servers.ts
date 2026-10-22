@@ -277,14 +277,15 @@ export const makeMcpServerOperations = (
 
   const tools: McpManager["tools"] = async (id) => {
     await builtinsReady
-    const selected: CatalogServer | undefined = id === undefined ? undefined : await record(id)
-    const pairs =
-      id === undefined
-        ? await allTools()
-        : (automationProviders.get(id)?.tools ?? (await connectUpstream(id)).tools).map((tool) => ({
-            server: selected!,
-            tool
-          }))
+    let pairs: Awaited<ReturnType<typeof allTools>>
+    if (id === undefined) {
+      pairs = await allTools()
+    } else {
+      const selected: CatalogServer = await record(id)
+      pairs = (automationProviders.get(id)?.tools ?? (await connectUpstream(id)).tools).map(
+        (tool) => ({ server: selected, tool })
+      )
+    }
     return pairs.map(({ server, tool }) => ({
       serverId: server.id,
       serverName: server.name,

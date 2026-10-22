@@ -177,6 +177,16 @@ export const chatRoute = (
 ): string | undefined =>
   chatRouteRows.maybe(sqlite.prepare(chatRouteSql.byKey).get(sessionId, key))?.item_id
 
+export const chatRouteForId = (
+  sqlite: Database.Database,
+  sessionId: string,
+  kind: string,
+  id: string | undefined
+): string | undefined => {
+  if (id === undefined) return undefined
+  return chatRoute(sqlite, sessionId, `${kind}:${id}`)
+}
+
 export const ensureAssistantChatItem = (
   sqlite: Database.Database,
   sessionId: string,
@@ -222,7 +232,7 @@ export const chatAssistantSummary = (
   const payload = row === undefined ? undefined : parseJsonRecord(row.payload)
   const hasPlan = hasPlanEntry(sqlite, itemId)
   return {
-    text: row === undefined ? "" : readTranscriptText(sqlite, itemId, row.entry_key, 24_000),
+    text: readAssistantAnswerText(sqlite, itemId, row),
     ...readAssistantPlanPreview(sqlite, itemId, hasPlan),
     ...readAssistantAnswerMetadata(sqlite, itemId, row, payload),
     ...(isMessagePhase(row?.phase) ? { phase: row.phase } : {})
@@ -246,6 +256,15 @@ const readAssistantAnswerRow = (
   return assistantAnswerRows.maybe(sqlite.prepare(transcriptEntrySql.latestAnswer).get(itemId))
 }
 
+const readAssistantAnswerText = (
+  sqlite: Database.Database,
+  itemId: string,
+  row: AssistantAnswerRow | undefined
+): string => {
+  if (row === undefined) return ""
+  return readTranscriptText(sqlite, itemId, row.entry_key, 24_000)
+}
+
 const readAssistantPlanPreview = (
   sqlite: Database.Database,
   itemId: string,
@@ -267,15 +286,14 @@ const readAssistantAnswerMetadata = (
   ReturnType<typeof chatAssistantSummary>,
   "textResource" | "messageId" | "textGeneration" | "textRevision" | "textPosition"
 > => {
-  return row === undefined
-    ? {}
-    : {
-        textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
-        messageId: stringField(payload, "messageId") ?? row.entry_key,
-        textGeneration: numberField(payload, "generation") ?? 0,
-        textRevision: row.revision,
-        textPosition: row.position
-      }
+  if (row === undefined) return {}
+  return {
+    textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
+    messageId: stringField(payload, "messageId") ?? row.entry_key,
+    textGeneration: numberField(payload, "generation") ?? 0,
+    textRevision: row.revision,
+    textPosition: row.position
+  }
 }
 
 export const sessionGoalSnapshot = (

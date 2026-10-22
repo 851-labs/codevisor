@@ -179,8 +179,8 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       let server: OpenCodeServer
       let managed = false
       try {
-        const isolated =
-          rawApiKey === undefined ? await config.loginProfile?.(accountId, providerId) : undefined
+        let isolated: OpenCodeProfile | undefined
+        if (rawApiKey === undefined) isolated = await config.loginProfile?.(accountId, providerId)
         managed = isolated !== undefined
         profile = isolated ?? (await config.profile(accountId))
         server = await startServer(profile)

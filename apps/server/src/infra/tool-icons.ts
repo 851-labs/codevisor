@@ -144,10 +144,12 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
   const imageAt = async (url: string): Promise<ToolIconAsset | undefined> => {
     if (url.startsWith("data:")) {
       const data = decodeDataUri(url)
-      return data === undefined ? undefined : normalizeIcon(data)
+      if (data === undefined) return undefined
+      return normalizeIcon(data)
     }
     const fetched = await fetchBounded(url, TOOL_ICON_MAX_BYTES, "image/*")
-    return fetched === undefined ? undefined : normalizeIcon(fetched.data)
+    if (fetched === undefined) return undefined
+    return normalizeIcon(fetched.data)
   }
 
   const favicon = async (
@@ -264,7 +266,10 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
     if (entry === undefined) return refresh()
     const age = now() - entry.record.fetchedAt
     const outdated = isOutdated(entry.record)
-    if (entry.asset === undefined) return age < MISS_TTL_MS && !outdated ? undefined : refresh()
+    if (entry.asset === undefined) {
+      if (age < MISS_TTL_MS && !outdated) return undefined
+      return refresh()
+    }
     if (age >= HIT_TTL_MS || outdated) background(refresh())
     return entry.asset
   }
@@ -293,7 +298,8 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
       if (loadIcon === undefined) return undefined
       return cached(`app:${bundleId}`, async () => {
         const data = await loadIcon(bundleId, path)
-        return { asset: data === undefined ? undefined : await normalizeIcon(data) }
+        if (data === undefined) return { asset: undefined }
+        return { asset: await normalizeIcon(data) }
       })
     },
     mcp: async (serverId, host, theme) => {

@@ -20,7 +20,7 @@ export const handleAssistantMessage = (
   readFile: (path: string) => string | undefined
 ): void => {
   const parentId = message.parent_tool_use_id ?? undefined
-  const isErrorReply = parentId === undefined ? observeAssistantStatus(session, message) : false
+  const isErrorReply = observeRootAssistantStatus(session, message, parentId)
   const content = message.message.content
   if (!Array.isArray(content)) return
   const inner = recordOf(message.message)
@@ -44,15 +44,26 @@ export const handleAssistantMessage = (
   )
 }
 
+const observeRootAssistantStatus = (
+  session: ClaudeSession,
+  message: AssistantMessage,
+  parentId: string | undefined
+): boolean => {
+  if (parentId !== undefined) return false
+  return observeAssistantStatus(session, message)
+}
+
 const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessage): boolean => {
   const contextUsage = claudeContextUsageFromAssistant(message.message)
   if (contextUsage !== undefined) session.latestContextUsage = contextUsage
   const assistantError = (message as { error?: unknown }).error
   const usageLimitText = detectUsageLimitMessage(message)
-  const isErrorReply =
-    typeof assistantError === "string"
-      ? recordStructuredAssistantError(session, assistantError, usageLimitText)
-      : recordUnstructuredAssistantError(session, message, usageLimitText)
+  let isErrorReply: boolean
+  if (typeof assistantError === "string") {
+    isErrorReply = recordStructuredAssistantError(session, assistantError, usageLimitText)
+  } else {
+    isErrorReply = recordUnstructuredAssistantError(session, message, usageLimitText)
+  }
   void ensureObservedTurnStarted(session)
   return isErrorReply
 }
@@ -141,8 +152,8 @@ const emitAssistantTool = (
   readFile: (path: string) => string | undefined
 ): void => {
   const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
-  const skill =
-    toolName === SKILL_TOOL ? skillCallMeta(session, toolUseId, block.input, parentId) : undefined
+  let skill: ReturnType<typeof skillCallMeta> | undefined
+  if (toolName === SKILL_TOOL) skill = skillCallMeta(session, toolUseId, block.input, parentId)
   void session.emit({
     kind: "session.output",
     payload: {

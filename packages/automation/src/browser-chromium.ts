@@ -81,9 +81,10 @@ export const runBrowserInstaller = async (browsersDir: string): Promise<void> =>
       stdio: ["ignore", "inherit", "inherit"]
     })
     child.once("error", reject)
-    child.once("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`Chromium installer exited with ${code}`))
-    )
+    child.once("exit", (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`Chromium installer exited with ${code}`))
+    })
   })
 }
 

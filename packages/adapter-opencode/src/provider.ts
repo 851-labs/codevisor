@@ -49,9 +49,12 @@ export const makeOpenCodeProvider = (
     },
     envFor: environment.envFor,
     executableExists: environment.executableExists,
-    locateExecutable: (name, env) =>
-      (OPENCODE_NAMES.has(name) ? locateOpenCode(env) : undefined) ??
-      environment.locateExecutable(name, env)
+    locateExecutable: (name, env) => {
+      if (OPENCODE_NAMES.has(name)) {
+        return locateOpenCode(env) ?? environment.locateExecutable(name, env)
+      }
+      return environment.locateExecutable(name, env)
+    }
   }
   const fallback = makeAcpProvider(opencode, {
     ...acp,

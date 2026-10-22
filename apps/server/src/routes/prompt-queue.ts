@@ -342,13 +342,11 @@ const promptInput = async (
   skills: Parameters<typeof withCodevisorSkills>[3]
 ) => {
   const refs = item.attachments ?? []
-  const promptText =
-    item.origin === "system"
-      ? item.text
-      : await withCodevisorSkills(services, sessionId, item.text, skills)
-  return refs.length === 0
-    ? promptText
-    : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
+  let promptText: string
+  if (item.origin === "system") promptText = item.text
+  else promptText = await withCodevisorSkills(services, sessionId, item.text, skills)
+  if (refs.length === 0) return promptText
+  return { attachments: await resolvePromptAttachments(services, refs), text: promptText }
 }
 
 interface RecordedPrompt {
@@ -419,12 +417,14 @@ const runPromptInBackground = async (
       origin,
       startsTurn: true
     })
-    await (client === undefined
-      ? services.mcp?.beginTurn(sessionId)
-      : services.mcp?.beginTurn(sessionId, {
-          clientId: client.clientId,
-          ...(client.platform === undefined ? {} : { clientPlatform: client.platform })
-        }))
+    if (client === undefined) {
+      await services.mcp?.beginTurn(sessionId)
+    } else {
+      await services.mcp?.beginTurn(sessionId, {
+        clientId: client.clientId,
+        ...(client.platform === undefined ? {} : { clientPlatform: client.platform })
+      })
+    }
     await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     const input = await promptInput(

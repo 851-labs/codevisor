@@ -169,10 +169,12 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     checkOwner()
     let exitMessage: string | undefined
     const runCommand = pluginRunCommand(plugin.manifest)
-    const child =
-      runCommand.kind === "shell"
-        ? spawnShell(runCommand.command, { cwd: plugin.path, env })
-        : spawnArgv(runCommand.argv, { cwd: plugin.path, env })
+    let child: PluginProcessHandle
+    if (runCommand.kind === "shell") {
+      child = spawnShell(runCommand.command, { cwd: plugin.path, env })
+    } else {
+      child = spawnArgv(runCommand.argv, { cwd: plugin.path, env })
+    }
     const terminal = config.registerExternalTerminal?.(
       { normalizeNewlines: true, sessionId: `plugin:${plugin.id}` },
       { kill: () => child.kill(), resize: () => undefined, write: () => undefined }
@@ -197,10 +199,9 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       if (exitMessage !== undefined) {
         throw new PluginsError("invalid", `Plugin ${plugin.id} ${exitMessage}`)
       }
-      const ready =
-        plugin.manifest.healthPath === undefined
-          ? await tcpProbe(port)
-          : await httpProbe(port, plugin.manifest.healthPath)
+      let ready: boolean
+      if (plugin.manifest.healthPath === undefined) ready = await tcpProbe(port)
+      else ready = await httpProbe(port, plugin.manifest.healthPath)
       checkOwner()
       /* v8 ignore next */
       if (ready) {

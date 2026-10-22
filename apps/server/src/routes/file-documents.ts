@@ -57,6 +57,11 @@ function editBlockedReason(info: Stats, content: string | null, writable: boolea
   return null
 }
 
+const readTextSizedFile = (path: string, info: Stats): Buffer | null => {
+  if (info.size <= textLimit) return readFileSync(path)
+  return null
+}
+
 function snapshot(path: string) {
   const canonicalPath = realpathSync(path)
   const info = statSync(canonicalPath)
@@ -68,7 +73,7 @@ function snapshot(path: string) {
   } catch {
     writable = false
   }
-  const bytes = info.size <= textLimit ? readFileSync(canonicalPath) : null
+  const bytes = readTextSizedFile(canonicalPath, info)
   const content = bytes === null ? null : textContent(bytes)
   return {
     path: canonicalPath,

@@ -48,6 +48,14 @@ export const sessionIsArchived = async (
   )
 }
 
+const startAgentSessionCloses = (
+  services: CodevisorServerServices,
+  agentSessionId: string
+): Array<Promise<void>> => {
+  if (agentSessionId.length === 0) return []
+  return [run(services.agents.closeAgentSession(agentSessionId))]
+}
+
 export const retireSessionRuntime = async (
   services: CodevisorServerServices,
   session: SessionSummary
@@ -67,9 +75,7 @@ export const retireSessionRuntime = async (
     failure = error
   }
   await settleCleanup([
-    ...(agentSessionId.length === 0
-      ? []
-      : [run(services.agents.closeAgentSession(agentSessionId))]),
+    ...startAgentSessionCloses(services, agentSessionId),
     services.mcp?.closeSession(session.id) ?? Promise.resolve()
   ])
   if (failure !== undefined) throw failure
@@ -269,9 +275,8 @@ export const workspaceGitCheckout = async (
   serverId: string,
   workspace: Workspace
 ): Promise<WorkspaceGitCheckout | undefined> => {
-  const found = workspace.isArchived
-    ? await findArchivedWorktreeFor(services, serverId, workspace)
-    : undefined
+  let found: Awaited<ReturnType<typeof findArchivedWorktreeFor>>
+  if (workspace.isArchived) found = await findArchivedWorktreeFor(services, serverId, workspace)
   if (found?.archived !== undefined) {
     const project = await getProjectOrFail(services.db, workspace.projectId)
     return {

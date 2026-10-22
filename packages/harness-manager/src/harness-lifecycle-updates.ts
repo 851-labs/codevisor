@@ -131,13 +131,13 @@ export const makeHarnessUpdateGate = (
         return { lifecycle, queued: false, terminalId }
       }
       case "reinstall": {
-        const detectedBrew =
-          origin === "brew"
-            ? detectBrewPackage(
-                path,
-                config.realpath === undefined ? {} : { realpath: config.realpath }
-              )
-            : undefined
+        let detectedBrew: ReturnType<typeof detectBrewPackage>
+        if (origin === "brew") {
+          detectedBrew = detectBrewPackage(
+            path,
+            config.realpath === undefined ? {} : { realpath: config.realpath }
+          )
+        }
         const replacement = replacedInstall(definition, origin, path, detectedBrew?.formula)
         if (replacement !== undefined) {
           const { lifecycle, terminalId } = await runOperation({

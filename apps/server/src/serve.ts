@@ -15,7 +15,7 @@ import {
 import { credentialFerrySources } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
-import { makeMcpManager } from "@codevisor/mcp"
+import { makeMcpManager, type NativeMcpManager } from "@codevisor/mcp"
 import {
   makePluginRegistryClient,
   makePluginsManager,
@@ -83,6 +83,14 @@ export {
 } from "./serve-boot.js"
 export type { BootScopedDataUpgradeProgress } from "./serve-boot.js"
 
+const monitorOwnerIfAppOwned = (
+  ownerPid: number | undefined,
+  lease: ServerLease
+): (() => void) | undefined => {
+  if (ownerPid === undefined) return undefined
+  return monitorAppOwner({ ownerPid, lease })
+}
+
 export const runServe = (
   args: Record<string, string>,
   startup: StartupReporter = makeStartupReporter(args)
@@ -147,7 +155,7 @@ export const runServe = (
       })
     )
     startupLease = lease
-    stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
+    stopOwnerMonitor = monitorOwnerIfAppOwned(ownerPid, lease)
     bootListener = yield* Effect.promise(() =>
       startBootListenerIfPortFree({
         host,
@@ -308,12 +316,12 @@ export const runServe = (
         ...(plugins === undefined ? {} : { pluginTools: plugins })
       })
     )
-    const nativeMcp =
-      mcp === undefined
-        ? undefined
-        : initializeOptionalServerFeature("Native MCP discovery", () =>
-            systemNativeMcpManager({ agents, dataDir: dirname(databasePath), db, mcp })
-          )
+    let nativeMcp: NativeMcpManager | undefined
+    if (mcp !== undefined) {
+      nativeMcp = initializeOptionalServerFeature("Native MCP discovery", () =>
+        systemNativeMcpManager({ agents, dataDir: dirname(databasePath), db, mcp })
+      )
+    }
     const lifecycle = initializeOptionalServerFeature("Harness lifecycle", () => {
       const manager = makeHarnessLifecycleManager({
         agents,
@@ -339,8 +347,10 @@ export const runServe = (
         agents,
         attachments,
         db,
-        resolveGitEnvironment: (directory) =>
-          directory === undefined ? gitEnvironment : resolveShellEnv({ cwd: directory }),
+        resolveGitEnvironment: (directory) => {
+          if (directory === undefined) return gitEnvironment
+          return resolveShellEnv({ cwd: directory })
+        },
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(sharedAccounts === undefined ? {} : { sharedAccounts }),

@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { basename, join } from "node:path"
 
-import type { Project, SessionSummary } from "@codevisor/api"
+import type { Bot, Project, SessionSummary } from "@codevisor/api"
 import { CreateBotRequest as CreateBotRequestSchema } from "@codevisor/api"
 import { botPath, botsRoot, legacyBotsRoot } from "@codevisor/db"
 import {
@@ -201,7 +201,8 @@ export const createBot = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateBotRequestSchema)
-  const existing = payload.id === undefined ? undefined : await run(services.db.getBot(payload.id))
+  let existing: Bot | undefined
+  if (payload.id !== undefined) existing = await run(services.db.getBot(payload.id))
   if (existing !== undefined) {
     writeJson(response, 200, existing)
     return true

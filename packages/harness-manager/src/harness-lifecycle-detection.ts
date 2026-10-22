@@ -73,6 +73,14 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     readBundleShortVersion
   } = core
 
+  const detectedBrewFormula = (binaryPath: string | undefined): string | undefined => {
+    if (binaryPath === undefined) return undefined
+    return detectBrewPackage(
+      binaryPath,
+      config.realpath === undefined ? {} : { realpath: config.realpath }
+    )?.formula
+  }
+
   const checkSource = async (
     source: HarnessUpdateSource,
     binaryPath?: string
@@ -83,15 +91,9 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
       case "pypi":
         return checkPypiLatest(source.check.packageName, fetchImpl)
       case "brew": {
-        const formula =
-          source.check.formula ??
-          (binaryPath === undefined
-            ? undefined
-            : detectBrewPackage(
-                binaryPath,
-                config.realpath === undefined ? {} : { realpath: config.realpath }
-              )?.formula)
-        return formula === undefined ? {} : checkBrewLatest(formula, fetchImpl)
+        const formula = source.check.formula ?? detectedBrewFormula(binaryPath)
+        if (formula === undefined) return {}
+        return checkBrewLatest(formula, fetchImpl)
       }
       case "github":
         return checkGithubLatest(source.check.repo, fetchImpl)

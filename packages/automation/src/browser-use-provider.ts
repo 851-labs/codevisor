@@ -151,7 +151,8 @@ export const makeBrowserUseProvider = (
     connectNative: hosts.connect,
     connectExtension: () => {
       const endpoint = extensionEndpoint()
-      return endpoint === undefined ? extensionRelay.connect() : CdpConnection.connect(endpoint)
+      if (endpoint === undefined) return extensionRelay.connect()
+      return CdpConnection.connect(endpoint)
     }
   })
 

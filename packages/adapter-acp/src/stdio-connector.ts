@@ -171,14 +171,7 @@ export const makeStdioAcpConnectorWithOptions = (
           })
         },
         extension?.configureClientApp
-      ).connect(
-        acp.ndJsonStream(
-          Writable.toWeb(child.stdin),
-          extension?.rewriteAgentLine === undefined
-            ? byteStream(child.stdout)
-            : rewriteAgentLines(byteStream(child.stdout), extension.rewriteAgentLine)
-        )
-      )
+      ).connect(acp.ndJsonStream(Writable.toWeb(child.stdin), agentOutputStream(extension, child)))
       const answerQuestion = async (
         sessionId: string,
         questionId: string,
@@ -294,6 +287,14 @@ export const makeStdioAcpConnectorWithOptions = (
     })
 })
 
+const agentOutputStream = (
+  extension: AcpStdioExtension | undefined,
+  child: ChildProcessWithoutNullStreams
+): ReadableStream<Uint8Array> => {
+  if (extension?.rewriteAgentLine === undefined) return byteStream(child.stdout)
+  return rewriteAgentLines(byteStream(child.stdout), extension.rewriteAgentLine)
+}
+
 const byteStream = (source: Readable): ReadableStream<Uint8Array> => {
   const reader = Readable.toWeb(source).getReader()
   return new ReadableStream<Uint8Array>({
@@ -322,8 +323,15 @@ const promiseWithTimeout = <A>(
   })
 }
 
+const trackDetachedProcessTree = (
+  child: ChildProcessWithoutNullStreams
+): ReturnType<typeof trackProcessTree> | undefined => {
+  if (child.pid === undefined) return undefined
+  return trackProcessTree(child.pid, { detached: true })
+}
+
 const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => Promise<void>) => {
-  const tree = child.pid === undefined ? undefined : trackProcessTree(child.pid, { detached: true })
+  const tree = trackDetachedProcessTree(child)
   tree?.catch(() => undefined)
   return async () => {
     if (tree === undefined) {

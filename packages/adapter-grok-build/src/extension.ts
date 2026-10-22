@@ -305,16 +305,14 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
 
   const planApproval = ({ params }: { readonly params: unknown }) => {
     const question = grokPlanApprovalQuestion(params)
-    return question === undefined
-      ? Promise.resolve({ outcome: "cancelled" as const })
-      : enqueueQuestion(question)
+    if (question === undefined) return Promise.resolve({ outcome: "cancelled" as const })
+    return enqueueQuestion(question)
   }
 
   const askUserQuestion = ({ params }: { readonly params: unknown }) => {
     const question = grokAskUserQuestion(params)
-    return question === undefined
-      ? Promise.resolve({ outcome: "cancelled" as const })
-      : enqueueQuestion(question)
+    if (question === undefined) return Promise.resolve({ outcome: "cancelled" as const })
+    return enqueueQuestion(question)
   }
 
   return {

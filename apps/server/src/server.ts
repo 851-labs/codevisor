@@ -15,7 +15,6 @@ import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import { forwardTerminalTitles } from "./infra/terminal-titles.js"
-import { startWorkspaceGitMonitor } from "./infra/workspace-git.js"
 import {
   makeFilePausedTurnStore,
   makeMemoryPausedTurnStore,
@@ -47,8 +46,7 @@ import {
   makeEventFanout,
   ServerError,
   swallowError,
-  sweepAttachmentTempFiles,
-  workspaceGitCheckout
+  sweepAttachmentTempFiles
 } from "./server-context.js"
 import type {
   CodevisorServerApp,
@@ -58,6 +56,11 @@ import type {
   RouteState,
   RunningCodevisorServer
 } from "./server-context.js"
+import {
+  startSharedAccountSweep,
+  startWorkspaceGitMonitorIfEnabled,
+  subscribeSessionActivity
+} from "./server-monitors.js"
 import { handleRequest } from "./server-router.js"
 import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
 import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
@@ -155,41 +158,11 @@ export const makeCodevisorServerApp = (
   const autoResume = makeServerAutoResume(services, fanout, routeState, config.id)
   routeState.autoResume = autoResume
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
-  const workspaceGit =
-    config.workspaceGit === true
-      ? startWorkspaceGitMonitor({
-          db: services.db,
-          fanout,
-          checkout: (workspace) => workspaceGitCheckout(services, config.id, workspace),
-          environment: (directory) =>
-            services.resolveGitEnvironment?.(directory) ?? Promise.resolve(process.env)
-        })
-      : undefined
+  const workspaceGit = startWorkspaceGitMonitorIfEnabled(services, config, fanout)
   void attentionSettle.recover().catch(swallowError)
   void autoResume.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
-  const unsubscribeSessionActivity = config.sessionActivity
-    ? fanout.subscribe((event) => {
-        if (event.kind !== "session.attention.updated") return
-        const payload = event.payload
-        if (
-          typeof payload !== "object" ||
-          payload === null ||
-          !("sidebarState" in payload) ||
-          typeof payload.sidebarState !== "string"
-        ) {
-          return
-        }
-        const active = payload.sidebarState === "inProgress"
-        if (active) {
-          if (activeSessionIds.has(event.subjectId)) return
-          activeSessionIds.add(event.subjectId)
-        } else {
-          if (!activeSessionIds.delete(event.subjectId)) return
-        }
-        config.sessionActivity?.update(event.subjectId, active)
-      })
-    : undefined
+  const unsubscribeSessionActivity = subscribeSessionActivity(config, fanout, activeSessionIds)
   const authSyncRefresh = makeAuthSyncRefreshScheduler(services, config, fanout)
   const unsubscribeSharedAccounts = services.sharedAccounts?.subscribe((entries) => {
     void appendAndPublish(services.db, fanout, "sync.changed", SHARED_ACCOUNTS_NAMESPACE, {
@@ -208,9 +181,7 @@ export const makeCodevisorServerApp = (
     sharedAccountReconcile = services.sharedAccounts?.reconcile().catch(swallowError)
   }
   reconcileSharedAccounts()
-  const sharedAccountSweep = services.sharedAccounts
-    ? setInterval(reconcileSharedAccounts, 30_000)
-    : undefined
+  const sharedAccountSweep = startSharedAccountSweep(services, reconcileSharedAccounts)
   sharedAccountSweep?.unref()
   /* v8 ignore next 9 */
   const unsubscribeAuth = services.auth?.subscribe((event) => {

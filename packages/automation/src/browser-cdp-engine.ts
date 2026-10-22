@@ -79,10 +79,9 @@ export const pageResult = async (
   value: Readonly<Record<string, unknown>>
 ): Promise<CallToolResult> => {
   const dialog = runtime.dialogs.get(page.sessionId)
-  const info =
-    dialog === undefined
-      ? await pageInformation(runtime, page)
-      : { url: page.target.url, title: page.target.title }
+  let info: { url: string; title: string }
+  if (dialog === undefined) info = await pageInformation(runtime, page)
+  else info = { url: page.target.url, title: page.target.title }
   return {
     content: [
       {

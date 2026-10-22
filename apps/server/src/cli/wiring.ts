@@ -52,11 +52,10 @@ export const makeAuthCommand = (runCli: RunCli) => {
     },
     ({ server, name, invite, port }) =>
       Effect.flatMap(
-        Effect.promise(async () =>
-          Option.isSome(invite) && invite.value === "-"
-            ? readStdin()
-            : Option.getOrUndefined(invite)
-        ),
+        Effect.promise(async () => {
+          if (Option.isSome(invite) && invite.value === "-") return readStdin()
+          return Option.getOrUndefined(invite)
+        }),
         (inviteCode) =>
           runCli((deps) =>
             authLoginCommand(deps, {

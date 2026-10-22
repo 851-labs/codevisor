@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 
 import {
-  chatRoute,
+  chatRouteForId,
   chatState,
   ensureAssistantChatItem,
   finishAssistantChatItem
@@ -33,7 +33,7 @@ const resolveTerminalAssistant = (
   const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
   const currentItemId = chatState(sqlite, sessionId).current_item_id ?? undefined
   const itemId =
-    (turnId === undefined ? undefined : chatRoute(sqlite, sessionId, `turn:${turnId}`)) ??
+    chatRouteForId(sqlite, sessionId, "turn", turnId) ??
     currentItemId ??
     latestStreamingAssistant(sqlite, sessionId)
   return itemId

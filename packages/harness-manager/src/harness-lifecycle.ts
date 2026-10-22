@@ -42,10 +42,9 @@ export const makeHarnessLifecycleManager = (
           harness.readiness.state === "ready"
             ? undefined
             : config.agents.catalog.find((candidate) => candidate.id === harness.id)
-        const methods =
-          definition === undefined
-            ? []
-            : await runner.resolveInstallMethods(definition).catch(() => [])
+        let methods: Awaited<ReturnType<typeof runner.resolveInstallMethods>>
+        if (definition === undefined) methods = []
+        else methods = await runner.resolveInstallMethods(definition).catch(() => [])
         return {
           ...harness,
           ...(info === undefined

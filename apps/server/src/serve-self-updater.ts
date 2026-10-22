@@ -112,7 +112,8 @@ export const makeSelfUpdater = (options: {
     return channelFromSyncedValue(entry?.value)
   }
   const resolveChannel = async (requested: ServerUpdateChannel): Promise<ServerUpdateChannel> => {
-    const fileChannel = appHosted() ? readMachineUpdateChannel(options.dataDir) : undefined
+    let fileChannel: ServerUpdateChannel | undefined
+    if (appHosted()) fileChannel = readMachineUpdateChannel(options.dataDir)
     return fileChannel ?? (await syncedChannel()) ?? requested
   }
 
@@ -256,9 +257,10 @@ export const makeSelfUpdater = (options: {
       new Promise<void>((resolve, reject) => {
         const untar = spawn("tar", ["-xzf", archivePath, "-C", destination], { stdio: "ignore" })
         untar.once("error", reject)
-        untar.once("exit", (code) =>
-          code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))
-        )
+        untar.once("exit", (code) => {
+          if (code === 0) resolve()
+          else reject(new Error(`tar exited with ${code}`))
+        })
       })
     await extractArchive(runtimeDir)
 

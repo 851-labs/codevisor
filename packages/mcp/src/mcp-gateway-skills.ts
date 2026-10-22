@@ -143,6 +143,30 @@ export const executeSkill: BuiltinSkill = {
   }
 }
 
+const savedSkillEntries = (
+  source: SkillSource,
+  skills: Awaited<ReturnType<SkillSource["list"]>>["skills"]
+): ReadonlyArray<SkillEntry> =>
+  skills
+    .filter((skill) => !RESERVED_SKILL_NAMES.has(skill.directoryName))
+    .map((skill) => ({
+      builtin: false,
+      name: skill.directoryName,
+      read: async () => {
+        const document = await source.document(skill.directoryName)
+        if (document === undefined) return undefined
+        const body = stripFrontmatter(document.content)
+        if (document.files.length === 0) return body
+        return [
+          body,
+          `Skill folder: ${document.path}`,
+          `Supporting files (relative to the skill folder; open them with your file tools): ${document.files.join(", ")}`
+        ].join("\n\n")
+      },
+      summary: skill.description ?? skill.name,
+      ...(skill.description === undefined ? {} : { composer: skill.description })
+    }))
+
 export const skillEntries = async (
   builtins: ReadonlyArray<BuiltinSkill>,
   context: SkillContext,
@@ -151,28 +175,9 @@ export const skillEntries = async (
   const visible = builtins.filter(
     (skill) => skill.gate === undefined || context.enabledIds.has(skill.gate)
   )
-  const saved =
-    source === undefined
-      ? []
-      : (await source.list()).skills
-          .filter((skill) => !RESERVED_SKILL_NAMES.has(skill.directoryName))
-          .map((skill) => ({
-            builtin: false,
-            name: skill.directoryName,
-            read: async () => {
-              const document = await source.document(skill.directoryName)
-              if (document === undefined) return undefined
-              const body = stripFrontmatter(document.content)
-              if (document.files.length === 0) return body
-              return [
-                body,
-                `Skill folder: ${document.path}`,
-                `Supporting files (relative to the skill folder; open them with your file tools): ${document.files.join(", ")}`
-              ].join("\n\n")
-            },
-            summary: skill.description ?? skill.name,
-            ...(skill.description === undefined ? {} : { composer: skill.description })
-          }))
+  let saved: ReadonlyArray<SkillEntry>
+  if (source === undefined) saved = []
+  else saved = savedSkillEntries(source, (await source.list()).skills)
   return [
     ...visible.map((skill) => ({
       builtin: true,
@@ -242,7 +247,8 @@ export const skillsToolResult = async (
   }
   const wanted = name.trim()
   const entry = entries.find((candidate) => candidate.name === wanted)
-  const text = entry === undefined ? undefined : await entry.read()
+  let text: string | undefined
+  if (entry !== undefined) text = await entry.read()
   if (text === undefined) {
     return { isError: true, text: `No skill named "${wanted}". Available skills:\n${index}` }
   }

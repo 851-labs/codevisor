@@ -98,7 +98,8 @@ export const gitRemoteUrl = async (
       .split("\n")
       .map((name) => name.trim())
       .find((name) => name.length > 0)
-    return first === undefined ? undefined : await remoteUrl(first)
+    if (first === undefined) return undefined
+    return await remoteUrl(first)
   } catch {
     return undefined
   }

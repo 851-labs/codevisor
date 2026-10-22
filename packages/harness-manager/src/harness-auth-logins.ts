@@ -303,8 +303,12 @@ export const makeHarnessLoginOperations = (
     accountId = (await config.sharedAccounts?.()?.prepareLogin(accountId, methodId)) ?? accountId
     const found = await run(config.db.getHarnessAccount(accountId))
     if (found === undefined) throw new Error(`Harness account not found: ${accountId}`)
-    const account =
-      found.harnessId === ANTIGRAVITY_HARNESS_ID ? await antigravity.managedAccount(found) : found
+    let account: HarnessAccountRecord
+    if (found.harnessId === ANTIGRAVITY_HARNESS_ID) {
+      account = await antigravity.managedAccount(found)
+    } else {
+      account = found
+    }
     if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey, shared)
     if (account.harnessId === MUSE_HARNESS_ID) return muse.begin(account, methodId, apiKey)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)

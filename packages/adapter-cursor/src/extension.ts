@@ -230,9 +230,10 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
         (params) => params,
         ({ params }) => {
           const question = withSession((sessionId) => cursorAskQuestion(params, sessionId))
-          return question === undefined
-            ? Promise.resolve({ outcome: { outcome: "cancelled" as const } })
-            : enqueueQuestion(question)
+          if (question === undefined) {
+            return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
+          }
+          return enqueueQuestion(question)
         }
       )
       app.onRequest<unknown, CursorCreatePlanResponse>(
@@ -244,9 +245,10 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
             if (plan !== undefined) emit(plan)
             return cursorCreatePlanQuestion(params, sessionId)
           })
-          return question === undefined
-            ? Promise.resolve({ outcome: { outcome: "cancelled" as const } })
-            : enqueueQuestion(question)
+          if (question === undefined) {
+            return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
+          }
+          return enqueueQuestion(question)
         }
       )
 

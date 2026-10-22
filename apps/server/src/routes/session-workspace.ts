@@ -322,23 +322,21 @@ export const loadAgentSessionFor = async (
     )
     return { agentSessionId, metadata: await load(agentSessionId) }
   }
-  const { agentSessionId, metadata } =
-    session.agentSessionId === ""
-      ? await startFresh()
-      : await (async () => {
-          const resumedId = session.agentSessionId ?? sessionId
-          try {
-            return { agentSessionId: resumedId, metadata: await load(resumedId) }
-          } catch (cause) {
-            if (
-              session.origin !== "codevisor" ||
-              !(await hasNoAgentReplyToLose(services, sessionId))
-            ) {
-              throw cause
-            }
-            return startFresh()
-          }
-        })()
+  const resumeOrStartFresh = async () => {
+    const resumedId = session.agentSessionId ?? sessionId
+    try {
+      return { agentSessionId: resumedId, metadata: await load(resumedId) }
+    } catch (cause) {
+      if (session.origin !== "codevisor" || !(await hasNoAgentReplyToLose(services, sessionId))) {
+        throw cause
+      }
+      return startFresh()
+    }
+  }
+  let started: Awaited<ReturnType<typeof startFresh>>
+  if (session.agentSessionId === "") started = await startFresh()
+  else started = await resumeOrStartFresh()
+  const { agentSessionId, metadata } = started
   if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
     await run(services.agents.closeAgentSession(agentSessionId))
     throw new HttpFailure(409, "Workspace was archived while starting its agent")

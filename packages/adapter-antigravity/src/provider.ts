@@ -157,16 +157,18 @@ export const makeAntigravityProvider = (
   ): Promise<AgyChat> => {
     await checkVersion(definition)
     const launch = launchFor(account, await environment.envFor(cwd))
-    const gateway =
-      toolGateway === undefined
-        ? { args: [], env: {} }
-        : await prepareGateway({
-            gateway: toolGateway,
-            geminiDir: launch.geminiDir,
-            home: home(),
-            overlays,
-            node
-          })
+    let gateway: Awaited<ReturnType<typeof prepareGateway>>
+    if (toolGateway === undefined) {
+      gateway = { args: [], env: {} }
+    } else {
+      gateway = await prepareGateway({
+        gateway: toolGateway,
+        geminiDir: launch.geminiDir,
+        home: home(),
+        overlays,
+        node
+      })
+    }
     return startAgyChat(emit, {
       connector,
       command: command(definition),

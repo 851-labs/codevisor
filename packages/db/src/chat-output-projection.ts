@@ -3,6 +3,7 @@ import type Database from "better-sqlite3"
 
 import {
   chatRoute,
+  chatRouteForId,
   chatState,
   createChatItem,
   ensureAssistantChatItem,
@@ -40,8 +41,8 @@ const steeredMessageOwner = (
 ): string | undefined => {
   const earlier = chatRoute(sqlite, sessionId, `steered:${itemId}`)
   if (earlier === undefined) return undefined
-  const owns = hasTranscriptEntry(sqlite, earlier, `message::${messageId}`)
-  return owns ? earlier : steeredMessageOwner(sqlite, sessionId, earlier, messageId)
+  if (hasTranscriptEntry(sqlite, earlier, `message::${messageId}`)) return earlier
+  return steeredMessageOwner(sqlite, sessionId, earlier, messageId)
 }
 
 const assistantItemForMessage = (
@@ -51,9 +52,8 @@ const assistantItemForMessage = (
   messageId: unknown
 ): string => {
   const current = ensureAssistantChatItem(sqlite, sessionId, createdAt)
-  return typeof messageId === "string"
-    ? (steeredMessageOwner(sqlite, sessionId, current, messageId) ?? current)
-    : current
+  if (typeof messageId !== "string") return current
+  return steeredMessageOwner(sqlite, sessionId, current, messageId) ?? current
 }
 
 const finalizeAssistantMessage = (
@@ -94,10 +94,14 @@ const projectUserOrSystemConversation = (
   conversation: Conversation
 ): string => {
   const existingUser = existingRetryUser(sqlite, sessionId, conversation)
-  const steeredItem =
-    existingUser === undefined && conversation.role === "user" && payload.startsTurn !== true
-      ? closeAssistantSection(sqlite, event, sessionId)
-      : undefined
+  const steeredItem = closeAssistantSectionForSteer(
+    sqlite,
+    event,
+    payload,
+    sessionId,
+    conversation,
+    existingUser
+  )
   const itemId =
     existingUser ??
     createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
@@ -113,6 +117,20 @@ const projectUserOrSystemConversation = (
     ensureAssistantChatItem(sqlite, sessionId, event.created_at)
   }
   return itemId
+}
+
+const closeAssistantSectionForSteer = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord,
+  sessionId: string,
+  conversation: Conversation,
+  existingUser: string | undefined
+): string | undefined => {
+  if (existingUser === undefined && conversation.role === "user" && payload.startsTurn !== true) {
+    return closeAssistantSection(sqlite, event, sessionId)
+  }
+  return undefined
 }
 
 const closeAssistantSection = (
@@ -213,6 +231,18 @@ const appendCompletedImage = (
   }
 }
 
+const resolvedQuestionOwner = (
+  sqlite: Database.Database,
+  sessionId: string,
+  update: string,
+  payload: JsonRecord
+): string | undefined => {
+  if (update === "question_resolved" && typeof payload.questionId === "string") {
+    return chatRoute(sqlite, sessionId, `question:${payload.questionId}`)
+  }
+  return undefined
+}
+
 const projectWorkedDetail = (
   sqlite: Database.Database,
   event: SessionEventRow,
@@ -227,14 +257,11 @@ const projectWorkedDetail = (
     const parent =
       typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : undefined
     const toolId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined
-    const questionOwner =
-      update === "question_resolved" && typeof payload.questionId === "string"
-        ? chatRoute(sqlite, sessionId, `question:${payload.questionId}`)
-        : undefined
+    const questionOwner = resolvedQuestionOwner(sqlite, sessionId, update, payload)
     const itemId =
       questionOwner ??
-      (parent === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${parent}`)) ??
-      (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
+      chatRouteForId(sqlite, sessionId, "tool", parent) ??
+      chatRouteForId(sqlite, sessionId, "tool", toolId) ??
       assistantItemForMessage(sqlite, sessionId, event.created_at, payload.messageId)
     sqlite
       .prepare(chatItemSql.markDetails)

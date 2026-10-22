@@ -93,7 +93,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           return []
         }
         const list = provider.listAgentSessions
-        return list === undefined ? [] : await list(definition, account, options)
+        if (list === undefined) return []
+        return await list(definition, account, options)
       }),
     reconcileConfigValue: (harnessId, option, value) => {
       const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
@@ -134,7 +135,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         await Promise.allSettled([state.envRefresh])
         const ids = new Set(harnessIds)
         const paths = harnessCatalog.flatMap((definition) => {
-          const path = ids.has(definition.id) ? locateHarnessBinary(definition) : undefined
+          if (!ids.has(definition.id)) return []
+          const path = locateHarnessBinary(definition)
           return path === undefined ? [] : [path]
         })
         await versions.probe(paths, state.currentEnv, { force: true })

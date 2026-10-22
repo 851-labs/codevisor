@@ -81,10 +81,15 @@ export const routeCloud = async (
     }
     let deviceId: string
     try {
-      deviceId =
-        "inviteCode" in credentials
-          ? await control.connectWithInvite!(credentials.inviteCode, registration)
-          : await control.connect(credentials.serverUrl, credentials.sessionToken, registration)
+      if ("inviteCode" in credentials) {
+        deviceId = await control.connectWithInvite!(credentials.inviteCode, registration)
+      } else {
+        deviceId = await control.connect(
+          credentials.serverUrl,
+          credentials.sessionToken,
+          registration
+        )
+      }
     } catch (cause) {
       throw new HttpFailure(
         502,

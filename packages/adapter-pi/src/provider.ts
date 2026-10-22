@@ -19,6 +19,11 @@ import { gatewayExtension, writeTemporaryExtension, type ExtensionWriter } from 
 import { startPiSession, type PiSession } from "./session.js"
 import { errorMessage, record } from "./values.js"
 
+interface PiGatewayExtension {
+  readonly path: string
+  readonly env: Readonly<Record<string, string>>
+}
+
 export interface PiProviderConfig {
   readonly connector?: PiConnector
   readonly writeExtension?: ExtensionWriter
@@ -72,17 +77,17 @@ export const makePiProvider = (
   ): Promise<PiSession> => {
     const command = locateHarnessBinary(definition, environment)
     if (command === undefined) throw new Error("pi not found on PATH")
-    const gateway =
-      toolGateway === undefined
-        ? undefined
-        : {
-            path: await writeExtension("codevisor-gateway", gatewayExtension),
-            env: {
-              CODEVISOR_MCP_GATEWAY_NAME: toolGateway.name,
-              CODEVISOR_MCP_GATEWAY_URL: toolGateway.url,
-              CODEVISOR_MCP_GATEWAY_TOKEN: toolGateway.bearerToken
-            }
-          }
+    let gateway: PiGatewayExtension | undefined
+    if (toolGateway !== undefined) {
+      gateway = {
+        path: await writeExtension("codevisor-gateway", gatewayExtension),
+        env: {
+          CODEVISOR_MCP_GATEWAY_NAME: toolGateway.name,
+          CODEVISOR_MCP_GATEWAY_URL: toolGateway.url,
+          CODEVISOR_MCP_GATEWAY_TOKEN: toolGateway.bearerToken
+        }
+      }
+    }
     const client = await connector({
       command,
       args: [

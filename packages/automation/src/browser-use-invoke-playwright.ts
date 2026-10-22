@@ -145,12 +145,13 @@ export const invokePlaywrightTools = async (
     }
     case "playwright.evaluate": {
       const source = stringArgument(args, "function")
-      return jsonResult({
-        value:
-          args.locator === undefined
-            ? await evaluateReadOnly(active, page, source, args.arg)
-            : await evaluateLocatorReadOnly(active, page, args.locator, source, args.arg)
-      })
+      let value: unknown
+      if (args.locator === undefined) {
+        value = await evaluateReadOnly(active, page, source, args.arg)
+      } else {
+        value = await evaluateLocatorReadOnly(active, page, args.locator, source, args.arg)
+      }
+      return jsonResult({ value })
     }
     case "playwright.downloadMedia": {
       const element = await resolveLocatorElement(

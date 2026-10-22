@@ -49,6 +49,15 @@ const installedBinary = (
     environment.executableExists(binary, environment.env)
   )
 
+const locateFallbackBinary = (
+  definition: HarnessDefinition,
+  environment: ProviderEnvironment,
+  installed: string
+): string | undefined => {
+  if (definition.detectBinaries.includes(installed)) return undefined
+  return environment.locateExecutable(installed, environment.env)
+}
+
 const resolveLaunch = (
   definition: HarnessDefinition,
   environment: ProviderEnvironment
@@ -73,9 +82,7 @@ const resolveLaunch = (
     default: {
       const located =
         environment.locateExecutable(launch.command, environment.env) ??
-        (definition.detectBinaries.includes(installed)
-          ? undefined
-          : environment.locateExecutable(installed, environment.env))
+        locateFallbackBinary(definition, environment, installed)
       if (located !== undefined) {
         return { args: launch.args, command: located }
       }
@@ -262,10 +269,12 @@ export const makeAcpProvider = (
   const readUsage = config.readUsageLimits
   return {
     id: config.providerId ?? "acp",
-    readiness: (definition) =>
-      resolveLaunch(definition, environment) === undefined
-        ? unavailableReadiness(definition, environment)
-        : { state: "ready" },
+    readiness: (definition) => {
+      if (resolveLaunch(definition, environment) === undefined) {
+        return unavailableReadiness(definition, environment)
+      }
+      return { state: "ready" }
+    },
     createSession: (
       definition,
       cwd,

@@ -174,9 +174,10 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const results = await Promise.allSettled(
       enabled.map(async (server) => {
         const provider = automationProviders.get(server.id)
-        return provider === undefined
-          ? { server, tools: (await connectUpstream(server.id)).tools }
-          : { server, tools: await providerTools(provider, sessionId) }
+        if (provider === undefined) {
+          return { server, tools: (await connectUpstream(server.id)).tools }
+        }
+        return { server, tools: await providerTools(provider, sessionId) }
       })
     )
     return [
@@ -238,11 +239,10 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
     if (!allowed) throw new Error("Tool server is disabled for this session")
     const provider = automationProviders.get(serverId)
-    const definition = (
-      provider === undefined
-        ? (await connectUpstream(serverId)).tools
-        : await providerTools(provider, sessionId)
-    ).find((candidate) => candidate.name === toolName)
+    let serverTools: ReadonlyArray<Tool>
+    if (provider === undefined) serverTools = (await connectUpstream(serverId)).tools
+    else serverTools = await providerTools(provider, sessionId)
+    const definition = serverTools.find((candidate) => candidate.name === toolName)
     if (definition === undefined) throw new Error(`Tool not found: ${path}`)
     return definition
   }

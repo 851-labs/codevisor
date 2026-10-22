@@ -90,7 +90,8 @@ export const appendAndPublish = async (
     kind === "session.queue.updated" ||
     kind === "session.authRequired" ||
     kind === "bot.message"
-  const before = affectsAttention ? await run(db.getSessionSummary(subjectId)) : undefined
+  let before: SessionSummary | undefined
+  if (affectsAttention) before = await run(db.getSessionSummary(subjectId))
   const event = await run(db.appendEvent(kind, subjectId, payload))
   await run(fanout.publish(event))
   if (before !== undefined) {

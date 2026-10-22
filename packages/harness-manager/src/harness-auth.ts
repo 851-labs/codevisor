@@ -247,10 +247,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     },
     openCodeProviders: async (accountId) => {
       const profile = await openCodeProfile(accountId)
-      const providers =
-        ((await openCodeMajorVersion(profile.command)) ?? 1) >= 2
-          ? await openCode2.providers(profile)
-          : await openCodeAuth.providers(accountId)
+      let providers: ReadonlyArray<OpenCodeAuthProvider>
+      if (((await openCodeMajorVersion(profile.command)) ?? 1) >= 2) {
+        providers = await openCode2.providers(profile)
+      } else {
+        providers = await openCodeAuth.providers(accountId)
+      }
       const configured = (await config.sharedProviders?.()?.configured("opencode", accountId)) ?? []
       const disabled = (await config.sharedProviders?.()?.disabled?.("opencode", accountId)) ?? []
       return withSharedProviderCredentials(providers, configured, disabled)
@@ -264,7 +266,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         apiKey === undefined &&
         providers !== undefined &&
         providerOAuthSupported("opencode", providerId)
-      const hold = captured ? await isolatedOpenCode2(profile) : await openCode2.hold(profile)
+      let hold: OpenCodeServerHold
+      if (captured) hold = await isolatedOpenCode2(profile)
+      else hold = await openCode2.hold(profile)
       const flow = await openCode2Logins.begin(hold, profile.cwd, {
         accountId,
         providerId,

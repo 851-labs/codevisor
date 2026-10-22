@@ -71,12 +71,13 @@ export interface CloudBridge {
   readonly bridgeTunnelMedia: NonNullable<CloudServerControl["bridgeTunnelMedia"]>
 }
 
-const readCredentials = async (
-  path: string
-): Promise<
-  | { credentials: MachineCredentials; managedBy: CloudBridgeManagedBy; machineName?: string }
-  | undefined
-> => {
+interface StoredCloudCredentials {
+  credentials: MachineCredentials
+  managedBy: CloudBridgeManagedBy
+  machineName?: string
+}
+
+const readCredentials = async (path: string): Promise<StoredCloudCredentials | undefined> => {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
     const serverUrl = stringField(parsed, "serverUrl")
@@ -330,15 +331,17 @@ export const connectCloudBridge = async (
   const bridgeOptions = { ...options, machineName: params.machineName ?? options.machineName }
   const fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init))
   const machineName = bridgeOptions.machineName === "" ? hostname() : bridgeOptions.machineName
-  const credentials =
-    "inviteCode" in params
-      ? await redeemMachineInvite(fetchImpl, params.inviteCode, machineName)
-      : await provisionMachine(
-          fetchImpl,
-          params.serverUrl.replace(/\/+$/, ""),
-          params.sessionToken,
-          machineName
-        )
+  let credentials: MachineCredentials
+  if ("inviteCode" in params) {
+    credentials = await redeemMachineInvite(fetchImpl, params.inviteCode, machineName)
+  } else {
+    credentials = await provisionMachine(
+      fetchImpl,
+      params.serverUrl.replace(/\/+$/, ""),
+      params.sessionToken,
+      machineName
+    )
+  }
   await writeFile(
     options.credentialsPath,
     JSON.stringify({ ...credentials, managedBy, machineName: params.machineName }, null, 2),
@@ -380,8 +383,8 @@ export const makeCloudServerControl = (
     return connecting
   }
   const storedCredentials = async (): Promise<MachineCredentials> => {
-    const stored =
-      current === undefined ? undefined : await readCredentials(options.credentialsPath)
+    let stored: StoredCloudCredentials | undefined
+    if (current !== undefined) stored = await readCredentials(options.credentialsPath)
     if (stored === undefined) {
       throw new Error("This machine is not connected to a Codevisor Cloud account")
     }
@@ -417,10 +420,14 @@ export const makeCloudServerControl = (
       return true
     },
     machines: () => current?.machines(),
-    requestGateway: (deviceId, body, signal) =>
-      current === undefined
-        ? Promise.reject(new GatewayChannelError("before-send", "not connected to the cloud relay"))
-        : current.requestGateway(deviceId, body, signal),
+    requestGateway: (deviceId, body, signal) => {
+      if (current === undefined) {
+        return Promise.reject(
+          new GatewayChannelError("before-send", "not connected to the cloud relay")
+        )
+      }
+      return current.requestGateway(deviceId, body, signal)
+    },
     bridgeTunnelMedia: async (request, answer) => current?.bridgeTunnelMedia(request, answer)
   }
 }

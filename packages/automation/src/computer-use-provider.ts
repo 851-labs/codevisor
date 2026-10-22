@@ -424,9 +424,10 @@ export const makeComputerUseProvider = (
         )
         const app = computerResultApp(result)
         if (app !== undefined) context.onApp?.(app)
-        return toolName === "stop_recording" || toolName === "recording_status"
-          ? await recordingArtifacts.enrich(result, context)
-          : result
+        if (toolName === "stop_recording" || toolName === "recording_status") {
+          return await recordingArtifacts.enrich(result, context)
+        }
+        return result
       } catch (cause) {
         const { requestPermissions, ...retryContext } = context
         if (requestPermissions !== undefined && permissionRequired(cause)) {

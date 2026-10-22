@@ -128,6 +128,22 @@ describe("@codevisor/agent-runtime", () => {
     expect(await versionOf("codex")).toBe("0.40.0")
   })
 
+  it("skips requested harnesses whose binary isn't installed on a forced version refresh", async () => {
+    const probed: Array<string> = []
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/opt/tools" },
+      locateExecutable: (name) => (name === "claude" ? "/opt/tools/claude" : undefined),
+      readVersionOutput: (path) => {
+        probed.push(path)
+        return Promise.resolve("tool 2.1.5")
+      }
+    })
+
+    await run(runtime.refreshHarnessVersions(["claude-code", "codex"]))
+
+    expect(probed).toEqual(["/opt/tools/claude"])
+  })
+
   it("refreshes the environment so readiness picks up newly installed CLIs", async () => {
     let resolveCalls = 0
     const runtime = makeAcpAgentRuntime({
