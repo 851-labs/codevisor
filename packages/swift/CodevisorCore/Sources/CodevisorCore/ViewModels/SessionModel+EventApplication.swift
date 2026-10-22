@@ -2,230 +2,96 @@ import Foundation
 import ACPKit
 
 extension SessionModel {
-  private func apply(_ update: SessionUpdate) {
-    appliedUpdateCount += 1
-    if let owner = Self.persistedOwner(of: update), activeItem?.id != owner, settledIndexById[owner] == nil {
-      return
-    }
-    if case let .plan(plan) = update {
-      sessionPlan = plan
-    }
-    switch update {
-    case let .userMessageChunk(block, _):
-      appendRemoteUserIfNeeded(text: block.textValue ?? "")
-    case let .availableCommandsUpdate(commands):
-      availableCommands = commands
-    case let .availableSkillsUpdate(skills):
-      availableSkills = skills
-    case let .currentModeUpdate(modeId):
-      if var state = modeState {
-        state.currentModeId = modeId
-        modeState = state
-      }
-    case let .configOptionUpdate(options):
-      if isReplayingHistory {
-        for option in options {
-          historicalConfigSelections[option.id] = option.currentValue
-        }
-      } else {
-        configOptions = preservingInFlightPicks(options)
-      }
-    case let .usageUpdate(usage):
-      self.usage = usage
-    case let .goalUpdate(goal):
-      self.goal = goal
-    case .goalCleared:
-      goal = nil
-    case let .question(request):
-      pendingQuestion = request
-      if TranscriptSetupRequest.kind(of: request.questions) != nil {
-        applySetupUpdate(update, questionId: request.questionId)
-        closeActiveSection()
-        settleActiveItem()
-      }
-    case let .questionResolved(resolution):
-      if pendingQuestion?.questionId == resolution.questionId {
-        pendingQuestion = nil
-      }
-      markActivePlanResumedIfNeeded()
-      if TranscriptSetupRequest.kind(of: resolution.questions) != nil {
-        applySetupUpdate(update, questionId: resolution.questionId)
-        if let continuation = resolution.assistantItemId.flatMap(UUID.init(uuidString:)), activeItem == nil {
-          startActiveBubble()
-          adoptActiveAssistantItemIdentity(continuation)
-          if !isSending { isSending = true }
-        }
-      } else if resolution.outcome == .answered {
-        ensureAssistantTurn()
-        guard case .assistant(var message) = activeItem else { return }
-        TranscriptReducer.apply(update, to: &message.turn)
-        activeItem = .assistant(message)
-        recordToolRoute(for: update, itemId: message.id)
-      }
-    default:
-      if let index = owningItemIndex(for: update),
-        case .assistant(var message) = item(at: index),
-        !(index == itemCount - 1 && message.turn.isGenerating)
-      {
-        TranscriptReducer.apply(update, to: &message.turn)
-        setItem(.assistant(message), at: index)
-        recordToolRoute(for: update, itemId: message.id)
-        loadDeferredTranscriptDetails(of: message)
-        return
-      }
-      ensureAssistantTurn()
-      guard case .assistant(var message) = activeItem else { return }
-      message.turn.isGenerating = true
-      if message.turn.retryStatus != nil { message.turn.retryStatus = nil }
-      if !isSending { isSending = true }
-      let planRevision = message.turn.planRevision
-      let planDocument = message.turn.planDocument
-      TranscriptReducer.apply(update, to: &message.turn)
-      if case .planDocument = update,
-        message.turn.planRevision != planRevision || message.turn.planDocument != planDocument
-      {
-        message.turn.planProposedAt = now()
-        message.turn.planResumedAt = nil
-      }
-      activeItem = .assistant(message)
-      recordToolRoute(for: update, itemId: message.id)
-    }
-  }
-
-  private static func persistedOwner(of update: SessionUpdate) -> UUID? {
-    switch update {
-    case let .agentMessagePatch(patch): return patch.chatItemId.flatMap(UUID.init(uuidString:))
-    case let .toolCall(call): return call.chatItemId.flatMap(UUID.init(uuidString:))
-    default: return nil
-    }
-  }
-
-  private func owningItemIndex(for update: SessionUpdate) -> Int? {
-    if let owner = Self.persistedOwner(of: update) {
-      return activeItem?.id == owner ? settledConversation.count : settledIndexById[owner]
-    }
-    var parentId: String?
-    var toolCallId: String?
-    switch update {
-    case let .agentMessagePatch(patch):
-      parentId = patch.parentToolCallId
-    case let .agentMessageChunk(_, _, parent, _):
-      parentId = parent
-    case let .agentThoughtChunk(_, _, parent):
-      parentId = parent
-    case let .toolCall(call):
-      parentId = call.parentToolCallId
-      toolCallId = call.toolCallId
-    case let .toolCallUpdate(toolUpdate):
-      parentId = toolUpdate.parentToolCallId
-      toolCallId = toolUpdate.toolCallId
-    default:
-      return nil
-    }
-    let ownerId =
-      parentId.flatMap { toolOwnerItemIds[$0] }
-      ?? toolCallId.flatMap { toolOwnerItemIds[$0] }
-    guard let ownerId else { return nil }
-    if activeItem?.id == ownerId { return settledConversation.count }
-    return settledIndexById[ownerId]
-  }
-
-  private func recordToolRoute(for update: SessionUpdate, itemId: UUID) {
-    if toolOwnerItemIds.count > 1024 {
-      let resident = Set(
-        conversation.flatMap { item -> [String] in
-          guard case let .assistant(message) = item else { return [] }
-          return message.turn.allToolCalls.map(\.toolCallId)
-        })
-      toolOwnerItemIds = toolOwnerItemIds.filter { resident.contains($0.key) }
-    }
-    switch update {
-    case let .toolCall(call):
-      toolOwnerItemIds[call.toolCallId] = itemId
-    case let .toolCallUpdate(call):
-      toolOwnerItemIds[call.toolCallId] = itemId
-    default:
-      break
-    }
-  }
-
   func apply(_ event: ServerSessionStreamEvent) {
     if case let .synchronization(state) = event {
       applySynchronization(state)
       return
     }
-    if !isReplayingHistory, connectionRecovery.isRunning, streamSynchronization != .reconnecting {
-      connectionRecovery.stop()
+    if liveEventEndsRecovery { connectionRecovery.stop() }
+    if isLiveProviderActivity(event) { noteProviderActivity() }
+
+    dispatch(event)
+  }
+
+  public func clearModelFallback() {
+    modelFallback = nil
+  }
+
+  @discardableResult
+  func finish(_ stop: SessionTurnStop, chatItemId: UUID? = nil) -> Bool {
+    guard closeSettledTurn(chatItemId, stop) else {
+      pendingQuestion = nil
+      closeActiveTurn(stop)
+      return false
     }
-    if !isReplayingHistory, isProviderActivity(event) {
-      noteProviderActivity()
-    }
+    guard !activeTurnIsGenerating else { return true }
+
+    pendingQuestion = nil
+    return false
+  }
+
+  func endTurn() {
+    let wasSending = isSending
+    isSending = false
+    connectionRecovery.stop()
+    stalledTurnWatch.stop()
+    isTakingLongerThanExpected = false
+    if wasSending { onTurnEnded?() }
+  }
+
+  func noteProviderActivity() {
+    if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
+    stalledTurnWatch.restart(for: self)
+  }
+
+  func applySetupUpdate(_ update: SessionUpdate, questionId: String) {
+    guard let owner = setupOwnerIndex(questionId: questionId),
+      case .assistant(var message) = item(at: owner)
+    else { return }
+
+    TranscriptReducer.apply(update, to: &message.turn)
+    setItem(.assistant(message), at: owner)
+    transcriptProjectionRevision &+= 1
+  }
+
+  func selectMode(_ modeId: String) {
+    guard var state = modeState else { return }
+
+    state.currentModeId = modeId
+    modeState = state
+  }
+
+  private var liveEventEndsRecovery: Bool {
+    !isReplayingHistory && connectionRecovery.isRunning && streamSynchronization != .reconnecting
+  }
+
+  private func isLiveProviderActivity(_ event: ServerSessionStreamEvent) -> Bool {
+    !isReplayingHistory && SessionStalledTurnWatch.isProviderActivity(event)
+  }
+
+  private func dispatch(_ event: ServerSessionStreamEvent) {
     switch event {
-    case .synchronization:
+    case .synchronization, .runtimeState:
       break
     case let .update(update):
       apply(update)
     case let .assistantItemStarted(itemId):
-      ensureAssistantTurn()
-      adoptActiveAssistantItemIdentity(itemId)
-      markActiveTurnStartedIfNeeded()
+      startAssistantItem(itemId)
     case let .assistantFinalized(markdown, messageId, attachments):
-      ensureAssistantTurn()
-      guard case .assistant(var message) = activeItem else { return }
-      TranscriptReducer.finalizeAssistant(
-        markdown: markdown,
-        messageId: messageId,
-        attachments: attachments,
-        to: &message.turn
-      )
-      activeItem = .assistant(message)
-      appliedUpdateCount += 1
+      finalizeAssistant(markdown: markdown, messageId: messageId, attachments: attachments)
     case let .userMessage(id, text, attachments, isEvent, assistantItemId):
-      appliedUpdateCount += 1
-      let promotedFromQueue = promptQueue.consumePromotion(id: id)
-      appendRemoteUserIfNeeded(
-        id: id,
-        text: text,
-        attachments: attachments,
-        isEvent: isEvent,
-        assistantItemId: assistantItemId
-      )
-      if let echoed = id.flatMap(UUID.init(uuidString:)) { confirmOutgoing(echoed) }
-      if promotedFromQueue, !isEvent {
-        onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
-      }
+      let remote = RemoteUserMessage(
+        id: id, text: text, attachments: attachments, isEvent: isEvent, assistantItemId: assistantItemId)
+      applyUserMessage(remote)
     case let .finished(stopReason, stopDetail, stopKind, retryable, chatItemId):
-      let activeTurnContinues = finish(
-        stopReason: stopReason,
-        outcome: stopReason == .cancelled ? .cancelled : .completed,
-        stopDetail: stopDetail,
-        stopKind: stopKind,
-        retryable: retryable,
-        chatItemId: chatItemId
-      )
-      if !activeTurnContinues { endTurn() }
+      let stop = SessionTurnStop.finished(stopReason, detail: stopDetail, kind: stopKind, retryable: retryable)
+      finishTurn(stop, chatItemId: chatItemId)
     case let .failed(message, retryable, chatItemId):
-      errorMessage = message
-      let activeTurnContinues = finish(
-        stopReason: nil,
-        outcome: .failed,
-        stopDetail: message,
-        retryable: retryable,
-        chatItemId: chatItemId
-      )
-      if !activeTurnContinues { endTurn() }
+      applyFailure(message, retryable: retryable, chatItemId: chatItemId)
     case let .authenticationRequired(message):
-      errorMessage = message
-      harnessAuthenticationErrorMessage = message
-      finish(stopReason: nil, outcome: .failed, stopDetail: message)
-      endTurn()
+      requireAuthentication(message)
     case let .retrying(retry):
-      ensureAssistantTurn()
-      guard case .assistant(var message) = activeItem else { return }
-      message.turn.isGenerating = true
-      message.turn.retryStatus = retry
-      activeItem = .assistant(message)
-      if !isSending { isSending = true }
+      showRetry(retry)
     case let .queueUpdated(queue):
       promptQueue.apply(queue)
     case let .updateGate(waiting, harnessName):
@@ -234,11 +100,8 @@ extension SessionModel {
       autoResume = pending
     case let .backgroundTasks(tasks):
       backgroundTasks = tasks
-    case .runtimeState:
-      break
     case let .planApprovalRequired(required):
-      pendingPlanApproval = required
-      onPlanApprovalChanged?(required)
+      requirePlanApproval(required)
     case let .modelFallback(fallback):
       modelFallback = fallback
     case let .botMessage(message):
@@ -246,170 +109,276 @@ extension SessionModel {
     }
   }
 
-  public func clearModelFallback() {
-    modelFallback = nil
+  private func startAssistantItem(_ itemId: UUID) {
+    ensureAssistantTurn()
+    adoptActiveAssistantItemIdentity(itemId)
+    markActiveTurnStartedIfNeeded()
   }
 
-  @discardableResult
-  func finish(
-    stopReason: StopReason?,
-    outcome: TranscriptReducer.TurnOutcome,
-    stopDetail: String? = nil,
-    stopKind: String? = nil,
-    retryable: Bool = false,
-    chatItemId: UUID? = nil
-  ) -> Bool {
-    if let chatItemId,
+  private func finalizeAssistant(markdown: String, messageId: String?, attachments: [Attachment]) {
+    ensureAssistantTurn()
+    guard case .assistant(var message) = activeItem else { return }
+
+    TranscriptReducer.finalizeAssistant(
+      markdown: markdown,
+      messageId: messageId,
+      attachments: attachments,
+      to: &message.turn
+    )
+    activeItem = .assistant(message)
+    appliedUpdateCount += 1
+  }
+
+  private func applyUserMessage(_ remote: RemoteUserMessage) {
+    appliedUpdateCount += 1
+    let promotedFromQueue = promptQueue.consumePromotion(id: remote.id)
+    appendRemoteUserIfNeeded(remote)
+
+    if let echoId = remote.echoId { confirmOutgoing(echoId) }
+    if promotedFromQueue, !remote.isEvent { onQueuedPromptPromoted?(remote.echoId) }
+  }
+
+  private func finishTurn(_ stop: SessionTurnStop, chatItemId: UUID?) {
+    let activeTurnContinues = finish(stop, chatItemId: chatItemId)
+    if !activeTurnContinues { endTurn() }
+  }
+
+  private func applyFailure(_ message: String, retryable: Bool, chatItemId: UUID?) {
+    errorMessage = message
+    finishTurn(.failed(message, retryable: retryable), chatItemId: chatItemId)
+  }
+
+  private func requireAuthentication(_ message: String) {
+    errorMessage = message
+    harnessAuthenticationErrorMessage = message
+    finish(.failed(message))
+    endTurn()
+  }
+
+  private func showRetry(_ retry: RetryStatus) {
+    ensureAssistantTurn()
+    guard case .assistant(var message) = activeItem else { return }
+
+    message.turn.isGenerating = true
+    message.turn.retryStatus = retry
+    activeItem = .assistant(message)
+    markSending()
+  }
+
+  private func requirePlanApproval(_ required: Bool) {
+    pendingPlanApproval = required
+    onPlanApprovalChanged?(required)
+  }
+
+  private func closeSettledTurn(_ chatItemId: UUID?, _ stop: SessionTurnStop) -> Bool {
+    guard let chatItemId,
       activeItem?.id != chatItemId,
       let index = settledIndexById[chatItemId],
       case .assistant(var settled) = settledConversation[index]
-    {
-      closeTurn(
-        &settled.turn,
-        stopReason: stopReason,
-        outcome: outcome,
-        stopDetail: stopDetail,
-        stopKind: stopKind,
-        retryable: retryable
-      )
-      settledConversation[index] = .assistant(settled)
-      if case let .assistant(active) = activeItem, active.turn.isGenerating {
-        return true
-      }
-      pendingQuestion = nil
-      return false
-    }
-    pendingQuestion = nil
-    guard case .assistant(var message) = activeItem else { return false }
-    closeTurn(
-      &message.turn,
-      stopReason: stopReason,
-      outcome: outcome,
-      stopDetail: stopDetail,
-      stopKind: stopKind,
-      retryable: retryable
-    )
+    else { return false }
+
+    stop.close(&settled.turn, endedAt: now())
+    settledConversation[index] = .assistant(settled)
+    return true
+  }
+
+  private func closeActiveTurn(_ stop: SessionTurnStop) {
+    guard case .assistant(var message) = activeItem else { return }
+
+    stop.close(&message.turn, endedAt: now())
     activeItem = .assistant(message)
-    return false
   }
 
-  private func closeTurn(
-    _ turn: inout AssistantTurn,
-    stopReason: StopReason?,
-    outcome: TranscriptReducer.TurnOutcome,
-    stopDetail: String?,
-    stopKind: String? = nil,
-    retryable: Bool
-  ) {
-    turn.isGenerating = false
-    turn.isThinking = false
-    turn.retryStatus = nil
-    turn.stopReason = stopReason
-    turn.stopDetail = stopDetail
-    turn.stopKind = stopKind
-    turn.retryable = retryable
-    turn.endedAt = now()
-    TranscriptReducer.settleToolCalls(&turn, outcome: outcome)
+  private func apply(_ update: SessionUpdate) {
+    appliedUpdateCount += 1
+    guard !belongsToUnloadedItem(update) else { return }
+
+    if case let .plan(plan) = update { sessionPlan = plan }
+    dispatch(update)
   }
 
-  func endTurn() {
-    let wasSending = isSending
-    isSending = false
-    connectionRecovery.stop()
-    stalledTurnSchedule?.cancel()
-    stalledTurnSchedule = nil
-    isTakingLongerThanExpected = false
-    if wasSending { onTurnEnded?() }
-  }
-
-  func noteProviderActivity() {
-    if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
-    stalledTurnSchedule?.cancel()
-    stalledTurnSchedule = quietTurnScheduler.schedule(Self.stalledTurnQuietInterval) { [weak self] in
-      guard let self, self.isSending else { return }
-      self.isTakingLongerThanExpected = true
-      let cursorBeforeReload = self.serverEventCursor
-      await self.reconcileFromServer()
-      guard self.isSending else { return }
-      let advanced: Bool
-      if let before = cursorBeforeReload, let after = self.serverEventCursor {
-        advanced = after > before
-      } else {
-        advanced = false
-      }
-      if !advanced { self.isTakingLongerThanExpected = true }
+  private func dispatch(_ update: SessionUpdate) {
+    switch update {
+    case let .userMessageChunk(block, _):
+      appendRemoteUserIfNeeded(RemoteUserMessage(text: block.textValue ?? ""))
+    case let .availableCommandsUpdate(commands):
+      availableCommands = commands
+    case let .availableSkillsUpdate(skills):
+      availableSkills = skills
+    case let .currentModeUpdate(modeId):
+      selectMode(modeId)
+    case let .configOptionUpdate(options):
+      applyConfigOptions(options)
+    case let .usageUpdate(usage):
+      self.usage = usage
+    case let .goalUpdate(goal):
+      self.goal = goal
+    case .goalCleared:
+      goal = nil
+    case let .question(request):
+      applyQuestion(request)
+    case let .questionResolved(resolution):
+      applyQuestionResolution(resolution)
+    default:
+      applyTranscriptUpdate(update)
     }
   }
 
-  private func isProviderActivity(_ event: ServerSessionStreamEvent) -> Bool {
-    switch event {
-    case let .update(update):
-      switch update {
-      case .agentMessagePatch, .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument,
-        .toolCall, .toolCallUpdate, .question, .questionResolved, .contextCompaction:
-        return true
-      case .userMessageChunk, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
-        .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
-        return false
-      }
-    case .retrying, .userMessage, .assistantItemStarted, .assistantFinalized:
-      return true
-    case .synchronization, .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
-      .autoResume, .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback, .botMessage:
-      return false
-    }
+  private func belongsToUnloadedItem(_ update: SessionUpdate) -> Bool {
+    guard let owner = SessionUpdateRoutes.persistedOwner(of: update) else { return false }
+    return itemIndex(of: owner) == nil
   }
 
-  private func appendRemoteUserIfNeeded(
-    id: String? = nil,
-    text: String,
-    attachments: [Attachment] = [],
-    isEvent: Bool = false,
-    assistantItemId: UUID? = nil
-  ) {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-    if let echoId = id.flatMap(UUID.init(uuidString:)),
-      let index = settledConversation.lastIndex(where: { item in
-        if case let .user(user) = item { return user.id == echoId }
-        return false
-      })
-    {
-      mergeRemoteEcho(at: index, attachments: attachments, isEvent: isEvent)
-      pendingOptimisticUserMessageIDs.remove(echoId)
+  private func applyConfigOptions(_ options: [SessionConfigOption]) {
+    guard isReplayingHistory else {
+      configOptions = preservingInFlightPicks(options)
       return
     }
-    if !isEvent,
-      let index = settledConversation.lastIndex(where: { item in
-        guard case let .user(user) = item else { return false }
-        return pendingOptimisticUserMessageIDs.contains(user.id)
-          && user.text == trimmed
-      }), case var .user(user) = settledConversation[index]
-    {
-      if user.attachments.isEmpty, !attachments.isEmpty {
-        user.attachments = attachments
-        settledConversation[index] = .user(user)
-      }
-      pendingOptimisticUserMessageIDs.remove(user.id)
-      return
+
+    for option in options {
+      historicalConfigSelections[option.id] = option.currentValue
     }
+  }
+
+  private func applyQuestion(_ request: QuestionRequest) {
+    pendingQuestion = request
+    guard Self.isSetupQuestion(request.questions) else { return }
+
+    applySetupUpdate(.question(request), questionId: request.questionId)
     closeActiveSection()
     settleActiveItem()
-    appendSettled(
-      .user(
-        UserMessage(
-          id: id.flatMap(UUID.init(uuidString:)) ?? UUID(),
-          text: text,
-          attachments: attachments,
-          isEvent: isEvent
-        )))
+  }
+
+  private func applyQuestionResolution(_ resolution: QuestionResolution) {
+    if pendingQuestion?.questionId == resolution.questionId { pendingQuestion = nil }
+    markActivePlanResumedIfNeeded()
+
+    if Self.isSetupQuestion(resolution.questions) {
+      resolveSetupQuestion(resolution)
+    } else if resolution.outcome == .answered {
+      applyAnswer(resolution)
+    }
+  }
+
+  private func resolveSetupQuestion(_ resolution: QuestionResolution) {
+    applySetupUpdate(.questionResolved(resolution), questionId: resolution.questionId)
+    guard let continuation = resolution.assistantItemId.flatMap(UUID.init(uuidString:)),
+      activeItem == nil
+    else { return }
+
     startActiveBubble()
-    if let assistantItemId { adoptActiveAssistantItemIdentity(assistantItemId) }
-    if !isSending { isSending = true }
+    adoptActiveAssistantItemIdentity(continuation)
+    markSending()
+  }
+
+  private func applyAnswer(_ resolution: QuestionResolution) {
+    let update = SessionUpdate.questionResolved(resolution)
+    ensureAssistantTurn()
+    guard case .assistant(var message) = activeItem else { return }
+
+    TranscriptReducer.apply(update, to: &message.turn)
+    activeItem = .assistant(message)
+    updateRoutes.record(update, owner: message.id, conversation: conversation)
+  }
+
+  private func applyTranscriptUpdate(_ update: SessionUpdate) {
+    if appliedToOwningItem(update) { return }
+
+    applyToGeneratingTurn(update)
+  }
+
+  private func appliedToOwningItem(_ update: SessionUpdate) -> Bool {
+    guard let index = owningItemIndex(for: update),
+      case .assistant(var message) = item(at: index),
+      !isGeneratingTail(message, at: index)
+    else { return false }
+
+    TranscriptReducer.apply(update, to: &message.turn)
+    setItem(.assistant(message), at: index)
+    updateRoutes.record(update, owner: message.id, conversation: conversation)
+    loadDeferredTranscriptDetails(of: message)
+    return true
+  }
+
+  private func applyToGeneratingTurn(_ update: SessionUpdate) {
+    ensureAssistantTurn()
+    guard case .assistant(var message) = activeItem else { return }
+
+    message.turn.isGenerating = true
+    if message.turn.retryStatus != nil { message.turn.retryStatus = nil }
+    markSending()
+    apply(update, stampingPlanProposalIn: &message.turn)
+    activeItem = .assistant(message)
+    updateRoutes.record(update, owner: message.id, conversation: conversation)
+  }
+
+  private func apply(_ update: SessionUpdate, stampingPlanProposalIn turn: inout AssistantTurn) {
+    let planRevision = turn.planRevision
+    let planDocument = turn.planDocument
+    TranscriptReducer.apply(update, to: &turn)
+    guard case .planDocument = update,
+      Self.planChanged(turn, revision: planRevision, document: planDocument)
+    else { return }
+
+    turn.planProposedAt = now()
+    turn.planResumedAt = nil
+  }
+
+  private func isGeneratingTail(_ message: AssistantMessage, at index: Int) -> Bool {
+    index == itemCount - 1 && message.turn.isGenerating
+  }
+
+  private func owningItemIndex(for update: SessionUpdate) -> Int? {
+    guard let ownerId = updateRoutes.owner(of: update) else { return nil }
+
+    return itemIndex(of: ownerId)
+  }
+
+  private func itemIndex(of ownerId: UUID) -> Int? {
+    if activeItem?.id == ownerId { return settledConversation.count }
+    return settledIndexById[ownerId]
+  }
+
+  private func appendRemoteUserIfNeeded(_ remote: RemoteUserMessage) {
+    guard remote.hasContent else { return }
+
+    switch remote.match(in: settledConversation, pendingOptimisticIds: pendingOptimisticUserMessageIDs) {
+    case let .echo(index, echoId):
+      mergeRemoteEcho(remote, at: index)
+      pendingOptimisticUserMessageIDs.remove(echoId)
+    case let .optimistic(index, user):
+      confirmOptimisticUser(user, at: index, from: remote)
+    case nil:
+      appendRemoteUser(remote)
+    }
+  }
+
+  private func mergeRemoteEcho(_ remote: RemoteUserMessage, at index: Int) {
+    guard case let .user(user) = settledConversation[index] else { return }
+
+    let merged = ConversationItem.user(remote.mergingEcho(into: user))
+    guard merged != settledConversation[index] else { return }
+
+    settledConversation[index] = merged
+  }
+
+  private func confirmOptimisticUser(_ user: UserMessage, at index: Int, from remote: RemoteUserMessage) {
+    if let filled = remote.fillingAttachments(of: user) { settledConversation[index] = .user(filled) }
+    pendingOptimisticUserMessageIDs.remove(user.id)
+  }
+
+  private func appendRemoteUser(_ remote: RemoteUserMessage) {
+    closeActiveSection()
+    settleActiveItem()
+    appendSettled(.user(remote.userMessage))
+    startActiveBubble()
+    if let assistantItemId = remote.assistantItemId { adoptActiveAssistantItemIdentity(assistantItemId) }
+    markSending()
   }
 
   private func closeActiveSection() {
     guard case var .assistant(message) = activeItem, message.turn.isGenerating else { return }
+
     message.turn.isGenerating = false
     message.turn.isThinking = false
     message.turn.retryStatus = nil
@@ -417,54 +386,62 @@ extension SessionModel {
     activeItem = .assistant(message)
   }
 
-  private func mergeRemoteEcho(at index: Int, attachments: [Attachment], isEvent: Bool) {
-    guard case var .user(user) = settledConversation[index] else { return }
-    if user.attachments.isEmpty { user.attachments = attachments }
-    user.isEvent = user.isEvent || isEvent
-    guard ConversationItem.user(user) != settledConversation[index] else { return }
-    settledConversation[index] = .user(user)
-  }
-
-  func applySetupUpdate(_ update: SessionUpdate, questionId: String) {
+  private func setupOwnerIndex(questionId: String) -> Int? {
     let indices = (0..<itemCount).reversed()
-    let owner =
-      indices.first { index in
-        guard case let .assistant(message) = item(at: index) else { return false }
-        return message.turn.setupRequests.contains { $0.id == questionId }
-      }
-      ?? indices.first { index in
-        if case .assistant = item(at: index) { return true }
-        return false
-      }
-    guard let owner, case .assistant(var message) = item(at: owner) else { return }
-    TranscriptReducer.apply(update, to: &message.turn)
-    setItem(.assistant(message), at: owner)
-    transcriptProjectionRevision &+= 1
+    return indices.first { asksSetupQuestion(questionId, at: $0) } ?? indices.first { isAssistantItem(at: $0) }
   }
 
-  func ensureAssistantTurn() {
+  private func asksSetupQuestion(_ questionId: String, at index: Int) -> Bool {
+    guard case let .assistant(message) = item(at: index) else { return false }
+    return message.turn.setupRequests.contains { $0.id == questionId }
+  }
+
+  private func isAssistantItem(at index: Int) -> Bool {
+    guard case .assistant = item(at: index) else { return false }
+    return true
+  }
+
+  private var activeTurnIsGenerating: Bool {
+    guard case let .assistant(message) = activeItem else { return false }
+    return message.turn.isGenerating
+  }
+
+  private func ensureAssistantTurn() {
     pendingOptimisticUserMessageIDs.removeAll()
-    if case let .assistant(message) = activeItem {
-      if message.turn.isGenerating { return }
-    }
+    guard !activeTurnIsGenerating else { return }
+
     settleActiveItem()
     startActiveBubble()
+    markSending()
+  }
+
+  private func markSending() {
     if !isSending { isSending = true }
   }
 
-  func markActivePlanResumedIfNeeded() {
-    guard case .assistant(var message) = activeItem,
-      message.turn.isGenerating,
-      message.turn.planProposedAt != nil,
-      message.turn.planResumedAt == nil
-    else { return }
+  private func markActivePlanResumedIfNeeded() {
+    guard case .assistant(var message) = activeItem, Self.awaitsPlanResume(message.turn) else { return }
+
     message.turn.planResumedAt = now()
     activeItem = .assistant(message)
   }
 
-  func markActiveTurnStartedIfNeeded() {
+  private func markActiveTurnStartedIfNeeded() {
     guard case .assistant(var message) = activeItem, message.turn.startedAt == nil else { return }
+
     message.turn.startedAt = now()
     activeItem = .assistant(message)
+  }
+
+  private nonisolated static func isSetupQuestion(_ questions: [QuestionSpec]) -> Bool {
+    TranscriptSetupRequest.kind(of: questions) != nil
+  }
+
+  private nonisolated static func planChanged(_ turn: AssistantTurn, revision: Int, document: String?) -> Bool {
+    turn.planRevision != revision || turn.planDocument != document
+  }
+
+  private nonisolated static func awaitsPlanResume(_ turn: AssistantTurn) -> Bool {
+    turn.isGenerating && turn.planProposedAt != nil && turn.planResumedAt == nil
   }
 }

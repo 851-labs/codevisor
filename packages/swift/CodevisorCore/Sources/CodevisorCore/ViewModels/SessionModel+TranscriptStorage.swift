@@ -34,14 +34,8 @@ extension SessionModel {
 
   func adoptActiveAssistantItemIdentity(_ id: UUID) {
     guard case let .assistant(message) = activeItem, message.id != id else { return }
-    let previousId = message.id
     activeItem = .assistant(AssistantMessage(id: id, turn: message.turn))
-    let ownedRoutes = toolOwnerItemIds.compactMap { route, owner in
-      owner == previousId ? route : nil
-    }
-    for route in ownedRoutes {
-      toolOwnerItemIds[route] = id
-    }
+    updateRoutes.reassign(from: message.id, to: id)
   }
 
   func setConversation(_ items: [ConversationItem]) {

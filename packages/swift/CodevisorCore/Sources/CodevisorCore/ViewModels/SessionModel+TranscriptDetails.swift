@@ -125,9 +125,7 @@ extension SessionModel {
     case .active: activeItem = item
     }
     guard case let .assistant(message) = item else { return }
-    for call in message.turn.allToolCalls {
-      toolOwnerItemIds[call.toolCallId] = message.id
-    }
+    updateRoutes.recordToolCalls(of: message)
   }
 
   private enum TranscriptStorageLocation {

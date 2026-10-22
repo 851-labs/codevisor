@@ -97,6 +97,8 @@ public final class SessionModel {
   @ObservationIgnored let streamReconnectNotice: DelayedConnectionNotice
   let connectionRecovery: SessionConnectionRecovery
   let promptQueue: SessionPromptQueue
+  let updateRoutes = SessionUpdateRoutes()
+  let stalledTurnWatch: SessionStalledTurnWatch
   public var queuedPrompts: [ServerPromptQueueItem] { promptQueue.items }
   public internal(set) var updateGateHarnessName: String? {
     didSet {
@@ -145,7 +147,6 @@ public final class SessionModel {
   @ObservationIgnored var usesPaginatedHistory = false
   @ObservationIgnored var transcriptDetailsCache: [String: TranscriptDetailsCacheEntry] = [:]
   @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
-  @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]
   @ObservationIgnored var settledIndexById: [UUID: Int] = [:]
 
   public var waitingBackgroundTasks: [BackgroundTaskInfo] {
@@ -176,14 +177,11 @@ public final class SessionModel {
   let transport: ServerSessionTransport
   private let sessionId: String
   let now: @Sendable () -> Date
-  static let stalledTurnQuietInterval: Duration = .seconds(300)
-  let quietTurnScheduler: SessionQuietTurnScheduler
   var serverEventCursor: Int?
   var isReplayingHistory = false
   var historicalConfigSelections: [String: String] = [:]
 
   var consumerTask: Task<Void, Never>?
-  @ObservationIgnored var stalledTurnSchedule: SessionQuietTurnCancellation?
 
   @ObservationIgnored nonisolated let pendingEvents = SessionEventBuffer()
   @ObservationIgnored var isFlushScheduled = false
@@ -219,7 +217,7 @@ public final class SessionModel {
     self.modeState = modeState
     self.configOptions = configOptions
     self.now = now
-    self.quietTurnScheduler = quietTurnScheduler
+    self.stalledTurnWatch = SessionStalledTurnWatch(scheduler: quietTurnScheduler)
     self.connectionRecovery = SessionConnectionRecovery(
       scheduler: connectionRecoveryScheduler,
       statusDelay: connectionRecoveryStatusDelay,

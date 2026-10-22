@@ -65,7 +65,7 @@ extension SessionModel {
 
   private func failTurn(_ detail: String) {
     errorMessage = detail
-    finish(stopReason: nil, outcome: .failed, stopDetail: detail, retryable: true)
+    finish(.failed(detail, retryable: true))
     endTurn()
   }
 
@@ -155,8 +155,7 @@ extension SessionModel {
       return outcome
     }
     if wasSending, !isSending {
-      stalledTurnSchedule?.cancel()
-      stalledTurnSchedule = nil
+      stalledTurnWatch.stop()
       isTakingLongerThanExpected = false
       onTurnEnded?()
     }
@@ -194,10 +193,7 @@ extension SessionModel {
       errorMessage = serverErrorMessage(error)
       return
     }
-    if var state = modeState {
-      state.currentModeId = modeId
-      modeState = state
-    }
+    selectMode(modeId)
   }
 
   @discardableResult
