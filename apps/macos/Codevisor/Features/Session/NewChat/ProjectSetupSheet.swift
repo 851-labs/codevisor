@@ -38,7 +38,7 @@ struct ProjectSetupSheet: View {
         }
       }
 
-      if hasCard {
+      if hasCard(caution: screen.caution) {
         PermissionCard { card(caution: screen.caution) }
       }
 
@@ -50,7 +50,7 @@ struct ProjectSetupSheet: View {
           SheetActivityLabel(activity)
         }
         if setup.offersSignIn {
-          Button("Sign In…") { setup.signIn() }
+          Button("Sign In") { setup.signIn() }
         }
         if let primary {
           Button(primary.title, action: primary.perform)
@@ -77,10 +77,11 @@ struct ProjectSetupSheet: View {
     }
   }
 
-  private var hasCard: Bool {
+  private func hasCard(caution: String?) -> Bool {
     switch setup.phase {
     case .idle, .unavailable, .finished: return false
     case let .running(plan): return plan.needsRemote
+    case let .failed(plan, _): return plan.needsRemote || caution != nil
     default: return true
     }
   }
@@ -106,11 +107,11 @@ struct ProjectSetupSheet: View {
       if let plan = shownPlan {
         if plan.needsRemote {
           remoteSteps(plan)
-        } else {
+        } else if isEditable {
           envRow(plan)
         }
         if let message {
-          Divider()
+          if plan.needsRemote { Divider() }
           caution(message)
         }
       }
@@ -159,7 +160,6 @@ struct ProjectSetupSheet: View {
       )
       .toggleStyle(.switch)
       .labelsHidden()
-      .disabled(!isEditable)
     }
   }
 
@@ -224,9 +224,7 @@ struct ProjectSetupSheet: View {
         setup.confirm()
       }
     case let .failed(plan, _):
-      return Primary(title: plan.needsRemote ? plan.pushTitle : plan.cloneTitle, isEnabled: plan.isReady) {
-        setup.retry()
-      }
+      return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: plan.isReady) { setup.retry() }
     case let .preparing(plan), let .running(plan):
       return Primary(title: plan.needsRemote ? plan.pushTitle : plan.cloneTitle, isEnabled: false) {}
     case .finished:
@@ -239,7 +237,7 @@ struct ProjectSetupSheet: View {
           if let url { openURL(url) }
         }
       case let .failed(provider, _):
-        return Primary(title: "Try Again", isEnabled: true) { model.signIn(with: provider) }
+        return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: true) { model.signIn(with: provider) }
       default:
         return nil
       }

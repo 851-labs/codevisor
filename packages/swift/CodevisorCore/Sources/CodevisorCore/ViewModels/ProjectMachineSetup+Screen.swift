@@ -1,6 +1,8 @@
 import Foundation
 
 extension ProjectMachineSetup {
+  public static let retryTitle = "Try Again"
+
   public struct Screen: Equatable, Sendable {
     public let symbol: String
     public let title: String

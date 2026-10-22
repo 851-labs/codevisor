@@ -85,14 +85,13 @@ struct ProjectSetupScreen: View {
       } else if let plan = shownPlan {
         if plan.needsRemote {
           remoteSteps(plan)
-        } else {
+        } else if isEditable {
           card {
             Toggle(
               isOn: Binding(get: { plan.copiesEnvFiles }, set: { setup.setCopiesEnvFiles($0) })
             ) {
               Label("Copy env files", systemImage: "key")
             }
-            .disabled(!isEditable)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
           }
@@ -186,7 +185,7 @@ struct ProjectSetupScreen: View {
           .disabled(!primary.isEnabled)
       }
       if setup.offersSignIn {
-        Button("Sign In…") { setup.signIn() }
+        Button("Sign In") { setup.signIn() }
           .font(.subheadline.weight(.medium))
       }
       if let note = actionNote {
@@ -277,9 +276,7 @@ struct ProjectSetupScreen: View {
         setup.confirm()
       }
     case let .failed(plan, _):
-      return Primary(title: plan.needsRemote ? plan.pushTitle : plan.cloneTitle, isEnabled: plan.isReady) {
-        setup.retry()
-      }
+      return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: plan.isReady) { setup.retry() }
     case let .preparing(plan):
       return Primary(title: plan.needsRemote ? plan.pushTitle : plan.cloneTitle, isEnabled: false) {}
     case let .running(plan):
@@ -296,7 +293,7 @@ struct ProjectSetupScreen: View {
           if let url { openURL(url) }
         }
       case let .failed(provider, _):
-        return Primary(title: "Try Again", isEnabled: true) { model.signIn(with: provider) }
+        return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: true) { model.signIn(with: provider) }
       default:
         return nil
       }
