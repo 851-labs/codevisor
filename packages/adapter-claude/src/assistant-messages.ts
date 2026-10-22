@@ -160,8 +160,11 @@ const emitAssistantTool = (
   })
 }
 
-const replyPhase = (stopReason: unknown): "commentary" | "final" | undefined =>
-  stopReason === "end_turn" ? "final" : stopReason === "tool_use" ? "commentary" : undefined
+const replyPhase = (stopReason: unknown): "commentary" | "final" | undefined => {
+  if (stopReason === "end_turn") return "final"
+  if (stopReason === "tool_use") return "commentary"
+  return undefined
+}
 
 const emitAssistantReply = (
   session: ClaudeSession,

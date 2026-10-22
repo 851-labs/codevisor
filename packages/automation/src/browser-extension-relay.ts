@@ -37,22 +37,23 @@ export interface BrowserExtensionInstallation {
   readonly profiles: ReadonlyArray<string>
 }
 
-const chromeRoots = (home: string): ReadonlyArray<string> =>
-  process.platform === "darwin"
-    ? [
-        join(home, "Library", "Application Support", "Google", "Chrome"),
-        join(home, "Library", "Application Support", "Chromium"),
-        join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
-        join(home, "Library", "Application Support", "Microsoft Edge")
-      ]
-    : process.platform === "linux"
-      ? [
-          join(home, ".config", "google-chrome"),
-          join(home, ".config", "chromium"),
-          join(home, ".config", "BraveSoftware", "Brave-Browser"),
-          join(home, ".config", "microsoft-edge")
-        ]
-      : []
+const chromeRoots = (home: string): ReadonlyArray<string> => {
+  if (process.platform === "darwin")
+    return [
+      join(home, "Library", "Application Support", "Google", "Chrome"),
+      join(home, "Library", "Application Support", "Chromium"),
+      join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
+      join(home, "Library", "Application Support", "Microsoft Edge")
+    ]
+  if (process.platform === "linux")
+    return [
+      join(home, ".config", "google-chrome"),
+      join(home, ".config", "chromium"),
+      join(home, ".config", "BraveSoftware", "Brave-Browser"),
+      join(home, ".config", "microsoft-edge")
+    ]
+  return []
+}
 
 const profileHasExtension = (profile: string): boolean | undefined => {
   if (existsSync(join(profile, "Extensions", CODEVISOR_BROWSER_EXTENSION_ID))) return true
@@ -69,6 +70,12 @@ const profileHasExtension = (profile: string): boolean | undefined => {
     }
   }
   return inaccessible ? undefined : false
+}
+
+const extensionInstallationState = (profiles: ReadonlyArray<string>, unknown: boolean) => {
+  if (profiles.length > 0) return "installed"
+  if (unknown) return "unknown"
+  return "not_installed"
 }
 
 export const browserExtensionInstallation = (home = homedir()): BrowserExtensionInstallation => {
@@ -91,8 +98,7 @@ export const browserExtensionInstallation = (home = homedir()): BrowserExtension
       else if (installed === undefined) unknown = true
     }
   }
-  const installationState =
-    profiles.length > 0 ? "installed" : unknown ? "unknown" : "not_installed"
+  const installationState = extensionInstallationState(profiles, unknown)
   return {
     bundled: browserExtensionPath() !== undefined,
     installed: installationState === "installed",
@@ -101,19 +107,22 @@ export const browserExtensionInstallation = (home = homedir()): BrowserExtension
   }
 }
 
-export const chromeBrowserAvailable = (): boolean =>
-  process.platform === "darwin"
-    ? existsSync("/Applications/Google Chrome.app") ||
+export const chromeBrowserAvailable = (): boolean => {
+  if (process.platform === "darwin")
+    return (
+      existsSync("/Applications/Google Chrome.app") ||
       existsSync(join(homedir(), "Applications", "Google Chrome.app"))
-    : process.platform === "linux"
-      ? [
-          "/usr/bin/google-chrome-stable",
-          "/usr/bin/google-chrome",
-          "/usr/bin/chromium-browser",
-          "/usr/bin/chromium",
-          "/snap/bin/chromium"
-        ].some(existsSync)
-      : false
+    )
+  if (process.platform === "linux")
+    return [
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium"
+    ].some(existsSync)
+  return false
+}
 
 export interface BrowserExtensionBranding {
   readonly worktreeName?: string | undefined

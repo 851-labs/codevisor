@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile, spawn } from "node:child_process"
+import { execFile, type ExecFileException, spawn } from "node:child_process"
 import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { dirname, join } from "node:path"
@@ -44,12 +44,17 @@ import { bundledVersion, runServe } from "./serve.js"
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url))
 
+const execExitCode = (error: ExecFileException | null): number => {
+  if (error === null) return 0
+  if (typeof error.code === "number") return error.code
+  return 127
+}
+
 const makeDeps = (): CliDeps => ({
   exec: (command, args) =>
     new Promise((resolve) => {
       execFile(command, [...args], { encoding: "utf8" }, (error, stdout, stderr) => {
-        const code =
-          error === null ? 0 : typeof error.code === "number" ? error.code : (127 as number)
+        const code = execExitCode(error)
         resolve({ code, stdout, stderr })
       })
     }),

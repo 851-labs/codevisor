@@ -161,12 +161,11 @@ export const spliceVNCSocket = (
         : new VNCClipboardBridge(desktopClipboard, sendText, () => arbiter.mayControl(id))
     clipboard?.start().catch(() => clipboard.close())
     const filter = new RFBClientStreamFilter()
-    const allow = (kind: RFBClientMessageKind) =>
-      kind === "input" || kind === "clipboard"
-        ? arbiter.mayControl(id)
-        : kind === "resize"
-          ? arbiter.mayResize(id)
-          : true
+    const allow = (kind: RFBClientMessageKind) => {
+      if (kind === "input" || kind === "clipboard") return arbiter.mayControl(id)
+      if (kind === "resize") return arbiter.mayResize(id)
+      return true
+    }
     webSocket.on("message", (bytes: Buffer, isBinary) => {
       if (!isBinary) {
         const text = bytes.toString("utf8")

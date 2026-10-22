@@ -252,6 +252,12 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
   )
 }
 
+const connectPlatformHelper = (dataDir: string): Promise<HelperClient> => {
+  if (process.platform === "darwin") return connectMacHelper(dataDir)
+  if (process.platform === "linux") return connectLinuxHelper()
+  return Promise.reject(new Error(`Computer Use is unavailable on ${process.platform}`))
+}
+
 const computerUseDeclinedMessage = "The user didn't allow Computer Use on this Mac."
 
 const permissionRequired = (cause: unknown): boolean =>
@@ -290,13 +296,7 @@ export const makeComputerUseProvider = (
       if (helpers.get(key) === existing) helpers.delete(key)
       return connect(sessionId)
     }
-    const created = (
-      process.platform === "darwin"
-        ? connectMacHelper(dataDir)
-        : process.platform === "linux"
-          ? connectLinuxHelper()
-          : Promise.reject(new Error(`Computer Use is unavailable on ${process.platform}`))
-    ).catch((cause: unknown) => {
+    const created = connectPlatformHelper(dataDir).catch((cause: unknown) => {
       if (helpers.get(key) === created) helpers.delete(key)
       throw cause
     })

@@ -157,6 +157,25 @@ export const writeJson = (response: ServerResponse, status: number, body: unknow
   response.end(JSON.stringify(body))
 }
 
+const skillsFailureStatus = (cause: SkillsError) => {
+  if (cause.code === "invalid") return 400
+  if (cause.code === "notFound") return 404
+  return 409
+}
+
+const pluginsFailureStatus = (cause: PluginsError) => {
+  if (cause.code === "invalid") return 400
+  if (cause.code === "notFound") return 404
+  if (cause.code === "unavailable") return 503
+  return 409
+}
+
+const nativeMcpFailureStatus = (cause: NativeMcpError) => {
+  if (cause.code === "notFound") return 404
+  if (cause.code === "conflict") return 409
+  return 422
+}
+
 export const writeFailure = (response: ServerResponse, cause: unknown): void => {
   /* v8 ignore next */
   if (response.headersSent) {
@@ -176,24 +195,17 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
     return
   }
   if (cause instanceof SkillsError) {
-    const status = cause.code === "invalid" ? 400 : cause.code === "notFound" ? 404 : 409
+    const status = skillsFailureStatus(cause)
     writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }
   if (cause instanceof PluginsError) {
-    const status =
-      cause.code === "invalid"
-        ? 400
-        : cause.code === "notFound"
-          ? 404
-          : cause.code === "unavailable"
-            ? 503
-            : 409
+    const status = pluginsFailureStatus(cause)
     writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }
   if (cause instanceof NativeMcpError) {
-    const status = cause.code === "notFound" ? 404 : cause.code === "conflict" ? 409 : 422
+    const status = nativeMcpFailureStatus(cause)
     writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }

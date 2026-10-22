@@ -16,6 +16,13 @@ const CHILD_THREAD_UPDATES = new Set([
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
+const subagentStateStatus = (update: JsonRecord) => {
+  if (update.state === "completed") return "completed"
+  if (update.state === "cancelled") return "cancelled"
+  if (update.state === "failed" || update.state === "disconnected") return "failed"
+  return undefined
+}
+
 interface CursorTask {
   description?: string
   prompt?: string
@@ -132,14 +139,7 @@ export class CursorSubagents {
       ]
     }
     const child = this.children.get(childId)
-    const status =
-      update.state === "completed"
-        ? "completed"
-        : update.state === "cancelled"
-          ? "cancelled"
-          : update.state === "failed" || update.state === "disconnected"
-            ? "failed"
-            : undefined
+    const status = subagentStateStatus(update)
     if (update.sessionUpdate !== "subagent_state_update" || child === undefined) return []
     if (status === undefined) return []
     return [

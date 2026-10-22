@@ -302,6 +302,12 @@ export function buildInfoExtras({
   }
 }
 
+export function hudSwitch(positional: readonly string[]): boolean | null {
+  if (positional[0] === "on") return true
+  if (positional[0] === "off") return false
+  return null
+}
+
 export function parseTuningArgument(argument: string | undefined): Tuning | null {
   if (argument === undefined)
     throw new Error("tune needs a JSON object, a profile name, or default")

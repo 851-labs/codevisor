@@ -1,6 +1,6 @@
 import { isPlainRecord, isStringArray } from "./unknown-values.js"
 
-interface BrowserLocator {
+export interface BrowserLocator {
   readonly ref?: string
   readonly css?: string
   readonly role?: string

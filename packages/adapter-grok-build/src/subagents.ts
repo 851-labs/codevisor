@@ -14,6 +14,13 @@ const TASK_TOOL_NAMES = new Set(["task", "Task", "spawn_subagent"])
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
+const finishedStatus = (update: JsonRecord) => {
+  if (update.status === "completed") return "completed"
+  if (update.status === "cancelled") return "cancelled"
+  if (update.status === "failed") return "failed"
+  return undefined
+}
+
 interface GrokTask {
   readonly callId: string
   readonly sessionId: string
@@ -100,14 +107,7 @@ export class GrokSubagents {
     if (update.sessionUpdate === "subagent_spawned") return this.spawned(sessionId, childId, update)
     if (update.sessionUpdate !== "subagent_finished") return []
     const child = this.children.get(childId)
-    const status =
-      update.status === "completed"
-        ? "completed"
-        : update.status === "cancelled"
-          ? "cancelled"
-          : update.status === "failed"
-            ? "failed"
-            : undefined
+    const status = finishedStatus(update)
     if (child === undefined || status === undefined) return []
     return [this.event(child.rootSessionId, { status, toolCallId: child.callId })]
   }

@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   bootstrapPlan,
+  hudSwitch,
   parseTuningArgument,
   withTuning,
   buildInfoExtras,
@@ -196,6 +197,13 @@ test("shell quoting and build extras", () => {
     CodevisorRigDirty: "true",
     CodevisorRigBuiltAt: "t"
   })
+})
+
+test("hud takes on or off and nothing else", () => {
+  assert.equal(hudSwitch(["on"]), true)
+  assert.equal(hudSwitch(["off"]), false)
+  assert.equal(hudSwitch([]), null)
+  assert.equal(hudSwitch(["toggle"]), null)
 })
 
 test("tune accepts a JSON object, the product profile, or default", () => {

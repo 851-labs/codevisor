@@ -1,4 +1,5 @@
 import { spawnCodexClient } from "@codevisor/adapter-codex"
+import type { HarnessAuthInspection } from "@codevisor/agent-runtime"
 import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountRecord, UpdateHarnessAccountAuthRequest } from "@codevisor/db"
 
@@ -58,6 +59,13 @@ const cursorProbeFailure = (cause: unknown): UpdateHarnessAccountAuthRequest => 
           error.code === undefined ? "" : ` (cursor-agent exited with status ${error.code})`
         }`
   }
+}
+
+const inspectedLabel = (inspection: HarnessAuthInspection, account: HarnessAccountRecord) => {
+  if (inspection.label !== undefined) return { label: inspection.label }
+  if (account.harnessId === MUSE_HARNESS_ID && inspection.state !== "authenticated")
+    return { label: "Existing Muse Code account" }
+  return {}
 }
 
 export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => {
@@ -226,11 +234,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     return persistProbe(account, {
       authState: inspection.state,
       authMethod: null,
-      ...(inspection.label !== undefined
-        ? { label: inspection.label }
-        : account.harnessId === MUSE_HARNESS_ID && inspection.state !== "authenticated"
-          ? { label: "Existing Muse Code account" }
-          : {}),
+      ...inspectedLabel(inspection, account),
       canLogin:
         methods.length > 0 ||
         account.harnessId === MUSE_HARNESS_ID ||

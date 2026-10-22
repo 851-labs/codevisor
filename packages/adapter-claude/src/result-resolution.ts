@@ -144,6 +144,12 @@ const boundedRecovery = (
   return undefined
 }
 
+const successStopDetail = (stopReasonRaw: string, truncated: boolean) => {
+  if (stopReasonRaw === "refusal") return "Claude declined to respond."
+  if (truncated) return "Response hit the output-token limit."
+  return undefined
+}
+
 const terminalResolution = (
   session: ClaudeSession,
   subtype: string,
@@ -153,12 +159,7 @@ const terminalResolution = (
   transient: boolean
 ): TurnResolution => {
   if (subtype === "success" && !transient) {
-    const stopDetail =
-      stopReasonRaw === "refusal"
-        ? "Claude declined to respond."
-        : truncated
-          ? "Response hit the output-token limit."
-          : undefined
+    const stopDetail = successStopDetail(stopReasonRaw, truncated)
     return { kind: "end", stopReason: "end_turn", stopDetail }
   }
   return {

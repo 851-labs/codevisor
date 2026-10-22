@@ -315,11 +315,9 @@ export const makeHarnessLoginOperations = (
       account.harnessId === "cursor"
     ) {
       try {
-        return await (account.harnessId === "codex"
-          ? beginCodexLogin(account, methodId)
-          : account.harnessId === "claude-code"
-            ? beginClaudeLogin(account)
-            : beginCursorLogin(account))
+        if (account.harnessId === "codex") return await beginCodexLogin(account, methodId)
+        if (account.harnessId === "claude-code") return await beginClaudeLogin(account)
+        return await beginCursorLogin(account)
       } catch (cause) {
         await config.sharedAccounts?.()?.loginFailed(account.id)
         throw cause

@@ -39,6 +39,12 @@ const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
 const resolveFetch = (options: CloudAuthOptions): FetchLike =>
   options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
 
+const loginFailureDetail = (error: unknown): string => {
+  if (error instanceof CloudApiError) return `${error.message} (status ${error.status})`
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
 const joinWithInvite = async (
   deps: CliDeps,
   port: number,
@@ -149,12 +155,7 @@ export const authLoginCommand = async (
       return 0
     }
   } catch (error) {
-    const detail =
-      error instanceof CloudApiError
-        ? `${error.message} (status ${error.status})`
-        : error instanceof Error
-          ? error.message
-          : String(error)
+    const detail = loginFailureDetail(error)
     deps.error(`Cloud login failed: ${detail}`)
     return 1
   }

@@ -30,17 +30,18 @@ export const initialPointerState = (): PointerState => ({ x: 0, y: 0, buttons: 0
 export const mouseButtonName = (value: unknown): MouseButton =>
   value === "right" || value === "middle" ? value : "left"
 
-export const mouseButtonMask = (button: MouseButton): number =>
-  button === "left" ? 1 : button === "right" ? 2 : 4
+export const mouseButtonMask = (button: MouseButton): number => {
+  if (button === "left") return 1
+  if (button === "right") return 2
+  return 4
+}
 
-export const heldButtonName = (buttons: number): MouseButton | undefined =>
-  (buttons & 1) !== 0
-    ? "left"
-    : (buttons & 2) !== 0
-      ? "right"
-      : (buttons & 4) !== 0
-        ? "middle"
-        : undefined
+export const heldButtonName = (buttons: number): MouseButton | undefined => {
+  if ((buttons & 1) !== 0) return "left"
+  if ((buttons & 2) !== 0) return "right"
+  if ((buttons & 4) !== 0) return "middle"
+  return undefined
+}
 
 export interface MouseDispatch {
   readonly dialogOpened: boolean

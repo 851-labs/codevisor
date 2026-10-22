@@ -69,10 +69,21 @@ const LEGACY_RELEASE_BASE_URL =
   process.env.HERDMAN_RELEASE_BASE_URL ??
   DEFAULT_LEGACY_RELEASE_BASE_URL
 
+const releasePlatform = () => {
+  if (process.platform === "darwin") return "darwin"
+  if (process.platform === "linux") return "linux"
+  return undefined
+}
+
+const releaseArch = () => {
+  if (process.arch === "arm64") return "arm64"
+  if (process.arch === "x64") return "x64"
+  return undefined
+}
+
 const releaseTarget = (): string | undefined => {
-  const platform =
-    process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : undefined
-  const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : undefined
+  const platform = releasePlatform()
+  const arch = releaseArch()
   return platform !== undefined && arch !== undefined ? `${platform}-${arch}` : undefined
 }
 

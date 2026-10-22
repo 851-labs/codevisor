@@ -38,6 +38,21 @@ import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 import { expectString } from "./unknown-values.js"
 
+const typedKeyName = (character: string): string => {
+  if (character === " ") return "Space"
+  if (character === "\n") return "Enter"
+  return character
+}
+
+const desiredCheckedState = (
+  toolName: string,
+  args: Readonly<Record<string, unknown>>
+): boolean => {
+  if (toolName === "playwright.check") return true
+  if (toolName === "playwright.uncheck") return false
+  return booleanArgument(args, "checked")
+}
+
 export const invokePlaywrightTools = async (
   invocation: BrowserToolInvocation,
   state: BrowserToolSessionState
@@ -122,11 +137,7 @@ export const invokePlaywrightTools = async (
           page.sessionId
         )
         for (const character of stringArgument(args, "value"))
-          await pressKey(
-            active,
-            page,
-            character === " " ? "Space" : character === "\n" ? "Enter" : character
-          )
+          await pressKey(active, page, typedKeyName(character))
       } finally {
         await releaseElement(active, page, element)
       }
@@ -335,12 +346,7 @@ export const invokePlaywrightTools = async (
     case "playwright.check":
     case "playwright.uncheck":
     case "playwright.setChecked": {
-      const desired =
-        toolName === "playwright.check"
-          ? true
-          : toolName === "playwright.uncheck"
-            ? false
-            : booleanArgument(args, "checked")
+      const desired = desiredCheckedState(toolName, args)
       const element = await resolveLocatorElement(
         active,
         page,
@@ -428,15 +434,15 @@ export const invokePlaywrightTools = async (
       const deadline = Date.now() + timeoutMs
       while (true) {
         const ids = await locatorBackendNodeIds(active, page, args.locator)
-        const satisfied =
-          targetState === "attached"
-            ? ids.length > 0
-            : targetState === "detached"
-              ? ids.length === 0
-              : targetState === "visible"
-                ? ids.length === 1 && (await locatorIsVisible(active, page, args.locator))
-                : ids.length === 0 ||
-                  (ids.length === 1 && !(await locatorIsVisible(active, page, args.locator)))
+        let satisfied: boolean
+        if (targetState === "attached") satisfied = ids.length > 0
+        else if (targetState === "detached") satisfied = ids.length === 0
+        else if (targetState === "visible")
+          satisfied = ids.length === 1 && (await locatorIsVisible(active, page, args.locator))
+        else
+          satisfied =
+            ids.length === 0 ||
+            (ids.length === 1 && !(await locatorIsVisible(active, page, args.locator)))
         if (satisfied) return jsonResult({ state: targetState, matched: true })
         if (ids.length > 1) {
           throw new Error(

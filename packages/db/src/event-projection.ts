@@ -39,6 +39,12 @@ const resolveTerminalAssistant = (
   return itemId
 }
 
+const terminalStopDetail = (event: SessionEventRow, payload: JsonRecord): string | undefined => {
+  if (typeof payload.stopDetail === "string") return payload.stopDetail
+  if (event.kind === "session.error" && typeof payload.message === "string") return payload.message
+  return undefined
+}
+
 const completeTerminalAssistant = (
   sqlite: Database.Database,
   event: SessionEventRow,
@@ -52,11 +58,7 @@ const completeTerminalAssistant = (
     itemId,
     event.created_at,
     typeof payload.stopReason === "string" ? payload.stopReason : undefined,
-    typeof payload.stopDetail === "string"
-      ? payload.stopDetail
-      : event.kind === "session.error" && typeof payload.message === "string"
-        ? payload.message
-        : undefined,
+    terminalStopDetail(event, payload),
     typeof payload.stopKind === "string" ? payload.stopKind : undefined,
     payload.retryable === true,
     event.kind === "session.error"

@@ -6,11 +6,13 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import {
   attachTarget,
+  type BrowserRuntime,
   evaluate,
   evaluateReadOnly,
   grantClipboardPermissions,
   jsonResult,
   numberArgument,
+  type PageHandle,
   stringArgument
 } from "./browser-cdp-engine.js"
 import { delay, type CdpEvent } from "./browser-cdp.js"
@@ -29,7 +31,8 @@ import {
   isRecord,
   isStringArray,
   optionalString,
-  recordOrEmpty
+  recordOrEmpty,
+  type UnknownRecord
 } from "./unknown-values.js"
 
 const cdpEventSessionId = (event: CdpEvent): string | undefined =>
@@ -37,6 +40,16 @@ const cdpEventSessionId = (event: CdpEvent): string | undefined =>
   (event.method === "Target.detachedFromTarget" && typeof event.params.sessionId === "string"
     ? event.params.sessionId
     : undefined)
+
+const eventTargetSession = (
+  target: UnknownRecord | undefined,
+  active: BrowserRuntime,
+  page: PageHandle
+): string | undefined => {
+  if (typeof target?.sessionId === "string") return target.sessionId
+  if (typeof target?.targetId === "string") return active.sessions.get(target.targetId)
+  return page.sessionId
+}
 
 const clipboardEntries = (value: unknown) => {
   const item = expectRecord(value, "Clipboard item")
@@ -252,12 +265,7 @@ export const invokePageTools = async (
           ? new Set(args.methods)
           : undefined
       const target = isRecord(args.target) ? args.target : undefined
-      const targetSession =
-        typeof target?.sessionId === "string"
-          ? target.sessionId
-          : typeof target?.targetId === "string"
-            ? active.sessions.get(target.targetId)
-            : page.sessionId
+      const targetSession = eventTargetSession(target, active, page)
       const matches = () =>
         active.eventLog.filter((event) => {
           const eventSessionId = cdpEventSessionId(event)

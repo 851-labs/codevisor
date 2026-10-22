@@ -42,6 +42,20 @@ export interface AgentRuntimeState {
   envRefresh: Promise<void> | undefined
 }
 
+const announcedModeId = (
+  event: RuntimeEvent,
+  payload: Record<string, unknown>
+): string | undefined => {
+  if (event.kind === "session.updated" && typeof payload.modeId === "string") return payload.modeId
+  if (
+    event.kind === "session.output" &&
+    payload.sessionUpdate === "current_mode_update" &&
+    typeof payload.currentModeId === "string"
+  )
+    return payload.currentModeId
+  return undefined
+}
+
 export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   const state: AgentRuntimeState = {
     currentEnv: config.env ?? process.env,
@@ -115,14 +129,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
           configOptions: payload.configOptions as AgentSessionMetadata["configOptions"]
         }
       }
-      const modeId =
-        event.kind === "session.updated" && typeof payload.modeId === "string"
-          ? payload.modeId
-          : event.kind === "session.output" &&
-              payload.sessionUpdate === "current_mode_update" &&
-              typeof payload.currentModeId === "string"
-            ? payload.currentModeId
-            : undefined
+      const modeId = announcedModeId(event, payload)
       if (modeId !== undefined && session.metadata.modes !== undefined) {
         session.metadata = {
           ...session.metadata,

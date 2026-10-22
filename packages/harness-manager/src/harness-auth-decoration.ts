@@ -13,6 +13,12 @@ export type HarnessAuthDecoration = Pick<
   readonly authSnapshot: (harnessId: string) => Promise<HarnessAuth>
 }
 
+const defaultAccountLabel = (harness: Harness): string => {
+  if (harness.id === "pi") return "Pi configuration"
+  if (harness.id === "opencode") return "Existing OpenCode profile"
+  return `Existing ${harness.name} account`
+}
+
 export const makeHarnessAuthDecoration = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes
@@ -29,12 +35,7 @@ export const makeHarnessAuthDecoration = (
       config.db.saveHarnessAccount({
         harnessId: harness.id,
         profileKind: "default",
-        label:
-          harness.id === "pi"
-            ? "Pi configuration"
-            : harness.id === "opencode"
-              ? "Existing OpenCode profile"
-              : `Existing ${harness.name} account`,
+        label: defaultAccountLabel(harness),
         authState: "checking",
         canLogin:
           harness.id === "codex" ||

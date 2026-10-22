@@ -78,12 +78,11 @@ const requireScopedPane = (sqlite: Database.Database, workspaceId: string, paneI
   return existing
 }
 
-const updatedResourceId = (existing: WorkspacePaneRow, request: UpdateWorkspacePaneRequest) =>
-  request.resourceId === undefined
-    ? existing.resource_id
-    : request.resourceId === null
-      ? null
-      : canonicalUuid(request.resourceId)
+const updatedResourceId = (existing: WorkspacePaneRow, request: UpdateWorkspacePaneRequest) => {
+  if (request.resourceId === undefined) return existing.resource_id
+  if (request.resourceId === null) return null
+  return canonicalUuid(request.resourceId)
+}
 
 export const updateWorkspacePane = (
   sqlite: Database.Database,

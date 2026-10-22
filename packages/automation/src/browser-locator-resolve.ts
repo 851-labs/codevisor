@@ -1,6 +1,6 @@
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
 import { evaluatedValue } from "./browser-cdp.js"
-import { parseLocator } from "./browser-locator-parse.js"
+import { type BrowserLocator, parseLocator } from "./browser-locator-parse.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { AXNode } from "./browser-snapshot.js"
 
@@ -200,6 +200,13 @@ const resolveFrameRoots = async (
 const semanticLocatorFunction =
   "function(kind,expected,exact){const normalize=value=>String(value??'').replace(/\\s+/g,' ').trim();const matches=value=>{const actual=normalize(value);if(expected&&typeof expected==='object'&&typeof expected.regex==='string')return new RegExp(expected.regex,expected.flags||'').test(actual);return exact?actual===expected:actual.toLocaleLowerCase().includes(String(expected).toLocaleLowerCase());};if(kind==='label')return [...this.querySelectorAll('input,textarea,select,button,[contenteditable=true]')].filter(element=>{const doc=element.ownerDocument;const labelledBy=(element.getAttribute('aria-labelledby')||'').split(/\\s+/).filter(Boolean).map(id=>doc.getElementById(id)?.innerText||'').join(' ');const labels=element.labels?[...element.labels].map(label=>{const clone=label.cloneNode(true);clone.querySelectorAll('input,textarea,select,button,option,[contenteditable=true]').forEach(control=>control.remove());return clone.textContent||'';}):[];return[element.getAttribute('aria-label'),labelledBy,...labels].some(matches);});if(kind==='placeholder')return[...this.querySelectorAll('[placeholder]')].filter(element=>matches(element.getAttribute('placeholder')));if(kind==='testId')return[...this.querySelectorAll('[data-testid]')].filter(element=>matches(element.getAttribute('data-testid')));const candidates=[...this.querySelectorAll('*')].filter(element=>matches(element.innerText||element.textContent));return candidates.filter(element=>![...element.children].some(child=>matches(child.innerText||child.textContent))).slice(0,200);}" as const
 
+const semanticLocatorKind = (locator: BrowserLocator) => {
+  if (locator.label !== undefined) return "label"
+  if (locator.placeholder !== undefined) return "placeholder"
+  if (locator.testId !== undefined) return "testId"
+  return "text"
+}
+
 const callBackendNodePredicate = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -298,14 +305,7 @@ export const locatorBackendNodeIds = async (
     ]
     ids = await filterBackendNodeIdsByRoots(runtime, page, candidates, roots)
   } else {
-    const kind =
-      locator.label !== undefined
-        ? "label"
-        : locator.placeholder !== undefined
-          ? "placeholder"
-          : locator.testId !== undefined
-            ? "testId"
-            : "text"
+    const kind = semanticLocatorKind(locator)
     const expected = locator.label ?? locator.placeholder ?? locator.testId ?? locator.text ?? ""
     const exact = locator.testId !== undefined || locator.exact === true
     const matches = await Promise.all(

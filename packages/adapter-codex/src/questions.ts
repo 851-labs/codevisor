@@ -53,6 +53,18 @@ const dismissQuestionOnAbort = (
   )
 }
 
+const approvalQuestion = (method: string, isCommand: boolean): string => {
+  if (method === "item/fileChange/requestApproval") return "Allow these file edits?"
+  if (isCommand) return "Allow this command to run?"
+  return "Grant the requested permissions?"
+}
+
+const approvalDecision = (label: string | undefined) => {
+  if (label === "Allow") return "accept"
+  if (label === "Allow for session") return "acceptForSession"
+  return "decline"
+}
+
 const holdApprovalRequest = (
   session: CodexSession,
   method: string,
@@ -70,12 +82,7 @@ const holdApprovalRequest = (
       ...(isCommand ? [{ label: "Allow for session" }] : []),
       { label: "Deny" }
     ],
-    question:
-      method === "item/fileChange/requestApproval"
-        ? "Allow these file edits?"
-        : isCommand
-          ? "Allow this command to run?"
-          : "Grant the requested permissions?",
+    question: approvalQuestion(method, isCommand),
     ...(isCommand ? { header: "Command" } : {}),
     ...(method === "item/fileChange/requestApproval" ? { header: "Edits" } : {}),
     ...(method === "item/permissions/requestApproval" ? { header: "Permissions" } : {})
@@ -94,12 +101,7 @@ const holdApprovalRequest = (
       resolve,
       respond: (answers) => {
         const label = answers[spec.id]?.answers[0]
-        const decision =
-          label === "Allow"
-            ? "accept"
-            : label === "Allow for session"
-              ? "acceptForSession"
-              : "decline"
+        const decision = approvalDecision(label)
         return { decision }
       },
       timer: undefined

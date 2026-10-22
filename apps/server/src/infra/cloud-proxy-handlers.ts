@@ -73,6 +73,18 @@ export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) 
   }
 }
 
+const fetchBodyInit = (body: Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array>) => {
+  if (body instanceof ReadableStream) return { body, duplex: "half" as const }
+  if (body.byteLength === 0) return {}
+  return { body }
+}
+
+const rawDataBytes = (data: WebSocket.RawData) => {
+  if (Array.isArray(data)) return Buffer.concat(data)
+  if (data instanceof ArrayBuffer) return Buffer.from(data)
+  return data
+}
+
 export const httpChannelHandler =
   (localBaseUrl: string, log: (line: string) => void): ChannelHandler =>
   (channel) => {
@@ -121,11 +133,7 @@ export const httpChannelHandler =
           method: params.method,
           headers: sanitizeRequestHeaders(params.headers),
           signal: abort.signal,
-          ...(body instanceof ReadableStream
-            ? { body, duplex: "half" as const }
-            : body.byteLength === 0
-              ? {}
-              : { body })
+          ...fetchBodyInit(body)
         })
         if (channelClosed) {
           await response.body?.cancel()
@@ -228,11 +236,7 @@ export const wsChannelHandler =
       queued.length = 0
     })
     socket.on("message", (data, isBinary) => {
-      const bytes = Array.isArray(data)
-        ? Buffer.concat(data)
-        : data instanceof ArrayBuffer
-          ? Buffer.from(data)
-          : data
+      const bytes = rawDataBytes(data)
       for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : bytes.toString())) {
         channel.send(frame)
       }

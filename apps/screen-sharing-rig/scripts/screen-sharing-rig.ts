@@ -38,6 +38,7 @@ import {
   buildInfoExtras,
   deployPlan,
   errorMessage,
+  hudSwitch,
   isDeployRecord,
   isRigConfiguration,
   launchAgentPlist,
@@ -435,7 +436,7 @@ async function source(): Promise<void> {
 }
 
 async function hud(): Promise<void> {
-  const enabled = positional[0] === "on" ? true : positional[0] === "off" ? false : null
+  const enabled = hudSwitch(positional)
   if (enabled === null) throw new Error("hud needs on|off")
   const { token, viewer, host } = endpoints()
   const result = await http("POST", `${options.host ? host : viewer}/hud`, token, isHudResult, {

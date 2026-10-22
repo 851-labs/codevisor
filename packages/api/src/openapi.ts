@@ -71,16 +71,13 @@ const pathParameters = (path: string): ReadonlyArray<JsonObject> =>
     schema: { type: "string" }
   }))
 
-const successStatusFor = (endpoint: Endpoint, isWebSocket: boolean): string =>
-  noContent.has(endpoint)
-    ? "204"
-    : isWebSocket
-      ? "101"
-      : created.has(endpoint)
-        ? "201"
-        : accepted.has(endpoint)
-          ? "202"
-          : "200"
+const successStatusFor = (endpoint: Endpoint, isWebSocket: boolean): string => {
+  if (noContent.has(endpoint)) return "204"
+  if (isWebSocket) return "101"
+  if (created.has(endpoint)) return "201"
+  if (accepted.has(endpoint)) return "202"
+  return "200"
+}
 
 const setSuccessContent = (
   endpoint: Endpoint,
@@ -144,6 +141,14 @@ const splitEndpoint = (endpoint: Endpoint): { method: string; rawPath: string } 
   return { method: endpoint.slice(0, space), rawPath: endpoint.slice(space + 1) }
 }
 
+const operationDescription = (endpoint: Endpoint, isWebSocket: boolean): string | undefined => {
+  if (endpoint === "POST /v1/auth/pairing-token")
+    return "Issue a bearer token from a trusted localhost connection, then use it to authenticate remote requests."
+  if (isWebSocket)
+    return "Upgrade to WebSocket. See the real-time and terminal protocol guides for replay and frame semantics."
+  return undefined
+}
+
 const makeOperation = (
   endpoint: Endpoint,
   requests: Partial<Record<Endpoint, Schema.Constraint>>,
@@ -166,12 +171,7 @@ const makeOperation = (
     tags: [tagFor(rawPath)],
     summary:
       summaries[endpoint] ?? `${titleCase(method)} ${titleCase(rawPath.replace(/^\/v1\/?/, ""))}`,
-    description:
-      endpoint === "POST /v1/auth/pairing-token"
-        ? "Issue a bearer token from a trusted localhost connection, then use it to authenticate remote requests."
-        : isWebSocket
-          ? "Upgrade to WebSocket. See the real-time and terminal protocol guides for replay and frame semantics."
-          : undefined,
+    description: operationDescription(endpoint, isWebSocket),
     security:
       endpoint === "GET /v1/health" || endpoint === "GET /v1/discovery" ? [] : [{ bearerAuth: [] }],
     responses: {

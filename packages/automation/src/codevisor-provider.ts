@@ -7,6 +7,7 @@ import { Schema } from "effect"
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
+import type { QueryParameter } from "./codevisor-api-tool-spec.js"
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { pathArgumentName, pathParameterNames, toolInputSchema } from "./codevisor-tool-schema.js"
 import { budgetedWaitPayload, withClampNote } from "./codevisor-wait-budget.js"
@@ -92,6 +93,17 @@ const sessionPromptPayload = (
   context: AutomationProviderContext
 ): Readonly<Record<string, unknown>> => ({ ...payload, fromSessionId: context.sessionId })
 
+const queryParameterValue = (
+  spec: CodevisorApiToolSpec,
+  parameter: QueryParameter,
+  value: unknown
+): string => {
+  if (spec.name === "server.update_status" && parameter.name === "refresh" && value === true)
+    return "1"
+  if (typeof value === "string") return value
+  return JSON.stringify(value)
+}
+
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,
@@ -119,14 +131,7 @@ const invokeApiTool = async (
   for (const parameter of spec.query ?? []) {
     const value = args[parameter.name]
     if (value === undefined) continue
-    url.searchParams.set(
-      parameter.name,
-      spec.name === "server.update_status" && parameter.name === "refresh" && value === true
-        ? "1"
-        : typeof value === "string"
-          ? value
-          : JSON.stringify(value)
-    )
+    url.searchParams.set(parameter.name, queryParameterValue(spec, parameter, value))
   }
 
   const headers = new Headers()

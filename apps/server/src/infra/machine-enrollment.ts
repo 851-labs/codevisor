@@ -147,15 +147,17 @@ const validateEnrollmentRequest = (
   return name
 }
 
+const installFailureReason = (run: SshRun): string => {
+  if (run.exitCode === null) return "timed out or was cancelled"
+  if (run.exitCode === 255)
+    return "could not connect over SSH (check the destination, your SSH key, and the host's firewall)"
+  return `failed (exit ${run.exitCode})`
+}
+
 const successfulInstallOutput = (run: SshRun, destination: string, inviteCode: string): string => {
   const output = tail(run.output, inviteCode)
   if (run.exitCode !== 0) {
-    const why =
-      run.exitCode === null
-        ? "timed out or was cancelled"
-        : run.exitCode === 255
-          ? "could not connect over SSH (check the destination, your SSH key, and the host's firewall)"
-          : `failed (exit ${run.exitCode})`
+    const why = installFailureReason(run)
     throw new HttpFailure(502, `Setting up ${destination} ${why}:\n${output}`)
   }
   if (/already connected to/i.test(run.output)) {

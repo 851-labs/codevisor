@@ -196,6 +196,12 @@ const selectedVariant = (variant: string | undefined, variants: ReadonlyArray<st
   return variants[0] ?? DEFAULT_VARIANT
 }
 
+const compareProviderIds = (a: ModelRef, b: ModelRef): number => {
+  if (a.providerID < b.providerID) return -1
+  if (a.providerID > b.providerID) return 1
+  return 0
+}
+
 export const configOptions = (
   catalog: Catalog,
   selection: Selection
@@ -209,11 +215,7 @@ export const configOptions = (
       category: "model",
       currentValue: advertised(model),
       options: catalog.models
-        .toSorted(
-          (a, b) =>
-            (a.providerID < b.providerID ? -1 : a.providerID > b.providerID ? 1 : 0) ||
-            a.name.localeCompare(b.name)
-        )
+        .toSorted((a, b) => compareProviderIds(a, b) || a.name.localeCompare(b.name))
         .map((item) => ({ value: advertised(item), name: `${item.providerID}/${item.name}` }))
     },
     ...(variants.length === 0

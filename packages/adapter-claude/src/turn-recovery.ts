@@ -67,18 +67,19 @@ const emitRetrying = (
   })
 }
 
+const resolutionOutcome = (resolution: TurnResolution): string => {
+  if (resolution.kind === "continue") return "continue"
+  if (resolution.kind === "retry") return `retry#${resolution.attempt}(${resolution.delayMs}ms)`
+  return `end/${resolution.stopReason}${resolution.stopDetail === undefined ? "" : ` — ${resolution.stopDetail}`}`
+}
+
 const logTurnEnd = (
   session: ClaudeSession,
   message: SDKMessage & { type: "result" },
   resolution: TurnResolution
 ): void => {
   const terminal = (message as { terminal_reason?: unknown }).terminal_reason
-  const outcome =
-    resolution.kind === "continue"
-      ? "continue"
-      : resolution.kind === "retry"
-        ? `retry#${resolution.attempt}(${resolution.delayMs}ms)`
-        : `end/${resolution.stopReason}${resolution.stopDetail === undefined ? "" : ` — ${resolution.stopDetail}`}`
+  const outcome = resolutionOutcome(resolution)
   console.error(
     `[claude] turn-end subtype=${message.subtype} stop_reason=${message.stop_reason ?? "-"} ` +
       `terminal=${typeof terminal === "string" ? terminal : "-"} lastError=${session.lastAssistantError ?? "-"} ` +

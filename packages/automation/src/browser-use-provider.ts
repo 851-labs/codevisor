@@ -61,6 +61,12 @@ import type {
 
 const extensionEndpoint = (): string | undefined => process.env.CODEVISOR_BROWSER_CDP_URL
 
+const chromiumBackend = (browsersDir: string): string => {
+  if (systemChromePath() !== undefined) return "systemChrome"
+  if (downloadedChromiumPath(browsersDir) !== undefined) return "downloadedChromium"
+  return "missing"
+}
+
 export const makeBrowserUseProvider = (
   dataDir: string,
   db?: CodevisorDatabaseService,
@@ -104,12 +110,7 @@ export const makeBrowserUseProvider = (
     const extension = browserExtensionInstallation()
     return {
       engine: "codevisor-cdp",
-      backend:
-        systemChromePath() !== undefined
-          ? "systemChrome"
-          : downloadedChromiumPath(browsersDir) !== undefined
-            ? "downloadedChromium"
-            : "missing",
+      backend: chromiumBackend(browsersDir),
       extensionAvailable: extension.bundled,
       extensionInstalled: extension.installed,
       extensionInstallationState: extension.installationState,

@@ -2,7 +2,8 @@ import {
   adapterPromise,
   normalizePromptInput,
   type AgentSessionHandle,
-  type CancelResult
+  type CancelResult,
+  type SetGoalUpdate
 } from "@codevisor/agent-runtime"
 import { isoTimestamp, type SessionGoal } from "@codevisor/api"
 
@@ -28,6 +29,12 @@ import {
 } from "./turn-lifecycle.js"
 
 const CANCEL_GRACE_MS = 1_500
+
+const goalSubcommand = (update: SetGoalUpdate) => {
+  if (update.status === "paused") return "pause"
+  if (update.status === "active") return "resume"
+  return undefined
+}
 
 export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle => ({
   cancel: adapterPromise("cancel", async () => {
@@ -226,8 +233,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       if (current === undefined) {
         throw new Error("No active goal to update")
       }
-      const subcommand =
-        update.status === "paused" ? "pause" : update.status === "active" ? "resume" : undefined
+      const subcommand = goalSubcommand(update)
       if (subcommand === undefined) {
         throw new Error("Claude goal updates support objective, pause, and resume only")
       }

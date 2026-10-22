@@ -183,6 +183,12 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
   ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
 })
 
+const actionRequiredKind = (row: SessionRow) => {
+  if (row.pending_question !== null) return { actionRequiredKind: "question" as const }
+  if (row.pending_plan_approval === 1) return { actionRequiredKind: "planApproval" as const }
+  return {}
+}
+
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
   const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
@@ -219,11 +225,7 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     unreadCount: row.attention_unread_count,
     hasUnreadError: row.attention_has_unread_error === 1,
     actionRequired: row.pending_question !== null || row.pending_plan_approval === 1,
-    ...(row.pending_question !== null
-      ? { actionRequiredKind: "question" as const }
-      : row.pending_plan_approval === 1
-        ? { actionRequiredKind: "planApproval" as const }
-        : {}),
+    ...actionRequiredKind(row),
     pendingPlanApproval: row.pending_plan_approval === 1,
     ...(latestBotMessage === undefined ? {} : { latestBotMessage }),
     ...(row.parent_session_id == null ? {} : { parentSessionId: row.parent_session_id }),

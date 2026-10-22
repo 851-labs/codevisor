@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync
 } from "node:fs"
-import type { Dirent } from "node:fs"
+import type { Dirent, Stats } from "node:fs"
 import { readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
@@ -26,10 +26,15 @@ import { searchFileEntries } from "./file-search.js"
 const textLimit = 4 * 1024 * 1024
 const revision = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex")
 
+function expandHome(value: string): string {
+  if (value === "~") return homedir()
+  if (value.startsWith("~/")) return join(homedir(), value.slice(2))
+  return value
+}
+
 function requestedPath(url: URL): string {
   const value = url.searchParams.get("path") ?? ""
-  const expanded =
-    value === "~" ? homedir() : value.startsWith("~/") ? join(homedir(), value.slice(2)) : value
+  const expanded = expandHome(value)
   if (!isAbsolute(expanded))
     throw new HttpFailure(400, "Choose an absolute file path.", "invalid_path")
   return resolve(expanded)
@@ -42,6 +47,14 @@ function textContent(bytes: Buffer): string | null {
   } catch {
     return null
   }
+}
+
+function editBlockedReason(info: Stats, content: string | null, writable: boolean): string | null {
+  if (info.size > textLimit)
+    return "This file is too large to edit. The editor supports files up to 4 MB."
+  if (content === null) return "This file uses a binary or unsupported text format."
+  if (!writable) return "This file is read-only."
+  return null
 }
 
 function snapshot(path: string) {
@@ -63,14 +76,7 @@ function snapshot(path: string) {
     version: bytes === null ? `${info.size}:${info.mtimeMs}` : revision(bytes),
     size: info.size,
     writable: writable && content !== null,
-    reason:
-      info.size > textLimit
-        ? "This file is too large to edit. The editor supports files up to 4 MB."
-        : content === null
-          ? "This file uses a binary or unsupported text format."
-          : !writable
-            ? "This file is read-only."
-            : null
+    reason: editBlockedReason(info, content, writable)
   }
 }
 

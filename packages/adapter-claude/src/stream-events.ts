@@ -7,13 +7,18 @@ import type { ClaudeSession } from "./session.js"
 import { toolKind } from "./tool-presentation.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
 
+const streamMessageId = (inner: unknown): string | undefined => {
+  if (!isRecord(inner)) return undefined
+  return typeof inner.id === "string" ? inner.id : ""
+}
+
 const startStreamMessage = (
   session: ClaudeSession,
   event: Record<string, unknown>,
   parentId: string | undefined
 ): void => {
   const inner = event.message
-  const innerId = isRecord(inner) ? (typeof inner.id === "string" ? inner.id : "") : undefined
+  const innerId = streamMessageId(inner)
   if (parentId === undefined) {
     session.currentMessageId = innerId
     session.currentMessageTextStreamed = false

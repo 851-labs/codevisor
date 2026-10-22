@@ -11,8 +11,11 @@ import { firstLine } from "./internal.js"
 import { askAsyncQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
 
-export const wirePhase = (raw: unknown): "commentary" | "final" | undefined =>
-  raw === "commentary" ? "commentary" : raw === "final_answer" ? "final" : undefined
+export const wirePhase = (raw: unknown): "commentary" | "final" | undefined => {
+  if (raw === "commentary") return "commentary"
+  if (raw === "final_answer") return "final"
+  return undefined
+}
 
 export const emitItemLifecycle = (
   session: CodexSession,
@@ -60,12 +63,7 @@ export const emitItemLifecycle = (
     }
     case "webSearch": {
       const query = typeof item.query === "string" && item.query.length > 0 ? item.query : undefined
-      const title =
-        query !== undefined
-          ? `Searched for ${query}`
-          : started
-            ? "Searching the web"
-            : "Searched the web"
+      const title = webSearchTitle(query, started)
       if (started) {
         void session.emit(
           event({
@@ -100,6 +98,24 @@ export const emitItemLifecycle = (
 
 type ItemEvent = (payload: Record<string, unknown>) => RuntimeEvent
 
+function webSearchTitle(query: string | undefined, started: boolean): string {
+  if (query !== undefined) return `Searched for ${query}`
+  if (started) return "Searching the web"
+  return "Searched the web"
+}
+
+function imageGenerationProgress(started: boolean, failed: boolean) {
+  if (started) return { status: "in_progress", title: "Generating image" }
+  if (failed) return { status: "failed", title: "Image generation failed" }
+  return { status: "completed", title: "Generated image" }
+}
+
+function mcpRawOutput(item: Record<string, unknown>) {
+  if (item.result !== undefined && item.result !== null) return { rawOutput: item.result }
+  if (item.error !== undefined && item.error !== null) return { rawOutput: item.error }
+  return {}
+}
+
 function emitImageItem(
   session: CodexSession,
   item: Record<string, unknown>,
@@ -113,8 +129,7 @@ function emitImageItem(
       sessionUpdate: started ? "tool_call" : "tool_call_update",
       kind: "image_generation",
       toolCallId: itemId,
-      status: started ? "in_progress" : failed ? "failed" : "completed",
-      title: started ? "Generating image" : failed ? "Image generation failed" : "Generated image",
+      ...imageGenerationProgress(started, failed),
       ...(!started && !failed
         ? {
             generatedImage: {
@@ -235,11 +250,7 @@ function emitMcpItem(
         sessionUpdate: "tool_call_update",
         status: item.status === "failed" ? "failed" : "completed",
         toolCallId: itemId,
-        ...(item.result !== undefined && item.result !== null
-          ? { rawOutput: item.result }
-          : item.error !== undefined && item.error !== null
-            ? { rawOutput: item.error }
-            : {})
+        ...mcpRawOutput(item)
       })
     )
   }

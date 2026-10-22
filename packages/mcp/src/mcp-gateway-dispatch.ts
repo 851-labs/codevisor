@@ -2,6 +2,7 @@ import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
 import type {
+  AutomationProviderContext,
   AutomationToolProvider,
   BrowserSetupBroker,
   ComputerUseApp
@@ -55,6 +56,29 @@ export interface GatewayDispatchDeps {
   readonly publishRecording: ReturnType<typeof makeRecordingPublisher>
   readonly record: (id: string) => Promise<McpServerRecord>
   readonly selfMachine: { readonly id: string; readonly name: string }
+}
+
+interface AutomationCallContext {
+  readonly sessionId: string
+  readonly projectId?: string | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly deadline?: number | undefined
+}
+
+interface BrowserCaller {
+  readonly provider: AutomationToolProvider
+  readonly context: AutomationCallContext
+  readonly collector: SandboxArtifactCollector | undefined
+  readonly remote: GatewayOrigin | undefined
+  readonly onPage: ((url: string) => void) | undefined
+}
+
+const reportBrowserPage = (
+  result: CallToolResult,
+  onPage: ((url: string) => void) | undefined
+): void => {
+  const pageUrl = browserResultPageUrl(result)
+  if (pageUrl !== undefined) onPage?.(pageUrl)
 }
 
 const assertAutomationToolArguments = (
@@ -143,14 +167,44 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     }
   }
 
+  const browserProviderContext = (caller: BrowserCaller): AutomationProviderContext => ({
+    ...caller.context,
+    invokeBrowser: (name: string, nested: Record<string, unknown>) =>
+      invokeNestedBrowserTool(caller, name, nested)
+  })
+
+  const invokeNestedBrowserTool = async (
+    caller: BrowserCaller,
+    name: string,
+    nested: Record<string, unknown>
+  ): Promise<unknown> => {
+    const { provider, context, collector, remote, onPage } = caller
+    const result = await invokeAutomationProvider(
+      provider,
+      context,
+      name,
+      nested,
+      collector,
+      remote,
+      onPage
+    )
+    reportBrowserPage(result, onPage)
+    return sandboxSuccessfulToolResult(result, nestedBrowserCollector(collector), "browser." + name)
+  }
+
+  const nestedBrowserCollector = (
+    collector: SandboxArtifactCollector | undefined
+  ): SandboxArtifactCollector =>
+    collector ?? {
+      content: [],
+      maxItems: 20,
+      maxBytes: 20_000_000,
+      persistence: artifactPersistence
+    }
+
   const invokeAutomationProvider = async (
     provider: AutomationToolProvider,
-    context: {
-      readonly sessionId: string
-      readonly projectId?: string | undefined
-      readonly signal?: AbortSignal | undefined
-      readonly deadline?: number | undefined
-    },
+    context: AutomationCallContext,
     toolName: string,
     args: Readonly<Record<string, unknown>>,
     collector?: SandboxArtifactCollector,
@@ -159,46 +213,25 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
     assertAutomationToolArguments(provider, toolName, args)
-    const providerContext =
-      provider.id === "computer"
-        ? {
-            ...context,
-            agentLabel:
-              remote === undefined
-                ? (await run(config.db.getSessionSummary(context.sessionId))).title
-                : `${remote.sessionTitle ?? "Agent"} (from ${remote.machineName})`,
-            publishRecording,
-            ...computerUsePermissionPrompt(context, remote),
-            ...(onApp === undefined ? {} : { onApp })
-          }
-        : provider.id === "browser"
-          ? {
-              ...context,
-              invokeBrowser: async (name: string, nested: Record<string, unknown>) => {
-                const result = await invokeAutomationProvider(
-                  provider,
-                  context,
-                  name,
-                  nested,
-                  collector,
-                  remote,
-                  onPage
-                )
-                const pageUrl = browserResultPageUrl(result)
-                if (pageUrl !== undefined) onPage?.(pageUrl)
-                return sandboxSuccessfulToolResult(
-                  result,
-                  collector ?? {
-                    content: [],
-                    maxItems: 20,
-                    maxBytes: 20_000_000,
-                    persistence: artifactPersistence
-                  },
-                  "browser." + name
-                )
-              }
-            }
-          : context
+    let providerContext: AutomationProviderContext = context
+    if (provider.id === "computer") {
+      const callContext = { ...context }
+      let agentLabel: string
+      if (remote === undefined) {
+        agentLabel = (await run(config.db.getSessionSummary(context.sessionId))).title
+      } else {
+        agentLabel = `${remote.sessionTitle ?? "Agent"} (from ${remote.machineName})`
+      }
+      providerContext = {
+        ...callContext,
+        agentLabel,
+        publishRecording,
+        ...computerUsePermissionPrompt(context, remote),
+        ...(onApp === undefined ? {} : { onApp })
+      }
+    } else if (provider.id === "browser") {
+      providerContext = browserProviderContext({ provider, context, collector, remote, onPage })
+    }
     let safeArgs = args
     if (
       provider.id === "browser" &&
