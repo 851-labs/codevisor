@@ -1,14 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
+import type { EventEnvelope, SessionSummary, Workspace, WorkspaceGit } from "@codevisor/api"
 import {
-  PromoteWorkspacePaneToChatRequest as PromoteWorkspacePaneToChatRequestSchema,
-  ReorderWorkspacePanesRequest as ReorderWorkspacePanesRequestSchema,
-  UpdateWorkspacePaneRequest as UpdateWorkspacePaneRequestSchema,
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
-  UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema,
-  UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
-  type Workspace,
-  type WorkspaceGit
+  UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema
 } from "@codevisor/api"
 import { gitCurrentBranch } from "@codevisor/worktrees"
 
@@ -17,61 +12,38 @@ import {
   applyWorkspaceArchiveEffects,
   captureWorkspaceRuntime,
   enqueueWorkspaceArchive,
-  HttpFailure,
   matchRoute,
   matchRouteParams,
   readSchema,
   run,
   workspaceGitCheckout,
-  writeJson,
-  type CodevisorServerConfig,
-  type CodevisorServerServices,
-  type EventFanout,
-  type RouteState
+  writeJson
+} from "../server-context.js"
+import type {
+  CodevisorServerConfig,
+  CodevisorServerServices,
+  EventFanout,
+  RouteState,
+  WorkspaceGitCheckout
 } from "../server-context.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { cachedPullRequest } from "./git-review.js"
 import { matchesLabelFilters } from "./label-filters.js"
+import { rejectSyncThrows } from "./route-context.js"
+import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
-import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 import { routeWorkspaceFiles } from "./workspace-files.js"
+import {
+  findWorkspace,
+  refuseMismatchedBodyId,
+  requireWorkspace,
+  sameId
+} from "./workspace-lookups.js"
 import { routeWorkspaceMedia } from "./workspace-media.js"
+import { routeWorkspacePanes } from "./workspace-panes.js"
 
-const workspaceGit = async (
-  services: CodevisorServerServices,
-  serverId: string,
-  workspace: Workspace,
-  includePullRequest: boolean
-): Promise<WorkspaceGit> => {
-  const checkout = await workspaceGitCheckout(services, serverId, workspace)
-  if (checkout === undefined) {
-    return includePullRequest ? { branch: null, pullRequest: null } : { branch: null }
-  }
-  const env = await (services.resolveGitEnvironment?.(checkout.directory) ??
-    Promise.resolve(process.env))
-  const branch = await (checkout.branch === undefined
-    ? gitCurrentBranch(checkout.directory, env)
-    : Promise.resolve(checkout.branch))
-  if (!includePullRequest) return { branch }
-  if (branch === null) return { branch, pullRequest: null }
-
-  const owned = checkout.ownedBranch
-  return {
-    branch,
-    pullRequest: await cachedPullRequest(checkout.directory, env, { branch, owned })
-  }
-}
-
-const findWorkspace = async (
-  services: CodevisorServerServices,
-  workspaceId: string
-): Promise<Workspace | undefined> =>
-  (await run(services.db.listWorkspaces)).find(
-    (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
-  )
-
-export const routeWorkspaces = async (
+export const routeWorkspaces = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
@@ -79,18 +51,19 @@ export const routeWorkspaces = async (
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
-): Promise<boolean> => {
-  if (request.method === "GET" && url.pathname === "/v1/workspaces") {
-    writeJson(
-      response,
-      200,
-      (await run(services.db.listWorkspaces)).filter((workspace) =>
-        matchesLabelFilters(workspace.labels, url)
-      )
-    )
-    return true
-  }
+): Promise<boolean> =>
+  rejectSyncThrows(() =>
+    dispatchWorkspaceRoute({ services, fanout, routeState, request, response, url, config })
+  )
 
+const dispatchWorkspaceRoute = (route: RouteContext): Promise<boolean> => {
+  const { request, url } = route
+  if (request.method === "GET" && url.pathname === "/v1/workspaces") return listWorkspaces(route)
+  return routeAfterDelegates(route)
+}
+
+const routeAfterDelegates = async (route: RouteContext): Promise<boolean> => {
+  const { services, fanout, request, response, url, config } = route
   if (await routeWorkspaceCreate(services, fanout, config, request, response, url)) {
     return true
   }
@@ -120,229 +93,183 @@ export const routeWorkspaces = async (
     return true
   }
 
+  return routeWorkspaceReads(route) ?? routeWorkspacePanes(route) ?? routeWorkspace(route) ?? false
+}
+
+const routeWorkspaceReads = (route: RouteContext): Promise<boolean> | undefined => {
+  const { request, url } = route
   const gitRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/git")
-  if (gitRoute !== undefined && request.method === "GET") {
-    const workspaceId = routeParam(gitRoute, "workspaceId")
-    const workspace = await findWorkspace(services, workspaceId)
-    if (workspace === undefined) throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
-    const includePullRequest = url.searchParams.get("pullRequest") === "true"
-    writeJson(response, 200, await workspaceGit(services, config.id, workspace, includePullRequest))
-    return true
-  }
+  if (gitRoute !== undefined && request.method === "GET") return readWorkspaceGit(route, gitRoute)
 
-  if (request.method === "GET" && url.pathname === "/v1/workspace-snapshot") {
-    writeJson(response, 200, await run(services.db.getWorkspaceSnapshot))
-    return true
-  }
+  if (request.method === "GET" && url.pathname === "/v1/workspace-snapshot")
+    return readWorkspaceSnapshot(route)
+  return undefined
+}
 
-  if (request.method === "GET" && url.pathname === "/v1/workspace-panes") {
-    writeJson(response, 200, await run(services.db.listWorkspacePanes))
-    return true
-  }
-
-  const promoteRoute = matchRouteParams(
-    url.pathname,
-    "/v1/workspaces/:workspaceId/panes/:paneId/promote-chat"
-  )
-  if (promoteRoute !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, PromoteWorkspacePaneToChatRequestSchema)
-    const workspaceId = routeParam(promoteRoute, "workspaceId")
-    const paneId = routeParam(promoteRoute, "paneId")
-    const workspace = (await run(services.db.listWorkspaces)).find(
-      (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
-    )
-    if (workspace === undefined) throw new HttpFailure(404, "Workspace not found")
-    const existingPane = (await run(services.db.listWorkspacePanes)).find(
-      (candidate) =>
-        candidate.id.toLowerCase() === paneId.toLowerCase() &&
-        candidate.workspaceId.toLowerCase() === workspaceId.toLowerCase()
-    )
-    if (existingPane === undefined) throw new HttpFailure(404, "Workspace pane not found")
-    if (workspace.projectId.toLowerCase() !== payload.session.projectId.toLowerCase()) {
-      throw new HttpFailure(409, "Chat and workspace must belong to the same project")
-    }
-    const { session: ensured, created } = await createSessionIfMissing(
-      services,
-      fanout,
-      routeState,
-      config,
-      { ...payload.session, workspaceId: undefined },
-      false
-    )
-    const pane = await run(
-      services.db.promoteWorkspacePaneToSession(
-        workspaceId,
-        paneId,
-        ensured.id,
-        payload.title ?? (ensured.title || "New Chat")
-      )
-    )
-    const session = await run(services.db.getSessionSummary(ensured.id))
-    await appendAndPublish(
-      services.db,
-      fanout,
-      created ? "session.created" : "session.updated",
-      session.id,
-      session
-    )
-    await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    writeJson(response, created ? 201 : 200, { pane, session })
-    return true
-  }
-
-  const reorderRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/panes/reorder")
-  if (reorderRoute !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, ReorderWorkspacePanesRequestSchema)
-    const workspaceId = routeParam(reorderRoute, "workspaceId")
-    if ((await findWorkspace(services, workspaceId)) === undefined) {
-      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
-    }
-    const panes = await run(services.db.reorderWorkspacePanes(workspaceId, payload.paneIds))
-    for (const pane of panes) {
-      await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    }
-    writeJson(response, 200, panes)
-    return true
-  }
-
-  const paneRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/panes/:paneId")
-  const closeRoute = matchRouteParams(
-    url.pathname,
-    "/v1/workspaces/:workspaceId/panes/:paneId/close"
-  )
-  if (
-    (closeRoute !== undefined && request.method === "POST") ||
-    (paneRoute !== undefined && request.method === "DELETE")
-  ) {
-    const route = (closeRoute ?? paneRoute)!
-    const workspaceId = routeParam(route, "workspaceId")
-    const paneId = routeParam(route, "paneId")
-    if ((await findWorkspace(services, workspaceId)) === undefined) {
-      writeJson(response, 200, {})
-      return true
-    }
-    await run(services.db.deleteWorkspacePane(workspaceId, paneId))
-    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", paneId, {
-      id: paneId,
-      workspaceId
-    })
-    writeJson(response, 200, {})
-    return true
-  }
-
-  if (paneRoute !== undefined && request.method === "PUT") {
-    const payload = await readSchema(request, UpsertWorkspacePaneRequestSchema)
-    const workspaceId = routeParam(paneRoute, "workspaceId")
-    const paneId = routeParam(paneRoute, "paneId")
-    if (payload.id !== undefined && payload.id.toLowerCase() !== paneId.toLowerCase()) {
-      throw new HttpFailure(
-        400,
-        `Pane id in the body (${payload.id}) does not match the path (${paneId})`
-      )
-    }
-    if ((await findWorkspace(services, workspaceId)) === undefined) {
-      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
-    }
-    const pane = await run(services.db.upsertWorkspacePane(workspaceId, { ...payload, id: paneId }))
-    await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    writeJson(response, 200, pane)
-    return true
-  }
-
-  if (paneRoute !== undefined && request.method === "PATCH") {
-    const payload = await readSchema(request, UpdateWorkspacePaneRequestSchema)
-    const workspaceId = routeParam(paneRoute, "workspaceId")
-    const paneId = routeParam(paneRoute, "paneId")
-    const panes = await run(services.db.listWorkspacePanes)
-    if (
-      !panes.some(
-        (candidate) =>
-          candidate.id.toLowerCase() === paneId.toLowerCase() &&
-          candidate.workspaceId.toLowerCase() === workspaceId.toLowerCase()
-      )
-    ) {
-      throw new HttpFailure(404, `Workspace pane not found: ${paneId}`)
-    }
-    const pane = await run(services.db.updateWorkspacePane(workspaceId, paneId, payload))
-    await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    writeJson(response, 200, pane)
-    return true
-  }
-
+const routeWorkspace = (route: RouteContext): Promise<boolean> | undefined => {
+  const { request, url } = route
   const workspaceId = matchRoute(url.pathname, "/v1/workspaces/:id")
-  if (workspaceId !== undefined && request.method === "PUT") {
-    const payload = await readSchema(request, UpsertWorkspaceRequestSchema)
-    if (payload.id !== undefined && payload.id.toLowerCase() !== workspaceId.toLowerCase()) {
-      throw new HttpFailure(
-        400,
-        `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
-      )
-    }
-    if (payload.isArchived === true) {
-      await assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
-    }
-    const wasArchived = (await run(services.db.listWorkspaces)).some(
-      (candidate) =>
-        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
-    )
-    const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
-    const settled = await applyWorkspaceArchiveEffects(
-      services,
-      fanout,
-      config,
-      routeState,
-      workspace,
-      wasArchived
-    )
-    writeJson(response, 200, settled)
-    return true
+  if (workspaceId !== undefined && request.method === "PUT")
+    return upsertWorkspace(route, workspaceId)
+  if (workspaceId !== undefined && request.method === "PATCH")
+    return updateWorkspace(route, workspaceId)
+  if (workspaceId !== undefined && request.method === "DELETE")
+    return deleteWorkspace(route, workspaceId)
+  return undefined
+}
+
+const listWorkspaces = async ({ services, response, url }: RouteContext): Promise<boolean> => {
+  const workspaces = await run(services.db.listWorkspaces)
+  writeJson(
+    response,
+    200,
+    workspaces.filter((workspace) => matchesLabelFilters(workspace.labels, url))
+  )
+  return true
+}
+
+const readWorkspaceGit = async (
+  { services, response, url, config }: RouteContext,
+  params: Readonly<Record<string, string>>
+): Promise<boolean> => {
+  const workspaceId = routeParam(params, "workspaceId")
+  const workspace = requireWorkspace(await findWorkspace(services, workspaceId), workspaceId)
+  const includePullRequest = url.searchParams.get("pullRequest") === "true"
+  writeJson(response, 200, await workspaceGit(services, config.id, workspace, includePullRequest))
+  return true
+}
+
+const readWorkspaceSnapshot = async ({ services, response }: RouteContext): Promise<boolean> => {
+  writeJson(response, 200, await run(services.db.getWorkspaceSnapshot))
+  return true
+}
+
+const upsertWorkspace = async (route: RouteContext, workspaceId: string): Promise<boolean> => {
+  const { services, request, response } = route
+  const payload = await readSchema(request, UpsertWorkspaceRequestSchema)
+  refuseMismatchedBodyId("Workspace", payload, workspaceId)
+  if (payload.isArchived === true) await refuseBotArchive(services, workspaceId)
+
+  const wasArchived = isArchivedIn(await run(services.db.listWorkspaces), workspaceId)
+  const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
+  const settled = await applyArchiveEffects(route, workspace, wasArchived)
+  writeJson(response, 200, settled)
+  return true
+}
+
+const updateWorkspace = async (route: RouteContext, workspaceId: string): Promise<boolean> => {
+  const { services, request, response } = route
+  const payload = await readSchema(request, UpdateWorkspaceRequestSchema)
+  const existing = requireWorkspace(await findWorkspace(services, workspaceId), workspaceId)
+  if (payload.isArchived === true) await refuseBotArchive(services, workspaceId)
+
+  const wasArchived = existing.isArchived
+  const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
+  const settled = await applyArchiveEffects(route, workspace, wasArchived)
+  writeJson(response, 200, settled)
+  return true
+}
+
+const deleteWorkspace = async (route: RouteContext, workspaceId: string): Promise<boolean> => {
+  const { services, fanout, routeState, response, config } = route
+  await refuseBotDelete(services, workspaceId)
+  if ((await findWorkspace(services, workspaceId)) === undefined) return noContent(response)
+
+  const workspace = await archiveWorkspace(services, workspaceId)
+  await publishWorkspaceUpdated(route, workspace)
+  const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
+  for (const session of await allSessions(services)) {
+    if (isInWorkspace(session, workspaceId)) await detachSession(services, session)
+  }
+  await run(services.db.deleteWorkspace(workspaceId))
+  await publishWorkspaceDeleted(route, workspaceId)
+  void enqueueWorkspaceArchive(services, fanout, config, workspace, runtime)
+  return noContent(response)
+}
+
+const workspaceGit = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  workspace: Workspace,
+  includePullRequest: boolean
+): Promise<WorkspaceGit> => {
+  const checkout = await workspaceGitCheckout(services, serverId, workspace)
+  if (checkout === undefined) {
+    return includePullRequest ? { branch: null, pullRequest: null } : { branch: null }
   }
 
-  if (workspaceId !== undefined && request.method === "PATCH") {
-    const payload = await readSchema(request, UpdateWorkspaceRequestSchema)
-    const existing = await findWorkspace(services, workspaceId)
-    if (existing === undefined) {
-      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
-    }
-    if (payload.isArchived === true) {
-      await assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
-    }
-    const wasArchived = existing.isArchived
-    const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
-    const settled = await applyWorkspaceArchiveEffects(
-      services,
-      fanout,
-      config,
-      routeState,
-      workspace,
-      wasArchived
-    )
-    writeJson(response, 200, settled)
-    return true
-  }
+  const env = await gitEnvironment(services, checkout)
+  const branch = await checkoutBranch(checkout, env)
+  if (!includePullRequest) return { branch }
+  if (branch === null) return { branch, pullRequest: null }
 
-  if (workspaceId !== undefined && request.method === "DELETE") {
-    await assertNotOwnedByBot(services, { workspaceId }, "delete this workspace")
-    const existing = await findWorkspace(services, workspaceId)
-    if (existing === undefined) {
-      writeJson(response, 204, undefined)
-      return true
-    }
-    const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
-    for (const session of await run(services.db.listSessions)) {
-      if (session.workspaceId?.toLowerCase() !== workspaceId.toLowerCase()) continue
-      await run(services.db.setSessionWorkspace(session.id, null))
-    }
-    await run(services.db.deleteWorkspace(workspaceId))
-    await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
-      id: workspaceId
-    })
-    void enqueueWorkspaceArchive(services, fanout, config, workspace, runtime)
-    writeJson(response, 204, undefined)
-    return true
+  const owned = checkout.ownedBranch
+  return {
+    branch,
+    pullRequest: await cachedPullRequest(checkout.directory, env, { branch, owned })
   }
+}
 
-  return false
+const gitEnvironment = (
+  services: CodevisorServerServices,
+  checkout: WorkspaceGitCheckout
+): Promise<NodeJS.ProcessEnv> =>
+  services.resolveGitEnvironment?.(checkout.directory) ?? Promise.resolve(process.env)
+
+const checkoutBranch = (
+  checkout: WorkspaceGitCheckout,
+  env: NodeJS.ProcessEnv
+): Promise<string | null> => {
+  if (checkout.branch === undefined) return gitCurrentBranch(checkout.directory, env)
+  return Promise.resolve(checkout.branch)
+}
+
+const isArchivedIn = (workspaces: ReadonlyArray<Workspace>, workspaceId: string): boolean =>
+  workspaces.some((candidate) => isArchivedWorkspace(candidate, workspaceId))
+
+const isArchivedWorkspace = (candidate: Workspace, workspaceId: string): boolean =>
+  sameId(candidate.id, workspaceId) && candidate.isArchived
+
+const isInWorkspace = (session: SessionSummary, workspaceId: string): boolean =>
+  session.workspaceId?.toLowerCase() === workspaceId.toLowerCase()
+
+const refuseBotDelete = (services: CodevisorServerServices, workspaceId: string): Promise<void> =>
+  assertNotOwnedByBot(services, { workspaceId }, "delete this workspace")
+
+const refuseBotArchive = (services: CodevisorServerServices, workspaceId: string): Promise<void> =>
+  assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
+
+const archiveWorkspace = (
+  services: CodevisorServerServices,
+  workspaceId: string
+): Promise<Workspace> => run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
+
+const allSessions = (services: CodevisorServerServices): Promise<ReadonlyArray<SessionSummary>> =>
+  run(services.db.listSessions)
+
+const detachSession = (services: CodevisorServerServices, session: SessionSummary): Promise<void> =>
+  run(services.db.setSessionWorkspace(session.id, null))
+
+const applyArchiveEffects = (
+  { services, fanout, config, routeState }: RouteContext,
+  workspace: Workspace,
+  wasArchived: boolean
+): Promise<Workspace> =>
+  applyWorkspaceArchiveEffects(services, fanout, config, routeState, workspace, wasArchived)
+
+const publishWorkspaceUpdated = (
+  { services, fanout }: RouteContext,
+  workspace: Workspace
+): Promise<EventEnvelope> =>
+  appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+
+const publishWorkspaceDeleted = (
+  { services, fanout }: RouteContext,
+  workspaceId: string
+): Promise<EventEnvelope> =>
+  appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, { id: workspaceId })
+
+const noContent = (response: ServerResponse): boolean => {
+  writeJson(response, 204, undefined)
+  return true
 }
