@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import type {
+  CodevisorDatabaseService,
+  HarnessAccountRecord,
+  SaveHarnessAccountRequest
+} from "@codevisor/db"
 
 import {
   atomicWriteJson,
@@ -98,100 +102,170 @@ export const sharedProfileCredentialSource = (id: string, directory: string): Cr
   }
 }
 
+export interface SharedProfileDeps {
+  readonly db: CodevisorDatabaseService
+  readonly dataDir: string
+  readonly removeAccount: (id: string) => Promise<void>
+}
+
 export const reconcileSharedOpenCodeProfiles = async (
-  deps: {
-    readonly db: CodevisorDatabaseService
-    readonly dataDir: string
-    readonly removeAccount: (id: string) => Promise<void>
-  },
+  deps: SharedProfileDeps,
   content?: string
 ): Promise<ReadonlyArray<CredentialSource>> => {
-  const desired = content === undefined ? empty() : parseProfiles(JSON.parse(content))
-  const markerPath = join(deps.dataDir, "harness-profiles", ".shared-opencode.json")
-  const marker = await readJsonFile(markerPath)
-  const previous = marker === undefined ? empty() : parseProfiles(marker)
+  const desired = desiredProfiles(content)
+  const markerPath = sharedMarkerPath(deps.dataDir)
+  const previous = recordedProfiles(await readJsonFile(markerPath))
   const accounts = await run(deps.db.listHarnessAccounts("opencode"))
-  let defaultAccount = accounts.find((account) => account.profileKind === "default")
-  if (defaultAccount === undefined) {
-    defaultAccount = await run(
-      deps.db.saveHarnessAccount({
-        harnessId: "opencode",
-        profileKind: "default",
-        label: "Default Profile",
-        authState: "unauthenticated",
-        canLogin: true,
-        canLogout: false
-      })
-    )
-  }
+  let defaultAccount = accounts.find(isDefaultAccount)
+  if (defaultAccount === undefined)
+    defaultAccount = await run(deps.db.saveHarnessAccount(defaultAccountRequest()))
+
   const sources: CredentialSource[] = []
   const present = new Set<string>(["default"])
   for (const profile of desired.profiles) {
     const account = await run(deps.db.getHarnessAccount(profile.id))
-    const prior = previous.profiles.find((item) => item.id === profile.id)
-    if (account === undefined && prior !== undefined) continue
-    if (
-      account !== undefined &&
-      (account.harnessId !== "opencode" ||
-        account.profileKind !== "managed" ||
-        account.profileKey !== profile.id)
-    )
+    const prior = priorProfile(previous, profile)
+    if (removedLocally(account, prior)) continue
+    if (conflictsWithProfile(account, profile))
       throw new Error("Shared profile conflicts with an existing account")
-    if (account === undefined) {
-      await run(
-        deps.db.saveHarnessAccount({
-          id: profile.id,
-          harnessId: "opencode",
-          profileKind: "managed",
-          profileKey: profile.id,
-          label: profile.label,
-          authState: "unauthenticated",
-          canLogin: true,
-          canLogout: false
-        })
-      )
-    } else if (
-      account.label !== profile.label &&
-      (prior === undefined || account.label === prior.label)
-    ) {
-      await run(
-        deps.db.updateHarnessAccountAuth(account.id, {
-          label: profile.label,
-          authState: account.authState
-        })
-      )
-    }
+
+    const write = writeProfileAccount(deps, account, profile, prior)
+    if (write !== undefined) await write
     present.add(profile.id)
-    sources.push(
-      sharedProfileCredentialSource(
-        profile.id,
-        join(deps.dataDir, "harness-profiles", "opencode", profile.id)
-      )
-    )
+    sources.push(profileCredentialSource(deps.dataDir, profile))
   }
+
   for (const profile of previous.profiles) {
-    if (
-      !desired.profiles.some((item) => item.id === profile.id) &&
-      accounts.some((account) => account.id === profile.id)
-    )
-      await deps.removeAccount(profile.id)
+    if (removedUpstream(profile, desired, accounts)) await deps.removeAccount(profile.id)
   }
-  const selected = accounts.find((account) => account.isActive)
-  const selectedId =
-    selected?.profileKind === "default" || selected === undefined ? "default" : selected.id
-  if (
-    present.has(desired.activeProfileId) &&
-    (selectedId === previous.activeProfileId ||
-      (previous.profiles.some((profile) => profile.id === selectedId) &&
-        !desired.profiles.some((profile) => profile.id === selectedId)))
-  ) {
-    await run(
-      deps.db.setActiveHarnessAccount(
-        "opencode",
-        desired.activeProfileId === "default" ? defaultAccount.id : desired.activeProfileId
-      )
-    )
+
+  const selectedId = selectedProfileId(accounts)
+  if (adoptsSharedSelection(present, desired, previous, selectedId)) {
+    await run(deps.db.setActiveHarnessAccount("opencode", activeAccountId(desired, defaultAccount)))
   }
   await atomicWriteJson(markerPath, { ...desired })
   return sources
 }
+
+const profilesDirectory = "harness-profiles"
+
+const desiredProfiles = (content: string | undefined): Profiles => {
+  if (content === undefined) return empty()
+  return parseProfiles(JSON.parse(content))
+}
+
+const recordedProfiles = (marker: Record<string, unknown> | undefined): Profiles => {
+  if (marker === undefined) return empty()
+  return parseProfiles(marker)
+}
+
+const sharedMarkerPath = (dataDir: string): string =>
+  join(dataDir, profilesDirectory, ".shared-opencode.json")
+
+const profileCredentialSource = (dataDir: string, profile: Profile): CredentialSource =>
+  sharedProfileCredentialSource(
+    profile.id,
+    join(dataDir, profilesDirectory, "opencode", profile.id)
+  )
+
+const isDefaultAccount = (account: HarnessAccountRecord): boolean =>
+  account.profileKind === "default"
+
+const defaultAccountRequest = (): SaveHarnessAccountRequest => ({
+  harnessId: "opencode",
+  profileKind: "default",
+  label: "Default Profile",
+  authState: "unauthenticated",
+  canLogin: true,
+  canLogout: false
+})
+
+const managedAccountRequest = (profile: Profile): SaveHarnessAccountRequest => ({
+  id: profile.id,
+  harnessId: "opencode",
+  profileKind: "managed",
+  profileKey: profile.id,
+  label: profile.label,
+  authState: "unauthenticated",
+  canLogin: true,
+  canLogout: false
+})
+
+const priorProfile = (previous: Profiles, profile: Profile): Profile | undefined =>
+  previous.profiles.find((item) => item.id === profile.id)
+
+const removedLocally = (
+  account: HarnessAccountRecord | undefined,
+  prior: Profile | undefined
+): boolean => account === undefined && prior !== undefined
+
+const conflictsWithProfile = (
+  account: HarnessAccountRecord | undefined,
+  profile: Profile
+): boolean => account !== undefined && foreignAccount(account, profile)
+
+const foreignAccount = (account: HarnessAccountRecord, profile: Profile): boolean =>
+  account.harnessId !== "opencode" ||
+  account.profileKind !== "managed" ||
+  account.profileKey !== profile.id
+
+const writeProfileAccount = (
+  deps: SharedProfileDeps,
+  account: HarnessAccountRecord | undefined,
+  profile: Profile,
+  prior: Profile | undefined
+): Promise<HarnessAccountRecord> | undefined => {
+  if (account === undefined) return run(deps.db.saveHarnessAccount(managedAccountRequest(profile)))
+  if (takesSharedLabel(account, profile, prior)) {
+    return run(
+      deps.db.updateHarnessAccountAuth(account.id, {
+        label: profile.label,
+        authState: account.authState
+      })
+    )
+  }
+  return undefined
+}
+
+const takesSharedLabel = (
+  account: HarnessAccountRecord,
+  profile: Profile,
+  prior: Profile | undefined
+): boolean =>
+  account.label !== profile.label && (prior === undefined || account.label === prior.label)
+
+const removedUpstream = (
+  profile: Profile,
+  desired: Profiles,
+  accounts: ReadonlyArray<HarnessAccountRecord>
+): boolean =>
+  !hasProfile(desired.profiles, profile.id) && accounts.some((account) => account.id === profile.id)
+
+const selectedProfileId = (accounts: ReadonlyArray<HarnessAccountRecord>): string => {
+  const selected = accounts.find((account) => account.isActive)
+  if (selected?.profileKind === "default") return "default"
+  if (selected === undefined) return "default"
+  return selected.id
+}
+
+const adoptsSharedSelection = (
+  present: ReadonlySet<string>,
+  desired: Profiles,
+  previous: Profiles,
+  selectedId: string
+): boolean =>
+  present.has(desired.activeProfileId) && followsSharedSelection(selectedId, previous, desired)
+
+const followsSharedSelection = (
+  selectedId: string,
+  previous: Profiles,
+  desired: Profiles
+): boolean =>
+  selectedId === previous.activeProfileId ||
+  (hasProfile(previous.profiles, selectedId) && !hasProfile(desired.profiles, selectedId))
+
+const hasProfile = (profiles: ReadonlyArray<Profile>, id: string): boolean =>
+  profiles.some((profile) => profile.id === id)
+
+const activeAccountId = (desired: Profiles, defaultAccount: HarnessAccountRecord): string =>
+  desired.activeProfileId === "default" ? defaultAccount.id : desired.activeProfileId

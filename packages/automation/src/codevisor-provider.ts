@@ -1,36 +1,17 @@
-import { randomUUID } from "node:crypto"
-
-import { jsonSchema } from "@codevisor/api"
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
-import { Schema } from "effect"
 
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
-import { CodeExecutionToolError } from "./code-executor.js"
-import type { QueryParameter } from "./codevisor-api-tool-spec.js"
+import { bearerHeaders, requestBody, requestInit, requestUrl } from "./codevisor-api-request.js"
+import { resourceResult, responseError, textResult } from "./codevisor-api-response.js"
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
-import { pathArgumentName, pathParameterNames, toolInputSchema } from "./codevisor-tool-schema.js"
-import { budgetedWaitPayload, withClampNote } from "./codevisor-wait-budget.js"
-import { isRecord, recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
+import { toolInputSchema } from "./codevisor-tool-schema.js"
+import type { UnknownRecord } from "./unknown-values.js"
 
 export {
   CODEVISOR_BOT_TOOL_NAMES,
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
 } from "./codevisor-api-tools.js"
-
-const contextDefault = (
-  spec: CodevisorApiToolSpec,
-  name: string,
-  context: AutomationProviderContext
-): string | undefined => {
-  if ((name === "id" && spec.path.startsWith("/v1/sessions/:id")) || name === "sessionId") {
-    return context.sessionId
-  }
-  if (name === "id" && spec.path.startsWith("/v1/projects/:id")) {
-    return context.projectId
-  }
-  return undefined
-}
 
 const tools: ReadonlyArray<Tool> = [
   {
@@ -46,161 +27,36 @@ const tools: ReadonlyArray<Tool> = [
   }))
 ]
 
-const loopbackBaseUrl = (value: string): URL => {
-  const url = new URL(value)
-  if (url.hostname === "0.0.0.0" || url.hostname === "::" || url.hostname === "[::]") {
-    url.hostname = "127.0.0.1"
-  }
-  return url
-}
-
-const bodyPropertyNames = (schema: Schema.Constraint): ReadonlyArray<string> =>
-  Object.keys(recordOrEmpty(jsonSchema(schema).properties))
-
-const responseError = async (spec: CodevisorApiToolSpec, response: Response): Promise<Error> => {
-  const text = await response.text()
-  let detail = text.trim()
-  let typed: UnknownRecord = {}
-  try {
-    const parsed = recordOrEmpty(JSON.parse(text))
-    typed = isRecord(parsed.error) ? parsed.error : { ...parsed, message: parsed.error }
-    if (typeof typed.message === "string") detail = typed.message
-  } catch {}
-  const code = typeof typed.code === "string" ? typed.code : undefined
-  const details = recordOrUndefined(typed.details)
-  const message = `${spec.name} failed (${response.status}${response.statusText.length === 0 ? "" : ` ${response.statusText}`}): ${detail || "Codevisor request failed"}`
-  return code === undefined
-    ? new Error(message)
-    : new CodeExecutionToolError(detail, { code, ...(details === undefined ? {} : { details }) })
-}
-
-const sessionCreatePayload = (
-  payload: Readonly<Record<string, unknown>>,
-  context: AutomationProviderContext
-): Readonly<Record<string, unknown>> => ({
-  ...payload,
-  ...("projectId" in payload || context.projectId === undefined
-    ? {}
-    : { projectId: context.projectId }),
-  ...("parentSessionId" in payload || context.sessionId === undefined
-    ? {}
-    : { parentSessionId: context.sessionId }),
-  ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
-})
-
-const sessionPromptPayload = (
-  payload: Readonly<Record<string, unknown>>,
-  context: AutomationProviderContext
-): Readonly<Record<string, unknown>> => ({ ...payload, fromSessionId: context.sessionId })
-
-const queryParameterValue = (
-  spec: CodevisorApiToolSpec,
-  parameter: QueryParameter,
-  value: unknown
-): string => {
-  if (spec.name === "server.update_status" && parameter.name === "refresh" && value === true)
-    return "1"
-  if (typeof value === "string") return value
-  return JSON.stringify(value)
-}
-
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,
   spec: CodevisorApiToolSpec,
   context: AutomationProviderContext,
-  args: Readonly<Record<string, unknown>>
+  args: UnknownRecord
 ): Promise<CallToolResult> => {
-  if (spec.confirm === true && args.confirm !== true) {
-    throw new Error(
-      `${spec.name} requires confirm: true — show the user what this call will run ` +
-        "(via the matching discover tool) and get their explicit approval first"
-    )
-  }
-  let path = spec.path
-  for (const parameterName of pathParameterNames(spec.path)) {
-    const argumentName = pathArgumentName(spec, parameterName)
-    const value = args[argumentName] ?? contextDefault(spec, parameterName, context)
-    if (typeof value !== "string" || value.length === 0) {
-      throw new Error(`${spec.name} requires ${argumentName}`)
-    }
-    path = path.replace(`:${parameterName}`, encodeURIComponent(value))
-  }
+  if (unconfirmed(spec, args)) throw confirmationRequired(spec)
+  const url = requestUrl(getBaseUrl, spec, context, args)
 
-  const url = new URL(path, loopbackBaseUrl(getBaseUrl()))
-  for (const parameter of spec.query ?? []) {
-    const value = args[parameter.name]
-    if (value === undefined) continue
-    url.searchParams.set(parameter.name, queryParameterValue(spec, parameter, value))
-  }
-
-  const headers = new Headers()
-  headers.set("authorization", `Bearer ${await getBearerToken()}`)
-  let body: BodyInit | undefined
-  let clampedToMs: number | undefined
-  if (spec.name === "files.upload") {
-    const encoded = args.dataBase64
-    if (typeof encoded !== "string") throw new Error("files.upload requires dataBase64")
-    body = Buffer.from(encoded, "base64")
-    headers.set(
-      "content-type",
-      typeof args.mimeType === "string" ? args.mimeType : "application/octet-stream"
-    )
-    url.searchParams.delete("mimeType")
-  } else if (spec.body !== undefined) {
-    const bodyPayload = (): unknown => {
-      if (spec.wrappedBody === true) return args.body
-      const createsSession = spec.name === "sessions.create"
-      const promptsSession = !createsSession && spec.name === "sessions.prompt"
-      const payload = Object.fromEntries(
-        bodyPropertyNames(spec.body!)
-          .filter((name) => args[name] !== undefined)
-          .map((name) => [name, args[name]])
-      )
-      if (createsSession) return sessionCreatePayload(payload, context)
-      if (promptsSession) return sessionPromptPayload(payload, context)
-      return payload
-    }
-    const budgeted = budgetedWaitPayload(spec, bodyPayload(), context)
-    clampedToMs = budgeted.clampedToMs
-    body = JSON.stringify(budgeted.payload)
-    headers.set("content-type", "application/json")
-  }
-
-  const response = await fetch(url, {
-    method: spec.method,
-    headers,
-    ...(body === undefined ? {} : { body }),
-    ...(context.signal === undefined ? {} : { signal: context.signal })
-  })
+  const headers = bearerHeaders(await getBearerToken())
+  const request = requestBody(spec, context, args, url)
+  const response = await fetch(url, requestInit(spec, context, headers, request))
   if (!response.ok) throw await responseError(spec, response)
 
   if (spec.response === "binary") {
     const bytes = Buffer.from(await response.arrayBuffer())
-    return {
-      content: [
-        {
-          type: "resource",
-          resource: {
-            uri: url.toString(),
-            mimeType: response.headers.get("content-type") ?? "application/octet-stream",
-            blob: bytes.toString("base64")
-          }
-        }
-      ]
-    }
+    return resourceResult(url, response, bytes)
   }
-
-  const text = await response.text()
-  if (text.length === 0) {
-    return textToolResult(JSON.stringify({ ok: true, status: response.status }))
-  }
-  const contentType = response.headers.get("content-type") ?? ""
-  if (contentType.includes("application/json")) {
-    return textToolResult(withClampNote(JSON.stringify(JSON.parse(text) as unknown), clampedToMs))
-  }
-  return textToolResult(text)
+  return textResult(response, await response.text(), request.clampedToMs)
 }
+
+const unconfirmed = (spec: CodevisorApiToolSpec, args: UnknownRecord): boolean =>
+  spec.confirm === true && args.confirm !== true
+
+const confirmationRequired = (spec: CodevisorApiToolSpec): Error =>
+  new Error(
+    `${spec.name} requires confirm: true — show the user what this call will run ` +
+      "(via the matching discover tool) and get their explicit approval first"
+  )
 
 export interface CodevisorCurrentContext {
   readonly workspaceId?: string
