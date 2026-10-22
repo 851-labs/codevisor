@@ -83,7 +83,7 @@ export const openSyncStamps = (
   now: () => number = wallClock
 ): SyncStamps => stampsAfter(latestSyncTimestamp(entries), () => owner.serverId, now)
 
-export const mergePending = (
+export const flushPending = (
   target: SyncDatabase,
   namespace: string,
   writes: ReadonlyArray<SyncEntryRecord>

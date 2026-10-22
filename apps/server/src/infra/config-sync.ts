@@ -17,7 +17,7 @@ import {
   withHeldCredential,
   withLegacyOAuth
 } from "./mcp-sync-values.js"
-import { keyedEntries, mergePending, openSyncLedger, type SyncLedger } from "./sync-ledger.js"
+import { flushPending, keyedEntries, openSyncLedger, type SyncLedger } from "./sync-ledger.js"
 
 export {
   ACCOUNTS_SYNC_NAMESPACE,
@@ -54,13 +54,12 @@ export interface McpSyncResult {
 
 export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> => {
   const now = deps.now ?? Date.now
-  const locals = (await deps.mcp.list()).filter((server) => server.kind === "managed")
+  const locals = (await deps.mcp.list()).filter(isManagedMcp)
   const localByName = new Map(locals.map((server) => [server.name, server]))
   const replica = await run(deps.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
   const replicaByKey = keyedEntries(replica)
   const appliedEntries = await run(deps.db.getSyncEntries(MCPS_APPLIED_NAMESPACE))
-  const ledger = openSyncLedger({ owner: deps, now, replica, applied: appliedEntries })
-  const sync = openMcpSync(localByName, replicaByKey, ledger)
+  const sync = openMcpSync(deps, now, { localByName, replica, replicaByKey, appliedEntries })
 
   for (const [name, server] of Array.from(localByName)) {
     const existing = replicaByKey.get(name)
@@ -69,10 +68,10 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     if (server.authType === "oauth") credential = await deps.mcp.oauthCredential(server.id)
     const secrets = await deps.mcp.staticSecrets(server.id)
     const value = withCredential(syncedValue(server, secrets), credential)
-    const step = localMcpStep(ledger, name, value, wanted)
+    const step = localMcpStep(sync.ledger, name, value, wanted)
     if (step === "skip") continue
     if (step === "adopt") {
-      ledger.markApplied(name, () => fingerprint(value))
+      sync.ledger.markApplied(name, () => fingerprint(value))
       continue
     }
     if (step === "publish") {
@@ -80,15 +79,14 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       continue
     }
 
-    const key = freeMcpName(sync, name)
-    await deps.mcp.update(server.id, { name: key })
-    publishMcp(sync, key, renameLocalMcp(sync, name, server, value, key), undefined)
+    const renameTo = freeMcpName(sync, name)
+    await deps.mcp.update(server.id, { name: renameTo })
+    publishMcp(sync, renameTo, renameLocalMcp(sync, name, server, value, renameTo), undefined)
   }
-  ledger.retractUnlisted(localByName, replicaByKey, sync.published)
+  sync.ledger.retractUnlisted(localByName, replicaByKey, sync.published)
 
-  let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  const replicaMerge = mergePending(deps, MCPS_SYNC_NAMESPACE, ledger.replicaWrites)
-  if (replicaMerge !== undefined) changedEntries = (await replicaMerge).changed
+  const published = flushPending(deps, MCPS_SYNC_NAMESPACE, sync.ledger.replicaWrites)
+  if (published !== undefined) sync.changedEntries = (await published).changed
   const merged = await run(deps.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
 
   for (const entry of merged) {
@@ -98,11 +96,10 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
       if (local === undefined) continue
 
       const secrets = await deps.mcp.staticSecrets(local.id)
-      if (!isUnchangedMcp(ledger, name, local, secrets)) continue
+      if (!isUnchangedMcp(sync.ledger, name, local, secrets)) continue
 
       await deps.mcp.remove(local.id)
-      ledger.markRemoved(name)
-      sync.removed.push(name)
+      recordRemoved(sync, name)
       continue
     }
 
@@ -111,29 +108,23 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
 
     let held: HeldCredential
     if (holdsOAuth(local, received)) held = await deps.mcp.oauthCredential(local.id)
-    const wanted = withHeldCredential(received, held)
-    recordRepair(sync, name, entry, received, wanted)
+    const wanted = repairedMcp(sync, name, entry, received, held)
     const wantedFingerprint = fingerprint(wanted)
-    if (ledger.applied.get(name) === wantedFingerprint) continue
+    if (sync.ledger.applied.get(name) === wantedFingerprint) continue
 
     const installed = await installMcp(deps, local, wanted)
     if (wanted.oauthCredential !== undefined) {
       await deps.mcp.setOAuthCredential(credentialOwner(local, installed), wanted.oauthCredential)
     }
-    ledger.markApplied(name, () => wantedFingerprint)
-    sync.applied.push(name)
+    recordApplied(sync, name, wantedFingerprint)
   }
 
-  let repairedEntries: ReadonlyArray<SyncEntryRecord> = []
-  const repairMerge = mergePending(deps, MCPS_SYNC_NAMESPACE, sync.repairs)
-  if (repairMerge !== undefined) repairedEntries = (await repairMerge).changed
-  for (const repair of sync.repairs) sync.published.push(repair.key)
-  const appliedMerge = mergePending(deps, MCPS_APPLIED_NAMESPACE, ledger.appliedWrites)
-  if (appliedMerge !== undefined) await appliedMerge
-  return {
-    status: mcpStatus(sync),
-    changedEntries: [...changedEntries, ...repairedEntries]
-  }
+  const repaired = flushPending(deps, MCPS_SYNC_NAMESPACE, sync.repairs)
+  if (repaired !== undefined) sync.repairedEntries = (await repaired).changed
+  publishRepairs(sync)
+  const applied = flushPending(deps, MCPS_APPLIED_NAMESPACE, sync.ledger.appliedWrites)
+  if (applied !== undefined) await applied
+  return mcpResult(sync)
 }
 
 interface McpRename {
@@ -150,26 +141,35 @@ interface McpSync {
   readonly renamed: Array<McpRename>
   readonly applied: Array<string>
   readonly removed: Array<string>
+  changedEntries: ReadonlyArray<SyncEntryRecord>
+  repairedEntries: ReadonlyArray<SyncEntryRecord>
+}
+
+interface McpRows {
+  readonly localByName: Map<string, McpServer>
+  readonly replica: ReadonlyArray<SyncEntryRecord>
+  readonly replicaByKey: ReadonlyMap<string, SyncEntryRecord>
+  readonly appliedEntries: ReadonlyArray<SyncEntryRecord>
 }
 
 type LocalMcpStep = "skip" | "publish" | "adopt" | "rename"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
-const openMcpSync = (
-  localByName: Map<string, McpServer>,
-  replicaByKey: ReadonlyMap<string, SyncEntryRecord>,
-  ledger: SyncLedger
-): McpSync => ({
-  localByName,
-  replicaByKey,
-  ledger,
+const openMcpSync = (deps: McpSyncDeps, now: () => number, rows: McpRows): McpSync => ({
+  localByName: rows.localByName,
+  replicaByKey: rows.replicaByKey,
+  ledger: openSyncLedger({ owner: deps, now, replica: rows.replica, applied: rows.appliedEntries }),
   repairs: [],
   published: [],
   renamed: [],
   applied: [],
-  removed: []
+  removed: [],
+  changedEntries: [],
+  repairedEntries: []
 })
+
+const isManagedMcp = (server: McpServer): boolean => server.kind === "managed"
 
 const replicatedMcp = (existing: SyncEntryRecord | undefined): SyncedMcpValue | undefined =>
   existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
@@ -218,6 +218,18 @@ const isUnchangedMcp = (
 const holdsOAuth = (local: McpServer | undefined, received: SyncedMcpValue): local is McpServer =>
   local !== undefined && received.authType === "oauth"
 
+const repairedMcp = (
+  sync: McpSync,
+  name: string,
+  entry: SyncEntryRecord,
+  received: SyncedMcpValue,
+  held: HeldCredential
+): SyncedMcpValue => {
+  const wanted = withHeldCredential(received, held)
+  recordRepair(sync, name, entry, received, wanted)
+  return wanted
+}
+
 const recordRepair = (
   sync: McpSync,
   name: string,
@@ -228,6 +240,20 @@ const recordRepair = (
   if (wanted === received) return
 
   sync.repairs.push(sync.ledger.entry(name, withLegacyOAuth(wanted, entry.value)))
+}
+
+const recordRemoved = (sync: McpSync, name: string): void => {
+  sync.ledger.markRemoved(name)
+  sync.removed.push(name)
+}
+
+const recordApplied = (sync: McpSync, name: string, wantedFingerprint: string): void => {
+  sync.ledger.markApplied(name, () => wantedFingerprint)
+  sync.applied.push(name)
+}
+
+const publishRepairs = (sync: McpSync): void => {
+  for (const repair of sync.repairs) sync.published.push(repair.key)
 }
 
 const installMcp = (
@@ -250,6 +276,11 @@ const replicaClaimsName = (
 
 const nameTaken = (sync: McpSync, candidate: string): boolean =>
   sync.localByName.has(candidate) || sync.replicaByKey.has(candidate)
+
+const mcpResult = (sync: McpSync): McpSyncResult => ({
+  status: mcpStatus(sync),
+  changedEntries: [...sync.changedEntries, ...sync.repairedEntries]
+})
 
 const mcpStatus = (sync: McpSync): McpSyncStatus => ({
   published: sync.published,

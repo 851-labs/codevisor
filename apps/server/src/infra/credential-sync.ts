@@ -18,7 +18,7 @@ import {
   recordOverrides,
   restoresLive
 } from "./credential-publish.js"
-import { keyedEntries, mergePending, type SyncLedger } from "./sync-ledger.js"
+import { flushPending, keyedEntries, type SyncLedger } from "./sync-ledger.js"
 
 export const CREDENTIALS_SYNC_NAMESPACE = "harness-credentials"
 const APPLIED_NAMESPACE = "local.credentials-applied"
@@ -91,9 +91,8 @@ export const reconcileCredentials = async (
     publishLocalCredential(sync, source, live, local)
   }
 
-  let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  const replicaMerge = mergePending(deps, CREDENTIALS_SYNC_NAMESPACE, sync.ledger.replicaWrites)
-  if (replicaMerge !== undefined) changedEntries = (await replicaMerge).changed
+  const published = flushPending(deps, CREDENTIALS_SYNC_NAMESPACE, sync.ledger.replicaWrites)
+  if (published !== undefined) sync.changedEntries = (await published).changed
   const merged = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
 
   const sourceById = new Map(sources.map((source) => [source.id, source]))
@@ -126,11 +125,11 @@ export const reconcileCredentials = async (
     recordReceived(deps, sync, source, content)
   }
 
-  const appliedMerge = mergePending(deps, APPLIED_NAMESPACE, sync.ledger.appliedWrites)
-  if (appliedMerge !== undefined) await appliedMerge
-  const overrideMerge = mergePending(deps, OVERRIDES_NAMESPACE, sync.overrideWrites)
-  if (overrideMerge !== undefined) await overrideMerge
-  return { status: credentialStatus(sync), changedEntries }
+  const applied = flushPending(deps, APPLIED_NAMESPACE, sync.ledger.appliedWrites)
+  if (applied !== undefined) await applied
+  const savedOverrides = flushPending(deps, OVERRIDES_NAMESPACE, sync.overrideWrites)
+  if (savedOverrides !== undefined) await savedOverrides
+  return { status: credentialStatus(sync), changedEntries: sync.changedEntries }
 }
 
 type DeletableSource = CredentialSource & { readonly applyDelete: () => Promise<void> }

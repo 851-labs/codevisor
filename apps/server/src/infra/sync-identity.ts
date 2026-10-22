@@ -18,7 +18,7 @@ import {
   MCP_READINESS_NAMESPACE,
   mcpOverlayDisableKey
 } from "./mcp-fleet.js"
-import { mergePending, openSyncStamps, type SyncStamps } from "./sync-ledger.js"
+import { flushPending, openSyncStamps, type SyncStamps } from "./sync-ledger.js"
 
 export const LEGACY_LOCAL_SERVER_ID = "local"
 
@@ -56,8 +56,8 @@ export const adoptLegacySyncIdentity = async (
 
   const overlays = await run(deps.db.getSyncEntries(MCP_OVERLAYS_NAMESPACE))
   const overlayWrites = legacyOverlayWrites(deps, overlays)
-  const overlayMerge = mergePending(deps, MCP_OVERLAYS_NAMESPACE, overlayWrites)
-  if (overlayMerge !== undefined) recordChanged(changed, MCP_OVERLAYS_NAMESPACE, await overlayMerge)
+  const adopted = flushPending(deps, MCP_OVERLAYS_NAMESPACE, overlayWrites)
+  if (adopted !== undefined) recordChanged(changed, MCP_OVERLAYS_NAMESPACE, await adopted)
 
   for (const namespace of SINGLE_WRITER_NAMESPACES) {
     const entries = await run(deps.db.getSyncEntries(namespace))

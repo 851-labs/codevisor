@@ -16,6 +16,7 @@ export interface CredentialSync {
   readonly applied: Array<string>
   readonly removed: Array<string>
   readonly failed: Array<CredentialFailure>
+  changedEntries: ReadonlyArray<SyncEntryRecord>
 }
 
 export interface CredentialRows {
@@ -57,7 +58,8 @@ export const openCredentialSync = (
     published: [],
     applied: [],
     removed: [],
-    failed: []
+    failed: [],
+    changedEntries: []
   }
 }
 

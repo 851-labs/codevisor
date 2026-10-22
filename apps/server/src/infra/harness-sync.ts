@@ -8,7 +8,7 @@ import {
   HARNESSES_SYNC_NAMESPACE,
   readHarnessSettings
 } from "./harness-preferences.js"
-import { mergePending, openSyncStamps } from "./sync-ledger.js"
+import { flushPending, openSyncStamps } from "./sync-ledger.js"
 
 export { HARNESSES_SYNC_NAMESPACE }
 
@@ -53,9 +53,8 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
   const sync = openHarnessSync()
   const promotions = promotedHarnesses(deps, now, replica, locals, sync)
 
-  let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  const promotionMerge = mergePending(deps, HARNESSES_SYNC_NAMESPACE, promotions)
-  if (promotionMerge !== undefined) changedEntries = (await promotionMerge).changed
+  const promoted = flushPending(deps, HARNESSES_SYNC_NAMESPACE, promotions)
+  if (promoted !== undefined) sync.changedEntries = (await promoted).changed
   const preferences = await readHarnessSettings(deps.db)
 
   for (const [id, settings] of preferences) {
@@ -88,7 +87,7 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
     }
   }
 
-  return { status: harnessStatus(sync), changedEntries }
+  return { status: harnessStatus(sync), changedEntries: sync.changedEntries }
 }
 
 interface HarnessSync {
@@ -96,6 +95,7 @@ interface HarnessSync {
   readonly applied: Array<string>
   readonly installing: Array<string>
   readonly blocked: Array<HarnessBlockage>
+  changedEntries: ReadonlyArray<SyncEntryRecord>
 }
 
 interface HarnessBlockage {
@@ -111,7 +111,8 @@ const openHarnessSync = (): HarnessSync => ({
   published: [],
   applied: [],
   installing: [],
-  blocked: []
+  blocked: [],
+  changedEntries: []
 })
 
 const promotedHarnesses = (

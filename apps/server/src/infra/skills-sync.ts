@@ -15,7 +15,7 @@ import {
   verifySkillArchive
 } from "./skill-archive.js"
 import { blobUnverified, markBlobVerified } from "./skill-blobs.js"
-import { keyedEntries, mergePending, openSyncLedger, type SyncLedger } from "./sync-ledger.js"
+import { flushPending, keyedEntries, openSyncLedger, type SyncLedger } from "./sync-ledger.js"
 
 export {
   archiveEntryNames,
@@ -59,8 +59,12 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   const replica = await run(deps.db.getSyncEntries(SKILLS_SYNC_NAMESPACE))
   const replicaByKey = keyedEntries(replica)
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
-  const ledger = openSyncLedger({ owner: deps, replica, applied: appliedEntries })
-  const sync = openSkillSync(localSkills, hashedSkills, replicaByKey, ledger)
+  const sync = openSkillSync(deps, hashedSkills, {
+    localSkills,
+    replica,
+    replicaByKey,
+    appliedEntries
+  })
 
   for (const hashed of hashedSkills) {
     const { directoryName, skill, localHash } = hashed
@@ -74,7 +78,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     const step = localSkillStep(sync, directoryName, localHash)
     if (step === "skip") continue
     if (step === "adopt") {
-      ledger.markApplied(directoryName, () => localHash)
+      sync.ledger.markApplied(directoryName, () => localHash)
       continue
     }
     if (step === "publish") {
@@ -82,17 +86,16 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
       continue
     }
 
-    const key = freeSkillName(sync, directoryName)
-    const path = join(deps.store.dir, key)
-    await deps.store.rename(directoryName, key)
-    renameLocalSkill(sync, hashed, key, path)
-    publishSkill(sync, key, hashed)
+    const renameTo = freeSkillName(sync, directoryName)
+    const path = join(deps.store.dir, renameTo)
+    await deps.store.rename(directoryName, renameTo)
+    renameLocalSkill(sync, hashed, renameTo, path)
+    publishSkill(sync, renameTo, hashed)
   }
-  ledger.retractUnlisted(localSkills, replicaByKey, sync.published)
+  sync.ledger.retractUnlisted(localSkills, replicaByKey, sync.published)
 
-  let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  const replicaMerge = mergePending(deps, SKILLS_SYNC_NAMESPACE, ledger.replicaWrites)
-  if (replicaMerge !== undefined) changedEntries = (await replicaMerge).changed
+  const published = flushPending(deps, SKILLS_SYNC_NAMESPACE, sync.ledger.replicaWrites)
+  if (published !== undefined) sync.changedEntries = (await published).changed
   const merged = await run(deps.db.getSyncEntries(SKILLS_SYNC_NAMESPACE))
 
   for (const entry of merged) {
@@ -100,38 +103,30 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     const wantedHash = entryHash(entry)
     const localHash = sync.localHashes.get(directoryName)
     if (wantedHash === undefined) {
-      if (!isUnchangedLocal(ledger, localSkills, directoryName, localHash)) continue
+      if (!isUnchangedLocal(sync.ledger, localSkills, directoryName, localHash)) continue
 
       await deps.store.remove(directoryName)
-      ledger.markRemoved(directoryName)
-      sync.removed.push(directoryName)
+      recordRemoved(sync, directoryName)
       continue
     }
 
-    if (holdsHash(ledger, directoryName, localHash, wantedHash)) continue
-    if (!deps.blobs.has(wantedHash)) {
-      recordMissingBlob(sync, directoryName, wantedHash)
-      continue
-    }
+    if (holdsHash(sync.ledger, directoryName, localHash, wantedHash)) continue
+    if (blobMissing(deps, sync, directoryName, wantedHash)) continue
 
     const unpacked = await unpackSkillArchive(await deps.blobs.read(wantedHash))
     try {
-      if (unpacked.hash !== wantedHash) {
-        deps.blobs.remove(wantedHash)
-        recordMissingBlob(sync, directoryName, wantedHash)
-        continue
-      }
+      if (archiveMismatch(deps, sync, directoryName, wantedHash, unpacked.hash)) continue
+
       await deps.store.replace(directoryName, unpacked.path)
-      ledger.markApplied(directoryName, () => wantedHash)
-      sync.applied.push(directoryName)
+      recordApplied(sync, directoryName, wantedHash)
     } finally {
       await rm(unpacked.path, { recursive: true, force: true })
     }
   }
 
-  const appliedMerge = mergePending(deps, APPLIED_NAMESPACE, ledger.appliedWrites)
-  if (appliedMerge !== undefined) await appliedMerge
-  return { status: skillsStatus(sync), changedEntries }
+  const applied = flushPending(deps, APPLIED_NAMESPACE, sync.ledger.appliedWrites)
+  if (applied !== undefined) await applied
+  return { status: skillsStatus(sync), changedEntries: sync.changedEntries }
 }
 
 interface SkillRename {
@@ -160,6 +155,14 @@ interface SkillSync {
   readonly applied: Array<string>
   readonly removed: Array<string>
   readonly missingBlobs: Array<MissingSkillBlob>
+  changedEntries: ReadonlyArray<SyncEntryRecord>
+}
+
+interface SkillRows {
+  readonly localSkills: Map<string, Skill>
+  readonly replica: ReadonlyArray<SyncEntryRecord>
+  readonly replicaByKey: ReadonlyMap<string, SyncEntryRecord>
+  readonly appliedEntries: ReadonlyArray<SyncEntryRecord>
 }
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
@@ -170,20 +173,20 @@ const entryHash = (entry: SyncEntryRecord): string | undefined =>
 type LocalSkillStep = "skip" | "publish" | "adopt" | "rename"
 
 const openSkillSync = (
-  localSkills: Map<string, Skill>,
+  deps: SkillsSyncDeps,
   hashedSkills: ReadonlyArray<HashedSkill>,
-  replicaByKey: ReadonlyMap<string, SyncEntryRecord>,
-  ledger: SyncLedger
+  rows: SkillRows
 ): SkillSync => ({
-  localSkills,
+  ledger: openSyncLedger({ owner: deps, replica: rows.replica, applied: rows.appliedEntries }),
+  localSkills: rows.localSkills,
   localHashes: new Map(hashedSkills.map((hashed) => [hashed.directoryName, hashed.localHash])),
-  replicaByKey,
-  ledger,
+  replicaByKey: rows.replicaByKey,
   published: [],
   renamed: [],
   applied: [],
   removed: [],
-  missingBlobs: []
+  missingBlobs: [],
+  changedEntries: []
 })
 
 const localSkillStep = (
@@ -219,6 +222,42 @@ const renameLocalSkill = (
 const publishSkill = (sync: SkillSync, key: string, { skill, localHash }: HashedSkill): void => {
   sync.ledger.publish(key, { hash: localHash, name: skill.name }, () => localHash)
   sync.published.push(key)
+}
+
+const recordRemoved = (sync: SkillSync, directoryName: string): void => {
+  sync.ledger.markRemoved(directoryName)
+  sync.removed.push(directoryName)
+}
+
+const recordApplied = (sync: SkillSync, directoryName: string, hash: string): void => {
+  sync.ledger.markApplied(directoryName, () => hash)
+  sync.applied.push(directoryName)
+}
+
+const blobMissing = (
+  deps: SkillsSyncDeps,
+  sync: SkillSync,
+  directoryName: string,
+  hash: string
+): boolean => {
+  if (deps.blobs.has(hash)) return false
+
+  recordMissingBlob(sync, directoryName, hash)
+  return true
+}
+
+const archiveMismatch = (
+  deps: SkillsSyncDeps,
+  sync: SkillSync,
+  directoryName: string,
+  wantedHash: string,
+  unpackedHash: string
+): boolean => {
+  if (unpackedHash === wantedHash) return false
+
+  deps.blobs.remove(wantedHash)
+  recordMissingBlob(sync, directoryName, wantedHash)
+  return true
 }
 
 const recordMissingBlob = (sync: SkillSync, directoryName: string, hash: string): void => {
