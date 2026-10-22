@@ -228,6 +228,12 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         }
       }),
     loadedAgentSessionIds: () => [...sessions.keys()],
+    loadedAgentSessions: () =>
+      [...sessions].map(([sessionId, session]) => ({
+        sessionId,
+        harnessId: session.harnessId,
+        resumable: session.handle.resumable !== false
+      })),
     loadAgentSession: (
       harnessId,
       agentSessionId,

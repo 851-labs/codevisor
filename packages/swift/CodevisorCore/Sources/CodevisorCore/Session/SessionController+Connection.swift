@@ -10,7 +10,25 @@ extension SessionController {
   public var isServerReady: Bool { serverAvailability == .ready }
 
   public var isPausedForUpdate: Bool {
-    machines?.isPausedForUpdate(machineId: project.serverId, sessionId: serverSession?.id) ?? false
+    updatePauseSubject != nil
+  }
+
+  public var updatingName: String {
+    guard case let .harness(_, name) = updatePauseSubject else { return "Codevisor" }
+    return name
+  }
+
+  private var updatePauseSubject: ServerUpdatePauseSubject? {
+    machines?.updatePauseSubject(
+      machineId: project.serverId,
+      sessionId: serverSession?.id,
+      harnessId: sessionHarnessId
+    )
+  }
+
+  private var sessionHarnessId: String? {
+    guard let persisted = serverSession?.harnessId, !persisted.isEmpty else { return selectedHarnessId }
+    return persisted
   }
 
   public var sessionCwdURL: URL {

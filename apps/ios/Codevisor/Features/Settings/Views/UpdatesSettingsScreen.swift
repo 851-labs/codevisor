@@ -157,6 +157,9 @@ struct UpdatesSettingsScreen: View {
   @ViewBuilder
   private func trailing(for component: UpdateComponent) -> some View {
     switch component.phase {
+    case .updating where component.canCancel:
+      Button("Cancel") { Task { await center.cancel(component) } }
+        .buttonStyle(.bordered)
     case .updating:
       if let progress = component.progress {
         ProgressView(value: progress)

@@ -10,4 +10,16 @@ public extension CodevisorServerClienting {
   }
 
   func cancelRestartDrain() async throws {}
+
+  func startUpdateRun(_ request: ServerUpdateRunRequest) async throws -> ServerUpdateRunStarted {
+    ServerUpdateRunStarted(run: .idle)
+  }
+
+  func updateRunState() async throws -> ServerUpdateRunState {
+    .idle
+  }
+
+  func cancelUpdateRun() async throws -> ServerUpdateRunState {
+    .idle
+  }
 }

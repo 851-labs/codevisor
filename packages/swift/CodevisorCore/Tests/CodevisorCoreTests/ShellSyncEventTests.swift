@@ -54,13 +54,15 @@ struct ShellSyncEventTests {
       kind: "update.changed", subjectId: "server",
       payload: .object(["currentVersion": .string("0.1.0"), "latestVersion": .string("9.9.9")]))
     fake.emit(kind: "restart.drain.updated", subjectId: "server", payload: .object(["state": .string("drained")]))
+    fake.emit(kind: "update.run.updated", subjectId: "server", payload: .object(["state": .string("pausing")]))
     fake.emit(kind: "sync.changed", subjectId: "skills", payload: .object(["namespace": .string("skills")]))
     fake.emit(kind: "mcp.updated", subjectId: "server")
     await reachedEnd.wait()
 
     #expect(calls.isEmpty)
     #expect(controller.connectionsById["local"]?.updateInfo == nil)
-    #expect(!controller.isPausedForUpdate(machineId: "local", sessionId: nil))
+    #expect(controller.updatePauseSubject(machineId: "local", sessionId: nil, harnessId: nil) == nil)
+    #expect(controller.connectionsById["local"]?.updateRun == .idle)
   }
 
   private func makeController(_ fake: SyncFakeServerClient) -> MachineController {

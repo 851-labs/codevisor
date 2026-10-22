@@ -131,7 +131,10 @@ const makeChat = async () => {
   const { services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const idle = idleRouteState()
-  const routeState = { ...idle, restart: { ...idle.restart, isGated: () => true } }
+  const routeState = {
+    ...idle,
+    restart: { ...idle.restart, isActive: () => true, gates: () => true }
+  }
   const project = await run(
     services.db.createProject({ folderPath: "/tmp/codevisor-continue", name: "Repo" })
   )

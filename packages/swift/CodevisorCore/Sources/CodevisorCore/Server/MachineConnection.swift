@@ -35,6 +35,11 @@ public final class MachineConnection {
     set { serverUpdate.restartDrain = newValue }
   }
 
+  public internal(set) var updateRun: ServerUpdateRunState? {
+    get { serverUpdate.updateRun }
+    set { serverUpdate.updateRun = newValue }
+  }
+
   public internal(set) var updatePhase: ServerUpdatePhase {
     get { serverUpdate.phase }
     set { serverUpdate.phase = newValue }

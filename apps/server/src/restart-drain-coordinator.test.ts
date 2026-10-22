@@ -5,12 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeMemoryPausedTurnStore } from "./paused-turns.js"
 import {
   DRAINED_WITHOUT_RESTART_GRACE_MS,
-  makeMemoryRestartSnapshotStore,
   PAUSE_SETTLE_MS,
-  makeRestartCoordinator,
-  type RestartSnapshotStore
+  makeRestartCoordinator
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
+import { makeMemoryRestartSnapshotStore, type RestartSnapshotStore } from "./restart-snapshot.js"
 import { makeEventFanout } from "./server-context.js"
 import { archiveSessionViaWorkspace, idleRouteState, makeServices, run } from "./test-support.js"
 
@@ -80,6 +79,8 @@ const makeHarness = async () => {
 
 const POLL_STEP_MS = 250
 
+const codevisorGate = { harnessId: "codevisor-server", harnessName: "Codevisor" }
+
 const diskFull = (): never => {
   throw new Error("ENOSPC: no space left on device")
 }
@@ -124,12 +125,12 @@ describe("restart coordinator", () => {
         const cancelling = coordinator.cancel()
         turns.activeTurnSessions.clear()
         if (stage === "issued cancel") {
-          expect(coordinator.isGated()).toBe(true)
+          expect(coordinator.isActive()).toBe(true)
           expect(coordinator.cancel()).toBe(cancelling)
           next = coordinator.begin()
         } else {
           await cancelling
-          expect(coordinator.isGated()).toBe(false)
+          expect(coordinator.isActive()).toBe(false)
         }
         release.resolve()
         await Promise.all([old, cancelling, next])
@@ -181,7 +182,7 @@ describe("restart coordinator", () => {
         await entered.promise
         await coordinator.cancel()
         expect(harness.snapshot.read()).toBeUndefined()
-        harness.turns.restartHeldSessions.add(harness.sessions.fresh.id)
+        harness.turns.restartHeldSessions.set(harness.sessions.fresh.id, codevisorGate)
         vi.spyOn(harness.services.agents, "loadedAgentSessionIds").mockReturnValue([
           "new-live-agent"
         ])
@@ -190,7 +191,7 @@ describe("restart coordinator", () => {
         release.resolve()
         await old
         expect(coordinator.state().state).toBe("drained")
-        expect(coordinator.isGated()).toBe(true)
+        expect(coordinator.isActive()).toBe(true)
         expect(harness.snapshot.read()).toEqual([harness.sessions.fresh.id])
         expect(harness.agents.closes).toEqual(["new-live-agent"])
       } finally {
@@ -203,7 +204,7 @@ describe("restart coordinator", () => {
   it("snapshots held work without reloading idle or archived sessions", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
-    turns.restartHeldSessions.add(sessions.fresh.id)
+    turns.restartHeldSessions.set(sessions.fresh.id, codevisorGate)
     const coordinator = harness.make({
       loadedAgentSessionIds: () => ["agent-live", "agent-old", sessions.fresh.id]
     })
@@ -272,13 +273,14 @@ describe("restart coordinator", () => {
     })
 
     const started = coordinator.begin()
-    expect(coordinator.begin()).toBe(started)
+    const joined = coordinator.begin()
     await vi.advanceTimersByTimeAsync(PAUSE_SETTLE_MS - 1)
     expect(coordinator.state()).toMatchObject({ state: "draining", remaining: 2 })
     expect(harness.agents.closes).toEqual([])
     await vi.advanceTimersByTimeAsync(POLL_STEP_MS)
 
     expect((await started).state).toBe("drained")
+    expect(await joined).toEqual(await started)
     expect(harness.agents.closes).toEqual(["agent-live"])
     expect(harness.pausedTurns.read().map((turn) => turn.sessionId)).toEqual([sessions.live.id])
     expect(harness.logs.some((line) => line.includes("could not interrupt"))).toBe(true)
@@ -295,7 +297,7 @@ describe("restart coordinator", () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
     turns.activeTurnSessions.add(sessions.live.id)
-    turns.restartHeldSessions.add(sessions.fresh.id)
+    turns.restartHeldSessions.set(sessions.fresh.id, codevisorGate)
     const coordinator = harness.make({
       cancel: () => Effect.succeed({ runtimeState: "reusable" as const })
     })
@@ -331,24 +333,24 @@ describe("restart coordinator", () => {
     await closing.promise
     const cancelled = coordinator.cancel()
     expect(coordinator.cancel()).toBe(cancelled)
-    expect(coordinator.isGated()).toBe(true)
+    expect(coordinator.isActive()).toBe(true)
     releaseClose.resolve()
     await cancelled
     expect((await started).state).not.toBe("drained")
-    expect(coordinator.isGated()).toBe(false)
+    expect(coordinator.isActive()).toBe(false)
     coordinator.close()
   })
 
   it("abandons a drain it cannot snapshot instead of holding prompts forever", async () => {
     const harness = await makeHarness()
-    harness.turns.restartHeldSessions.add(harness.sessions.fresh.id)
+    harness.turns.restartHeldSessions.set(harness.sessions.fresh.id, codevisorGate)
     const coordinator = harness.make(
       {},
       { read: () => undefined, write: diskFull, clear: diskFull }
     )
 
     expect((await coordinator.begin()).state).toBe("idle")
-    expect(coordinator.isGated()).toBe(false)
+    expect(coordinator.isActive()).toBe(false)
     expect(harness.redrained).toEqual([harness.sessions.fresh.id])
     expect(harness.logs).toContain(
       "Restart drain could not finish: ENOSPC: no space left on device"
@@ -376,7 +378,7 @@ describe("restart coordinator", () => {
     const harness = await makeHarness()
     const coordinator = harness.make()
     expect((await coordinator.begin()).state).toBe("drained")
-    expect(coordinator.isGated()).toBe(true)
+    expect(coordinator.isActive()).toBe(true)
     await vi.advanceTimersByTimeAsync(DRAINED_WITHOUT_RESTART_GRACE_MS - 1)
     expect(coordinator.state().state).toBe("drained")
     await vi.advanceTimersByTimeAsync(1)

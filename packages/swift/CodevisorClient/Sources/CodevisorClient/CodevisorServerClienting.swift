@@ -298,6 +298,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func beginRestartDrain() async throws -> ServerRestartDrainState
   func restartDrainState() async throws -> ServerRestartDrainState
   func cancelRestartDrain() async throws
+  func startUpdateRun(_ request: ServerUpdateRunRequest) async throws -> ServerUpdateRunStarted
+  func updateRunState() async throws -> ServerUpdateRunState
+  func cancelUpdateRun() async throws -> ServerUpdateRunState
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
   func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>
   func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error>

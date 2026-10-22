@@ -146,7 +146,7 @@ extension ComposerBar {
       .accessibilityLabel("Steer")
       .accessibilityHint(
         controller.isPausedForUpdate
-          ? "Codevisor is updating"
+          ? "\(controller.updatingName) is updating"
           : "Adds your message to the running turn. Touch and hold to queue it instead."
       )
     } else {
@@ -174,7 +174,7 @@ extension ComposerBar {
   }
 
   private var sendButtonAccessibilityHint: String {
-    if controller.isPausedForUpdate { return "Codevisor is updating" }
+    if controller.isPausedForUpdate { return "\(controller.updatingName) is updating" }
     return controller.requiresModelSelection ? "Select a model" : ""
   }
 

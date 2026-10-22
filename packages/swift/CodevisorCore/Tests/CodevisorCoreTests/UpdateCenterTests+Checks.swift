@@ -99,7 +99,7 @@ extension UpdateCenterTests {
     fake.harnessUpdateHandler = { _ in
       ServerHarnessOperationStarted(
         accepted: true,
-        lifecycle: ServerHarnessLifecycleState(phase: "pendingUpdate")
+        lifecycle: ServerHarnessLifecycleState(phase: "updating", targetVersion: "1.2.0")
       )
     }
     let controller = try makeController(
@@ -122,7 +122,7 @@ extension UpdateCenterTests {
     await reading.wait()
     let inFlight = try #require(center.components.first { $0.id == row.id })
     #expect(inFlight.phase == .updating)
-    #expect(inFlight.statusMessage == "Waiting for chats to finish…")
+    #expect(inFlight.statusMessage == "Updating to 1.2.0…")
 
     release.signal()
     await update.value
@@ -133,7 +133,7 @@ extension UpdateCenterTests {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     var armed = makeHarness(updateAvailable: true)
-    armed.lifecycle = ServerHarnessLifecycleState(phase: "pendingUpdate")
+    armed.lifecycle = ServerHarnessLifecycleState(phase: "updating")
     fake.configureHarnesses([armed])
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],

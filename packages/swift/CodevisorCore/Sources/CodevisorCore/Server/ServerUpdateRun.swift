@@ -25,6 +25,7 @@ final class ServerUpdateRun {
 
   private let connection: MachineConnection
   private let client: any CodevisorServerClienting
+  private let apply: ServerUpdateApply
   private let channel: ServerUpdateChannel
   private let machine: Machine
   private let scheduler: ServerUpdateScheduler
@@ -36,6 +37,7 @@ final class ServerUpdateRun {
   init(
     connection: MachineConnection,
     client: any CodevisorServerClienting,
+    apply: ServerUpdateApply,
     channel: ServerUpdateChannel,
     machine: Machine,
     scheduler: ServerUpdateScheduler,
@@ -44,6 +46,7 @@ final class ServerUpdateRun {
   ) {
     self.connection = connection
     self.client = client
+    self.apply = apply
     self.channel = channel
     self.machine = machine
     self.scheduler = scheduler
@@ -58,7 +61,7 @@ final class ServerUpdateRun {
     machine.beginWaiting()
     initialHealth = try? await client.health()
     do {
-      let applied = try await client.applyServerUpdate(channel: channel)
+      let applied = try await apply.start(channel)
       guard applied.accepted else { return await finishDeclined(applied) }
 
       await waitForUpdatedServer(applied)

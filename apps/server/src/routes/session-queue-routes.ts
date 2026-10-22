@@ -124,7 +124,7 @@ const sendNow = async (route: RouteContext, params: Record<string, string>): Pro
   const { services, fanout, routeState, response, config } = route
   const id = routeParam(params, "id")
   const queueId = routeParam(params, "queueId")
-  refuseWhileUpdating(routeState, id)
+  await refuseWhileUpdating(services, routeState, id)
 
   const outcome = await sendQueuedPromptNow(services, fanout, routeState, config.id, id, queueId)
   writeJson(response, 200, acceptedPrompt(id, queueId, outcome))

@@ -40,7 +40,7 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
     if (existing !== undefined) return writeAccepted(response, existing)
   }
 
-  refuseWhileUpdating(routeState, sessionId)
+  await refuseWhileUpdating(services, routeState, sessionId)
   /* v8 ignore next 3 */
   if (promptActionPending(routeState, actionKey)) {
     return writeAccepted(response, { accepted: true, sessionId })

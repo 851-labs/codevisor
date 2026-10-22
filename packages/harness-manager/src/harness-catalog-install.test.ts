@@ -11,8 +11,7 @@ import {
   installMethodsFor,
   jsonResponse,
   makeBinDir,
-  makeDb,
-  waitForLifecycleSettle
+  makeDb
 } from "./harness-lifecycle-test-support.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
@@ -134,7 +133,7 @@ describe("catalog installation routes", () => {
     ],
     ["opencode", "/usr/local/bin/opencode", "/usr/local/bin/opencode upgrade"]
   ])("updates %s through its installed owner (%s)", async (id, path, command) => {
-    const { spawnShell, spawns, processes } = fakeSpawner()
+    const { spawnShell, spawns, processes, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents: agentsStub([definition(id)], [harness(id, path, "1.0.0")]),
       db: await makeDb(),
@@ -145,11 +144,11 @@ describe("catalog installation routes", () => {
       spawnShell,
       terminal: fakeTerminal().terminal
     })
-    await lifecycle.beginUpdate(id)
+    const applied = lifecycle.applyUpdate(id)
+    await spawned
     expect(spawns[0]?.command).toBe(command)
-    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await settled
+    await applied
   })
 
   it("installs all adapter dependencies and preserves npm's ignore-scripts option on updates", () => {

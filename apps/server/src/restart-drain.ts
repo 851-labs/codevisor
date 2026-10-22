@@ -1,7 +1,9 @@
-import type { RestartDrainState } from "@codevisor/api"
+import type { RestartDrainState, SessionUpdateGate } from "@codevisor/api"
 
-import { readJsonStateFile, removeJsonStateFile, writeJsonStateFile } from "./json-state-file.js"
+import { makePauseFinalizer } from "./pause-finalizer.js"
+import { allChats, sameScope, scopeIncludes, widenScope, type PauseScope } from "./pause-scope.js"
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import type { RestartSnapshotStore } from "./restart-snapshot.js"
 import { awaitsBotReply, conversationalBotForSession } from "./routes/bot-turns.js"
 import {
   appendAndPublish,
@@ -11,7 +13,6 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "./server-context.js"
-import { field } from "./unknown-values.js"
 import { forgetUpdatePauses, markPausingForUpdate } from "./update-pauses.js"
 
 export const DRAINED_WITHOUT_RESTART_GRACE_MS = 15 * 60_000
@@ -21,42 +22,6 @@ const POLL_MS = 250
 export const RESTART_GATE_HARNESS_ID = "codevisor-server"
 export const RESTART_GATE_HARNESS_NAME = "Codevisor"
 
-export interface RestartSnapshotStore {
-  readonly read: () => ReadonlyArray<string> | undefined
-  readonly write: (sessionIds: ReadonlyArray<string>) => void
-  readonly clear: () => void
-}
-
-/* v8 ignore start */
-export const makeFileRestartSnapshotStore = (path: string): RestartSnapshotStore => ({
-  read: () => {
-    const sessions = field(readJsonStateFile(path), "sessions")
-    return Array.isArray(sessions)
-      ? sessions.filter((id): id is string => typeof id === "string")
-      : undefined
-  },
-  write: (sessionIds) => {
-    writeJsonStateFile(path, { sessions: sessionIds, at: new Date().toISOString() })
-  },
-  clear: () => {
-    removeJsonStateFile(path)
-  }
-})
-/* v8 ignore stop */
-
-export const makeMemoryRestartSnapshotStore = (): RestartSnapshotStore => {
-  let value: ReadonlyArray<string> | undefined
-  return {
-    read: () => value,
-    write: (sessionIds) => {
-      value = [...sessionIds]
-    },
-    clear: () => {
-      value = undefined
-    }
-  }
-}
-
 interface PauseTarget {
   readonly agentSessionId: string
   readonly turn: PausedTurn
@@ -64,9 +29,12 @@ interface PauseTarget {
 
 export interface RestartCoordinator {
   readonly state: () => RestartDrainState
-  readonly isGated: () => boolean
-  readonly begin: () => Promise<RestartDrainState>
+  readonly isActive: () => boolean
+  readonly gates: (harnessId: string | undefined) => boolean
+  readonly gateFor: (harnessId: string | undefined) => SessionUpdateGate
+  readonly begin: (scope?: PauseScope) => Promise<RestartDrainState>
   readonly cancel: () => Promise<RestartDrainState>
+  readonly extendGrace: () => void
   readonly close: () => void
 }
 
@@ -76,7 +44,7 @@ export interface RestartCoordinatorDeps {
   readonly turns: {
     readonly activePromptSessions: Set<string>
     readonly activeTurnSessions: Set<string>
-    readonly restartHeldSessions: Set<string>
+    readonly restartHeldSessions: Map<string, SessionUpdateGate>
   }
   readonly snapshot: RestartSnapshotStore
   readonly pausedTurns: PausedTurnStore
@@ -87,10 +55,12 @@ export interface RestartCoordinatorDeps {
 }
 
 export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoordinator => {
-  const { services, fanout, turns, snapshot, pausedTurns, redrain } = deps
+  const { services, fanout, turns, pausedTurns, redrain } = deps
   const log = deps.log ?? ((line: string) => console.log(line))
 
   let phase: RestartDrainState["state"] = "idle"
+  let scope: PauseScope = allChats
+  let liveInScope = 0
   let startedAt = new Date().toISOString()
   let inFlight: Promise<RestartDrainState> | undefined
   let cancelling: Promise<RestartDrainState> | undefined
@@ -101,15 +71,35 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const liveSessions = (): Set<string> =>
     new Set([...turns.activePromptSessions, ...turns.activeTurnSessions])
 
+  const harnessName = (harnessId: string): string =>
+    services.agents.catalog.find((candidate) => candidate.id === harnessId)?.name ?? harnessId
+
+  const harnessScope = (harnessIds: ReadonlyArray<string>) => ({
+    harnessIds,
+    harnessNames: Object.fromEntries(harnessIds.map((id) => [id, harnessName(id)]))
+  })
+
   const state = (): RestartDrainState => ({
     state: phase,
-    remaining: liveSessions().size,
+    remaining: scope.kind === "all" ? liveSessions().size : liveInScope,
     startedAt,
-    pausedSessionIds: pausedTurns.read().map((turn) => turn.sessionId)
+    pausedSessionIds: pausedTurns.read().map((turn) => turn.sessionId),
+    ...(phase !== "idle" && scope.kind === "harnesses" ? harnessScope(scope.harnessIds) : {})
   })
 
   const changed = (): void => {
     deps.onChange?.()
+  }
+
+  const gates = (harnessId: string | undefined): boolean =>
+    phase !== "idle" && scopeIncludes(scope, harnessId)
+
+  const gateFor = (harnessId: string | undefined): SessionUpdateGate => {
+    if (scope.kind === "all" || harnessId === undefined) {
+      return { harnessId: RESTART_GATE_HARNESS_ID, harnessName: RESTART_GATE_HARNESS_NAME }
+    }
+
+    return { harnessId, harnessName: harnessName(harnessId) }
   }
 
   const destructive = async (work: Promise<unknown>): Promise<void> => {
@@ -119,6 +109,28 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     } finally {
       destructiveWork = undefined
     }
+  }
+
+  const harnessOf = async (sessionId: string): Promise<string | undefined> => {
+    const session = await run(services.db.getSessionSummary(sessionId)).catch(swallowError)
+    return session?.harnessId
+  }
+
+  const liveSessionsIn = async (pauseScope: PauseScope): Promise<ReadonlyArray<string>> => {
+    const live = [...liveSessions()]
+    if (pauseScope.kind === "all") return live
+
+    const harnesses = await Promise.all(live.map(harnessOf))
+    return live.filter((_, index) => scopeIncludes(pauseScope, harnesses[index]))
+  }
+
+  const countLive = async (pauseScope: PauseScope): Promise<number> => {
+    const count = (await liveSessionsIn(pauseScope)).length
+    if (count !== liveInScope) {
+      liveInScope = count
+      changed()
+    }
+    return count
   }
 
   const pauseTarget = async (sessionId: string): Promise<PauseTarget | undefined> => {
@@ -141,8 +153,8 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     })
   }
 
-  const pauseLiveTurns = async (myGeneration: number): Promise<void> => {
-    const sessionIds = [...liveSessions()]
+  const pauseLiveTurns = async (myGeneration: number, pauseScope: PauseScope): Promise<void> => {
+    const sessionIds = await liveSessionsIn(pauseScope)
     if (sessionIds.length === 0) return
 
     const targets = (await Promise.all(sessionIds.map(pauseTarget))).filter(isDefined)
@@ -165,83 +177,109 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       wakeDrain = done
     })
 
-  const waitUntilIdle = async (until: number, myGeneration: number): Promise<void> => {
-    while (liveSessions().size > 0 && Date.now() < until) {
+  const waitUntilIdle = async (
+    until: number,
+    myGeneration: number,
+    pauseScope: PauseScope
+  ): Promise<void> => {
+    while ((await countLive(pauseScope)) > 0 && Date.now() < until) {
       await pollPause()
       if (generation !== myGeneration) return
     }
   }
 
-  const sessionsToResume = async (): Promise<ReadonlyArray<string>> => {
-    const ids = new Set<string>([
-      ...(await run(services.db.listSessionsRequiringResume)),
-      ...turns.restartHeldSessions
-    ])
-    return [...ids].toSorted()
-  }
+  const finalizer = makePauseFinalizer({
+    services,
+    snapshot: deps.snapshot,
+    heldSessionIds: () => [...turns.restartHeldSessions.keys()],
+    destructive,
+    log
+  })
 
-  const finalize = async (myGeneration: number): Promise<void> => {
-    const resume = await sessionsToResume()
-    if (generation !== myGeneration) return
-    snapshot.write(resume)
-    for (const agentSessionId of services.agents.loadedAgentSessionIds()) {
-      if (generation !== myGeneration) return
-      await destructive(run(services.agents.closeAgentSession(agentSessionId))).catch(
-        (cause: unknown) => {
-          log(`Restart drain could not close ${agentSessionId}: ${failureMessage(cause)}`)
-        }
-      )
-    }
-    log(
-      `Restart drain complete: ${resume.length} session${resume.length === 1 ? "" : "s"} will resume after the restart`
-    )
-  }
-
-  const drain = async (myGeneration: number): Promise<RestartDrainState> => {
-    await pauseLiveTurns(myGeneration)
-    if (generation !== myGeneration) return state()
-
-    await waitUntilIdle(Date.now() + PAUSE_SETTLE_MS, myGeneration)
-    if (generation !== myGeneration) return state()
-
-    let finalized = true
-    try {
-      await finalize(myGeneration)
-    } catch (cause) {
-      log(`Restart drain could not finish: ${failureMessage(cause)}`)
-      finalized = false
-    }
-    if (generation !== myGeneration) return state()
-    if (!finalized) {
-      return coordinator.cancel()
-    }
-    phase = "drained"
-    changed()
+  const armGrace = (): void => {
+    if (graceTimer !== undefined) clearTimeout(graceTimer)
     graceTimer = setTimeout(() => {
       log("Restart drain abandoned: the server never restarted")
       void coordinator.cancel()
     }, DRAINED_WITHOUT_RESTART_GRACE_MS)
     graceTimer.unref()
+  }
+
+  const drain = async (
+    myGeneration: number,
+    pauseScope: PauseScope
+  ): Promise<RestartDrainState> => {
+    await pauseLiveTurns(myGeneration, pauseScope)
+    if (generation !== myGeneration) return state()
+
+    await waitUntilIdle(Date.now() + PAUSE_SETTLE_MS, myGeneration, pauseScope)
+    if (generation !== myGeneration) return state()
+
+    let finalized = true
+    try {
+      await finalizer.finalize(pauseScope, () => generation === myGeneration)
+    } catch (cause) {
+      log(`Restart drain could not finish: ${failureMessage(cause)}`)
+      finalized = false
+    }
+    if (generation !== myGeneration) return state()
+    if (!finalized) return coordinator.cancel()
+    if (!sameScope(scope, pauseScope)) return state()
+
+    phase = "drained"
+    changed()
+    if (pauseScope.kind === "all") armGrace()
     return state()
+  }
+
+  const startDrain = (requested: PauseScope): Promise<RestartDrainState> => {
+    if (phase === "idle") startedAt = new Date().toISOString()
+    scope = requested
+    phase = "draining"
+    changed()
+    const myGeneration = generation
+    const previous = inFlight ?? Promise.resolve(state())
+    log(`Restart drain started: pausing ${liveSessions().size} live turn(s) before restarting`)
+    const work = previous
+      .then(() => (generation === myGeneration ? drain(myGeneration, requested) : state()))
+      .finally(() => {
+        if (inFlight === work) inFlight = undefined
+      })
+    inFlight = work
+    return followLatest(work)
+  }
+
+  const followLatest = async (work: Promise<RestartDrainState>): Promise<RestartDrainState> => {
+    const settled = await work
+    if (inFlight === undefined || inFlight === work) return settled
+    return followLatest(inFlight)
+  }
+
+  const releaseHeld = async (): Promise<void> => {
+    const held = [...turns.restartHeldSessions]
+    turns.restartHeldSessions.clear()
+    for (const [sessionId, gate] of held) {
+      await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+        ...gate,
+        state: "released"
+      }).catch(swallowError)
+      void redrain(sessionId).catch(swallowError)
+    }
   }
 
   const coordinator: RestartCoordinator = {
     state,
-    isGated: () => phase !== "idle",
-    begin: () => {
-      if (cancelling !== undefined) return cancelling.then(() => coordinator.begin())
-      if (inFlight !== undefined) return inFlight
-      if (phase === "drained") return Promise.resolve(state())
-      phase = "draining"
-      startedAt = new Date().toISOString()
-      changed()
-      const myGeneration = generation
-      log(`Restart drain started: pausing ${liveSessions().size} live turn(s) before restarting`)
-      const work = drain(myGeneration).finally(() => {
-        if (inFlight === work) inFlight = undefined
-      })
-      inFlight = work
-      return inFlight
+    isActive: () => phase !== "idle",
+    gates,
+    gateFor,
+    begin: (requested = allChats) => {
+      if (cancelling !== undefined) return cancelling.then(() => coordinator.begin(requested))
+      if (phase === "idle") return startDrain(requested)
+
+      const widened = widenScope(scope, requested)
+      if (!sameScope(widened, scope)) return startDrain(widened)
+      if (inFlight === undefined) return Promise.resolve(state())
+      return followLatest(inFlight)
     },
     cancel: () => {
       if (cancelling !== undefined) return cancelling
@@ -252,6 +290,8 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       const cancel = (async () => {
         if (destructiveWork !== undefined) await destructiveWork.catch(swallowError)
         phase = "idle"
+        scope = allChats
+        liveInScope = 0
         startedAt = new Date().toISOString()
         changed()
         forgetUpdatePauses(services)
@@ -260,21 +300,12 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
           graceTimer = undefined
         }
         try {
-          snapshot.clear()
+          deps.snapshot.clear()
         } catch (cause) {
           log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
         }
         deps.resumePaused()
-        const held = [...turns.restartHeldSessions]
-        turns.restartHeldSessions.clear()
-        for (const sessionId of held) {
-          await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
-            harnessId: RESTART_GATE_HARNESS_ID,
-            harnessName: RESTART_GATE_HARNESS_NAME,
-            state: "released"
-          }).catch(swallowError)
-          void redrain(sessionId).catch(swallowError)
-        }
+        await releaseHeld()
         log("Restart drain cancelled: prompts dispatch again")
         return state()
       })().finally(() => {
@@ -282,6 +313,9 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       })
       cancelling = cancel
       return cancel
+    },
+    extendGrace: () => {
+      if (graceTimer !== undefined) armGrace()
     },
     close: () => {
       generation += 1

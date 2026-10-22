@@ -261,6 +261,15 @@ describe("sdkConnection.steer", () => {
     expect(advertisesSteering(undefined)).toBe(false)
   })
 
+  it("carries whether the agent can load sessions", async () => {
+    const agent = steeringAgent(() => ({ outcome: "injected" }))
+    const unknown = sdkConnection(agent.connection, () => "")
+    const cannotLoad = sdkConnection(agent.connection, () => "", { canLoadSession: false })
+    expect(unknown.canLoadSession).toBeUndefined()
+    expect(cannotLoad.canLoadSession).toBe(false)
+    await Effect.runPromise(unknown.close)
+  })
+
   it("only steers agents that advertise it", async () => {
     const agent = steeringAgent(() => ({ outcome: "injected" }))
     const connection = sdkConnection(agent.connection, () => "")

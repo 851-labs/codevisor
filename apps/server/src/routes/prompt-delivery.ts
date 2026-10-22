@@ -9,16 +9,22 @@ import {
 } from "../server-context.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { hasLiveTurn, steerQueuedPrompt } from "./prompt-queue.js"
+import { pausedForUpdate } from "./update-pause-gate.js"
 
 export const defaultPromptDelivery: PromptDelivery = "steer"
 
 export const UPDATING_MESSAGE = "Codevisor is updating. Send this again once the update finishes."
 
-export const refuseWhileUpdating = (routeState: RouteState, sessionId: string): void => {
-  if (routeState.restart.isGated() || routeState.updateResume.isPending(sessionId)) {
-    throw new HttpFailure(409, UPDATING_MESSAGE, "updating")
-  }
+export const refuseWhileUpdating = async (
+  services: CodevisorServerServices,
+  routeState: RouteState,
+  sessionId: string
+): Promise<void> => {
+  if (routeState.updateResume.isPending(sessionId)) throw updating()
+  if (await pausedForUpdate(services, routeState, sessionId)) throw updating()
 }
+
+const updating = (): HttpFailure => new HttpFailure(409, UPDATING_MESSAGE, "updating")
 
 export interface PromptDeliveryOutcome {
   readonly delivered: PromptDelivered
@@ -107,9 +113,9 @@ const promptsAreHeld = async (
   routeState: RouteState,
   sessionId: string
 ): Promise<boolean> => {
-  if (routeState.restart.isGated()) return true
-
   const { harnessId } = await run(services.db.getSessionSummary(sessionId))
+  if (routeState.restart.gates(harnessId)) return true
+
   return services.lifecycle?.isGated(harnessId) === true
 }
 

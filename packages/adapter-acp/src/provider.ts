@@ -158,6 +158,7 @@ const acpSessionHandle = (
   harnessName: string,
   account?: HarnessAccountContext
 ): AgentSessionHandle => ({
+  ...(connection.canLoadSession === false ? { resumable: false } : {}),
   prompt: (input) =>
     Effect.gen(function* () {
       if (account?.beforeTurn !== undefined) {

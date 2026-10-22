@@ -192,7 +192,7 @@ struct MachineConnectionTests {
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
     let paused = UUID()
     let idle = UUID()
-    #expect(!controller.isPausedForUpdate(machineId: remote.id, sessionId: idle))
+    #expect(!controller.pausesForUpdate(machineId: remote.id, sessionId: idle))
 
     remoteFake.emit(
       kind: "restart.drain.updated",
@@ -203,9 +203,9 @@ struct MachineConnectionTests {
         "pausedSessionIds": .array([.string(paused.uuidString.lowercased())]),
       ])
     )
-    try await waitForSync { controller.isPausedForUpdate(machineId: remote.id, sessionId: idle) }
-    #expect(controller.isPausedForUpdate(machineId: remote.id, sessionId: nil))
-    #expect(!controller.isPausedForUpdate(machineId: "local", sessionId: idle))
+    try await waitForSync { controller.pausesForUpdate(machineId: remote.id, sessionId: idle) }
+    #expect(controller.pausesForUpdate(machineId: remote.id, sessionId: nil))
+    #expect(!controller.pausesForUpdate(machineId: "local", sessionId: idle))
 
     remoteFake.emit(
       kind: "restart.drain.updated",
@@ -216,8 +216,8 @@ struct MachineConnectionTests {
         "pausedSessionIds": .array([.string(paused.uuidString.lowercased())]),
       ])
     )
-    try await waitForSync { !controller.isPausedForUpdate(machineId: remote.id, sessionId: idle) }
-    #expect(controller.isPausedForUpdate(machineId: remote.id, sessionId: paused))
+    try await waitForSync { !controller.pausesForUpdate(machineId: remote.id, sessionId: idle) }
+    #expect(controller.pausesForUpdate(machineId: remote.id, sessionId: paused))
 
     remoteFake.emit(
       kind: "restart.drain.updated",
@@ -228,7 +228,42 @@ struct MachineConnectionTests {
         "pausedSessionIds": .array([]),
       ])
     )
-    try await waitForSync { !controller.isPausedForUpdate(machineId: remote.id, sessionId: paused) }
+    try await waitForSync { !controller.pausesForUpdate(machineId: remote.id, sessionId: paused) }
+  }
+
+  @Test("A harness update pauses only that harness's chats and names the harness")
+  func harnessScopedPause() async throws {
+    let remote = makeRemote("remote-a")
+    let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+    let (controller, _) = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    await controller.connectMachine(remote.id)
+    try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
+
+    remoteFake.emit(
+      kind: "restart.drain.updated",
+      subjectId: "server",
+      payload: .object([
+        "state": .string("drained"), "remaining": .number(0),
+        "startedAt": .string("2026-10-21T00:00:00.000Z"),
+        "pausedSessionIds": .array([]),
+        "harnessIds": .array([.string("claude-code")]),
+        "harnessNames": .object(["claude-code": .string("Claude Code")]),
+      ])
+    )
+    let chat = UUID()
+    try await waitForSync {
+      controller.updatePauseSubject(machineId: remote.id, sessionId: chat, harnessId: "claude-code") != nil
+    }
+
+    #expect(
+      controller.updatePauseSubject(machineId: remote.id, sessionId: chat, harnessId: "claude-code")
+        == .harness(id: "claude-code", name: "Claude Code"))
+    #expect(controller.updatePauseSubject(machineId: remote.id, sessionId: chat, harnessId: "codex") == nil)
+    #expect(controller.updatePauseSubject(machineId: remote.id, sessionId: chat, harnessId: nil) == nil)
   }
 
   @Test("An update tracks on its own machine, not on the selected one")
@@ -301,5 +336,11 @@ struct MachineConnectionTests {
     try await waitForSync {
       fakeA.eventStreamSubscriberCount == 1 && fakeB.eventStreamSubscriberCount == 1
     }
+  }
+}
+
+extension MachineController {
+  fileprivate func pausesForUpdate(machineId: String, sessionId: UUID?) -> Bool {
+    updatePauseSubject(machineId: machineId, sessionId: sessionId, harnessId: nil) == .codevisor
   }
 }

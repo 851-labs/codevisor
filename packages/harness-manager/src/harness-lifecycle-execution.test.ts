@@ -148,7 +148,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.void
     })
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -159,13 +159,12 @@ describe("harness lifecycle install/update execution", () => {
       terminal
     })
 
-    const outcome = await lifecycle.beginUpdate("fake-cli")
-    expect(outcome).toMatchObject({ queued: false, terminalId: "terminal-1" })
+    const applied = lifecycle.applyUpdate("fake-cli")
+    await spawned
     expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/fake-cli update")
     expect(spawns[0]?.env.FAKE_UPDATE_OPTIN).toBe("1")
-    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await settled
+    await expect(applied).resolves.toBe(true)
   })
 
   it("verifies an update by re-probing the harness when its launcher path is unchanged", async () => {
@@ -187,7 +186,7 @@ describe("harness lifecycle install/update execution", () => {
         })
     })
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell } = fakeSpawner()
+    const { processes, spawnShell, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -205,11 +204,11 @@ describe("harness lifecycle install/update execution", () => {
       updateAvailable: true
     })
     reprobed.length = 0
-    await lifecycle.beginUpdate("fake-cli")
-    const settled = waitForLifecycleSettle(lifecycle)
+    const applied = lifecycle.applyUpdate("fake-cli")
+    await spawned
     updaterFinished = true
     processes[0]?.emitExit(0)
-    await settled
+    await applied
 
     expect(reprobed[0]).toEqual(["fake-cli"])
     const decorated = await lifecycle.decorateHarnesses([
@@ -234,7 +233,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.void
     })
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell } = fakeSpawner()
+    const { processes, spawnShell, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -247,9 +246,8 @@ describe("harness lifecycle install/update execution", () => {
     })
 
     await lifecycle.checkForUpdates(true)
-    const started = await lifecycle.beginUpdate("fake-cli")
-    expect(started.lifecycle?.phase).toBe("updating")
-    const settled = waitForLifecycleSettle(lifecycle)
+    const applied = lifecycle.applyUpdate("fake-cli")
+    await spawned
     processes[0]?.emitExit(0)
 
     const whileVerifying = await lifecycle.decorateHarnesses([
@@ -262,7 +260,7 @@ describe("harness lifecycle install/update execution", () => {
     ])
     expect(beforeDeadline[0]?.lifecycle?.phase).toBe("updating")
     await vi.advanceTimersByTimeAsync(1)
-    await settled
+    await applied
     const decorated = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
     ])
@@ -295,7 +293,7 @@ describe("harness lifecycle install/update execution", () => {
       refreshEnvironment: Effect.void
     })
     const { terminal } = fakeTerminal()
-    const { spawnShell, spawns } = fakeSpawner()
+    const { spawnShell, spawns, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -306,7 +304,8 @@ describe("harness lifecycle install/update execution", () => {
       terminal
     })
 
-    await lifecycle.beginUpdate("fake-cli")
+    void lifecycle.applyUpdate("fake-cli")
+    await spawned
     expect(spawns[0]?.command).toBe("brew upgrade fake-cli")
   })
 
@@ -336,7 +335,7 @@ describe("harness lifecycle install/update execution", () => {
     }
     const bin = makeBinDir(["brew"])
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -356,11 +355,11 @@ describe("harness lifecycle install/update execution", () => {
     })
     expect(requests.some((url) => url.includes("registry.npmjs.org"))).toBe(false)
 
-    await lifecycle.beginUpdate("claude-code")
+    const applied = lifecycle.applyUpdate("claude-code")
+    await spawned
     expect(spawns[0]?.command).toBe("brew upgrade --cask claude-code@latest")
-    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await settled
+    await applied
     expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 
@@ -390,7 +389,7 @@ describe("harness lifecycle install/update execution", () => {
     }
     const bin = makeBinDir(["npm"])
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -410,11 +409,11 @@ describe("harness lifecycle install/update execution", () => {
     })
     expect(requests.some((url) => url.includes("formulae.brew.sh"))).toBe(false)
 
-    await lifecycle.beginUpdate("claude-code")
+    const applied = lifecycle.applyUpdate("claude-code")
+    await spawned
     expect(spawns[0]?.command).toBe("npm install -g @anthropic-ai/claude-code@latest")
-    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await settled
+    await applied
     expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 
@@ -436,7 +435,7 @@ describe("harness lifecycle install/update execution", () => {
       })
     })
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
@@ -451,11 +450,11 @@ describe("harness lifecycle install/update execution", () => {
     const outcomes = await lifecycle.checkForUpdates(true)
     expect(outcomes[0]?.info).toMatchObject({ installOrigin: "curl", source: "npm" })
 
-    await lifecycle.beginUpdate("claude-code")
+    const applied = lifecycle.applyUpdate("claude-code")
+    await spawned
     expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/claude update")
-    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await settled
+    await applied
     expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 })

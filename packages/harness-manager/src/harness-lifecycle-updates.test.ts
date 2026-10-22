@@ -1,10 +1,9 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { waitForLifecycleSettle, fakeAgentRuntime } from "./harness-lifecycle-test-support.js"
+import { fakeAgentRuntime } from "./harness-lifecycle-test-support.js"
 import {
   cleanupLifecycleTests,
-  run,
   makeDb,
   harness,
   jsonResponse,
@@ -14,12 +13,11 @@ import {
   installableDefinition,
   appBundleDefinition
 } from "./harness-lifecycle-test-support.js"
-import type { HarnessLifecycleEvent } from "./harness-lifecycle-types.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 
-describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
+describe("harness lifecycle updates", () => {
   it("performs the app-bundle swap through the injected verifier", async () => {
     const db = await makeDb()
     const swaps: Array<{ bundlePath: string }> = []
@@ -51,13 +49,9 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     })
     lifecycle.subscribe((event) => events.push(event))
 
-    const settled = waitForLifecycleSettle(lifecycle)
-    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
-      lifecycle: { phase: "updating" },
-      queued: false
-    })
-    expect(events.at(-1)?.payload.lifecycle?.phase).toBe("updating")
-    await settled
+    const applied = lifecycle.applyUpdate("fake-cli")
+    await expect(applied).resolves.toBe(true)
+    expect(events.map((event) => event.payload.lifecycle?.phase)).toContain("updating")
     expect(events.at(-1)?.payload.lifecycle?.phase).toBe("idle")
     expect(swaps).toEqual([{ bundlePath: "/Applications/ChatGPT.app" }])
   })
@@ -89,120 +83,14 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       terminal
     })
 
-    const settled = waitForLifecycleSettle(lifecycle)
-    await lifecycle.beginUpdate("fake-cli")
-    await settled
+    await expect(lifecycle.applyUpdate("fake-cli")).resolves.toBe(false)
     const decorated = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
     ])
     expect(decorated[0]?.lifecycle?.error).toContain("Sparkle signature")
   })
 
-  it("arms a durable pending update while the harness is busy, then runs it when idle", async () => {
-    const db = await makeDb()
-    const bin = makeBinDir(["npm"])
-    const agents = fakeAgentRuntime({
-      catalog: [installableDefinition],
-      discoverHarnesses: Effect.succeed([
-        harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
-      ]),
-      refreshEnvironment: Effect.void
-    })
-    const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
-    const released: Array<string> = []
-    const lifecycle = makeHarnessLifecycleManager({
-      agents,
-      db,
-      fetchImpl: async () => jsonResponse({}, 404),
-      home: "/Users/dev",
-      realpath: (path) => path,
-      resolveEnv: async () => ({ PATH: bin }),
-      spawnShell,
-      terminal
-    })
-    const gateReleased = Promise.withResolvers<void>()
-    lifecycle.onGateReleased((harnessId) => {
-      released.push(harnessId)
-      gateReleased.resolve()
-    })
-
-    lifecycle.notifyTurnStarted("fake-cli")
-    lifecycle.notifyTurnStarted("fake-cli")
-    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
-      lifecycle: { phase: "pendingUpdate" },
-      queued: true
-    })
-    expect(spawns).toHaveLength(0)
-    expect(lifecycle.isGated("fake-cli")).toBe(false)
-    await expect(run(db.listHarnessPendingUpdates)).resolves.toMatchObject([
-      { harnessId: "fake-cli", state: "pending" }
-    ])
-
-    lifecycle.notifyTurnEnded("fake-cli")
-    expect(spawns).toHaveLength(0)
-
-    lifecycle.notifyTurnEnded("fake-cli")
-    await spawned
-    expect(spawns.length).toBe(1)
-    expect(lifecycle.isGated("fake-cli")).toBe(true)
-    await expect(run(db.listHarnessPendingUpdates)).resolves.toMatchObject([
-      { harnessId: "fake-cli", state: "running" }
-    ])
-
-    processes[0]?.emitExit(0)
-    await gateReleased.promise
-    expect(released).toEqual(["fake-cli"])
-    expect(lifecycle.isGated("fake-cli")).toBe(false)
-    await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
-  })
-
-  it("releases the gate on failure, supports Update Now and cancel", async () => {
-    const db = await makeDb()
-    const bin = makeBinDir(["npm"])
-    const agents = fakeAgentRuntime({
-      catalog: [installableDefinition],
-      discoverHarnesses: Effect.succeed([
-        harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
-      ]),
-      refreshEnvironment: Effect.void
-    })
-    const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
-    const released: Array<string> = []
-    const lifecycle = makeHarnessLifecycleManager({
-      agents,
-      db,
-      home: "/Users/dev",
-      realpath: (path) => path,
-      resolveEnv: async () => ({ PATH: bin }),
-      spawnShell,
-      terminal
-    })
-    const gateReleased = Promise.withResolvers<void>()
-    lifecycle.onGateReleased((harnessId) => {
-      released.push(harnessId)
-      gateReleased.resolve()
-    })
-
-    lifecycle.notifyTurnStarted("fake-cli")
-    await lifecycle.beginUpdate("fake-cli")
-    await lifecycle.cancelPendingUpdate("fake-cli")
-    await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
-    await expect(lifecycle.cancelPendingUpdate("fake-cli")).rejects.toThrow(/No pending update/)
-
-    await lifecycle.beginUpdate("fake-cli")
-    await lifecycle.forcePendingUpdate("fake-cli")
-    await spawned
-    expect(spawns.length).toBe(1)
-    expect(lifecycle.isGated("fake-cli")).toBe(true)
-    processes[0]?.emitExit(1)
-    await gateReleased.promise
-    expect(released).toEqual(["fake-cli"])
-    expect(lifecycle.isGated("fake-cli")).toBe(false)
-  })
-
-  it("dispatches immediately with the gate kill switch off", async () => {
+  it("shows a prepared update as updating toward the latest version until it is cancelled", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
     const { terminal } = fakeTerminal()
@@ -216,48 +104,87 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
         refreshEnvironment: Effect.void
       }),
       db,
-      gateEnabled: false,
+      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.0.0" } }),
       home: "/Users/dev",
       realpath: (path) => path,
       resolveEnv: async () => ({ PATH: bin }),
       spawnShell,
       terminal
     })
-    lifecycle.notifyTurnStarted("fake-cli")
-    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({ queued: false })
-    expect(spawns).toHaveLength(1)
-    expect(lifecycle.isGated("fake-cli")).toBe(false)
+    await lifecycle.checkForUpdates(true)
+
+    await expect(lifecycle.prepareUpdate("fake-cli")).resolves.toMatchObject({
+      phase: "updating",
+      targetVersion: "2.0.0"
+    })
+    await expect(lifecycle.prepareUpdate("fake-cli")).rejects.toThrow(/already running/)
+    expect(spawns).toEqual([])
+
+    lifecycle.cancelUpdate("fake-cli")
+    const [cancelled] = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(cancelled?.lifecycle).toBeUndefined()
   })
 
-  it("reconciles interrupted and armed updates at startup", async () => {
+  it("applies a prepared update and reports whether the install succeeded", async () => {
     const db = await makeDb()
-    await run(
-      db.setHarnessPendingUpdate({
-        harnessId: "fake-cli",
-        requestedAt: "2026-07-20T00:00:00.000Z",
-        startedAt: "2026-07-20T00:01:00.000Z",
-        state: "running",
-        targetVersion: "2.0.0",
-        timeoutAt: "2026-07-20T00:11:00.000Z"
-      })
-    )
-    const events: Array<HarnessLifecycleEvent> = []
+    const bin = makeBinDir(["npm"])
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell, spawned } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents: fakeAgentRuntime({
         catalog: [installableDefinition],
-        discoverHarnesses: Effect.succeed([]),
+        discoverHarnesses: Effect.succeed([
+          harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+        ]),
         refreshEnvironment: Effect.void
       }),
-      db
+      db,
+      home: "/Users/dev",
+      realpath: (path) => path,
+      resolveEnv: async () => ({ PATH: bin }),
+      spawnShell,
+      terminal
     })
-    lifecycle.subscribe((event) => events.push(event))
+    await lifecycle.prepareUpdate("fake-cli")
 
-    await lifecycle.reconcileOnStartup()
-    expect(lifecycle.isGated("fake-cli")).toBe(false)
-    await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
-    expect(events.at(-1)?.payload.lifecycle).toMatchObject({
-      error: expect.stringContaining("restart"),
-      phase: "failed"
+    const applied = lifecycle.applyUpdate("fake-cli")
+    await spawned
+    lifecycle.cancelUpdate("fake-cli")
+    const [running] = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(running?.lifecycle).toMatchObject({ phase: "updating", terminalId: "terminal-1" })
+    processes[0]?.emitExit(1)
+
+    await expect(applied).resolves.toBe(false)
+  })
+
+  it("fails an update whose harness was uninstalled while chats paused", async () => {
+    const db = await makeDb()
+    let installed = [harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")]
+    const lifecycle = makeHarnessLifecycleManager({
+      agents: fakeAgentRuntime({
+        catalog: [installableDefinition],
+        discoverHarnesses: Effect.sync(() => installed),
+        refreshEnvironment: Effect.void
+      }),
+      db,
+      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.0.0" } }),
+      home: "/Users/dev",
+      realpath: (path) => path
+    })
+    await lifecycle.checkForUpdates(true)
+    await lifecycle.prepareUpdate("fake-cli")
+    installed = []
+
+    await expect(lifecycle.applyUpdate("fake-cli")).resolves.toBe(false)
+    const [failed] = await lifecycle.decorateHarnesses([harness("fake-cli", "/bin/fake-cli")])
+    expect(failed?.lifecycle).toMatchObject({
+      error: "fake-cli is not installed",
+      phase: "failed",
+      targetVersion: "2.0.0"
     })
   })
 })

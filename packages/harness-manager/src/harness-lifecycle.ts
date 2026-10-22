@@ -9,7 +9,7 @@ import type {
   HarnessLifecycleManagerConfig
 } from "./harness-lifecycle-types.js"
 import { makeHarnessUninstall } from "./harness-lifecycle-uninstall.js"
-import { makeHarnessUpdateGate } from "./harness-lifecycle-updates.js"
+import { makeHarnessUpdates } from "./harness-lifecycle-updates.js"
 
 export type {
   HarnessLifecycleEvent,
@@ -26,7 +26,7 @@ export const makeHarnessLifecycleManager = (
   const core = makeHarnessLifecycleCore(config)
   const detection = makeHarnessUpdateDetection(core)
   const runner = makeHarnessOperationRunner(core, detection)
-  const gate = makeHarnessUpdateGate(core, runner)
+  const updates = makeHarnessUpdates(core, runner)
   const bundledApp = makeBundledAppOperations(core, detection, runner)
   const { checkIntervalMs, listeners, loadStates, operations } = core
 
@@ -104,7 +104,7 @@ export const makeHarnessLifecycleManager = (
   }
 
   return {
-    ...gate,
+    ...updates,
     ...bundledApp,
     ...makeHarnessUninstall(core, runner),
     beginInstall: runner.beginInstall,

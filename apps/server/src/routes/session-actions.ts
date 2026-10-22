@@ -175,7 +175,7 @@ const setConfig = async (route: RouteContext, sessionId: string): Promise<boolea
 }
 
 const setGoal = async (route: RouteContext, sessionId: string): Promise<boolean> => {
-  refuseWhileUpdating(route.routeState, sessionId)
+  await refuseWhileUpdating(route.services, route.routeState, sessionId)
   const payload = await readSchema(route.request, SetGoalRequest)
   await writeIdempotentAction(route.services, route.response, sessionId, "goal", payload, () =>
     applyGoal(route, sessionId, payload)

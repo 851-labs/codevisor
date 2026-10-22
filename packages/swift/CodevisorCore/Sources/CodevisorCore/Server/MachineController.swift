@@ -128,8 +128,10 @@ public final class MachineController {
   public var navigationSyncStateByMachineId: [String: NavigationSyncState] { connections.navigationSyncStateById }
   public func availability(for machineId: String) -> ServerAvailability { connections.availability(for: machineId) }
 
-  public func isPausedForUpdate(machineId: String, sessionId: UUID?) -> Bool {
-    connections.isPausedForUpdate(machineId: machineId, sessionId: sessionId)
+  public func updatePauseSubject(
+    machineId: String, sessionId: UUID?, harnessId: String?
+  ) -> ServerUpdatePauseSubject? {
+    connections.updatePauseSubject(machineId: machineId, sessionId: sessionId, harnessId: harnessId)
   }
 
   public func showsReconnectNotice(for machineId: String) -> Bool {

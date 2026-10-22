@@ -10,8 +10,8 @@ public final class UpdateCenter {
   private let appUpdate: AppUpdateModel
   private let store: (any PersistenceStore)?
   private static let sessionKey = "updateCenter.pendingSession"
-  private let harnessSettlePollInterval: Duration
-  private let harnessSettleAttempts: Int
+  private let updateRunPollInterval: Duration
+  private let updateRunPollAttempts: Int
 
   public private(set) var isRefreshing = false
   public private(set) var isCheckingForUpdates = false
@@ -20,24 +20,24 @@ public final class UpdateCenter {
   private var refreshTaskIsForced = false
   public private(set) var isUpdatingAll = false
   public private(set) var lastRefreshedAt: Date?
-  public private(set) var updateAllNotice: String?
+  public internal(set) var updateAllNotice: String?
   private var harnessesByMachine: [String: [ServerHarness]] = [:]
   private var pluginUpdatesByMachine: [String: [ServerPluginUpdateStatus]] = [:]
-  private var transientPhases: [String: UpdateComponent.Phase] = [:]
+  var transientPhases: [String: UpdateComponent.Phase] = [:]
   private var dismissedHarnessFailures: [String: ServerHarnessLifecycleState] = [:]
 
   public init(
     machines: MachineController,
     appUpdate: AppUpdateModel,
     store: (any PersistenceStore)? = nil,
-    harnessSettlePollInterval: Duration = .seconds(3),
-    harnessSettleAttempts: Int = 300
+    updateRunPollInterval: Duration = .seconds(3),
+    updateRunPollAttempts: Int = 1_200
   ) {
     self.machines = machines
     self.appUpdate = appUpdate
     self.store = store ?? machines.persistenceStore
-    self.harnessSettlePollInterval = harnessSettlePollInterval
-    self.harnessSettleAttempts = harnessSettleAttempts
+    self.updateRunPollInterval = updateRunPollInterval
+    self.updateRunPollAttempts = updateRunPollAttempts
   }
 
   public var components: [UpdateComponent] {
@@ -114,13 +114,11 @@ public final class UpdateCenter {
 
   private func harnessComponent(_ harness: ServerHarness, machineId: String, listed: Set<String>?) -> UpdateComponent? {
     if let listed, !listed.contains(harness.id) { return nil }
-    let lifecycleActive = Self.harnessLifecycleIsActive(harness)
+    let status = harnessStatus(harness, machineId: machineId)
     let available = harness.updateInfo?.updateAvailable == true
-    guard available || lifecycleActive else { return nil }
+    guard available || status.isActive else { return nil }
     let id = "harness:\(machineId):\(harness.id)"
-    let lifecyclePhase = harness.lifecycle?.phase
-    let phase = harnessPhase(harness, id: id, lifecyclePhase: lifecyclePhase)
-    let statusMessage = UpdateComponent.harnessStatusMessage(harness, lifecyclePhase: lifecyclePhase)
+    let phase = harnessPhase(harness, id: id, status: status)
     return UpdateComponent(
       id: id,
       kind: .harness,
@@ -132,24 +130,32 @@ public final class UpdateCenter {
       latestVersion: harness.updateInfo?.latestVersion,
       updateAvailable: available,
       phase: phase,
-      statusMessage: statusMessage,
-      notes: harness.updateInfo?.notes
+      statusMessage: status.message,
+      notes: harness.updateInfo?.notes,
+      canCancel: status.canCancel
     )
   }
 
-  private func harnessPhase(_ harness: ServerHarness, id: String, lifecyclePhase: String?) -> UpdateComponent.Phase {
-    switch lifecyclePhase {
-    case "installing", "updating", "pendingUpdate": return .updating
-    case "failed":
-      if let phase = transientPhases[id] { return phase }
-      if dismissedHarnessFailures[id] == harness.lifecycle { return .idle }
-      return .failed(harness.lifecycle?.error ?? "The update failed.")
-    default: return transientPhases[id] ?? .idle
-    }
+  private func harnessStatus(_ harness: ServerHarness, machineId: String) -> HarnessUpdateStatus {
+    let connection = machines.connectionsById[machineId]
+    return HarnessUpdateStatus.of(
+      harness,
+      run: connection?.updateRun,
+      pauseIsHarnessScoped: connection?.restartDrain?.harnessIds != nil
+    )
   }
 
-  private static func harnessLifecycleIsActive(_ harness: ServerHarness) -> Bool {
-    ["installing", "updating", "pendingUpdate"].contains(harness.lifecycle?.phase ?? "")
+  private func harnessPhase(_ harness: ServerHarness, id: String, status: HarnessUpdateStatus) -> UpdateComponent.Phase
+  {
+    if harness.lifecycle?.phase == "failed" { return failedHarnessPhase(harness, id: id) }
+    if status.isActive { return .updating }
+    return transientPhases[id] ?? .idle
+  }
+
+  private func failedHarnessPhase(_ harness: ServerHarness, id: String) -> UpdateComponent.Phase {
+    if let phase = transientPhases[id] { return phase }
+    if dismissedHarnessFailures[id] == harness.lifecycle { return .idle }
+    return .failed(harness.lifecycle?.error ?? "The update failed.")
   }
 
   private var pluginComponents: [UpdateComponent] {
@@ -288,7 +294,7 @@ public final class UpdateCenter {
     await runDeferredRefreshIfSettled()
   }
 
-  private func install(_ component: UpdateComponent) async {
+  func install(_ component: UpdateComponent) async {
     switch component.kind {
     case .app:
       await appUpdate.installUpdate()
@@ -332,58 +338,29 @@ public final class UpdateCenter {
     await runDeferredRefreshIfSettled()
   }
 
+  public func cancel(_ component: UpdateComponent) async {
+    guard component.canCancel else { return }
+
+    let client = machines.client(for: component.machineId)
+    if let run = try? await client.cancelUpdateRun() {
+      machines.connection(for: component.machineId).updateRun = run
+    }
+    await refreshHarnesses(onMachine: component.machineId)
+  }
+
   private func run(components snapshot: [UpdateComponent]) async {
     guard !isUpdatingAll, !snapshot.isEmpty else { return }
     isUpdatingAll = true
     updateAllNotice = nil
     defer { isUpdatingAll = false }
-    var remaining = Set(snapshot.map(\.id))
-    persistSession(remaining)
-    let harnessMachines = Set(snapshot.filter { $0.kind == .harness }.map(\.machineId))
-    for kind in [UpdateComponent.Kind.plugin, .harness, .server, .app] {
-      if kind == .app {
-        for machineId in harnessMachines.sorted() {
-          await waitForHarnessUpdatesToSettle(onMachine: machineId)
-        }
-        if let failure = firstFailure(in: snapshot) {
-          updateAllNotice =
-            "Codevisor was not restarted because \(failure.title) on \(failure.machineName) failed to update. Fix that, then update again."
-          clearSession()
-          return
-        }
-      }
-      for component in snapshot where component.kind == kind {
-        if kind == .server, harnessMachines.contains(component.machineId) {
-          await waitForHarnessUpdatesToSettle(onMachine: component.machineId)
-        }
-        await install(component)
-        remaining.remove(component.id)
-        persistSession(remaining)
-      }
-    }
-    if !snapshot.contains(where: { $0.kind == .app }) {
-      clearSession()
-    }
-  }
-
-  private func firstFailure(in snapshot: [UpdateComponent]) -> UpdateComponent? {
-    let ids = Set(snapshot.map(\.id))
-    return components.first { component in
-      guard ids.contains(component.id), component.kind != .app, component.kind != .harness else { return false }
-      if case .failed = component.phase { return true }
-      return false
-    }
-  }
-
-  private func waitForHarnessUpdatesToSettle(onMachine machineId: String) async {
-    for attempt in 0..<harnessSettleAttempts {
-      if attempt > 0 {
-        try? await machines.updateScheduler.sleep(harnessSettlePollInterval)
-      }
-      await refreshHarnesses(onMachine: machineId)
-      let active = (harnessesByMachine[machineId] ?? []).contains(where: Self.harnessLifecycleIsActive)
-      if !active { return }
-    }
+    let run = UpdateAllRun(
+      center: self,
+      machines: machines,
+      snapshot: snapshot,
+      pollInterval: updateRunPollInterval,
+      pollAttempts: updateRunPollAttempts
+    )
+    await run.perform()
   }
 
   public func resumePendingSessionIfNeeded() async {
@@ -400,7 +377,7 @@ public final class UpdateCenter {
 }
 
 extension UpdateCenter {
-  private func refreshHarnesses(onMachine machineId: String) async {
+  func refreshHarnesses(onMachine machineId: String) async {
     guard
       let harnesses = try? await machines.client(for: machineId)
         .listHarnessesWithLifecycle()
@@ -426,7 +403,7 @@ extension UpdateCenter {
     pluginUpdatesByMachine[machineId] = plugins
   }
 
-  private func persistSession(_ remaining: Set<String>) {
+  func persistSession(_ remaining: Set<String>) {
     guard let store else { return }
     try? store.saveData(JSONEncoder().encode(remaining.sorted()), forKey: Self.sessionKey)
   }
@@ -438,7 +415,7 @@ extension UpdateCenter {
     return Set(ids)
   }
 
-  private func clearSession() {
+  func clearSession() {
     try? store?.removeData(forKey: Self.sessionKey)
   }
 }

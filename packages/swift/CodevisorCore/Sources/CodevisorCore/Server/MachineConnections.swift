@@ -42,8 +42,8 @@ final class MachineConnections {
     byId[machineId]?.availability ?? .waiting(.connecting)
   }
 
-  func isPausedForUpdate(machineId: String, sessionId: UUID?) -> Bool {
-    byId[machineId]?.restartDrain?.pausesSending(sessionId: sessionId) ?? false
+  func updatePauseSubject(machineId: String, sessionId: UUID?, harnessId: String?) -> ServerUpdatePauseSubject? {
+    byId[machineId]?.restartDrain?.pauseSubject(sessionId: sessionId, harnessId: harnessId)
   }
 
   func showsReconnectNotice(for machineId: String) -> Bool {

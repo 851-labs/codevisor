@@ -344,7 +344,7 @@ private extension ComposerCard {
 
   private func submitHelp(isBlockedByCapabilities: Bool) -> String {
     if isAppUpdateInProgress { return "Updating… you can send once the update finishes." }
-    if controller.isPausedForUpdate { return "Codevisor is updating" }
+    if controller.isPausedForUpdate { return "\(controller.updatingName) is updating" }
     if isBlockedByCapabilities { return "Connecting to harness…" }
     if controller.isConnecting { return "Connecting… you can send once the agent is ready." }
     return controller.requiresModelSelection ? "Select a model" : "Send (↩)"

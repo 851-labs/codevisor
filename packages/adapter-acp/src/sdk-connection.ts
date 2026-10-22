@@ -76,6 +76,7 @@ export interface AcpSdkConnectionOptions {
   readonly terminate?: () => void | Promise<void>
   readonly promptCapabilities?: AcpPromptCapabilities
   readonly steering?: boolean
+  readonly canLoadSession?: boolean
   readonly questions?: AcpQuestionControls
   readonly skills?: AcpSkillTracker
   readonly auth?: AcpAuthControls
@@ -130,6 +131,7 @@ export const sdkConnection = (
   }
 
   const base: AcpAgentConnection = {
+    ...(options.canLoadSession === undefined ? {} : { canLoadSession: options.canLoadSession }),
     probeAuth: (cwd) =>
       adapterPromise("probeAuth", async () => {
         try {

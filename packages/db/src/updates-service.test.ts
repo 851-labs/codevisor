@@ -109,31 +109,6 @@ describe("@codevisor/db", () => {
       }
       await run(db.setHarnessUpdateState(full))
       expect(await run(db.listHarnessUpdateStates)).toEqual([full])
-
-      expect(await run(db.listHarnessPendingUpdates)).toEqual([])
-      await run(
-        db.setHarnessPendingUpdate({
-          harnessId: "codex",
-          state: "pending",
-          requestedAt: "2026-07-20T00:01:00.000Z"
-        })
-      )
-      expect(await run(db.listHarnessPendingUpdates)).toEqual([
-        { harnessId: "codex", state: "pending", requestedAt: "2026-07-20T00:01:00.000Z" }
-      ])
-      const running = {
-        harnessId: "codex",
-        state: "running" as const,
-        targetVersion: "0.145.0",
-        requestedAt: "2026-07-20T00:01:00.000Z",
-        startedAt: "2026-07-20T00:02:00.000Z",
-        timeoutAt: "2026-07-20T00:12:00.000Z"
-      }
-      expect(await run(db.setHarnessPendingUpdate(running))).toEqual(running)
-      expect(await run(db.listHarnessPendingUpdates)).toEqual([running])
-      await run(db.clearHarnessPendingUpdate("codex"))
-      expect(await run(db.listHarnessPendingUpdates)).toEqual([])
-      await run(db.clearHarnessPendingUpdate("codex"))
     } finally {
       await Effect.runPromise(db.close)
     }

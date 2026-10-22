@@ -43,14 +43,8 @@ export type {
 } from "./harness-account-rows.js"
 export { harnessAccountRows } from "./harness-account-rows.js"
 
-export type {
-  UpdateRow,
-  HarnessUpdateStateRecord,
-  HarnessPendingUpdateRecord,
-  HarnessPendingUpdateRow,
-  HarnessUpdateStateRow
-} from "./update-rows.js"
-export { updateRows, harnessPendingUpdateRows, harnessUpdateStateRows } from "./update-rows.js"
+export type { UpdateRow, HarnessUpdateStateRecord, HarnessUpdateStateRow } from "./update-rows.js"
+export { updateRows, harnessUpdateStateRows } from "./update-rows.js"
 
 export type {
   FileMetadataRow,

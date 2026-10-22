@@ -2,7 +2,6 @@ import { realpathSync } from "node:fs"
 
 import type { HarnessDefinition, HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
 import type { HarnessLifecycleState } from "@codevisor/api"
-import type { HarnessPendingUpdateRecord } from "@codevisor/db"
 import { detectBrewPackage, detectInstallOrigin } from "@codevisor/updater"
 
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
@@ -17,48 +16,27 @@ import {
 } from "./harness-lifecycle-support.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle-types.js"
 
-export type HarnessUpdateGate = Pick<
+export type HarnessUpdates = Pick<
   HarnessLifecycleManager,
-  | "beginUpdate"
-  | "cancelPendingUpdate"
-  | "forcePendingUpdate"
+  | "applyUpdate"
+  | "cancelUpdate"
   | "isGated"
   | "notifyTurnEnded"
   | "notifyTurnStarted"
   | "onGateReleased"
-  | "reconcileOnStartup"
+  | "prepareUpdate"
 >
 
-type BeginUpdateResult = Awaited<ReturnType<HarnessLifecycleManager["beginUpdate"]>>
-
-export const makeHarnessUpdateGate = (
+export const makeHarnessUpdates = (
   core: HarnessLifecycleCore,
   runner: HarnessOperationRunner
-): HarnessUpdateGate => {
-  const {
-    arch,
-    config,
-    definitionOrThrow,
-    loadStates,
-    now,
-    operationTimeoutMs,
-    platform,
-    setOperation
-  } = core
+): HarnessUpdates => {
+  const { arch, config, definitionOrThrow, loadStates, now, platform, setOperation } = core
   const { runOperation, startBundleSwap } = runner
 
-  const gateEnabled = config.gateEnabled ?? process.env.CODEVISOR_HARNESS_UPDATE_GATE !== "0"
   const gateListeners = core.gateListeners
-  const pendingUpdates = new Map<string, HarnessPendingUpdateRecord>()
+  const prepared = new Set<string>()
   const busyCounts = core.busyCounts
-
-  const isHarnessBusy = (harnessId: string): boolean => (busyCounts.get(harnessId) ?? 0) > 0
-
-  const releaseGate = (harnessId: string): void => {
-    pendingUpdates.delete(harnessId)
-    void run(config.db.clearHarnessPendingUpdate(harnessId)).catch(() => undefined)
-    for (const listener of gateListeners) listener(harnessId)
-  }
 
   const replacedInstall = (
     definition: HarnessDefinition,
@@ -102,8 +80,8 @@ export const makeHarnessUpdateGate = (
 
   const executeUpdateNow = async (
     harnessId: string,
-    onSettled?: (success: boolean) => void
-  ): Promise<BeginUpdateResult> => {
+    onSettled: (success: boolean) => void
+  ): Promise<void> => {
     const definition = definitionOrThrow(harnessId)
     const harnesses = await run(config.agents.discoverHarnesses)
     const harness = harnesses.find((candidate) => candidate.id === harnessId)
@@ -120,15 +98,15 @@ export const makeHarnessUpdateGate = (
     const targetVersion = (await loadStates()).get(harnessId)?.latestVersion
     switch (source.apply.kind) {
       case "selfUpdate": {
-        const { lifecycle, terminalId } = await runOperation({
+        await runOperation({
           command: [path, ...source.apply.args].join(" "),
           harnessId,
           phase: "updating",
           ...(source.apply.env === undefined ? {} : { extraEnv: source.apply.env }),
           ...(targetVersion === undefined ? {} : { targetVersion }),
-          ...(onSettled === undefined ? {} : { onSettled })
+          onSettled
         })
-        return { lifecycle, queued: false, terminalId }
+        return
       }
       case "reinstall": {
         let detectedBrew: ReturnType<typeof detectBrewPackage>
@@ -140,15 +118,15 @@ export const makeHarnessUpdateGate = (
         }
         const replacement = replacedInstall(definition, origin, path, detectedBrew?.formula)
         if (replacement !== undefined) {
-          const { lifecycle, terminalId } = await runOperation({
+          await runOperation({
             command: replacement.command,
             harnessId,
             methodId: replacement.methodId,
             phase: "updating",
             ...(targetVersion === undefined ? {} : { targetVersion }),
-            ...(onSettled === undefined ? {} : { onSettled })
+            onSettled
           })
-          return { lifecycle, queued: false, terminalId }
+          return
         }
         const spec: HarnessInstallMethodSpec | undefined =
           detectedBrew === undefined
@@ -160,15 +138,15 @@ export const makeHarnessUpdateGate = (
             : { cask: detectedBrew.cask, formula: detectedBrew.formula, kind: "brew" }
         if (spec === undefined)
           throw new Error(`${harnessId} has no reinstall method for ${origin}`)
-        const { lifecycle, terminalId } = await runOperation({
+        await runOperation({
           command: upgradeCommand(spec),
           harnessId,
           methodId: spec.kind,
           phase: "updating",
           ...(targetVersion === undefined ? {} : { targetVersion }),
-          ...(onSettled === undefined ? {} : { onSettled })
+          onSettled
         })
-        return { lifecycle, queued: false, terminalId }
+        return
       }
       default: {
         if (platform !== "darwin" || origin !== "appBundle") {
@@ -181,63 +159,66 @@ export const makeHarnessUpdateGate = (
         if (source.check.kind !== "sparkle") {
           throw new Error(`${definition.name}'s update feed is not a Sparkle appcast`)
         }
-        const lifecycle = startBundleSwap({
+        startBundleSwap({
           appcastUrl: sparkleFeedUrl(arch, source.check),
           bundle,
           harnessId,
           ...(targetVersion === undefined ? {} : { targetVersion }),
-          ...(onSettled === undefined ? {} : { onSettled })
+          onSettled
         })
-        return { lifecycle, queued: false }
       }
     }
   }
 
-  const runPendingUpdate = async (harnessId: string): Promise<void> => {
-    const pending = pendingUpdates.get(harnessId)
-    if (pending === undefined || pending.state === "running") return
-    const record: HarnessPendingUpdateRecord = {
-      ...pending,
-      startedAt: new Date(now()).toISOString(),
-      state: "running",
-      timeoutAt: new Date(now() + operationTimeoutMs).toISOString()
+  const prepareUpdate: HarnessLifecycleManager["prepareUpdate"] = async (harnessId) => {
+    definitionOrThrow(harnessId)
+    if (core.uninstallRequests.has(harnessId)) throw new Error("Uninstall in progress")
+    if (operationRunning(harnessId)) {
+      throw new Error(`An operation is already running for ${harnessId}`)
     }
-    pendingUpdates.set(harnessId, record)
-    await run(config.db.setHarnessPendingUpdate(record)).catch(() => undefined)
+
+    const targetVersion = (await loadStates()).get(harnessId)?.latestVersion
+    const lifecycle: HarnessLifecycleState = {
+      phase: "updating",
+      startedAt: new Date(now()).toISOString(),
+      ...(targetVersion === undefined ? {} : { targetVersion })
+    }
+    prepared.add(harnessId)
+    setOperation(harnessId, lifecycle)
+    return lifecycle
+  }
+
+  const applyUpdate: HarnessLifecycleManager["applyUpdate"] = async (harnessId) => {
+    const settled = Promise.withResolvers<boolean>()
+    const targetVersion = core.operations.get(harnessId)?.targetVersion
+    clearPrepared(harnessId)
     try {
-      await executeUpdateNow(harnessId, () => releaseGate(harnessId))
+      await executeUpdateNow(harnessId, settled.resolve)
     } catch (cause) {
       setOperation(harnessId, {
         error: cause instanceof Error ? cause.message : String(cause),
         phase: "failed",
-        ...(pending.targetVersion === undefined ? {} : { targetVersion: pending.targetVersion })
+        ...(targetVersion === undefined ? {} : { targetVersion })
       })
-      releaseGate(harnessId)
+      return false
     }
+    return settled.promise
   }
 
-  const beginUpdate: HarnessLifecycleManager["beginUpdate"] = async (harnessId) => {
-    definitionOrThrow(harnessId)
-    if (core.uninstallRequests.has(harnessId)) throw new Error("Uninstall in progress")
-    if (gateEnabled && isHarnessBusy(harnessId) && !pendingUpdates.has(harnessId)) {
-      const targetVersion = (await loadStates()).get(harnessId)?.latestVersion
-      const record: HarnessPendingUpdateRecord = {
-        harnessId,
-        requestedAt: new Date(now()).toISOString(),
-        state: "pending",
-        ...(targetVersion === undefined ? {} : { targetVersion })
-      }
-      pendingUpdates.set(harnessId, record)
-      await run(config.db.setHarnessPendingUpdate(record)).catch(() => undefined)
-      const lifecycle: HarnessLifecycleState = {
-        phase: "pendingUpdate",
-        startedAt: record.requestedAt,
-        ...(targetVersion === undefined ? {} : { targetVersion })
-      }
-      setOperation(harnessId, lifecycle)
-      return { lifecycle, queued: true }
-    }
-    return executeUpdateNow(harnessId)
+  const cancelUpdate = (harnessId: string): void => {
+    if (!prepared.has(harnessId)) return
+
+    clearPrepared(harnessId)
+  }
+
+  const clearPrepared = (harnessId: string): void => {
+    prepared.delete(harnessId)
+    setOperation(harnessId, undefined)
+  }
+
+  const operationRunning = (harnessId: string): boolean => {
+    const phase = core.operations.get(harnessId)?.phase
+    return phase !== undefined && phase !== "failed"
   }
 
   const notifyTurnStarted = (harnessId: string): void => {
@@ -248,68 +229,14 @@ export const makeHarnessUpdateGate = (
     const next = Math.max(0, (busyCounts.get(harnessId) ?? 0) - 1)
     if (next === 0) busyCounts.delete(harnessId)
     else busyCounts.set(harnessId, next)
-    if (next === 0 && pendingUpdates.get(harnessId)?.state === "pending") {
-      void runPendingUpdate(harnessId).catch(() => undefined)
-    }
   }
 
   const isGated = (harnessId: string): boolean =>
-    core.uninstallRequests.has(harnessId) ||
-    core.settingUp.has(harnessId) ||
-    (gateEnabled && pendingUpdates.get(harnessId)?.state === "running")
-
-  const forcePendingUpdate = async (harnessId: string): Promise<void> => {
-    if (pendingUpdates.get(harnessId)?.state !== "pending") {
-      throw new Error(`No pending update for ${harnessId}`)
-    }
-    await runPendingUpdate(harnessId)
-  }
-
-  const cancelPendingUpdate = async (harnessId: string): Promise<void> => {
-    if (pendingUpdates.get(harnessId)?.state !== "pending") {
-      throw new Error(`No pending update for ${harnessId}`)
-    }
-    pendingUpdates.delete(harnessId)
-    await run(config.db.clearHarnessPendingUpdate(harnessId)).catch(() => undefined)
-    setOperation(harnessId, undefined)
-  }
-
-  const reconcileOnStartup = async (): Promise<void> => {
-    let records: ReadonlyArray<HarnessPendingUpdateRecord>
-    try {
-      records = await run(config.db.listHarnessPendingUpdates)
-    } catch {
-      return
-    }
-    for (const record of records) {
-      if (record.state === "running") {
-        await run(config.db.clearHarnessPendingUpdate(record.harnessId)).catch(() => undefined)
-        setOperation(record.harnessId, {
-          error: "Interrupted by a server restart",
-          phase: "failed",
-          ...(record.targetVersion === undefined ? {} : { targetVersion: record.targetVersion })
-        })
-        continue
-      }
-      pendingUpdates.set(record.harnessId, record)
-      setOperation(record.harnessId, {
-        phase: "pendingUpdate",
-        startedAt: record.requestedAt,
-        ...(record.targetVersion === undefined ? {} : { targetVersion: record.targetVersion })
-      })
-      const kickoff = setTimeout(() => {
-        if (!isHarnessBusy(record.harnessId)) {
-          void runPendingUpdate(record.harnessId).catch(() => undefined)
-        }
-      }, 15_000)
-      kickoff.unref()
-    }
-  }
+    core.uninstallRequests.has(harnessId) || core.settingUp.has(harnessId)
 
   return {
-    beginUpdate,
-    cancelPendingUpdate,
-    forcePendingUpdate,
+    applyUpdate,
+    cancelUpdate,
     isGated,
     notifyTurnEnded,
     notifyTurnStarted,
@@ -317,6 +244,6 @@ export const makeHarnessUpdateGate = (
       gateListeners.add(listener)
       return () => gateListeners.delete(listener)
     },
-    reconcileOnStartup
+    prepareUpdate
   }
 }

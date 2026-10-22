@@ -3,7 +3,13 @@ import type { Socket } from "node:net"
 
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { ScreenSharingRequest } from "@codevisor/api"
-import type { EventEnvelope, ServerKind, SessionSummary, UpdateInfo } from "@codevisor/api"
+import type {
+  EventEnvelope,
+  ServerKind,
+  SessionSummary,
+  SessionUpdateGate,
+  UpdateInfo
+} from "@codevisor/api"
 import type { AttachmentStore, CodevisorDatabaseService } from "@codevisor/db"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
@@ -25,6 +31,7 @@ import type { RestartCoordinator } from "./restart-drain.js"
 import type { AutoResumeScheduler } from "./routes/auto-resume-scheduler.js"
 import type { Simulators } from "./simulators.js"
 import type { UpdateResumer } from "./update-resume.js"
+import type { UpdateRun } from "./update-run.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -161,8 +168,9 @@ export interface RouteState {
   readonly gatedSessions: Map<string, string>
   readonly activeTurnSessions: Set<string>
   readonly turnHeldSessions: Set<string>
-  readonly restartHeldSessions: Set<string>
+  readonly restartHeldSessions: Map<string, SessionUpdateGate>
   readonly restart: RestartCoordinator
+  readonly updateRun: UpdateRun
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
   autoResume?: AutoResumeScheduler

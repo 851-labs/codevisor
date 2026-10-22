@@ -1,7 +1,10 @@
-import type { NativeMcpScan, SkillsList } from "@codevisor/api"
+import type { Harness, NativeMcpScan, SkillsList } from "@codevisor/api"
 import { PluginsError } from "@codevisor/plugins"
 import type { PluginsManager, PluginStateEvent } from "@codevisor/plugins"
 import { SkillsError } from "@codevisor/skills"
+
+import type { RestartCoordinator } from "./restart-drain.js"
+import type { UpdateRun } from "./update-run.js"
 
 export const nativeMcpScan: NativeMcpScan = {
   candidates: [
@@ -304,3 +307,46 @@ export const skillsStub = (calls: Array<unknown[]>) => {
     subscribe: () => () => undefined
   }
 }
+
+export const idleRestartCoordinator = (): RestartCoordinator => {
+  const startedAt = "2026-06-30T00:00:00.000Z"
+  return {
+    state: () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
+    isActive: () => false,
+    gates: () => false,
+    gateFor: () => ({ harnessId: "codevisor-server", harnessName: "Codevisor" }),
+    begin: async () => ({ state: "drained", remaining: 0, startedAt, pausedSessionIds: [] }),
+    cancel: async () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
+    extendGrace: () => {},
+    close: () => {}
+  }
+}
+
+export const idleUpdateRun = (): UpdateRun => {
+  const idle = {
+    state: "idle" as const,
+    harnessIds: [],
+    pausing: 0,
+    startedAt: "2026-06-30T00:00:00.000Z"
+  }
+  return {
+    state: () => idle,
+    start: async () => ({ run: idle }),
+    startServerUpdate: async () => ({ accepted: false, targetVersion: "0.0.0" }),
+    cancel: async () => idle,
+    noteChatsChanged: () => {}
+  }
+}
+
+export const harnesses: ReadonlyArray<Harness> = [
+  {
+    id: "codex",
+    name: "Codex",
+    symbolName: "chevron.left.forwardslash.chevron.right",
+    source: "registry",
+    launchKind: "npx",
+    enabled: true,
+    readiness: { state: "ready" },
+    installHint: "npm install -g @openai/codex"
+  }
+]

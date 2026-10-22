@@ -246,6 +246,7 @@ export const makeStdioAcpConnectorWithOptions = (
         },
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
         steering: advertisesSteering(initialized),
+        canLoadSession: initialized?.agentCapabilities?.loadSession === true,
         questions: { answerQuestion, cancelQuestions },
         skills,
         auth: {

@@ -24,6 +24,9 @@ export const endpoints = [
   "GET /v1/restart/drain",
   "POST /v1/restart/drain",
   "DELETE /v1/restart/drain",
+  "GET /v1/updates/run",
+  "POST /v1/updates/run",
+  "DELETE /v1/updates/run",
   "GET /v1/sync/:namespace",
   "PUT /v1/sync/:namespace",
   "GET /v1/sync/blobs/:id",
@@ -227,6 +230,10 @@ export const summaries: Partial<Record<Endpoint, string>> = {
     "Pause live turns for a restart; they continue automatically once the server is back",
   "DELETE /v1/restart/drain":
     "Cancel a restart drain, dispatch held prompts and continue paused chats",
+  "GET /v1/updates/run": "Get the progress of the running harness and server update",
+  "POST /v1/updates/run":
+    "Pause the affected chats once, update harnesses, then restart or continue the chats",
+  "DELETE /v1/updates/run": "Cancel an update run while it is still pausing chats",
   "GET /v1/sessions/:id/subscriptions": "List the session event subscriptions a session holds",
   "POST /v1/sessions/:id/subscriptions":
     "Subscribe a session to another session's events, delivered as hidden prompts",
@@ -287,6 +294,7 @@ export const created = new Set<Endpoint>([
 
 export const accepted = new Set<Endpoint>([
   "POST /v1/update/apply",
+  "POST /v1/updates/run",
   "POST /v1/restart/drain",
   "POST /v1/shutdown",
   "POST /v1/sessions/:id/prompt",

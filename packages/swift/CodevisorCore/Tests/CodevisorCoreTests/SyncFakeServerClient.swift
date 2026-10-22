@@ -345,6 +345,9 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _busy = false
   var _drainPollsRemaining = 0
   var _harnessLifecycleActivePolls = 0
+  var _updateRunActivePolls = 0
+  var _updateRunSettled = ServerUpdateRunState.idle
+  var updateRunUnsupported = false
   var _harnessLifecycleReads = 0
   var currentBuildNumber: Int?
   var targetBuildNumber: Int?

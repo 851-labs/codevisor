@@ -55,7 +55,6 @@ export interface HarnessLifecycleManagerConfig {
   readonly harnessSetup?: Readonly<
     Record<string, (env: NodeJS.ProcessEnv) => Promise<PendingHarnessSetup | undefined>>
   >
-  readonly gateEnabled?: boolean
 }
 
 export interface HarnessUpdateCheckOutcome {
@@ -75,20 +74,15 @@ export interface HarnessLifecycleManager {
     harnessId: string,
     methodId?: string
   ) => Promise<{ readonly terminalId: string }>
-  readonly beginUpdate: (harnessId: string) => Promise<{
-    readonly queued: boolean
-    readonly terminalId?: string
-    readonly lifecycle?: HarnessLifecycleState
-  }>
+  readonly prepareUpdate: (harnessId: string) => Promise<HarnessLifecycleState>
+  readonly applyUpdate: (harnessId: string) => Promise<boolean>
+  readonly cancelUpdate: (harnessId: string) => void
   readonly notifyTurnStarted: (harnessId: string) => void
   readonly notifyTurnEnded: (harnessId: string) => void
   readonly isGated: (harnessId: string) => boolean
   readonly bundledAppInfo: (harnessId: string) => Promise<HarnessBundledApp | undefined>
   readonly beginBundledAppUpdate: (harnessId: string) => Promise<void>
-  readonly forcePendingUpdate: (harnessId: string) => Promise<void>
-  readonly cancelPendingUpdate: (harnessId: string) => Promise<void>
   readonly finishPendingSetup: () => Promise<void>
-  readonly reconcileOnStartup: () => Promise<void>
   readonly onGateReleased: (listener: (harnessId: string) => void) => () => void
   readonly subscribe: (listener: (event: HarnessLifecycleEvent) => void) => () => void
 }

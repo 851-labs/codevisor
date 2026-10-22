@@ -47,7 +47,6 @@ import type {
   FileStorageRecord,
   FileStorageState,
   HarnessAccountRecord,
-  HarnessPendingUpdateRecord,
   HarnessUpdateStateRecord,
   McpServerRecord,
   NativeConfigBackupRecord,
@@ -449,14 +448,6 @@ export interface CodevisorDatabaseService
   readonly setHarnessUpdateState: (
     record: HarnessUpdateStateRecord
   ) => Effect.Effect<HarnessUpdateStateRecord, DatabaseError>
-  readonly listHarnessPendingUpdates: Effect.Effect<
-    ReadonlyArray<HarnessPendingUpdateRecord>,
-    DatabaseError
-  >
-  readonly setHarnessPendingUpdate: (
-    record: HarnessPendingUpdateRecord
-  ) => Effect.Effect<HarnessPendingUpdateRecord, DatabaseError>
-  readonly clearHarnessPendingUpdate: (harnessId: string) => Effect.Effect<void, DatabaseError>
   readonly getSyncEntries: (
     namespace: string
   ) => Effect.Effect<ReadonlyArray<SyncEntryRecord>, DatabaseError>

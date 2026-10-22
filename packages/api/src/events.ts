@@ -35,6 +35,7 @@ export const EventKind = Schema.Literals([
   "terminal.exit",
   "update.changed",
   "restart.drain.updated",
+  "update.run.updated",
   "mcp.updated",
   "bot.updated",
   "bot.message",

@@ -7,11 +7,12 @@ import type {
   RuntimeEventSink,
   SetGoalUpdate
 } from "@codevisor/agent-runtime"
-import type { Harness, SessionConfigOption } from "@codevisor/api"
+import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { observableFixture } from "./changes-test-support.js"
 import { dependencyConfigOptions } from "./test-support-config-options.js"
+import { harnesses } from "./test-support-stubs.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -19,19 +20,6 @@ export const configSelectionsFromTestOptions = (
   options: ReadonlyArray<SessionConfigOption>
 ): Readonly<Record<string, string>> =>
   Object.fromEntries(options.map((option) => [option.id, option.currentValue]))
-
-export const harnesses: ReadonlyArray<Harness> = [
-  {
-    id: "codex",
-    name: "Codex",
-    symbolName: "chevron.left.forwardslash.chevron.right",
-    source: "registry",
-    launchKind: "npx",
-    enabled: true,
-    readiness: { state: "ready" },
-    installHint: "npm install -g @openai/codex"
-  }
-]
 
 export const makeAgents = (): AgentRuntimeService & {
   readonly loads: Array<readonly [string, string, string]>
@@ -72,6 +60,7 @@ export const makeAgents = (): AgentRuntimeService & {
   const startSelections: Array<Readonly<Record<string, string>> | undefined> = observableFixture([])
   const environmentRefreshes: Array<number> = observableFixture([])
   const sinks = new Map<string, RuntimeEventSink>()
+  const sessionHarnesses = new Map<string, string>()
   const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
   const dependencyConfigSessions = new Set<string>()
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
@@ -131,6 +120,7 @@ export const makeAgents = (): AgentRuntimeService & {
         startSelections.push(sessionOptions?.configSelections)
         const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
         sinks.set(sessionId, sink)
+        sessionHarnesses.set(sessionId, harnessId)
         return sessionId
       }),
     reconcileConfigValue: (_harnessId, option, value) =>
@@ -203,6 +193,7 @@ export const makeAgents = (): AgentRuntimeService & {
         loads.push([harnessId, agentSessionId, cwd])
         startSelections.push(sessionOptions?.configSelections)
         sinks.set(agentSessionId, sink)
+        sessionHarnesses.set(agentSessionId, harnessId)
         if (cwd.includes("no-config-options")) {
           configOptionsBySession.set(agentSessionId, [])
           return { configOptions: [], sessionId: agentSessionId }
@@ -387,6 +378,12 @@ export const makeAgents = (): AgentRuntimeService & {
         return { runtimeState: "reusable" as const }
       }),
     loadedAgentSessionIds: () => [...sinks.keys()],
+    loadedAgentSessions: () =>
+      [...sinks.keys()].map((id) => ({
+        sessionId: id,
+        harnessId: sessionHarnesses.get(id) ?? "",
+        resumable: true
+      })),
     closeAgentSession: (sessionId) =>
       Effect.sync(() => {
         closes.push(sessionId)

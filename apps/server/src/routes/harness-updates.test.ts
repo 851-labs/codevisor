@@ -24,9 +24,10 @@ describe("harness update checks", () => {
     const lifecycle = {
       beginBundledAppUpdate: async () => {},
       beginInstall: async () => ({ terminalId: "unused" }),
-      beginUpdate: async () => ({ queued: false }),
+      prepareUpdate: async () => ({ phase: "updating" as const }),
+      applyUpdate: async () => true,
+      cancelUpdate: () => {},
       bundledAppInfo: async () => undefined,
-      cancelPendingUpdate: async () => {},
       checkForUpdates: async (force?: boolean, harnessIds?: ReadonlyArray<string>) => {
         checks.push([force === true, harnessIds])
         return []
@@ -36,14 +37,12 @@ describe("harness update checks", () => {
           ...harness,
           updateInfo: { latestVersion: "9.9.9", updateAvailable: true }
         })),
-      forcePendingUpdate: async () => {},
       beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
       onGateReleased: () => () => {},
       finishPendingSetup: async () => {},
-      reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
     }
@@ -80,11 +79,16 @@ describe("harness update checks", () => {
         calls.push(`install ${id} ${methodId ?? "auto"}`)
         return { terminalId: "terminal-9" }
       },
-      beginUpdate: async (id: string) => {
+      prepareUpdate: async (id: string) => {
         if (id === "kimi") throw new Error("kimi has no update source")
-        calls.push(`update ${id}`)
-        return { lifecycle: { phase: "pendingUpdate" as const }, queued: true }
+        calls.push(`prepare ${id}`)
+        return { phase: "updating" as const }
       },
+      applyUpdate: async (id: string) => {
+        calls.push(`update ${id}`)
+        return true
+      },
+      cancelUpdate: () => {},
       bundledAppInfo: async (id: string) =>
         id === "codex"
           ? {
@@ -95,23 +99,14 @@ describe("harness update checks", () => {
               updateAvailable: true
             }
           : undefined,
-      cancelPendingUpdate: async (id: string) => {
-        if (id !== "codex") throw new Error("No pending update")
-        calls.push(`cancel ${id}`)
-      },
       checkForUpdates: async () => [],
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
-      forcePendingUpdate: async (id: string) => {
-        if (id !== "codex") throw new Error("No pending update")
-        calls.push(`force ${id}`)
-      },
       beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
       onGateReleased: () => () => {},
       finishPendingSetup: async () => {},
-      reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
     }
@@ -142,28 +137,14 @@ describe("harness update checks", () => {
     expect(update.status).toBe(202)
     expect(update.body).toMatchObject({
       accepted: true,
-      lifecycle: { phase: "pendingUpdate" },
-      queued: true
+      lifecycle: { phase: "updating" },
+      queued: false
     })
+    await waitFor(
+      async () => field((await jsonRequest(server, "/v1/updates/run")).body, "state") === "idle"
+    )
     const badUpdate = await jsonRequest(server, "/v1/harnesses/kimi/update", { method: "POST" })
     expect(badUpdate.status).toBe(409)
-
-    const pendingApply = await jsonRequest(server, "/v1/harnesses/codex/update/pending/apply", {
-      method: "POST"
-    })
-    expect(pendingApply.status).toBe(202)
-    const badApply = await jsonRequest(server, "/v1/harnesses/gemini/update/pending/apply", {
-      method: "POST"
-    })
-    expect(badApply.status).toBe(409)
-    const pendingCancel = await jsonRequest(server, "/v1/harnesses/codex/update/pending", {
-      method: "DELETE"
-    })
-    expect(pendingCancel.status).toBe(204)
-    const badCancel = await jsonRequest(server, "/v1/harnesses/gemini/update/pending", {
-      method: "DELETE"
-    })
-    expect(badCancel.status).toBe(409)
 
     const bundled = await jsonRequest(server, "/v1/harnesses/codex/bundled-app")
     expect(bundled.status).toBe(200)
@@ -182,9 +163,8 @@ describe("harness update checks", () => {
     expect(calls).toEqual([
       "install codex brew",
       "install codex auto",
+      "prepare codex",
       "update codex",
-      "force codex",
-      "cancel codex",
       "bundled-update codex"
     ])
   })
@@ -269,8 +249,6 @@ describe("harness update checks", () => {
       ["/v1/harnesses/check-updates", "POST"],
       ["/v1/harnesses/codex/install", "POST"],
       ["/v1/harnesses/codex/update", "POST"],
-      ["/v1/harnesses/codex/update/pending/apply", "POST"],
-      ["/v1/harnesses/codex/update/pending", "DELETE"],
       ["/v1/harnesses/codex/bundled-app", "GET"],
       ["/v1/harnesses/codex/bundled-app/update", "POST"]
     ] as const) {
@@ -287,12 +265,12 @@ describe("harness update checks", () => {
     const lifecycle = {
       beginBundledAppUpdate: async () => {},
       beginInstall: async () => ({ terminalId: "unused" }),
-      beginUpdate: async () => ({ queued: false }),
+      prepareUpdate: async () => ({ phase: "updating" as const }),
+      applyUpdate: async () => true,
+      cancelUpdate: () => {},
       bundledAppInfo: async () => undefined,
-      cancelPendingUpdate: async () => {},
       checkForUpdates: async () => [],
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
-      forcePendingUpdate: async () => {},
       beginUninstall: async () => {},
       isGated: (harnessId: string) => gated.has(harnessId),
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
@@ -302,7 +280,6 @@ describe("harness update checks", () => {
         return () => {}
       },
       finishPendingSetup: async () => {},
-      reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
     }

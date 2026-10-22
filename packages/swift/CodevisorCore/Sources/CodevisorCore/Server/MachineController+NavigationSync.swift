@@ -13,6 +13,7 @@ extension MachineController {
     "bot.updated",
     "update.changed",
     "restart.drain.updated",
+    "update.run.updated",
     "sync.changed",
   ]
 
@@ -36,6 +37,7 @@ extension MachineController {
     connection.navigationSync.eventStreamTask?.cancel()
     connection.navigationSync.eventStreamTask = Task { [weak self] in
       await connection.serverUpdate.loadRestartDrain(from: client)
+      await connection.serverUpdate.loadUpdateRun(from: client)
       do {
         for try await event in client.shellEventStream(
           since: max(0, initialCursor),
@@ -105,6 +107,10 @@ extension MachineController {
     case "restart.drain.updated":
       if let drain = ShellSyncPayload.decoded(ServerRestartDrainState.self, from: event.payload) {
         connection(for: serverId).restartDrain = drain
+      }
+    case "update.run.updated":
+      if let run = ShellSyncPayload.decoded(ServerUpdateRunState.self, from: event.payload) {
+        connection(for: serverId).updateRun = run
       }
     case "sync.changed":
       if let document = ShellSyncPayload.decoded(ServerSyncDocument.self, from: event.payload) {

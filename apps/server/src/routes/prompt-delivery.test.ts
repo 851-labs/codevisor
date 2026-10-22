@@ -159,7 +159,10 @@ describe("prompt delivery", () => {
 
   it("holds a prompt that slips in as an update starts pausing chats, and announces it once", async () => {
     const { agents, services, state, fanout } = await runningTurn()
-    const gated = { ...state, restart: { ...state.restart, isGated: () => true } }
+    const gated = {
+      ...state,
+      restart: { ...state.restart, isActive: () => true, gates: () => true }
+    }
     const steer = await run(services.db.createPromptQueueItem("chat", "steer me"))
 
     expect(

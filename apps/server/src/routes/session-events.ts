@@ -18,6 +18,7 @@ import { withUpdatePauseStop } from "../update-pauses.js"
 import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
+import { echoesHiddenPrompt } from "./hidden-prompt-titles.js"
 import { persistToolImages, toolImageCandidates } from "./tool-images.js"
 
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
@@ -124,6 +125,7 @@ export const materializeRuntimeEvent = async (
       ? payload.title.trim()
       : undefined
   if (harnessTitle !== undefined && harnessTitle.length > 0) {
+    if (await echoesHiddenPrompt(db, subjectId, harnessTitle)) return
     const updated = await run(db.updateSessionTitleFromHarness(subjectId, harnessTitle))
     if (updated !== undefined) {
       await appendAndPublish(db, fanout, "session.updated", subjectId, updated)

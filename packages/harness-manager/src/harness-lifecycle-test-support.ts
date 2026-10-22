@@ -81,6 +81,7 @@ export const fakeAgentRuntime = (
   prompt: unstubbedEffect("prompt"),
   cancel: unstubbedEffect("cancel"),
   loadedAgentSessionIds: unstubbed("loadedAgentSessionIds"),
+  loadedAgentSessions: unstubbed("loadedAgentSessions"),
   closeAgentSession: unstubbedEffect("closeAgentSession"),
   setMode: unstubbedEffect("setMode"),
   setConfigOption: unstubbedEffect("setConfigOption"),

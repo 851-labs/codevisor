@@ -38,6 +38,12 @@ export interface AgentRuntimeConfig {
   readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
 }
 
+export interface LoadedAgentSessionInfo {
+  readonly sessionId: string
+  readonly harnessId: string
+  readonly resumable: boolean
+}
+
 export interface AgentRuntimeService {
   readonly catalog: ReadonlyArray<HarnessDefinition>
   readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
@@ -93,6 +99,7 @@ export interface AgentRuntimeService {
   ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
   readonly loadedAgentSessionIds: () => ReadonlyArray<string>
+  readonly loadedAgentSessions: () => ReadonlyArray<LoadedAgentSessionInfo>
   readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

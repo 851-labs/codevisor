@@ -17,19 +17,18 @@ describe("archived chats and update turn accounting", () => {
     const lifecycle = {
       beginBundledAppUpdate: async () => {},
       beginInstall: async () => ({ terminalId: "unused" }),
-      beginUpdate: async () => ({ queued: false }),
+      prepareUpdate: async () => ({ phase: "updating" as const }),
+      applyUpdate: async () => true,
+      cancelUpdate: () => {},
       bundledAppInfo: async () => undefined,
-      cancelPendingUpdate: async () => {},
       checkForUpdates: async () => [],
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
-      forcePendingUpdate: async () => {},
       beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),
       onGateReleased: () => () => {},
       finishPendingSetup: async () => {},
-      reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
     }

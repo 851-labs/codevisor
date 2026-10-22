@@ -22,7 +22,6 @@ import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import type { RestartCoordinator } from "./restart-drain.js"
 import {
   defaultServerConfig,
   EventFanout,
@@ -33,19 +32,9 @@ import {
 import type { RunningCodevisorServer } from "./server.js"
 import type { CodevisorServerConfig, CodevisorServerServices, RouteState } from "./server.js"
 import { run, makeAgents } from "./test-support-agents.js"
+import { idleRestartCoordinator, idleUpdateRun } from "./test-support-stubs.js"
 export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"
-
-export const idleRestartCoordinator = (): RestartCoordinator => {
-  const startedAt = "2026-06-30T00:00:00.000Z"
-  return {
-    state: () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
-    isGated: () => false,
-    begin: async () => ({ state: "drained", remaining: 0, startedAt, pausedSessionIds: [] }),
-    cancel: async () => ({ state: "idle", remaining: 0, startedAt, pausedSessionIds: [] }),
-    close: () => {}
-  }
-}
 
 export const idleRouteState = (): RouteState => ({
   activePromptSessions: new Set(),
@@ -56,8 +45,9 @@ export const idleRouteState = (): RouteState => ({
   pendingSessionCreates: new Map(),
   turnHeldSessions: new Set(),
   updateSignature: {},
-  restartHeldSessions: new Set(),
+  restartHeldSessions: new Map(),
   restart: idleRestartCoordinator(),
+  updateRun: idleUpdateRun(),
   updateResume: {
     resume: () => {},
     isPending: () => false,

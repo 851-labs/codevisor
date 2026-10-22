@@ -337,7 +337,6 @@ export const runServe = (
       manager.startPeriodicChecks()
       return manager
     })
-    void lifecycle?.reconcileOnStartup().catch(() => undefined)
     void lifecycle?.finishPendingSetup().catch(() => undefined)
     void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
     void sweepTrashedWorktrees()

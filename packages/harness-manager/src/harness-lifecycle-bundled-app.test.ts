@@ -139,6 +139,10 @@ describe("harness lifecycle bundled desktop apps", () => {
       resolveEnv: async () => ({}),
       terminal
     })
-    await expect(lifecycle.beginUpdate("fake-cli")).rejects.toThrow(/desktop app/)
+    await expect(lifecycle.applyUpdate("fake-cli")).resolves.toBe(false)
+    const [decorated] = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
+    ])
+    expect(decorated?.lifecycle?.error).toMatch(/desktop app/)
   })
 })

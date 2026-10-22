@@ -23,8 +23,6 @@ import type {
   FileStorageRecord,
   HarnessAccountRecord,
   HarnessAccountRow,
-  HarnessPendingUpdateRecord,
-  HarnessPendingUpdateRow,
   HarnessUpdateStateRecord,
   HarnessUpdateStateRow,
   McpServerRecord,
@@ -280,17 +278,6 @@ export const fileStorageRecordFromRow = (row: FileStorageRow): FileStorageRecord
   metadata: fileMetadataFromRow(row),
   storageState: row.storage_state,
   data: row.data
-})
-
-export const harnessPendingUpdateFromRow = (
-  row: HarnessPendingUpdateRow
-): HarnessPendingUpdateRecord => ({
-  harnessId: row.harness_id,
-  requestedAt: row.requested_at,
-  state: row.state,
-  ...(row.target_version === null ? {} : { targetVersion: row.target_version }),
-  ...(row.started_at === null ? {} : { startedAt: row.started_at }),
-  ...(row.timeout_at === null ? {} : { timeoutAt: row.timeout_at })
 })
 
 export const harnessUpdateStateFromRow = (

@@ -34,6 +34,7 @@ export interface AcpPromptResult {
 }
 
 export interface AcpAgentConnection {
+  readonly canLoadSession?: boolean
   readonly listSessions?: Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   readonly createSession: (
     cwd: string,

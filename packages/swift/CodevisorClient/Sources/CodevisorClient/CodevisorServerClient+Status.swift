@@ -185,18 +185,40 @@ public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
   public var remaining: Int
   public var startedAt: String?
   public var pausedSessionIds: [String]?
+  public var harnessIds: [String]?
+  public var harnessNames: [String: String]?
 
-  public init(state: String, remaining: Int, startedAt: String? = nil, pausedSessionIds: [String]? = nil) {
+  public init(
+    state: String,
+    remaining: Int,
+    startedAt: String? = nil,
+    pausedSessionIds: [String]? = nil,
+    harnessIds: [String]? = nil,
+    harnessNames: [String: String]? = nil
+  ) {
     self.state = state
     self.remaining = remaining
     self.startedAt = startedAt
     self.pausedSessionIds = pausedSessionIds
+    self.harnessIds = harnessIds
+    self.harnessNames = harnessNames
   }
 
   public var isDrained: Bool { state == "drained" }
 
-  public func pausesSending(sessionId: UUID?) -> Bool {
-    if state != "idle" { return true }
+  public func pauseSubject(sessionId: UUID?, harnessId: String?) -> ServerUpdatePauseSubject? {
+    if state != "idle" { return activePauseSubject(harnessId: harnessId) }
+    return awaitsContinue(sessionId) ? .codevisor : nil
+  }
+
+  private func activePauseSubject(harnessId: String?) -> ServerUpdatePauseSubject? {
+    guard let harnessIds else { return .codevisor }
+    guard let harnessId, harnessIds.contains(harnessId) else { return nil }
+
+    return .harness(id: harnessId, name: harnessNames?[harnessId] ?? harnessId)
+  }
+
+  private func awaitsContinue(_ sessionId: UUID?) -> Bool {
     guard let sessionId, let pausedSessionIds else { return false }
     return pausedSessionIds.contains { UUID(uuidString: $0) == sessionId }
   }
@@ -354,5 +376,17 @@ extension CodevisorServerClient {
 
   public func cancelRestartDrain() async throws {
     try await sendNoResponse("/v1/restart/drain", method: "DELETE")
+  }
+
+  public func startUpdateRun(_ request: ServerUpdateRunRequest) async throws -> ServerUpdateRunStarted {
+    try await send("/v1/updates/run", method: "POST", body: request)
+  }
+
+  public func updateRunState() async throws -> ServerUpdateRunState {
+    try await get("/v1/updates/run")
+  }
+
+  public func cancelUpdateRun() async throws -> ServerUpdateRunState {
+    try await send("/v1/updates/run", method: "DELETE", body: Optional<EmptyBody>.none)
   }
 }

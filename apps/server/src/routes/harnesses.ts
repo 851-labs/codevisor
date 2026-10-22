@@ -50,15 +50,6 @@ export const routeHarnesses = async (route: RouteContext): Promise<boolean> => {
   const bundledAppUpdateHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/bundled-app/update")
   if (bundledAppUpdateHarnessId !== undefined && request.method === "POST")
     return updateBundledHarnessApp(services, response, bundledAppUpdateHarnessId)
-  const pendingApplyHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update/pending/apply")
-  if (pendingApplyHarnessId !== undefined && request.method === "POST")
-    return applyPendingHarnessUpdate(services, response, pendingApplyHarnessId)
-  const pendingCancelHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update/pending")
-  if (pendingCancelHarnessId !== undefined && request.method === "DELETE")
-    return cancelPendingHarnessUpdate(services, response, pendingCancelHarnessId)
-  const updateHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update")
-  if (updateHarnessId !== undefined && request.method === "POST")
-    return updateHarness(services, response, updateHarnessId)
   const agentSessionsHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/agent-sessions")
   if (agentSessionsHarnessId !== undefined && request.method === "GET")
     return listHarnessAgentSessions(services, response, agentSessionsHarnessId)
@@ -172,51 +163,6 @@ const updateBundledHarnessApp = async (
   try {
     await services.lifecycle.beginBundledAppUpdate(bundledAppUpdateHarnessId)
     writeJson(response, 202, { accepted: true })
-  } catch (cause) {
-    throw conflictFrom(cause)
-  }
-  return true
-}
-
-const applyPendingHarnessUpdate = async (
-  services: CodevisorServerServices,
-  response: ServerResponse,
-  pendingApplyHarnessId: string
-): Promise<boolean> => {
-  if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
-  try {
-    await services.lifecycle.forcePendingUpdate(pendingApplyHarnessId)
-    writeJson(response, 202, { accepted: true })
-  } catch (cause) {
-    throw conflictFrom(cause)
-  }
-  return true
-}
-
-const cancelPendingHarnessUpdate = async (
-  services: CodevisorServerServices,
-  response: ServerResponse,
-  pendingCancelHarnessId: string
-): Promise<boolean> => {
-  if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
-  try {
-    await services.lifecycle.cancelPendingUpdate(pendingCancelHarnessId)
-    writeJson(response, 204, undefined)
-  } catch (cause) {
-    throw conflictFrom(cause)
-  }
-  return true
-}
-
-const updateHarness = async (
-  services: CodevisorServerServices,
-  response: ServerResponse,
-  updateHarnessId: string
-): Promise<boolean> => {
-  if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
-  try {
-    const outcome = await services.lifecycle.beginUpdate(updateHarnessId)
-    writeJson(response, 202, { accepted: true, ...outcome })
   } catch (cause) {
     throw conflictFrom(cause)
   }

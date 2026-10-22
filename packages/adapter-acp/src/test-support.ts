@@ -45,6 +45,7 @@ export class FakeConnection implements AcpAgentConnection {
   readonly configs: Array<readonly [string, string, string]> = []
   closeCount = 0
   failClose = false
+  canLoadSession?: boolean
   agentInfo?: {
     readonly name?: string
     readonly version?: string
@@ -157,7 +158,9 @@ export class FakeConnection implements AcpAgentConnection {
   })
 }
 
-export const makeConnector = (): AcpConnector & {
+export const makeConnector = (
+  options: { readonly canLoadSession?: boolean } = {}
+): AcpConnector & {
   readonly connections: ReadonlyArray<FakeConnection>
   readonly requests: ReadonlyArray<AcpHarnessLaunchRequest>
 } => {
@@ -170,6 +173,7 @@ export const makeConnector = (): AcpConnector & {
       Effect.sync(() => {
         requests.push(request)
         const connection = new FakeConnection(request, emit)
+        if (options.canLoadSession !== undefined) connection.canLoadSession = options.canLoadSession
         connections.push(connection)
         return connection
       })

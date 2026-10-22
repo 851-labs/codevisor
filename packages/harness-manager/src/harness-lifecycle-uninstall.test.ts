@@ -55,7 +55,6 @@ const fixture = async (
       json: async () => ({}),
       text: async () => ""
     }),
-    gateEnabled: false,
     operationTimeoutMs: 60_000,
     ...overrides
   })
@@ -139,7 +138,7 @@ describe("harness uninstall", () => {
     expect(world.spawns[0]?.command).toContain("'--prefix' '/tools/it'\\''s node' 'fake-cli'")
     expect(world.spawns[0]?.command).toContain("'--ignore-scripts'")
     await expect(world.lifecycle.beginInstall("fake-cli")).rejects.toThrow("already running")
-    await expect(world.lifecycle.beginUpdate("fake-cli")).rejects.toThrow("Uninstall in progress")
+    await expect(world.lifecycle.prepareUpdate("fake-cli")).rejects.toThrow("Uninstall in progress")
     world.processes[0]!.emitOutput("Removed package\n")
     const settled = waitForLifecycleSettle(world.lifecycle)
     world.state.installed = false

@@ -22,7 +22,7 @@ extension MachineController {
     }
   }
 
-  public func updateServer(machineId: String) async {
+  public func updateServer(machineId: String, harnessIds: [String] = []) async {
     let connection = connection(for: machineId)
     guard connection.updatePhase != .updating else { return }
 
@@ -30,6 +30,7 @@ extension MachineController {
     let run = ServerUpdateRun(
       connection: connection,
       client: client,
+      apply: .afterHarnesses(harnessIds, client: client),
       channel: serverUpdateChannel,
       machine: updateMachine(for: machineId, client: client),
       scheduler: updateScheduler,

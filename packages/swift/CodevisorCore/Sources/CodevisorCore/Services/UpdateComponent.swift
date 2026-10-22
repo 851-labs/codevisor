@@ -27,6 +27,7 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public var statusMessage: String?
   public var progress: Double?
   public var notes: String?
+  public var canCancel = false
 
   @MainActor
   static func server(machine: CodevisorMachine, connection: MachineConnection) -> UpdateComponent {
@@ -69,16 +70,6 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
       }
     case .updating: .updating
     case let .failed(message): .failed(message)
-    }
-  }
-
-  @MainActor
-  static func harnessStatusMessage(_ harness: ServerHarness, lifecyclePhase: String?) -> String? {
-    switch lifecyclePhase {
-    case "pendingUpdate": "Waiting for chats to finish…"
-    case "installing", "updating":
-      harness.lifecycle?.targetVersion.map { "Updating to \($0)…" } ?? "Updating…"
-    default: nil
     }
   }
 

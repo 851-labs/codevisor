@@ -111,6 +111,9 @@ import {
   UpdateHarnessAccountRequest,
   UpdateHarnessRequest,
   UpdateInfo,
+  UpdateRunRequest,
+  UpdateRunStarted,
+  UpdateRunState,
   UpdateMcpServerRequest,
   UpdateProjectRequest,
   UpdateQueuedPromptRequest,
@@ -233,7 +236,8 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sessions/:id/config": SetConfigRequest,
   "POST /v1/sessions/:id/goal": SetGoalRequest,
   "POST /v1/sessions/:id/questions/:questionId/answer": SetQuestionAnswerRequest,
-  "POST /v1/terminals": TerminalCreateRequest
+  "POST /v1/terminals": TerminalCreateRequest,
+  "POST /v1/updates/run": UpdateRunRequest
 })
 
 export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
@@ -244,6 +248,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/restart/drain": RestartDrainState,
   "POST /v1/restart/drain": RestartDrainState,
   "DELETE /v1/restart/drain": RestartDrainState,
+  "GET /v1/updates/run": UpdateRunState,
+  "POST /v1/updates/run": UpdateRunStarted,
+  "DELETE /v1/updates/run": UpdateRunState,
   "GET /v1/sync/:namespace": SyncDocument,
   "PUT /v1/sync/:namespace": SyncDocument,
   "GET /v1/capabilities": ServerCapabilities,

@@ -120,10 +120,11 @@ struct UpdateCenterTests {
       fake.operationLog == [
         "plugin.prepare:notes",
         "plugin.apply:notes",
+        "update.run:claude-code+server",
         "harness.update:claude-code",
         "server.apply",
       ])
-    #expect(appInstalledAfterOperations == 4)
+    #expect(appInstalledAfterOperations == 5)
     controller.stopEventSync()
   }
 
@@ -295,30 +296,98 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
-  @Test("updateAll waits for a machine's harness updates to settle before its server restarts")
-  func updateAllWaitsForHarnessSettle() async throws {
+  @Test("updateAll pauses a machine's chats once for its harnesses and its server restart")
+  func updateAllPausesOnceForHarnessesAndServer() async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    fake.configureHarnessUpdateInProgress(polls: 3)
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
       remotes: [remote]
     )
-    let center = UpdateCenter(
-      machines: controller,
-      appUpdate: AppUpdateModel(currentVersion: "1.0.0")
-    )
+    defer { controller.stopEventSync() }
+    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
     await controller.refreshStatus(for: remote.id)
     await center.refresh()
 
     await center.updateAll()
 
-    #expect(fake.operationLog == ["harness.update:claude-code", "server.apply"])
-    #expect(fake.harnessLifecycleReads >= 4)
+    #expect(fake.operationLog == ["update.run:claude-code+server", "harness.update:claude-code", "server.apply"])
+    #expect(fake.appliedUpdates == 1)
     #expect(center.updateAllNotice == nil)
-    controller.stopEventSync()
+  }
+
+  @Test("updateAll keeps this Mac's chats paused from its harness updates into the app update")
+  func updateAllHoldsThePauseForTheApp() async throws {
+    let local = SyncFakeServerClient(projects: [], sessions: [])
+    local.configureHarnesses([makeHarness(updateAvailable: true)])
+    local.configureUpdateRunInProgress(polls: 2)
+    let controller = try makeController(fakes: ["local": local], remotes: [])
+    defer { controller.stopEventSync() }
+    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+    appUpdate.checkHandler = {}
+    var operationsBeforeApp: [String]?
+    appUpdate.installHandler = { _ in operationsBeforeApp = local.operationLog }
+    appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
+    let center = UpdateCenter(
+      machines: controller,
+      appUpdate: appUpdate,
+      updateRunPollInterval: .milliseconds(1)
+    )
+    await center.refresh()
+
+    await center.updateAll()
+
+    #expect(operationsBeforeApp == ["update.run:claude-code+hold", "harness.update:claude-code"])
+    #expect(local.operationLog.count == 2)
+  }
+
+  @Test("updateAll lets this Mac's chats continue when an earlier failure stops the app update")
+  func updateAllReleasesTheHeldPauseOnFailure() async throws {
+    let remote = makeRemote("remote-a")
+    let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+    remoteFake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    remoteFake.configureBusy(true)
+    let local = SyncFakeServerClient(projects: [], sessions: [])
+    local.configureHarnesses([makeHarness(updateAvailable: true)])
+    let controller = try makeController(fakes: ["local": local, remote.id: remoteFake], remotes: [remote])
+    defer { controller.stopEventSync() }
+    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+    appUpdate.checkHandler = {}
+    var appInstalls = 0
+    appUpdate.installHandler = { _ in appInstalls += 1 }
+    appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
+    let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+
+    await center.updateAll()
+
+    #expect(appInstalls == 0)
+    #expect(
+      local.operationLog == ["update.run:claude-code+hold", "harness.update:claude-code", "restart.drain.cancel"])
+    #expect(center.updateAllNotice?.contains("remote-a") == true)
+  }
+
+  @Test("updateAll updates an older server's harnesses one by one")
+  func updateAllFallsBackForOlderServers() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureHarnesses([makeHarness(updateAvailable: true)])
+    fake.updateRunUnsupported = true
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+
+    await center.updateAll()
+
+    #expect(fake.operationLog == ["harness.update:claude-code"])
   }
 
   @Test("updateAll stops before restarting the app when an earlier step failed")

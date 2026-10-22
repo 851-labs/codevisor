@@ -145,6 +145,7 @@ export interface HarnessAuthInspection {
 }
 
 export interface AgentSessionHandle {
+  readonly resumable?: boolean
   readonly prompt: (input: string | PromptInput) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly steer?: (input: string | PromptInput) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>

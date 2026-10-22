@@ -82,9 +82,41 @@ export const RestartDrainState = Schema.Struct({
   state: Schema.Literals(["idle", "draining", "drained"]),
   remaining: Schema.Number,
   startedAt: Schema.String,
-  pausedSessionIds: Schema.Array(Schema.String)
+  pausedSessionIds: Schema.Array(Schema.String),
+  harnessIds: Schema.optional(Schema.Array(Schema.String)),
+  harnessNames: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 export type RestartDrainState = typeof RestartDrainState.Type
+
+export const UpdateRunRequest = Schema.Struct({
+  harnessIds: Schema.Array(Schema.String),
+  serverChannel: Schema.optional(Schema.Literals(["stable", "alpha"])),
+  holdForAppUpdate: Schema.optional(Schema.Boolean)
+})
+export type UpdateRunRequest = typeof UpdateRunRequest.Type
+
+export const UpdateRunState = Schema.Struct({
+  state: Schema.Literals(["idle", "pausing", "updating", "restarting", "holding", "continuing"]),
+  harnessIds: Schema.Array(Schema.String),
+  currentHarnessId: Schema.optional(Schema.String),
+  pausing: Schema.Number,
+  startedAt: Schema.String
+})
+export type UpdateRunState = typeof UpdateRunState.Type
+
+export const ServerUpdateAccepted = Schema.Struct({
+  accepted: Schema.Boolean,
+  targetVersion: Schema.String,
+  targetBuildNumber: Schema.optional(Schema.Number),
+  draining: Schema.optional(Schema.Boolean)
+})
+export type ServerUpdateAccepted = typeof ServerUpdateAccepted.Type
+
+export const UpdateRunStarted = Schema.Struct({
+  run: UpdateRunState,
+  server: Schema.optional(ServerUpdateAccepted)
+})
+export type UpdateRunStarted = typeof UpdateRunStarted.Type
 
 export const PairingTokenResponse = Schema.Struct({
   token: Schema.String,

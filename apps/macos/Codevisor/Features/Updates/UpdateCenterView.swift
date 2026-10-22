@@ -173,6 +173,12 @@ struct UpdateCenterView: View {
   @ViewBuilder
   private func trailing(for component: UpdateComponent) -> some View {
     switch component.phase {
+    case .updating where component.canCancel:
+      HStack(spacing: 8) {
+        ProgressView()
+          .controlSize(.small)
+        Button("Cancel") { Task { await center.cancel(component) } }
+      }
     case .updating:
       if let progress = component.progress {
         ProgressView(value: progress)

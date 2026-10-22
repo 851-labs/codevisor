@@ -1,31 +1,16 @@
-import type { ServerResponse } from "node:http"
-
-import type { RestartDrainState, UpdateApplyState, UpdateInfo } from "@codevisor/api"
+import { UpdateRunRequest, type UpdateInfo } from "@codevisor/api"
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
-import { applyAfterDrain } from "../apply-after-drain.js"
-import {
-  appendAndPublish,
-  failureMessage,
-  HttpFailure,
-  run,
-  swallowError,
-  writeJson
-} from "../server-context.js"
-import type {
-  CodevisorServerConfig,
-  CodevisorServerServices,
-  CodevisorServerUpdater,
-  EventFanout,
-  RouteState
-} from "../server-context.js"
+import { matchRoute, readSchema, run, swallowError, writeJson } from "../server-context.js"
+import { publishUpdateChanged, withRestartDrain } from "../update-info-publish.js"
 import { isMethodRoute, respondAfter } from "./route-context.js"
 import type { RouteContext, RouteHandler } from "./route-context.js"
 
-export const updateRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
+export const updateRouteFor = (route: RouteContext): RouteHandler | undefined => {
+  const { request, url } = route
   if (isMethodRoute(request, url, "GET", "/v1/update")) return checkForUpdate
   if (isMethodRoute(request, url, "POST", "/v1/update/apply")) return applyUpdate
-  return undefined
+  return updateRunRouteFor(route) ?? harnessUpdateRouteFor(route)
 }
 
 export const restartRouteFor = (route: RouteContext): RouteHandler | undefined => {
@@ -36,18 +21,19 @@ export const restartRouteFor = (route: RouteContext): RouteHandler | undefined =
   return undefined
 }
 
-type UpdatableConfig = CodevisorServerConfig & { readonly updater: CodevisorServerUpdater }
-
-interface AcceptedUpdate {
-  readonly accepted: true
-  readonly targetVersion: string
-  readonly targetBuildNumber?: number
-  readonly draining: boolean
+const updateRunRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
+  if (url.pathname !== "/v1/updates/run") return undefined
+  if (request.method === "GET") return writeUpdateRun
+  if (request.method === "POST") return startUpdateRun
+  if (request.method === "DELETE") return cancelUpdateRun
+  return undefined
 }
 
-interface UpdateRequest {
-  readonly busy: boolean
-  readonly channel: ServerUpdateChannel
+const harnessUpdateRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
+  if (request.method !== "POST") return undefined
+  const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update")
+  if (harnessId === undefined) return undefined
+  return (route) => updateHarness(route, harnessId)
 }
 
 const restartDrainRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
@@ -60,7 +46,7 @@ const restartDrainRouteFor = ({ request, url }: RouteContext): RouteHandler | un
 
 const checkForUpdate = (route: RouteContext): Promise<void> => {
   const { config, response, url } = route
-  if (!canUpdate(config)) return writeStoredUpdateInfo(route)
+  if (config.updater === undefined) return writeStoredUpdateInfo(route)
 
   const force = url.searchParams.get("refresh") === "1"
   const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
@@ -76,65 +62,39 @@ const writeCheckedUpdate = (
   { services, fanout, routeState, response }: RouteContext,
   checked: UpdateInfo
 ): void => {
-  const info = withRestartDrain(routeState, checked)
+  const info = withRestartDrain(services, routeState, checked)
   publishUpdateChanged(services, fanout, routeState, info)
   writeJson(response, 200, info)
 }
 
-const applyUpdate = (route: RouteContext): Promise<void> => {
-  const { config, routeState, response, url } = route
-  if (!canUpdate(config)) throw new HttpFailure(409, "This server does not support remote updates")
-
-  const update: UpdateRequest = {
-    busy: hasActiveChats(routeState),
-    channel: serverUpdateChannelFrom(url.searchParams.get("channel"))
-  }
-  return respondAfter(
-    response,
-    config.updater.check({ channel: update.channel, force: true }),
-    (info) => startUpdate(route, config, update, info)
+const applyUpdate = ({ routeState, response, url }: RouteContext): Promise<void> => {
+  const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
+  return respondAfter(response, routeState.updateRun.startServerUpdate(channel), (server) =>
+    writeJson(response, server.accepted ? 202 : 200, server)
   )
 }
 
-const startUpdate = (
-  route: RouteContext,
-  config: UpdatableConfig,
-  update: UpdateRequest,
-  info: UpdateInfo
-): void => {
-  const { services, fanout, routeState, response } = route
-  publishUpdateChanged(services, fanout, routeState, info)
-  if (!info.updateAvailable) return writeUpToDate(response, info)
+const writeUpdateRun = ({ routeState, response }: RouteContext): void =>
+  writeJson(response, 200, routeState.updateRun.state())
 
-  writeJson(response, 202, acceptedUpdate(info, update.busy))
-  applyWhenDrained(route, config.updater, update.channel, info)
+const startUpdateRun = async ({ routeState, request, response }: RouteContext): Promise<void> => {
+  const started = routeState.updateRun.start(await readSchema(request, UpdateRunRequest))
+  return respondAfter(response, started, (progress) => writeJson(response, 202, progress))
 }
 
-const writeUpToDate = (response: ServerResponse, info: UpdateInfo): void =>
-  writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
-
-const acceptedUpdate = (info: UpdateInfo, busy: boolean): AcceptedUpdate => ({
-  accepted: true,
-  targetVersion: info.latestVersion,
-  ...(info.latestBuildNumber === undefined ? {} : { targetBuildNumber: info.latestBuildNumber }),
-  draining: busy
-})
-
-const applyWhenDrained = (
-  { services, fanout, routeState }: RouteContext,
-  updater: CodevisorServerUpdater,
-  channel: ServerUpdateChannel,
-  info: UpdateInfo
-): void => {
-  void applyAfterDrain(
-    routeState.restart,
-    () => publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info)),
-    () => updater.apply({ channel })
-  ).catch(
-    /* v8 ignore next */
-    (cause: unknown) => console.log(`Update apply failed: ${failureMessage(cause)}`)
+const cancelUpdateRun = ({ routeState, response }: RouteContext): Promise<void> =>
+  respondAfter(response, routeState.updateRun.cancel(), (progress) =>
+    writeJson(response, 200, progress)
   )
-}
+
+const updateHarness = ({ routeState, response }: RouteContext, harnessId: string): Promise<void> =>
+  respondAfter(response, routeState.updateRun.start({ harnessIds: [harnessId] }), (started) =>
+    writeJson(response, 202, {
+      accepted: true,
+      queued: false,
+      lifecycle: { phase: "updating", startedAt: started.run.startedAt }
+    })
+  )
 
 const writeRestartDrain = ({ routeState, response }: RouteContext): void =>
   writeJson(response, 200, routeState.restart.state())
@@ -152,67 +112,5 @@ const requestShutdown = ({ config, response }: RouteContext): void => {
   config.onShutdownRequested?.()
 }
 
-const canUpdate = (config: CodevisorServerConfig): config is UpdatableConfig =>
-  config.updater !== undefined
-
-const hasActiveChats = (routeState: RouteState): boolean =>
-  routeState.activePromptSessions.size > 0 || routeState.activeTurnSessions.size > 0
-
 const serverUpdateChannelFrom = (value: string | null): ServerUpdateChannel =>
   value === "alpha" ? "alpha" : "stable"
-
-const updateInfoSignature = (info: UpdateInfo): string =>
-  JSON.stringify([
-    info.updateAvailable,
-    info.latestVersion,
-    info.latestBuildNumber ?? null,
-    info.currentVersion,
-    info.channel,
-    info.lastApply?.state ?? null,
-    info.lastApply?.message ?? null,
-    info.lastApply?.progress ?? null,
-    info.lastApply?.at ?? null
-  ])
-
-const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo => {
-  const drain = routeState.restart.state()
-  if (drainLeavesUpdate(drain, info)) return info
-  if (installedAfterDrain(drain, info)) return info
-
-  const chats = `${drain.remaining} chat${drain.remaining === 1 ? "" : "s"}`
-  return { ...info, lastApply: drainingApply(drain, info, chats) }
-}
-
-const drainLeavesUpdate = (drain: RestartDrainState, info: UpdateInfo): boolean =>
-  drain.state === "idle" || info.lastApply?.state === "failed"
-
-const installedAfterDrain = (drain: RestartDrainState, info: UpdateInfo): boolean =>
-  drain.state === "drained" &&
-  info.lastApply?.state === "installing" &&
-  Date.parse(info.lastApply.at) >= Date.parse(drain.startedAt)
-
-const drainingApply = (
-  drain: RestartDrainState,
-  info: UpdateInfo,
-  chats: string
-): UpdateApplyState => ({
-  state: drain.state === "draining" ? "draining" : "installing",
-  message:
-    drain.state === "draining"
-      ? `Pausing ${chats} for the update`
-      : "Restarting to install the update",
-  targetVersion: info.latestVersion,
-  at: drain.startedAt
-})
-
-const publishUpdateChanged = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  info: UpdateInfo
-): void => {
-  const signature = updateInfoSignature(info)
-  if (routeState.updateSignature.value === signature) return
-  routeState.updateSignature.value = signature
-  void appendAndPublish(services.db, fanout, "update.changed", "server", info).catch(swallowError)
-}

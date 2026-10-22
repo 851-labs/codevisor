@@ -9,7 +9,6 @@ import type {
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
-import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-drain.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -29,6 +28,7 @@ import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
+import { pausedForUpdate, sessionHarnessId } from "./update-pause-gate.js"
 
 export const hasLiveTurn = (routeState: RouteState, sessionId: string): boolean =>
   routeState.activePromptSessions.has(sessionId) || routeState.activeTurnSessions.has(sessionId)
@@ -122,12 +122,12 @@ const holdForRestartDrain = async (
   sessionId: string
 ): Promise<void> => {
   const firstHold = !routeState.restartHeldSessions.has(sessionId)
-  routeState.restartHeldSessions.add(sessionId)
+  const gate = routeState.restart.gateFor(await sessionHarnessId(services, sessionId))
+  routeState.restartHeldSessions.set(sessionId, gate)
   await publishPromptQueue(services.db, fanout, sessionId)
   if (firstHold) {
     await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
-      harnessId: RESTART_GATE_HARNESS_ID,
-      harnessName: RESTART_GATE_HARNESS_NAME,
+      ...gate,
       state: "waiting"
     }).catch(swallowError)
   }
@@ -140,7 +140,7 @@ export const drainPromptQueue = async (
   serverId: string,
   sessionId: string
 ): Promise<void> => {
-  if (routeState.restart.isGated()) {
+  if (await pausedForUpdate(services, routeState, sessionId)) {
     await holdForRestartDrain(services, fanout, routeState, sessionId)
     return
   }
@@ -200,7 +200,7 @@ export const drainPromptQueue = async (
         return
       }
       /* v8 ignore stop */
-      if (routeState.restart.isGated()) {
+      if (routeState.restart.gates(turn.harnessId)) {
         await holdForRestartDrain(services, fanout, routeState, sessionId)
         return
       }

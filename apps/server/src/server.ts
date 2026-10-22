@@ -2,6 +2,7 @@ import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import { Socket, type AddressInfo } from "node:net"
 
+import type { SessionUpdateGate } from "@codevisor/api"
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
 
@@ -20,12 +21,9 @@ import {
   makeMemoryPausedTurnStore,
   observePausedTurns
 } from "./paused-turns.js"
-import {
-  makeFileRestartSnapshotStore,
-  makeMemoryRestartSnapshotStore,
-  makeRestartCoordinator
-} from "./restart-drain.js"
+import { makeRestartCoordinator } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
+import { makeFileRestartSnapshotStore, makeMemoryRestartSnapshotStore } from "./restart-snapshot.js"
 import { makeServerAutoResume } from "./routes/auto-resume-dispatch.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
@@ -63,6 +61,7 @@ import {
 } from "./server-monitors.js"
 import { handleRequest } from "./server-router.js"
 import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
+import { makeServerUpdateRun } from "./update-run-server.js"
 import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
 export * from "./server-context.js"
@@ -79,7 +78,7 @@ export const makeCodevisorServerApp = (
     activePromptSessions: new Set<string>(),
     promptTurnReleases: new Map<string, () => void>(),
     activeTurnSessions: new Set<string>(),
-    restartHeldSessions: new Set<string>()
+    restartHeldSessions: new Map<string, SessionUpdateGate>()
   }
   const restartSnapshot =
     config.restartSnapshotPath === undefined
@@ -93,6 +92,7 @@ export const makeCodevisorServerApp = (
       "server",
       restart.state()
     ).catch(swallowError)
+    updateRun.noteChatsChanged()
   }
   const pausedTurns = observePausedTurns(
     config.pausedTurnsPath === undefined
@@ -114,6 +114,14 @@ export const makeCodevisorServerApp = (
     resumePaused: () => updateResume.resume(pausedTurns.read()),
     onChange: publishRestartDrain
   })
+  const updateRun = makeServerUpdateRun({
+    services,
+    fanout,
+    restart,
+    pausedTurns,
+    updater: config.updater,
+    routeState: () => routeState
+  })
   const browserProxy = new BrowserProxy()
   const clientControl = new ClientControlBroker()
   const routeState: RouteState = {
@@ -126,6 +134,7 @@ export const makeCodevisorServerApp = (
     turnHeldSessions: new Set(),
     updateSignature: {},
     restart,
+    updateRun,
     updateResume
   }
   updateResume.resume(pausedTurns.read())
