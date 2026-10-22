@@ -21,6 +21,12 @@ struct LocalCodevisorServerProcessConfiguration: Equatable {
   var arguments: [String]
 }
 
+private enum RunningServerAdoption {
+  case ownBoot
+  case managedService
+  case developmentServer
+}
+
 @MainActor
 @Observable
 public final class LocalCodevisorServer: LocalServerControlling {
@@ -69,6 +75,16 @@ public final class LocalCodevisorServer: LocalServerControlling {
   public static let updateHandoffExitStatus: Int32 = 85
 
   @ObservationIgnored var startupScheduler: LocalServerScheduler = .continuous
+
+  static let bindHost = "0.0.0.0"
+
+  nonisolated static func serverDisplayName() -> String {
+    CodevisorMachine.local.name
+  }
+
+  var port: Int {
+    config.baseURL.port ?? CodevisorServerConfig.localPort
+  }
 
   public init(
     client: any CodevisorServerClienting,
@@ -133,140 +149,188 @@ public final class LocalCodevisorServer: LocalServerControlling {
 
   private func performEnsureRunning() async -> LocalCodevisorServerState {
     var clock = StepClock()
-    startupProgress = LocalServerStartupProgress(stage: "preparingService", completed: 0)
-    lifecycleLog.note(
-      "ensureRunning: begin (bundled runtime \(bundledServerVersion() ?? "none"), managed service \(managedService == nil ? "absent" : "configured"))"
-    )
-    defer {
-      startupStep = nil
-      lifecycleLog.note("ensureRunning: end → \(state) (\(clock.totalMilliseconds) ms total)")
-    }
-    let step: (String) -> Void = { [self] name in
-      startupStep = name
-    }
+    beginEnsureRunning()
+    defer { endEnsureRunning(clock) }
 
-    step("computer-use bridge")
-    let computerUseConfiguration: ComputerUseBridge.Configuration?
-    do {
-      computerUseConfiguration = try computerUseBridge?.start()
-    } catch {
-      computerUseConfiguration = nil
-      lifecycleLog.error("Computer Use bridge failed to start: \(error)")
-    }
-    lifecycleLog.note("ensureRunning: computer-use bridge ready (\(clock.lap()) ms)")
+    let computerUse = startComputerUseBridge(&clock)
+    if let failure = await prepareManagedService(&clock) { return failure }
+    if let settled = await adoptOrStopAnsweringServer(&clock) { return settled }
+    if let process, process.isRunning { return await waitForOwnedProcess(process) }
+    guard let entrypoint else { return fail("Codevisor server entrypoint was not found") }
 
-    if let managedService {
-      step("prepare managed service")
-      do {
-        try await managedService.prepare()
-        lifecycleLog.note("ensureRunning: managed service prepared (\(clock.lap()) ms)")
-      } catch {
-        return fail("Codevisor could not prepare its background service: \(error)")
-      }
-    }
-
-    step("health probe")
-    if let health = await currentHealth() {
-      lifecycleLog.note(
-        "ensureRunning: a server answered (version \(health.version), boot \(health.bootId ?? "?"), managed \(health.serviceManaged == true), app-owned \(health.appOwned == true)) (\(clock.lap()) ms)"
-      )
-      if let activeBootId, health.bootId == activeBootId {
-        dataUpgradeProgress = nil
-        completeStartup()
-        state = .alreadyRunning
-        return state
-      }
-
-      if managedService != nil,
-        health.serviceManaged == true,
-        healthMatchesBundledRuntime(health)
-      {
-        startUpdateRequestMonitor()
-        dataUpgradeProgress = nil
-        completeStartup()
-        state = .alreadyRunning
-        lifecycleLog.note("ensureRunning: adopting the running managed server")
-        return state
-      }
-
-      if allowsDevelopmentLaunch, bundledServerVersion() == nil, health.appOwned != true {
-        dataUpgradeProgress = nil
-        completeStartup()
-        state = .alreadyRunning
-        return state
-      }
-
-      step("stop stale server")
-      lifecycleLog.note("ensureRunning: stopping a stale server that does not match this build")
-      let stopped = await stopStaleServer()
-      lifecycleLog.note("ensureRunning: stale server \(stopped ? "stopped" : "NOT stopped") (\(clock.lap()) ms)")
-      guard stopped else {
-        return fail("Another Codevisor server is still running and could not be stopped.")
-      }
-    } else {
-      lifecycleLog.note("ensureRunning: no server answering (\(clock.lap()) ms)")
-    }
-
-    if let process, process.isRunning {
-      step("wait for owned process")
-      return await waitUntilHealthy(process: process, expectedBootId: activeBootId)
-    }
-
-    guard let entrypoint else {
-      return fail("Codevisor server entrypoint was not found")
-    }
-
-    if databasePath == Self.defaultDatabasePath() {
-      step("migrate legacy data")
-      Self.migrateLegacyServerData()
-      lifecycleLog.note("ensureRunning: legacy data check done (\(clock.lap()) ms)")
-    }
-
-    if let managedService {
-      return await startManagedServer(managedService)
-    }
-
+    migrateLegacyDataIfDefault(&clock)
+    if let managedService { return await startManagedServer(managedService) }
     guard allowsDevelopmentLaunch else {
       return fail("Codevisor's background service is unavailable. Restart Codevisor to register it again.")
     }
 
-    step("launch development server")
-    startupAttemptStartedAt = Date()
-    startupProgress = LocalServerStartupProgress(stage: "startingProcess", completed: 1)
+    return await launchDevelopmentServer(entrypoint: entrypoint, computerUse: computerUse, clock: &clock)
+  }
+
+  private func beginEnsureRunning() {
+    startupProgress = LocalServerStartupProgress(stage: "preparingService", completed: 0)
+    lifecycleLog.note(
+      "ensureRunning: begin (bundled runtime \(bundledServerVersion() ?? "none"), managed service \(managedService == nil ? "absent" : "configured"))"
+    )
+  }
+
+  private func endEnsureRunning(_ clock: StepClock) {
+    startupStep = nil
+    lifecycleLog.note("ensureRunning: end → \(state) (\(clock.totalMilliseconds) ms total)")
+  }
+
+  private func startComputerUseBridge(_ clock: inout StepClock) -> ComputerUseBridge.Configuration? {
+    startupStep = "computer-use bridge"
+    let configuration = startedComputerUseBridge()
+    lifecycleLog.note("ensureRunning: computer-use bridge ready (\(clock.lap()) ms)")
+    return configuration
+  }
+
+  private func startedComputerUseBridge() -> ComputerUseBridge.Configuration? {
     do {
-      let bootId = UUID().uuidString
-      activeBootId = bootId
-      var serverEnvironment = await serverEnvironmentProvider()
-      serverEnvironment["CODEVISOR_APP_HOSTED"] = "1"
-      if let computerUseConfiguration {
-        serverEnvironment["CODEVISOR_COMPUTER_USE_SOCKET"] = computerUseConfiguration.socketPath
-        serverEnvironment["CODEVISOR_COMPUTER_USE_TOKEN"] = computerUseConfiguration.token
-      }
-      let request = LocalCodevisorServerLaunchRequest(
-        nodeExecutable: nodeExecutable,
-        entrypoint: entrypoint,
-        databasePath: databasePath,
-        logURL: logURL,
-        host: Self.bindHost,
-        port: port,
-        name: Self.serverDisplayName(),
-        bootId: bootId,
-        ownerPid: ProcessInfo.processInfo.processIdentifier,
-        environment: serverEnvironment,
-        dataUpgradeStatusURL: dataUpgradeStatusURL
-      )
-      let launched = try launcher(request)
-      process = launched
-      observeTermination(of: launched)
-      lifecycleLog.note(
-        "ensureRunning: launched app-owned server pid \(launched.processIdentifier) boot \(bootId) (\(clock.lap()) ms)"
-      )
-      step("wait for app-owned server")
-      return await waitUntilHealthy(process: launched, expectedBootId: bootId, scheduler: startupScheduler)
+      return try computerUseBridge?.start()
+    } catch {
+      lifecycleLog.error("Computer Use bridge failed to start: \(error)")
+      return nil
+    }
+  }
+
+  private func prepareManagedService(_ clock: inout StepClock) async -> LocalCodevisorServerState? {
+    guard let managedService else { return nil }
+    startupStep = "prepare managed service"
+    do {
+      try await managedService.prepare()
+    } catch {
+      return fail("Codevisor could not prepare its background service: \(error)")
+    }
+    lifecycleLog.note("ensureRunning: managed service prepared (\(clock.lap()) ms)")
+    return nil
+  }
+
+  private func adoptOrStopAnsweringServer(_ clock: inout StepClock) async -> LocalCodevisorServerState? {
+    startupStep = "health probe"
+    guard let health = await currentHealth() else {
+      lifecycleLog.note("ensureRunning: no server answering (\(clock.lap()) ms)")
+      return nil
+    }
+    lifecycleLog.note(
+      "ensureRunning: a server answered (version \(health.version), boot \(health.bootId ?? "?"), managed \(health.serviceManaged == true), app-owned \(health.appOwned == true)) (\(clock.lap()) ms)"
+    )
+    if let adoption = adoption(of: health) { return adopt(adoption) }
+    return await stopMismatchedServer(&clock)
+  }
+
+  private func adoption(of health: ServerHealth) -> RunningServerAdoption? {
+    if let activeBootId, health.bootId == activeBootId { return .ownBoot }
+    if managedService != nil, health.serviceManaged == true, healthMatchesBundledRuntime(health) {
+      return .managedService
+    }
+    if allowsDevelopmentLaunch, bundledServerVersion() == nil, health.appOwned != true { return .developmentServer }
+    return nil
+  }
+
+  private func adopt(_ adoption: RunningServerAdoption) -> LocalCodevisorServerState {
+    switch adoption {
+    case .managedService:
+      startUpdateRequestMonitor()
+      markAlreadyRunning()
+      lifecycleLog.note("ensureRunning: adopting the running managed server")
+    case .ownBoot, .developmentServer:
+      markAlreadyRunning()
+    }
+    return state
+  }
+
+  private func markAlreadyRunning() {
+    dataUpgradeProgress = nil
+    completeStartup()
+    state = .alreadyRunning
+  }
+
+  private func stopMismatchedServer(_ clock: inout StepClock) async -> LocalCodevisorServerState? {
+    startupStep = "stop stale server"
+    lifecycleLog.note("ensureRunning: stopping a stale server that does not match this build")
+    let stopped = await shutdown()
+    lifecycleLog.note("ensureRunning: stale server \(stopped ? "stopped" : "NOT stopped") (\(clock.lap()) ms)")
+    guard stopped else { return fail("Another Codevisor server is still running and could not be stopped.") }
+    return nil
+  }
+
+  private func waitForOwnedProcess(_ process: Process) async -> LocalCodevisorServerState {
+    startupStep = "wait for owned process"
+    return await waitUntilHealthy(process: process, expectedBootId: activeBootId)
+  }
+
+  private func migrateLegacyDataIfDefault(_ clock: inout StepClock) {
+    guard databasePath == Self.defaultDatabasePath() else { return }
+    startupStep = "migrate legacy data"
+    Self.migrateLegacyServerData()
+    lifecycleLog.note("ensureRunning: legacy data check done (\(clock.lap()) ms)")
+  }
+
+  private func launchDevelopmentServer(
+    entrypoint: URL, computerUse: ComputerUseBridge.Configuration?, clock: inout StepClock
+  ) async -> LocalCodevisorServerState {
+    startupStep = "launch development server"
+    let bootId = beginDevelopmentLaunch()
+    let environment = Self.appHostedEnvironment(await serverEnvironmentProvider(), computerUse: computerUse)
+    let launched: Process
+    do {
+      launched = try launcher(launchRequest(entrypoint: entrypoint, bootId: bootId, environment: environment))
     } catch {
       activeBootId = nil
       return fail("Codevisor server could not be launched: \(error)")
     }
+    track(launched, bootId: bootId, clock: &clock)
+
+    startupStep = "wait for app-owned server"
+    return await waitUntilHealthy(process: launched, expectedBootId: bootId, scheduler: startupScheduler)
+  }
+
+  private func beginDevelopmentLaunch() -> String {
+    startupAttemptStartedAt = Date()
+    startupProgress = LocalServerStartupProgress(stage: "startingProcess", completed: 1)
+    let bootId = UUID().uuidString
+    activeBootId = bootId
+    return bootId
+  }
+
+  nonisolated static func appHostedEnvironment(
+    _ base: [String: String], computerUse: ComputerUseBridge.Configuration?
+  ) -> [String: String] {
+    var environment = base
+    environment["CODEVISOR_APP_HOSTED"] = "1"
+    if let computerUse {
+      environment["CODEVISOR_COMPUTER_USE_SOCKET"] = computerUse.socketPath
+      environment["CODEVISOR_COMPUTER_USE_TOKEN"] = computerUse.token
+    }
+    return environment
+  }
+
+  private func launchRequest(
+    entrypoint: URL, bootId: String, environment: [String: String]
+  ) -> LocalCodevisorServerLaunchRequest {
+    LocalCodevisorServerLaunchRequest(
+      nodeExecutable: nodeExecutable,
+      entrypoint: entrypoint,
+      databasePath: databasePath,
+      logURL: logURL,
+      host: Self.bindHost,
+      port: port,
+      name: Self.serverDisplayName(),
+      bootId: bootId,
+      ownerPid: ProcessInfo.processInfo.processIdentifier,
+      environment: environment,
+      dataUpgradeStatusURL: dataUpgradeStatusURL
+    )
+  }
+
+  private func track(_ launched: Process, bootId: String, clock: inout StepClock) {
+    process = launched
+    observeTermination(of: launched)
+    lifecycleLog.note(
+      "ensureRunning: launched app-owned server pid \(launched.processIdentifier) boot \(bootId) (\(clock.lap()) ms)"
+    )
   }
 
   @discardableResult

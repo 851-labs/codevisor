@@ -1,6 +1,5 @@
 import CodevisorCore
 import Foundation
-import Observation
 
 extension LocalCodevisorServer {
   func bundledServerVersion() -> String? {
@@ -36,10 +35,6 @@ extension LocalCodevisorServer {
     return true
   }
 
-  func stopStaleServer() async -> Bool {
-    await shutdown()
-  }
-
   func currentHealth() async -> ServerHealth? {
     do {
       let health = try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
@@ -54,16 +49,6 @@ extension LocalCodevisorServer {
     }
   }
 
-  static let bindHost = "0.0.0.0"
-
-  nonisolated static func serverDisplayName() -> String {
-    CodevisorMachine.local.name
-  }
-
-  var port: Int {
-    config.baseURL.port ?? CodevisorServerConfig.localPort
-  }
-
   func isHealthy() async -> Bool {
     do {
       return try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
@@ -74,9 +59,6 @@ extension LocalCodevisorServer {
     }
   }
 
-  static let deadJobProbeThreshold = 3
-  static let healthProbeReportEvery = 8
-
   func waitUntilHealthy(
     process: Process?,
     expectedBootId: String?,
@@ -85,98 +67,116 @@ extension LocalCodevisorServer {
     jobProbe: (@MainActor () async -> Bool?)? = nil,
     scheduler: LocalServerScheduler = .continuous
   ) async -> LocalCodevisorServerState {
-    let deadline = scheduler.now() + startupMaximumDuration
-    var lastProgressAt = scheduler.now()
-    var attempt = 0
-    var attemptLimit = initialAttemptLimit ?? healthPollAttempts
-    var lastProbeError = "none"
-    var deadJobProbes = 0
-    while attempt < attemptLimit {
-      attempt += 1
+    var watch = StartupHealthWatch(
+      expectedBootId: expectedBootId,
+      requiresBundledIdentity: requiresBundledIdentity,
+      deadline: scheduler.now() + startupMaximumDuration,
+      lastProgressAt: scheduler.now(),
+      stallTimeout: startupStallTimeout,
+      attemptLimit: initialAttemptLimit ?? healthPollAttempts,
+      progressAttemptLimit: healthPollAttempts
+    )
+    while watch.hasAttemptsLeft {
+      watch.beginAttempt()
       if Task.isCancelled { return fail("Server startup was cancelled.") }
-      if refreshStartupProgress(expectedBootId: expectedBootId ?? activeBootId) {
-        lastProgressAt = scheduler.now()
-        attemptLimit = max(attemptLimit, healthPollAttempts)
+      refreshProgress(&watch, scheduler: scheduler)
+      if let failure = startupFailure(watch, scheduler: scheduler) { return failure }
+
+      if let health = await probeHealth(&watch, scheduler: scheduler) {
+        return acceptHealthy(health, from: watch)
       }
-      refreshDataUpgradeProgress(expectedBootId: expectedBootId ?? activeBootId)
-      if startupProgress?.state == "failed" {
-        return fail(startupProgress?.error ?? "The server failed during startup.")
-      }
-      if scheduler.now() >= deadline || scheduler.now() - lastProgressAt >= startupStallTimeout {
-        startupCanRetry = true
-        return fail(
-          "Server startup stopped progressing while \(startupProgress?.label.lowercased() ?? "waiting for a response")."
-        )
-      }
-      do {
-        let health = try await StartupDeadline.run(for: .seconds(2), scheduler: scheduler) { [client] in
-          try await client.health()
-        }
-        if health.ok {
-          let boot = expectedBootId ?? activeBootId
-          guard boot == nil || health.bootId == boot else {
-            return fail(
-              "A different Codevisor server answered while the local server was starting (boot \(health.bootId ?? "?"), expected \(boot ?? "?"))."
-            )
-          }
-          guard
-            !requiresBundledIdentity
-              || (health.serviceManaged == true && healthMatchesBundledRuntime(health))
-          else {
-            return fail(
-              "The local server does not match this Codevisor build (server \(health.version) build \(health.buildNumber.map(String.init) ?? "?"), managed \(health.serviceManaged == true))."
-            )
-          }
-          dataUpgradeProgress = nil
-          activeBootId = health.bootId
-          completeStartup()
-          state = .started
-          lifecycleLog.note(
-            "waitUntilHealthy: healthy after \(attempt) attempt(s) (version \(health.version), boot \(health.bootId ?? "?"))"
-          )
-          return state
-        }
-        lastProbeError = "health not ok"
-      } catch {
-        lastProbeError = String(describing: error)
-      }
-      if let process, !process.isRunning {
-        return fail(
-          "Codevisor server exited before becoming ready (status \(process.terminationStatus)). See \(logURL.path)"
-        )
-      }
-      if attempt % Self.healthProbeReportEvery == 0 || attempt == attemptLimit {
-        var jobNote = ""
-        if let jobProbe {
-          switch try? await StartupDeadline.run(
-            for: .seconds(5), scheduler: scheduler, operation: { await jobProbe() })
-          {
-          case .some(true):
-            deadJobProbes = 0
-            jobNote = ", launchd job running"
-          case .some(false):
-            deadJobProbes += 1
-            jobNote = ", launchd job has no process (\(deadJobProbes)/\(Self.deadJobProbeThreshold))"
-            if deadJobProbes >= Self.deadJobProbeThreshold {
-              startupCanRetry = true
-              return fail(
-                "Codevisor's background server exited before becoming ready (last probe: \(lastProbeError)). See \(logURL.path)"
-              )
-            }
-          case .none:
-            jobNote = ", launchd job state unknown"
-          }
-        }
-        lifecycleLog.note(
-          "waitUntilHealthy: attempt \(attempt)/\(attemptLimit), last probe: \(lastProbeError)\(jobNote)"
-        )
+      if let process, !process.isRunning { return failExited(process) }
+
+      if watch.isReportDue, let gaveUp = await reportProgress(&watch, jobProbe: jobProbe, scheduler: scheduler) {
+        return gaveUp
       }
       try? await scheduler.sleep(healthPollInterval)
     }
     startupCanRetry = true
-    return fail(
-      "Timed out waiting for Codevisor server after \(attempt) attempt(s) (last probe: \(lastProbeError)). See \(logURL.path)"
+    return fail(watch.timeoutMessage(logPath: logURL.path))
+  }
+
+  private func refreshProgress(_ watch: inout StartupHealthWatch, scheduler: LocalServerScheduler) {
+    if refreshStartupProgress(expectedBootId: watch.expectedBootId ?? activeBootId) {
+      watch.noteProgress(at: scheduler.now())
+    }
+    refreshDataUpgradeProgress(expectedBootId: watch.expectedBootId ?? activeBootId)
+  }
+
+  private func startupFailure(
+    _ watch: StartupHealthWatch, scheduler: LocalServerScheduler
+  ) -> LocalCodevisorServerState? {
+    if startupProgress?.state == "failed" {
+      return fail(startupProgress?.error ?? "The server failed during startup.")
+    }
+    guard watch.isPastDeadline(at: scheduler.now()) || watch.hasStalled(at: scheduler.now()) else { return nil }
+    startupCanRetry = true
+    return fail(watch.stalledMessage(waitingOn: startupProgress?.label))
+  }
+
+  private func probeHealth(_ watch: inout StartupHealthWatch, scheduler: LocalServerScheduler) async -> ServerHealth? {
+    do {
+      let health = try await StartupDeadline.run(for: .seconds(2), scheduler: scheduler) { [client] in
+        try await client.health()
+      }
+      if health.ok { return health }
+      watch.noteFailedProbe("health not ok")
+    } catch {
+      watch.noteFailedProbe(String(describing: error))
+    }
+    return nil
+  }
+
+  private func acceptHealthy(_ health: ServerHealth, from watch: StartupHealthWatch) -> LocalCodevisorServerState {
+    let boot = watch.expectedBootId ?? activeBootId
+    guard boot == nil || health.bootId == boot else {
+      return fail(
+        "A different Codevisor server answered while the local server was starting (boot \(health.bootId ?? "?"), expected \(boot ?? "?"))."
+      )
+    }
+    guard !watch.requiresBundledIdentity || isBundledManagedServer(health) else {
+      return fail(
+        "The local server does not match this Codevisor build (server \(health.version) build \(health.buildNumber.map(String.init) ?? "?"), managed \(health.serviceManaged == true))."
+      )
+    }
+    return markStarted(health, after: watch.attempt)
+  }
+
+  private func isBundledManagedServer(_ health: ServerHealth) -> Bool {
+    health.serviceManaged == true && healthMatchesBundledRuntime(health)
+  }
+
+  private func markStarted(_ health: ServerHealth, after attempt: Int) -> LocalCodevisorServerState {
+    dataUpgradeProgress = nil
+    activeBootId = health.bootId
+    completeStartup()
+    state = .started
+    lifecycleLog.note(
+      "waitUntilHealthy: healthy after \(attempt) attempt(s) (version \(health.version), boot \(health.bootId ?? "?"))"
     )
+    return state
+  }
+
+  private func failExited(_ process: Process) -> LocalCodevisorServerState {
+    fail("Codevisor server exited before becoming ready (status \(process.terminationStatus)). See \(logURL.path)")
+  }
+
+  private func reportProgress(
+    _ watch: inout StartupHealthWatch, jobProbe: (@MainActor () async -> Bool?)?, scheduler: LocalServerScheduler
+  ) async -> LocalCodevisorServerState? {
+    var jobNote = ""
+    if let jobProbe {
+      let running = try? await StartupDeadline.run(
+        for: .seconds(5), scheduler: scheduler, operation: { await jobProbe() })
+      let probe = watch.noteJobProbe(running)
+      if probe.givesUp {
+        startupCanRetry = true
+        return fail(watch.jobExitedMessage(logPath: logURL.path))
+      }
+      jobNote = probe.text
+    }
+    lifecycleLog.note(watch.progressReport(jobNote: jobNote))
+    return nil
   }
 
   private func fail(_ message: String) -> LocalCodevisorServerState {
