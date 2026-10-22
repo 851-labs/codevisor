@@ -196,7 +196,6 @@ describe("provider accounts across machines", () => {
   it("preserves OpenCode's database and configuration in the managed runtime", async () => {
     const host = await fleet().machine("opencode-resources")
     await run(host.db.saveHarnessAccount(account("opencode")))
-    await host.shared.providers.capture("opencode", "default", "openai", credential())
     const base = {
       id: "opencode-default",
       profileKind: "default" as const,
@@ -205,6 +204,8 @@ describe("provider accounts across machines", () => {
         OPENCODE_DB: "work.db"
       }
     }
+    expect(await host.shared.providers.context(account("opencode"), base)).toBe(base)
+    await host.shared.providers.capture("opencode", "default", "openai", credential())
     const context = await host.shared.providers.context(account("opencode"), base)
     expect(context.env!.OPENCODE_CONFIG_CONTENT).toBe(base.env.OPENCODE_CONFIG_CONTENT)
     const native = join(host.dataDir, ".local", "share", "opencode")
@@ -296,8 +297,10 @@ describe("provider accounts across machines", () => {
     await host.shared.providers.capture("pi", "default", "openai-codex", credential("working"))
     const context = await host.shared.providers.context(account("pi"), {
       id: "pi-default",
-      profileKind: "default"
+      profileKind: "default",
+      unsetEnv: ["ANTHROPIC_API_KEY"]
     })
+    expect(context.unsetEnv).toEqual(["ANTHROPIC_API_KEY"])
     const auth = await json(join(context.env!.PI_CODING_AGENT_DIR!, "auth.json"))
     expect(auth.anthropic).toBeUndefined()
     expect(auth["openai-codex"]?.access).toBe(credential("working").access)
@@ -312,6 +315,8 @@ describe("provider accounts across machines", () => {
     const a = await machine("provider-a"),
       b = await machine("provider-b")
     expect(await a.shared.providers.capture("pi", "default", "anthropic", credential())).toBe(true)
+    const unshared = { id: "pi-default", profileKind: "default" as const }
+    expect(await b.shared.providers.context(account("pi"), unshared)).toBe(unshared)
     await sync(a, b)
     expect(await b.shared.providers.configured("pi", "default")).toEqual(["anthropic"])
     const first = await b.shared.providers.context(account("pi"), {
@@ -452,7 +457,7 @@ describe("provider accounts across machines", () => {
     expect(await b.shared.probe("shared-work")).toBeUndefined()
   })
   it("prepares Grok's external provider command without credentials in its arguments", async () => {
-    const { machine } = fleet()
+    const { machine, rotate } = fleet()
     const host = await machine("grok")
     await host.shared.providers.capture("grok-build", "default", "xai", {
       auth_mode: "oidc",
@@ -474,6 +479,13 @@ describe("provider accounts across machines", () => {
     expect(runtime.env).not.toHaveProperty("GROK_AUTH")
     expect(runtime.env).not.toHaveProperty("XAI_API_KEY")
     expect(runtime.unsetEnv).toEqual(expect.arrayContaining(["GROK_AUTH", "XAI_API_KEY"]))
+    rotate.mockRejectedValueOnce(new Error("offline"))
+    vi.setSystemTime(3_600_000)
+    const offline = await host.shared.providers.context(account("grok-build"), {
+      id: "grok-build-default",
+      profileKind: "default"
+    })
+    expect(offline.env!.GROK_AUTH_PROVIDER_COMMAND).toBe("false")
     await host.shared.providers.remove("grok-build", "default", "xai")
     const disabled = await host.shared.providers.context(account("grok-build"), {
       id: "grok-build-default",

@@ -12,6 +12,7 @@ import {
   providerTokenEndpoint,
   SharedCredentialError,
   type SharedCredentialVault,
+  type SharedTokenBundle,
   type ProviderOAuthHarness
 } from "@codevisor/harness-manager"
 import { Schema } from "effect"
@@ -23,11 +24,24 @@ import {
   resolvePiResourcePaths
 } from "./shared-provider-documents.js"
 import {
+  grokCredentialPlan,
+  grokCurlConfig,
+  grokEnv,
+  grokResources,
+  grokTokenCommand,
+  grokTokenScript
+} from "./shared-provider-grok.js"
+import {
   makeOpenCode2Deps,
   makeOpenCode2Materializer,
   type OpenCode2Deps
 } from "./shared-provider-opencode2.js"
-import { providerDigest, providerSlot, type SharedProviderStore } from "./shared-provider-store.js"
+import {
+  providerDigest,
+  providerSlot,
+  type SharedProviderRecord,
+  type SharedProviderStore
+} from "./shared-provider-store.js"
 
 export { readProviderDocument } from "./shared-provider-documents.js"
 
@@ -43,15 +57,22 @@ interface ManifestProvider {
   endpoint?: string
   access: string
 }
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+type ProviderManifest = {
+  url: string
+  providers: Record<string, ManifestProvider>
+}
+interface ResourceLink {
+  readonly source: string
+  readonly destination: string
+}
 const script = async (path: string, content: string) => {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  await mkdir(dirname(path), privateDirectory)
   await writeFile(path, content, { mode: 0o600 })
   await chmod(path, 0o600)
 }
-const linkResource = async (source: string, destination: string) => {
+const linkResource = async (link: ResourceLink) => {
   try {
-    await symlink(source, destination)
+    await symlink(link.source, link.destination)
   } catch (cause) {
     if (errorCode(cause) !== "EEXIST") throw cause
   }
@@ -176,124 +197,141 @@ export const makeSharedProviderRuntime = (options: {
     openCode2
   })
 
-  const materialize = async (
+  const trackOpenCode = (profile: string, path: string, dueAt: number): OpenCodeProfile => {
+    const entry = openCode.get(profile) ?? { path, dueAt, usedAt: 0 }
+    entry.dueAt = dueAt
+    openCode.set(profile, entry)
+    return entry
+  }
+
+  const materializePi = async (
+    profile: string,
+    nativePath: string,
+    base: HarnessAccountContext
+  ): Promise<HarnessAccountContext> => {
+    const rows = await store.records("pi", profile)
+    const known = await store.knownProviders("pi", profile)
+    if (!known.length) return base
+
+    const root = providerAuthRoot(dataDir, "pi", profile)
+    const auth = await readProviderDocument(nativePath)
+    prepareProviderAuthDocument("pi", auth, known)
+    const manifest: ProviderManifest = { url, providers: {} }
+    for (const row of rows) {
+      const cap = await capabilityFor("pi", profile, row)
+      const token = await vault.token(row.credential).catch(() => undefined)
+      if (token) shareGrant(auth, manifest, row, cap, token)
+    }
+
+    const manifestPath = join(root, "manifest.json")
+    const runtimeEnv = {
+      ...base.env,
+      CODEVISOR_PROVIDER_AUTH: manifestPath,
+      PI_CODING_AGENT_DIR: root
+    }
+    await atomicWriteJson(manifestPath, manifest)
+    const unsetEnv = base.unsetEnv
+
+    const source = dirname(nativePath)
+    await mkdir(join(source, "sessions"), privateDirectory)
+    for (const link of resourceLinks(source, root, piResources)) await linkResource(link)
+    const settings = await readProviderDocument(join(source, "settings.json"))
+    await atomicWriteJson(join(root, "settings.json"), piRuntimeSettings(settings, source))
+    await atomicWriteJson(join(root, "auth.json"), auth)
+    await script(join(root, "extensions", "codevisor-auth.ts"), piAuthExtension)
+    return { ...base, env: runtimeEnv, ...(unsetEnv === undefined ? {} : { unsetEnv }) }
+  }
+
+  const materializeOpenCode = async (
+    profile: string,
+    nativePath: string,
+    base: HarnessAccountContext,
+    env: NodeJS.ProcessEnv
+  ): Promise<HarnessAccountContext> => {
+    const rows = await store.records("opencode", profile)
+    const known = await store.knownProviders("opencode", profile)
+    if (!known.length) return base
+
+    const root = providerAuthRoot(dataDir, "opencode", profile)
+    const auth = await readProviderDocument(nativePath)
+    prepareProviderAuthDocument("opencode", auth, known)
+    if (((await openCode2.majorVersion(env)) ?? 1) >= 2)
+      return materializeOpenCode2(profile, root, base, env, rows, auth)
+
+    const source = dirname(nativePath)
+    const runtimeEnv = openCodeEnv(base, root, source, env)
+    const data = join(root, "data", "opencode")
+    await mkdir(data, privateDirectory)
+    for (const link of resourceLinks(source, data, openCodeResources)) {
+      await mkdir(link.source, privateDirectory)
+      await linkResource(link)
+    }
+
+    const path = join(data, "auth.json")
+    const dueAt = await withOpenCodeCredentials(profile, auth)
+    await atomicWriteJson(path, auth)
+    const entry = trackOpenCode(profile, path, dueAt)
+    keepOpenCodeCurrent(entry)
+    return {
+      ...base,
+      env: runtimeEnv,
+      beforeTurn: async () => {
+        keepOpenCodeCurrent(entry)
+        await refreshOpenCode(profile)
+      }
+    }
+  }
+
+  const materializeGrok = async (
+    profile: string,
+    nativePath: string,
+    base: HarnessAccountContext
+  ): Promise<HarnessAccountContext> => {
+    const rows = await store.records("grok-build", profile)
+    const known = await store.knownProviders("grok-build", profile)
+    if (!known.length) return base
+
+    const root = providerAuthRoot(dataDir, "grok-build", profile)
+    const auth = await readProviderDocument(nativePath)
+    prepareProviderAuthDocument("grok-build", auth, known)
+    const manifest: ProviderManifest = { url, providers: {} }
+    let apiKey: string | undefined
+    for (const row of rows) {
+      const cap = await capabilityFor("grok-build", profile, row)
+      const token = await vault.token(row.credential).catch(() => undefined)
+      if (!token) continue
+      if (token.authMethod === "apiKey") apiKey = token.accessToken
+      shareGrant(auth, manifest, row, cap, token)
+    }
+
+    const plan = grokCredentialPlan(root, apiKey, manifest.providers.xai)
+    const manifestPath = join(root, "manifest.json")
+    const runtimeEnv = grokEnv(base, root, manifestPath, plan)
+    await atomicWriteJson(manifestPath, manifest)
+    const unsetEnv = [...new Set([...(base.unsetEnv ?? []), ...plan.unset])]
+    await atomicWriteJson(join(root, "auth.json"), {})
+
+    const source = dirname(nativePath)
+    await mkdir(join(source, "sessions"), privateDirectory)
+    for (const link of resourceLinks(source, root, grokResources)) await linkResource(link)
+    if (plan.broker) {
+      const curlConfig = join(root, "curl.conf")
+      await script(curlConfig, grokCurlConfig(url, plan.broker.capability))
+      await script(grokTokenCommand(root), grokTokenScript(curlConfig))
+    }
+    return { ...base, env: runtimeEnv, unsetEnv }
+  }
+
+  const materialize = (
     harness: ProviderOAuthHarness,
     profile: string,
     nativePath: string,
     base: HarnessAccountContext,
     env: NodeJS.ProcessEnv
   ): Promise<HarnessAccountContext> => {
-    const rows = await store.records(harness, profile)
-    const known = await store.knownProviders(harness, profile)
-    if (!known.length) return base
-    const root = join(dataDir, "provider-auth", harness, providerDigest(profile))
-    const manifest: { url: string; providers: Record<string, ManifestProvider> } = {
-      url,
-      providers: {}
-    }
-    const auth = await readProviderDocument(nativePath)
-    prepareProviderAuthDocument(harness, auth, known)
-    if (harness === "opencode" && ((await openCode2.majorVersion(env)) ?? 1) >= 2)
-      return materializeOpenCode2(profile, root, base, env, rows, auth)
-    let grokApiKey: string | undefined
-    for (const row of harness === "opencode" ? [] : rows) {
-      const cap = await capabilityFor(harness, profile, row)
-      const token = await vault.token(row.credential).catch(() => undefined)
-      if (!token) continue
-      if (harness === "grok-build" && token.authMethod === "apiKey") grokApiKey = token.accessToken
-      auth[row.providerId] = providerCredential(token, MANAGED_REFRESH_PREFIX + cap.capability)
-      const endpoint = providerTokenEndpoint(row.providerId)
-      manifest.providers[row.providerId] = {
-        capability: cap.capability,
-        access: token.accessToken,
-        ...(endpoint ? { endpoint } : {})
-      }
-    }
-    const runtimeEnv: Record<string, string> = { ...base.env }
-    if (harness !== "opencode") {
-      const manifestPath = join(root, "manifest.json")
-      await atomicWriteJson(manifestPath, manifest)
-      runtimeEnv.CODEVISOR_PROVIDER_AUTH = manifestPath
-    }
-    let unsetEnv: ReadonlyArray<string> | undefined = base.unsetEnv
-    if (harness === "pi") {
-      const source = dirname(nativePath)
-      await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
-      for (const name of ["sessions", "skills", "prompts", "themes", "models.json", "AGENTS.md"]) {
-        await linkResource(join(source, name), join(root, name))
-      }
-      const settings = await readProviderDocument(join(source, "settings.json"))
-      resolvePiResourcePaths(settings, source)
-      const extensions = Array.isArray(settings.extensions) ? settings.extensions : []
-      await atomicWriteJson(join(root, "settings.json"), {
-        ...settings,
-        extensions: [...extensions, join(source, "extensions")]
-      })
-      await atomicWriteJson(join(root, "auth.json"), auth)
-      await script(join(root, "extensions", "codevisor-auth.ts"), piAuthExtension)
-      runtimeEnv.PI_CODING_AGENT_DIR = root
-    } else if (harness === "opencode") {
-      runtimeEnv.XDG_DATA_HOME = join(root, "data")
-      const source = dirname(nativePath)
-      const database = env.OPENCODE_DB || "opencode.db"
-      runtimeEnv.OPENCODE_DB = database === ":memory:" ? database : resolve(source, database)
-      await mkdir(join(root, "data", "opencode"), { recursive: true, mode: 0o700 })
-      for (const name of ["storage", "snapshot", "worktree", "repos", "log", "bin"]) {
-        await mkdir(join(source, name), { recursive: true, mode: 0o700 })
-        await linkResource(join(source, name), join(root, "data", "opencode", name))
-      }
-      runtimeEnv.OPENCODE_AUTH_CONTENT = ""
-      const path = join(root, "data", "opencode", "auth.json")
-      const dueAt = await withOpenCodeCredentials(profile, auth)
-      await atomicWriteJson(path, auth)
-      const entry = openCode.get(profile) ?? { path, dueAt, usedAt: 0 }
-      entry.dueAt = dueAt
-      openCode.set(profile, entry)
-      keepOpenCodeCurrent(entry)
-      return {
-        ...base,
-        env: runtimeEnv,
-        beforeTurn: async () => {
-          keepOpenCodeCurrent(entry)
-          await refreshOpenCode(profile)
-        }
-      }
-    } else {
-      runtimeEnv.GROK_HOME = root
-      runtimeEnv.GROK_AUTH_PATH = join(root, "auth.json")
-      const grokUnset = [
-        "GROK_AUTH",
-        ...(grokApiKey ? ["GROK_AUTH_PROVIDER_COMMAND"] : ["XAI_API_KEY"])
-      ]
-      for (const name of grokUnset) delete runtimeEnv[name]
-      unsetEnv = [...new Set([...(base.unsetEnv ?? []), ...grokUnset])]
-      if (grokApiKey) runtimeEnv.XAI_API_KEY = grokApiKey
-      await atomicWriteJson(join(root, "auth.json"), {})
-      const source = dirname(nativePath)
-      await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
-      for (const name of ["sessions", "config.toml"]) {
-        await linkResource(join(source, name), join(root, name))
-      }
-      if (grokApiKey) return { ...base, env: runtimeEnv, unsetEnv }
-      if (!manifest.providers.xai) {
-        runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = "false"
-        return { ...base, env: runtimeEnv, unsetEnv }
-      }
-      const managed = manifest.providers.xai
-      const curlConfig = join(root, "curl.conf")
-      await script(
-        curlConfig,
-        `url = ${JSON.stringify(url)}\nheader = ${JSON.stringify(`Authorization: Bearer ${managed.capability}`)}\nheader = "Content-Type: application/json"\nrequest = "POST"\nsilent\nshow-error\nfail\nmax-time = 6\n`
-      )
-      const command = join(root, "token.sh")
-      await script(
-        command,
-        `#!/bin/sh\nif [ "\${GROK_AUTH_EXPIRED:-0}" = "1" ]; then\n  exec curl --config ${shellQuote(curlConfig)} --data '{"force":true}'\nfi\nexec curl --config ${shellQuote(curlConfig)} --data '{}'\n`
-      )
-      runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = `/bin/sh ${shellQuote(command)}`
-      runtimeEnv.GROK_AUTH_PROVIDER_LABEL = "Codevisor"
-    }
-    return { ...base, env: runtimeEnv, ...(unsetEnv === undefined ? {} : { unsetEnv }) }
+    if (harness === "pi") return materializePi(profile, nativePath, base)
+    if (harness === "opencode") return materializeOpenCode(profile, nativePath, base, env)
+    return materializeGrok(profile, nativePath, base)
   }
   return {
     materialize: (...args: Parameters<typeof materialize>) =>
@@ -374,4 +412,57 @@ export const makeSharedProviderRuntime = (options: {
       }
     }
   }
+}
+
+const privateDirectory = { recursive: true, mode: 0o700 }
+const piResources = ["sessions", "skills", "prompts", "themes", "models.json", "AGENTS.md"]
+const openCodeResources = ["storage", "snapshot", "worktree", "repos", "log", "bin"]
+
+const providerAuthRoot = (dataDir: string, harness: ProviderOAuthHarness, profile: string) =>
+  join(dataDir, "provider-auth", harness, providerDigest(profile))
+
+const resourceLinks = (
+  source: string,
+  destination: string,
+  names: ReadonlyArray<string>
+): ReadonlyArray<ResourceLink> =>
+  names.map((name) => ({ source: join(source, name), destination: join(destination, name) }))
+
+const shareGrant = (
+  auth: Record<string, unknown>,
+  manifest: ProviderManifest,
+  row: SharedProviderRecord,
+  cap: Capability,
+  token: SharedTokenBundle
+): void => {
+  auth[row.providerId] = providerCredential(token, MANAGED_REFRESH_PREFIX + cap.capability)
+  const endpoint = providerTokenEndpoint(row.providerId)
+  manifest.providers[row.providerId] = {
+    capability: cap.capability,
+    access: token.accessToken,
+    ...(endpoint ? { endpoint } : {})
+  }
+}
+
+const piRuntimeSettings = (settings: Record<string, unknown>, source: string) => {
+  resolvePiResourcePaths(settings, source)
+  const extensions = Array.isArray(settings.extensions) ? settings.extensions : []
+  return { ...settings, extensions: [...extensions, join(source, "extensions")] }
+}
+
+const openCodeEnv = (
+  base: HarnessAccountContext,
+  root: string,
+  source: string,
+  env: NodeJS.ProcessEnv
+): Record<string, string> => ({
+  ...base.env,
+  XDG_DATA_HOME: join(root, "data"),
+  OPENCODE_DB: openCodeDatabase(source, env),
+  OPENCODE_AUTH_CONTENT: ""
+})
+
+const openCodeDatabase = (source: string, env: NodeJS.ProcessEnv): string => {
+  const database = env.OPENCODE_DB || "opencode.db"
+  return database === ":memory:" ? database : resolve(source, database)
 }
