@@ -177,7 +177,7 @@ const configSelectionsJson = (sqlite: ServiceContext["sqlite"], id: string): str
 
 const configSelectionRows = rowReader({ config_selections: text })
 
-const sessionListSql = (summarySelect: string): string =>
+export const sessionListSql = (summarySelect: string): string =>
   `${summarySelect} order by coalesce(sessions.updated_at, sessions.created_at) desc`
 
 const sessionSql = {

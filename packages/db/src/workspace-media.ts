@@ -93,12 +93,7 @@ export const makeWorkspaceMediaService = (
       ),
     recordMediaDuration: (sha256, durationMs) =>
       attempt("recordMediaDuration", () => {
-        sqlite
-          .prepare(
-            `insert into media_durations (sha256, duration_ms) values (?, ?)
-              on conflict (sha256) do update set duration_ms = excluded.duration_ms`
-          )
-          .run(sha256, durationMs ?? null)
+        sqlite.prepare(mediaDurationUpsertSql).run(sha256, durationMs ?? null)
       }),
     listWorkspaceMessageTexts: (workspaceId, before, limit) =>
       attempt("listWorkspaceMessageTexts", () =>
@@ -228,3 +223,6 @@ const workspaceFileEditsSql = `with edits as (
                  where recency = 1
                  order by updated_at desc, path
                  limit @limit`
+
+const mediaDurationUpsertSql = `insert into media_durations (sha256, duration_ms) values (?, ?)
+              on conflict (sha256) do update set duration_ms = excluded.duration_ms`

@@ -24,27 +24,7 @@ const sidebarStateRows = rowReader({ sidebar_state: Schema.is(SessionSidebarStat
 export const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
 
 const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
-  return sidebarInputRows.one(
-    sqlite
-      .prepare(
-        `select s.pending_question, s.background_tasks,
-         coalesce(sa.attention_revision, 0) as attention_revision,
-         coalesce(sa.turn_active, 0) as turn_active,
-         coalesce(sa.runtime_state, 'idle') as runtime_state,
-         coalesce(sa.has_runtime_state, 0) as has_runtime_state,
-         coalesce(sa.pending_plan_approval, 0) as pending_plan_approval,
-         coalesce(sa.errored, 0) as errored,
-         coalesce(sa.pending_finish, 0) as pending_finish,
-         coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
-         coalesce(rs.manually_unread, 0) as manually_unread
-       from sessions s
-       left join session_attention sa on sa.session_id = s.id
-       left join session_read_state rs
-         on rs.session_id = s.id and rs.reader_id = 'owner'
-       where s.id = ?`
-      )
-      .get(sessionId)
-  )
+  return sidebarInputRows.one(sqlite.prepare(sidebarSql.inputs).get(sessionId))
 }
 
 const sidebarStateFromRow = (state: ReturnType<typeof readSidebarState>): SessionSidebarState => {
@@ -73,12 +53,30 @@ export const projectSessionSidebarState = (
   changedAt: string
 ): boolean => {
   const next = sidebarStateFromRow(readSidebarState(sqlite, sessionId))
-  const current = sidebarStateRows.one(
-    sqlite.prepare("select sidebar_state from sessions where id = ?").get(sessionId)
-  )
-  if (current.sidebar_state === next) return false
-  sqlite
-    .prepare("update sessions set sidebar_state = ?, sidebar_state_changed_at = ? where id = ?")
-    .run(next, changedAt, sessionId)
+  if (storedSidebarState(sqlite, sessionId) === next) return false
+  sqlite.prepare(sidebarSql.update).run(next, changedAt, sessionId)
   return true
+}
+
+const storedSidebarState = (sqlite: Database.Database, sessionId: string): SessionSidebarState =>
+  sidebarStateRows.one(sqlite.prepare(sidebarSql.current).get(sessionId)).sidebar_state
+
+const sidebarSql = {
+  inputs: `select s.pending_question, s.background_tasks,
+         coalesce(sa.attention_revision, 0) as attention_revision,
+         coalesce(sa.turn_active, 0) as turn_active,
+         coalesce(sa.runtime_state, 'idle') as runtime_state,
+         coalesce(sa.has_runtime_state, 0) as has_runtime_state,
+         coalesce(sa.pending_plan_approval, 0) as pending_plan_approval,
+         coalesce(sa.errored, 0) as errored,
+         coalesce(sa.pending_finish, 0) as pending_finish,
+         coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
+         coalesce(rs.manually_unread, 0) as manually_unread
+       from sessions s
+       left join session_attention sa on sa.session_id = s.id
+       left join session_read_state rs
+         on rs.session_id = s.id and rs.reader_id = 'owner'
+       where s.id = ?`,
+  current: "select sidebar_state from sessions where id = ?",
+  update: "update sessions set sidebar_state = ?, sidebar_state_changed_at = ? where id = ?"
 }

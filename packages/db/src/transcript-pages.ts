@@ -48,20 +48,23 @@ const resolveTranscriptPosition = (
   sessionId: string,
   rawBefore: number | string | undefined
 ) => {
-  const before =
-    typeof rawBefore === "string"
-      ? positionRows.maybe(
-          sqlite
-            .prepare(
-              "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)"
-            )
-            .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore))
-        )?.position
-      : rawBefore
-  if (rawBefore !== undefined && before === undefined)
-    throw new Error("Transcript cursor item no longer exists")
+  if (typeof rawBefore !== "string") return rawBefore
+
+  const before = cursorItemPosition(sqlite, sessionId, rawBefore)
+  if (before === undefined) throw new Error("Transcript cursor item no longer exists")
   return before
 }
+
+const cursorItemPosition = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  rawItemId: string
+): number | undefined =>
+  positionRows.maybe(
+    sqlite
+      .prepare(transcriptPageSql.cursorItemPosition)
+      .get(sessionId, canonicalUuid(rawItemId), canonicalUuid(rawItemId))
+  )?.position
 
 const transcriptRowsWithinBudget = (
   candidates: ReadonlyArray<ChatItemRow>,
@@ -150,18 +153,12 @@ const transcriptPageItem = (
 ) => {
   const item = transcriptFromChatRow(row)
   if (row.role !== "assistant") {
-    const entry = entryKeyRows.maybe(
-      sqlite
-        .prepare(
-          "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
-        )
-        .get(row.id)
-    )
+    const entryKey = firstTextEntryKey(sqlite, row.id)
     return {
       ...item,
-      ...(entry === undefined
+      ...(entryKey === undefined
         ? {}
-        : { textResource: transcriptTextResource(sqlite, row.id, entry.entry_key) })
+        : { textResource: transcriptTextResource(sqlite, row.id, entryKey) })
     }
   }
   const summary = chatAssistantSummary(sqlite, sessionId, row.id)
@@ -181,6 +178,9 @@ const transcriptPageItem = (
   }
 }
 
+const firstTextEntryKey = (sqlite: ServiceContext["sqlite"], itemId: string): string | undefined =>
+  entryKeyRows.maybe(sqlite.prepare(transcriptPageSql.firstTextEntry).get(itemId))?.entry_key
+
 const readTranscriptPageRows = (
   sqlite: ServiceContext["sqlite"],
   sessionId: string,
@@ -189,20 +189,7 @@ const readTranscriptPageRows = (
   forward: boolean
 ) => {
   return chatItemRows.all(
-    sqlite
-      .prepare(
-        `select chat_items.*,
-               coalesce((select substr(text, 1, 24000) from chat_parts
-                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
-               (select substr(text, 1, 24000) from chat_parts
-                 where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
-             from chat_items
-             where session_id = ? and role in ('user', 'assistant')
-               and ${renderableChatItemPredicate}
-               and (? is null or position ${forward ? ">" : "<"} ?)
-             order by position ${forward ? "asc" : "desc"} limit ?`
-      )
-      .all(sessionId, before ?? null, before ?? null, bounded + 1)
+    sqlite.prepare(pageRowsSql(forward)).all(sessionId, before ?? null, before ?? null, bounded + 1)
   )
 }
 
@@ -213,12 +200,7 @@ const hasOlderRenderableTranscriptItem = (
 ) => {
   return (
     first !== undefined &&
-    sqlite
-      .prepare(
-        `select 1 from chat_items where session_id = ?
-          and ${renderableChatItemPredicate} and position < ? limit 1`
-      )
-      .get(sessionId, first) !== undefined
+    sqlite.prepare(transcriptPageSql.olderRenderableItem).get(sessionId, first) !== undefined
   )
 }
 
@@ -229,36 +211,17 @@ const hasNewerRenderableTranscriptItem = (
 ) => {
   return (
     last !== undefined &&
-    sqlite
-      .prepare(
-        `select 1 from chat_items where session_id = ?
-          and ${renderableChatItemPredicate} and position > ? limit 1`
-      )
-      .get(sessionId, last) !== undefined
+    sqlite.prepare(transcriptPageSql.newerRenderableItem).get(sessionId, last) !== undefined
   )
 }
 
 const readTranscriptPageState = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
-  return pageStateRows.one(
-    sqlite
-      .prepare(
-        `select revision as cursor, pending_question, background_tasks, session_plan
-             from sessions where id = ?`
-      )
-      .get(sessionId)
-  )
+  return pageStateRows.one(sqlite.prepare(transcriptPageSql.pageState).get(sessionId))
 }
 
 const readTranscriptStateUpdates = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
   return payloadRows
-    .all(
-      sqlite
-        .prepare(
-          `select payload from session_state where session_id = ?
-            and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
-        )
-        .all(sessionId)
-    )
+    .all(sqlite.prepare(transcriptPageSql.stateUpdates).all(sessionId))
     .map((row) => JSON.parse(row.payload) as unknown)
 }
 
@@ -315,4 +278,31 @@ export const readTranscriptPage = (
   const pageRows = transcriptRowsWithinBudget(candidates, bounded)
   const ordered = forward ? pageRows : pageRows.toReversed()
   return makeTranscriptPage(sqlite, sessionId, session, ordered)
+}
+
+const pageRowsSql = (forward: boolean): string =>
+  `select chat_items.*,
+               coalesce((select substr(text, 1, 24000) from chat_parts
+                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
+               (select substr(text, 1, 24000) from chat_parts
+                 where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
+             from chat_items
+             where session_id = ? and role in ('user', 'assistant')
+               and ${renderableChatItemPredicate}
+               and (? is null or position ${forward ? ">" : "<"} ?)
+             order by position ${forward ? "asc" : "desc"} limit ?`
+
+const transcriptPageSql = {
+  cursorItemPosition:
+    "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)",
+  firstTextEntry:
+    "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1",
+  olderRenderableItem: `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position < ? limit 1`,
+  newerRenderableItem: `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position > ? limit 1`,
+  pageState: `select revision as cursor, pending_question, background_tasks, session_plan
+             from sessions where id = ?`,
+  stateUpdates: `select payload from session_state where session_id = ?
+            and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
 }

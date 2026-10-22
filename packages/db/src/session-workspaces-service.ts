@@ -17,18 +17,14 @@ function writeSessionMembership(
   targetWorkspaceId: string | null,
   sessionId: string
 ): void {
-  const result = sqlite
-    .prepare("update sessions set workspace_id = ? where id = ?")
-    .run(targetWorkspaceId, id)
+  const result = sqlite.prepare(sessionPaneSql.setWorkspace).run(targetWorkspaceId, id)
   if (result.changes === 0) {
     throw new Error(`Session not found: ${sessionId}`)
   }
 }
 
 function removeSessionPane(sqlite: ServiceContext["sqlite"], id: string): void {
-  sqlite
-    .prepare("delete from workspace_panes where resource_kind = 'session' and resource_id = ?")
-    .run(id)
+  sqlite.prepare(sessionPaneSql.delete).run(id)
 }
 
 function moveSessionPane(
@@ -37,9 +33,7 @@ function moveSessionPane(
   existing: { readonly id: string; readonly workspace_id: string }
 ): void {
   sqlite
-    .prepare(
-      "update workspace_panes set workspace_id = ?, position = ?, revision = revision + 1, updated_at = ? where id = ?"
-    )
+    .prepare(sessionPaneSql.move)
     .run(
       targetWorkspaceId,
       nextPanePositionIn(sqlite, targetWorkspaceId, existing.id),
@@ -53,16 +47,9 @@ function createSessionPane(
   id: string,
   targetWorkspaceId: string
 ): void {
-  const session = sessionTitleRows.one(
-    sqlite.prepare("select title, created_at from sessions where id = ?").get(id)
-  )
+  const session = sessionTitleAndCreation(sqlite, id)
   sqlite
-    .prepare(
-      `insert into workspace_panes (
-                 id, workspace_id, provider_id, pane_type, title,
-                 resource_kind, resource_id, created_at, position
-               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`
-    )
+    .prepare(sessionPaneSql.insert)
     .run(
       id,
       targetWorkspaceId,
@@ -89,13 +76,7 @@ export const makeSessionWorkspacesService = (
             removeSessionPane(sqlite, id)
             return
           }
-          const existing = sessionPaneRows.maybe(
-            sqlite
-              .prepare(
-                "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
-              )
-              .get(id)
-          )
+          const existing = existingSessionPane(sqlite, id)
           if (existing?.workspace_id === targetWorkspaceId) return
           if (existing !== undefined) {
             moveSessionPane(sqlite, targetWorkspaceId, existing)
@@ -105,4 +86,23 @@ export const makeSessionWorkspacesService = (
         })()
       })
   }
+}
+
+const sessionTitleAndCreation = (sqlite: ServiceContext["sqlite"], id: string) =>
+  sessionTitleRows.one(sqlite.prepare(sessionPaneSql.sessionTitle).get(id))
+
+const existingSessionPane = (sqlite: ServiceContext["sqlite"], sessionId: string) =>
+  sessionPaneRows.maybe(sqlite.prepare(sessionPaneSql.bySession).get(sessionId))
+
+const sessionPaneSql = {
+  setWorkspace: "update sessions set workspace_id = ? where id = ?",
+  delete: "delete from workspace_panes where resource_kind = 'session' and resource_id = ?",
+  move: "update workspace_panes set workspace_id = ?, position = ?, revision = revision + 1, updated_at = ? where id = ?",
+  sessionTitle: "select title, created_at from sessions where id = ?",
+  insert: `insert into workspace_panes (
+                 id, workspace_id, provider_id, pane_type, title,
+                 resource_kind, resource_id, created_at, position
+               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`,
+  bySession:
+    "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
 }

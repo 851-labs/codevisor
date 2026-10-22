@@ -8,7 +8,7 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
-import { readInstanceMeta } from "./common-rows.js"
+import { instanceMetaSql, readInstanceMeta } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import { parseJsonColumn } from "./json-column.js"
 import type { ServiceContext } from "./service-context.js"
@@ -62,11 +62,7 @@ export const makeBrowserStateService = ({
     return value === undefined ? undefined : parseJsonColumn(schema, value)
   }
   const write = (key: string, value: unknown) =>
-    sqlite
-      .prepare(
-        "insert into instance_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value"
-      )
-      .run(key, JSON.stringify(value))
+    sqlite.prepare(instanceMetaSql.upsert).run(key, JSON.stringify(value))
   return {
     exchangeBrowserCookies: (mutations) =>
       attempt("exchangeBrowserCookies", () =>

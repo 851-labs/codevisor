@@ -35,6 +35,8 @@ const entryRows = rowReader({
   bytes: integer
 })
 
+type EntryRow = ReturnType<typeof entryRows.one>
+
 const decodePageCursor = (after: string): Cursor => {
   const cursor: unknown = JSON.parse(Buffer.from(after, "base64url").toString())
   if (!isCursor(cursor) || !Number.isSafeInteger(cursor.position)) {
@@ -55,21 +57,9 @@ export const readTranscriptStatePage = (
   after?: string
 ): TranscriptItemDetails | undefined =>
   db.transaction(() => {
-    const item = itemCursorRows.maybe(
-      db
-        .prepare(
-          `select chat_items.revision, sessions.revision as cursor from chat_items
-    join sessions on sessions.id = chat_items.session_id where chat_items.id = ? and session_id = ?`
-        )
-        .get(itemId, sessionId)
-    )
+    const item = itemRevisions(db, sessionId, itemId)
     if (item === undefined) return undefined
-    const cursor: Cursor =
-      after === "latest"
-        ? { position: Number.MAX_SAFE_INTEGER, key: "", reverse: true }
-        : after === undefined
-          ? { position: -1, key: "" }
-          : decodePageCursor(after)
+    const cursor = pageCursor(after)
     const entries: Array<{
       key: string
       position: number
@@ -78,28 +68,12 @@ export const readTranscriptStatePage = (
     }> = []
     let bytes = 0
     const reverse = cursor.reverse === true
-    const rows = entryRows.all(
-      db
-        .prepare(
-          `select entry_key, position, revision, category, text_length, length(cast(payload as blob)) as bytes
-    from transcript_entries where item_id = ? and (position, entry_key) ${reverse ? "<" : ">"} (?, ?)
-    order by position ${reverse ? "desc" : "asc"}, entry_key ${reverse ? "desc" : "asc"} limit 33`
-        )
-        .all(itemId, cursor.position, cursor.key)
-    )
+    const rows = entriesPastCursor(db, itemId, cursor, reverse)
     for (const row of rows) {
       if (entries.length >= 32 || bytes >= maxPageBytes) {
         break
       }
-      let payload = inlineTranscriptFields(
-        parseJsonObject(
-          payloadRows.one(
-            db
-              .prepare("select payload from transcript_entries where item_id = ? and entry_key = ?")
-              .get(itemId, row.entry_key)
-          ).payload
-        )
-      )
+      let payload = inlineTranscriptFields(parseJsonObject(entryPayload(db, itemId, row.entry_key)))
       const resource = transcriptBodyResource(db, itemId, row.entry_key)
       if (resource !== undefined) payload.detailResource = resource
       if (row.category === "tool") {
@@ -143,22 +117,8 @@ export const readTranscriptStatePage = (
     if (reverse) entries.reverse()
     const first = entries[0]
     const end = entries.at(-1)
-    const hasPrevious =
-      first !== undefined &&
-      db
-        .prepare(
-          `select 1 from transcript_entries where item_id = ?
-    and (position, entry_key) < (?, ?) limit 1`
-        )
-        .get(itemId, first.position, first.key) !== undefined
-    const hasNext =
-      end !== undefined &&
-      db
-        .prepare(
-          `select 1 from transcript_entries where item_id = ?
-    and (position, entry_key) > (?, ?) limit 1`
-        )
-        .get(itemId, end.position, end.key) !== undefined
+    const hasPrevious = first !== undefined && hasEntryBefore(db, itemId, first)
+    const hasNext = end !== undefined && hasEntryAfter(db, itemId, end)
     const included = new Set(entries.map((entry) => entry.key))
     const parents = new Set(
       entries
@@ -207,3 +167,49 @@ export const readTranscriptStatePage = (
       ...(hasNext ? { nextAfter: encodePageCursor(end) } : {})
     }
   })()
+
+const pageCursor = (after: string | undefined): Cursor => {
+  if (after === "latest") return { position: Number.MAX_SAFE_INTEGER, key: "", reverse: true }
+  if (after === undefined) return { position: -1, key: "" }
+  return decodePageCursor(after)
+}
+
+const itemRevisions = (db: Database.Database, sessionId: string, itemId: string) =>
+  itemCursorRows.maybe(db.prepare(statePageSql.itemRevisions).get(itemId, sessionId))
+
+const entriesPastCursor = (
+  db: Database.Database,
+  itemId: string,
+  cursor: Cursor,
+  reverse: boolean
+): ReadonlyArray<EntryRow> =>
+  entryRows.all(db.prepare(entryPageSql(reverse)).all(itemId, cursor.position, cursor.key))
+
+const entryPayload = (db: Database.Database, itemId: string, entryKey: string): string =>
+  payloadRows.one(db.prepare(statePageSql.entryPayload).get(itemId, entryKey)).payload
+
+const hasEntryBefore = (db: Database.Database, itemId: string, entry: EntryPosition): boolean =>
+  db.prepare(statePageSql.entryBefore).get(itemId, entry.position, entry.key) !== undefined
+
+const hasEntryAfter = (db: Database.Database, itemId: string, entry: EntryPosition): boolean =>
+  db.prepare(statePageSql.entryAfter).get(itemId, entry.position, entry.key) !== undefined
+
+interface EntryPosition {
+  readonly position: number
+  readonly key: string
+}
+
+const entryPageSql = (reverse: boolean): string =>
+  `select entry_key, position, revision, category, text_length, length(cast(payload as blob)) as bytes
+    from transcript_entries where item_id = ? and (position, entry_key) ${reverse ? "<" : ">"} (?, ?)
+    order by position ${reverse ? "desc" : "asc"}, entry_key ${reverse ? "desc" : "asc"} limit 33`
+
+const statePageSql = {
+  itemRevisions: `select chat_items.revision, sessions.revision as cursor from chat_items
+    join sessions on sessions.id = chat_items.session_id where chat_items.id = ? and session_id = ?`,
+  entryPayload: "select payload from transcript_entries where item_id = ? and entry_key = ?",
+  entryBefore: `select 1 from transcript_entries where item_id = ?
+    and (position, entry_key) < (?, ?) limit 1`,
+  entryAfter: `select 1 from transcript_entries where item_id = ?
+    and (position, entry_key) > (?, ?) limit 1`
+}

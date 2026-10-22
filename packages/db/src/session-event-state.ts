@@ -19,9 +19,7 @@ const projectSessionPlan = (
 ): void => {
   const sessionPlan = sessionPlanFromPayload(payload)
   if (sessionPlan !== undefined) {
-    sqlite
-      .prepare("update sessions set session_plan = ? where id = ?")
-      .run(JSON.stringify(sessionPlan), sessionId)
+    sqlite.prepare(sessionStateSql.setPlan).run(JSON.stringify(sessionPlan), sessionId)
   }
 }
 
@@ -38,28 +36,21 @@ const projectPendingQuestion = (
     typeof payload.questionId === "string" &&
     Array.isArray(payload.questions)
   ) {
-    sqlite
-      .prepare("update sessions set pending_question = ? where id = ?")
-      .run(event.payload, sessionId)
+    sqlite.prepare(sessionStateSql.setPendingQuestion).run(event.payload, sessionId)
   } else if (
     event.kind === "session.output" &&
     update === "question_resolved" &&
     typeof payload.questionId === "string"
   ) {
-    const current = pendingQuestionRows.one(
-      sqlite.prepare("select pending_question from sessions where id = ?").get(sessionId)
-    )
-    const projected =
-      current.pending_question === null ? undefined : parseJsonRecord(current.pending_question)
-    if (projected?.questionId === payload.questionId) {
-      sqlite.prepare("update sessions set pending_question = null where id = ?").run(sessionId)
-    }
+    const current = pendingQuestionJson(sqlite, sessionId)
+    const projected = current === null ? undefined : parseJsonRecord(current)
+    if (projected?.questionId === payload.questionId) clearPendingQuestion(sqlite, sessionId)
   } else if (
     event.kind === "session.error" ||
     (event.kind === "session.updated" &&
       (payload.turnState === "ended" || typeof payload.stopReason === "string"))
   ) {
-    sqlite.prepare("update sessions set pending_question = null where id = ?").run(sessionId)
+    clearPendingQuestion(sqlite, sessionId)
   }
 }
 
@@ -71,19 +62,7 @@ const projectSessionUsage = (
   const cost = jsonRecord(payload.cost)
   const costKind = cost?.kind === "reported" || cost?.kind === "estimated" ? cost.kind : null
   sqlite
-    .prepare(
-      `update sessions set
-           usage_used = coalesce(?, usage_used), usage_size = coalesce(?, usage_size),
-           input_tokens = coalesce(?, input_tokens),
-           cached_input_tokens = coalesce(?, cached_input_tokens),
-           output_tokens = coalesce(?, output_tokens),
-           reasoning_output_tokens = coalesce(?, reasoning_output_tokens),
-           total_tokens = coalesce(?, total_tokens),
-           cost_amount = coalesce(?, cost_amount),
-           cost_currency = coalesce(?, cost_currency),
-           cost_kind = coalesce(?, cost_kind)
-         where id = ?`
-    )
+    .prepare(sessionStateSql.addUsage)
     .run(
       finite(payload.used),
       finite(payload.size),
@@ -112,7 +91,7 @@ export const projectSessionEventState = (
   projectPendingQuestion(sqlite, event, payload, sessionId, update)
   if (event.kind === "session.updated" && Array.isArray(payload.backgroundTasks)) {
     sqlite
-      .prepare("update sessions set background_tasks = ? where id = ?")
+      .prepare(sessionStateSql.setBackgroundTasks)
       .run(JSON.stringify(payload.backgroundTasks), sessionId)
   }
   if (
@@ -121,4 +100,31 @@ export const projectSessionEventState = (
   ) {
     projectSessionUsage(sqlite, payload, sessionId)
   }
+}
+
+const pendingQuestionJson = (sqlite: Database.Database, sessionId: string): string | null =>
+  pendingQuestionRows.one(sqlite.prepare(sessionStateSql.pendingQuestion).get(sessionId))
+    .pending_question
+
+const clearPendingQuestion = (sqlite: Database.Database, sessionId: string): void => {
+  sqlite.prepare(sessionStateSql.clearPendingQuestion).run(sessionId)
+}
+
+const sessionStateSql = {
+  setPlan: "update sessions set session_plan = ? where id = ?",
+  setPendingQuestion: "update sessions set pending_question = ? where id = ?",
+  pendingQuestion: "select pending_question from sessions where id = ?",
+  clearPendingQuestion: "update sessions set pending_question = null where id = ?",
+  addUsage: `update sessions set
+           usage_used = coalesce(?, usage_used), usage_size = coalesce(?, usage_size),
+           input_tokens = coalesce(?, input_tokens),
+           cached_input_tokens = coalesce(?, cached_input_tokens),
+           output_tokens = coalesce(?, output_tokens),
+           reasoning_output_tokens = coalesce(?, reasoning_output_tokens),
+           total_tokens = coalesce(?, total_tokens),
+           cost_amount = coalesce(?, cost_amount),
+           cost_currency = coalesce(?, cost_currency),
+           cost_kind = coalesce(?, cost_kind)
+         where id = ?`,
+  setBackgroundTasks: "update sessions set background_tasks = ? where id = ?"
 }

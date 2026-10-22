@@ -26,13 +26,7 @@ const prefix = (text: string, count: number): string => {
 }
 
 const readLastTranscriptChunk = (db: Database.Database, itemId: string, key: string) => {
-  return lastChunkRows.maybe(
-    db
-      .prepare(
-        "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1"
-      )
-      .get(itemId, key)
-  )
+  return lastChunkRows.maybe(db.prepare(textChunkSql.last).get(itemId, key))
 }
 
 const extendTranscriptTail = (
@@ -43,9 +37,7 @@ const extendTranscriptTail = (
   last: { position: number; text: string; char_offset: number }
 ): number => {
   const take = prefix(text, transcriptTextBlockSize - last.text.length)
-  db.prepare(
-    "update transcript_text_chunks set text = text || ? where item_id = ? and entry_key = ? and position = ?"
-  ).run(take, itemId, key, last.position)
+  db.prepare(textChunkSql.extend).run(take, itemId, key, last.position)
   return take.length
 }
 
@@ -58,9 +50,7 @@ const appendRemainingTranscriptBlocks = (
   baseOffset: number,
   offset: number
 ): void => {
-  const insert = db.prepare(
-    "insert into transcript_text_chunks (item_id, entry_key, position, char_offset, text) values (?, ?, ?, ?, ?)"
-  )
+  const insert = db.prepare(textChunkSql.insert)
   while (offset < text.length) {
     const block = prefix(text.slice(offset), transcriptTextBlockSize)
     insert.run(itemId, key, position++, baseOffset + offset, block)
@@ -75,11 +65,7 @@ export const appendTranscriptText = (
   text: string,
   replace = false
 ): void => {
-  if (replace)
-    db.prepare("delete from transcript_text_chunks where item_id = ? and entry_key = ?").run(
-      itemId,
-      key
-    )
+  if (replace) db.prepare(textChunkSql.deleteEntry).run(itemId, key)
   const last = readLastTranscriptChunk(db, itemId, key)
   let position = last?.position ?? 0
   const baseOffset = last === undefined ? 0 : last.char_offset + last.text.length
@@ -89,9 +75,7 @@ export const appendTranscriptText = (
   }
   if (last !== undefined) position += 1
   appendRemainingTranscriptBlocks(db, itemId, key, text, position, baseOffset, offset)
-  db.prepare(
-    `update transcript_entries set text_length = ${replace ? "?" : "text_length + ?"} where item_id = ? and entry_key = ?`
-  ).run(text.length, itemId, key)
+  db.prepare(textLengthSql(replace)).run(text.length, itemId, key)
 }
 
 export const readTranscriptText = (
@@ -102,11 +86,7 @@ export const readTranscriptText = (
 ): string => {
   const blocks: string[] = []
   let remaining = limit ?? Number.MAX_SAFE_INTEGER
-  for (const raw of db
-    .prepare(
-      "select text from transcript_text_chunks where item_id = ? and entry_key = ? order by position"
-    )
-    .iterate(itemId, key)) {
+  for (const raw of db.prepare(textChunkSql.entryChunks).iterate(itemId, key)) {
     const row = chunkTextRows.one(raw)
     const text = prefix(row.text, remaining)
     blocks.push(text)
@@ -122,15 +102,7 @@ const readTranscriptPatchHead = (
   parent: string,
   revision: number
 ) => {
-  return patchHeadRows.maybe(
-    db
-      .prepare(
-        `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
-    join transcript_entries e on e.item_id = h.item_id and e.entry_key = h.entry_key
-    where h.item_id = ? and h.parent_id = ? and e.revision = ?`
-      )
-      .get(itemId, parent, revision)
-  )
+  return patchHeadRows.maybe(db.prepare(patchHeadSql).get(itemId, parent, revision))
 }
 
 const makeTranscriptEventPatch = (
@@ -178,3 +150,21 @@ export const textPatchForEvent = (
   if (row === undefined) return undefined
   return makeTranscriptEventPatch(db, itemId, revision, payload, row)
 }
+
+const textLengthSql = (replace: boolean): string =>
+  `update transcript_entries set text_length = ${replace ? "?" : "text_length + ?"} where item_id = ? and entry_key = ?`
+
+const textChunkSql = {
+  last: "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1",
+  extend:
+    "update transcript_text_chunks set text = text || ? where item_id = ? and entry_key = ? and position = ?",
+  insert:
+    "insert into transcript_text_chunks (item_id, entry_key, position, char_offset, text) values (?, ?, ?, ?, ?)",
+  deleteEntry: "delete from transcript_text_chunks where item_id = ? and entry_key = ?",
+  entryChunks:
+    "select text from transcript_text_chunks where item_id = ? and entry_key = ? order by position"
+}
+
+const patchHeadSql = `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
+    join transcript_entries e on e.item_id = h.item_id and e.entry_key = h.entry_key
+    where h.item_id = ? and h.parent_id = ? and e.revision = ?`

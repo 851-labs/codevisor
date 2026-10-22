@@ -24,14 +24,10 @@ const projectIdRows = rowReader({ project_id: text })
 const sessionProjectRows = rowReader({ id: text, project_id: text })
 
 export const readPane = (sqlite: Database.Database, id: string) =>
-  workspacePaneFromRow(
-    workspacePaneRows.one(sqlite.prepare("select * from workspace_panes where id = ?").get(id))
-  )
+  workspacePaneFromRow(workspacePaneRows.one(sqlite.prepare(paneSql.byId).get(id)))
 
 export const listWorkspacePanes = (sqlite: Database.Database) =>
-  workspacePaneRows
-    .all(sqlite.prepare("select * from workspace_panes order by position, created_at, id").all())
-    .map(workspacePaneFromRow)
+  workspacePaneRows.all(sqlite.prepare(paneSql.ordered).all()).map(workspacePaneFromRow)
 
 const upsertResourceId = (
   sqlite: Database.Database,
@@ -39,9 +35,7 @@ const upsertResourceId = (
   id: string,
   request: UpsertWorkspacePaneRequest
 ) => {
-  const existing = workspacePaneRows.maybe(
-    sqlite.prepare("select * from workspace_panes where id = ?").get(id)
-  )
+  const existing = paneRow(sqlite, id)
   if (existing !== undefined && existing.workspace_id !== workspaceId) {
     throw new Error(`Pane ${id} belongs to workspace ${existing.workspace_id}`)
   }
@@ -73,9 +67,7 @@ export const upsertWorkspacePane = (
 
 const requireScopedPane = (sqlite: Database.Database, workspaceId: string, paneId: string) => {
   const existing = workspacePaneRows.maybe(
-    sqlite
-      .prepare("select * from workspace_panes where id = ? and workspace_id = ?")
-      .get(paneId, workspaceId)
+    sqlite.prepare(paneSql.inWorkspace).get(paneId, workspaceId)
   )
   if (existing === undefined) {
     throw new Error(`Workspace pane not found: ${paneId}`)
@@ -136,11 +128,8 @@ export const deleteWorkspacePane = (
 ): void => {
   const workspaceId = canonicalUuid(rawWorkspaceId)
   const paneId = canonicalUuid(rawPaneId)
-  const workspace = sqlite.prepare("select id from workspaces where id = ?").get(workspaceId)
-  if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
-  sqlite
-    .prepare("delete from workspace_panes where id = ? and workspace_id = ?")
-    .run(paneId, workspaceId)
+  if (!workspaceExists(sqlite, workspaceId)) throw new Error(`Workspace not found: ${workspaceId}`)
+  sqlite.prepare(paneSql.delete).run(paneId, workspaceId)
 }
 
 const validatePromotion = (
@@ -149,16 +138,11 @@ const validatePromotion = (
   paneId: string,
   sessionId: string
 ): void => {
-  const pane = sqlite
-    .prepare("select id from workspace_panes where id = ? and workspace_id = ?")
-    .get(paneId, workspaceId)
-  if (pane === undefined) throw new Error(`Workspace pane not found: ${paneId}`)
-  const workspace = projectIdRows.maybe(
-    sqlite.prepare("select project_id from workspaces where id = ?").get(workspaceId)
-  )
-  const session = sessionProjectRows.maybe(
-    sqlite.prepare("select id, project_id from sessions where id = ?").get(sessionId)
-  )
+  if (!paneExists(sqlite, workspaceId, paneId)) {
+    throw new Error(`Workspace pane not found: ${paneId}`)
+  }
+  const workspace = workspaceProject(sqlite, workspaceId)
+  const session = sessionProject(sqlite, sessionId)
   if (session === undefined) throw new Error(`Session not found: ${sessionId}`)
   /* v8 ignore next */
   if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
@@ -186,4 +170,30 @@ export const promoteWorkspacePaneToSession = (
     assignPaneSession(sqlite, workspaceId, "session", sessionId)
   })()
   return readPane(sqlite, paneId)
+}
+
+const paneRow = (sqlite: Database.Database, id: string) =>
+  workspacePaneRows.maybe(sqlite.prepare(paneSql.byId).get(id))
+
+const workspaceExists = (sqlite: Database.Database, workspaceId: string): boolean =>
+  sqlite.prepare(paneSql.workspaceId).get(workspaceId) !== undefined
+
+const paneExists = (sqlite: Database.Database, workspaceId: string, paneId: string): boolean =>
+  sqlite.prepare(paneSql.idInWorkspace).get(paneId, workspaceId) !== undefined
+
+const workspaceProject = (sqlite: Database.Database, workspaceId: string) =>
+  projectIdRows.maybe(sqlite.prepare(paneSql.workspaceProject).get(workspaceId))
+
+const sessionProject = (sqlite: Database.Database, sessionId: string) =>
+  sessionProjectRows.maybe(sqlite.prepare(paneSql.sessionProject).get(sessionId))
+
+const paneSql = {
+  byId: "select * from workspace_panes where id = ?",
+  ordered: "select * from workspace_panes order by position, created_at, id",
+  inWorkspace: "select * from workspace_panes where id = ? and workspace_id = ?",
+  idInWorkspace: "select id from workspace_panes where id = ? and workspace_id = ?",
+  delete: "delete from workspace_panes where id = ? and workspace_id = ?",
+  workspaceId: "select id from workspaces where id = ?",
+  workspaceProject: "select project_id from workspaces where id = ?",
+  sessionProject: "select id, project_id from sessions where id = ?"
 }

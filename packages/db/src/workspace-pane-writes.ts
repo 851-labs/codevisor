@@ -12,23 +12,17 @@ export const discardConflictingPanes = (
   resourceId: string,
   targetWorkspaceId: string
 ): string | undefined => {
-  const replaced = panePositionRows.one(
-    sqlite
-      .prepare(
-        `select min(position) as position from workspace_panes
-         where id <> ? and resource_kind = ? and resource_id = ? and workspace_id = ?
-           and position <> ''`
-      )
-      .get(paneId, resourceKind, resourceId, targetWorkspaceId)
+  const replacedPosition = firstConflictingPosition(
+    sqlite,
+    paneId,
+    resourceKind,
+    resourceId,
+    targetWorkspaceId
   )
   sqlite
-    .prepare(
-      `delete from workspace_panes
-         where id <> ? and resource_kind = ? and resource_id = ?
-           and (workspace_id = ? or ? = 'session')`
-    )
+    .prepare(conflictingPaneSql.delete)
     .run(paneId, resourceKind, resourceId, targetWorkspaceId, resourceKind)
-  return replaced.position ?? undefined
+  return replacedPosition ?? undefined
 }
 
 const sameResource = `workspace_panes.resource_kind is excluded.resource_kind
@@ -151,6 +145,30 @@ export const assignPaneSession = (
   resourceId: string | null
 ): void => {
   if (resourceKind === "session" && resourceId !== null) {
-    sqlite.prepare("update sessions set workspace_id = ? where id = ?").run(workspaceId, resourceId)
+    sqlite.prepare(sessionWorkspaceSql).run(workspaceId, resourceId)
   }
 }
+
+const firstConflictingPosition = (
+  sqlite: Database.Database,
+  paneId: string,
+  resourceKind: string,
+  resourceId: string,
+  targetWorkspaceId: string
+): string | null =>
+  panePositionRows.one(
+    sqlite
+      .prepare(conflictingPaneSql.firstPosition)
+      .get(paneId, resourceKind, resourceId, targetWorkspaceId)
+  ).position
+
+const conflictingPaneSql = {
+  firstPosition: `select min(position) as position from workspace_panes
+         where id <> ? and resource_kind = ? and resource_id = ? and workspace_id = ?
+           and position <> ''`,
+  delete: `delete from workspace_panes
+         where id <> ? and resource_kind = ? and resource_id = ?
+           and (workspace_id = ? or ? = 'session')`
+}
+
+const sessionWorkspaceSql = "update sessions set workspace_id = ? where id = ?"

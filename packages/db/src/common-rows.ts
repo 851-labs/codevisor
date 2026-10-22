@@ -28,4 +28,10 @@ export const backfillJobRows = rowReader({
 })
 
 export const readInstanceMeta = (sqlite: Database.Database, key: string): string | undefined =>
-  valueRows.maybe(sqlite.prepare("select value from instance_meta where key = ?").get(key))?.value
+  valueRows.maybe(sqlite.prepare(instanceMetaSql.read).get(key))?.value
+
+export const instanceMetaSql = {
+  read: "select value from instance_meta where key = ?",
+  upsert:
+    "insert into instance_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value"
+}
