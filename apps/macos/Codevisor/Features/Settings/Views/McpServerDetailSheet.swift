@@ -5,71 +5,25 @@ import CodevisorUI
 struct McpServerDetailSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.settingsMachineId) private var settingsMachineId
-  let server: ServerMcpServer
-  let didChange: () async -> Void
+  let entryName: String
+  let machineId: String
+  let model: McpGlobalModel
   @State private var tools: [ServerMcpTool] = []
   @State private var isLoadingTools = false
   @State private var errorMessage: String?
   @State private var confirmingRemoval = false
 
   var body: some View {
+    if let entry = model.entry(named: entryName), let server = entry.server(on: machineId) {
+      content(server: server, status: model.row(for: entry, on: machineId, in: environment)?.status)
+    }
+  }
+
+  private func content(server: ServerMcpServer, status: McpFleet.MachineStatus?) -> some View {
     VStack(spacing: 0) {
-      HStack(spacing: 10) {
-        Image(systemName: server.connectionState == "connected" ? "checkmark.circle.fill" : "circle")
-          .foregroundStyle(
-            server.connectionState == "connected"
-              ? AnyShapeStyle(.green)
-              : AnyShapeStyle(.secondary)
-          )
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(server.name).font(.headline)
-          Text(connectionStateLabel)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
-        Spacer()
-      }
-      .padding(.horizontal, 20)
-      .padding(.top, 18)
+      McpServerDetailHeader(name: server.name, status: status)
       Form {
-        Section("Connection") {
-          if server.isBuiltIn {
-            LabeledContent("Provider", value: "Codevisor built-in")
-          } else {
-            LabeledContent("Transport", value: server.transport == "http" ? "HTTP" : "Local command")
-          }
-          if let url = server.url {
-            LabeledContent("Server URL") {
-              Text(url).textSelection(.enabled)
-            }
-          }
-          if let command = server.command {
-            LabeledContent("Command") {
-              Text(([command] + server.args).joined(separator: " "))
-                .font(.body.monospaced())
-                .textSelection(.enabled)
-            }
-          }
-          if server.transport == "http" {
-            LabeledContent("Authorization", value: authorizationLabel)
-          }
-          if server.transport == "http", let count = server.headerNames?.count, count > 0 {
-            LabeledContent("HTTP Headers", value: "\(count) configured")
-          }
-          if server.transport == "stdio", let count = server.environmentNames?.count, count > 0 {
-            LabeledContent(
-              "Environment Variables",
-              value: "\(count) variable\(count == 1 ? "" : "s")"
-            )
-          }
-          if server.transport == "http", server.authType == "oauth" {
-            Text("Authorization renews automatically.")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-        }
+        McpServerConnectionSection(server: server)
         Section("Tools") {
           if isLoadingTools {
             ProgressView().controlSize(.small)
@@ -94,8 +48,8 @@ struct McpServerDetailSheet: View {
         if server.canRemove != false {
           Button("Remove…", role: .destructive) { confirmingRemoval = true }
         }
-        if server.authType == "oauth" && server.connectionState == "connected" {
-          Button("Sign Out") { Task { await disconnect() } }
+        if server.authType == "oauth" && isConnected(status) {
+          Button("Sign Out") { Task { await disconnect(server) } }
         }
         Spacer()
         Button("Done") { dismiss() }
@@ -104,13 +58,13 @@ struct McpServerDetailSheet: View {
       .padding()
     }
     .frame(width: 540, height: 470)
-    .task { await loadTools() }
+    .task(id: isConnected(status)) { await loadTools(server) }
     .confirmationDialog(
       "Remove \(server.name)?",
       isPresented: $confirmingRemoval,
       titleVisibility: .visible
     ) {
-      Button("Remove MCP Server", role: .destructive) { Task { await remove() } }
+      Button("Remove MCP Server", role: .destructive) { Task { await remove(server) } }
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("This removes its configuration and saved authorization from Codevisor.")
@@ -118,51 +72,37 @@ struct McpServerDetailSheet: View {
   }
 
   private var client: any CodevisorServerClienting {
-    environment.machines.client(for: settingsMachineId ?? environment.defaultComposerServerId)
+    environment.machines.client(for: machineId)
   }
 
-  private var connectionStateLabel: String {
-    switch server.connectionState {
-    case "connected": return "Connected · \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")"
-    case "connecting": return "Connecting…"
-    case "needsSetup": return server.detail ?? "Browser setup required"
-    case "unavailable": return server.detail ?? "Unavailable on this machine"
-    case "needsAuthorization": return server.detail ?? "Authorization required"
-    case "expired": return server.detail ?? "Sign-in expired"
-    case "error": return server.detail ?? "Connection failed"
-    default: return server.enabled ? "Not connected" : "Disabled"
-    }
+  private func isConnected(_ status: McpFleet.MachineStatus?) -> Bool {
+    if case .ready = status { true } else { false }
   }
 
-  private var authorizationLabel: String {
-    switch server.authType {
-    case "oauth": return "OAuth"
-    case "bearer": return "Bearer token"
-    default: return "None"
-    }
-  }
-
-  private func loadTools() async {
+  private func loadTools(_ server: ServerMcpServer) async {
     isLoadingTools = true
     defer { isLoadingTools = false }
-    do { tools = try await client.listMcpTools(id: server.id) } catch {
+    do {
+      tools = try await client.listMcpTools(id: server.id)
+      errorMessage = nil
+    } catch {
       errorMessage = ErrorReporter.userFacingMessage(for: error)
     }
   }
 
-  private func remove() async {
+  private func remove(_ server: ServerMcpServer) async {
     do {
       try await client.removeMcpServer(id: server.id)
-      await didChange()
       dismiss()
+      await model.load(in: environment)
     } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
   }
 
-  private func disconnect() async {
+  private func disconnect(_ server: ServerMcpServer) async {
     do {
       _ = try await client.disconnectMcpOAuth(id: server.id)
-      await didChange()
       dismiss()
+      await model.load(in: environment)
     } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
   }
 }

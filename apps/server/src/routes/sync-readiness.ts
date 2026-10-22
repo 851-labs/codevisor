@@ -1,3 +1,4 @@
+import type { McpManager } from "@codevisor/mcp"
 import type { PluginsManager } from "@codevisor/plugins"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
@@ -66,6 +67,34 @@ export const refreshMcpReadiness = async (
   try {
     const overlays = await readMcpOverlays(services.db, config.id)
     await mcp.setLocalSuppression(overlays.disabledHere)
+    await republishMcpReadiness(services, config, fanout, mcp)
+  } catch {}
+}
+
+export const publishMcpChanges = (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  mcp: McpManager
+): (() => void) => {
+  const readiness = makeRefreshScheduler(() => republishMcpReadiness(services, config, fanout, mcp))
+  const unsubscribe = mcp.subscribeServersChanged((id) => {
+    void appendAndPublish(services.db, fanout, "mcp.updated", id, { id }).catch(swallowError)
+    readiness.request()
+  })
+  return () => {
+    unsubscribe()
+    readiness.close()
+  }
+}
+
+const republishMcpReadiness = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  mcp: McpManager
+): Promise<void> => {
+  try {
     const result = await publishMcpReadiness({ db: services.db, mcp, serverId: config.id })
     publishReadinessChanges(services, fanout, MCP_READINESS_NAMESPACE, result)
   } catch {}
@@ -139,7 +168,7 @@ export const refreshHarnessReadiness = async (
   } catch {}
 }
 
-export interface AuthSyncRefreshScheduler {
+export interface RefreshScheduler {
   readonly request: () => void
   readonly close: () => void
 }
@@ -148,7 +177,15 @@ export const makeAuthSyncRefreshScheduler = (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout
-): AuthSyncRefreshScheduler => {
+): RefreshScheduler =>
+  makeRefreshScheduler(async () => {
+    await Promise.all([
+      republishAccountsRoster(services, config, fanout),
+      refreshHarnessReadiness(services, config, fanout)
+    ])
+  })
+
+const makeRefreshScheduler = (refresh: () => Promise<void>): RefreshScheduler => {
   let requested = false
   let closed = false
   let running: Promise<void> | undefined
@@ -157,10 +194,7 @@ export const makeAuthSyncRefreshScheduler = (
     // oxlint-disable-next-line no-unmodified-loop-condition
     while (!closed && requested) {
       requested = false
-      await Promise.all([
-        republishAccountsRoster(services, config, fanout),
-        refreshHarnessReadiness(services, config, fanout)
-      ])
+      await refresh()
     }
   }
 

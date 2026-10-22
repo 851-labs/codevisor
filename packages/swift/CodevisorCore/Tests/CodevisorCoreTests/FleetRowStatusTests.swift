@@ -59,10 +59,10 @@ struct FleetRowStatusTests {
     #expect(rows[0].status.rowStatus.reason == FleetRowStatus.blockedFallbackReason)
   }
 
-  @Test("MCP rows let the overlay outrank the report, and split auth from other failures")
+  @Test("MCP rows follow each machine's own report, and split auth from other failures")
   func mcpRows() {
     let readiness: [String: [McpFleet.MachineReadiness]] = [
-      "studio-key": [.init(name: "Linear", state: "ready", reason: nil, toolCount: 14)],
+      "studio-key": [.init(name: "Linear", state: "disabled", reason: "Disabled on this machine")],
       "book-key": [
         .init(name: "Linear", state: "blocked", reason: "Sign-in expired", code: "expired")
       ],
@@ -70,14 +70,13 @@ struct FleetRowStatusTests {
         .init(name: "Linear", state: "blocked", reason: "spawn psql ENOENT", code: "error")
       ],
     ]
-    let rows = McpFleet.machineRows(
-      name: "Linear", readiness: readiness, disabledKeys: ["studio-key"], machines: machines())
-    #expect(rows[0].status == .offHere)
-    #expect(rows[0].status.isOnHere == false)
-    #expect(rows[1].status == .needsAuthorization(reason: "Sign-in expired"))
+    let rows = McpFleet.machineRows(name: "Linear", readiness: readiness, machines: machines())
+    #expect(
+      rows.map(\.status) == [
+        .off, .needsAuthorization(reason: "Sign-in expired"), .unreachable, .syncing,
+      ])
+    #expect(rows.map(\.isOn) == [false, true, true, true])
     #expect(rows[1].status.rowStatus.needsAttention)
-    #expect(rows[2].status == .unreachable)
-    #expect(rows[3].status == .syncing)
   }
 
   @Test(
@@ -90,9 +89,10 @@ struct FleetRowStatusTests {
         "studio-key": [.init(name: "Linear", state: "disabled", reason: nil)],
         "book-key": [.init(name: "Linear", state: "disabled", reason: nil)],
       ],
-      disabledKeys: [], machines: Array(machines()[0...1]),
-      wantsOn: { $0 == "studio" })
-    #expect(mcp.map(\.status) == [.syncing, .offFleet])
+      machines: Array(machines()[0...1]),
+      intents: ["studio": true])
+    #expect(mcp.map(\.status) == [.syncing, .off])
+    #expect(mcp.map(\.isOn) == [true, false])
     #expect(mcp[0].status.rowStatus.isBusy)
     let harness = HarnessFleet.machineRows(
       harnessId: "codex",
@@ -118,7 +118,6 @@ struct FleetRowStatusTests {
     let rows = McpFleet.machineRows(
       name: "Linear",
       readiness: ["studio-key": [.init(name: "Linear", state: "ready", reason: nil, toolCount: 1)]],
-      disabledKeys: [],
       machines: [machines()[0]])
     #expect(rows[0].status == .ready(toolCount: 1))
     #expect(rows[0].status.label == "Connected · 1 tool")

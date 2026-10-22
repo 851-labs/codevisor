@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorUI
 import SwiftUI
 

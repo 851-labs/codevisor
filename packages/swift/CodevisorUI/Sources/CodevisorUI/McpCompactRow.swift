@@ -25,11 +25,10 @@ import SwiftUI
     }
 
     private var summary: String {
-      if !entry.isMachineScoped && !entry.enabled { return "Off" }
       let attention = rows.filter(\.status.rowStatus.needsAttention).count
       if attention > 0 { return "\(attention) need\(attention == 1 ? "s" : "") attention" }
-      let on = rows.filter(\.status.isOnHere).count
-      if on == 0 { return "Off everywhere" }
+      let on = rows.filter(\.isOn).count
+      if on == 0 { return "Off" }
       return on == rows.count ? "On \(on) machines" : "On \(on) of \(rows.count)"
     }
 

@@ -5,13 +5,19 @@ import CodevisorUI
 import SwiftUI
 
 struct McpSettingsView: View {
+  private struct McpDetailTarget: Identifiable {
+    let entryName: String
+    let machineId: String
+    var id: String { "\(entryName)|\(machineId)" }
+  }
+
   @Environment(AppEnvironment.self) private var environment
   @State private var model = McpGlobalModel()
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live)
   @State private var showingAdd = false
   @State private var editing: McpFleetEntry?
-  @State private var details: McpFleetEntry?
+  @State private var details: McpDetailTarget?
   @State private var pendingRemoval: McpFleetEntry?
   @State private var showsOtherServers = false
   @State private var actionError: String?
@@ -43,6 +49,9 @@ struct McpSettingsView: View {
     .formStyle(.grouped)
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: mcpStateRevisions) { _, _ in model.scheduleReload(in: environment) }
+    .onChange(of: environment.configSync.revisionsByNamespace["mcp-readiness"]) { _, _ in
+      model.settle(in: environment)
+    }
     .sheet(isPresented: $showingAdd) {
       McpServerEditorSheet(initialServer: nil) { values in
         let created = try await localClient.createMcpServer(values.createBody)
@@ -65,12 +74,9 @@ struct McpSettingsView: View {
         }
       }
     }
-    .sheet(item: $details) { entry in
-      McpServerDetailSheet(server: entry.representative) {
-        await model.load(in: environment)
-      }
-      .environment(environment)
-      .environment(\.settingsMachineId, entry.machineId(preferring: CodevisorMachine.local.id) ?? "")
+    .sheet(item: $details) { target in
+      McpServerDetailSheet(entryName: target.entryName, machineId: target.machineId, model: model)
+        .environment(environment)
     }
     .confirmationDialog(
       "Remove \(pendingRemoval?.name ?? "MCP server")?",
@@ -92,7 +98,10 @@ struct McpSettingsView: View {
     McpFleetSection(
       model: model,
       builtIn: builtIn,
-      onDetails: { details = $0 },
+      onDetails: { entry in
+        guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id) else { return }
+        details = McpDetailTarget(entryName: entry.name, machineId: machineId)
+      },
       onEdit: { editing = $0 },
       onRemove: { pendingRemoval = $0 },
       onConnect: { entry, machineId in
@@ -111,11 +120,9 @@ struct McpSettingsView: View {
           ComputerUsePermissionRowsView(model: permissions, embedded: true)
             .padding(.leading, FleetRowMetrics.iconColumnWidth + 8)
             .onChange(of: permissions.allGranted) { _, granted in
-              guard !granted, entry.enabledByMachine[machineId] == true else { return }
-              Task {
-                await model.setEnabled(
-                  entry, on: machineId, enabled: false, in: environment)
-              }
+              guard !granted, model.row(for: entry, on: machineId, in: environment)?.isOn == true
+              else { return }
+              Task { await model.setAvailability(false, of: entry, on: machineId, in: environment) }
             }
         }
       })
@@ -134,16 +141,6 @@ struct McpSettingsView: View {
       actionError = nil
     } catch {
       actionError = ErrorReporter.userFacingMessage(for: error)
-      return
-    }
-    for _ in 0..<60 {
-      try? await Task.sleep(for: .seconds(2))
-      await model.load(in: environment)
-      if let entry = model.entries.first(where: { $0.idByMachine[machineId] == serverId }),
-        entry.representative.connectionState == "connected"
-      {
-        break
-      }
     }
   }
 

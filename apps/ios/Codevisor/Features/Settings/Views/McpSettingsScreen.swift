@@ -42,6 +42,9 @@ struct McpSettingsScreen: View {
     }
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
     .onChange(of: mcpStateRevisions) { _, _ in model.scheduleReload(in: environment) }
+    .onChange(of: environment.configSync.revisionsByNamespace["mcp-readiness"]) { _, _ in
+      model.settle(in: environment)
+    }
     .sheet(item: $editing) { target in
       McpServerEditor(
         initialServer: target.server, machineId: editorMachineId(for: target.entry)

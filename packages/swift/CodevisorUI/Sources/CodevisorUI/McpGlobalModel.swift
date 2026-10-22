@@ -2,44 +2,43 @@ import CodevisorCore
 import Foundation
 import Observation
 
-public struct McpFleetEntry: Identifiable, Equatable, Sendable {
-  public var name: String
-  public var kind: String?
-  public var transport: String
-  public var authType: String
-  public var enabled: Bool
-  public var canEdit: Bool
-  public var canRemove: Bool
-  public var idByMachine: [String: String]
-  public var enabledByMachine: [String: Bool] = [:]
-  public var turningOnMachines: Set<String> = []
-  public var representative: ServerMcpServer
-  public var id: String { name }
-
-  public var isBuiltIn: Bool { representative.isBuiltIn }
-
-  public var isMachineScoped: Bool { isBuiltIn }
-
-  public func machineId(preferring preferred: String?) -> String? {
-    if let preferred, idByMachine[preferred] != nil { return preferred }
-    return idByMachine.keys.sorted().first
-  }
-}
-
 @MainActor @Observable
 public final class McpGlobalModel {
-  public private(set) var entries: [McpFleetEntry] = []
+  public private(set) var state = McpFleetState(preferredMachineId: CodevisorMachine.local.id)
   public private(set) var browserByMachine: [String: ServerBrowserUseConfiguration] = [:]
-  public private(set) var respondingMachines: Set<String> = []
-  public var isLoading = true
+  public private(set) var isLoading = true
   public var actionError: String?
 
+  @ObservationIgnored private let pendingTimeout: Duration
   @ObservationIgnored private var reloadTask: Task<Void, Never>?
-  @ObservationIgnored private var loadGeneration = 0
-  @ObservationIgnored private var merged: [String: McpFleetEntry] = [:]
-  @ObservationIgnored private var pendingEnabled: [String: Bool] = [:]
+  @ObservationIgnored private var latestRequest: [String: Int] = [:]
 
-  public init() {}
+  public init(pendingTimeout: Duration = .seconds(30)) {
+    self.pendingTimeout = pendingTimeout
+  }
+
+  public var entries: [McpFleetEntry] { state.entries }
+  public var builtIns: [McpFleetEntry] { entries.filter(\.isBuiltIn) }
+  public var managed: [McpFleetEntry] { entries.filter { !$0.isBuiltIn } }
+
+  public func entry(named name: String) -> McpFleetEntry? {
+    entries.first { $0.name == name }
+  }
+
+  public func rows(for entry: McpFleetEntry, in environment: AppEnvironment) -> [McpFleet.MachineRow] {
+    state.rows(
+      for: entry, sync: environment.configSync, machines: FleetMachineInfo.all(environment.machines))
+  }
+
+  public func row(
+    for entry: McpFleetEntry, on machineId: String, in environment: AppEnvironment
+  ) -> McpFleet.MachineRow? {
+    rows(for: entry, in: environment).first { $0.machineId == machineId }
+  }
+
+  public func settle(in environment: AppEnvironment) {
+    state.settle(sync: environment.configSync, machines: FleetMachineInfo.all(environment.machines))
+  }
 
   public func scheduleReload(in environment: AppEnvironment) {
     reloadTask?.cancel()
@@ -50,145 +49,60 @@ public final class McpGlobalModel {
     }
   }
 
-  public var builtIns: [McpFleetEntry] { entries.filter(\.isBuiltIn) }
-  public var managed: [McpFleetEntry] { entries.filter { !$0.isBuiltIn } }
-
-  public func entry(named name: String) -> McpFleetEntry? {
-    entries.first { $0.name == name }
-  }
-
-  @MainActor
-  static func machineRows(
-    entry: McpFleetEntry, sync: ConfigSync, machines: [FleetMachineInfo]
-  ) -> [McpFleet.MachineRow] {
-    McpFleet.rowsRespectingBuiltIns(
-      name: entry.name, isMachineScoped: entry.isMachineScoped,
-      enabledByMachine: entry.enabledByMachine, fleetEnabled: entry.enabled,
-      turningOn: entry.turningOnMachines, sync: sync, machines: machines)
-  }
-
   public func load(in environment: AppEnvironment) async {
-    loadGeneration &+= 1
-    let generation = loadGeneration
-    isLoading = true
-    defer { if generation == loadGeneration { isLoading = false } }
-    merged = [:]
-    respondingMachines = []
-    let probes = environment.machines.allMachines.map { machine in
-      let client = environment.machines.client(for: machine.id)
-      return Task { @MainActor [weak self] in
-        let servers = try? await client.listMcpServers()
-        guard let self, generation == self.loadGeneration, let servers else { return }
-        self.absorb(servers, from: machine.id)
-      }
+    let machineIds = environment.machines.allMachines.map(\.id)
+    state.retainMachines(Set(machineIds))
+    let fetches = machineIds.map { machineId in
+      let client = environment.machines.client(for: machineId)
+      return Task { @MainActor [weak self] in await self?.fetch(machineId, from: client) }
     }
-    for probe in probes { await probe.value }
-    guard generation == loadGeneration else { return }
+    for fetch in fetches { await fetch.value }
+    isLoading = false
     await loadBrowserConfigurations(in: environment)
   }
 
-  private func absorb(_ servers: [ServerMcpServer], from machineId: String) {
-    respondingMachines.insert(machineId)
-    for server in servers {
-      merge(server, from: machineId, into: &merged)
+  public func setAvailability(
+    _ isOn: Bool, of entry: McpFleetEntry, on machineId: String, in environment: AppEnvironment
+  ) async {
+    let token = state.intend(isOn, name: entry.name, on: machineId)
+    expire(entry.name, on: machineId, token: token)
+    do {
+      try await McpAvailabilityChange(
+        entry: entry, machineId: machineId, isOn: isOn, environment: environment
+      ).apply()
+      actionError = nil
+    } catch {
+      state.abandon(name: entry.name, on: machineId, token: token)
+      actionError = ErrorReporter.userFacingMessage(for: error)
     }
-    publish(merged)
+  }
+
+  private func fetch(_ machineId: String, from client: any CodevisorServerClienting) async {
+    let request = (latestRequest[machineId] ?? 0) &+ 1
+    latestRequest[machineId] = request
+    guard let servers = try? await client.listMcpServers(),
+      latestRequest[machineId] == request
+    else { return }
+    state.absorb(servers, from: machineId)
+  }
+
+  private func expire(_ name: String, on machineId: String, token: Int) {
+    Task { [weak self, pendingTimeout] in
+      try? await Task.sleep(for: pendingTimeout)
+      self?.state.abandon(name: name, on: machineId, token: token)
+    }
   }
 
   private func loadBrowserConfigurations(in environment: AppEnvironment) async {
-    guard let hosts = merged.values.first(where: { $0.kind == "browserUse" })?.idByMachine.keys
+    guard let hosts = entries.first(where: { $0.kind == "browserUse" })?.serverByMachine.keys
     else { return }
     let probes = hosts.map { machineId in
       let client = environment.machines.client(for: machineId)
       return Task { @MainActor [weak self] in
-        let configuration = try? await client.browserUseConfiguration()
-        guard let self, let configuration else { return }
-        self.browserByMachine[machineId] = configuration
+        guard let configuration = try? await client.browserUseConfiguration() else { return }
+        self?.browserByMachine[machineId] = configuration
       }
     }
     for probe in probes { await probe.value }
-  }
-
-  private func publish(_ merged: [String: McpFleetEntry]) {
-    entries = merged.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-  }
-
-  private func merge(
-    _ incoming: ServerMcpServer, from machineId: String, into merged: inout [String: McpFleetEntry]
-  ) {
-    var server = incoming
-    let pending = pendingEnabled["\(server.name)|\(machineId)"]
-    if let pending { server.enabled = pending }
-    defer { if pending == true { merged[server.name]?.turningOnMachines.insert(machineId) } }
-    if var existing = merged[server.name] {
-      existing.idByMachine[machineId] = server.id
-      existing.enabledByMachine[machineId] = server.enabled
-      if server.connectionState == "connected",
-        existing.representative.connectionState != "connected"
-      {
-        existing.representative = server
-      }
-      merged[server.name] = existing
-    } else {
-      merged[server.name] = McpFleetEntry(
-        name: server.name,
-        kind: server.kind,
-        transport: server.transport,
-        authType: server.authType,
-        enabled: server.enabled,
-        canEdit: server.canEdit != false,
-        canRemove: server.canRemove != false,
-        idByMachine: [machineId: server.id],
-        enabledByMachine: [machineId: server.enabled],
-        representative: server)
-    }
-    if !server.enabled, merged[server.name]?.isMachineScoped == false {
-      merged[server.name]?.enabled = false
-    }
-  }
-
-  public func setEnabled(
-    _ entry: McpFleetEntry, on machineId: String, enabled: Bool, in environment: AppEnvironment
-  ) async {
-    guard let serverId = entry.idByMachine[machineId] else {
-      actionError = "\(entry.name) isn’t on that machine yet."
-      return
-    }
-    let key = "\(entry.name)|\(machineId)"
-    pendingEnabled[key] = enabled
-    applyEnabled(entry.name, on: machineId, enabled: enabled)
-    do {
-      _ = try await environment.machines.client(for: machineId)
-        .setMcpServerEnabled(id: serverId, enabled: enabled)
-      actionError = nil
-      if pendingEnabled[key] == enabled { pendingEnabled[key] = nil }
-      await load(in: environment)
-    } catch {
-      actionError = ErrorReporter.userFacingMessage(for: error)
-      if pendingEnabled[key] == enabled { pendingEnabled[key] = nil }
-      await load(in: environment)
-    }
-  }
-
-  private func applyEnabled(_ name: String, on machineId: String, enabled: Bool) {
-    guard var entry = merged[name] else { return }
-    entry.enabledByMachine[machineId] = enabled
-    if enabled { entry.turningOnMachines.insert(machineId) } else { entry.turningOnMachines.remove(machineId) }
-    if !entry.isMachineScoped {
-      entry.enabled = enabled
-      for id in entry.enabledByMachine.keys { entry.enabledByMachine[id] = enabled }
-    }
-    merged[name] = entry
-    publish(merged)
-  }
-
-  public func setFleetEnabled(
-    _ entry: McpFleetEntry, enabled: Bool, in environment: AppEnvironment
-  ) async {
-    guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id) else {
-      actionError = "No machine has this server yet."
-      return
-    }
-    await setEnabled(entry, on: machineId, enabled: enabled, in: environment)
   }
 }

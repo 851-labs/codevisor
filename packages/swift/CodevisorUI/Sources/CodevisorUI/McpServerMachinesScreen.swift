@@ -14,10 +14,9 @@ import SwiftUI
 
     var body: some View {
       let entry = model.entry(named: serverName)
-      let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
       List {
         if let entry {
-          if !entry.isMachineScoped, needsAuthorization(entry),
+          if needsAuthorization(entry),
             let machineId = entry.machineId(preferring: nil)
           {
             Section {
@@ -56,19 +55,13 @@ import SwiftUI
     }
 
     private func machineRows(_ entry: McpFleetEntry) -> [McpFleet.MachineRow] {
-      McpGlobalModel.machineRows(
-        entry: entry, sync: environment.configSync,
-        machines: FleetMachineInfo.all(environment.machines))
+      model.rows(for: entry, in: environment)
     }
 
     private func needsAuthorization(_ entry: McpFleetEntry) -> Bool {
-      guard entry.authType == "oauth" else { return false }
-      return machineRows(entry).contains {
-        if case .needsAuthorization = $0.status { return true }
-        return false
-      }
+      entry.authType == "oauth"
+        && machineRows(entry).contains { $0.isOn && $0.status.needsAuthorization }
     }
-
   }
 
   private struct McpMachineDetailRow: View {

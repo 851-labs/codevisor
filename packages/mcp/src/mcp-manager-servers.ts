@@ -130,6 +130,7 @@ export const makeMcpServerOperations = (
         secretCipher: encryptSecrets(key, stored)
       })
     )
+    emitServerChanged(saved.id)
     if (saved.enabled && authType !== "oauth") {
       await connect(saved.id).catch(() => undefined)
     }

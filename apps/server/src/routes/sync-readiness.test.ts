@@ -2,6 +2,7 @@ import type { Harness } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 
+import { waitFor } from "../changes-test-support.js"
 import { defaultServerConfig } from "../server-config.js"
 import { makeEventFanout, type CodevisorServerConfig } from "../server-context.js"
 import {
@@ -133,6 +134,30 @@ describe("/v1/sync/mcp-readiness", () => {
     expect(computer).toMatchObject({ state: "disabled", reason: "Disabled on this machine" })
     const resolved = await services.mcp?.resolved()
     expect(resolved?.some((s) => s.name === "Computer Use")).toBe(false)
+  })
+  it("republishes readiness when a server's state changes outside any sync request", async () => {
+    const { services } = await makeServices("server-live")
+    await startWithApp(services, undefined, { id: "server-live" })
+    const created = await services.mcp.create({
+      name: "Sentry",
+      transport: "http",
+      url: "https://sentry.example/mcp",
+      args: [],
+      enabled: false,
+      authType: "none"
+    })
+    const readinessNames = async (): Promise<ReadonlyArray<unknown>> =>
+      (await run(services.db.getSyncEntries("mcp-readiness")))
+        .flatMap((entry) => itemsOf(field(entry.value, "servers")))
+        .map((row) => field(row, "name"))
+
+    await refreshMcpReadiness(services, machine("server-live"), await run(makeEventFanout))
+    expect(await readinessNames()).toContain("Sentry")
+
+    await services.mcp.update(created.id, { name: "Sentry Cloud" })
+
+    await waitFor(async () => (await readinessNames()).includes("Sentry Cloud"))
+    expect(await readinessNames()).not.toContain("Sentry")
   })
 })
 

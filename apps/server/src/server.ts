@@ -37,7 +37,7 @@ import {
   reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns
 } from "./routes/sessions.js"
-import { makeAuthSyncRefreshScheduler } from "./routes/sync-readiness.js"
+import { makeAuthSyncRefreshScheduler, publishMcpChanges } from "./routes/sync-readiness.js"
 import { runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import {
   appendAndPublish,
@@ -259,9 +259,8 @@ export const makeCodevisorServerApp = (
       .then((overlays) => mcpAtBoot.setLocalSuppression(overlays.disabledHere))
       .catch(swallowError)
   }
-  const unsubscribeMcpChanges = services.mcp?.subscribeServersChanged((id) => {
-    void appendAndPublish(services.db, fanout, "mcp.updated", id, { id }).catch(swallowError)
-  })
+  const unsubscribeMcpChanges =
+    mcpAtBoot === undefined ? undefined : publishMcpChanges(services, config, fanout, mcpAtBoot)
   /* v8 ignore next 3 */
   const unsubscribeRotations = services.mcp?.subscribeCredentialsRotated(() => {
     void runBackgroundSyncReconcile(services, config, fanout, "mcps")

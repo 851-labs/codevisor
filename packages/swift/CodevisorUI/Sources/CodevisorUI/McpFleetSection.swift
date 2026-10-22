@@ -46,8 +46,7 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
     ForEach(entries) { entry in
       #if os(iOS)
         if horizontalSizeClass == .compact, machines.count > 1 {
-          let rows = McpGlobalModel.machineRows(
-            entry: entry, sync: environment.configSync, machines: machines)
+          let rows = model.rows(for: entry, in: environment)
           NavigationLink {
             McpServerMachinesScreen(
               serverName: entry.name, model: model, onConnect: onConnect,
@@ -93,26 +92,24 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   @ViewBuilder let machineExtras: (McpFleetEntry, _ machineId: String) -> MachineExtras
 
   var body: some View {
-    let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
-    let rows = machineRows()
-    let live = entry.isMachineScoped || entry.enabled || machines.count > 1
+    let rows = model.rows(for: entry, in: environment)
+    let isLive = rows.contains { $0.isOn || $0.isPending }
     let onlyMachine = machines.count == 1 ? rows.first : nil
     let showsMachines = machines.count > 1
-    let single = live ? onlyMachine : nil
+    let single = isLive ? onlyMachine : nil
     let needsAuthorization =
-      entry.authType == "oauth"
-      && rows.contains { if case .needsAuthorization = $0.status { true } else { false } }
+      entry.authType == "oauth" && rows.contains { $0.isOn && $0.status.needsAuthorization }
     FleetEntryRow(
       name: entry.name,
       caption: caption(rows: rows),
       isBusy: single?.status.rowStatus.isBusy ?? false,
       isEnabled: entryToggle(onlyMachine: onlyMachine),
       toggleDisabledReason: onlyMachine.flatMap { row in
-        row.status.isOnHere ? nil : toggleDisabledReason(entry, row.machineId)
+        row.isOn ? nil : toggleDisabledReason(entry, row.machineId)
       },
       icon: { icon },
       accessory: {
-        if live, needsAuthorization,
+        if needsAuthorization,
           let machineId = entry.machineId(preferring: CodevisorMachine.local.id)
         {
           Button("Connect…") { onConnect(entry, machineId) }
@@ -143,26 +140,12 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   }
 
   private func entryToggle(onlyMachine: McpFleet.MachineRow?) -> Binding<Bool>? {
-    guard machines.count <= 1 else { return nil }
-    guard entry.isMachineScoped else {
-      return Binding(
-        get: { entry.enabled },
-        set: { next in
-          Task { await model.setFleetEnabled(entry, enabled: next, in: environment) }
-        })
-    }
-    guard let row = onlyMachine else { return nil }
+    guard machines.count <= 1, let row = onlyMachine else { return nil }
     return Binding(
-      get: { row.status.isOnHere },
+      get: { row.isOn },
       set: { next in
-        Task {
-          await model.setEnabled(entry, on: row.machineId, enabled: next, in: environment)
-        }
+        Task { await model.setAvailability(next, of: entry, on: row.machineId, in: environment) }
       })
-  }
-
-  private func machineRows() -> [McpFleet.MachineRow] {
-    McpGlobalModel.machineRows(entry: entry, sync: environment.configSync, machines: machines)
   }
 
   private func details(for row: McpFleet.MachineRow) -> FleetBlockedMachine? {
@@ -173,7 +156,6 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   }
 
   private func caption(rows: [McpFleet.MachineRow]) -> String? {
-    guard entry.isMachineScoped || entry.enabled else { return nil }
     let counts = rows.compactMap { row -> Int? in
       if case .ready(let toolCount) = row.status { return toolCount }
       return nil
@@ -213,39 +195,22 @@ struct McpMachineTrailing: View {
     #endif
     Toggle("Available on \(row.name)", isOn: availability)
       .labelsHidden().toggleStyle(.switch)
-      .disabled(row.status == .unreachable || (!row.status.isOnHere && disabledReason != nil))
+      .disabled(isLocked)
       .help(disabledReason ?? "")
       #if os(macOS)
         .controlSize(.mini)
       #endif
   }
 
+  private var isLocked: Bool {
+    row.status == .unreachable || (!row.isOn && disabledReason != nil)
+  }
+
   private var availability: Binding<Bool> {
     Binding(
-      get: { row.status.isOnHere && (entry.isMachineScoped || entry.enabled) },
+      get: { row.isOn },
       set: { next in
-        if entry.isMachineScoped {
-          Task {
-            await model.setEnabled(
-              entry, on: row.machineId, enabled: next, in: environment)
-          }
-          return
-        }
-        guard let key = environment.machines.syncKey(forMachineId: row.machineId) else {
-          model.actionError = "\(row.name) hasn’t reported its identity yet."
-          return
-        }
-        if next, !entry.enabled {
-          for machine in FleetMachineInfo.all(environment.machines) where machine.id != row.machineId {
-            guard let other = machine.syncKey else { continue }
-            McpFleet.setDisabled(environment.configSync, machineId: other, name: entry.name, disabled: true)
-          }
-          McpFleet.setDisabled(environment.configSync, machineId: key, name: entry.name, disabled: false)
-          Task { await model.setFleetEnabled(entry, enabled: true, in: environment) }
-          return
-        }
-        McpFleet.setDisabled(
-          environment.configSync, machineId: key, name: entry.name, disabled: !next)
+        Task { await model.setAvailability(next, of: entry, on: row.machineId, in: environment) }
       })
   }
 }

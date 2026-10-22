@@ -171,6 +171,15 @@ describe("MCP manager lifecycle", () => {
     expect(seen).toContain(created.id)
     seen.length = 0
 
+    const awaitingSignIn = await manager.create({
+      authType: "oauth",
+      name: "Sentry",
+      transport: "http",
+      url: "https://mcp.example.test/mcp"
+    })
+    expect(seen).toEqual([awaitingSignIn.id])
+    seen.length = 0
+
     unsubscribe()
     await manager.create({ authType: "none", name: "Quiet", transport: "http", url: upstream.url })
     expect(seen).toEqual([])

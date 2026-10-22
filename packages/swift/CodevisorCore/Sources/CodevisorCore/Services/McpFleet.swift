@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 public enum McpFleet {
+  public static let syncNamespaces = ["mcps", "mcp-readiness", "mcp-overlays"]
+
   public struct MachineReadiness: Identifiable, Equatable, Sendable {
     public let name: String
     public let state: String
@@ -99,8 +101,7 @@ public enum McpFleet {
     case needsAuthorization(reason: String)
     case needsSetup(reason: String)
     case blocked(reason: String)
-    case offHere
-    case offFleet
+    case off
     case unreachable
     case syncing
 
@@ -113,8 +114,7 @@ public enum McpFleet {
       case .needsAuthorization: "Authorization required"
       case .needsSetup: "Setup required"
       case .blocked: "Needs attention"
-      case .offHere: "Off here"
-      case .offFleet: "Off"
+      case .off: "Off"
       case .unreachable: "Unreachable"
       case .syncing: "Syncing…"
       }
@@ -127,15 +127,12 @@ public enum McpFleet {
       case .needsAuthorization(let reason): .attention(label, reason: reason)
       case .needsSetup(let reason): .attention(label, reason: reason)
       case .blocked(let reason): .attention(label, reason: reason)
-      case .offHere, .offFleet, .unreachable: .quiet(label)
+      case .off, .unreachable: .quiet(label)
       }
     }
 
-    public var isOnHere: Bool {
-      switch self {
-      case .offHere: false
-      default: true
-      }
+    public var needsAuthorization: Bool {
+      if case .needsAuthorization = self { true } else { false }
     }
   }
 
@@ -143,13 +140,17 @@ public enum McpFleet {
     public var machineId: String
     public var name: String
     public var status: MachineStatus
+    public var isOn: Bool
     public var id: String { machineId }
 
-    public init(machineId: String, name: String, status: MachineStatus) {
+    public init(machineId: String, name: String, status: MachineStatus, isOn: Bool) {
       self.machineId = machineId
       self.name = name
       self.status = status
+      self.isOn = isOn
     }
+
+    public var isPending: Bool { status == .syncing }
   }
 
   nonisolated public static func machineStatus(_ row: MachineReadiness) -> MachineStatus {
@@ -157,8 +158,7 @@ public enum McpFleet {
     case "ready": return .ready(toolCount: row.toolCount)
     case "connecting": return .connecting
     case "idle": return .idle
-    case "disabled":
-      return .offFleet
+    case "disabled": return .off
     default:
       let reason = row.reason ?? FleetRowStatus.blockedFallbackReason
       switch row.code {
@@ -169,68 +169,60 @@ public enum McpFleet {
     }
   }
 
+  nonisolated public static func isReportedOn(_ row: MachineReadiness) -> Bool {
+    row.state != "disabled"
+  }
+
   nonisolated public static func machineRows(
     name: String,
     readiness: [String: [MachineReadiness]],
-    disabledKeys: Set<String>,
     machines: [FleetMachineInfo],
-    wantsOn: (String) -> Bool = { _ in false }
+    desiredOn: (FleetMachineInfo) -> Bool = { _ in true },
+    intents: [String: Bool] = [:]
   ) -> [MachineRow] {
     machines.map { machine in
-      var status: MachineStatus
-      if let key = machine.syncKey, disabledKeys.contains(key) {
-        status = .offHere
-      } else if !machine.isReachable {
-        status = .unreachable
-      } else if let key = machine.syncKey,
-        let row = readiness[key]?.first(where: { $0.name == name })
-      {
-        status = machineStatus(row)
-        if status == .offFleet, wantsOn(machine.id) { status = .syncing }
-      } else {
-        status = .syncing
+      let reported = machine.syncKey.flatMap { key in
+        readiness[key]?.first { $0.name == name }
       }
-      return MachineRow(machineId: machine.id, name: machine.name, status: status)
+      return machineRow(
+        machine, reported: reported, desiredOn: desiredOn(machine), intent: intents[machine.id])
     }
   }
 
-  public static func rowsRespectingBuiltIns(
-    name: String,
-    isMachineScoped: Bool,
-    enabledByMachine: [String: Bool],
-    fleetEnabled: Bool = false,
-    turningOn: Set<String> = [],
-    sync: ConfigSync,
-    machines: [FleetMachineInfo]
-  ) -> [MachineRow] {
-    let wantsOn: (String) -> Bool = { machineId in
-      isMachineScoped ? enabledByMachine[machineId] == true : fleetEnabled
+  nonisolated static func machineRow(
+    _ machine: FleetMachineInfo, reported: MachineReadiness?, desiredOn: Bool, intent: Bool?
+  ) -> MachineRow {
+    let confirmedOn = reported.map(isReportedOn)
+    let isOn = intent ?? confirmedOn ?? desiredOn
+    let status: MachineStatus
+    if !machine.isReachable {
+      status = .unreachable
+    } else if let intent, intent != confirmedOn {
+      status = .syncing
+    } else if let reported {
+      status = machineStatus(reported)
+    } else {
+      status = desiredOn ? .syncing : .off
     }
-    let derived = rows(name: name, sync: sync, machines: machines, wantsOn: wantsOn)
-    return derived.map { row in
-      var copy = row
-      if isMachineScoped, enabledByMachine[row.machineId] == false {
-        copy.status = .offHere
-      } else if turningOn.contains(row.machineId), row.status != .offHere, row.status != .unreachable {
-        copy.status = .syncing
-      }
-      return copy
-    }
+    return MachineRow(machineId: machine.id, name: machine.name, status: status, isOn: isOn)
   }
 
-  public static func rows(
-    name: String, sync: ConfigSync, machines: [FleetMachineInfo],
-    wantsOn: (String) -> Bool = { _ in false }
-  ) -> [MachineRow] {
-    let disabled = Set(
-      machines.compactMap { machine -> String? in
-        guard let key = machine.syncKey,
-          isDisabled(sync, machineId: key, name: name)
-        else { return nil }
+  public static func overlayDisabledKeys(
+    _ sync: ConfigSync, name: String, machines: [FleetMachineInfo]
+  ) -> Set<String> {
+    Set(
+      machines.compactMap { machine in
+        guard let key = machine.syncKey, isDisabled(sync, machineId: key, name: name) else {
+          return nil
+        }
         return key
       })
-    return machineRows(
-      name: name, readiness: readiness(sync), disabledKeys: disabled, machines: machines,
-      wantsOn: wantsOn)
+  }
+
+  public static func fleetEnabled(_ sync: ConfigSync, name: String) -> Bool? {
+    guard case .object(let value)? = sync.value(namespace: "mcps", key: name),
+      case .bool(let enabled)? = value["enabled"]
+    else { return nil }
+    return enabled
   }
 }
