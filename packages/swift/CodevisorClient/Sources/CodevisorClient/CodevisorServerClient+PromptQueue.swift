@@ -10,6 +10,10 @@ private struct ReorderQueuedPromptsBody: Encodable {
 }
 
 extension CodevisorServerClient {
+  public func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {
+    try await get("/v1/sessions/\(id.uuidString)/queue")
+  }
+
   public func updateQueuedPrompt(
     sessionId: UUID, queueItemId: String, text: String, attachments: [ServerAttachmentRef]?
   ) async throws -> ServerPromptQueueItem {

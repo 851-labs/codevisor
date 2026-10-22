@@ -229,6 +229,10 @@ extension CodevisorServerClient {
     try await get("/v1/health")
   }
 
+  public func machineStats() async throws -> ServerMachineStats {
+    try await get("/v1/machine/stats")
+  }
+
   public func info() async throws -> ServerInfo {
     try await get("/v1/info")
   }
