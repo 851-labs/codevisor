@@ -16,10 +16,15 @@ const caches = new WeakMap<
 export const scanProjectRecommendations = async (
   services: CodevisorServerServices,
   includesHarness: (harness: Harness) => boolean
+): Promise<ReadonlyArray<ProjectRecommendation>> =>
+  recommendFromHarnesses(services, (await discoverHarnesses(services)).filter(includesHarness))
+
+export const recommendFromHarnesses = async (
+  services: CodevisorServerServices,
+  harnesses: ReadonlyArray<Harness>
 ): Promise<ReadonlyArray<ProjectRecommendation>> => {
-  const harnesses = await discoverHarnesses(services)
   const sessionGroups = await Promise.all(
-    harnesses.filter(includesHarness).map(async (harness) => {
+    harnesses.map(async (harness) => {
       try {
         const account = await services.auth?.activeAccountContext(harness.id)
         return await run(services.agents.listAgentSessions(harness.id, account, { titles: false }))

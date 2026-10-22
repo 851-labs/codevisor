@@ -43,6 +43,7 @@ export const endpoints = [
   "POST /v1/auth/connection-token/rotate",
   "GET /v1/projects",
   "GET /v1/projects/recommendations",
+  "GET /v1/first-run",
   "POST /v1/projects",
   "POST /v1/projects/from-git",
   "DELETE /v1/projects/from-git/:id",

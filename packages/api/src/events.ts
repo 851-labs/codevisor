@@ -6,6 +6,7 @@ export const EventKind = Schema.Literals([
   "project.updated",
   "project.deleted",
   "project.setup",
+  "firstRun.updated",
   "worktree.created",
   "worktree.setup",
   "workspace.updated",

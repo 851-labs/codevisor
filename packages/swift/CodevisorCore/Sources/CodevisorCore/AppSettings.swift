@@ -157,6 +157,12 @@ public final class AppSettingsModel {
     settings.hasCompletedOnboarding && settings.confirmBeforeQuitting
   }
 
+  public func claimFirstLaunch() -> Bool {
+    guard !settings.hasCompletedOnboarding else { return false }
+    completeOnboarding(importExternalSessions: false)
+    return true
+  }
+
   public func completeOnboarding(importExternalSessions: Bool) {
     settings.hasCompletedOnboarding = true
     settings.importExternalSessions = importExternalSessions

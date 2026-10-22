@@ -168,6 +168,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
   func projectRecommendations(limit: Int) async throws -> [ServerProjectRecommendation]
+  func firstRunStatus() async throws -> ServerFirstRunStatus
   func createDirectory(path: String) async throws -> String
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource

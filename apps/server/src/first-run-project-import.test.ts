@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { importFirstRunProjects, startFirstRunProjectImport } from "./first-run-project-import.js"
 import { defaultServerConfig } from "./server-config.js"
 import { makeEventFanout } from "./server-context.js"
-import { listEvents, makeServices, run } from "./test-support.js"
+import { jsonRequest, listEvents, makeServices, run, startWithApp } from "./test-support.js"
 
 const roots: Array<string> = []
 
@@ -41,6 +41,11 @@ describe("first-run project import", () => {
     expect(machine.agents.environmentRefreshes).toHaveLength(1)
     expect(machine.createdEvents()).toHaveLength(2)
     expect(await machine.marker()).toBe("done")
+    expect(machine.statusEvents()).toEqual([
+      { state: "running" },
+      { state: "running", harnesses: foundHarnesses },
+      { state: "done", harnesses: foundHarnesses, addedProjects: 2 }
+    ])
     expect(machine.logs()).toEqual(
       expect.arrayContaining([
         `[first-run-projects] added ${machine.folders.recent} (1 chats, last ${machine.activity.recent})`,
@@ -114,6 +119,58 @@ describe("first-run project import", () => {
 
     expect(machine.logs()).toEqual(row.logged)
     expect(await machine.marker()).toBe("pending")
+    expect(machine.statusEvents().at(-1)).toEqual({ state: "failed" })
+  })
+
+  it("reports a failed run with the harnesses it had already found", async () => {
+    const machine = await makeMachine()
+    await run(machine.services.db.setHarnessEnabled("opencode", false))
+    const failing = {
+      ...machine.services,
+      db: { ...machine.services.db, createProject: () => Effect.die(new Error("disk full")) }
+    }
+
+    await startFirstRunProjectImport(failing, machine.fanout, machine.config)
+
+    expect(machine.statusEvents().at(-1)).toEqual({ state: "failed", harnesses: foundHarnesses })
+  })
+
+  it("settles quietly when it cannot record any status", async () => {
+    const machine = await makeMachine()
+    const silent = {
+      ...machine.services,
+      db: { ...machine.services.db, appendEvent: () => Effect.die(new Error("read-only")) }
+    }
+
+    await expect(
+      startFirstRunProjectImport(silent, machine.fanout, machine.config)
+    ).resolves.toBeUndefined()
+    expect(await machine.marker()).toBe("pending")
+  })
+
+  it("serves the first-run status from the run, or from the marker after a restart", async () => {
+    const machine = await makeMachine()
+    await run(machine.services.db.setHarnessEnabled("opencode", false))
+    const server = await startWithApp(machine.services, machine.fanout)
+    expect((await jsonRequest(server, "/v1/first-run")).body).toEqual({ state: "running" })
+
+    await machine.importProjects()
+    expect((await jsonRequest(server, "/v1/first-run")).body).toEqual({
+      state: "done",
+      harnesses: foundHarnesses,
+      addedProjects: 2
+    })
+
+    const restarted = await startWithApp({ ...machine.services }, machine.fanout)
+    expect((await jsonRequest(restarted, "/v1/first-run")).body).toEqual({ state: "done" })
+  })
+
+  it("tells clients of an existing install that there is no first run", async () => {
+    const machine = await makeMachine()
+    await run(machine.services.db.setMachineSetting(FIRST_RUN_PROJECTS_SETTING, undefined))
+    const server = await startWithApp(machine.services, machine.fanout)
+
+    expect((await jsonRequest(server, "/v1/first-run")).body).toEqual({ state: "notApplicable" })
   })
 
   it("runs only on servers configured for it", async () => {
@@ -174,6 +231,10 @@ const makeMachine = async (overrides: Partial<AgentRuntimeService> = {}) => {
     importProjects: () =>
       importFirstRunProjects(services, fanout, "test", config.firstRunProjects!),
     createdEvents: () => listEvents(services).filter((event) => event.kind === "project.created"),
+    statusEvents: () =>
+      listEvents(services)
+        .filter((event) => event.kind === "firstRun.updated")
+        .map((event) => event.payload),
     logs: () => debug.mock.calls.map(([message]) => String(message)),
     marker: () => run(services.db.getMachineSetting(FIRST_RUN_PROJECTS_SETTING)),
     projectFolders: async () =>
@@ -192,6 +253,11 @@ const harness = (id: string, state: "ready" | "unavailable"): Harness => ({
   enabled: true,
   readiness: { state }
 })
+
+const foundHarnesses = [
+  { id: "codex", name: "codex" },
+  { id: "claude-code", name: "claude-code" }
+]
 
 const fixtureHarnesses: ReadonlyArray<Harness> = [
   harness("codex", "ready"),

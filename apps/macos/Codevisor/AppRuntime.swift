@@ -12,6 +12,7 @@ final class AppRuntime {
 
   private(set) var environment: AppEnvironment?
   private(set) var sparkleUpdater: SparkleUpdateController?
+  private(set) var firstLaunchSetup: FirstLaunchSetup?
   var startupError: String?
   @ObservationIgnored private var startupInProgress = false
   @ObservationIgnored let serverAgent = MacServerAgentController()
@@ -20,7 +21,7 @@ final class AppRuntime {
     serverAgent: MacServerAgentController,
     storage: ClientStorage,
     instanceLease: AppInstanceLease?
-  ) -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
+  ) -> (environment: AppEnvironment, updater: SparkleUpdateController?, isFirstLaunch: Bool) {
     let environment = AppEnvironment.live(storage: storage)
     environment.syncClientPreferences(SyncedPreferences.keys)
     if !CodevisorAppVariant.isDevelopment {
@@ -42,14 +43,12 @@ final class AppRuntime {
         CommandLineTools.ensureInstalled()
       }
     }
-    if !environment.settings.hasCompletedOnboarding {
-      environment.settings.completeOnboarding(importExternalSessions: false)
-    }
+    let isFirstLaunch = environment.settings.claimFirstLaunch()
     AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
     ChatNotificationManager.shared.attach(to: environment)
-    return (environment, sparkleUpdater)
+    return (environment, sparkleUpdater, isFirstLaunch)
   }
 
   func retry() {
@@ -74,6 +73,9 @@ final class AppRuntime {
       AppDelegate.current?.settings = runtime.environment.settings
       AppDelegate.current?.appUpdate = runtime.environment.appUpdate
       startupError = nil
+      if runtime.isFirstLaunch, !AppPreview.isRunning {
+        startFirstLaunchSetup(runtime.environment)
+      }
       if !AppPreview.isRunning {
         Task { @MainActor in
           await runtime.environment.prepareAllMachines()
@@ -83,5 +85,11 @@ final class AppRuntime {
     } catch {
       startupError = error.localizedDescription
     }
+  }
+
+  private func startFirstLaunchSetup(_ environment: AppEnvironment) {
+    let setup = FirstLaunchSetup(work: LiveFirstLaunchSetupWork(environment: environment))
+    firstLaunchSetup = setup
+    Task { await setup.run() }
   }
 }

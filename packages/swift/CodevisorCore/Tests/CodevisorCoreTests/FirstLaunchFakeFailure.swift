@@ -1,0 +1,1 @@
+struct FirstLaunchFakeFailure: Error {}

@@ -8,6 +8,7 @@ import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
 import { routeCloud } from "./routes/cloud.js"
 import { routeFiles } from "./routes/files.js"
+import { routeFirstRun } from "./routes/first-run.js"
 import { routeFs } from "./routes/fs.js"
 import { routeGatewayInvoke } from "./routes/gateway-invoke.js"
 import { routeGitAuth } from "./routes/git-auth.js"
@@ -116,6 +117,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, request, response, url }) => routeToolIcons(services, request, response, url),
   ({ services, request, response, url }) => routeLinkPreviews(services, request, response, url),
   ({ services, request, response, url }) => routeMachineStats(services, request, response, url),
+  ({ services, request, response, url }) => routeFirstRun(services, request, response, url),
   ({ services, request, response, url }) => routeMcps(services, request, response, url),
   ({ services, request, response, url }) => routeMcpScopes(services, request, response, url),
   ({ services, request, response, url }) => routeNativeMcps(services, request, response, url),

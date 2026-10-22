@@ -16,6 +16,11 @@ struct CodevisorApp: App {
           .frame(minWidth: 480, minHeight: 600)
           .themedRoot()
           .modifier(DebugMetricsOverlayModifier())
+          .overlay {
+            if let setup = runtime.firstLaunchSetup {
+              FirstLaunchSetupOverlay(setup: setup)
+            }
+          }
           .environment(environment)
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else if let startupError = runtime.startupError {
