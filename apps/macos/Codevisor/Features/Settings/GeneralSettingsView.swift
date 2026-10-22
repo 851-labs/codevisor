@@ -21,19 +21,14 @@ struct GeneralSettingsView: View {
     }
     .onAppear(perform: permissions.refresh)
     .onChange(of: controlActiveState) { _, _ in permissions.refresh() }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      permissions.refresh()
+    }
   }
 
   private var permissionsSection: some View {
     Section("Permissions") {
-      PermissionRow(
-        symbol: "internaldrive",
-        title: "Full Disk Access",
-        subtitle: "Agents can reach all your files",
-        grantedLabel: permissions.isFullDiskAccessGranted ? "Granted" : nil,
-        embedded: true
-      ) {
-        PermissionActionButton("Set Up…") { showsFullDiskAccessSetup = true }
-      }
+      FullDiskAccessSettingsRow(model: permissions) { showsFullDiskAccessSetup = true }
     }
   }
 

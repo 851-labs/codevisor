@@ -10,10 +10,10 @@ struct FullDiskAccessSetupSheet: View {
     SetupSheet(
       symbol: "internaldrive",
       title: "Allow Full Disk Access",
-      primaryTitle: "Done",
-      canContinue: model.isFullDiskAccessGranted,
+      primaryTitle: model.fullDiskAccessNeedsRestart ? "Restart" : "Done",
+      canContinue: model.isFullDiskAccessAllowed,
       onCancel: { dismiss() },
-      onContinue: { dismiss() }
+      onContinue: finish
     ) {
       PermissionRow(symbol: "gearshape", title: "Open Full Disk Access") {
         PermissionActionButton("Open…") {
@@ -25,13 +25,13 @@ struct FullDiskAccessSetupSheet: View {
       PermissionRow(
         symbol: "hand.draw",
         title: "Drag Codevisor into the list",
-        grantedLabel: model.isFullDiskAccessGranted ? "Granted" : nil
+        grantedLabel: model.isFullDiskAccessAllowed ? "Granted" : nil
       ) {
         AppDragChip()
       }
     }
-    .onChange(of: model.isFullDiskAccessGranted) { _, granted in
-      if granted { FullDiskAccessDragPanel.shared.close() }
+    .onChange(of: model.isFullDiskAccessAllowed) { _, allowed in
+      if allowed { FullDiskAccessDragPanel.shared.close() }
     }
     .onDisappear { FullDiskAccessDragPanel.shared.close() }
     .task {
@@ -40,5 +40,10 @@ struct FullDiskAccessSetupSheet: View {
         try? await Task.sleep(for: .seconds(1))
       }
     }
+  }
+
+  private func finish() {
+    guard model.fullDiskAccessNeedsRestart else { return dismiss() }
+    AppRelauncher.relaunch()
   }
 }

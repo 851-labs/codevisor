@@ -8,6 +8,7 @@ struct ComputerUsePermissionsTests {
     var accessibility = false
     var screenRecording = false
     var fullDiskAccess = false
+    var fullDiskAccessAllowed = false
     var accessibilityPrompts = 0
     var screenRecordingPrompts = 0
     var openedPanes: [SystemSettingsPane] = []
@@ -18,6 +19,7 @@ struct ComputerUsePermissionsTests {
       isAccessibilityGranted: { state.accessibility },
       isScreenRecordingGranted: { state.screenRecording },
       isFullDiskAccessGranted: { state.fullDiskAccess },
+      isFullDiskAccessAllowed: { state.fullDiskAccessAllowed },
       promptForAccessibility: { state.accessibilityPrompts += 1 },
       promptForScreenRecording: { state.screenRecordingPrompts += 1 },
       openSettingsPane: { pane in state.openedPanes.append(pane) }
@@ -156,6 +158,29 @@ struct ComputerUsePermissionsTests {
 
     model.requestFullDiskAccess()
     #expect(state.openedPanes == [.fullDiskAccess])
+  }
+
+  @Test("Full Disk Access allowed after launch asks for a restart instead of Set Up")
+  @MainActor
+  func fullDiskAccessAllowedMidRunNeedsRestart() {
+    let state = ProbeState()
+    let model = ComputerUsePermissionsModel(probes: probes(state))
+    #expect(!model.isFullDiskAccessAllowed)
+    #expect(!model.fullDiskAccessNeedsRestart)
+
+    state.fullDiskAccessAllowed = true
+    model.refresh()
+    #expect(!model.isFullDiskAccessGranted)
+    #expect(model.isFullDiskAccessAllowed)
+    #expect(model.fullDiskAccessNeedsRestart)
+
+    model.requestFullDiskAccess()
+    #expect(state.openedPanes.isEmpty)
+
+    state.fullDiskAccess = true
+    let relaunched = ComputerUsePermissionsModel(probes: probes(state))
+    #expect(relaunched.isFullDiskAccessGranted)
+    #expect(!relaunched.fullDiskAccessNeedsRestart)
   }
 
   @Test("Full Disk Access probe reports only a successful open as granted")

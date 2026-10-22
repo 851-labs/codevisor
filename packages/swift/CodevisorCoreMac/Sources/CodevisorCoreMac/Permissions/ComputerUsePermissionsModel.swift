@@ -16,6 +16,7 @@ public struct ComputerUsePermissionProbes: Sendable {
   public var isAccessibilityGranted: @Sendable () -> Bool
   public var isScreenRecordingGranted: @Sendable () -> Bool
   public var isFullDiskAccessGranted: @Sendable () -> Bool
+  public var isFullDiskAccessAllowed: @Sendable () -> Bool
   public var promptForAccessibility: @Sendable () -> Void
   public var promptForScreenRecording: @Sendable () -> Void
   public var openSettingsPane: @MainActor @Sendable (SystemSettingsPane) -> Void
@@ -24,6 +25,7 @@ public struct ComputerUsePermissionProbes: Sendable {
     isAccessibilityGranted: @escaping @Sendable () -> Bool,
     isScreenRecordingGranted: @escaping @Sendable () -> Bool,
     isFullDiskAccessGranted: @escaping @Sendable () -> Bool,
+    isFullDiskAccessAllowed: @escaping @Sendable () -> Bool,
     promptForAccessibility: @escaping @Sendable () -> Void,
     promptForScreenRecording: @escaping @Sendable () -> Void,
     openSettingsPane: @escaping @MainActor @Sendable (SystemSettingsPane) -> Void
@@ -31,6 +33,7 @@ public struct ComputerUsePermissionProbes: Sendable {
     self.isAccessibilityGranted = isAccessibilityGranted
     self.isScreenRecordingGranted = isScreenRecordingGranted
     self.isFullDiskAccessGranted = isFullDiskAccessGranted
+    self.isFullDiskAccessAllowed = isFullDiskAccessAllowed
     self.promptForAccessibility = promptForAccessibility
     self.promptForScreenRecording = promptForScreenRecording
     self.openSettingsPane = openSettingsPane
@@ -40,6 +43,7 @@ public struct ComputerUsePermissionProbes: Sendable {
     isAccessibilityGranted: { AXIsProcessTrusted() },
     isScreenRecordingGranted: { CGPreflightScreenCaptureAccess() },
     isFullDiskAccessGranted: { fullDiskAccessProbe() },
+    isFullDiskAccessAllowed: { TCCPreflight.isAllowed("kTCCServiceSystemPolicyAllFiles") },
     promptForAccessibility: {
       _ = AXIsProcessTrustedWithOptions(
         ["AXTrustedCheckOptionPrompt": true] as CFDictionary
@@ -60,6 +64,7 @@ public struct ComputerUsePermissionProbes: Sendable {
     isAccessibilityGranted: { true },
     isScreenRecordingGranted: { true },
     isFullDiskAccessGranted: { true },
+    isFullDiskAccessAllowed: { true },
     promptForAccessibility: {},
     promptForScreenRecording: {},
     openSettingsPane: { _ in }
@@ -95,7 +100,8 @@ public func computerUsePermissionsGateNeeded(
 public final class ComputerUsePermissionsModel {
   public private(set) var isAccessibilityGranted: Bool
   public private(set) var isScreenRecordingGranted: Bool
-  public private(set) var isFullDiskAccessGranted: Bool
+  public private(set) var isFullDiskAccessGranted = false
+  public private(set) var isFullDiskAccessAllowed = false
   public private(set) var screenRecordingGrantedThisRun = false
 
   private let probes: ComputerUsePermissionProbes
@@ -109,21 +115,30 @@ public final class ComputerUsePermissionsModel {
     let screenRecording = probes.isScreenRecordingGranted()
     isAccessibilityGranted = accessibility
     isScreenRecordingGranted = screenRecording
-    isFullDiskAccessGranted = probes.isFullDiskAccessGranted()
     screenRecordingGrantedAtStart = screenRecording
+    refreshFullDiskAccess()
   }
 
   public var allGranted: Bool {
     isAccessibilityGranted && isScreenRecordingGranted
   }
 
+  public var fullDiskAccessNeedsRestart: Bool {
+    isFullDiskAccessAllowed && !isFullDiskAccessGranted
+  }
+
   public func refresh() {
     isAccessibilityGranted = probes.isAccessibilityGranted()
     isScreenRecordingGranted = probes.isScreenRecordingGranted()
-    isFullDiskAccessGranted = probes.isFullDiskAccessGranted()
+    refreshFullDiskAccess()
     if isScreenRecordingGranted, !screenRecordingGrantedAtStart {
       screenRecordingGrantedThisRun = true
     }
+  }
+
+  private func refreshFullDiskAccess() {
+    isFullDiskAccessGranted = probes.isFullDiskAccessGranted()
+    isFullDiskAccessAllowed = isFullDiskAccessGranted || probes.isFullDiskAccessAllowed()
   }
 
   public func requestAccessibility() {
@@ -153,7 +168,7 @@ public final class ComputerUsePermissionsModel {
   }
 
   public func requestFullDiskAccess() {
-    guard !isFullDiskAccessGranted else { return }
+    guard !isFullDiskAccessAllowed else { return }
     probes.openSettingsPane(.fullDiskAccess)
   }
 
