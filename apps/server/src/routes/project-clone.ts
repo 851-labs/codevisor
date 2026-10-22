@@ -6,10 +6,12 @@ import { homedir } from "node:os"
 import { basename, dirname, join, sep } from "node:path"
 
 import type {
+  CreateProjectFromGitRequest,
   Project,
   ProjectCloneProgress,
   ProjectEnvFileContent,
-  ProjectSetupUpdate
+  ProjectSetupUpdate,
+  UpdateProjectRequest
 } from "@codevisor/api"
 import {
   CreateProjectFromGitRequest as CreateProjectFromGitRequestSchema,
@@ -60,7 +62,7 @@ const activeSetups = new Map<string, ActiveSetup>()
 const PROGRESS_INTERVAL_MS = 250
 
 export const cancelProjectSetup = (projectId: string): boolean => {
-  const setup = activeSetups.get(projectId.toLowerCase())
+  const setup = activeSetups.get(setupKey(projectId))
   if (setup === undefined) return false
   setup.controller.abort()
   return true
@@ -73,122 +75,205 @@ export const routeProjectFromGit = async (
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> => {
-  const payload = await readSchema(request, CreateProjectFromGitRequestSchema)
+  const clone = cloneRequest(await readSchema(request, CreateProjectFromGitRequestSchema))
+  const environment = await gitEnvironment(services)
+  const route: SetupRoute = { services, fanout, serverId, response }
+
+  const existing = await existingProjectFor(services.db, serverId, clone.repoUrl)
+  if (existing !== undefined) return adoptExistingProject(route, clone, existing)
+  assertNotSettingUp(clone.repository)
+
+  return cloneNewProject(route, clone, environment)
+}
+
+interface SetupRoute {
+  readonly services: CodevisorServerServices
+  readonly fanout: EventFanout
+  readonly serverId: string
+  readonly response: ServerResponse
+}
+
+interface CloneRequest {
+  readonly payload: CreateProjectFromGitRequest
+  readonly repoUrl: string
+  readonly name: string
+  readonly envFiles: ReadonlyArray<ProjectEnvFileContent>
+  readonly repository: string
+}
+
+interface ExistingProject {
+  readonly project: Project
+  readonly folderPath: string
+}
+
+interface CloneSetup {
+  readonly projectId: string
+  readonly controller: AbortController
+  readonly publish: ProjectSetupPublisher
+  readonly startedAt: number
+}
+
+const cloneRequest = (payload: CreateProjectFromGitRequest): CloneRequest => {
+  const repoUrl = requireGitUrl(payload)
+  const name = requireProjectName(payload, repoUrl)
+  const envFiles = payload.envFiles ?? []
+  assertWritableEnvFiles(envFiles)
+  return { payload, repoUrl, name, envFiles, repository: repoIdentityKey(repoUrl) ?? repoUrl }
+}
+
+const requireGitUrl = (payload: CreateProjectFromGitRequest): string => {
   const repoUrl = payload.url.trim()
   if (!looksLikeGitUrl(repoUrl)) {
     throw new HttpFailure(400, `Not a git URL: ${payload.url}`, "invalid_url")
   }
+  return repoUrl
+}
+
+const requireProjectName = (payload: CreateProjectFromGitRequest, repoUrl: string): string => {
   const name = payload.name?.trim() || cloneDirectoryName(repoUrl)
-  if (name === undefined || name.length === 0) {
+  if (isMissingName(name)) {
     throw new HttpFailure(
       400,
       "Could not derive a project name from the URL; pass one explicitly",
       "invalid_url"
     )
   }
-  const envFiles = payload.envFiles ?? []
-  assertWritableEnvFiles(envFiles)
-  const repository = repoIdentityKey(repoUrl) ?? repoUrl
-  const environment = await gitEnvironment(services)
+  return name
+}
 
-  const existing = await existingProjectFor(services.db, serverId, repoUrl)
-  if (existing !== undefined) {
-    const { project: existingProject, folderPath } = existing
-    await writeEnvFiles(folderPath, envFiles)
-    const publishSetup = makeProjectSetupPublisher(
-      services.db,
-      fanout,
-      payload.id ?? existingProject.id,
-      repoUrl
-    )
-    await publishSetup({ state: "completed", folderPath, durationMs: 0 })
-    writeJson(response, 200, await probeProject(serverId, existingProject))
-    return
-  }
-  if ([...activeSetups.values()].some((setup) => setup.repository === repository)) {
+const isMissingName = (name: string | undefined): name is "" | undefined =>
+  name === undefined || name.length === 0
+
+const adoptExistingProject = async (
+  route: SetupRoute,
+  clone: CloneRequest,
+  existing: ExistingProject
+): Promise<void> => {
+  const { project, folderPath } = existing
+  await writeEnvFiles(folderPath, clone.envFiles)
+  const publishSetup = makeProjectSetupPublisher(
+    route.services.db,
+    route.fanout,
+    clone.payload.id ?? project.id,
+    clone.repoUrl
+  )
+  await publishSetup({ state: "completed", folderPath, durationMs: 0 })
+  writeJson(route.response, 200, await probeProject(route.serverId, project))
+}
+
+const assertNotSettingUp = (repository: string): void => {
+  if (isSettingUp(repository)) {
     throw new HttpFailure(
       409,
       "This repository is already being set up on this machine",
       "in_progress"
     )
   }
+}
 
-  const newProjectId = payload.id ?? randomUUID()
-  const controller = new AbortController()
-  activeSetups.set(newProjectId.toLowerCase(), { controller, repository })
-  const publishSetup = makeProjectSetupPublisher(services.db, fanout, newProjectId, repoUrl)
-  const startedAt = Date.now()
+const isSettingUp = (repository: string): boolean =>
+  [...activeSetups.values()].some((setup) => setup.repository === repository)
+
+const cloneNewProject = async (
+  route: SetupRoute,
+  clone: CloneRequest,
+  environment: NodeJS.ProcessEnv
+): Promise<void> => {
+  const setup = beginSetup(route, clone)
   let createdFolder: string | undefined
   try {
-    await publishSetup({ state: "started" })
+    await setup.publish({ state: "started" })
     const destination = await chooseDestination({
-      name,
-      repoUrl,
-      homeRelativePath: payload.homeRelativePath,
-      baseFolder: await cloneBaseFolder(services.db),
+      name: clone.name,
+      repoUrl: clone.repoUrl,
+      homeRelativePath: clone.payload.homeRelativePath,
+      baseFolder: await cloneBaseFolder(route.services.db),
       env: environment
     })
-    let clonedUrl = repoUrl
+    let clonedUrl = clone.repoUrl
     if (!destination.adopt) {
-      await publishSetup({ state: "progress", progress: { stage: "connecting" } })
-      clonedUrl = await reachableCloneUrl(repoUrl, environment, controller.signal)
+      await setup.publish({ state: "progress", progress: { stage: "connecting" } })
+      clonedUrl = await reachableCloneUrl(clone.repoUrl, environment, setup.controller.signal)
       await mkdir(dirname(destination.path), { recursive: true })
       createdFolder = destination.path
       await cloneRepository(
         clonedUrl,
         destination.path,
-        cloneOutputPublisher(publishSetup),
+        cloneOutputPublisher(setup.publish),
         environment,
-        controller.signal
+        setup.controller.signal
       )
     }
-    if (envFiles.length > 0) {
-      await publishSetup({ state: "progress", progress: { stage: "copying" } })
-      await writeEnvFiles(destination.path, envFiles)
+    if (clone.envFiles.length > 0) {
+      await setup.publish({ state: "progress", progress: { stage: "copying" } })
+      await writeEnvFiles(destination.path, clone.envFiles)
     }
     const created = await run(
-      services.db.createProject({
-        id: newProjectId,
+      route.services.db.createProject({
+        id: setup.projectId,
         folderPath: destination.path,
-        name,
+        name: clone.name,
         repoUrl: clonedUrl
       })
     )
     const project = await run(
-      services.db.updateProject(created.id, {
-        ...(payload.worktreeBase === undefined ? {} : { worktreeBase: payload.worktreeBase }),
-        ...(payload.defaultRunLocation === undefined
-          ? {}
-          : { defaultRunLocation: payload.defaultRunLocation })
-      })
+      route.services.db.updateProject(created.id, inheritedSettings(clone.payload))
     )
     createdFolder = undefined
-    await publishSetup({
-      state: "completed",
-      folderPath: destination.path,
-      durationMs: Date.now() - startedAt
-    })
-    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-    writeJson(response, 201, await probeProject(serverId, project))
+    await setup.publish(completedUpdate(destination.path, setup.startedAt))
+    await appendAndPublish(route.services.db, route.fanout, "project.created", project.id, project)
+    writeJson(route.response, 201, await probeProject(route.serverId, project))
   } catch (cause) {
-    const code =
-      cause instanceof CloneError || cause instanceof HttpFailure
-        ? setupErrorCode(cause.code)
-        : /* v8 ignore next */ undefined
-    const host = cloneUrlHost(repoUrl)
-    await publishSetup({
-      state: "failed",
-      message: failureMessage(cause),
-      ...(code === undefined ? {} : { code }),
-      ...(host === undefined ? {} : { host }),
-      durationMs: Date.now() - startedAt
-    })
+    await setup.publish(failedUpdate(cause, clone.repoUrl, setup.startedAt))
     if (createdFolder !== undefined) await rm(createdFolder, { force: true, recursive: true })
     throw cause
   } finally {
-    activeSetups.delete(newProjectId.toLowerCase())
+    activeSetups.delete(setupKey(setup.projectId))
   }
 }
+
+const beginSetup = (route: SetupRoute, clone: CloneRequest): CloneSetup => {
+  const projectId = clone.payload.id ?? randomUUID()
+  const controller = new AbortController()
+  activeSetups.set(setupKey(projectId), { controller, repository: clone.repository })
+  const publish = makeProjectSetupPublisher(
+    route.services.db,
+    route.fanout,
+    projectId,
+    clone.repoUrl
+  )
+  return { projectId, controller, publish, startedAt: Date.now() }
+}
+
+const setupKey = (projectId: string): string => projectId.toLowerCase()
+
+const inheritedSettings = (payload: CreateProjectFromGitRequest): UpdateProjectRequest => ({
+  ...(payload.worktreeBase === undefined ? {} : { worktreeBase: payload.worktreeBase }),
+  ...(payload.defaultRunLocation === undefined
+    ? {}
+    : { defaultRunLocation: payload.defaultRunLocation })
+})
+
+const completedUpdate = (folderPath: string, startedAt: number): ProjectSetupDetail => ({
+  state: "completed",
+  folderPath,
+  durationMs: Date.now() - startedAt
+})
+
+const failedUpdate = (cause: unknown, repoUrl: string, startedAt: number): ProjectSetupDetail => {
+  const code = hasErrorCode(cause) ? setupErrorCode(cause.code) : /* v8 ignore next */ undefined
+  const host = cloneUrlHost(repoUrl)
+  return {
+    state: "failed",
+    message: failureMessage(cause),
+    ...(code === undefined ? {} : { code }),
+    ...(host === undefined ? {} : { host }),
+    durationMs: Date.now() - startedAt
+  }
+}
+
+const hasErrorCode = (cause: unknown): cause is CloneError | HttpFailure =>
+  cause instanceof CloneError || cause instanceof HttpFailure
 
 const sameRepository = (left: string | undefined, right: string): boolean =>
   left !== undefined && (repoIdentityKey(left) ?? left) === (repoIdentityKey(right) ?? right)
@@ -197,7 +282,7 @@ const existingProjectFor = async (
   db: CodevisorDatabaseService,
   serverId: string,
   repoUrl: string
-): Promise<{ readonly project: Project; readonly folderPath: string } | undefined> => {
+): Promise<ExistingProject | undefined> => {
   for (const project of await run(db.listProjects)) {
     const folderPath = project.locations
       .filter((location) => location.serverId === serverId)
@@ -313,9 +398,9 @@ const isSetupErrorCode = Schema.is(ProjectSetupErrorCode)
 const setupErrorCode = (code: string | undefined): ProjectSetupUpdate["code"] =>
   isSetupErrorCode(code) ? code : undefined
 
-type ProjectSetupPublisher = (
-  detail: Partial<ProjectSetupUpdate> & { state: ProjectSetupUpdate["state"] }
-) => Promise<void>
+type ProjectSetupDetail = Partial<ProjectSetupUpdate> & { state: ProjectSetupUpdate["state"] }
+
+type ProjectSetupPublisher = (detail: ProjectSetupDetail) => Promise<void>
 
 const makeProjectSetupPublisher = (
   db: CodevisorDatabaseService,
