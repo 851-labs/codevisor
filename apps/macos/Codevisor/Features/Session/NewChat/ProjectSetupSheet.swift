@@ -39,7 +39,7 @@ struct ProjectSetupSheet: View {
       }
 
       if hasCard {
-        PermissionCard { card }
+        PermissionCard { card(caution: screen.caution) }
       }
 
       HStack {
@@ -48,6 +48,9 @@ struct ProjectSetupSheet: View {
         Spacer()
         if let activity {
           SheetActivityLabel(activity)
+        }
+        if setup.offersSignIn {
+          Button("Sign In…") { setup.signIn() }
         }
         if let primary {
           Button(primary.title, action: primary.perform)
@@ -95,7 +98,7 @@ struct ProjectSetupSheet: View {
   }
 
   @ViewBuilder
-  private var card: some View {
+  private func card(caution message: String?) -> some View {
     switch setup.phase {
     case let .signingIn(_, model):
       signInRows(model)
@@ -106,17 +109,12 @@ struct ProjectSetupSheet: View {
         } else {
           envRow(plan)
         }
-        if let failureMessage {
+        if let message {
           Divider()
-          caution(failureMessage)
+          caution(message)
         }
       }
     }
-  }
-
-  private var failureMessage: String? {
-    if case let .failed(_, failure) = setup.phase { return failure.message }
-    return nil
   }
 
   @ViewBuilder

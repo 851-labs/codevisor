@@ -80,6 +80,13 @@ export const cloneUrlHost = (rawUrl: string): string | undefined => {
   return scpPattern.exec(url)?.[1]?.toLowerCase()
 }
 
+export const cloneUrlScheme = (rawUrl: string): string => {
+  const url = rawUrl.trim()
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url)?.[1]
+  if (scheme !== undefined) return scheme.toLowerCase()
+  return scpPattern.test(url) ? "ssh" : "file"
+}
+
 export const nonInteractiveGitEnvironment = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
   ...env,
   GIT_TERMINAL_PROMPT: "0",
@@ -92,6 +99,25 @@ export interface RemoteProbeResult {
   readonly ok: boolean
   readonly code?: CloneFailureCode | undefined
   readonly message: string
+}
+
+const failurePrecedence: ReadonlyArray<CloneFailureCode> = [
+  "cancelled",
+  "repo_not_found",
+  "auth_failed",
+  "invalid_url",
+  "network",
+  "disk_full"
+]
+
+export const moreTellingFailure = (
+  first: RemoteProbeResult,
+  second: RemoteProbeResult
+): RemoteProbeResult => (failureRank(second) < failureRank(first) ? second : first)
+
+const failureRank = (result: RemoteProbeResult): number => {
+  if (result.code === undefined) return failurePrecedence.length
+  return failurePrecedence.indexOf(result.code)
 }
 
 export const probeRemote = (

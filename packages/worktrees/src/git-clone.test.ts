@@ -5,7 +5,15 @@ import { join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
 
-import { alternateCloneUrl, cloneUrlHost, parseCloneProgress, probeRemote } from "./git-clone.js"
+import {
+  alternateCloneUrl,
+  cloneUrlHost,
+  cloneUrlScheme,
+  moreTellingFailure,
+  parseCloneProgress,
+  probeRemote,
+  type RemoteProbeResult
+} from "./git-clone.js"
 import { expectInstanceOf, makeGitRepo, testTempDir } from "./git-test-support.js"
 import { CloneError, cloneRepository, gitRemoteUrl } from "./git.js"
 
@@ -84,6 +92,42 @@ describe("clone URLs", () => {
     expect(cloneUrlHost("https://gitlab.example.com/acme/widget")).toBe("gitlab.example.com")
     expect(cloneUrlHost("file:///tmp/widget")).toBeUndefined()
     expect(cloneUrlHost("/srv/git/widget")).toBeUndefined()
+  })
+
+  it("names the transport a clone URL uses", () => {
+    expect(cloneUrlScheme("https://github.com/acme/widget")).toBe("https")
+    expect(cloneUrlScheme("SSH://git@github.com/acme/widget")).toBe("ssh")
+    expect(cloneUrlScheme("git@github.com:acme/widget.git")).toBe("ssh")
+    expect(cloneUrlScheme("file:///tmp/widget")).toBe("file")
+    expect(cloneUrlScheme("/srv/git/widget")).toBe("file")
+  })
+})
+
+describe("choosing between two failed probes", () => {
+  type Code = RemoteProbeResult["code"]
+  const failed = (code: Code): RemoteProbeResult => ({ ok: false, code, message: String(code) })
+
+  it("reports the failure that says the most about the repository", () => {
+    const cases: ReadonlyArray<readonly [Code, Code, Code]> = [
+      [undefined, "repo_not_found", "repo_not_found"],
+      [undefined, "auth_failed", "auth_failed"],
+      ["network", "repo_not_found", "repo_not_found"],
+      ["auth_failed", "repo_not_found", "repo_not_found"],
+      ["repo_not_found", "auth_failed", "repo_not_found"],
+      ["repo_not_found", "cancelled", "cancelled"],
+      ["network", undefined, "network"]
+    ]
+    for (const [first, second, expected] of cases) {
+      const chosen = moreTellingFailure(failed(first), failed(second))
+      expect(chosen.code, `${String(first)} vs ${String(second)}`).toBe(expected)
+    }
+  })
+
+  it("keeps the requested URL's failure when both say the same", () => {
+    const first = failed("auth_failed")
+
+    expect(moreTellingFailure(first, failed("auth_failed"))).toBe(first)
+    expect(moreTellingFailure(failed(undefined), failed(undefined)).message).toBe("undefined")
   })
 })
 

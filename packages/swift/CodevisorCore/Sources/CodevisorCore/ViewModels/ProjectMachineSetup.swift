@@ -62,9 +62,11 @@ public final class ProjectMachineSetup {
     public var serverId: String?
 
     public var provider: GitHostProvider? { host.flatMap(GitHostProvider.init(host:)) }
-    public var needsSignIn: Bool {
+    public var isMissingRepository: Bool { code == "repo_not_found" }
+    public var needsSignIn: Bool { canSignIn && code == "auth_failed" }
+    public var canSignIn: Bool {
       guard provider?.supportsSignIn == true else { return false }
-      return code == "auth_failed" || code == "repo_not_found"
+      return code == "auth_failed" || isMissingRepository
     }
   }
 
@@ -140,6 +142,11 @@ public final class ProjectMachineSetup {
 
   public var isPushing: Bool {
     if case let .running(plan) = phase { return plan.needsRemote }
+    return false
+  }
+
+  public var offersSignIn: Bool {
+    if case let .failed(_, failure) = phase { return failure.canSignIn }
     return false
   }
 
@@ -237,7 +244,7 @@ public final class ProjectMachineSetup {
   }
 
   public func signIn() {
-    guard case let .failed(plan, failure) = phase, failure.needsSignIn, let provider = failure.provider
+    guard case let .failed(plan, failure) = phase, failure.canSignIn, let provider = failure.provider
     else { return }
     let serverId = failure.serverId ?? plan.targetServerId
     let model = GitSignInModel(
@@ -409,10 +416,11 @@ public final class ProjectMachineSetup {
       phase = .idle
       return
     }
-    phase = .failed(
-      plan,
-      Failure(
-        message: Self.message(plan: plan, code: code), code: code, host: plan.host, serverId: serverId))
-    signIn()
+    let machine = serverId.map(machineName) ?? plan.targetMachineName
+    let failure = Failure(
+      message: Self.message(plan: plan, code: code, machine: machine), code: code, host: plan.host,
+      serverId: serverId)
+    phase = .failed(plan, failure)
+    if failure.needsSignIn { signIn() }
   }
 }

@@ -211,6 +211,40 @@ struct ProjectMachineSetupTests {
     #expect(requests[0].id != requests[1].id)
   }
 
+  @Test("explains a missing repository without starting sign-in, and signs in only when asked")
+  func explainsMissingRepository() async throws {
+    let source = ProjectSetupFakeClient()
+    let target = ProjectSetupFakeClient()
+    await target.configure(setupResults: [
+      .failure(.httpStatus(422, #"{"error":"remote: Repository not found.","code":"repo_not_found"}"#))
+    ])
+    let setup = makeSetup(source: source, target: target)
+    let group = try #require(ProjectGroup.grouping([sourceProject]).first)
+
+    await setup.prepare(group: group, targetServerId: "studio", preferredSource: nil)
+    setup.confirm()
+    try await waitUntil {
+      if case .failed = setup.phase { return true }
+      return false
+    }
+
+    #expect(
+      setup.screen(showing: setup.plan)
+        == .init(
+          symbol: "questionmark.folder",
+          title: "Repository not found",
+          message: "acme/widget doesn't exist, or Studio's GitHub account can't see it."
+        ))
+    #expect(setup.offersSignIn)
+
+    setup.signIn()
+    guard case let .signingIn(_, signIn) = setup.phase else {
+      Issue.record("Expected Sign In to move the sheet to sign-in")
+      return
+    }
+    #expect(signIn.machineName == "Studio")
+  }
+
   @Test("skips env files when unchecked and explains a project with no remote and no source")
   func skipsEnvFilesAndRejectsNoRemote() async throws {
     let source = ProjectSetupFakeClient()

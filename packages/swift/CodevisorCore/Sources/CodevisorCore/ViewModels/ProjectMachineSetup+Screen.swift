@@ -5,6 +5,7 @@ extension ProjectMachineSetup {
     public let symbol: String
     public let title: String
     public let message: String
+    public var caution: String?
   }
 
   public func screen(showing plan: Plan?) -> Screen {
@@ -16,6 +17,8 @@ extension ProjectMachineSetup {
         title: "Sign In to \(provider)",
         message: "\(model.machineName) needs to sign in to \(provider) to continue."
       )
+    case let .failed(_, failure) where failure.isMissingRepository:
+      return Screen(symbol: "questionmark.folder", title: "Repository not found", message: failure.message)
     case let .unavailable(project, machine):
       return Screen(
         symbol: "folder",
@@ -30,15 +33,22 @@ extension ProjectMachineSetup {
         return Screen(
           symbol: "square.and.arrow.up",
           title: "Add a remote for \(name)",
-          message: "To use \(name) on \(machine), it needs a git remote to clone from."
+          message: "To use \(name) on \(machine), it needs a git remote to clone from.",
+          caution: failureMessage
         )
       }
       return Screen(
         symbol: "square.and.arrow.down",
         title: "Clone \(name) to \(machine)?",
-        message: "\(name) isn't on \(machine) yet. We'll clone it there so you can use it."
+        message: "\(name) isn't on \(machine) yet. We'll clone it there so you can use it.",
+        caution: failureMessage
       )
     }
+  }
+
+  private var failureMessage: String? {
+    if case let .failed(_, failure) = phase { return failure.message }
+    return nil
   }
 }
 

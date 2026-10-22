@@ -25,9 +25,12 @@ import {
   cloneRepository,
   cloneUrlHost,
   gitRemoteUrl,
+  type GitOutputListener,
   isGitWorkTree,
+  moreTellingFailure,
   parseCloneProgress,
-  probeRemote
+  probeRemote,
+  type RemoteProbeResult
 } from "@codevisor/worktrees"
 import { Schema } from "effect"
 
@@ -43,6 +46,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { logCloneFailure } from "./project-clone-log.js"
 import { cloneBaseFolder } from "./project-clone-settings.js"
 import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
 import { probeProject } from "./project-probe.js"
@@ -196,7 +200,7 @@ const cloneNewProject = async (
       clonedUrl = await reachableCloneUrl(clone.repoUrl, environment, setup.controller.signal)
       await mkdir(dirname(destination.path), { recursive: true })
       createdFolder = destination.path
-      await cloneRepository(
+      await cloneAndLog(
         clonedUrl,
         destination.path,
         cloneOutputPublisher(setup.publish),
@@ -339,12 +343,41 @@ const reachableCloneUrl = async (
   env: NodeJS.ProcessEnv,
   signal: AbortSignal
 ): Promise<string> => {
-  const first = await probeRemote(repoUrl, env, signal)
+  const first = await probeAndLog(repoUrl, env, signal)
   if (first.ok) return repoUrl
+
   const alternate = alternateCloneUrl(repoUrl)
-  if (alternate !== undefined && (await probeRemote(alternate, env, signal)).ok) return alternate
-  throw new CloneError(first.message, first.code)
+  if (alternate === undefined) throw probeFailure(first)
+
+  const second = await probeAndLog(alternate, env, signal)
+  if (second.ok) return alternate
+  throw probeFailure(moreTellingFailure(first, second))
 }
+
+const probeAndLog = async (
+  url: string,
+  env: NodeJS.ProcessEnv,
+  signal: AbortSignal
+): Promise<RemoteProbeResult> => {
+  const result = await probeRemote(url, env, signal)
+  if (!result.ok) logCloneFailure(url, result)
+  return result
+}
+
+const probeFailure = (result: RemoteProbeResult): CloneError =>
+  new CloneError(result.message, result.code)
+
+const cloneAndLog = (
+  url: string,
+  destination: string,
+  onOutput: GitOutputListener,
+  env: NodeJS.ProcessEnv,
+  signal: AbortSignal
+): Promise<void> =>
+  cloneRepository(url, destination, onOutput, env, signal).catch((failure: CloneError) => {
+    logCloneFailure(url, failure)
+    throw failure
+  })
 
 const cloneOutputPublisher = (
   publishSetup: ProjectSetupPublisher

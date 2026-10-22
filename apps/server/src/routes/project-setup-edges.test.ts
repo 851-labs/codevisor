@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { jsonRequest, listSubjectEvents, start } from "../test-support.js"
 import { MAX_CLONE_FOLDER_SUFFIX } from "./project-clone.js"
@@ -200,6 +208,68 @@ describe("project setup transport", () => {
       state: "failed",
       host: "localhost"
     })
+  })
+
+  it("reports the more telling failure when both transports fail and logs each without credentials", async () => {
+    const env = fakeCli("fake-ssh", 'echo "ERROR: Repository not found." >&2\nexit 1')
+    const { server, services } = await startServer({ ...env, GIT_SSH_COMMAND: "fake-ssh" })
+    await useBaseFolder(server)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    onTestFinished(() => logged.mockRestore())
+
+    const failed = await jsonRequest(server, "/v1/projects/from-git", {
+      body: JSON.stringify({
+        id: "gone",
+        url: "https://cv:ghp_cv3074secret@localhost/acme/gone.git"
+      }),
+      method: "POST"
+    })
+
+    expect(failed).toMatchObject({ status: 422, body: { code: "repo_not_found" } })
+    expect(lastSetup(services, "gone")).toMatchObject({ state: "failed", code: "repo_not_found" })
+    const lines = logged.mock.calls.map(([line]) => String(line))
+    expect(lines.map((line) => JSON.parse(line) as unknown)).toEqual([
+      expect.objectContaining({
+        event: "project_clone_failed",
+        host: "localhost",
+        scheme: "https"
+      }),
+      expect.objectContaining({
+        event: "project_clone_failed",
+        code: "repo_not_found",
+        host: "localhost",
+        scheme: "ssh",
+        stderr: expect.stringContaining("ERROR: Repository not found.")
+      })
+    ])
+    expect(lines.join("\n")).not.toContain("cv3074secret")
+  })
+
+  it("logs a clone that fails after the remote answered", async () => {
+    const origin = await makeOrigin()
+    const objects = join(origin, ".git", "objects")
+    for (const entry of readdirSync(objects).filter((name) => /^[0-9a-f]{2}$/.test(name))) {
+      rmSync(join(objects, entry), { recursive: true })
+    }
+    const { server, services } = await startServer()
+    await useBaseFolder(server)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    onTestFinished(() => logged.mockRestore())
+
+    const failed = await jsonRequest(server, "/v1/projects/from-git", {
+      body: JSON.stringify({ id: "hollow", url: `file://${origin}` }),
+      method: "POST"
+    })
+
+    expect(failed.status).toBe(422)
+    expect(lastSetup(services, "hollow")).toMatchObject({ state: "failed" })
+    expect(logged.mock.calls.map(([line]) => JSON.parse(String(line)) as unknown)).toEqual([
+      expect.objectContaining({
+        event: "project_clone_failed",
+        scheme: "file",
+        stderr: expect.stringContaining("not our ref")
+      })
+    ])
   })
 
   it("cancels a setup in progress and refuses a second one for the same repository", async () => {

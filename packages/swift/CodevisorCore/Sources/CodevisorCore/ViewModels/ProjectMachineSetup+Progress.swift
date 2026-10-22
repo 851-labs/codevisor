@@ -35,11 +35,12 @@ extension ProjectMachineSetup {
     return "\(size) · \(rate.formatted(.byteCount(style: .file)))/s"
   }
 
-  static func message(plan: Plan, code: String?) -> String {
+  static func message(plan: Plan, code: String?, machine: String) -> String {
     let provider = plan.provider?.displayName ?? "remote"
     switch code {
     case "auth_failed": return "Not signed in to \(provider)"
-    case "repo_not_found": return "No access on \(provider)"
+    case "repo_not_found":
+      return "\(plan.repositoryName) doesn't exist, or \(machine)'s \(provider) account can't see it."
     case "network": return "Can't reach \(provider)"
     case "disk_full": return "Disk full"
     case "in_progress": return "Already setting up"

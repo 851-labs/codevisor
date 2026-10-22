@@ -20,19 +20,8 @@ export const classifyCloneFailure = (
   stderrText: string
 ): Exclude<CloneFailureCode, "cancelled"> | undefined => {
   const text = stderrText.toLowerCase()
-  if (
-    text.includes("authentication failed") ||
-    text.includes("could not read username") ||
-    text.includes("could not read password") ||
-    text.includes("permission denied (publickey") ||
-    text.includes("host key verification failed") ||
-    text.includes("support for password authentication was removed")
-  ) {
-    return "auth_failed"
-  }
-  if (text.includes("repository") && text.includes("not found")) {
-    return "repo_not_found"
-  }
+  if (credentialsMissingOrRejected(text)) return "auth_failed"
+  if (repositoryNotFound(text)) return "repo_not_found"
   if (
     text.includes("could not resolve host") ||
     text.includes("unable to access") ||
@@ -52,6 +41,15 @@ export const classifyCloneFailure = (
   }
   return undefined
 }
+
+const credentialsMissingOrRejected = (text: string): boolean =>
+  text.includes("authentication failed") ||
+  text.includes("could not read username") ||
+  text.includes("could not read password") ||
+  text.includes("permission denied (publickey")
+
+const repositoryNotFound = (text: string): boolean =>
+  text.includes("repository not found") || /repository '[^']*' not found/.test(text)
 
 export class CloneError extends GitError {
   constructor(

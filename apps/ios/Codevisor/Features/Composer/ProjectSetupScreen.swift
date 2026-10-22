@@ -185,6 +185,10 @@ struct ProjectSetupScreen: View {
           )
           .disabled(!primary.isEnabled)
       }
+      if setup.offersSignIn {
+        Button("Sign In…") { setup.signIn() }
+          .font(.subheadline.weight(.medium))
+      }
       if let note = actionNote {
         SheetActivityLabel(note)
       }
@@ -197,7 +201,7 @@ struct ProjectSetupScreen: View {
 
   private var errorMessage: String? {
     switch setup.phase {
-    case let .failed(_, failure): failure.message
+    case .failed: setup.screen(showing: shownPlan).caution
     case let .signingIn(_, model):
       if case let .failed(_, message) = model.step {
         message.components(separatedBy: "\n").first ?? message

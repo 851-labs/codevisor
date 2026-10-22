@@ -13,7 +13,6 @@ import {
   CloneError,
   GitError,
   addWorktree,
-  classifyCloneFailure,
   cloneRepository,
   gitBranchDiffTotals,
   gitRemoteUrl,
@@ -350,30 +349,6 @@ describe("git helper", () => {
     ).catch((cause: unknown) => cause)
     expect(expectInstanceOf(failure, GitError).message).toContain("exited with code 2")
     expect(lines).toContainEqual(["stdout", "partial-stdout-line"])
-  })
-})
-
-describe("classifyCloneFailure", () => {
-  it("maps git stderr onto actionable failure codes", () => {
-    const cases: ReadonlyArray<readonly [string, string | undefined]> = [
-      ["fatal: Authentication failed for 'https://x'", "auth_failed"],
-      ["fatal: could not read Username for 'https://github.com'", "auth_failed"],
-      ["fatal: could not read Password for 'https://github.com'", "auth_failed"],
-      ["git@github.com: Permission denied (publickey).", "auth_failed"],
-      ["Host key verification failed.", "auth_failed"],
-      ["remote: Support for password authentication was removed.", "auth_failed"],
-      ["remote: Repository not found.", "repo_not_found"],
-      ["fatal: unable to access 'https://x/': Could not resolve host: x", "network"],
-      ["ssh: connect to host x port 22: Connection timed out", "network"],
-      ["ssh: connect to host x port 22: Connection refused", "network"],
-      ["fatal: write error: No space left on device", "disk_full"],
-      ["fatal: 'x' does not appear to be a git repository", "invalid_url"],
-      ["remote: is not a valid repository name", "invalid_url"],
-      ["fatal: something novel exploded", undefined]
-    ]
-    for (const [stderr, expected] of cases) {
-      expect(classifyCloneFailure(stderr), stderr).toBe(expected)
-    }
   })
 })
 
