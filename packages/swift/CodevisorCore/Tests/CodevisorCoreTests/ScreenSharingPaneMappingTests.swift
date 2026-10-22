@@ -10,7 +10,7 @@ struct ScreenSharingPaneMappingTests {
     let pane = PaneDescriptorState(
       id: id, kind: .screenSharing, name: "Screen Sharing", terminalKey: id.uuidString,
       screenSharing: preferences)
-    let record = WorkspaceSyncModel.serverPane(
+    let record = ServerPaneMapping.record(
       from: pane, workspaceId: UUID(), createdAt: Date(timeIntervalSince1970: 0))
     #expect(record.providerId == "codevisor")
     #expect(record.paneType == "screen-sharing")
@@ -19,7 +19,7 @@ struct ScreenSharingPaneMappingTests {
     let data = try #require(record.metadata?.data(using: .utf8))
     let fields = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     #expect(Set(fields.keys) == ["schemaVersion", "preferredDisplayId"])
-    #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
+    #expect(ServerPaneMapping.descriptor(from: record) == pane)
     #expect(try JSONDecoder().decode(PaneDescriptorState.self, from: JSONEncoder().encode(pane)) == pane)
   }
 
@@ -29,9 +29,9 @@ struct ScreenSharingPaneMappingTests {
       id: id.uuidString, workspaceId: UUID().uuidString, providerId: "codevisor",
       paneType: "screen-sharing", title: "Screen Sharing", metadata: #"{"schemaVersion":2}"#,
       createdAt: "2026-01-01T00:00:00.000Z")
-    #expect(WorkspaceSyncModel.descriptor(from: record) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record) == nil)
     record.metadata = "invalid"
-    #expect(WorkspaceSyncModel.descriptor(from: record) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record) == nil)
     var state = PaneGroupState.centerInitial(sessionId: UUID())
     let initial = state.panes
     let placeholder = state.addNewTabPane()

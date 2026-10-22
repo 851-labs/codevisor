@@ -145,7 +145,7 @@ enum NavigationOverlay {
     let current = records.panes.first { UUID(uuidString: $0.id) == pane.id }
     let createdAt =
       current.flatMap { try? ServerDateCoding.date(from: $0.createdAt) } ?? Date(timeIntervalSince1970: 0)
-    var record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: createdAt)
+    var record = ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: createdAt)
     record.liveTitle = current?.liveTitle
     record.terminalActivity = current?.terminalActivity
     if let index = records.panes.firstIndex(where: { UUID(uuidString: $0.id) == pane.id }) {

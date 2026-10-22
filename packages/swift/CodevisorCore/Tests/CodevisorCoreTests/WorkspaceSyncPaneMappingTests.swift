@@ -57,7 +57,7 @@ struct WorkspaceSyncPaneMappingTests {
       pluginId: "codevisor.git-diff",
       pluginPaneType: "diff"
     )
-    let record = WorkspaceSyncModel.serverPane(
+    let record = ServerPaneMapping.record(
       from: pane, workspaceId: workspaceId, createdAt: Date()
     )
     #expect(record.providerId == "plugin:codevisor.git-diff")
@@ -67,7 +67,7 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(record.resourceKind == nil)
     #expect(record.resourceId == nil)
 
-    let restored = WorkspaceSyncModel.descriptor(from: record)
+    let restored = ServerPaneMapping.descriptor(from: record)
     #expect(restored == pane)
   }
 
@@ -81,7 +81,7 @@ struct WorkspaceSyncPaneMappingTests {
       pluginId: "codevisor.git-diff",
       pluginPaneType: "diff"
     )
-    let record = WorkspaceSyncModel.serverPane(
+    let record = ServerPaneMapping.record(
       from: pane, workspaceId: workspaceId, createdAt: Date()
     )
     #expect(record.metadata == nil)
@@ -99,10 +99,10 @@ struct WorkspaceSyncPaneMappingTests {
         createdAt: "2026-01-01T00:00:00.000Z"
       )
     }
-    #expect(WorkspaceSyncModel.descriptor(from: record(providerId: "somebody-else")) == nil)
-    #expect(WorkspaceSyncModel.descriptor(from: record(providerId: "plugin:")) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record(providerId: "somebody-else")) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record(providerId: "plugin:")) == nil)
     #expect(
-      WorkspaceSyncModel.descriptor(
+      ServerPaneMapping.descriptor(
         from: record(providerId: "codevisor", paneType: "hologram")
       ) == nil
     )
@@ -121,10 +121,10 @@ struct WorkspaceSyncPaneMappingTests {
         createdAt: "2026-01-01T00:00:00.000Z"
       )
     }
-    let browser = WorkspaceSyncModel.descriptor(from: record(paneType: "browser", title: "Browser"))
+    let browser = ServerPaneMapping.descriptor(from: record(paneType: "browser", title: "Browser"))
     #expect(browser?.kind == .browser)
     #expect(browser?.id == id)
-    #expect(WorkspaceSyncModel.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
   }
 
   @Test("Terminals map; the hidden agent terminals older clients published do not")
@@ -142,14 +142,14 @@ struct WorkspaceSyncPaneMappingTests {
         createdAt: "2026-01-01T00:00:00.000Z"
       )
     }
-    let user = WorkspaceSyncModel.descriptor(from: record("shell", metadata: #"{"attachOnly":false}"#))
+    let user = ServerPaneMapping.descriptor(from: record("shell", metadata: #"{"attachOnly":false}"#))
     #expect(user?.kind == .terminal)
     #expect(user?.terminalKey == "shell")
-    #expect(WorkspaceSyncModel.descriptor(from: record("shell", metadata: nil))?.kind == .terminal)
+    #expect(ServerPaneMapping.descriptor(from: record("shell", metadata: nil))?.kind == .terminal)
     let agent = record("chat:bg:tool-1", metadata: #"{"attachOnly":true,"ownerChatSessionId":"\#(UUID())"}"#)
-    #expect(WorkspaceSyncModel.descriptor(from: agent) == nil)
+    #expect(ServerPaneMapping.descriptor(from: agent) == nil)
     let pane = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "shell")
-    let published = WorkspaceSyncModel.serverPane(
+    let published = ServerPaneMapping.record(
       from: pane, workspaceId: workspaceId, createdAt: Date(timeIntervalSince1970: 0))
     #expect(published.metadata == nil)
   }
@@ -160,16 +160,57 @@ struct WorkspaceSyncPaneMappingTests {
     let pane = PaneDescriptorState(
       id: id, kind: .review, name: "Review", terminalKey: id.uuidString,
       review: ReviewPanePreferences(mode: .branch, base: "origin/release"))
-    let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date())
+    let record = ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: Date())
     #expect(record.providerId == "codevisor")
     #expect(record.paneType == "review")
-    #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
+    #expect(ServerPaneMapping.descriptor(from: record) == pane)
 
     let future = ServerWorkspacePane(
       id: id.uuidString, workspaceId: workspaceId.uuidString, providerId: "codevisor",
       paneType: "review", title: "Review", metadata: #"{"mode":"sinceRelease","base":"v2"}"#,
       createdAt: "2026-01-01T00:00:00.000Z")
-    let restored = try #require(WorkspaceSyncModel.descriptor(from: future))
+    let restored = try #require(ServerPaneMapping.descriptor(from: future))
     #expect(restored.review == ReviewPanePreferences(mode: .branch, base: "v2"))
+  }
+
+  @Test("Document rows restore from the file and legacy markdown types, and only with a file path")
+  func documentRows() {
+    let id = UUID()
+    func record(_ paneType: String, _ resourceKind: String?, _ resourceId: String?) -> ServerWorkspacePane {
+      ServerWorkspacePane(
+        id: id.uuidString, workspaceId: workspaceId.uuidString, providerId: "codevisor",
+        paneType: paneType, title: "Notes", resourceKind: resourceKind, resourceId: resourceId,
+        createdAt: "2026-01-01T00:00:00.000Z")
+    }
+    let document = PaneDescriptorState(
+      id: id, kind: .document, name: "Notes", terminalKey: id.uuidString, documentPath: "/notes.md")
+    #expect(ServerPaneMapping.descriptor(from: record("markdown", "file", "/notes.md")) == document)
+    #expect(ServerPaneMapping.descriptor(from: record("file", "file", "")) == nil)
+    #expect(ServerPaneMapping.descriptor(from: record("file", "session", "/notes.md")) == nil)
+  }
+
+  @Test(
+    "Device-local panes publish only their type and never restore",
+    arguments: [(PaneKind.newTab, "new-tab"), (.subagent, "subagent"), (.transcript, "transcript")]
+  )
+  func deviceLocalPanes(kind: PaneKind, paneType: String) {
+    let pane = PaneDescriptorState(
+      id: UUID(), kind: kind, name: "Local", terminalKey: "local", chatSessionId: UUID(), documentPath: "/a.md")
+    let record = ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: Date())
+    #expect(record.providerId == "codevisor")
+    #expect(record.paneType == paneType)
+    #expect(record.resourceKind == nil)
+    #expect(record.resourceId == nil)
+    #expect(record.metadata == nil)
+    #expect(ServerPaneMapping.descriptor(from: record) == nil)
+  }
+
+  @Test("A plugin pane without an id or type publishes the fallback provider and type")
+  func pluginPaneFallbacks() {
+    let pane = PaneDescriptorState(id: UUID(), kind: .plugin, name: "Plugin", terminalKey: "plugin")
+    let record = ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: Date())
+    #expect(record.providerId == "plugin:unknown")
+    #expect(record.paneType == "pane")
+    #expect(ServerPaneMapping.descriptor(from: record)?.pluginId == "unknown")
   }
 }

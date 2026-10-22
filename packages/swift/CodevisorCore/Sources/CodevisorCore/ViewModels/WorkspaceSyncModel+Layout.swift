@@ -10,7 +10,7 @@ extension WorkspaceSyncModel {
     let previousTabs = workspace.centerTabs
     let selectedTab = workspace.selectedCenterTabId
     let remote = records.compactMap { record -> (ServerWorkspacePane, PaneDescriptorState)? in
-      descriptor(from: record).map { (record, $0) }
+      ServerPaneMapping.descriptor(from: record).map { (record, $0) }
     }
     let remoteIds = Set(remote.map(\.1.id))
     let remoteIdByResourceKey = Dictionary(

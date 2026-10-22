@@ -16,6 +16,9 @@ extension MachineController {
     "sync.changed",
   ]
 
+  private static let navigationRefreshDelay: Duration = .milliseconds(300)
+  private static let navigationSyncTimeout: Duration = .seconds(30)
+
   public func startEventSync(for serverId: String, since initialCursor: Int = 0) {
     startEventSync(
       serverId: serverId,
@@ -32,20 +35,14 @@ extension MachineController {
     let connection = connection(for: serverId)
     connection.eventSyncTask?.cancel()
     connection.eventSyncTask = Task { [weak self] in
-      if let drain = try? await client.restartDrainState(), !Task.isCancelled {
-        connection.restartDrain = drain
-      }
+      await connection.loadRestartDrain(from: client)
       do {
         for try await event in client.shellEventStream(
           since: max(0, initialCursor),
           handledKinds: Self.shellSyncEventKinds
         ) {
           guard let self, !Task.isCancelled else { return }
-          await self.handleSyncEvent(
-            event,
-            serverId: serverId,
-            client: client
-          )
+          await self.handleSyncEvent(event, serverId: serverId, client: client)
         }
         guard !Task.isCancelled else { return }
         connection.eventSyncTask = nil
@@ -65,26 +62,9 @@ extension MachineController {
     }
   }
 
-  @concurrent
-  nonisolated static func decodeNavigationDelta(_ payload: JSONValue) async throws -> ServerNavigationDelta {
-    try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(payload))
-  }
-
   public func stopEventSync() {
     for connection in connectionsById.values {
-      connection.manualNavigationRefresh?.cancel()
-      connection.manualNavigationRefresh = nil
-      connection.eventSyncTask?.cancel()
-      connection.eventSyncTask = nil
-      connection.pendingRefreshTask?.cancel()
-      connection.pendingRefreshTask = nil
-      connection.navigationRetryTask?.cancel()
-      connection.navigationRetryTask = nil
-      connection.navigationSyncTask?.cancel()
-      connection.navigationSyncTask = nil
-      connection.navigationSyncToken = nil
-      connection.preparationRetryTask?.cancel()
-      connection.preparationRetryTask = nil
+      connection.cancelSyncWork()
     }
   }
 
@@ -94,9 +74,7 @@ extension MachineController {
   }
 
   private func handleSyncEvent(
-    _ event: ServerEventEnvelope,
-    serverId: String,
-    client: any CodevisorServerClienting
+    _ event: ServerEventEnvelope, serverId: String, client: any CodevisorServerClienting
   ) async {
     DiagnosticsClient.shared.noteSyncEvent(
       machineIsLocal: serverId == CodevisorMachine.local.id,
@@ -104,28 +82,13 @@ extension MachineController {
     )
     switch event.kind {
     case "navigation.changed":
-      do {
-        let delta = try await Self.decodeNavigationDelta(event.payload)
-        guard let navigationStore else { return }
-        guard await navigationStore.apply(delta, machineId: serverId) else {
-          scheduleNavigationRefresh(serverId: serverId, client: client)
-          return
-        }
-        let changed = Set(delta.sessions.compactMap { UUID(uuidString: $0.id) })
-        for session in projectList.sessions where session.serverId == serverId && changed.contains(session.id) {
-          onSessionStateChanged?(session, nil)
-        }
-      } catch {
-        navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
-      }
+      await applyNavigationChange(event.payload, serverId: serverId, client: client)
     case "harness.lifecycle.updated":
       onHarnessLifecycleChanged?(serverId)
     case "harness.auth.updated":
       onHarnessAuthChanged?(serverId)
     case "harness.notice":
-      if let data = try? JSONEncoder().encode(event.payload),
-        let notice = try? JSONDecoder().decode(ServerHarnessNotice.self, from: data)
-      {
+      if let notice = ShellSyncPayload.decoded(ServerHarnessNotice.self, from: event.payload) {
         onHarnessNotice?(notice)
       }
     case "plugin.state.updated":
@@ -137,21 +100,15 @@ extension MachineController {
     case "plugin.updated":
       onPluginUpdated?(serverId, event.subjectId)
     case "update.changed":
-      if let data = try? JSONEncoder().encode(event.payload),
-        let info = try? JSONDecoder().decode(ServerUpdateInfo.self, from: data)
-      {
+      if let info = ShellSyncPayload.decoded(ServerUpdateInfo.self, from: event.payload) {
         connection(for: serverId).updateInfo = info
       }
     case "restart.drain.updated":
-      if let data = try? JSONEncoder().encode(event.payload),
-        let drain = try? JSONDecoder().decode(ServerRestartDrainState.self, from: data)
-      {
+      if let drain = ShellSyncPayload.decoded(ServerRestartDrainState.self, from: event.payload) {
         connection(for: serverId).restartDrain = drain
       }
     case "sync.changed":
-      if let data = try? JSONEncoder().encode(event.payload),
-        let document = try? JSONDecoder().decode(ServerSyncDocument.self, from: data)
-      {
+      if let document = ShellSyncPayload.decoded(ServerSyncDocument.self, from: event.payload) {
         onSyncChanged?(serverId, document)
       }
     default:
@@ -159,16 +116,34 @@ extension MachineController {
     }
   }
 
-  func scheduleNavigationRefresh(
-    serverId: String,
-    client: any CodevisorServerClienting
-  ) {
+  private func applyNavigationChange(
+    _ payload: JSONValue, serverId: String, client: any CodevisorServerClienting
+  ) async {
+    let delta: ServerNavigationDelta
+    do {
+      delta = try await ShellSyncPayload.navigationDelta(payload)
+    } catch {
+      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
+      return
+    }
+    guard let navigationStore else { return }
+    guard await navigationStore.apply(delta, machineId: serverId) else {
+      scheduleNavigationRefresh(serverId: serverId, client: client)
+      return
+    }
+
+    let changed = Set(delta.sessions.compactMap { UUID(uuidString: $0.id) })
+    notifySessionStatesChanged(serverId: serverId) { changed.contains($0.id) }
+  }
+
+  func scheduleNavigationRefresh(serverId: String, client: any CodevisorServerClienting) {
     guard !Task.isCancelled else { return }
     let connection = connection(for: serverId)
     guard connection.pendingRefreshTask == nil else { return }
+
     let clock = navigationClock
     connection.pendingRefreshTask = Task { [weak self] in
-      try? await clock.sleep(for: .milliseconds(300))
+      try? await clock.sleep(for: Self.navigationRefreshDelay)
       guard let self, !Task.isCancelled else { return }
       connection.pendingRefreshTask = nil
       await self.synchronizeNavigationState(
@@ -194,52 +169,57 @@ extension MachineController {
   ) async {
     let connection = connection(for: serverId)
     if let existing = connection.navigationSyncTask {
-      if presentation == .catchUp {
-        connection.beginNavigationCatchUp()
-      }
-      await existing.value
-      if connection.navigationSyncTask == nil,
-        connection.navigationSyncState == .catchingUp
-      {
-        await synchronizeNavigationState(
-          serverId: serverId,
-          client: client,
-          presentation: presentation
-        )
-      }
+      await joinNavigationSync(
+        existing, on: connection, serverId: serverId, client: client, presentation: presentation)
       return
     }
 
-    connection.navigationSyncTask?.cancel()
-    let token = UUID()
+    await runNavigationSync(on: connection, serverId: serverId, client: client, presentation: presentation)
+  }
+
+  private func joinNavigationSync(
+    _ existing: Task<Void, Never>, on connection: MachineConnection,
+    serverId: String, client: any CodevisorServerClienting, presentation: NavigationSyncPresentation
+  ) async {
+    if presentation == .catchUp {
+      connection.beginNavigationCatchUp()
+    }
+    await existing.value
+    guard connection.isWaitingForCatchUp else { return }
+
+    await synchronizeNavigationState(serverId: serverId, client: client, presentation: presentation)
+  }
+
+  private func runNavigationSync(
+    on connection: MachineConnection,
+    serverId: String, client: any CodevisorServerClienting, presentation: NavigationSyncPresentation
+  ) async {
     let task = Task { [weak self] in
       guard let self else { return }
-      await self.performNavigationSynchronization(
-        serverId: serverId,
-        client: client,
-        presentation: presentation
-      )
+      await self.performNavigationSynchronization(serverId: serverId, client: client, presentation: presentation)
     }
-    connection.navigationSyncToken = token
-    connection.navigationSyncTask = task
-    let clock = navigationClock
-    let watchdog = Task {
-      try? await clock.sleep(for: .seconds(30))
-      guard !Task.isCancelled, connection.navigationSyncToken == token
-      else { return }
-      task.cancel()
-      connection.navigationSyncToken = nil
-      connection.navigationSyncTask = nil
-      connection.navigationSyncState = .stale(
-        "Timed out syncing with this machine."
-      )
-      scheduleNavigationRetry(serverId: serverId, client: client)
-    }
+    let token = connection.beginNavigationSync(task)
+    let watchdog = startNavigationSyncWatchdog(
+      for: task, token: token, on: connection, serverId: serverId, client: client)
+
     await task.value
     watchdog.cancel()
-    if connection.navigationSyncToken == token {
-      connection.navigationSyncToken = nil
-      connection.navigationSyncTask = nil
+    connection.finishNavigationSync(token)
+  }
+
+  private func startNavigationSyncWatchdog(
+    for task: Task<Void, Never>, token: UUID, on connection: MachineConnection,
+    serverId: String, client: any CodevisorServerClienting
+  ) -> Task<Void, Never> {
+    let clock = navigationClock
+    return Task {
+      try? await clock.sleep(for: Self.navigationSyncTimeout)
+      guard !Task.isCancelled, connection.isRunningNavigationSync(token) else { return }
+
+      task.cancel()
+      connection.endNavigationSync()
+      connection.navigationSyncState = .stale("Timed out syncing with this machine.")
+      scheduleNavigationRetry(serverId: serverId, client: client)
     }
   }
 
@@ -255,27 +235,40 @@ extension MachineController {
     stopEventSync(for: serverId)
 
     let requestedAt = Date()
-    let snapshot: ServerNavigationSnapshot
-    do {
-      snapshot = try await client.navigationSnapshot()
-    } catch {
-      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
-      return
-    }
+    guard let snapshot = await navigationSnapshot(serverId: serverId, client: client) else { return }
     guard !Task.isCancelled else { return }
     if let navigationStore {
       guard await navigationStore.replace(snapshot, machineId: serverId, requestedAt: requestedAt) else { return }
     }
     guard !Task.isCancelled else { return }
+
     startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
-    for session in projectList.sessions where session.serverId == serverId {
+    notifySessionStatesChanged(serverId: serverId)
+    markNavigationCurrent(serverId: serverId)
+  }
+
+  private func navigationSnapshot(
+    serverId: String, client: any CodevisorServerClienting
+  ) async -> ServerNavigationSnapshot? {
+    do {
+      return try await client.navigationSnapshot()
+    } catch {
+      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
+      return nil
+    }
+  }
+
+  private func notifySessionStatesChanged(
+    serverId: String,
+    where isIncluded: (ChatSession) -> Bool = { _ in true }
+  ) {
+    for session in projectList.sessions where session.serverId == serverId && isIncluded(session) {
       onSessionStateChanged?(session, nil)
     }
-    let connection = connection(for: serverId)
-    connection.navigationSyncState = .current
-    connection.navigationFailures = 0
-    connection.navigationRetryTask?.cancel()
-    connection.navigationRetryTask = nil
+  }
+
+  private func markNavigationCurrent(serverId: String) {
+    connection(for: serverId).markNavigationCurrent()
     navigationStore?.executor.resume(machineId: serverId)
   }
 }

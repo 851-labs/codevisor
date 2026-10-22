@@ -64,7 +64,7 @@ struct TerminalLiveTitleTests {
         .fixture(cursor: 5, panes: [try record(in: workspace, liveTitle: "vim")]), machineId: "m"))
     let (_, pane) = try shownTerminal(fixture, workspace)
 
-    let published = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspace.id, createdAt: Date())
+    let published = ServerPaneMapping.record(from: pane, workspaceId: workspace.id, createdAt: Date())
     #expect(published.title == "Terminal 1")
     #expect(published.liveTitle == nil)
 

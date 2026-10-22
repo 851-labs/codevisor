@@ -121,11 +121,11 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
       }
     case let .upsertPane(pane, workspaceId):
       _ = try await client.upsertWorkspacePane(
-        WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date()))
+        ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: Date()))
     case let .closePane(paneId, workspaceId):
       _ = try await client.closeWorkspacePane(workspaceId: workspaceId, paneId: paneId)
     case let .promotePane(pane, workspaceId, session):
-      let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date())
+      let record = ServerPaneMapping.record(from: pane, workspaceId: workspaceId, createdAt: Date())
       let promoted: Bool
       do {
         promoted = try await client.promoteWorkspacePaneToChat(record, session: session) != nil

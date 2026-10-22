@@ -37,10 +37,66 @@ public final class MachineConnection {
     self.reconnectNotice = reconnectNotice
   }
 
+  var isWaitingForCatchUp: Bool {
+    navigationSyncTask == nil && navigationSyncState == .catchingUp
+  }
+
   func beginNavigationCatchUp() {
     if navigationSyncState == nil || navigationSyncState == .cached {
       navigationSyncState = .catchingUp
     }
+  }
+
+  func loadRestartDrain(from client: any CodevisorServerClienting) async {
+    guard let drain = try? await client.restartDrainState(), !Task.isCancelled else { return }
+
+    restartDrain = drain
+  }
+
+  func beginNavigationSync(_ task: Task<Void, Never>) -> UUID {
+    navigationSyncTask?.cancel()
+    let token = UUID()
+    navigationSyncToken = token
+    navigationSyncTask = task
+    return token
+  }
+
+  func isRunningNavigationSync(_ token: UUID) -> Bool {
+    navigationSyncToken == token
+  }
+
+  func finishNavigationSync(_ token: UUID) {
+    guard isRunningNavigationSync(token) else { return }
+
+    endNavigationSync()
+  }
+
+  func endNavigationSync() {
+    navigationSyncToken = nil
+    navigationSyncTask = nil
+  }
+
+  func markNavigationCurrent() {
+    navigationSyncState = .current
+    navigationFailures = 0
+    navigationRetryTask?.cancel()
+    navigationRetryTask = nil
+  }
+
+  func cancelSyncWork() {
+    manualNavigationRefresh?.cancel()
+    manualNavigationRefresh = nil
+    eventSyncTask?.cancel()
+    eventSyncTask = nil
+    pendingRefreshTask?.cancel()
+    pendingRefreshTask = nil
+    navigationRetryTask?.cancel()
+    navigationRetryTask = nil
+    navigationSyncTask?.cancel()
+    navigationSyncTask = nil
+    navigationSyncToken = nil
+    preparationRetryTask?.cancel()
+    preparationRetryTask = nil
   }
 }
 

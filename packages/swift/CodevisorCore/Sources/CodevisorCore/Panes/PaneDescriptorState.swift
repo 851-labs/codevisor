@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PaneKind: String, Codable, Sendable {
+public enum PaneKind: String, Codable, Sendable, CaseIterable {
   case terminal
   case chat
   case newTab

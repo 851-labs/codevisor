@@ -9,36 +9,18 @@ extension MachineController {
     sleep: @escaping @Sendable (Duration) async throws -> Void
   ) async {
     guard !Task.isCancelled else { return }
-    let answering = Set(allMachines.filter { connectionsById[$0.id]?.availability == .ready }.map(\.id))
+    let answering = answeringMachineIds()
     let refreshes = allMachines.compactMap { machine -> MachineNavigationRefresh? in
       let refresh = manualRefresh(for: machine.id)
       return answering.contains(machine.id) ? refresh : nil
     }
     guard !refreshes.isEmpty else { return }
 
-    let observerID = UUID()
-    let (completions, continuation) = AsyncStream<Void>.makeStream()
-    for refresh in refreshes {
-      refresh.observeCompletion(id: observerID, continuation: continuation)
-    }
-    let deadline = Task {
-      do {
-        try await sleep(.seconds(5))
-        continuation.finish()
-      } catch {
-      }
-    }
-    defer {
-      deadline.cancel()
-      continuation.finish()
-      for refresh in refreshes { refresh.removeObserver(id: observerID) }
-    }
+    await MachineNavigationRefresh.waitForAll(refreshes, sleep: sleep)
+  }
 
-    var remaining = refreshes.count
-    for await _ in completions {
-      remaining -= 1
-      if remaining == 0 { break }
-    }
+  private func answeringMachineIds() -> Set<String> {
+    Set(allMachines.filter { connectionsById[$0.id]?.availability == .ready }.map(\.id))
   }
 
   private func manualRefresh(for machineId: String) -> MachineNavigationRefresh {
@@ -72,6 +54,27 @@ final class MachineNavigationRefresh {
   private var finished = false
   private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
+  private static let waitDeadline: Duration = .seconds(5)
+
+  static func waitForAll(
+    _ refreshes: [MachineNavigationRefresh],
+    sleep: @escaping @Sendable (Duration) async throws -> Void
+  ) async {
+    let observerID = UUID()
+    let (completions, continuation) = AsyncStream<Void>.makeStream()
+    for refresh in refreshes {
+      refresh.observeCompletion(id: observerID, continuation: continuation)
+    }
+    let deadline = finishing(continuation, after: waitDeadline, sleep: sleep)
+    defer {
+      deadline.cancel()
+      continuation.finish()
+      for refresh in refreshes { refresh.removeObserver(id: observerID) }
+    }
+
+    await waitFor(refreshes.count, of: completions)
+  }
+
   func observeCompletion(id: UUID, continuation: AsyncStream<Void>.Continuation) {
     if finished {
       continuation.yield(())
@@ -95,5 +98,27 @@ final class MachineNavigationRefresh {
   func cancel() {
     task?.cancel()
     finish()
+  }
+
+  private static func finishing(
+    _ continuation: AsyncStream<Void>.Continuation,
+    after delay: Duration,
+    sleep: @escaping @Sendable (Duration) async throws -> Void
+  ) -> Task<Void, Never> {
+    Task {
+      do {
+        try await sleep(delay)
+        continuation.finish()
+      } catch {
+      }
+    }
+  }
+
+  private static func waitFor(_ count: Int, of completions: AsyncStream<Void>) async {
+    var remaining = count
+    for await _ in completions {
+      remaining -= 1
+      if remaining == 0 { break }
+    }
   }
 }

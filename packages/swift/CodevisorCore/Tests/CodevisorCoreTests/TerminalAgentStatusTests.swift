@@ -43,7 +43,7 @@ struct TerminalAgentStatusTests {
       "resourceId":"t1","createdAt":"2026-01-01T00:00:00.000Z"\(fields)}
       """
     let record = try JSONDecoder().decode(ServerWorkspacePane.self, from: Data(json.utf8))
-    let pane = try #require(WorkspaceSyncModel.descriptor(from: record))
+    let pane = try #require(ServerPaneMapping.descriptor(from: record))
     #expect(pane.terminalActivity == activity)
   }
 
@@ -93,7 +93,7 @@ struct TerminalAgentStatusTests {
     try await serverSets(fixture, activity: "working")
     let pane = try shownTerminal(fixture)
 
-    let published = WorkspaceSyncModel.serverPane(from: pane, workspaceId: fixture.workspace.id, createdAt: Date())
+    let published = ServerPaneMapping.record(from: pane, workspaceId: fixture.workspace.id, createdAt: Date())
     #expect(published.terminalActivity == nil)
 
     fixture.sync.publishPane(pane, workspaceId: fixture.workspace.id)

@@ -32,8 +32,8 @@ struct ReviewPanePreferencesTests {
     let pane = PaneDescriptorState(
       id: id, kind: .review, name: "Review", terminalKey: id.uuidString,
       review: ReviewPanePreferences(mode: .staged, viewed: ["a.swift": "1..2"]))
-    let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: UUID(), createdAt: Date())
-    #expect(WorkspaceSyncModel.descriptor(from: record)?.review == pane.review)
+    let record = ServerPaneMapping.record(from: pane, workspaceId: UUID(), createdAt: Date())
+    #expect(ServerPaneMapping.descriptor(from: record)?.review == pane.review)
 
     let legacy = try JSONDecoder().decode(ReviewPanePreferences.self, from: Data(#"{"mode":"staged"}"#.utf8))
     #expect(legacy.viewed.isEmpty)

@@ -261,6 +261,42 @@ struct MachineNavigationSyncTests {
     }
   }
 
+  @Test("A catch-up waiting on a sync that is stopped runs its own snapshot")
+  func catchUpOutlivesStoppedSync() async {
+    let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: makeProjectList(),
+      clientFactory: { _ in fake }
+    )
+    defer { controller.stopEventSync() }
+    let snapshotStarted = TestSignal()
+    let snapshotGate = TestSignal()
+    fake.configureListSessionDelay {
+      snapshotStarted.signal()
+      await snapshotGate.wait()
+    }
+    let background = Task {
+      await controller.synchronizeNavigationState(serverId: "local", client: fake, presentation: .background)
+    }
+    await snapshotStarted.wait()
+
+    let joining = TestSignal()
+    let catchUp = Task { @MainActor in
+      joining.signal()
+      await controller.synchronizeNavigationState(serverId: "local", client: fake, presentation: .catchUp)
+    }
+    await joining.wait()
+    #expect(controller.navigationSyncStateByMachineId["local"] == .catchingUp)
+
+    controller.stopEventSync()
+    snapshotGate.signal()
+    await background.value
+    await catchUp.value
+    #expect(fake.listSessionCallCount == 2)
+    #expect(controller.navigationSyncStateByMachineId["local"] == .current)
+  }
+
   private func makeProjectList() -> ProjectListModel {
     ProjectListModel.fixture()
   }

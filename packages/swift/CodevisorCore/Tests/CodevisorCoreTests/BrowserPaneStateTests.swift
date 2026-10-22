@@ -23,12 +23,12 @@ struct BrowserPaneStateTests {
     let browser = PaneDescriptorState(
       id: id, kind: .browser, name: "Dev app", terminalKey: id.uuidString,
       browserURL: "http://localhost:3000/app?q=1#section")
-    let record = WorkspaceSyncModel.serverPane(
+    let record = ServerPaneMapping.record(
       from: browser, workspaceId: UUID(), createdAt: Date(timeIntervalSince1970: 0))
     #expect(record.paneType == "browser")
     #expect(record.resourceKind == nil)
     #expect(record.resourceId == nil)
     #expect(record.metadata != nil)
-    #expect(WorkspaceSyncModel.descriptor(from: record) == browser)
+    #expect(ServerPaneMapping.descriptor(from: record) == browser)
   }
 }

@@ -56,11 +56,11 @@ struct MarkdownDocumentTests {
       PaneGroupState.self, from: JSONEncoder().encode(state)
     )
     #expect(restored == state)
-    let record = WorkspaceSyncModel.serverPane(
+    let record = ServerPaneMapping.record(
       from: pane, workspaceId: UUID(), createdAt: Date()
     )
     #expect(record.paneType == "file")
     #expect(record.resourceId == "/workspace/docs/Audit.md")
-    #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
+    #expect(ServerPaneMapping.descriptor(from: record) == pane)
   }
 }
