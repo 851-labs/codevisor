@@ -15,7 +15,9 @@ struct HarnessSharedCredentialEditor: View {
   @State private var confirmsRemoval = false
 
   private var effectiveProviderId: String {
-    credential?.id ?? (source.hasProviders ? (providerId.isEmpty ? customProviderId : providerId) : "openai")
+    if let credential { return credential.id }
+    guard source.hasProviders else { return "openai" }
+    return providerId.isEmpty ? customProviderId : providerId
   }
 
   private var canReplace: Bool { credential?.canReplaceKey ?? true }

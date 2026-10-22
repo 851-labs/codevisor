@@ -59,7 +59,13 @@ struct WorkspaceInspectorMeter: View {
       nsColor: NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let alpha =
-          NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? increasedContrast : isDark ? dark : light
+          if NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+            increasedContrast
+          } else if isDark {
+            dark
+          } else {
+            light
+          }
         return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(alpha)
       })
   }

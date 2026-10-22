@@ -53,7 +53,7 @@ struct HarnessSignInSheet: View {
           }
         },
         showsHeader: false,
-        signInRequest: startsSignIn ? HarnessMachineSignIn(profileId: harnessId == "opencode" ? "default" : nil) : nil
+        signInRequest: startsSignIn ? HarnessMachineSignIn(harnessId: harnessId) : nil
       )
     } else if loadFailed {
       ContentUnavailableView {

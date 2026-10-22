@@ -205,12 +205,15 @@ struct ProjectSetupSelectionView: View {
   private var addFolderButton: some View {
     ProjectSetupActionCard(
       systemImage: "plus.circle",
-      title: isLocalMachine
-        ? (model.folderChoices.isEmpty ? "Choose a folder…" : "Add another folder…")
-        : "Browse Files…"
+      title: addFolderTitle
     ) {
       onPickFolder()
     }
+  }
+
+  private var addFolderTitle: String {
+    guard isLocalMachine else { return "Browse Files…" }
+    return model.folderChoices.isEmpty ? "Choose a folder…" : "Add another folder…"
   }
 
   private var cloneRepositoryButton: some View {

@@ -334,20 +334,20 @@ private extension ComposerCard {
             && (controller.canSend || !visibleSlashMatches.isEmpty))
       ComposerSubmitButton(
         isEnabled: isEnabled,
-        help: isAppUpdateInProgress
-          ? "Updating… you can send once the update finishes."
-          : controller.isPausedForUpdate
-            ? "Codevisor is updating"
-            : isBlockedByCapabilities
-              ? "Connecting to harness…"
-              : controller.isConnecting
-                ? "Connecting… you can send once the agent is ready."
-                : controller.requiresModelSelection ? "Select a model" : "Send (↩)",
+        help: submitHelp(isBlockedByCapabilities: isBlockedByCapabilities),
         accessibilityLabel: "Send"
       ) {
         submitOrAcceptSlash()
       }
     }
+  }
+
+  private func submitHelp(isBlockedByCapabilities: Bool) -> String {
+    if isAppUpdateInProgress { return "Updating… you can send once the update finishes." }
+    if controller.isPausedForUpdate { return "Codevisor is updating" }
+    if isBlockedByCapabilities { return "Connecting to harness…" }
+    if controller.isConnecting { return "Connecting… you can send once the agent is ready." }
+    return controller.requiresModelSelection ? "Select a model" : "Send (↩)"
   }
 
   private var slashToken: ComposerSlashToken? {

@@ -70,10 +70,7 @@ private struct HarnessFleetRow<Icon: View>: View {
     let signedInAt =
       sharesAccounts
       ? HarnessRowState.latestSharedSignIn(harnessId: setting.id, sync: environment.configSync) : nil
-    let sharedSignIn: HarnessFleet.SharedSignIn =
-      !sharesAccounts
-      ? .notShared
-      : shared.needsSignIn ? .pending : signedInAt.map { .signedIn(at: $0) } ?? .unresolved
+    let sharedSignIn = Self.sharedSignIn(sharesAccounts: sharesAccounts, shared: shared, signedInAt: signedInAt)
     let status = HarnessFleet.status(
       harnessId: setting.id, sync: environment.configSync, machines: machines, sharedSignIn: sharedSignIn)
     let live = setting.enabled
@@ -118,5 +115,13 @@ private struct HarnessFleetRow<Icon: View>: View {
           .id("\(setting.id)/\(row.machineId)")
       }
     }
+  }
+
+  private static func sharedSignIn(
+    sharesAccounts: Bool, shared: HarnessRowState, signedInAt: Date?
+  ) -> HarnessFleet.SharedSignIn {
+    guard sharesAccounts else { return .notShared }
+    if shared.needsSignIn { return .pending }
+    return signedInAt.map { .signedIn(at: $0) } ?? .unresolved
   }
 }

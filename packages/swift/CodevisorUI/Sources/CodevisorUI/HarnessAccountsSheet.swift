@@ -20,6 +20,10 @@ public struct HarnessMachineSignIn: Identifiable {
     self.profileId = profileId
     self.providerId = providerId
   }
+
+  public init(harnessId: String) {
+    self.init(profileId: harnessId == "opencode" ? "default" : nil)
+  }
 }
 
 extension EnvironmentValues {
@@ -168,7 +172,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   }
 
   private var initialSignInRequest: HarnessMachineSignIn? {
-    startsSignIn ? HarnessMachineSignIn(profileId: harnessId == "opencode" ? "default" : nil) : nil
+    startsSignIn ? HarnessMachineSignIn(harnessId: harnessId) : nil
   }
 
   private func loadSharedHost() async {

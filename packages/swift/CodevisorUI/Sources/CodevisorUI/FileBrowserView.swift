@@ -135,12 +135,8 @@
       .textInputAutocapitalization(.never)
       .autocorrectionDisabled()
       .task(id: filter) { await updateSearch() }
-      .navigationTitle(
-        closeBrowser == nil ? (directory == model.root ? "Open File" : (directory as NSString).lastPathComponent) : ""
-      )
-      .navigationSubtitle(
-        closeBrowser == nil ? (relativeParent.isEmpty ? model.rootName : model.rootName + "/" + relativeParent) : ""
-      )
+      .navigationTitle(title)
+      .navigationSubtitle(subtitle)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
@@ -167,6 +163,16 @@
 
     private func refresh() async {
       if filter.isEmpty { await model.load(directory) } else { await updateSearch() }
+    }
+
+    private var title: String {
+      guard closeBrowser == nil else { return "" }
+      return directory == model.root ? "Open File" : (directory as NSString).lastPathComponent
+    }
+
+    private var subtitle: String {
+      guard closeBrowser == nil else { return "" }
+      return relativeParent.isEmpty ? model.rootName : model.rootName + "/" + relativeParent
     }
 
     private var relativeParent: String {

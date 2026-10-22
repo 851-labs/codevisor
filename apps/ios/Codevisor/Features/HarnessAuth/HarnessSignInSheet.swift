@@ -104,8 +104,7 @@ struct HarnessSignInSheet: View {
         serverId: request.serverId,
         harness: harness,
         onAuthenticated: { finish() },
-        signInRequest: request.startsSignIn
-          ? HarnessMachineSignIn(profileId: request.harnessId == "opencode" ? "default" : nil) : nil
+        signInRequest: request.startsSignIn ? HarnessMachineSignIn(harnessId: request.harnessId) : nil
       )
     } else if loadFailed {
       ContentUnavailableView {

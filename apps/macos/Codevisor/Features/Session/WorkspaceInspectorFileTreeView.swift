@@ -240,6 +240,11 @@ private struct WorkspaceInspectorFileTreeRow: View {
 
   private var entry: ServerFileEntry { row.entry }
 
+  private var expansionValue: LocalizedStringKey {
+    guard entry.isDirectory else { return "" }
+    return isExpanded ? "Expanded" : "Collapsed"
+  }
+
   var body: some View {
     HStack(spacing: 0) {
       ZStack {
@@ -284,7 +289,7 @@ private struct WorkspaceInspectorFileTreeRow: View {
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(entry.name)
-    .accessibilityValue(entry.isDirectory ? (isExpanded ? "Expanded" : "Collapsed") : "")
+    .accessibilityValue(expansionValue)
     .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     .accessibilityHint(entry.isDirectory ? "" : "Opens the file")
     .accessibilityAction { onActivate() }

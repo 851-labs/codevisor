@@ -81,10 +81,15 @@
       }
     #endif
 
+    private var requestWidth: CGFloat {
+      guard wrapsText else { return 1_000_000 }
+      return rowWidth.flatMap { $0 > 1 ? $0 : nil } ?? measuredWidth
+    }
+
     var body: some View {
       let request = Request(
         content: content,
-        width: wrapsText ? (rowWidth.flatMap { $0 > 1 ? $0 : nil } ?? measuredWidth) : 1_000_000,
+        width: requestWidth,
         wrapsText: wrapsText, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme
       )
       Group {

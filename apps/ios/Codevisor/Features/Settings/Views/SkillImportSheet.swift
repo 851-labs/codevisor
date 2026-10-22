@@ -118,11 +118,12 @@ struct SkillImportSheet: View {
       }
     }
     .disabled(candidate.alreadyExists)
-    .accessibilityValue(
-      candidate.alreadyExists
-        ? "Already added"
-        : selection.contains(candidate.directoryName)
-          ? "Selected" : "Not selected")
+    .accessibilityValue(selectionValue(for: candidate))
+  }
+
+  private func selectionValue(for candidate: ServerRemoteSkillCandidate) -> LocalizedStringKey {
+    if candidate.alreadyExists { return "Already added" }
+    return selection.contains(candidate.directoryName) ? "Selected" : "Not selected"
   }
 
   private func find() async {
