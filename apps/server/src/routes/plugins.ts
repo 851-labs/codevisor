@@ -1,28 +1,27 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { PluginSummary, WorkspacePane } from "@codevisor/api"
+import type { PluginRegistryIndex } from "@codevisor/api"
 import {
-  ApplyPluginUpdateRequest as ApplyPluginUpdateRequestSchema,
   DiscoverRemotePluginRequest as DiscoverRemotePluginRequestSchema,
   ImportRemotePluginRequest as ImportRemotePluginRequestSchema,
-  InvokePluginToolRequest as InvokePluginToolRequestSchema,
-  LinkPluginRequest as LinkPluginRequestSchema,
-  PluginPaneTokenRequest as PluginPaneTokenRequestSchema,
-  SetPluginEnabledRequest as SetPluginEnabledRequestSchema
+  LinkPluginRequest as LinkPluginRequestSchema
 } from "@codevisor/api"
 import { filterPluginRegistryIndex } from "@codevisor/plugins"
+import type { PluginsManager } from "@codevisor/plugins"
 
 import {
-  appendAndPublish,
   HttpFailure,
-  matchRoute,
-  matchRouteParams,
   readSchema,
-  run,
   writeJson,
+  type CodevisorServerConfig,
   type CodevisorServerServices,
-  type EventFanout
+  type EventFanout,
+  type RouteState
 } from "../server-context.js"
+import { publishPluginUpdated, withOpenPaneCount } from "./plugin-panes.js"
+import { routePlugin } from "./plugin-routes.js"
+import { isRoute, rejectSyncThrows } from "./route-context.js"
+import type { RouteContext } from "./route-context.js"
 
 export const routePluginProxy = async (
   services: CodevisorServerServices,
@@ -36,221 +35,115 @@ export const routePluginProxy = async (
   return services.plugins.handleProxyRequest(request, response, url)
 }
 
-const listPluginPanes = async (
-  services: CodevisorServerServices,
-  pluginId: string
-): Promise<ReadonlyArray<WorkspacePane>> => {
-  const providerId = `plugin:${pluginId}`
-  return (await run(services.db.listWorkspacePanes)).filter(
-    (pane) => pane.providerId === providerId
-  )
-}
-
-const withOpenPaneCount = async (
-  services: CodevisorServerServices,
-  summary: PluginSummary
-): Promise<PluginSummary> => ({
-  ...summary,
-  openPaneCount: (await listPluginPanes(services, summary.id)).length
-})
-
-const deletePluginPanes = async (
+export const routePlugins = (
   services: CodevisorServerServices,
   fanout: EventFanout,
-  pluginId: string
-): Promise<void> => {
-  for (const pane of await listPluginPanes(services, pluginId)) {
-    await run(services.db.deleteWorkspacePane(pane.workspaceId, pane.id))
-    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", pane.id, {
-      id: pane.id,
-      workspaceId: pane.workspaceId
-    })
-  }
-}
-
-export const routePlugins = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
+  routeState: RouteState,
+  config: CodevisorServerConfig,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
-): Promise<boolean> => {
-  if (!url.pathname.startsWith("/v1/plugins")) {
-    return false
-  }
+): Promise<boolean> =>
+  rejectSyncThrows(() =>
+    dispatchPluginRoute({ services, fanout, routeState, request, response, url, config })
+  )
 
-  if (url.pathname === "/v1/plugins/registry" && request.method === "GET") {
-    const registry = services.pluginRegistry
-    if (registry === undefined) {
-      throw new HttpFailure(501, "The plugin registry is unavailable")
-    }
-    const index = await registry.fetchIndex()
-    const query = url.searchParams.get("q")
-    writeJson(response, 200, query === null ? index : filterPluginRegistryIndex(index, query))
-    return true
-  }
+const dispatchPluginRoute = (route: RouteContext): Promise<boolean> => {
+  const { services, request, url } = route
+  if (!url.pathname.startsWith("/v1/plugins")) return Promise.resolve(false)
+
+  if (isRoute(url, request, "/v1/plugins/registry", "GET")) return readRegistry(route)
 
   const manager = services.plugins
-  if (manager === undefined) {
-    throw new HttpFailure(501, "Plugins are unavailable")
-  }
+  if (manager === undefined) throw new HttpFailure(501, "Plugins are unavailable")
 
-  if (url.pathname === "/v1/plugins" && request.method === "GET") {
-    const list = await manager.list()
-    writeJson(response, 200, {
-      plugins: await Promise.all(
-        list.plugins.map((summary) => withOpenPaneCount(services, summary))
-      )
-    })
-    return true
-  }
+  return routePluginCollection(route, manager) ?? routePlugin(route, manager)
+}
 
-  if (url.pathname === "/v1/plugins/updates" && request.method === "GET") {
-    writeJson(response, 200, await manager.listUpdates())
-    return true
-  }
+const routePluginCollection = (
+  route: RouteContext,
+  manager: PluginsManager
+): Promise<boolean> | undefined => {
+  const { request, url } = route
+  if (isRoute(url, request, "/v1/plugins", "GET")) return listPlugins(route, manager)
 
-  if (url.pathname === "/v1/plugins/discover-remote" && request.method === "POST") {
-    writeJson(
-      response,
-      200,
-      await manager.discoverRemote(await readSchema(request, DiscoverRemotePluginRequestSchema))
-    )
-    return true
-  }
+  if (isRoute(url, request, "/v1/plugins/updates", "GET")) return listUpdates(route, manager)
 
-  if (url.pathname === "/v1/plugins/import-remote" && request.method === "POST") {
-    const imported = await manager.importRemote(
-      await readSchema(request, ImportRemotePluginRequestSchema)
-    )
-    await appendAndPublish(services.db, fanout, "plugin.updated", imported.id, imported)
-    writeJson(response, 201, imported)
-    return true
-  }
+  if (isRoute(url, request, "/v1/plugins/discover-remote", "POST"))
+    return discoverRemote(route, manager)
 
-  if (url.pathname === "/v1/plugins/link" && request.method === "POST") {
-    const linked = await manager.link(await readSchema(request, LinkPluginRequestSchema))
-    await appendAndPublish(services.db, fanout, "plugin.updated", linked.id, linked)
-    writeJson(response, 201, linked)
-    return true
-  }
+  if (isRoute(url, request, "/v1/plugins/import-remote", "POST"))
+    return importRemote(route, manager)
 
-  const tokenRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneId/token")
-  if (tokenRoute !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, PluginPaneTokenRequestSchema)
-    /* v8 ignore next 5 */
-    const issued = await manager.issuePaneToken(
-      tokenRoute.pluginId ?? "",
-      tokenRoute.paneId ?? "",
-      payload
-    )
-    writeJson(response, 201, { ...issued, url: `${url.origin}${issued.path}` })
-    return true
-  }
+  if (isRoute(url, request, "/v1/plugins/link", "POST")) return linkPlugin(route, manager)
+  return undefined
+}
 
-  const paneIconRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneType/icon")
-  if (paneIconRoute !== undefined && request.method === "GET") {
-    /* v8 ignore next 2 */
-    const icon = await manager.fetchIcon(paneIconRoute.pluginId ?? "", paneIconRoute.paneType ?? "")
-    response.writeHead(200, {
-      "Cache-Control": "private, max-age=300",
-      "Content-Length": String(icon.data.byteLength),
-      "Content-Type": icon.contentType
-    })
-    response.end(icon.data)
-    return true
-  }
+const readRegistry = async ({ services, response, url }: RouteContext): Promise<boolean> => {
+  const registry = services.pluginRegistry
+  if (registry === undefined) throw new HttpFailure(501, "The plugin registry is unavailable")
 
-  const pluginIconId = matchRoute(url.pathname, "/v1/plugins/:pluginId/icon")
-  if (pluginIconId !== undefined && request.method === "GET") {
-    const icon = await manager.fetchIcon(pluginIconId)
-    response.writeHead(200, {
-      "Cache-Control": "private, max-age=300",
-      "Content-Length": String(icon.data.byteLength),
-      "Content-Type": icon.contentType
-    })
-    response.end(icon.data)
-    return true
-  }
+  const index = await registry.fetchIndex()
+  const query = url.searchParams.get("q")
+  writeJson(response, 200, registryMatching(index, query))
+  return true
+}
 
-  const toolRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/tools/:toolName")
-  if (toolRoute !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, InvokePluginToolRequestSchema)
-    const args = payload.args ?? {}
-    const context = {
-      ...(payload.cwd === undefined ? {} : { cwd: payload.cwd }),
-      ...(payload.workspaceId === undefined ? {} : { workspaceId: payload.workspaceId })
-    }
-    /* v8 ignore next 2 */
-    const result = await manager.invokeTool(
-      toolRoute.pluginId ?? "",
-      toolRoute.toolName ?? "",
-      args,
-      context
-    )
-    writeJson(response, 200, result)
-    return true
-  }
+const listPlugins = async (
+  { services, response }: RouteContext,
+  manager: PluginsManager
+): Promise<boolean> => {
+  const list = await manager.list()
+  writeJson(response, 200, {
+    plugins: await Promise.all(list.plugins.map((summary) => withOpenPaneCount(services, summary)))
+  })
+  return true
+}
 
-  const unlinkId = matchRoute(url.pathname, "/v1/plugins/:pluginId/link")
-  if (unlinkId !== undefined && request.method === "DELETE") {
-    const summary = await manager.get(unlinkId)
-    await deletePluginPanes(services, fanout, summary.id)
-    writeJson(response, 200, await manager.unlink(unlinkId))
-    return true
-  }
+const listUpdates = async (
+  { response }: RouteContext,
+  manager: PluginsManager
+): Promise<boolean> => {
+  writeJson(response, 200, await manager.listUpdates())
+  return true
+}
 
-  const restartId = matchRoute(url.pathname, "/v1/plugins/:pluginId/restart")
-  if (restartId !== undefined && request.method === "POST") {
-    const restarted = await manager.restart(restartId)
-    await appendAndPublish(services.db, fanout, "plugin.updated", restarted.id, restarted)
-    writeJson(response, 200, restarted)
-    return true
-  }
+const discoverRemote = async (
+  { request, response }: RouteContext,
+  manager: PluginsManager
+): Promise<boolean> => {
+  writeJson(
+    response,
+    200,
+    await manager.discoverRemote(await readSchema(request, DiscoverRemotePluginRequestSchema))
+  )
+  return true
+}
 
-  const restoreId = matchRoute(url.pathname, "/v1/plugins/:pluginId/restore")
-  if (restoreId !== undefined && request.method === "POST") {
-    const restored = await manager.restore(restoreId)
-    await appendAndPublish(services.db, fanout, "plugin.updated", restored.id, restored)
-    writeJson(response, 200, restored)
-    return true
-  }
+const importRemote = async (route: RouteContext, manager: PluginsManager): Promise<boolean> => {
+  const imported = await manager.importRemote(
+    await readSchema(route.request, ImportRemotePluginRequestSchema)
+  )
 
-  const enabledId = matchRoute(url.pathname, "/v1/plugins/:pluginId/set-enabled")
-  if (enabledId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, SetPluginEnabledRequestSchema)
-    const changed = await manager.setEnabled(enabledId, payload.enabled)
-    await appendAndPublish(services.db, fanout, "plugin.updated", changed.id, changed)
-    writeJson(response, 200, changed)
-    return true
-  }
+  await publishPluginUpdated(route, imported)
 
-  const prepareUpdateId = matchRoute(url.pathname, "/v1/plugins/:pluginId/update/prepare")
-  if (prepareUpdateId !== undefined && request.method === "POST") {
-    writeJson(response, 201, await manager.prepareUpdate(prepareUpdateId))
-    return true
-  }
+  writeJson(route.response, 201, imported)
+  return true
+}
 
-  const applyUpdateId = matchRoute(url.pathname, "/v1/plugins/:pluginId/update/apply")
-  if (applyUpdateId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, ApplyPluginUpdateRequestSchema)
-    const updated = await manager.applyUpdate(applyUpdateId, payload.planId)
-    await appendAndPublish(services.db, fanout, "plugin.updated", updated.id, updated)
-    writeJson(response, 200, updated)
-    return true
-  }
+const linkPlugin = async (route: RouteContext, manager: PluginsManager): Promise<boolean> => {
+  const linked = await manager.link(await readSchema(route.request, LinkPluginRequestSchema))
 
-  const pluginId = matchRoute(url.pathname, "/v1/plugins/:pluginId")
-  if (pluginId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await withOpenPaneCount(services, await manager.get(pluginId)))
-    return true
-  }
-  if (pluginId !== undefined && request.method === "DELETE") {
-    const summary = await manager.get(pluginId)
-    await deletePluginPanes(services, fanout, summary.id)
-    writeJson(response, 200, await manager.remove(pluginId))
-    return true
-  }
+  await publishPluginUpdated(route, linked)
 
-  return false
+  writeJson(route.response, 201, linked)
+  return true
+}
+
+const registryMatching = (
+  index: PluginRegistryIndex,
+  query: string | null
+): PluginRegistryIndex => {
+  if (query === null) return index
+  return filterPluginRegistryIndex(index, query)
 }
