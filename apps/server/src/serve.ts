@@ -13,6 +13,7 @@ import {
   migrateAttachmentBlobs,
   worktreesRoot
 } from "@codevisor/db"
+import { makeGitHosts } from "@codevisor/git-hosts"
 import { credentialFerrySources } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
@@ -366,6 +367,7 @@ export const runServe = (
           if (directory === undefined) return gitEnvironment
           return resolveShellEnv({ cwd: directory })
         },
+        gitHosts: makeGitHosts({ toolsDir: join(dirname(databasePath), "tools") }),
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(sharedAccounts === undefined ? {} : { sharedAccounts }),

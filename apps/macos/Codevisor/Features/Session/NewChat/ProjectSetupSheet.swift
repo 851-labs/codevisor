@@ -197,6 +197,10 @@ struct ProjectSetupSheet: View {
       .padding(.vertical, 14)
     case let .failed(_, message):
       caution(firstLine(message))
+    case let .installing(provider):
+      PermissionRow(symbol: "arrow.down.circle", title: "Installing \(provider.cliName)…") {
+        ProgressView().controlSize(.small)
+      }
     case .idle, .starting, .signedIn:
       PermissionRow(symbol: "person.badge.key", title: "Starting sign-in") {
         ProgressView().controlSize(.small)

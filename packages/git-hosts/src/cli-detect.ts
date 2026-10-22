@@ -7,23 +7,42 @@ import type { GitHostCli } from "./git-host.js"
 const versionTimeoutMs = 10_000
 const versionPattern = /(\d+\.\d+\.\d+)/
 
-export const locateCli = (command: string, env: NodeJS.ProcessEnv): string | undefined =>
-  pathDirectories(env)
+export const managedBin = (toolsDir: string): string => join(toolsDir, "bin")
+
+export const locateCli = (
+  command: string,
+  env: NodeJS.ProcessEnv,
+  toolsDir?: string
+): string | undefined =>
+  searchDirectories(env, toolsDir)
     .map((directory) => join(directory, command))
     .find(isExecutable)
 
 export const detectCli = async (
   command: string,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  toolsDir?: string
 ): Promise<GitHostCli | undefined> => {
-  const path = locateCli(command, env)
+  const path = locateCli(command, env, toolsDir)
   if (path === undefined) return undefined
 
-  return { path, version: await cliVersion(path, env) }
+  return describeCli(path, env)
 }
 
-const pathDirectories = (env: NodeJS.ProcessEnv): ReadonlyArray<string> =>
-  (env.PATH ?? "").split(":").filter((directory) => directory.length > 0)
+export const describeCli = async (path: string, env: NodeJS.ProcessEnv): Promise<GitHostCli> => ({
+  path,
+  version: await cliVersion(path, env)
+})
+
+const searchDirectories = (
+  env: NodeJS.ProcessEnv,
+  toolsDir: string | undefined
+): ReadonlyArray<string> => {
+  const onPath = (env.PATH ?? "").split(":").filter((directory) => directory.length > 0)
+  if (toolsDir === undefined) return onPath
+
+  return [...onPath, managedBin(toolsDir)]
+}
 
 const isExecutable = (path: string): boolean => {
   try {

@@ -1,8 +1,16 @@
 import type { GitHostProvider, GitPullRequest } from "@codevisor/api"
 
+import type { CliPlatform } from "./cli-release.js"
+
 export interface GitHostCli {
   readonly path: string
   readonly version: string | undefined
+}
+
+export interface GitHostTools {
+  readonly toolsDir?: string | undefined
+  readonly platform?: CliPlatform | undefined
+  readonly releasesUrl?: string | undefined
 }
 
 export interface GitHostSignInStatus {
@@ -30,6 +38,7 @@ export interface GitHost {
   readonly command: string
   readonly cliName: string
   readonly detect: (env: NodeJS.ProcessEnv) => Promise<GitHostCli | undefined>
+  readonly install: (env: NodeJS.ProcessEnv) => Promise<GitHostCli>
   readonly authStatus: (hostname: string, env: NodeJS.ProcessEnv) => Promise<GitHostSignInStatus>
   readonly login: (
     hostname: string,

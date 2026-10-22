@@ -28,6 +28,7 @@ export const GitAuthFlow = Schema.Struct({
   host: Schema.String,
   provider: GitHostProvider,
   state: GitAuthFlowState,
+  installing: Schema.optional(Schema.Boolean),
   userCode: Schema.optional(Schema.String),
   verificationUrl: Schema.optional(Schema.String),
   account: Schema.optional(Schema.String),

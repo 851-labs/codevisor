@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto"
 
 import { gitHostProvider, type GitAuthFlow, type GitHostAuthStatus } from "@codevisor/api"
-import type { DeviceCode, GitHost, GitHostLogin, GitHosts } from "@codevisor/git-hosts"
+import type {
+  DeviceCode,
+  GitHost,
+  GitHostLogin,
+  GitHostLoginResult,
+  GitHosts
+} from "@codevisor/git-hosts"
+
+import { failureMessage } from "../server-http.js"
 
 export interface GitAuthTimings {
   readonly codeWaitMs: number
@@ -17,7 +25,7 @@ const defaultTimings: GitAuthTimings = {
 
 interface LoginFlow {
   flow: GitAuthFlow
-  readonly login: GitHostLogin
+  login: GitHostLogin | undefined
   done: boolean
 }
 
@@ -53,8 +61,8 @@ export const makeGitAuthManager = (
   const finish = (entry: LoginFlow, update: Partial<GitAuthFlow>): void => {
     if (entry.done) return
     entry.done = true
-    entry.flow = { ...entry.flow, ...update }
-    entry.login.cancel()
+    entry.flow = { ...withoutInstalling(entry.flow), ...update }
+    entry.login?.cancel()
     setTimeout(() => flows.delete(entry.flow.id), timings.retentionMs).unref()
   }
 
@@ -62,6 +70,41 @@ export const makeGitAuthManager = (
     for (const entry of flows.values()) {
       if (entry.flow.host === host) finish(entry, { state: "cancelled" })
     }
+  }
+
+  const readyCli = async (
+    entry: LoginFlow,
+    gitHost: GitHost,
+    env: NodeJS.ProcessEnv
+  ): Promise<boolean> => {
+    if ((await gitHost.detect(env)) !== undefined) return true
+
+    entry.flow = { ...entry.flow, installing: true }
+    try {
+      await gitHost.install(env)
+    } catch (cause) {
+      finish(entry, { state: "error", message: failureMessage(cause) })
+      return false
+    }
+    entry.flow = withoutInstalling(entry.flow)
+    return true
+  }
+
+  const login = (
+    entry: LoginFlow,
+    gitHost: GitHost,
+    env: NodeJS.ProcessEnv
+  ): Promise<GitHostLoginResult> => {
+    const showCode = (code: DeviceCode): void => {
+      if (entry.flow.state !== "starting") return
+      entry.flow = { ...entry.flow, state: "waiting", ...code }
+    }
+    entry.login = gitHost.login(entry.flow.host, env, showCode)
+    const timer = setTimeout(() => {
+      finish(entry, { state: "error", message: "Sign-in timed out. Try again." })
+    }, timings.loginTimeoutMs)
+    timer.unref()
+    return entry.login.finished.finally(() => clearTimeout(timer))
   }
 
   const complete = async (
@@ -77,6 +120,21 @@ export const makeGitAuthManager = (
     })
   }
 
+  const signIn = async (
+    entry: LoginFlow,
+    gitHost: GitHost,
+    env: NodeJS.ProcessEnv
+  ): Promise<void> => {
+    const ready = await readyCli(entry, gitHost, env)
+    if (!ready || entry.done) return
+
+    const result = await login(entry, gitHost, env)
+    if (entry.done) return
+    if (!result.signedIn) return finish(entry, { state: "error", message: result.message })
+
+    await complete(entry, gitHost, env)
+  }
+
   const begin = async (rawHost: string): Promise<GitAuthFlow> => {
     const host = normalizedHost(rawHost)
     const gitHost = hosts.forHost(host)
@@ -84,18 +142,9 @@ export const makeGitAuthManager = (
 
     cancelSignInsFor(host)
     const env = await resolveEnvironment()
-    const entry = startLogin(gitHost, host, env)
+    const entry: LoginFlow = { flow: newFlow(gitHost, host), login: undefined, done: false }
     flows.set(entry.flow.id, entry)
-    const timer = setTimeout(() => {
-      finish(entry, { state: "error", message: "Sign-in timed out. Try again." })
-    }, timings.loginTimeoutMs)
-    timer.unref()
-    void entry.login.finished.then((result) => {
-      clearTimeout(timer)
-      if (entry.done) return
-      if (!result.signedIn) return finish(entry, { state: "error", message: result.message })
-      return complete(entry, gitHost, env)
-    })
+    void signIn(entry, gitHost, env)
     await waitForCode(entry, timings.codeWaitMs)
     return entry.flow
   }
@@ -126,24 +175,21 @@ const unsupportedStatus = (host: string): GitHostAuthStatus => {
   }
 }
 
-const startLogin = (gitHost: GitHost, host: string, env: NodeJS.ProcessEnv): LoginFlow => {
-  const flow: GitAuthFlow = {
-    id: randomUUID(),
-    host,
-    provider: gitHost.provider,
-    state: "starting"
-  }
-  const showCode = (code: DeviceCode): void => {
-    if (entry.flow.state !== "starting") return
-    entry.flow = { ...entry.flow, state: "waiting", ...code }
-  }
-  const entry: LoginFlow = { flow, login: gitHost.login(host, env, showCode), done: false }
-  return entry
-}
+const newFlow = (gitHost: GitHost, host: string): GitAuthFlow => ({
+  id: randomUUID(),
+  host,
+  provider: gitHost.provider,
+  state: "starting"
+})
+
+const withoutInstalling = ({ installing: _installing, ...flow }: GitAuthFlow): GitAuthFlow => flow
+
+const showsProgress = (flow: GitAuthFlow): boolean =>
+  flow.state !== "starting" || flow.installing === true
 
 const waitForCode = async (entry: LoginFlow, codeWaitMs: number): Promise<void> => {
   const deadline = Date.now() + codeWaitMs
-  while (entry.flow.state === "starting" && Date.now() < deadline) {
+  while (!showsProgress(entry.flow) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }

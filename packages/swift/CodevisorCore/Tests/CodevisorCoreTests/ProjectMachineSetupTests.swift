@@ -6,6 +6,7 @@ private actor ProjectSetupFakeClient: CodevisorServerClienting {
   var source = ServerProjectSetupSource(projectId: "", folderPath: "")
   var envContents: [String: String] = [:]
   var setupResults: [Result<ServerProject, CodevisorServerClientError>] = []
+  var authFlows: [ServerGitAuthFlow] = []
   private(set) var setupRequests: [ServerProjectSetupRequest] = []
   private(set) var readPaths: [[String]] = []
   private(set) var publishes: [(url: String, initialize: Bool)] = []
@@ -13,8 +14,10 @@ private actor ProjectSetupFakeClient: CodevisorServerClienting {
   func configure(
     source: ServerProjectSetupSource? = nil,
     envContents: [String: String]? = nil,
-    setupResults: [Result<ServerProject, CodevisorServerClientError>]? = nil
+    setupResults: [Result<ServerProject, CodevisorServerClientError>]? = nil,
+    authFlows: [ServerGitAuthFlow]? = nil
   ) {
+    if let authFlows { self.authFlows = authFlows }
     if let source { self.source = source }
     if let envContents { self.envContents = envContents }
     if let setupResults { self.setupResults = setupResults }
@@ -37,6 +40,20 @@ private actor ProjectSetupFakeClient: CodevisorServerClienting {
   func setUpProjectFromGit(_ request: ServerProjectSetupRequest) async throws -> ServerProject {
     setupRequests.append(request)
     return try setupResults.removeFirst().get()
+  }
+
+  func startGitAuth(host: String) async throws -> ServerGitAuthFlow {
+    try nextAuthFlow()
+  }
+
+  func gitAuthFlow(id: String) async throws -> ServerGitAuthFlow {
+    try nextAuthFlow()
+  }
+
+  private func nextAuthFlow() throws -> ServerGitAuthFlow {
+    guard let flow = authFlows.first else { throw CodevisorServerClientError.invalidResponse }
+    if authFlows.count > 1 { authFlows.removeFirst() }
+    return flow
   }
 
   func health() async throws -> ServerHealth { ServerHealth(ok: true, version: "0.1.0", database: "ready") }
@@ -209,6 +226,61 @@ struct ProjectMachineSetupTests {
     #expect(requests.count == 2)
     #expect(requests[0].url == requests[1].url)
     #expect(requests[0].id != requests[1].id)
+  }
+
+  @Test("installs the GitHub CLI on a target without it, then shows the device code")
+  func installsMissingCliBeforeSignIn() async throws {
+    let source = ProjectSetupFakeClient()
+    let target = ProjectSetupFakeClient()
+    let flow = ServerGitAuthFlow(id: "flow", host: "github.com", provider: "github", state: .starting)
+    var installing = flow
+    installing.installing = true
+    var waiting = flow
+    waiting.state = .waiting
+    waiting.userCode = "AB12-CD34"
+    waiting.verificationUrl = "https://github.com/login/device"
+    await target.configure(
+      setupResults: [
+        .failure(.httpStatus(422, #"{"error":"fatal: Authentication failed","code":"auth_failed"}"#))
+      ],
+      authFlows: [installing, waiting]
+    )
+    let setup = makeSetup(source: source, target: target)
+    let group = try #require(ProjectGroup.grouping([sourceProject]).first)
+
+    await setup.prepare(group: group, targetServerId: "studio", preferredSource: nil)
+    setup.confirm()
+    try await waitUntil { signInStep(of: setup) == .installing(.github) }
+    try await waitUntil { signInStep(of: setup) == .waiting(.github, waiting) }
+
+    #expect(GitHostProvider.github.cliName == "GitHub CLI")
+  }
+
+  @Test("fails a sign-in whose CLI install failed, and installs again on Try Again")
+  func retriesFailedInstall() async throws {
+    let client = ProjectSetupFakeClient()
+    var installing = ServerGitAuthFlow(id: "flow", host: "github.com", provider: "github", state: .starting)
+    installing.installing = true
+    var failed = installing
+    failed.installing = nil
+    failed.state = .error
+    failed.message = "Couldn't download GitHub CLI. Check this machine's internet connection."
+    await client.configure(authFlows: [installing, failed])
+    let model = GitSignInModel(
+      client: client, machineName: "Studio", suggestedHost: "github.com", pollInterval: .milliseconds(1))
+
+    model.signIn(with: .github)
+    try await waitUntil { model.step == .failed(.github, message: failed.message ?? "") }
+    await client.configure(authFlows: [installing])
+    model.signIn(with: .github)
+    try await waitUntil { model.step == .installing(.github) }
+
+    #expect(model.provider == .github)
+  }
+
+  private func signInStep(of setup: ProjectMachineSetup) -> GitSignInModel.Step? {
+    guard case let .signingIn(_, model) = setup.phase else { return nil }
+    return model.step
   }
 
   @Test("explains a missing repository without starting sign-in, and signs in only when asked")

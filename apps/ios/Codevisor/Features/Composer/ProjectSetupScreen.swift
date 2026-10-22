@@ -216,6 +216,7 @@ struct ProjectSetupScreen: View {
     guard case let .signingIn(_, model) = setup.phase else { return nil }
     switch model.step {
     case .waiting: return "Waiting for sign-in…"
+    case let .installing(provider): return "Installing \(provider.cliName)…"
     case .idle, .starting, .signedIn: return "Starting sign-in…"
     case .failed: return nil
     }

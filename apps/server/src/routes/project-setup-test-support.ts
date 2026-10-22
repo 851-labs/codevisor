@@ -1,10 +1,13 @@
-import { execFile } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { execFile, execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { createServer as createHttpServer } from "node:http"
 import { createServer, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { makeGitHosts, type GitHosts } from "@codevisor/git-hosts"
 import { expect, onTestFinished } from "vitest"
 
 import { jsonRequest, makeServices, startWithApp, tempDirs } from "../test-support.js"
@@ -33,9 +36,13 @@ export const makeOrigin = async (): Promise<string> => {
   return repo
 }
 
-export const startServer = async (env: NodeJS.ProcessEnv = process.env) => {
+export const startServer = async (env: NodeJS.ProcessEnv = process.env, gitHosts?: GitHosts) => {
   const { services } = await makeServices("server-a")
-  const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
+  const server = await startWithApp({
+    ...services,
+    resolveGitEnvironment: async () => env,
+    ...(gitHosts === undefined ? {} : { gitHosts })
+  })
   return { server, services }
 }
 
@@ -54,7 +61,8 @@ export const useBaseFolder = async (server: TestServer): Promise<string> => {
 export const fakeCli = (name: string, script: string): NodeJS.ProcessEnv => {
   const bin = tempDir(`codevisor-fake-${name}-`)
   const path = join(bin, name)
-  writeFileSync(path, `#!/bin/sh\n${script}\n`)
+  const version = `[ "$1" = "--version" ] && echo "${name} version 1.0.0" && exit 0`
+  writeFileSync(path, `#!/bin/sh\n${version}\n${script}\n`)
   chmodSync(path, 0o755)
   return { ...process.env, PATH: `${bin}:/usr/bin:/bin` }
 }
@@ -77,4 +85,77 @@ export const silentGitDaemon = async (): Promise<{
   const address = server.address()
   if (address === null || typeof address === "string") throw new Error("No port")
   return { url: `git://127.0.0.1:${String(address.port)}/widget.git`, connected }
+}
+
+export const isolatedGitEnv = (bin = tempDir("codevisor-empty-bin-")): NodeJS.ProcessEnv => {
+  const home = tempDir("codevisor-git-home-")
+  return {
+    PATH: `${bin}:/usr/bin:/bin`,
+    HOME: home,
+    GH_CONFIG_DIR: join(home, "gh"),
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1"
+  }
+}
+
+export interface FakeGhRelease {
+  readonly gitHosts: GitHosts
+  readonly toolsDir: string
+  readonly downloads: () => number
+}
+
+const fakeGhVersion = "9.1.0"
+const fakeGhArchive = `gh_${fakeGhVersion}_linux_amd64.tar.gz`
+const fakeGhReleases = "/cli/cli/releases"
+
+export const fakeGhRelease = async (
+  ghScript: string,
+  { checksum }: { readonly checksum?: string } = {}
+): Promise<FakeGhRelease> => {
+  const root = tempDir("codevisor-gh-release-")
+  const archive = ghReleaseArchive(root, ghScript)
+  let downloads = 0
+  const routes: Record<string, () => { readonly status: number; readonly body: string | Buffer }> =
+    {
+      [`${fakeGhReleases}/latest`]: () => ({ status: 302, body: "" }),
+      [`${fakeGhReleases}/tag/v${fakeGhVersion}`]: () => ({ status: 200, body: "release" }),
+      [`${fakeGhReleases}/download/v${fakeGhVersion}/gh_${fakeGhVersion}_checksums.txt`]: () => ({
+        status: 200,
+        body: `${checksum ?? createHash("sha256").update(archive).digest("hex")}  ${fakeGhArchive}\n`
+      }),
+      [`${fakeGhReleases}/download/v${fakeGhVersion}/${fakeGhArchive}`]: () => {
+        downloads += 1
+        return { status: 200, body: archive }
+      }
+    }
+  const server = createHttpServer((request, response) => {
+    const route = routes[request.url ?? ""]?.() ?? { status: 404, body: "" }
+    const location = { location: `${fakeGhReleases}/tag/v${fakeGhVersion}` }
+    setTimeout(() => response.writeHead(route.status, location).end(route.body), 300)
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  onTestFinished(() => new Promise<void>((resolve) => server.close(() => resolve())))
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("No port")
+  const { port } = address
+  const toolsDir = join(root, "tools")
+  const gitHosts = makeGitHosts({
+    toolsDir,
+    platform: { os: "linux", arch: "x64" },
+    releasesUrls: { github: `http://127.0.0.1:${String(port)}${fakeGhReleases}` }
+  })
+  return { gitHosts, toolsDir, downloads: () => downloads }
+}
+
+const ghReleaseArchive = (root: string, ghScript: string): Buffer => {
+  const bin = join(root, "content", `gh_${fakeGhVersion}_linux_amd64`, "bin")
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(
+    join(bin, "gh"),
+    `#!/bin/sh\n[ "$1" = "--version" ] && echo "gh version ${fakeGhVersion}" && exit 0\n${ghScript}\n`
+  )
+  chmodSync(join(bin, "gh"), 0o755)
+  const archive = join(root, fakeGhArchive)
+  execFileSync("tar", ["-czf", archive, "-C", join(root, "content"), "."])
+  return readFileSync(archive)
 }

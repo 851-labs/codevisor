@@ -26,6 +26,8 @@ public enum GitHostProvider: String, Sendable, CaseIterable, Identifiable {
     }
   }
 
+  public var cliName: String { "\(displayName) CLI" }
+
   public var defaultHost: String {
     switch self {
     case .github: "github.com"

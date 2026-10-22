@@ -120,6 +120,7 @@ public struct ServerGitAuthFlow: Decodable, Equatable, Sendable, Identifiable {
   public var host: String
   public var provider: String
   public var state: State
+  public var installing: Bool?
   public var userCode: String?
   public var verificationUrl: String?
   public var account: String?
@@ -130,6 +131,7 @@ public struct ServerGitAuthFlow: Decodable, Equatable, Sendable, Identifiable {
     host: String,
     provider: String,
     state: State,
+    installing: Bool? = nil,
     userCode: String? = nil,
     verificationUrl: String? = nil,
     account: String? = nil,
@@ -139,6 +141,7 @@ public struct ServerGitAuthFlow: Decodable, Equatable, Sendable, Identifiable {
     self.host = host
     self.provider = provider
     self.state = state
+    self.installing = installing
     self.userCode = userCode
     self.verificationUrl = verificationUrl
     self.account = account

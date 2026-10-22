@@ -7,6 +7,7 @@ public final class GitSignInModel {
   public enum Step: Equatable, Sendable {
     case idle
     case starting(GitHostProvider)
+    case installing(GitHostProvider)
     case waiting(GitHostProvider, ServerGitAuthFlow)
     case signedIn(GitHostProvider, account: String?)
     case failed(GitHostProvider, message: String)
@@ -35,8 +36,8 @@ public final class GitSignInModel {
   public var provider: GitHostProvider? {
     switch step {
     case .idle: nil
-    case let .starting(provider), let .waiting(provider, _), let .signedIn(provider, _),
-      let .failed(provider, _):
+    case let .starting(provider), let .installing(provider), let .waiting(provider, _),
+      let .signedIn(provider, _), let .failed(provider, _):
       provider
     }
   }
@@ -53,7 +54,8 @@ public final class GitSignInModel {
         while !Task.isCancelled {
           switch flow.state {
           case .starting:
-            break
+            let next: Step = flow.installing == true ? .installing(provider) : .starting(provider)
+            if step != next { step = next }
           case .waiting:
             if step != .waiting(provider, flow) { step = .waiting(provider, flow) }
           case .complete:
