@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
+import type { ServerResponse } from "node:http"
 
 import type { EventEnvelope, SessionSummary, Workspace, WorkspaceGit } from "@codevisor/api"
 import {
@@ -19,13 +19,7 @@ import {
   workspaceGitCheckout,
   writeJson
 } from "../server-context.js"
-import type {
-  CodevisorServerConfig,
-  CodevisorServerServices,
-  EventFanout,
-  RouteState,
-  WorkspaceGitCheckout
-} from "../server-context.js"
+import type { CodevisorServerServices, WorkspaceGitCheckout } from "../server-context.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { cachedPullRequest } from "./git-review.js"
 import { matchesLabelFilters } from "./label-filters.js"
@@ -43,18 +37,8 @@ import {
 import { routeWorkspaceMedia } from "./workspace-media.js"
 import { routeWorkspacePanes } from "./workspace-panes.js"
 
-export const routeWorkspaces = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  config: CodevisorServerConfig,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> =>
-  rejectSyncThrows(() =>
-    dispatchWorkspaceRoute({ services, fanout, routeState, request, response, url, config })
-  )
+export const routeWorkspaces = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchWorkspaceRoute(route))
 
 const dispatchWorkspaceRoute = (route: RouteContext): Promise<boolean> => {
   const { request, url } = route

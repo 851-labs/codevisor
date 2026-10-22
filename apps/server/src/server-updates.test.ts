@@ -188,6 +188,31 @@ describe("@codevisor/server self-updates", () => {
     })
   })
 
+  it("answers a failed update check with a server error", async () => {
+    const { services } = await makeServices("server-update-check-fails")
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({
+          bootId: "test-boot",
+          id: "server-update-check-fails",
+          port: 0,
+          updater: {
+            apply: async () => undefined,
+            check: async () => {
+              throw new Error("release feed unreachable")
+            }
+          }
+        })
+      )
+    )
+    runningServers.push(server)
+
+    const check = await jsonRequest(server, "/v1/update?refresh=1")
+    expect(check.status).toBe(500)
+    expect(check.body).toEqual({ error: "release feed unreachable" })
+  })
+
   it("applies an update right away while a chat is mid-turn", async () => {
     const { agents, services } = await makeServices("server-busy")
     const applied = observableFixture({ count: 0 })

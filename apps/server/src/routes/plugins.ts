@@ -13,10 +13,7 @@ import {
   HttpFailure,
   readSchema,
   writeJson,
-  type CodevisorServerConfig,
-  type CodevisorServerServices,
-  type EventFanout,
-  type RouteState
+  type CodevisorServerServices
 } from "../server-context.js"
 import { publishPluginUpdated, withOpenPaneCount } from "./plugin-panes.js"
 import { routePlugin } from "./plugin-routes.js"
@@ -35,18 +32,8 @@ export const routePluginProxy = async (
   return services.plugins.handleProxyRequest(request, response, url)
 }
 
-export const routePlugins = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  config: CodevisorServerConfig,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> =>
-  rejectSyncThrows(() =>
-    dispatchPluginRoute({ services, fanout, routeState, request, response, url, config })
-  )
+export const routePlugins = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchPluginRoute(route))
 
 const dispatchPluginRoute = (route: RouteContext): Promise<boolean> => {
   const { services, request, url } = route

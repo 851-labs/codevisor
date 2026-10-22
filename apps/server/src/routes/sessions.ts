@@ -1,5 +1,3 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-
 import type { HarnessAccount, HarnessUsageLimits, Project, SessionSummary } from "@codevisor/api"
 import {
   MarkSessionReadRequest as MarkSessionReadRequestSchema,
@@ -18,12 +16,7 @@ import {
   run,
   writeJson
 } from "../server-context.js"
-import type {
-  CodevisorServerConfig,
-  CodevisorServerServices,
-  EventFanout,
-  RouteState
-} from "../server-context.js"
+import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { withAutoResume } from "./auto-resume-routes.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { matchesLabelFilters } from "./label-filters.js"
@@ -50,18 +43,8 @@ export {
 
 export const MAX_PROMPT_ATTACHMENTS = 10
 
-export const routeSessions = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL,
-  config: CodevisorServerConfig
-): Promise<boolean> =>
-  rejectSyncThrows(() =>
-    dispatchSessionRoute({ services, fanout, routeState, request, response, url, config })
-  )
+export const routeSessions = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchSessionRoute(route))
 
 const dispatchSessionRoute = (route: RouteContext): Promise<boolean> => {
   const { request, url } = route

@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
+import type { IncomingMessage } from "node:http"
 
 import { PutSyncRequest as PutSyncRequestSchema } from "@codevisor/api"
 import { isValidBlobId, isValidSyncNamespace } from "@codevisor/sync"
@@ -15,11 +15,7 @@ import {
   readSchema,
   run,
   swallowError,
-  writeJson,
-  type CodevisorServerConfig,
-  type CodevisorServerServices,
-  type EventFanout,
-  type RouteState
+  writeJson
 } from "../server-context.js"
 import { isRoute, rejectSyncThrows, whenMethod } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
@@ -30,18 +26,8 @@ import {
   type SyncReconcileNamespace
 } from "./sync-reconcilers.js"
 
-export const routeSync = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  config: CodevisorServerConfig,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL
-): Promise<boolean> =>
-  rejectSyncThrows(() =>
-    dispatchSyncRoute({ services, fanout, routeState, request, response, url, config })
-  )
+export const routeSync = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchSyncRoute(route))
 
 interface RosterPublish {
   readonly changedEntries: ReadonlyArray<SyncEntryRecord>

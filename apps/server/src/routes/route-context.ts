@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { matchRoute, matchRouteParams } from "../server-context.js"
+import { matchRoute, matchRouteParams, writeFailure } from "../server-context.js"
 import type {
   CodevisorServerConfig,
   CodevisorServerServices,
@@ -18,6 +18,10 @@ export interface RouteContext {
   readonly config: CodevisorServerConfig
 }
 
+export type RouteHandler = (route: RouteContext) => void | Promise<void>
+
+export type RouteFamily = (route: RouteContext) => Promise<boolean>
+
 export const rejectSyncThrows = (dispatch: () => Promise<boolean>): Promise<boolean> => {
   try {
     return dispatch()
@@ -32,6 +36,25 @@ export const isRoute = (
   pathname: string,
   method: string
 ): boolean => url.pathname === pathname && request.method === method
+
+export const isMethodRoute = (
+  request: IncomingMessage,
+  url: URL,
+  method: string,
+  pathname: string
+): boolean => request.method === method && url.pathname === pathname
+
+export const respondAfter = async <T>(
+  response: ServerResponse,
+  pending: Promise<T>,
+  write: (value: T) => void | Promise<void> = ignoreResult
+): Promise<void> => {
+  try {
+    return write(await pending)
+  } catch (cause) {
+    writeFailure(response, cause)
+  }
+}
 
 export const whenMethod = <T>(
   request: IncomingMessage,
@@ -55,3 +78,5 @@ export const methodRouteParams = (
   pattern: string
 ): Record<string, string> | undefined =>
   whenMethod(request, method, matchRouteParams(url.pathname, pattern))
+
+const ignoreResult = (): void => undefined
