@@ -9,6 +9,7 @@
     var acceptsTranscriptSelection: Bool { get }
     func transcriptCharacterIndex(at viewPoint: NSPoint) -> Int
     func transcriptTextRects(for range: NSRange) -> [NSRect]
+    func transcriptPlainText(in range: NSRange) -> String
   }
 
   extension TranscriptTextSurface {

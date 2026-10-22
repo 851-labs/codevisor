@@ -34,6 +34,7 @@
       let string = renderMemo.attributedString(for: model, width: bounds.width)
       updateLinkHover(at: nil)
       textStorage?.setAttributedString(string)
+      if let layoutManager, let textContainer { layoutManager.ensureLayout(for: textContainer) }
       builtWidth = bounds.width
       needsDisplay = true
     }

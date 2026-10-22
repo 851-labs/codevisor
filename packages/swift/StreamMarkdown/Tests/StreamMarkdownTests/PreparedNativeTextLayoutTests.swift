@@ -68,6 +68,19 @@
           == "Name\tValue\nAlpha\t42\n日本語\t")
     }
 
+    @Test func tableSurfaceCopiesTSVThroughTheTranscriptSurfaceProtocol() async throws {
+      let content = PreparedTextContent.table(
+        headers: ["Name", "Value"], alignments: [.leading, .trailing],
+        rows: [["Alpha", "42"]], theme: .default
+      )
+      let layout = try await Task.detached { try content.prepare(width: 360, wrapsText: true) }.value
+      let surface: any TranscriptTextSurface = TableTextView(
+        frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
+      #expect(
+        surface.transcriptPlainText(in: NSRange(location: 0, length: surface.transcriptTextLength))
+          == "Name\tValue\nAlpha\t42")
+    }
+
     private struct ImmutableText: @unchecked Sendable {
       let text: NSAttributedString
       init(_ text: NSAttributedString) { self.text = text }

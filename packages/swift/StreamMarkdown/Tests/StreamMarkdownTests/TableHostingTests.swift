@@ -77,6 +77,16 @@
       #expect(scrollView.tableTextView.frame.height == measured)
     }
 
+    @Test("A mounted table is fully laid out before its first draw")
+    func mountedTableIsLaidOutBeforeDrawing() throws {
+      let textView = try mountTable(rows: Self.proseRows).scrollView.tableTextView
+      let layoutManager = try #require(textView.layoutManager)
+      let storage = try #require(textView.textStorage)
+
+      #expect(storage.length > 0)
+      #expect(layoutManager.firstUnlaidCharacterIndex() == storage.length)
+    }
+
     @Test("A table that fits hands horizontal swipes to the transcript; an overflowing one scrolls")
     func horizontalSwipesScrollOnlyOverflowingTables() throws {
       let fitting = try mountTable(rows: Self.proseRows)

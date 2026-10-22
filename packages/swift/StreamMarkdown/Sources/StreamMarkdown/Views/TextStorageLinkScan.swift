@@ -1,17 +1,18 @@
 #if canImport(AppKit)
   import AppKit
+  import Synchronization
 
   @MainActor
   final class TextStorageLinkScan: NSObject {
     private static let linkKeys: [NSAttributedString.Key] = [.link, .streamMarkdownServerFileLink]
 
     private weak var storage: NSTextStorage?
-    private var isCurrent = false
+    private let needsRescan = Mutex(true)
     private var foundLinks = false
 
     func containsLinks(in storage: NSTextStorage) -> Bool {
       if self.storage !== storage { observe(storage) }
-      if !isCurrent { rescan(storage) }
+      if needsRescan.withLock({ $0 }) { rescan(storage) }
       return foundLinks
     }
 
@@ -25,16 +26,16 @@
         object: storage
       )
       self.storage = storage
-      isCurrent = false
+      needsRescan.withLock { $0 = true }
     }
 
-    @objc private func storageDidEdit(_: Notification) {
-      isCurrent = false
+    @objc nonisolated private func storageDidEdit(_: Notification) {
+      needsRescan.withLock { $0 = true }
     }
 
     private func rescan(_ storage: NSTextStorage) {
+      needsRescan.withLock { $0 = false }
       foundLinks = Self.linkKeys.contains { Self.storage(storage, contains: $0) }
-      isCurrent = true
     }
 
     private static func storage(_ storage: NSTextStorage, contains key: NSAttributedString.Key) -> Bool {
