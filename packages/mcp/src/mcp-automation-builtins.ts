@@ -108,6 +108,7 @@ export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider =
       backend: "missing",
       error: detail,
       extensionConnected: false,
+      extensionNeedsUpdate: false,
       chromeAvailable: false,
       extensionSetupMode: "development"
     }),

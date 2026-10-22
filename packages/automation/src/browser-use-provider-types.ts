@@ -10,6 +10,7 @@ export type BrowserClientPlatform = "macos" | "ios"
 
 export interface BrowserUseProviderStatus extends Readonly<Record<string, unknown>> {
   readonly extensionConnected: boolean
+  readonly extensionNeedsUpdate: boolean
   readonly chromeAvailable: boolean
   readonly extensionSetupMode: BrowserExtensionSetupMode
   readonly developmentExtensionPath?: string

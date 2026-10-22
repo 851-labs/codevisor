@@ -14,7 +14,8 @@ import {
   listen,
   managers,
   run,
-  testManager
+  testManager,
+  TEST_BASE_URL
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import { sdkTransport } from "./mcp-support.js"
@@ -119,7 +120,12 @@ describe("Codevisor built-in tools", () => {
 
     await manager.update("codevisor", { enabled: false })
     await manager.close()
-    const restarted = makeMcpManager({ db, dataDir: directory, ...providers })
+    const restarted = makeMcpManager({
+      db,
+      dataDir: directory,
+      baseUrl: TEST_BASE_URL,
+      ...providers
+    })
     managers.push(restarted)
     expect((await restarted.list()).find((server) => server.id === "codevisor")).toMatchObject({
       enabled: false,

@@ -224,6 +224,14 @@ UNIT
 
 }
 
+codevisor_cli() {
+  if [ -n "$explicit_port" ]; then
+    "$bin_dir/codevisor" "$@" --port "$explicit_port"
+  else
+    "$bin_dir/codevisor" "$@"
+  fi
+}
+
 finish_server_onboarding() {
   if [ -n "${CODEVISOR_INVITE:-}" ]; then
     say "Joining your Codevisor account"
@@ -231,15 +239,15 @@ finish_server_onboarding() {
     unset CODEVISOR_INVITE
     if [ -n "${CODEVISOR_MACHINE_NAME:-}" ]; then
       printf '%s\n' "$invite" |
-        "$bin_dir/codevisor" auth login --invite - --name "$CODEVISOR_MACHINE_NAME" --port "$port"
+        codevisor_cli auth login --invite - --name "$CODEVISOR_MACHINE_NAME"
     else
-      printf '%s\n' "$invite" | "$bin_dir/codevisor" auth login --invite - --port "$port"
+      printf '%s\n' "$invite" | codevisor_cli auth login --invite -
     fi
   elif [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
     note "Finish onboarding later with: codevisor setup"
   elif [ -t 1 ] && [ -r /dev/tty ]; then
     say "Finishing setup"
-    "$bin_dir/codevisor" setup --port "$port" < /dev/tty ||
+    codevisor_cli setup < /dev/tty ||
       note "Finish onboarding with: codevisor setup"
   else
     say "Connect this machine to your Codevisor account"
@@ -269,7 +277,8 @@ install_server() {
   fi
   data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
   logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
-  port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
+  explicit_port="${CODEVISOR_PORT:-${HERDMAN_PORT:-}}"
+  port="${explicit_port:-49361}"
 
   target="$os-$arch"
   archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"

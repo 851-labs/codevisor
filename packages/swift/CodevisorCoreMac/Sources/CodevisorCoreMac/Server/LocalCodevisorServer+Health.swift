@@ -36,6 +36,7 @@ extension LocalCodevisorServer {
   }
 
   func currentHealth() async -> ServerHealth? {
+    adoptClaimedPort()
     do {
       let health = try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
         try await client.health()
@@ -50,6 +51,7 @@ extension LocalCodevisorServer {
   }
 
   func isHealthy() async -> Bool {
+    adoptClaimedPort()
     do {
       return try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
         try await client.health().ok
@@ -115,6 +117,7 @@ extension LocalCodevisorServer {
   }
 
   private func probeHealth(_ watch: inout StartupHealthWatch, scheduler: LocalServerScheduler) async -> ServerHealth? {
+    adoptClaimedPort()
     do {
       let health = try await StartupDeadline.run(for: .seconds(2), scheduler: scheduler) { [client] in
         try await client.health()

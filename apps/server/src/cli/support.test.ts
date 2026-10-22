@@ -12,6 +12,8 @@ import {
   stopCommand
 } from "./support.js"
 
+const portFile = "/home/user/.codevisor/data/server-port.json"
+
 describe("codevisor CLI support", () => {
   it("detects system units, user units, and the pidfile fallback", async () => {
     const system = makeWorld({ exec: { [systemCat]: unit(50000) } })
@@ -24,7 +26,7 @@ describe("codevisor CLI support", () => {
     expect(await detectServiceManager(none.deps)).toEqual({ kind: "pidfile" })
   })
 
-  it("resolves the port from flag, env, unit, then default", async () => {
+  it("resolves the port from flag, env, unit, the port file, then default", async () => {
     const world = makeWorld({ exec: { [systemCat]: unit(50123) } })
     expect(await resolvePort(world.deps, 40000)).toBe(40000)
 
@@ -49,6 +51,11 @@ describe("codevisor CLI support", () => {
       exec: { [systemCat]: { code: 0, stdout: "ExecStart=serve", stderr: "" } }
     })
     expect(await resolvePort(noUnitPort.deps)).toBe(DEFAULT_PORT)
+
+    const fellBack = makeWorld({ files: { [portFile]: '{"port":49364,"pid":7}' } })
+    expect(await resolvePort(fellBack.deps)).toBe(49364)
+    const damaged = makeWorld({ files: { [portFile]: "{" } })
+    expect(await resolvePort(damaged.deps)).toBe(DEFAULT_PORT)
 
     expect(pidFilePath(world.deps)).toBe("/home/user/.codevisor/data/server.pid")
     expect(logFilePath(world.deps)).toBe("/home/user/.codevisor/logs/server.log")
@@ -110,8 +117,6 @@ describe("codevisor CLI support", () => {
       "serve",
       "--host",
       "0.0.0.0",
-      "--port",
-      String(DEFAULT_PORT),
       "--auth",
       "token",
       "--db",
@@ -119,6 +124,27 @@ describe("codevisor CLI support", () => {
     ])
     expect(world.files.get("/home/user/.codevisor/data/server.pid")).toBe("777\n")
     expect(world.logs.at(-1)).toContain("pid 777")
+  })
+
+  it("follows a started server to the port it claimed, and passes a pinned port through", async () => {
+    const world = makeWorld({ http: { [health(49365)]: [ok] }, spawnPid: 777 })
+    const spawn = world.deps.spawnDetachedServer
+    const deps = {
+      ...world.deps,
+      spawnDetachedServer: async (args: ReadonlyArray<string>, logPath: string) => {
+        world.files.set(portFile, '{"port":49365,"pid":777}')
+        return spawn(args, logPath)
+      }
+    }
+    expect(await startCommand(deps)).toBe(0)
+    expect(world.logs.at(-1)).toBe("Codevisor server is running on port 49365 (pid 777)")
+
+    const pinned = makeWorld({
+      http: { [health(6000)]: [undefined, ok] },
+      env: { CODEVISOR_PORT: "6000" }
+    })
+    expect(await startCommand(pinned.deps)).toBe(0)
+    expect(pinned.spawned[0]?.args.slice(3, 5)).toEqual(["--port", "6000"])
   })
 
   it("does not double-start: healthy server and half-dead process are surfaced", async () => {

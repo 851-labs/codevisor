@@ -165,7 +165,13 @@ export const makeServices = async (
   observeDatabase(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
-  const mcp = makeMcpManager({ db, dataDir: dir, serverId, ...mcpConfig })
+  const mcp = makeMcpManager({
+    db,
+    dataDir: dir,
+    baseUrl: "http://127.0.0.1:43210",
+    serverId,
+    ...mcpConfig
+  })
   mcpManagers.push(mcp)
   onTestFinished(mcp.subscribeServersChanged(fixtureChanged))
   onTestFinished(mcp.subscribeCredentialsRotated(fixtureChanged))

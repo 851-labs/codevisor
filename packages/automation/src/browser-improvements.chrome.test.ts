@@ -54,7 +54,7 @@ beforeAll(async () => {
   emulateBrowserFocus()
   cdp = observeCdp()
   directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
-  provider = makeBrowserUseProvider(directory)
+  provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)
     server.listen(0, "127.0.0.1", resolve)

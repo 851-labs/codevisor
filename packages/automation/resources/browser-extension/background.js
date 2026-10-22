@@ -1,8 +1,7 @@
-importScripts("relay-config.js")
-importScripts("tab-groups.js")
+importScripts("relay-config.js", "relay-candidates.js", "tab-groups.js")
 
 const connections = new Set()
-const CODEVISOR_RELAY = globalThis.CODEVISOR_RELAY
+const relays = globalThis.codevisorRelays(globalThis.CODEVISOR_RELAY)
 const RECONNECT_ALARM = "codevisor-reconnect"
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
@@ -368,7 +367,7 @@ const connectionStatus = () => {
     lastConnectionError: lastConnectionError ?? null,
     lastCommandError: lastCommandError ?? null,
     lastCommandErrorAt: lastCommandErrorAt ?? null,
-    relay: CODEVISOR_RELAY,
+    relay: relays.current(),
     version: chrome.runtime.getManifest().version
   }
 }
@@ -415,7 +414,7 @@ const connectToCodevisor = () => {
   connectionState = reconnectAttempt === 0 ? "connecting" : "reconnecting"
   let socket
   try {
-    socket = new WebSocket(CODEVISOR_RELAY)
+    socket = new WebSocket(relays.current())
   } catch (error) {
     lastConnectionError = error instanceof Error ? error.message : String(error)
     lastDisconnectedAt = Date.now()
@@ -454,7 +453,8 @@ const connectToCodevisor = () => {
     activeSocket = undefined
     lastDisconnectedAt = Date.now()
     lastConnectionError ??= "The connection to Codevisor closed"
-    scheduleReconnect()
+    if (connection === undefined && relays.advance()) connectToCodevisor()
+    else scheduleReconnect()
   })
   socket.addEventListener("error", () => {
     if (activeSocket === socket) {

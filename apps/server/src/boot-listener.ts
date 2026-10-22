@@ -4,11 +4,12 @@ import type { Socket } from "node:net"
 
 import type { DataUpgradeProgress, HealthResponse } from "@codevisor/api"
 
-import { hasExistingListener } from "./infra/listener-probe.js"
+import { claimPort, type LoopbackCheck } from "./infra/port-claim.js"
 
 export interface BootListenerOptions {
   readonly host: string
-  readonly port: number
+  readonly candidates: ReadonlyArray<number>
+  readonly loopbackIsOurs?: LoopbackCheck
   readonly version: string | undefined
   readonly bootId: string
   readonly processId: number
@@ -21,6 +22,7 @@ export interface BootListenerOptions {
 
 export interface BootListener {
   readonly server: Server
+  readonly port: number
   readonly report: (progress: DataUpgradeProgress) => void
   readonly detach: () => void
   readonly close: (options?: { readonly afterMs?: number }) => Promise<void>
@@ -34,20 +36,6 @@ const defaultLog = (line: string): void => console.error(line)
 
 const onSocket = (_request: IncomingMessage, socket: Socket): void => {
   socket.destroy()
-}
-
-export const startBootListenerIfPortFree = async (
-  options: BootListenerOptions
-): Promise<BootListener | undefined> => {
-  if (options.port === 0) return undefined
-  if (await hasExistingListener(options.host, options.port)) {
-    const log = options.log ?? defaultLog
-    log(
-      `${options.host}:${options.port} already has a listener; skipping the early health listener`
-    )
-    return undefined
-  }
-  return startBootListener(options)
 }
 
 export const bootHealth = (
@@ -76,55 +64,58 @@ export const bootHealth = (
       })
 })
 
-export const startBootListener = (
-  options: BootListenerOptions
-): Promise<BootListener | undefined> =>
-  new Promise((resolve) => {
-    const log = options.log ?? defaultLog
-    let latest: DataUpgradeProgress | undefined
-    const onRequest = (request: IncomingMessage, response: ServerResponse): void => {
-      if (request.method === "GET" && request.url?.split("?")[0] === "/v1/health") {
-        response.writeHead(200, { "Content-Type": "application/json", Connection: "close" })
-        response.end(JSON.stringify(bootHealth(options, latest)))
-        return
-      }
-      response.writeHead(503, { "Content-Type": "application/json", Connection: "close" })
-      response.end(BOOT_REFUSED)
+export const claimBootListener = async (options: BootListenerOptions): Promise<BootListener> => {
+  const log = options.log ?? defaultLog
+  const progress: BootProgress = { latest: undefined }
+  const onRequest = bootRequestHandler(options, progress)
+  const onServerError = (error: Error): void => log(`Early health listener error: ${error.message}`)
+  const server = createServer(onRequest)
+  server.on("upgrade", onSocket)
+  server.on("connect", onSocket)
+
+  const port = await claimPort(server, options)
+  server.on("error", onServerError)
+  return {
+    server,
+    port,
+    report: (next) => {
+      progress.latest = next
+    },
+    detach: () => {
+      server.off("request", onRequest)
+      server.off("upgrade", onSocket)
+      server.off("connect", onSocket)
+      server.off("error", onServerError)
+    },
+    close: (closeOptions) => closeBootListener(server, closeOptions)
+  }
+}
+
+interface BootProgress {
+  latest: DataUpgradeProgress | undefined
+}
+
+const bootRequestHandler =
+  (options: BootListenerOptions, progress: BootProgress) =>
+  (request: IncomingMessage, response: ServerResponse): void => {
+    if (request.method === "GET" && request.url?.split("?")[0] === "/v1/health") {
+      response.writeHead(200, { "Content-Type": "application/json", Connection: "close" })
+      response.end(JSON.stringify(bootHealth(options, progress.latest)))
+      return
     }
-    const server = createServer(onRequest)
-    server.on("upgrade", onSocket)
-    server.on("connect", onSocket)
-    const onBindError = (error: Error): void => {
-      log(`Early health listener unavailable on ${options.host}:${options.port}: ${error.message}`)
-      resolve(undefined)
-    }
-    const onServerError = (error: Error): void => {
-      log(`Early health listener error: ${error.message}`)
-    }
-    server.once("error", onBindError)
-    server.listen(options.port, options.host, () => {
-      server.off("error", onBindError)
-      server.on("error", onServerError)
-      resolve({
-        server,
-        report: (progress) => {
-          latest = progress
-        },
-        detach: () => {
-          server.off("request", onRequest)
-          server.off("upgrade", onSocket)
-          server.off("connect", onSocket)
-          server.off("error", onServerError)
-        },
-        close: async (closeOptions) => {
-          if (closeOptions?.afterMs !== undefined && closeOptions.afterMs > 0) {
-            await new Promise<void>((done) => setTimeout(done, closeOptions.afterMs))
-          }
-          await new Promise<void>((done) => {
-            server.close(() => done())
-            server.closeAllConnections()
-          })
-        }
-      })
-    })
+    response.writeHead(503, { "Content-Type": "application/json", Connection: "close" })
+    response.end(BOOT_REFUSED)
+  }
+
+const closeBootListener = async (
+  server: Server,
+  options: { readonly afterMs?: number } | undefined
+): Promise<void> => {
+  if (options?.afterMs !== undefined && options.afterMs > 0) {
+    await new Promise<void>((done) => setTimeout(done, options.afterMs))
+  }
+  await new Promise<void>((done) => {
+    server.close(() => done())
+    server.closeAllConnections()
   })
+}

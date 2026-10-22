@@ -22,8 +22,10 @@ import {
   openBrowserExtensionDevelopmentInstaller,
   openBrowserExtensionDevelopmentPage,
   openBrowserExtensionWebStore,
-  prepareBrowserExtension
+  prepareBrowserExtension,
+  type BrowserExtensionInstallation
 } from "./browser-extension-relay.js"
+import { extensionNeedsUpdate } from "./browser-extension-update.js"
 import { makeBrowserHostRegistry, type BrowserHostRegistry } from "./browser-host-registry.js"
 import { makeBrowserPreviews } from "./browser-preview.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
@@ -69,6 +71,7 @@ const chromiumBackend = (browsersDir: string): string => {
 
 export const makeBrowserUseProvider = (
   dataDir: string,
+  serverBaseUrl: string,
   db?: CodevisorDatabaseService,
   hosts: BrowserHostRegistry = makeBrowserHostRegistry()
 ): BrowserUseProvider => {
@@ -93,7 +96,8 @@ export const makeBrowserUseProvider = (
   const assetInventories = new Map<string, BrowserAssetInventory>()
   const extensionRelay = makeBrowserExtensionRelay()
   const previews = makeBrowserPreviews()
-  const developmentExtensionPath = prepareBrowserExtension(dataDir, "http://127.0.0.1:49361")
+  const developmentExtensionPath = prepareBrowserExtension(dataDir, serverBaseUrl)
+  let relayBaseUrl = serverBaseUrl
   const extensionArchive = browserExtensionArchivePath(developmentExtensionPath)
   const extensionSetupMode: BrowserExtensionSetupMode =
     process.env.CODEVISOR_DEV_WORKTREE !== undefined ||
@@ -115,6 +119,7 @@ export const makeBrowserUseProvider = (
       extensionInstalled: extension.installed,
       extensionInstallationState: extension.installationState,
       extensionConnected: extensionConnected(),
+      extensionNeedsUpdate: updateRequired(extension),
       extensionSetupMode,
       chromeAvailable: chromeBrowserAvailable(),
       developmentExtensionPath,
@@ -218,11 +223,22 @@ export const makeBrowserUseProvider = (
       platform: clientPlatforms.get(context.sessionId),
       managedError: setupError,
       builtin: builtinState(context),
-      extension: browserExtensionState({
-        connected: extensionConnected(),
-        chromeAvailable: chromeBrowserAvailable(),
-        installationState: browserExtensionInstallation().installationState
-      })
+      extension: extensionReport(browserExtensionInstallation())
+    })
+
+  const extensionReport = (installation: BrowserExtensionInstallation) =>
+    browserExtensionState({
+      connected: extensionConnected(),
+      chromeAvailable: chromeBrowserAvailable(),
+      installationState: installation.installationState,
+      needsUpdate: updateRequired(installation)
+    })
+
+  const updateRequired = (installation: BrowserExtensionInstallation): boolean =>
+    extensionNeedsUpdate({
+      connected: extensionConnected(),
+      relayBaseUrl,
+      profiles: installation.profiles
     })
 
   const discardSessionHandles = async (sessionId: string) => {
@@ -285,8 +301,9 @@ export const makeBrowserUseProvider = (
     openExtensionWebStore: () => openBrowserExtensionWebStore(),
     extensionArchivePath: () => extensionArchive,
     extensionIconPath: () => join(developmentExtensionPath, "icons", "128.png"),
-    configureExtensionRelay: (serverBaseUrl) => {
-      prepareBrowserExtension(dataDir, serverBaseUrl)
+    configureExtensionRelay: (baseUrl) => {
+      relayBaseUrl = baseUrl
+      prepareBrowserExtension(dataDir, baseUrl)
     },
     subscribePreview: previews.subscribe,
     invoke: async (context, toolName, args) => {

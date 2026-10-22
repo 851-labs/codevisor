@@ -11,6 +11,8 @@ extension AppEnvironment {
     let store = storage.store
     let launchSnapshot = storage.launchSnapshot
     let settings = AppSettingsModel(store: store, launchSnapshot: launchSnapshot)
+    LocalServerEndpoint.shared.adoptClaimedPort(
+      fromDataDirectory: CodevisorAppVariant.serverDataDirectoryURL())
     let serverClient = CodevisorServerClient(config: .localDefault)
     let localServer = LocalCodevisorServer(
       client: serverClient,

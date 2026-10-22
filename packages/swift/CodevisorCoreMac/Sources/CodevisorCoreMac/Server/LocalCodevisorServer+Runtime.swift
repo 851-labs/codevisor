@@ -42,7 +42,7 @@ extension LocalCodevisorServer {
         request.entrypoint.path,
         "serve",
         "--host", request.host,
-        "--port", String(request.port),
+        "--preferred-port", String(request.port),
         "--db", request.databasePath,
         "--auth", "token",
         "--kind", "local",

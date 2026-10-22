@@ -27,7 +27,7 @@ const ExportedSchema = z.object({
 it("preserves browser cells and applies gateway upload validation and attachment persistence to nested operations", async () => {
   const root = await mkdtemp(join(tmpdir(), "browser-repl-gateway-"))
   directories.push(root)
-  const provider = makeBrowserUseProvider(root)
+  const provider = makeBrowserUseProvider(root, "http://127.0.0.1:43210")
   const nested: string[] = []
   const { db, manager, directory } = await testManager({
     makeBrowserProvider: () => ({

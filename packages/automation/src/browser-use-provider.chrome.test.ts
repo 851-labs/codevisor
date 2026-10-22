@@ -24,7 +24,7 @@ describe("Browser Use direct CDP engine", () => {
     const previousHeadless = process.env.CODEVISOR_BROWSER_HEADLESS
     process.env.CODEVISOR_BROWSER_HEADLESS = "1"
     const cdp = observeCdp()
-    const provider = makeBrowserUseProvider(directory)
+    const provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
     const server = createServer((request, response) => {
       if (request.url === "/fixture.txt") {
         response.writeHead(200, {

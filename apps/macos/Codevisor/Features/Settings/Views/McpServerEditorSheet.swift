@@ -132,7 +132,7 @@ struct McpServerEditorSheet: View {
                   prompt: Text("Optional client secret")
                 )
                 Text(
-                  "With your own client ID, register each machine's Codevisor callback (http://127.0.0.1:49361/v1/mcps/oauth/callback on a Mac) as a redirect URI with the provider."
+                  "With your own client ID, register each machine's Codevisor callback as a redirect URI with the provider. This Mac's callback is \(LocalServerEndpoint.shared.mcpOAuthCallbackURL.absoluteString)."
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)

@@ -15,6 +15,7 @@ public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
 public enum QuestionPresentation: String, Sendable, Codable, Equatable {
   case browserExtensionSetup
   case browserExtensionWaiting
+  case browserExtensionUpdate
   case computerUsePermissions
 }
 

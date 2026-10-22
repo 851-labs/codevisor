@@ -18,6 +18,7 @@ import { readJsonBody } from "./mcp-support.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
+export const TEST_BASE_URL = "http://127.0.0.1:43210"
 export const directories: string[] = []
 export const databases: CodevisorDatabaseService[] = []
 export const managers: McpManager[] = []
@@ -81,6 +82,7 @@ export const testManager = async (
   const manager = makeMcpManager({
     db,
     dataDir: directory,
+    baseUrl: TEST_BASE_URL,
     ...extraConfig
   })
   managers.push(manager)

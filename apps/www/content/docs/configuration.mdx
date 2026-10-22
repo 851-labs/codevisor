@@ -16,16 +16,29 @@ codevisor-server serve \
   --kind remote
 ```
 
-| Flag               | Description                   | Default                                           |
-| ------------------ | ----------------------------- | ------------------------------------------------- |
-| `--host`           | Bind address                  | `127.0.0.1`                                       |
-| `--port`           | HTTP, SSE, and WebSocket port | `49361`                                           |
-| `--auth`           | `none` or `token`             | `none` for `127.0.0.1`; otherwise `token`         |
-| `--serverId`       | Protocol-facing server ID     | `local`                                           |
-| `--name`           | Human-readable machine name   | `Local Codevisor` on loopback; hostname otherwise |
-| `--kind`           | `local` or `remote`           | `local` for `127.0.0.1`; otherwise `remote`       |
-| `--db`             | SQLite database path          | `~/.codevisor/data/codevisor-server.sqlite`       |
-| `--upgrade-status` | Data-migration status file    | `data-upgrade.json` beside the database           |
+| Flag               | Description                        | Default                                           |
+| ------------------ | ---------------------------------- | ------------------------------------------------- |
+| `--host`           | Bind address                       | `127.0.0.1`                                       |
+| `--port`           | HTTP, SSE, and WebSocket port      | Automatic (see below)                             |
+| `--preferred-port` | First port to try without `--port` | `49361`                                           |
+| `--auth`           | `none` or `token`                  | `none` for `127.0.0.1`; otherwise `token`         |
+| `--serverId`       | Protocol-facing server ID          | `local`                                           |
+| `--name`           | Human-readable machine name        | `Local Codevisor` on loopback; hostname otherwise |
+| `--kind`           | `local` or `remote`                | `local` for `127.0.0.1`; otherwise `remote`       |
+| `--db`             | SQLite database path               | `~/.codevisor/data/codevisor-server.sqlite`       |
+| `--upgrade-status` | Data-migration status file         | `data-upgrade.json` beside the database           |
+
+### Listening port
+
+Without `--port` or `CODEVISOR_PORT`, the server defaults to `49361` and falls back to a free port
+in the range `49361`–`49399` when another app holds it. It first tries the port it used last time,
+so the port stays stable across restarts. Only if the whole range is taken does it let the
+operating system pick a port. The server records the port it chose in `server-port.json` in its
+data directory, and the `codevisor` CLI and the Codevisor app read it from there.
+
+`--port` or `CODEVISOR_PORT` pins the port exactly: the server fails to start rather than move.
+The Linux installer and systemd units pin the port this way, so remote clients keep a fixed
+address.
 
 `CODEVISOR_DATA_DIR` changes the default data directory. An explicit `--db` wins. The canonical
 layout is:

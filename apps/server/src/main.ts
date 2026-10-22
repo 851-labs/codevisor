@@ -8,7 +8,10 @@ Usage: codevisor-server [serve] [options]
 
 Options:
   --host <address>         Address to bind (default: 127.0.0.1)
-  --port <port>            Port to listen on (default: 49361)
+  --port <port>            Pin the listening port exactly (also CODEVISOR_PORT)
+  --preferred-port <port>  First port to try without --port (default: 49361); the
+                           server reuses its last port, then tries this one and
+                           the next 38, then lets the OS pick
   --name <name>            Server display name (default: "Local Codevisor" or hostname)
   --serverId <id>          Server identifier (default: local)
   --auth <none|token>      Auth mode (default: none on 127.0.0.1, token otherwise)

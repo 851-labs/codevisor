@@ -269,10 +269,12 @@ struct TranscriptReducerTests {
   func setupQuestions() {
     let computerUse = [QuestionSpec(id: "c", question: "Allow", presentation: .computerUsePermissions)]
     let chrome = [QuestionSpec(id: "b", question: "Connect", presentation: .browserExtensionSetup)]
+    let update = [QuestionSpec(id: "u", question: "Update", presentation: .browserExtensionUpdate)]
     var turn = AssistantTurn()
     TranscriptReducer.apply(.question(QuestionRequest(questionId: "cu", questions: computerUse)), to: &turn)
     TranscriptReducer.apply(.question(QuestionRequest(questionId: "chrome", questions: chrome)), to: &turn)
-    #expect(turn.setupRequests.map(\.state) == [.pending, .pending])
+    TranscriptReducer.apply(.question(QuestionRequest(questionId: "update", questions: update)), to: &turn)
+    #expect(turn.setupRequests.map(\.state) == [.pending, .pending, .pending])
 
     TranscriptReducer.apply(
       .questionResolved(QuestionResolution(questionId: "cu", outcome: .cancelled, questions: computerUse)), to: &turn)
@@ -283,6 +285,7 @@ struct TranscriptReducerTests {
       turn.setupRequests == [
         TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined),
         TranscriptSetupRequest(id: "chrome", kind: .chromeExtension, state: .setUp),
+        TranscriptSetupRequest(id: "update", kind: .chromeExtensionUpdate, state: .pending),
       ])
     #expect(turn.entries.isEmpty)
   }

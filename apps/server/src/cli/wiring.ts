@@ -15,7 +15,9 @@ import {
 import type { CliDeps } from "./support.js"
 
 export const portFlag = Flag.integer("port").pipe(
-  Flag.withDescription("Server port (defaults to CODEVISOR_PORT, the systemd unit, or 49361)"),
+  Flag.withDescription(
+    "Server port (defaults to CODEVISOR_PORT, the systemd unit, the port the server last used, or 49361)"
+  ),
   Flag.optional
 )
 

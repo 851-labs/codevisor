@@ -49,7 +49,7 @@ const extensionReady = (provider: BrowserUseProvider): Promise<void> =>
   })
 
 const makeExtensionFixture = (directory: string) => {
-  const provider = makeBrowserUseProvider(directory)
+  const provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
   let relay: WebSocketServer | undefined
   let client: WebSocket | undefined
   let clientClosed: Promise<void> | undefined
@@ -91,11 +91,14 @@ describe("Browser Use extension tab lifecycle", () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-relay-config-"))
     directories.push(directory)
     observeCdp()
-    const provider = makeBrowserUseProvider(directory)
+    const provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
     try {
-      provider.configureExtensionRelay("http://127.0.0.1:60704")
       const extension = provider.status().developmentExtensionPath
       expect(extension).toBeDefined()
+      expect(readFileSync(join(extension!, "relay-config.js"), "utf8")).toContain(
+        "ws://127.0.0.1:43210/v1/browser-use/extension/socket"
+      )
+      provider.configureExtensionRelay("http://127.0.0.1:60704")
       expect(readFileSync(join(extension!, "relay-config.js"), "utf8")).toContain(
         "ws://127.0.0.1:60704/v1/browser-use/extension/socket"
       )

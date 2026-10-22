@@ -13,6 +13,11 @@ export type ExtensionInstallOutcome =
   | { readonly outcome: "dismissed"; readonly note?: string }
   | { readonly outcome: "timeout" }
 
+export interface BrowserCall {
+  readonly toolName: string
+  readonly args: Readonly<Record<string, unknown>>
+}
+
 export interface ExtensionInstallRequest {
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
@@ -36,6 +41,11 @@ export interface BrowserSetupBroker {
     sessionId: string,
     request: ExtensionInstallRequest
   ) => Promise<ExtensionInstallOutcome>
+  readonly ensureExtensionCurrent: (
+    sessionId: string,
+    call: BrowserCall,
+    request: ExtensionInstallRequest
+  ) => Promise<void>
   readonly requestComputerUsePermissions: (
     sessionId: string,
     request: ExtensionInstallRequest
@@ -79,17 +89,42 @@ const computerUsePermissionsQuestion: QuestionSpec = {
   presentation: "computerUsePermissions"
 }
 
+const extensionUpdateQuestion: QuestionSpec = {
+  id: "browser_extension_update",
+  header: "Update Chrome Extension",
+  question: "Update the Codevisor extension in Chrome so it can reach Codevisor.",
+  options: [{ label: "Update", description: "Open the Extensions page in Chrome." }],
+  multiSelect: false,
+  allowsOther: false,
+  presentation: "browserExtensionUpdate"
+}
+
+export const extensionUpdateDeclined =
+  "The user chose not to update the Codevisor Chrome extension, so Browser Use can't reach their Chrome. Use the built-in or managed browser instead."
+export const extensionUpdateTimedOut =
+  "The Codevisor Chrome extension wasn't updated in time, so Browser Use can't reach the user's Chrome yet."
+const extensionUpdateInterrupted =
+  "The Chrome extension update prompt was interrupted before the user answered."
+const extensionUpdateClosed =
+  "The chat closed before the user answered the Chrome extension update prompt."
+
+const usesUserChrome = (provider: BrowserUseProvider, sessionId: string, call: BrowserCall) =>
+  call.toolName === "request_extension_install" ||
+  (call.toolName === "use_backend" && call.args.backend === "extension") ||
+  provider.sessionBackend(sessionId) === "extension"
+
 const promptLimit = (deadline: number | undefined): number =>
   Math.min(
     EXTENSION_INSTALL_PROMPT_MS,
     (deadline ?? Infinity) - DEADLINE_MARGIN_MS - performance.now()
   )
 
-const answerWithin = async (
-  answer: Promise<Settled>,
+const answerWithin = async <Answer>(
+  answer: Promise<Answer>,
   limit: number,
   signal: AbortSignal | undefined
-): Promise<Settled | PromptStop> => {
+): Promise<Answer | PromptStop> => {
+  if (signal?.aborted === true) return "interrupted"
   const { promise: stopped, resolve: stop } = Promise.withResolvers<PromptStop>()
   const timer = setTimeout(() => stop("timeout"), limit)
   const interrupt = () => stop("interrupted")
@@ -225,6 +260,63 @@ export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSet
     }
   }
 
+  const extensionConnected = () => {
+    const { promise, resolve } = Promise.withResolvers<"connected">()
+    const unsubscribe = provider.onExtensionConnectionChange((connected) => {
+      if (connected) resolve("connected")
+    })
+    return { promise, unsubscribe }
+  }
+
+  const askForExtensionUpdate = async (
+    sessionId: string,
+    { signal, deadline }: ExtensionInstallRequest
+  ): Promise<void> => {
+    signal?.throwIfAborted()
+    const stopAt = performance.now() + promptLimit(deadline)
+    const connected = extensionConnected()
+    try {
+      while (!provider.status().extensionConnected) {
+        const asked = await ask(sessionId, extensionUpdateQuestion)
+        const answer = Promise.race([asked.answer, connected.promise])
+        const result = await answerWithin(answer, stopAt - performance.now(), signal)
+        if (await settleExtensionUpdate(asked.questionId, result)) return
+        await provider.openDevelopmentExtensionPage()
+      }
+    } finally {
+      connected.unsubscribe()
+    }
+  }
+
+  const settleExtensionUpdate = async (
+    questionId: string,
+    result: Settled | PromptStop | "connected"
+  ): Promise<boolean> => {
+    if (result === "connected") {
+      await resolveQuestion(questionId, "autoResolved")
+      return true
+    }
+    if (result === "timeout" || result === "interrupted") {
+      await resolveQuestion(questionId, "cancelled")
+    }
+    if (result === "timeout") throw new Error(extensionUpdateTimedOut)
+    if (result === "interrupted") throw new Error(extensionUpdateInterrupted)
+    if (result.outcome === "closed") throw new Error(extensionUpdateClosed)
+    if (result.outcome !== "answered") throw new Error(extensionUpdateDeclined)
+    return false
+  }
+
+  const ensureExtensionCurrent = async (
+    sessionId: string,
+    call: BrowserCall,
+    request: ExtensionInstallRequest
+  ): Promise<void> => {
+    if (!provider.status().extensionNeedsUpdate) return
+    if (!usesUserChrome(provider, sessionId, call)) return
+
+    await askForExtensionUpdate(sessionId, request)
+  }
+
   const permissionRequests = new Map<string, Promise<boolean>>()
 
   const askForComputerUsePermissions = async (
@@ -271,6 +363,7 @@ export const makeBrowserSetupBroker = (provider: BrowserUseProvider): BrowserSet
     beginTurn: (sessionId, options) => provider.beginTurn(sessionId, options),
     setSink: (sessionId, sink) => sinks.set(sessionId, sink),
     requestExtensionInstall,
+    ensureExtensionCurrent,
     requestComputerUsePermissions,
     answerQuestion: async (sessionId, questionId, answer) => {
       const current = pending.get(questionId)

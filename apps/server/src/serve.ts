@@ -28,16 +28,13 @@ import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
 
 import { agentProviderFactories } from "./agent-providers.js"
-import {
-  FAILED_UPGRADE_GRACE_MS,
-  startBootListenerIfPortFree,
-  type BootListener
-} from "./boot-listener.js"
+import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { makeLinkPreviewStore } from "./infra/link-previews.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
+import { listenPortArgs } from "./infra/listen-port.js"
 import { guessMachineIcon } from "./infra/machine-icon.js"
 import { makeMachineStatsSampler } from "./infra/machine-stats.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
@@ -68,6 +65,7 @@ import {
   selfUpdateServeArgs,
   databaseStartupFailure
 } from "./serve-boot.js"
+import { claimServeListener } from "./serve-listener.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
 import { sweepTrashedWorktrees } from "./server-workspace-effects.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
@@ -105,7 +103,6 @@ export const runServe = (
 
   const program = Effect.gen(function* () {
     const host = args.host ?? "127.0.0.1"
-    const port = Number(args.port ?? "49361")
     const worktreeNameStyle =
       process.env.CODEVISOR_DEV_INSTANCE_ID !== undefined ||
       process.env.HERDMAN_DEV_INSTANCE_ID !== undefined
@@ -156,18 +153,26 @@ export const runServe = (
     )
     startupLease = lease
     stopOwnerMonitor = monitorOwnerIfAppOwned(ownerPid, lease)
-    bootListener = yield* Effect.promise(() =>
-      startBootListenerIfPortFree({
-        host,
-        port,
-        version,
-        bootId,
-        processId: process.pid,
-        appOwned,
-        serviceManaged,
-        ...buildMetadata
-      })
-    )
+    const claimed = yield* Effect.tryPromise({
+      try: () =>
+        claimServeListener({
+          args,
+          env: process.env,
+          dataDir: dirname(databasePath),
+          boot: {
+            host,
+            version,
+            bootId,
+            processId: process.pid,
+            appOwned,
+            serviceManaged,
+            ...buildMetadata
+          }
+        }),
+      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause)))
+    })
+    bootListener = claimed.listener
+    const port = claimed.listener.port
     startup.checkpoint("openingDatabase")
     if (args.db === undefined || canonicalDatabasePaths().includes(databasePath)) {
       yield* Effect.tryPromise(() => migrateTmpDataDir({ databasePath }))
@@ -207,7 +212,7 @@ export const runServe = (
             dataDir: dirname(databasePath),
             serveArgs: selfUpdateServeArgs({
               host,
-              port,
+              portArgs: listenPortArgs(claimed.plan),
               databasePath,
               serverId,
               authMode,
@@ -306,6 +311,7 @@ export const runServe = (
       makeMcpManager({
         db,
         dataDir: dirname(databasePath),
+        baseUrl: `http://127.0.0.1:${port}`,
         serverId,
         machine,
         remoteInvoker: machineLink.invoke,

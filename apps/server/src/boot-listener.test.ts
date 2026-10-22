@@ -3,18 +3,13 @@ import { createServer } from "node:net"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import {
-  bootHealth,
-  startBootListener,
-  startBootListenerIfPortFree,
-  type BootListener
-} from "./boot-listener.js"
+import { bootHealth, claimBootListener, type BootListener } from "./boot-listener.js"
 import { hasExistingListener } from "./infra/listener-probe.js"
 import { listeningPort } from "./test-support-net.js"
 
 const options = {
   host: "127.0.0.1",
-  port: 0,
+  candidates: [0],
   version: "0.3.0",
   bootId: "boot-1",
   processId: 4242,
@@ -24,8 +19,6 @@ const options = {
   log: () => undefined
 }
 
-const portOf = (listener: BootListener): number => listeningPort(listener.server)
-
 describe("boot listener", () => {
   const open: Array<BootListener> = []
   afterEach(async () => {
@@ -33,10 +26,9 @@ describe("boot listener", () => {
   })
 
   it("answers health with the latest upgrade report and refuses everything else", async () => {
-    const listener = await startBootListener(options)
-    expect(listener).toBeDefined()
-    open.push(listener!)
-    const base = `http://127.0.0.1:${portOf(listener!)}`
+    const listener = await claimBootListener(options)
+    open.push(listener)
+    const base = `http://127.0.0.1:${listener.port}`
 
     const initial = await fetch(`${base}/v1/health`)
     expect(initial.status).toBe(200)
@@ -52,7 +44,7 @@ describe("boot listener", () => {
       buildNumber: 300
     })
 
-    listener!.report({
+    listener.report({
       state: "running",
       id: "canonical-session-chat-v1",
       name: "Updating chat history",
@@ -70,7 +62,7 @@ describe("boot listener", () => {
       }
     })
 
-    listener!.report({
+    listener.report({
       state: "failed",
       id: "database-startup",
       name: "Applying update",
@@ -89,19 +81,20 @@ describe("boot listener", () => {
     expect((await fetch(`${base}/v1/health`, { method: "POST" })).status).toBe(503)
 
     await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(`ws://127.0.0.1:${portOf(listener!)}/v1/events`)
+      const socket = new WebSocket(`ws://127.0.0.1:${listener.port}/v1/events`)
       socket.once("error", () => resolve())
       socket.once("open", () => reject(new Error("Event stream opened during boot")))
     })
   })
 
   it("hands the socket to replacement handlers and frees the port on close", async () => {
-    const listener = await startBootListener(options)
-    open.push(listener!)
-    const port = portOf(listener!)
+    const listener = await claimBootListener(options)
+    open.push(listener)
+    const port = listener.port
+    expect(port).toBe(listeningPort(listener.server))
 
-    listener!.detach()
-    listener!.server.on("request", (_request, response) => {
+    listener.detach()
+    listener.server.on("request", (_request, response) => {
       response.writeHead(200, { "Content-Type": "application/json" })
       response.end(JSON.stringify({ ok: true }))
     })
@@ -113,88 +106,58 @@ describe("boot listener", () => {
 
   it("logs a failed accept instead of exiting, and keeps answering", async () => {
     const lines: Array<string> = []
-    const listener = await startBootListener({ ...options, log: (line) => lines.push(line) })
-    open.push(listener!)
-    listener!.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
+    const listener = await claimBootListener({ ...options, log: (line) => lines.push(line) })
+    open.push(listener)
+    listener.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
     expect(lines).toEqual(["Early health listener error: accept EMFILE"])
-    expect((await fetch(`http://127.0.0.1:${portOf(listener!)}/v1/health`)).status).toBe(200)
+    expect((await fetch(`http://127.0.0.1:${listener.port}/v1/health`)).status).toBe(200)
   })
 
-  it("steps aside instead of failing when the port is taken", async () => {
-    const first = await startBootListener(options)
-    open.push(first!)
-    const lines: Array<string> = []
-    const second = await startBootListener({
-      ...options,
-      port: portOf(first!),
-      log: (line) => lines.push(line)
-    })
-    expect(second).toBeUndefined()
-    expect(lines).toHaveLength(1)
-    expect(lines[0]).toContain("Early health listener unavailable")
+  it("moves past a taken candidate and fails clearly when a pinned port is taken", async () => {
+    const taken = createServer()
+    await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve))
+    const takenPort = listeningPort(taken)
+    try {
+      const listener = await claimBootListener({ ...options, candidates: [takenPort, 0] })
+      open.push(listener)
+      expect(listener.port).not.toBe(takenPort)
+      expect((await fetch(`http://127.0.0.1:${listener.port}/v1/health`)).status).toBe(200)
+
+      await expect(claimBootListener({ ...options, candidates: [takenPort] })).rejects.toThrow(
+        `127.0.0.1:${takenPort} already has a listener (another Codevisor server?). Stop the other process or pass a different --port.`
+      )
+    } finally {
+      await new Promise<void>((resolve) => taken.close(() => resolve()))
+    }
   })
 
-  it("binds a free fixed port, but never a live listener or an ephemeral port", async () => {
-    expect(await startBootListenerIfPortFree(options)).toBeUndefined()
-
-    const freePort = await new Promise<number>((resolve) => {
-      const probe = createServer()
-      probe.listen(0, "127.0.0.1", () => {
-        const port = listeningPort(probe)
-        probe.close(() => resolve(port))
-      })
-    })
-    const bound = await startBootListenerIfPortFree({ ...options, port: freePort })
-    expect(bound).toBeDefined()
-    open.push(bound!)
-    expect(portOf(bound!)).toBe(freePort)
-
-    const live = await startBootListener(options)
-    open.push(live!)
-    const lines: Array<string> = []
-    expect(
-      await startBootListenerIfPortFree({
-        ...options,
-        port: portOf(live!),
-        log: (line) => lines.push(line)
-      })
-    ).toBeUndefined()
-    expect(lines).toEqual([
-      `127.0.0.1:${portOf(live!)} already has a listener; skipping the early health listener`
-    ])
-  })
-
-  it("reports through the console when no log sink is supplied", async () => {
-    const live = await startBootListener(options)
-    open.push(live!)
+  it("reports socket errors through the console when no log sink is supplied", async () => {
     const { log: _omitted, ...quiet } = options
+    const listener = await claimBootListener(quiet)
+    open.push(listener)
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
     try {
-      expect(await startBootListenerIfPortFree({ ...quiet, port: portOf(live!) })).toBeUndefined()
-      expect(await startBootListener({ ...quiet, port: portOf(live!) })).toBeUndefined()
-      expect(error.mock.calls.map(([line]) => String(line))).toEqual([
-        expect.stringContaining("already has a listener"),
-        expect.stringContaining("Early health listener unavailable")
-      ])
+      listener.server.emit("error", new Error("accept EMFILE"))
+      expect(error).toHaveBeenCalledExactlyOnceWith("Early health listener error: accept EMFILE")
     } finally {
       error.mockRestore()
     }
   })
 
   it("keeps answering for the grace window before closing after a failed upgrade", async () => {
-    const listener = await startBootListener(options)
-    open.push(listener!)
+    const listener = await claimBootListener(options)
+    open.push(listener)
     vi.useFakeTimers({ toFake: ["setTimeout"] })
     try {
       const closed = vi.fn()
       const closing = open.pop()!.close({ afterMs: 10_000 }).then(closed)
       await vi.advanceTimersByTimeAsync(9_999)
       expect(closed).not.toHaveBeenCalled()
-      expect(listener!.server.listening).toBe(true)
+      expect(listener.server.listening).toBe(true)
       await vi.advanceTimersByTimeAsync(1)
       await closing
       expect(closed).toHaveBeenCalledOnce()
-      expect(listener!.server.listening).toBe(false)
+      expect(listener.server.listening).toBe(false)
     } finally {
       vi.useRealTimers()
     }

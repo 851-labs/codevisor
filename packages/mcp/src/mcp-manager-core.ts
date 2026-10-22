@@ -37,8 +37,6 @@ export interface McpManagerState {
   locallySuppressed: ReadonlySet<string>
 }
 
-const DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:49361"
-
 export const systemOAuthClock: McpOAuthClock = {
   now: () => Date.now(),
   setTimeout: (callback, delayMs) => {
@@ -104,8 +102,8 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const gateways = new Map<string, GatewayRuntime>()
   const sessionGatewayIds = new Map<string, string>()
   const state: McpManagerState = {
-    gatewayBaseUrl: DEFAULT_GATEWAY_BASE_URL,
-    oauthBaseUrl: DEFAULT_GATEWAY_BASE_URL,
+    gatewayBaseUrl: config.baseUrl,
+    oauthBaseUrl: config.baseUrl,
     locallySuppressed: new Set()
   }
   const codeExecutor = makeCodeExecutor({
@@ -115,7 +113,8 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   })
   const browserProvider = initializeAutomationProvider(
     "Browser Use",
-    config.makeBrowserProvider ?? (() => makeBrowserUseProvider(config.dataDir, config.db)),
+    config.makeBrowserProvider ??
+      (() => makeBrowserUseProvider(config.dataDir, config.baseUrl, config.db)),
     unavailableBrowserProvider
   )
   const computerProvider = initializeAutomationProvider(

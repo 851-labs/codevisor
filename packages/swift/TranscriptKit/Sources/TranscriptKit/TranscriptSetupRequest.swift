@@ -4,6 +4,7 @@ public struct TranscriptSetupRequest: Sendable, Equatable, Identifiable {
   public enum Kind: Sendable, Equatable {
     case computerUse
     case chromeExtension
+    case chromeExtensionUpdate
   }
 
   public enum State: Sendable, Equatable {
@@ -30,6 +31,7 @@ public struct TranscriptSetupRequest: Sendable, Equatable, Identifiable {
     switch presentation {
     case .computerUsePermissions: .computerUse
     case .browserExtensionSetup, .browserExtensionWaiting: .chromeExtension
+    case .browserExtensionUpdate: .chromeExtensionUpdate
     case nil: nil
     }
   }

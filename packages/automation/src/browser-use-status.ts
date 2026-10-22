@@ -5,6 +5,7 @@ import type { BrowserBackend, BrowserClientPlatform } from "./browser-use-provid
 
 export type BrowserExtensionState =
   | "connected"
+  | "update_required"
   | "installed_not_connected"
   | "not_connected"
   | "not_installed"
@@ -24,8 +25,10 @@ export const browserExtensionState = (inputs: {
   readonly connected: boolean
   readonly chromeAvailable: boolean
   readonly installationState: BrowserExtensionInstallation["installationState"]
+  readonly needsUpdate: boolean
 }): BrowserExtensionState => {
   if (inputs.connected) return "connected"
+  if (inputs.needsUpdate) return "update_required"
   if (!inputs.chromeAvailable) return "chrome_not_installed"
   if (inputs.installationState === "installed") return "installed_not_connected"
   return inputs.installationState === "not_installed" ? "not_installed" : "not_connected"

@@ -16,7 +16,8 @@ overlay network.
 ## Recommended baseline
 
 - Run with `--auth token` whenever the bind address is not loopback.
-- Restrict port `49361` with a host firewall or private network policy.
+- Restrict the server's port (`49361` by default, or the pinned `--port`) with a host firewall or
+  private network policy.
 - Terminate HTTPS and WSS before traffic crosses an untrusted network.
 - Keep the SQLite database and installation directory readable only by the service user.
 - Store bearer tokens in an operating-system credential manager.

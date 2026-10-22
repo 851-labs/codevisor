@@ -18,7 +18,8 @@ import {
   directories,
   databases,
   managers,
-  testManager
+  testManager,
+  TEST_BASE_URL
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import { bundleWithAccess, memoryOAuthVault } from "./mcp-oauth-vault-test-support.js"
@@ -102,12 +103,14 @@ describe("MCP manager secrets and replication", () => {
     const invalidKeyDirectory = mkdtempSync(join(tmpdir(), "codevisor-invalid-mcp-key-"))
     directories.push(invalidKeyDirectory)
     writeFileSync(join(invalidKeyDirectory, "mcp-secret-key"), "short")
-    expect(() => makeMcpManager({ db, dataDir: invalidKeyDirectory })).toThrow(
-      "Invalid MCP secret key"
-    )
+    expect(() =>
+      makeMcpManager({ db, dataDir: invalidKeyDirectory, baseUrl: TEST_BASE_URL })
+    ).toThrow("Invalid MCP secret key")
 
     vi.stubEnv("CODEVISOR_MCP_SECRET_KEY", "invalid")
-    expect(() => makeMcpManager({ db, dataDir: invalidKeyDirectory })).toThrow("must be 32 bytes")
+    expect(() =>
+      makeMcpManager({ db, dataDir: invalidKeyDirectory, baseUrl: TEST_BASE_URL })
+    ).toThrow("must be 32 bytes")
     vi.stubEnv("CODEVISOR_MCP_SECRET_KEY", Buffer.alloc(32, 7).toString("base64"))
     const configuredKeyDirectory = join(invalidKeyDirectory, "configured")
     mkdirSync(configuredKeyDirectory)
@@ -118,7 +121,11 @@ describe("MCP manager secrets and replication", () => {
       })
     )
     databases.push(configuredDb)
-    const configuredManager = makeMcpManager({ db: configuredDb, dataDir: configuredKeyDirectory })
+    const configuredManager = makeMcpManager({
+      db: configuredDb,
+      dataDir: configuredKeyDirectory,
+      baseUrl: TEST_BASE_URL
+    })
     managers.push(configuredManager)
     expect(await configuredManager.list()).toBeDefined()
 
@@ -245,6 +252,7 @@ describe("MCP manager secrets and replication", () => {
     const core = makeMcpManagerCore({
       db,
       dataDir: directory,
+      baseUrl: TEST_BASE_URL,
       makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
       makeComputerProvider: () => unavailableComputerProvider("Not used in this test")
     })

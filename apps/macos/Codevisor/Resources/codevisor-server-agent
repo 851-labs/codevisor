@@ -31,11 +31,10 @@ export CODEVISOR_APP_HOSTED=1
 export CODEVISOR_APP_UPDATE_REQUEST_PATH="$update_request_path"
 
 computer_name="$(/usr/sbin/scutil --get ComputerName 2>/dev/null || /bin/hostname)"
-log "exec node $entrypoint (port 49361)"
+log "exec node $entrypoint (last port, else 49361, else the next free port; see $data_dir/server-port.json)"
 printf '[%s] Starting bundled Codevisor server\n' "$(/bin/date -u +%FT%TZ)"
 exec -a codevisor-server "$node_bin" "$entrypoint" serve \
   --host 0.0.0.0 \
-  --port 49361 \
   --db "$database_path" \
   --upgrade-status "$upgrade_status_path" \
   --auth token \

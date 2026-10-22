@@ -12,7 +12,8 @@ import {
   databases,
   managers,
   testManager,
-  workingUpstream
+  workingUpstream,
+  TEST_BASE_URL
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
 
@@ -49,6 +50,7 @@ describe("MCP manager built-in providers and suppression", () => {
     const manager = makeMcpManager({
       db,
       dataDir: directory,
+      baseUrl: TEST_BASE_URL,
       makeBrowserProvider: () => {
         throw new Error("extension archive is unreadable")
       }

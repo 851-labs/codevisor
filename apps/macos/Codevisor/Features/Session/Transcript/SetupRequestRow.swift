@@ -8,10 +8,13 @@ struct SetupRequestRow: View {
   let inBotConversation: Bool
   let controller: SessionController
 
+  private var machineName: String {
+    environment?.machines.machine(for: controller.project.serverId)?.name ?? "the Mac running this chat"
+  }
+
   private var handoffMachineName: String? {
-    let serverId = controller.project.serverId
-    guard serverId != CodevisorMachine.local.id else { return nil }
-    return environment?.machines.machine(for: serverId)?.name ?? "the Mac running this chat"
+    guard controller.project.serverId != CodevisorMachine.local.id else { return nil }
+    return machineName
   }
 
   var body: some View {
@@ -19,6 +22,7 @@ struct SetupRequestRow: View {
       request: request,
       inBotConversation: inBotConversation,
       handoffMachineName: handoffMachineName,
+      machineName: machineName,
       onSetUp: { controller.presentedSetupRequest = request },
       onDecline: { Task { await controller.declineSetupRequest(request.id) } }
     )

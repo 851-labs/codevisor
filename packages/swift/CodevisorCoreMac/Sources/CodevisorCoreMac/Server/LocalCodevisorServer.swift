@@ -86,6 +86,13 @@ public final class LocalCodevisorServer: LocalServerControlling {
     config.baseURL.port ?? CodevisorServerConfig.localPort
   }
 
+  func adoptClaimedPort() {
+    guard case let .localServer(endpoint) = config.address else { return }
+    let dataDirectory = URL(fileURLWithPath: databasePath).deletingLastPathComponent()
+    guard endpoint.adoptClaimedPort(fromDataDirectory: dataDirectory) else { return }
+    lifecycleLog.note("The local server claimed port \(endpoint.port)")
+  }
+
   public init(
     client: any CodevisorServerClienting,
     allowsDevelopmentLaunch: Bool = false,

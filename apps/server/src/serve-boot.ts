@@ -265,7 +265,7 @@ export const restoreTerminalPersistence = (
 
 export const selfUpdateServeArgs = (options: {
   readonly host: string
-  readonly port: number
+  readonly portArgs: ReadonlyArray<string>
   readonly databasePath: string
   readonly serverId: string
   readonly authMode: string
@@ -275,8 +275,7 @@ export const selfUpdateServeArgs = (options: {
 }): ReadonlyArray<string> => [
   "--host",
   options.host,
-  "--port",
-  String(options.port),
+  ...options.portArgs,
   "--db",
   options.databasePath,
   "--serverId",

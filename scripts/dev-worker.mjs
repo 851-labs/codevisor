@@ -41,7 +41,13 @@ import {
 } from "./dev-layout.mjs"
 import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 import { devNetCloudVariables, devNetEnvironment, launchDevNet, prepareDevNet } from "./dev-net.mjs"
-import { describeExit, shutdownDevServers, waitForExit, waitForHealth } from "./dev-shared.mjs"
+import {
+  claimedServerPort,
+  describeExit,
+  shutdownDevServers,
+  waitForExit,
+  waitForHealth
+} from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
@@ -104,7 +110,7 @@ Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
-console.log(`  server:   http://127.0.0.1:${port}`)
+console.log(`  server:   http://127.0.0.1:${port} (preferred; the next free port if taken)`)
 console.log(`  www:      http://localhost:${wwwPort}`)
 console.log(`  viacloud: http://127.0.0.1:${cloudRemotePort}  (${cloudRemoteName})`)
 console.log(`  cloud:    ${cloudUrl}`)
@@ -234,6 +240,7 @@ const withoutCloudToken = (environment) => {
   return copy
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
+const serverPort = () => claimedServerPort(dataDirectory, port)
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
 await prepareCloudSession({ cloudProcess: cloud, cloudUrl, sharedEnvironment })
 
@@ -244,7 +251,7 @@ const server = spawn(
     "serve",
     "--host",
     "0.0.0.0",
-    "--port",
+    "--preferred-port",
     String(port),
     "--db",
     databasePath,
@@ -298,7 +305,7 @@ const stop = async (exitCode = 0) => {
   for (const relay of relays) relay.kill("SIGTERM")
 
   await shutdownDevServers([
-    [port, server],
+    [serverPort(), server],
     [cloudRemotePort, cloudRemoteServer]
   ])
   process.exitCode = exitCode
@@ -333,7 +340,8 @@ void waitForExit(cloud).then((result) => {
 })
 
 try {
-  await waitForHealth(port, server)
+  await waitForHealth(serverPort, server)
+  console.log(`Codevisor dev server is listening on http://127.0.0.1:${serverPort()}`)
   const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
   console.log(`\n${cloudRemoteName} is ready; it appears after signing into the dev cloud.\n`)

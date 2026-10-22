@@ -35,6 +35,8 @@ extension LocalCodevisorServerTests {
       ])
     #expect(configuration.arguments.contains("--boot-id"))
     #expect(configuration.arguments.contains("test-boot"))
+    #expect(configuration.arguments.contains("--preferred-port"))
+    #expect(!configuration.arguments.contains("--port"))
     #expect(configuration.arguments.contains("--app-owned"))
     #expect(configuration.arguments.contains("--owner-pid"))
     #expect(configuration.arguments.contains("4242"))

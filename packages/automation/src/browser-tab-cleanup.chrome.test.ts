@@ -43,7 +43,7 @@ let origin = ""
 
 beforeAll(async () => {
   process.env.CODEVISOR_BROWSER_HEADLESS = "1"
-  provider = makeBrowserUseProvider(directory)
+  provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")

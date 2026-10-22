@@ -3,13 +3,23 @@ import Foundation
 public struct CodevisorMachine: Identifiable, Sendable, Equatable {
   public var id: String
   public var name: String
-  public var baseURL: URL
+  public var address: ServerAddress
   public var kind: String
   public var icon: MachineIcon
+
+  public var baseURL: URL {
+    get { address.url }
+    set { address = .fixed(newValue) }
+  }
+
   public init(id: String, name: String, baseURL: URL, kind: String, icon: String? = nil) {
+    self.init(id: id, name: name, address: .fixed(baseURL), kind: kind, icon: icon)
+  }
+
+  public init(id: String, name: String, address: ServerAddress, kind: String, icon: String? = nil) {
     self.id = id
     self.name = name
-    self.baseURL = baseURL
+    self.address = address
     self.kind = kind
     self.icon = MachineIcon(resolving: icon)
   }
@@ -24,13 +34,13 @@ public struct CodevisorMachine: Identifiable, Sendable, Equatable {
   public var isCloud: Bool { id.hasPrefix(Self.cloudIdPrefix) }
 
   public var serverConfig: CodevisorServerConfig {
-    CodevisorServerConfig(baseURL: baseURL)
+    CodevisorServerConfig(address: address)
   }
 
   public static let local = CodevisorMachine(
     id: "local",
     name: localDisplayName,
-    baseURL: URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
+    address: .localServer(.shared),
     kind: "local"
   )
 

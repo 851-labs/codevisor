@@ -47,7 +47,15 @@ const hostRegistry = () => {
 
 const builtinProvider = (directory: string) => {
   const hosts = hostRegistry()
-  return { provider: makeBrowserUseProvider(directory, undefined, hosts.registry), hosts }
+  return {
+    provider: makeBrowserUseProvider(
+      directory,
+      "http://127.0.0.1:43210",
+      undefined,
+      hosts.registry
+    ),
+    hosts
+  }
 }
 
 const status = (provider: ReturnType<typeof makeBrowserUseProvider>, sessionId: string) =>

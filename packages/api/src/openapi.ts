@@ -224,7 +224,8 @@ export const makeOpenApiDocument = (version: string): CodevisorOpenApi => {
     servers: [
       {
         url: "http://127.0.0.1:49361",
-        description: "Default local server"
+        description:
+          "Default local server. If 49361 is taken it uses the next free port up to 49399; `codevisor status` shows the port."
       }
     ],
     tags: [

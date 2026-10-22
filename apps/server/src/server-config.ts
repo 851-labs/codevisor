@@ -1,3 +1,4 @@
+import { DEFAULT_LISTEN_PORT } from "./infra/listen-port.js"
 import type { CodevisorServerConfig } from "./server-context-types.js"
 
 export const defaultServerConfig = (
@@ -14,7 +15,7 @@ export const defaultServerConfig = (
   serviceManaged: overrides.serviceManaged ?? false,
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
-  port: overrides.port ?? 49361,
+  port: overrides.port ?? DEFAULT_LISTEN_PORT,
   directPathEnabled: overrides.directPathEnabled ?? true,
   worktreeNameStyle: overrides.worktreeNameStyle ?? "production",
   auth: overrides.auth ?? {

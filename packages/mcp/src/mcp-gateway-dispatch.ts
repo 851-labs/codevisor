@@ -248,6 +248,13 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       const resolvedPaths = workspaceUploadPaths(args, workspaceRoot, toolName)
       safeArgs = { ...args, paths: resolvedPaths }
     }
+    if (provider.id === "browser") {
+      await browserSetupBroker.ensureExtensionCurrent(
+        context.sessionId,
+        { toolName, args },
+        { signal: context.signal, deadline: context.deadline }
+      )
+    }
     if (provider.id === "browser" && toolName === "request_extension_install") {
       const outcome = await browserSetupBroker.requestExtensionInstall(context.sessionId, {
         signal: context.signal,

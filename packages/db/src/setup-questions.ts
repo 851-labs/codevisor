@@ -5,6 +5,7 @@ import { jsonRecord, type JsonRecord } from "./event-payloads.js"
 const setupPresentations: ReadonlySet<unknown> = new Set<QuestionPresentation>([
   "browserExtensionSetup",
   "browserExtensionWaiting",
+  "browserExtensionUpdate",
   "computerUsePermissions"
 ])
 

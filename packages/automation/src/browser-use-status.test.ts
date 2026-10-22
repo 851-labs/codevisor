@@ -12,8 +12,9 @@ const ready = { ready: true }
 const state = (
   connected: boolean,
   chromeAvailable: boolean,
-  installationState: "installed" | "not_installed" | "unknown"
-) => browserExtensionState({ connected, chromeAvailable, installationState })
+  installationState: "installed" | "not_installed" | "unknown",
+  needsUpdate = false
+) => browserExtensionState({ connected, chromeAvailable, installationState, needsUpdate })
 
 const text = (result: ReturnType<typeof builtinLostResult>) => JSON.stringify(result.content)
 
@@ -24,6 +25,8 @@ describe("browser status", () => {
     expect(state(false, true, "installed")).toBe("installed_not_connected")
     expect(state(false, true, "not_installed")).toBe("not_installed")
     expect(state(false, true, "unknown")).toBe("not_connected")
+    expect(state(false, true, "installed", true)).toBe("update_required")
+    expect(state(true, true, "installed", true)).toBe("connected")
   })
 
   it("reports which browsers the user can see, with the fallback and setup failures", () => {

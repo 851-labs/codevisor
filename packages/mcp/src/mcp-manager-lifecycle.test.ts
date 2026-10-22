@@ -7,7 +7,8 @@ import {
   managers,
   run,
   testManager,
-  workingUpstream
+  workingUpstream,
+  TEST_BASE_URL
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import {
@@ -303,6 +304,7 @@ describe("MCP manager lifecycle", () => {
     const rebooted = makeMcpManager({
       db,
       dataDir: directory,
+      baseUrl: TEST_BASE_URL,
       serverId: "mirror",
       oauthVault: shared.vault
     })

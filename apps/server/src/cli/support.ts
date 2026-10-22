@@ -1,3 +1,4 @@
+import { DEFAULT_LISTEN_PORT, listenPortFile, parseListenPortFile } from "../infra/listen-port.js"
 import { field, recordField, stringField } from "../unknown-values.js"
 import { harnessSummaries, printRunningStatus, printUnavailableStatus } from "./status-output.js"
 
@@ -42,7 +43,7 @@ export interface ServiceManager {
 }
 
 const UNIT = "codevisor-server.service"
-export const DEFAULT_PORT = 49361
+export const DEFAULT_PORT = DEFAULT_LISTEN_PORT
 
 export const detectServiceManager = async (deps: CliDeps): Promise<ServiceManager> => {
   const system = await deps.exec("systemctl", ["cat", UNIT])
@@ -59,15 +60,24 @@ export const resolvePort = async (
   deps: CliDeps,
   flag?: number,
   service?: ServiceManager
-): Promise<number> => {
+): Promise<number> => (await configuredPort(deps, flag, service)) ?? discoveredPort(deps)
+
+const configuredPort = async (
+  deps: CliDeps,
+  flag: number | undefined,
+  service: ServiceManager | undefined
+): Promise<number | undefined> => {
   if (flag !== undefined) return flag
   const fromEnv = Number(deps.env["CODEVISOR_PORT"] ?? "")
   if (Number.isInteger(fromEnv) && fromEnv > 0) return fromEnv
   const detected = service ?? (await detectServiceManager(deps))
   const match = detected.unitText?.match(/--port[= ](\d+)/)
   if (match !== undefined && match !== null) return Number(match[1])
-  return DEFAULT_PORT
+  return undefined
 }
+
+const discoveredPort = (deps: CliDeps): number =>
+  parseListenPortFile(deps.readTextFile(listenPortFile(deps.dataDir))) ?? DEFAULT_PORT
 
 const baseUrl = (port: number): string => `http://127.0.0.1:${port}`
 
@@ -160,13 +170,17 @@ export const startCommand = async (
     deps.error("Stop it first: codevisor stop")
     return 1
   }
+  return spawnPidfileServer(deps, await configuredPort(deps, options.port, service))
+}
+
+const spawnPidfileServer = async (deps: CliDeps, pinned: number | undefined): Promise<number> => {
+  const livePort = (): number => pinned ?? discoveredPort(deps)
   const pid = await deps.spawnDetachedServer(
     [
       "serve",
       "--host",
       "0.0.0.0",
-      "--port",
-      String(port),
+      ...(pinned === undefined ? [] : ["--port", String(pinned)]),
       "--auth",
       "token",
       "--db",
@@ -175,11 +189,11 @@ export const startCommand = async (
     logFilePath(deps)
   )
   deps.writeTextFile(pidFilePath(deps), `${pid}\n`)
-  if (!(await waitFor(deps, 60, () => isHealthy(deps, port)))) {
-    deps.error(`Server did not become healthy on port ${port}; see ${logFilePath(deps)}`)
+  if (!(await waitFor(deps, 60, () => isHealthy(deps, livePort())))) {
+    deps.error(`Server did not become healthy on port ${livePort()}; see ${logFilePath(deps)}`)
     return 1
   }
-  deps.log(`Codevisor server is running on port ${port} (pid ${pid})`)
+  deps.log(`Codevisor server is running on port ${livePort()} (pid ${pid})`)
   return 0
 }
 

@@ -257,7 +257,7 @@ describe("gateway machines and execution annotations", () => {
   it("names a browser workflow after the site its tab reached", async () => {
     const root = await mkdtemp(join(tmpdir(), "gateway-browser-site-"))
     directories.push(root)
-    const provider = makeBrowserUseProvider(root)
+    const provider = makeBrowserUseProvider(root, "http://127.0.0.1:43210")
     const pages: Record<string, string | undefined> = {
       navigate: "https://linear.app/codevisor/issue/ABC-1",
       snapshot: "https://linear.app/codevisor/issue/ABC-2",

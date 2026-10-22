@@ -88,18 +88,34 @@ public struct CodevisorServerConfig: Equatable, Sendable {
     CodevisorAppVariant.localServerPort
   }
 
-  public var baseURL: URL
+  public var address: ServerAddress
   public var bearerToken: String?
   public var requestTransport: (any ServerRequestTransport)?
   public var webSocketTransport: (any ServerWebSocketTransport)?
 
+  public var baseURL: URL {
+    get { address.url }
+    set { address = .fixed(newValue) }
+  }
+
   public init(
-    baseURL: URL = URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
+    baseURL: URL,
     bearerToken: String? = nil,
     requestTransport: (any ServerRequestTransport)? = nil,
     webSocketTransport: (any ServerWebSocketTransport)? = nil
   ) {
-    self.baseURL = baseURL
+    self.init(
+      address: .fixed(baseURL), bearerToken: bearerToken,
+      requestTransport: requestTransport, webSocketTransport: webSocketTransport)
+  }
+
+  public init(
+    address: ServerAddress = .localServer(.shared),
+    bearerToken: String? = nil,
+    requestTransport: (any ServerRequestTransport)? = nil,
+    webSocketTransport: (any ServerWebSocketTransport)? = nil
+  ) {
+    self.address = address
     self.bearerToken = bearerToken
     self.requestTransport = requestTransport
     self.webSocketTransport = webSocketTransport

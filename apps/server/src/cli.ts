@@ -139,7 +139,14 @@ const serve = Command.make(
   "serve",
   {
     host: optionalString("host", "Bind address (default 127.0.0.1)"),
-    port: optionalString("port", "Port to listen on (default 49361)"),
+    port: optionalString(
+      "port",
+      "Pin the listening port exactly (default: last port used, else 49361, else the next free port up to 49399)"
+    ),
+    preferredPort: optionalString(
+      "preferred-port",
+      "First port to try when --port is not given (default 49361)"
+    ),
     serverId: optionalString("serverId", "Stable server identifier (default local)"),
     auth: optionalString("auth", "Auth mode: none or token (default none on loopback)"),
     kind: optionalString("kind", "Server kind: local or remote"),
@@ -160,6 +167,7 @@ const serve = Command.make(
       const entries: Array<readonly [string, Option.Option<string>]> = [
         ["host", config.host],
         ["port", config.port],
+        ["preferred-port", config.preferredPort],
         ["serverId", config.serverId],
         ["auth", config.auth],
         ["kind", config.kind],

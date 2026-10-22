@@ -20,7 +20,7 @@ describe("Browser Use pointer input", () => {
     directories.push(directory)
     const previousHeadless = process.env.CODEVISOR_BROWSER_HEADLESS
     process.env.CODEVISOR_BROWSER_HEADLESS = "1"
-    const provider = makeBrowserUseProvider(directory)
+    const provider = makeBrowserUseProvider(directory, "http://127.0.0.1:43210")
     try {
       if (provider.status().backend === "missing")
         throw new Error("No Chromium is available for the Chrome suite")

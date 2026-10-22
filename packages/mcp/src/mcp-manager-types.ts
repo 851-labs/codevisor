@@ -160,6 +160,7 @@ export interface McpManager {
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
+  readonly baseUrl: string
   readonly serverId?: string
   readonly machine?: { readonly id: string; readonly name: string }
   readonly remoteInvoker?: GatewayRemoteInvoker

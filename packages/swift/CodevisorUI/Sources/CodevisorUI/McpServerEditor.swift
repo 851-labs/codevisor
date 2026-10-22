@@ -168,7 +168,7 @@ public struct McpServerEditor: View {
             .autocorrectionDisabled()
           SecureField("Client Secret", text: $clientSecret)
           Text(
-            "With your own client ID, register each machine's Codevisor callback (http://127.0.0.1:49361/v1/mcps/oauth/callback on a Mac) as a redirect URI with the provider."
+            "With your own client ID, register each machine's Codevisor callback as a redirect URI with the provider. On a Mac it's usually http://127.0.0.1:49361/v1/mcps/oauth/callback; that Mac's MCP settings show the exact URL."
           )
           .font(.footnote)
           .foregroundStyle(.secondary)

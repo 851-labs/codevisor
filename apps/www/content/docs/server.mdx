@@ -40,8 +40,10 @@ WebSocket API documented here.
 
 ## Default endpoint
 
-A standalone server listens on `127.0.0.1:49361` unless configured otherwise. The Linux installer
-binds to `0.0.0.0:49361`, enables token authentication, and can install a systemd service.
+A standalone server listens on `127.0.0.1:49361` unless configured otherwise. If another app holds
+that port, it falls back to a free port in the range `49361`–`49399` and remembers it for the next
+start; `codevisor status` shows the port in use. The Linux installer pins `0.0.0.0:49361`, enables
+token authentication, and can install a systemd service.
 
 ```bash
 curl http://127.0.0.1:49361/v1/health

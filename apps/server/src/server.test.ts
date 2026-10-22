@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import { startBootListener } from "./boot-listener.js"
+import { claimBootListener } from "./boot-listener.js"
 import {
   defaultDatabasePath,
   defaultServerConfig,
@@ -13,7 +13,6 @@ import {
   startCodevisorServer
 } from "./server.js"
 import type { CodevisorServerServices } from "./server.js"
-import { listeningPort } from "./test-support-net.js"
 import {
   jsonRequest,
   makeServices,
@@ -165,9 +164,9 @@ describe("@codevisor/server", () => {
 
   it("takes over the boot listener's socket so health flips from migrating to ready", async () => {
     const { services } = await makeServices("server-a")
-    const listener = await startBootListener({
+    const listener = await claimBootListener({
       host: "127.0.0.1",
-      port: 0,
+      candidates: [0],
       version: "0.1.0",
       bootId: "boot-a",
       processId: process.pid,
@@ -175,9 +174,8 @@ describe("@codevisor/server", () => {
       serviceManaged: false,
       log: () => undefined
     })
-    expect(listener).toBeDefined()
-    const port = listeningPort(listener!.server)
-    listener!.report({
+    const port = listener.port
+    listener.report({
       state: "running",
       id: "canonical-session-chat-v1",
       name: "Updating chat history",
@@ -208,9 +206,9 @@ describe("@codevisor/server", () => {
 
   it("logs a failed accept on the taken-over socket instead of exiting", async () => {
     const { services } = await makeServices("server-a")
-    const listener = await startBootListener({
+    const listener = await claimBootListener({
       host: "127.0.0.1",
-      port: 0,
+      candidates: [0],
       version: "0.1.0",
       bootId: "boot-a",
       processId: process.pid,
@@ -218,7 +216,7 @@ describe("@codevisor/server", () => {
       serviceManaged: false,
       log: () => undefined
     })
-    const port = listeningPort(listener!.server)
+    const port = listener.port
     const server = await run(
       startCodevisorServer(
         services,
@@ -229,7 +227,7 @@ describe("@codevisor/server", () => {
     runningServers.push(server)
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
     try {
-      listener!.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
+      listener.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
       expect(logged).toHaveBeenCalledExactlyOnceWith("Server socket error: accept EMFILE")
     } finally {
       logged.mockRestore()

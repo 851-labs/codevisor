@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs"
 import { access, readdir } from "node:fs/promises"
 import { createServer } from "node:net"
+import { join } from "node:path"
 
 function hueSectionChannels(section, chroma, x) {
   if (section < 1) return [chroma, x, 0]
@@ -74,15 +76,25 @@ export async function directoryIsEmpty(path) {
 }
 
 export async function waitForHealth(port, child, attempts = 120) {
+  const currentPort = typeof port === "function" ? port : () => port
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (child.exitCode !== null) throw new Error("Codevisor server exited before becoming healthy")
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
+      const response = await fetch(`http://127.0.0.1:${currentPort()}/v1/health`)
       if (response.ok) return
     } catch {}
     await delay(250)
   }
-  throw new Error(`Timed out waiting for the Codevisor server on port ${port}`)
+  throw new Error(`Timed out waiting for the Codevisor server on port ${currentPort()}`)
+}
+
+export function claimedServerPort(dataDirectory, fallback) {
+  try {
+    const { port } = JSON.parse(readFileSync(join(dataDirectory, "server-port.json"), "utf8"))
+    return Number.isInteger(port) && port > 0 ? port : fallback
+  } catch {
+    return fallback
+  }
 }
 
 export function waitForExit(child) {

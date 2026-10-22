@@ -1,7 +1,12 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { EXTENSION_INSTALL_PROMPT_MS, makeBrowserSetupBroker } from "./browser-setup-broker.js"
+import {
+  EXTENSION_INSTALL_PROMPT_MS,
+  extensionUpdateDeclined,
+  extensionUpdateTimedOut,
+  makeBrowserSetupBroker
+} from "./browser-setup-broker.js"
 import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
 import { recordOrEmpty, recordsIn } from "./unknown-values.js"
 
@@ -9,6 +14,7 @@ const fixture = (
   options: {
     chrome?: boolean
     connected?: boolean
+    outdated?: boolean
     setupMode?: "development" | "webStore"
   } = {}
 ) => {
@@ -35,6 +41,7 @@ const fixture = (
       chromeAvailable: options.chrome ?? true,
       developmentExtensionPath: "/tmp/Codevisor",
       extensionConnected: connected,
+      extensionNeedsUpdate: (options.outdated ?? false) && !connected,
       extensionSetupMode: options.setupMode ?? "development"
     }),
     beginTurn: async () => {},
@@ -296,5 +303,101 @@ describe("Computer Use permission prompt", () => {
     await current.broker.finishTurn("session")
     await expect(request).resolves.toBe(false)
     expect(resolutions(current.events)).toEqual(["cancelled"])
+  })
+})
+
+describe("Chrome extension update prompt", () => {
+  const useChrome = { toolName: "use_backend", args: { backend: "extension" } }
+
+  it("leaves calls alone unless they need the user's outdated Chrome extension", async () => {
+    const current = fixture()
+    await current.broker.ensureExtensionCurrent("session", useChrome, {})
+    const outdated = fixture({ outdated: true })
+    await outdated.broker.ensureExtensionCurrent(
+      "session",
+      { toolName: "navigate", args: { url: "https://example.com" } },
+      {}
+    )
+
+    expect(current.events).toHaveLength(0)
+    expect(outdated.events).toHaveLength(0)
+  })
+
+  it("asks for an update and continues once the updated extension connects", async () => {
+    const current = fixture({ outdated: true })
+    current.backends.set("session", "extension")
+    const ensured = current.broker.ensureExtensionCurrent(
+      "session",
+      { toolName: "navigate", args: {} },
+      {}
+    )
+    await current.nextQuestion()
+
+    expect(latestQuestions(current.events)[0]).toMatchObject({
+      header: "Update Chrome Extension",
+      presentation: "browserExtensionUpdate",
+      options: [{ label: "Update" }]
+    })
+    current.connect()
+    await ensured
+    expect(resolutions(current.events)).toEqual(["autoResolved"])
+  })
+
+  it("opens Chrome's Extensions page when a client answers, then keeps waiting", async () => {
+    const current = fixture({ outdated: true })
+    const ensured = current.broker.ensureExtensionCurrent(
+      "session",
+      { toolName: "request_extension_install", args: {} },
+      {}
+    )
+    await current.nextQuestion()
+    await answer(current.broker, current.events, "Update")
+    await current.nextQuestion()
+
+    expect(current.openExtensions).toHaveBeenCalledOnce()
+    current.openExtensions.mockImplementationOnce(async () => current.connect())
+    await answer(current.broker, current.events, "Update")
+    await ensured
+    expect(current.openExtensions).toHaveBeenCalledTimes(2)
+  })
+
+  it("tells the model the user declined", async () => {
+    const current = fixture({ outdated: true })
+    const ensured = current.broker.ensureExtensionCurrent("session", useChrome, {})
+    await current.nextQuestion()
+
+    await current.broker.answerQuestion("session", latestQuestionId(current.events), {
+      outcome: "cancelled"
+    })
+
+    await expect(ensured).rejects.toThrow(extensionUpdateDeclined)
+  })
+
+  it("gives up when the prompt times out", async () => {
+    vi.useFakeTimers()
+    const timedOut = fixture({ outdated: true })
+    const waiting = timedOut.broker.ensureExtensionCurrent("session", useChrome, {})
+    const timedOutResult = expect(waiting).rejects.toThrow(extensionUpdateTimedOut)
+    await timedOut.nextQuestion()
+    await vi.advanceTimersByTimeAsync(EXTENSION_INSTALL_PROMPT_MS)
+    await timedOutResult
+    expect(resolutions(timedOut.events)).toEqual(["cancelled"])
+  })
+
+  it("gives up when the prompt is interrupted or the chat closes", async () => {
+    const interrupted = fixture({ outdated: true })
+    const stop = new AbortController()
+    const asked = interrupted.broker.ensureExtensionCurrent("session", useChrome, {
+      signal: stop.signal
+    })
+    await interrupted.nextQuestion()
+    stop.abort()
+    await expect(asked).rejects.toThrow("interrupted before the user answered")
+
+    const closing = fixture({ outdated: true })
+    const open = closing.broker.ensureExtensionCurrent("session", useChrome, {})
+    await closing.nextQuestion()
+    await closing.broker.closeSession("session")
+    await expect(open).rejects.toThrow("chat closed before the user answered")
   })
 })

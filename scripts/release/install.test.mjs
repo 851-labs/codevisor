@@ -182,11 +182,27 @@ describe("install.sh", { concurrency: true }, () => {
     assert.equal(
       readFileSync(join(result.root, "cli.log"), "utf8"),
       [
-        "args=auth login --invite - --name hetzner 1 --port 49361",
+        "args=auth login --invite - --name hetzner 1",
         "stdin=cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
         "env=",
         ""
       ].join("\n")
+    )
+  })
+
+  test("onboarding pins the port only when the installer was given one", async (t) => {
+    const result = await install(t, {
+      cli: 'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
+      env: {
+        CODEVISOR_NO_SERVICE: "1",
+        CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
+        CODEVISOR_PORT: "5000"
+      }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(
+      readFileSync(join(result.root, "cli.log"), "utf8"),
+      "args=auth login --invite - --port 5000\n"
     )
   })
 

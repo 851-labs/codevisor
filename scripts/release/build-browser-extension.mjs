@@ -168,6 +168,7 @@ try {
     "popup.html",
     "popup.js",
     "relay-config.js",
+    "relay-candidates.js",
     "tab-groups.js",
     "icons/16.png",
     "icons/32.png",
