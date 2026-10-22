@@ -1,9 +1,13 @@
+import type Database from "better-sqlite3"
+
 import { instanceMetaSql, readInstanceMeta } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
-const settingKey = (key: string): string => `machine-setting:${key}`
+export const FIRST_RUN_PROJECTS_SETTING = "first-run-projects"
+
+export const FIRST_RUN_PROJECTS_PENDING = "pending"
 
 export const makeMachineSettingsService = ({
   sqlite
@@ -19,3 +23,11 @@ export const makeMachineSettingsService = ({
       sqlite.prepare(instanceMetaSql.upsert).run(settingKey(key), value)
     })
 })
+
+export const markFirstRunProjectsPending = (sqlite: Database.Database): void => {
+  sqlite
+    .prepare(instanceMetaSql.upsert)
+    .run(settingKey(FIRST_RUN_PROJECTS_SETTING), FIRST_RUN_PROJECTS_PENDING)
+}
+
+const settingKey = (key: string): string => `machine-setting:${key}`

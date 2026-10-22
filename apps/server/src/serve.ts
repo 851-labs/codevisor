@@ -390,6 +390,7 @@ export const runServe = (
         worktreeNameStyle,
         cloud: cloudControl,
         workspaceGit: true,
+        firstRunProjects: { dataDirectory: dirname(databasePath), homeDirectory: homedir() },
         icon,
         bootId,
         processId: process.pid,

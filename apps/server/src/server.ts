@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws"
 
 import { archiveJobs } from "./archive-jobs.js"
 import type { BootListener } from "./boot-listener.js"
+import { startFirstRunProjectImport } from "./first-run-project-import.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
 import { ClientControlBroker } from "./infra/client-control.js"
@@ -409,6 +410,7 @@ export const startCodevisorServer = (
               services.resolveGitEnvironment
             ).catch(swallowError)
             void reconcileWorktreeArchives(services, fanout, config).catch(swallowError)
+            void startFirstRunProjectImport(services, fanout, config)
             resolve({
               host: config.host,
               port,

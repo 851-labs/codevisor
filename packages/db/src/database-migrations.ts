@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 
 import { runBlockingDataUpgrades } from "./data-upgrades.js"
+import { markFirstRunProjectsPending } from "./machine-settings-service.js"
 import { migrations } from "./migrations.js"
 import { installNavigationJournal } from "./navigation-journal.js"
 import { migrateProjectLocationState } from "./project-location-state.js"
@@ -64,12 +65,14 @@ export const runDatabaseMigrations = (
   config: CodevisorDatabaseConfig
 ): Array<string> => {
   const applied = loadAppliedMigrations(sqlite)
+  const isNewDatabase = applied.size === 0
   const names: Array<string> = []
   sqlite.pragma("foreign_keys = OFF")
   try {
     const transaction = sqlite.transaction(() => {
       applyDeclaredMigrations(sqlite, config, applied, names)
       initializeUpdateState(sqlite)
+      if (isNewDatabase) markFirstRunProjectsPending(sqlite)
       if (names.length > 0) {
         validateSchemaAndResetAdoption(sqlite)
       }

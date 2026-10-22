@@ -12,6 +12,11 @@ export * from "./identity.js"
 export * from "./ids.js"
 
 export {
+  FIRST_RUN_PROJECTS_PENDING,
+  FIRST_RUN_PROJECTS_SETTING
+} from "./machine-settings-service.js"
+
+export {
   botPath,
   botsRoot,
   isBotFolder,

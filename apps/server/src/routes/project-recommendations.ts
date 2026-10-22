@@ -1,4 +1,4 @@
-import type { ProjectRecommendation } from "@codevisor/api"
+import type { Harness, ProjectRecommendation } from "@codevisor/api"
 
 import { recommendProjectsFromSessions } from "../project-recommendations.js"
 import { run, type CodevisorServerServices } from "../server-context.js"
@@ -13,26 +13,26 @@ const caches = new WeakMap<
   () => Promise<ReadonlyArray<ProjectRecommendation>>
 >()
 
-const scan = async (
-  services: CodevisorServerServices
+export const scanProjectRecommendations = async (
+  services: CodevisorServerServices,
+  includesHarness: (harness: Harness) => boolean
 ): Promise<ReadonlyArray<ProjectRecommendation>> => {
   const harnesses = await discoverHarnesses(services)
   const sessionGroups = await Promise.all(
-    harnesses
-      .filter((harness) => harness.enabled && harness.readiness.state === "ready")
-      .map(async (harness) => {
-        try {
-          const account = await services.auth?.activeAccountContext(harness.id)
-          return await run(
-            services.agents.listAgentSessions(harness.id, account, { titles: false })
-          )
-        } catch {
-          return []
-        }
-      })
+    harnesses.filter(includesHarness).map(async (harness) => {
+      try {
+        const account = await services.auth?.activeAccountContext(harness.id)
+        return await run(services.agents.listAgentSessions(harness.id, account, { titles: false }))
+      } catch {
+        return []
+      }
+    })
   )
   return recommendProjectsFromSessions(sessionGroups.flat(), { limit: maxLimit })
 }
+
+const isUsableHarness = (harness: Harness): boolean =>
+  harness.enabled && harness.readiness.state === "ready"
 
 export const makeStaleWhileRevalidate = <T>(
   load: () => Promise<ReadonlyArray<T>>,
@@ -74,7 +74,9 @@ export const projectRecommendationsForRequest = async (
   )
   let recommendations = caches.get(services)
   if (recommendations === undefined) {
-    recommendations = makeStaleWhileRevalidate(() => scan(services))
+    recommendations = makeStaleWhileRevalidate(() =>
+      scanProjectRecommendations(services, isUsableHarness)
+    )
     caches.set(services, recommendations)
   }
   return (await recommendations()).slice(0, limit)

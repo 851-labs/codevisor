@@ -79,6 +79,12 @@ export interface CodevisorServerConfig {
   readonly cloud?: CloudServerControl | undefined
   readonly icon?: string | undefined
   readonly workspaceGit?: boolean | undefined
+  readonly firstRunProjects?: FirstRunProjectsConfig | undefined
+}
+
+export interface FirstRunProjectsConfig {
+  readonly dataDirectory: string
+  readonly homeDirectory: string
 }
 
 export interface ScreenSharingVNCConfig {

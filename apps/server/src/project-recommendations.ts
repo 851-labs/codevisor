@@ -148,7 +148,7 @@ const isDirectory = (path: string): boolean => {
   }
 }
 
-const isPathInside = (path: string, root: string): boolean =>
+export const isPathInside = (path: string, root: string): boolean =>
   path === root || path.startsWith(`${root}${sep}`)
 
 const isExcludedPath = (path: string, temporaryRoot: string): boolean => {

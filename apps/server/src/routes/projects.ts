@@ -16,7 +16,6 @@ import {
   archiveJobs,
   discardProjectWorktrees,
   assertLocationFolderExists,
-  existingDirectory,
   getProjectOrFail,
   HttpFailure,
   localLocationOrFail,
@@ -32,10 +31,11 @@ import {
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { routeProjectCloneSettings } from "./project-clone-settings.js"
 import { cancelProjectSetup, routeProjectFromGit } from "./project-clone.js"
+import { addProject } from "./project-create.js"
 import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
 import { routePublishProjectRemote } from "./project-remote.js"
-import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
+import { reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { createScratchProject } from "./project-scratch.js"
 import { routeProjectSetupSource, routeReadProjectEnvFiles } from "./project-setup-source.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
@@ -146,21 +146,11 @@ const createProject = async (
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<boolean> => {
-  const payload = await readSchema(request, CreateProjectRequestSchema)
-  let repoUrl = payload.repoUrl
-  if (repoUrl === undefined && existingDirectory(payload.folderPath) !== undefined) {
-    repoUrl = await discoverRepoUrl(
-      payload.folderPath,
-      await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-    )
-  }
-  const project = await run(
-    services.db.createProject({
-      ...payload,
-      ...(repoUrl === undefined ? {} : { repoUrl })
-    })
+  const project = await addProject(
+    services,
+    fanout,
+    await readSchema(request, CreateProjectRequestSchema)
   )
-  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
   writeJson(response, 201, await probeProject(serverId, project))
   return true
 }
