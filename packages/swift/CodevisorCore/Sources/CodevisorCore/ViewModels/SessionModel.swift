@@ -93,9 +93,8 @@ public final class SessionModel {
   @ObservationIgnored var streamSynchronization: SessionStreamSynchronization = .caughtUp
   @ObservationIgnored let streamReconnectNotice: DelayedConnectionNotice
   @ObservationIgnored var connectionRecoveryGeneration: UInt64 = 0
-  public internal(set) var queuedPrompts: [ServerPromptQueueItem] = []
-  @ObservationIgnored var promptQueueRevision: UInt64 = 0
-  @ObservationIgnored var promptQueueLoadTask: Task<Void, Never>?
+  let promptQueue: SessionPromptQueue
+  public var queuedPrompts: [ServerPromptQueueItem] { promptQueue.items }
   public internal(set) var updateGateHarnessName: String? {
     didSet {
       if updateGateHarnessName != oldValue { transcriptProjectionRevision &+= 1 }
@@ -194,7 +193,6 @@ public final class SessionModel {
   @ObservationIgnored var isFlushScheduled = false
   @ObservationIgnored var scheduledFlushTask: Task<Void, Never>?
   @ObservationIgnored var presentationFrameRequester: (@MainActor () -> Bool)?
-  @ObservationIgnored var pendingQueuePromotionIDs: [String: TimeInterval] = [:]
   @ObservationIgnored var pendingOptimisticUserMessageIDs: Set<UUID> = []
   static var eventFlushInterval: Duration = .milliseconds(16)
 
@@ -220,6 +218,7 @@ public final class SessionModel {
     connectionRecoveryRetryMaximumDelay: Duration = .seconds(5)
   ) {
     self.transport = serverTransport
+    self.promptQueue = SessionPromptQueue(transport: serverTransport)
     self.sessionId = sessionId
     self.modeState = modeState
     self.configOptions = configOptions
@@ -234,6 +233,12 @@ public final class SessionModel {
       sleep: connectionRecoveryScheduler.sleep)
     streamReconnectNotice.onVisibilityChange = { [weak self] isVisible in
       self?.streamReconnectNoticeChanged(isVisible: isVisible)
+    }
+    promptQueue.onMessageQueued = { [weak self] id in
+      self?.confirmOutgoing(id)
+    }
+    promptQueue.onFailure = { [weak self] error in
+      self?.errorMessage = serverErrorMessage(error)
     }
   }
 

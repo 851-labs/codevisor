@@ -210,8 +210,7 @@ extension SessionModel {
     scheduledFlushTask?.cancel()
     scheduledFlushTask = nil
     isFlushScheduled = false
-    promptQueueLoadTask?.cancel()
-    promptQueueLoadTask = nil
+    promptQueue.cancelLoad()
     pendingEvents.invalidateConsumer(keepingCapacity: false)
   }
 

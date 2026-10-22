@@ -37,8 +37,8 @@ struct SessionModelEventPromptTests {
     model.onQueuedPromptPromoted = { promoted.append($0) }
     let itemID = UUID()
 
-    model.applyQueuedPromptSnapshot([queueItem(id: itemID)])
-    model.applyQueuedPromptSnapshot([])
+    model.promptQueue.apply([queueItem(id: itemID)])
+    model.promptQueue.apply([])
     model.apply(.userMessage(id: itemID.uuidString, text: eventText, attachments: [], isEvent: true))
 
     #expect(promoted.isEmpty)

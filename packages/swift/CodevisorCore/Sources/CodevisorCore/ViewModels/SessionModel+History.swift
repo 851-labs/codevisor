@@ -35,8 +35,7 @@ extension SessionModel {
     defersPromptQueue: Bool,
     preservingContent: Bool = false
   ) async -> SessionHistoryLoadOutcome {
-    promptQueueLoadTask?.cancel()
-    promptQueueLoadTask = nil
+    promptQueue.cancelLoad()
     do {
       var page: TranscriptHistoryPage
       if let preloaded {
@@ -51,11 +50,7 @@ extension SessionModel {
         )
         if preservingContent { applySynchronization(.catchingUp) }
         await startConsumer()
-        if defersPromptQueue {
-          schedulePromptQueueLoad()
-        } else {
-          await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
-        }
+        await loadPromptQueue(deferred: defersPromptQueue)
         return .loaded
       }
       page = try await transport.completeHistoryPage(page, limit: Self.initialTranscriptPageSize)
@@ -124,11 +119,7 @@ extension SessionModel {
       if preservingContent { applySynchronization(.catchingUp) }
       await startConsumer()
       restoreActiveTranscriptDetails()
-      if defersPromptQueue {
-        schedulePromptQueueLoad()
-      } else {
-        await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
-      }
+      await loadPromptQueue(deferred: defersPromptQueue)
       return .loaded
     } catch {
       return historyLoadOutcome(for: error)
@@ -165,31 +156,11 @@ extension SessionModel {
     return .failed(message: serverErrorMessage(error), retryable: retryable)
   }
 
-  private func schedulePromptQueueLoad() {
-    let revision = promptQueueRevision
-    promptQueueLoadTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      await self.loadPromptQueue(ifUnchangedSince: revision)
-      if !Task.isCancelled {
-        self.promptQueueLoadTask = nil
-      }
-    }
-  }
-
-  private func loadPromptQueue(ifUnchangedSince revision: UInt64) async {
-    do {
-      let queue = try await transport.promptQueue()
-      guard !Task.isCancelled, revision == promptQueueRevision else { return }
-      queuedPrompts = queue
-      promptQueueRevision &+= 1
-    } catch {
-      guard !isTaskCancellation(error) else { return }
-      Log.session.error(
-        "Failed to load prompt queue: \(String(describing: error), privacy: .public)"
-      )
-      guard revision == promptQueueRevision else { return }
-      queuedPrompts = []
-      promptQueueRevision &+= 1
+  private func loadPromptQueue(deferred: Bool) async {
+    if deferred {
+      promptQueue.scheduleLoad(keepingAlive: self)
+    } else {
+      await promptQueue.load()
     }
   }
 

@@ -261,7 +261,7 @@ extension SessionModelTests {
 
     releaseQueue.yield()
     releaseQueue.finish()
-    await model.promptQueueLoadTask?.value
+    await model.promptQueue.loadTask?.value
 
     #expect(model.queuedPrompts == [freshItem])
   }

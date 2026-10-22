@@ -63,7 +63,7 @@ struct SessionControllerQueueEditingTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    model.applyQueuedPromptSnapshot([
+    model.promptQueue.apply([
       ServerPromptQueueItem(
         id: "queue-1", sessionId: sessionId.uuidString, text: "look at this",
         createdAt: "2026-10-20T00:00:00.000Z", updatedAt: "2026-10-20T00:00:00.000Z",

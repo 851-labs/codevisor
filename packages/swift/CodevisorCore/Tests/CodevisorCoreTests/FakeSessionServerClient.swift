@@ -37,6 +37,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _promptQueueResponse: [ServerPromptQueueItem] = []
   private var _promptQueueGate: AsyncStream<Void>?
   private var _promptQueueRequestCount = 0
+  private var _failNextPromptQueue = false
   private var _queueUpdates: [(id: String, text: String, attachments: [ServerAttachmentRef]?)] = []
   private var _queueReorders: [[String]] = []
   private var _queueDeletes: [String] = []
@@ -189,6 +190,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { _promptQueueGate = gate }
   }
 
+  func failNextPromptQueue() { lock.withLock { _failNextPromptQueue = true } }
+
   var queueUpdates: [(id: String, text: String, attachments: [ServerAttachmentRef]?)] {
     lock.withLock { _queueUpdates }
   }
@@ -314,13 +317,15 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   }
 
   func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {
-    let (gate, response) = lock.withLock {
+    let (gate, response, shouldFail) = lock.withLock {
       _promptQueueRequestCount += 1
-      return (_promptQueueGate, _promptQueueResponse)
+      defer { _failNextPromptQueue = false }
+      return (_promptQueueGate, _promptQueueResponse, _failNextPromptQueue)
     }
     if let gate {
       for await _ in gate { break }
     }
+    if shouldFail { throw URLError(.networkConnectionLost) }
     return response
   }
 

@@ -142,9 +142,10 @@ extension SessionModel {
       await refreshBotConversation()
       return serverShows(id)
     }
-    if let queue = try? await transport.promptQueue() {
-      applyQueuedPromptSnapshot(queue)
-      if queue.contains(where: { $0.id.lowercased() == id.uuidString.lowercased() }) { return true }
+    if let queue = await promptQueue.refresh(),
+      queue.contains(where: { $0.id.lowercased() == id.uuidString.lowercased() })
+    {
+      return true
     }
     guard let page = try? await transport.transcriptPage(limit: 16) else { return false }
     return page.conversation.contains { item in

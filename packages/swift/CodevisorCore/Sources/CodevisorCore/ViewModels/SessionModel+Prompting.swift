@@ -95,67 +95,6 @@ extension SessionModel {
     }
   }
 
-  @discardableResult
-  public func updateQueuedPrompt(id: String, text: String, attachments: [Attachment]? = nil) async -> Bool {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || attachments?.isEmpty == false else { return false }
-    do {
-      _ = try await transport.updateQueuedPrompt(id: id, text: trimmed, attachments: attachments)
-      return true
-    } catch {
-      errorMessage = serverErrorMessage(error)
-      return false
-    }
-  }
-
-  @discardableResult
-  public func reorderQueuedPrompts(ids: [String]) async -> Bool {
-    guard ids.count == Set(ids).count else { return false }
-    let previous = queuedPrompts
-    applyQueuedPromptSnapshot(Self.queue(previous, orderedBy: ids))
-    do {
-      let queue = try await transport.reorderQueuedPrompts(ids: ids)
-      applyQueuedPromptSnapshot(queue)
-      return true
-    } catch {
-      applyQueuedPromptSnapshot(previous)
-      errorMessage = serverErrorMessage(error)
-      return false
-    }
-  }
-
-  private static func queue(
-    _ queue: [ServerPromptQueueItem], orderedBy ids: [String]
-  ) -> [ServerPromptQueueItem] {
-    let byID = Dictionary(uniqueKeysWithValues: queue.map { ($0.id, $0) })
-    let ordered = ids.compactMap { byID[$0] }
-    return ordered + queue.filter { !ids.contains($0.id) }
-  }
-
-  @discardableResult
-  public func deleteQueuedPrompt(id: String) async -> Bool {
-    do {
-      try await transport.deleteQueuedPrompt(id: id)
-      return true
-    } catch {
-      errorMessage = serverErrorMessage(error)
-      return false
-    }
-  }
-
-  @discardableResult
-  public func sendQueuedPromptNow(id: String) async -> Bool {
-    do {
-      _ = try await transport.sendQueuedPromptNow(id: id)
-      return true
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return false
-    } catch {
-      errorMessage = serverErrorMessage(error)
-      return false
-    }
-  }
-
   public func cancel() async {
     guard isSending, !isCancelling else { return }
     isCancelling = true

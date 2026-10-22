@@ -65,7 +65,7 @@ extension SessionModelTests {
 
     #expect(client.sendAttempts.actionIds.dropFirst() == [id, id])
     #expect(model.transcriptOutgoingMessages.isEmpty)
-    model.applyQueuedPromptSnapshot([
+    model.promptQueue.apply([
       ServerPromptQueueItem(
         id: id, sessionId: client.sessionId.uuidString, text: "queue me",
         createdAt: "2026-10-21T00:00:00.000Z", updatedAt: "2026-10-21T00:00:00.000Z")

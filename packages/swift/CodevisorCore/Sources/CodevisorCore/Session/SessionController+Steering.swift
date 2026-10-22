@@ -25,7 +25,7 @@ extension SessionController {
 
   @discardableResult
   public func sendQueuedPromptNow(id: String) async -> Bool {
-    await model?.sendQueuedPromptNow(id: id) ?? false
+    await model?.promptQueue.sendNow(id: id) ?? false
   }
 
   func resolvedDelivery(for delivery: ServerPromptDelivery) -> ServerPromptDelivery {

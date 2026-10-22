@@ -244,18 +244,18 @@ extension SessionController {
 
   @discardableResult
   public func updateQueuedPrompt(id: String, text: String, attachments: [Attachment]? = nil) async -> Bool {
-    await model?.updateQueuedPrompt(id: id, text: text, attachments: attachments) ?? false
+    await model?.promptQueue.update(id: id, text: text, attachments: attachments) ?? false
   }
 
   @discardableResult
   public func reorderQueuedPrompts(ids: [String]) async -> Bool {
-    await model?.reorderQueuedPrompts(ids: ids) ?? false
+    await model?.promptQueue.reorder(ids: ids) ?? false
   }
 
   @discardableResult
   public func deleteQueuedPrompt(id: String) async -> Bool {
     guard let model else { return false }
-    let deleted = await model.deleteQueuedPrompt(id: id)
+    let deleted = await model.promptQueue.delete(id: id)
     if deleted, editingQueuedPromptID == id { cancelEditingQueuedPrompt() }
     return deleted
   }

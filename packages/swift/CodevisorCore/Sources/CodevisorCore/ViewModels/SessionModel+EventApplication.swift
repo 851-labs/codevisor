@@ -182,7 +182,7 @@ extension SessionModel {
       appliedUpdateCount += 1
     case let .userMessage(id, text, attachments, isEvent, assistantItemId):
       appliedUpdateCount += 1
-      let promotedFromQueue = consumeQueuePromotion(id: id)
+      let promotedFromQueue = promptQueue.consumePromotion(id: id)
       appendRemoteUserIfNeeded(
         id: id,
         text: text,
@@ -227,7 +227,7 @@ extension SessionModel {
       activeItem = .assistant(message)
       if !isSending { isSending = true }
     case let .queueUpdated(queue):
-      applyQueuedPromptSnapshot(queue)
+      promptQueue.apply(queue)
     case let .updateGate(waiting, harnessName):
       updateGateHarnessName = waiting ? harnessName : nil
     case let .autoResume(pending):
@@ -423,41 +423,6 @@ extension SessionModel {
     user.isEvent = user.isEvent || isEvent
     guard ConversationItem.user(user) != settledConversation[index] else { return }
     settledConversation[index] = .user(user)
-  }
-
-  func applyQueuedPromptSnapshot(_ queue: [ServerPromptQueueItem]) {
-    rememberRemovedQueueItems(in: queue)
-    queuedPrompts = queue
-    for item in queue {
-      if let queued = UUID(uuidString: item.id) { confirmOutgoing(queued) }
-    }
-    promptQueueRevision &+= 1
-  }
-
-  private func rememberRemovedQueueItems(in updatedQueue: [ServerPromptQueueItem]) {
-    let now = ProcessInfo.processInfo.systemUptime
-    pendingQueuePromotionIDs = pendingQueuePromotionIDs.filter { $0.value > now }
-    let updatedIDs = Set(updatedQueue.map(\.id))
-    for item in queuedPrompts where !updatedIDs.contains(item.id) {
-      pendingQueuePromotionIDs[item.id] = now + 5
-    }
-    if pendingQueuePromotionIDs.count > 32 {
-      let newest =
-        pendingQueuePromotionIDs
-        .sorted { $0.value > $1.value }
-        .prefix(32)
-        .map { ($0.key, $0.value) }
-      pendingQueuePromotionIDs = Dictionary(uniqueKeysWithValues: newest)
-    }
-  }
-
-  private func consumeQueuePromotion(id: String?) -> Bool {
-    guard let id else { return false }
-    let now = ProcessInfo.processInfo.systemUptime
-    guard let deadline = pendingQueuePromotionIDs.removeValue(forKey: id),
-      deadline > now
-    else { return false }
-    return true
   }
 
   func applySetupUpdate(_ update: SessionUpdate, questionId: String) {
