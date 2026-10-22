@@ -1,154 +1,35 @@
-import { randomUUID } from "node:crypto"
-
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
-import { updateClaudeCommands } from "./skills.js"
 import { toolKind } from "./tool-presentation.js"
 
-const compactionStatus = (message: Extract<SDKMessage, { subtype: "status"; type: "system" }>) => {
-  if (message.compact_result === "success") return "completed"
-  if (message.compact_result === "failed") return "failed"
-  if (message.status === "compacting") return "started"
-  return undefined
+type SystemMessage = Extract<SDKMessage, { type: "system" }>
+
+type TaskStartedMessage = Extract<SystemMessage, { subtype: "task_started" }>
+
+type TaskProgressMessage = Extract<SystemMessage, { subtype: "task_progress" }>
+
+type TaskUpdatedMessage = Extract<SystemMessage, { subtype: "task_updated" }>
+
+type TaskNotificationMessage = Extract<SystemMessage, { subtype: "task_notification" }>
+
+type SubagentLaunchMessage = TaskStartedMessage & { readonly tool_use_id: string }
+
+type TaskStatus = TaskUpdatedMessage["patch"]["status"]
+
+type FinishedTaskStatus = "completed" | "failed" | "killed"
+
+interface SubagentMeta {
+  readonly codevisorSubagent: { readonly taskId: string }
 }
 
-export const handleSystemMessage = (
-  session: ClaudeSession,
-  message: Extract<SDKMessage, { type: "system" }>
-): void => {
-  switch (message.subtype) {
-    case "commands_changed":
-      updateClaudeCommands(session, message.commands)
-      break
-    case "api_retry": {
-      if (!session.turnActive) break
-      if (message.error === "authentication_failed") {
-        if (session.lastAssistantError !== "authentication_failed") {
-          session.lastAssistantError = "authentication_failed"
-          void session.q.interrupt().catch(() => undefined)
-        }
-        break
-      }
-      const retry = claudeInternalRetryStatus(message)
-      void session.emit({
-        kind: "session.updated",
-        payload: { retrying: retry, turnId: session.turnId },
-        subjectId: session.key
-      })
-      break
-    }
-    case "status": {
-      const status = compactionStatus(message)
-      if (status === undefined) break
-      if (status === "started" || session.activeContextCompactionId === undefined) {
-        session.activeContextCompactionId = randomUUID()
-      }
-      const compactionId = session.activeContextCompactionId
-      void session.emit({
-        kind: "session.output",
-        payload: {
-          sessionUpdate: "context_compaction",
-          compactionId,
-          status
-        },
-        subjectId: session.key
-      })
-      if (status !== "started") session.activeContextCompactionId = undefined
-      break
-    }
-    case "task_started": {
-      if (message.skip_transcript === true) {
-        session.hiddenBackgroundTaskIds.add(message.task_id)
-        if (removeBackgroundTask(session, message.task_id)) void emitBackgroundTasks(session)
-        break
-      }
-      const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
-      session.backgroundTasks.set(message.task_id, {
-        description: message.description,
-        id: message.task_id,
-        status: "running",
-        taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
-        ...(toolUseId === undefined ? {} : { toolUseId })
-      })
-      void emitBackgroundTasks(session)
-      if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
-        const subagent = { codevisorSubagent: { taskId: message.task_id } }
-        void session.emit({
-          kind: "session.output",
-          payload: startsNewSubagent(session, message.tool_use_id)
-            ? {
-                _meta: subagent,
-                kind: "agent",
-                sessionUpdate: "tool_call_update",
-                title: `Agent: ${message.description}`,
-                toolCallId: message.tool_use_id
-              }
-            : {
-                _meta: subagent,
-                sessionUpdate: "tool_call_update",
-                title: `Messaged agent: ${message.description}`,
-                toolCallId: message.tool_use_id
-              },
-          subjectId: session.key
-        })
-      }
-      break
-    }
-    case "task_progress": {
-      const entry = session.backgroundTasks.get(message.task_id)
-      if (entry === undefined || message.summary === undefined) break
-      if (entry.description === message.summary) break
-      entry.description = message.summary
-      void emitBackgroundTasks(session)
-      break
-    }
-    case "task_updated": {
-      const status = message.patch.status
-      if (status === "completed" || status === "failed" || status === "killed") {
-        finishForkedCommand(session, message.task_id, status)
-        session.hiddenBackgroundTaskIds.delete(message.task_id)
-      }
-      const entry = session.backgroundTasks.get(message.task_id)
-      if (entry === undefined) break
-      if (status === "completed" || status === "failed" || status === "killed") {
-        removeBackgroundTask(session, message.task_id)
-      } else {
-        if (status !== undefined) entry.status = status
-        if (message.patch.description !== undefined) entry.description = message.patch.description
-      }
-      void emitBackgroundTasks(session)
-      break
-    }
-    case "task_notification": {
-      finishForkedCommand(session, message.task_id, message.status)
-      session.hiddenBackgroundTaskIds.delete(message.task_id)
-      if (removeBackgroundTask(session, message.task_id)) {
-        void emitBackgroundTasks(session)
-      }
-      break
-    }
-    case "background_tasks_changed": {
-      replaceBackgroundTasks(session, message.tasks)
-      break
-    }
-    case "session_state_changed": {
-      void session.emit({
-        kind: "session.updated",
-        payload: { runtimeState: message.state },
-        subjectId: session.key
-      })
-      break
-    }
-    default:
-      break
-  }
-}
-
-const startsNewSubagent = (session: ClaudeSession, toolUseId: string): boolean => {
-  const toolName = session.accumulators.get(toolUseId)?.toolName
-  return toolName === undefined || toolKind(toolName) === "agent"
+interface SubagentStartUpdate {
+  readonly _meta: SubagentMeta
+  readonly kind?: "agent"
+  readonly sessionUpdate: "tool_call_update"
+  readonly title: string
+  readonly toolCallId: string
 }
 
 export const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>
@@ -158,7 +39,52 @@ export const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>
     subjectId: session.key
   })
 
-const replaceBackgroundTasks = (
+export const handleTaskStarted = (session: ClaudeSession, message: TaskStartedMessage): void => {
+  if (message.skip_transcript === true) {
+    hideBackgroundTask(session, message)
+    return
+  }
+
+  trackStartedTask(session, message)
+  void emitBackgroundTasks(session)
+  if (launchesSubagent(message)) emitSubagentStart(session, message)
+}
+
+export const handleTaskProgress = (session: ClaudeSession, message: TaskProgressMessage): void => {
+  const entry = session.backgroundTasks.get(message.task_id)
+  if (entry === undefined) return
+  if (message.summary === undefined) return
+  if (entry.description === message.summary) return
+
+  entry.description = message.summary
+  void emitBackgroundTasks(session)
+}
+
+export const handleTaskUpdated = (session: ClaudeSession, message: TaskUpdatedMessage): void => {
+  const status = message.patch.status
+  if (isFinishedStatus(status)) releaseFinishedTask(session, message, status)
+
+  const entry = session.backgroundTasks.get(message.task_id)
+  if (entry === undefined) return
+
+  if (isFinishedStatus(status)) {
+    removeBackgroundTask(session, message.task_id)
+  } else {
+    patchBackgroundTask(entry, message, status)
+  }
+  void emitBackgroundTasks(session)
+}
+
+export const handleTaskNotification = (
+  session: ClaudeSession,
+  message: TaskNotificationMessage
+): void => {
+  finishForkedCommand(session, message.task_id, message.status)
+  session.hiddenBackgroundTaskIds.delete(message.task_id)
+  if (removeBackgroundTask(session, message.task_id)) void emitBackgroundTasks(session)
+}
+
+export const replaceBackgroundTasks = (
   session: ClaudeSession,
   tasks: ReadonlyArray<{ task_id: string; task_type: string; description: string }>
 ): void => {
@@ -179,31 +105,88 @@ const replaceBackgroundTasks = (
   void emitBackgroundTasks(session)
 }
 
+const hideBackgroundTask = (session: ClaudeSession, message: TaskStartedMessage): void => {
+  session.hiddenBackgroundTaskIds.add(message.task_id)
+  if (removeBackgroundTask(session, message.task_id)) void emitBackgroundTasks(session)
+}
+
+const trackStartedTask = (session: ClaudeSession, message: TaskStartedMessage): void => {
+  const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
+  session.backgroundTasks.set(message.task_id, {
+    description: message.description,
+    id: message.task_id,
+    status: "running",
+    taskType: startedTaskType(message),
+    ...(toolUseId === undefined ? {} : { toolUseId })
+  })
+}
+
+const startedTaskType = (message: TaskStartedMessage): string =>
+  message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task")
+
+const launchesSubagent = (message: TaskStartedMessage): message is SubagentLaunchMessage =>
+  message.subagent_type !== undefined && message.tool_use_id !== undefined
+
+const emitSubagentStart = (session: ClaudeSession, message: SubagentLaunchMessage): void => {
+  const subagent = { codevisorSubagent: { taskId: message.task_id } }
+  void session.emit({
+    kind: "session.output",
+    payload: subagentStartUpdate(session, message, subagent),
+    subjectId: session.key
+  })
+}
+
+const subagentStartUpdate = (
+  session: ClaudeSession,
+  message: SubagentLaunchMessage,
+  subagent: SubagentMeta
+): SubagentStartUpdate => {
+  if (startsNewSubagent(session, message.tool_use_id)) {
+    return {
+      _meta: subagent,
+      kind: "agent",
+      sessionUpdate: "tool_call_update",
+      title: `Agent: ${message.description}`,
+      toolCallId: message.tool_use_id
+    }
+  }
+  return {
+    _meta: subagent,
+    sessionUpdate: "tool_call_update",
+    title: `Messaged agent: ${message.description}`,
+    toolCallId: message.tool_use_id
+  }
+}
+
+const startsNewSubagent = (session: ClaudeSession, toolUseId: string): boolean => {
+  const toolName = session.accumulators.get(toolUseId)?.toolName
+  return toolName === undefined || toolKind(toolName) === "agent"
+}
+
+const isFinishedStatus = (status: TaskStatus): status is FinishedTaskStatus =>
+  status === "completed" || status === "failed" || status === "killed"
+
+const releaseFinishedTask = (
+  session: ClaudeSession,
+  message: TaskUpdatedMessage,
+  status: FinishedTaskStatus
+): void => {
+  finishForkedCommand(session, message.task_id, status)
+  session.hiddenBackgroundTaskIds.delete(message.task_id)
+}
+
+const patchBackgroundTask = (
+  entry: BackgroundTaskEntry,
+  message: TaskUpdatedMessage,
+  status: TaskStatus
+): void => {
+  if (status !== undefined) entry.status = status
+  if (message.patch.description !== undefined) entry.description = message.patch.description
+}
+
 const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean => {
   const entry = session.backgroundTasks.get(taskId)
   if (entry === undefined) return false
   session.backgroundTasks.delete(taskId)
   return true
-}
-
-type ApiRetryMessage = Extract<SDKMessage, { subtype: "api_retry"; type: "system" }>
-
-const retryReason = (status: number | undefined, message: ApiRetryMessage) => {
-  if (status === 529 || message.error === "overloaded") return "Claude is overloaded, retrying"
-  if (status === 429 || message.error === "rate_limit")
-    return "Claude is temporarily rate limited, retrying"
-  if (status !== undefined && status >= 500) return "Claude returned a server error, retrying"
-  return "Claude connection was interrupted, retrying"
-}
-
-const claudeInternalRetryStatus = (
-  message: ApiRetryMessage
-): { attempt?: number; message: string; of?: number } => {
-  const status = message.error_status ?? undefined
-  const retryMessage = retryReason(status, message)
-  return {
-    ...(message.attempt > 0 ? { attempt: message.attempt } : {}),
-    message: retryMessage,
-    ...(message.max_retries > 0 ? { of: message.max_retries } : {})
-  }
 }

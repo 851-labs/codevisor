@@ -2,13 +2,13 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { usageLimitsObserved } from "@codevisor/agent-runtime"
 
 import { handleAssistantMessage, messageProse } from "./assistant-messages.js"
-import { handleSystemMessage } from "./background-tasks.js"
 import { acceptForkedCommandMessage, startForkedCommand } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession, ClaudeTaskToolUse } from "./session.js"
 import { attachSkillText, skillResultMeta } from "./skill-tool.js"
 import { handleStreamEvent } from "./stream-events.js"
+import { handleSystemMessage } from "./system-messages.js"
 import {
   applyTaskCreate,
   applyTaskUpdate,

@@ -11,6 +11,7 @@ import {
   payloadOf,
   recordValue,
   resultMessage,
+  resultWith,
   run,
   sdkMessage,
   streamEvent,
@@ -167,6 +168,15 @@ const mainText = (payloads: Array<Record<string, unknown>>) => textUnder(payload
 describe("a forked command", () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it("leaves the report unanswered when the turn ends abnormally", async () => {
+    const { fake, turn } = await startTurn()
+    for (const message of codeReview("completed", "No findings.")) fake.push(message)
+    fake.push(resultWith({ stop_reason: "refusal" }))
+
+    expect(await turn).toEqual({ stopReason: "end_turn" })
+    expect(fake.userMessages).toHaveLength(1)
   })
 
   it("runs under its own agent call, then Claude answers with its report", async () => {

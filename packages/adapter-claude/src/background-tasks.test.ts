@@ -349,4 +349,139 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     expect(snapshots().at(-1)).toEqual([])
   })
+
+  it("renames a background task from progress summaries and description patches", async () => {
+    const { fake, events } = await startTestSession()
+    const snapshots = () =>
+      events
+        .map(payloadOf)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => recordsValue(payload.backgroundTasks))
+
+    fake.push(
+      systemMessage("task_started", {
+        description: "Run npm test",
+        task_id: "bg-1",
+        task_type: "shell",
+        tool_use_id: "tool-bash-1"
+      })
+    )
+    fake.push(systemMessage("task_progress", { summary: "Running 40 suites", task_id: "bg-1" }))
+    fake.push(systemMessage("task_progress", { summary: "Running 40 suites", task_id: "bg-1" }))
+    fake.push(systemMessage("task_progress", { task_id: "bg-1" }))
+    fake.push(systemMessage("task_progress", { summary: "Unknown work", task_id: "bg-2" }))
+    await fake.drain()
+
+    expect(snapshots()).toHaveLength(3)
+    expect(
+      snapshots()
+        .at(-1)
+        ?.map((task) => task.description)
+    ).toEqual(["Running 40 suites"])
+
+    fake.push(systemMessage("task_updated", { patch: { description: "Tests" }, task_id: "bg-1" }))
+    fake.push(systemMessage("task_updated", { patch: { status: "completed" }, task_id: "bg-2" }))
+    await fake.drain()
+
+    expect(snapshots()).toHaveLength(4)
+    expect(snapshots().at(-1)).toEqual([
+      {
+        description: "Tests",
+        id: "bg-1",
+        status: "running",
+        taskType: "shell",
+        toolUseId: "tool-bash-1"
+      }
+    ])
+  })
+
+  it("rebuilds restated tasks without hidden ones and ignores unknown notifications", async () => {
+    const { fake, events } = await startTestSession()
+    const snapshots = () =>
+      events
+        .map(payloadOf)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => recordsValue(payload.backgroundTasks))
+
+    fake.push(systemMessage("task_started", { description: "Watch files", task_id: "bg-1" }))
+    fake.push(
+      systemMessage("task_started", {
+        description: "Watch files",
+        skip_transcript: true,
+        task_id: "bg-1"
+      })
+    )
+    await fake.drain()
+    expect(snapshots().slice(1)).toEqual([
+      [{ description: "Watch files", id: "bg-1", status: "running", taskType: "task" }],
+      []
+    ])
+
+    fake.push(
+      systemMessage("background_tasks_changed", {
+        tasks: [
+          { description: "Watch files", task_id: "bg-1", task_type: "shell" },
+          { description: "npm run dev", task_id: "bg-2", task_type: "shell" }
+        ]
+      })
+    )
+    fake.push(systemMessage("task_notification", { status: "completed", task_id: "bg-3" }))
+    await fake.drain()
+
+    expect(snapshots().slice(3)).toEqual([
+      [{ description: "npm run dev", id: "bg-2", status: "running", taskType: "shell" }]
+    ])
+  })
+
+  it("words rate-limit and server-error retries, and stays quiet outside a turn", async () => {
+    const { fake, events, created } = await startTestSession()
+    const retries = () =>
+      events
+        .map(payloadOf)
+        .flatMap((payload) => (payload.retrying === undefined ? [] : [payload.retrying]))
+
+    fake.push(
+      systemMessage("api_retry", {
+        attempt: 1,
+        error: "overloaded",
+        error_status: 529,
+        max_retries: 10,
+        retry_delay_ms: 500
+      })
+    )
+    fake.push(systemMessage("status", { status: null }))
+    await fake.drain()
+    expect(retries()).toEqual([])
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    fake.push(
+      systemMessage("api_retry", {
+        attempt: 0,
+        error: "unknown",
+        error_status: 429,
+        max_retries: 0,
+        retry_delay_ms: 500
+      })
+    )
+    fake.push(
+      systemMessage("api_retry", {
+        attempt: 2,
+        error: "unknown",
+        error_status: 503,
+        max_retries: 10,
+        retry_delay_ms: 500
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    expect(retries()).toEqual([
+      { message: "Claude is temporarily rate limited, retrying" },
+      { attempt: 2, message: "Claude returned a server error, retrying", of: 10 }
+    ])
+    expect(
+      events.map(payloadOf).some((payload) => payload.sessionUpdate === "context_compaction")
+    ).toBe(false)
+  })
 })

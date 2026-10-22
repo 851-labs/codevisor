@@ -439,3 +439,40 @@ describe("ClaudeProvider", () => {
     await promptPromise
   })
 })
+
+describe("Claude result usage", () => {
+  it("reports only the finite usage Claude sent, and nothing when it sent none", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    fake.push(initMessage())
+    const created = await createPromise
+    const usageUpdates = () =>
+      events.map(payloadOf).filter((payload) => payload.sessionUpdate === "usage_update")
+
+    const first = run(created.handle.prompt("hello"))
+    await fake.nextPrompt()
+    fake.push(
+      sdkMessage({
+        ...resultMessage(),
+        total_cost_usd: Number.POSITIVE_INFINITY,
+        usage: { input_tokens: Number.NaN, output_tokens: 40 }
+      })
+    )
+    await first
+    expect(usageUpdates()).toEqual([
+      { outputTokens: 40, sessionUpdate: "usage_update", totalTokens: 40 }
+    ])
+
+    const second = run(created.handle.prompt("again"))
+    await fake.nextPrompt()
+    fake.push(resultMessage())
+    await second
+    expect(usageUpdates()).toHaveLength(1)
+  })
+})

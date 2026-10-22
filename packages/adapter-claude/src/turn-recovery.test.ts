@@ -258,4 +258,61 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     expect(continuations()).toHaveLength(0)
   })
+
+  it("logs each turn-end decision when debug logging is on", async () => {
+    vi.useFakeTimers()
+    vi.stubEnv("CODEVISOR_DEBUG", "1")
+    const logged: Array<string> = []
+    const errorSpy = vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      logged.push(String(line))
+    })
+    try {
+      const { fake, created } = await startTestSession()
+      const promptPromise = run(created.handle.prompt("do work"))
+      await fake.nextPrompt()
+
+      fake.push(resultWith({ stop_reason: "max_tokens" }))
+      fake.push(assistantErrorMessage("rate_limit"))
+      fake.push(resultMessage("error_during_execution"))
+      await fake.drain()
+      await vi.advanceTimersByTimeAsync(1000)
+      fake.push(resultWith({ stop_reason: "refusal" }))
+      await promptPromise
+    } finally {
+      errorSpy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+
+    expect(logged.filter((line) => line.startsWith("[claude] turn-end"))).toEqual([
+      "[claude] turn-end subtype=success stop_reason=max_tokens terminal=- lastError=- trunc=0 retries=0 -> continue",
+      "[claude] turn-end subtype=error_during_execution stop_reason=- terminal=- lastError=rate_limit trunc=1 retries=0 -> retry#1(1000ms)",
+      "[claude] turn-end subtype=success stop_reason=refusal terminal=- lastError=- trunc=1 retries=1 -> end/end_turn — Claude declined to respond."
+    ])
+  })
+
+  it("words a rate-limited or server-error restart", async () => {
+    vi.useFakeTimers()
+    const { fake, events, created } = await startTestSession()
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+
+    fake.push(assistantErrorMessage("rate_limit"))
+    fake.push(resultMessage("error_during_execution"))
+    await fake.drain()
+    await vi.advanceTimersByTimeAsync(1000)
+    fake.push(assistantErrorMessage("server_error"))
+    fake.push(resultMessage("error_during_execution"))
+    await fake.drain()
+    await vi.advanceTimersByTimeAsync(2000)
+    fake.push(resultMessage("success"))
+    await promptPromise
+
+    const retrying = events
+      .map(payloadOf)
+      .flatMap((payload) => (payload.retrying === undefined ? [] : [payload.retrying]))
+    expect(retrying).toEqual([
+      { attempt: 1, message: "Claude is temporarily rate limited, restarting response", of: 3 },
+      { attempt: 2, message: "Claude returned a server error, restarting response", of: 3 }
+    ])
+  })
 })

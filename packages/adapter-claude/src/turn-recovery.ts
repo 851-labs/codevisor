@@ -2,10 +2,9 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { settleForkedCommands } from "./forked-commands.js"
 import { settleGoalOnTurnEnd } from "./goals.js"
-import { isRecord, recordOf } from "./internal.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
 import { classifyResult, MAX_TRANSIENT_RETRIES, type TurnResolution } from "./result-resolution.js"
-import { claudeContextWindowFrom } from "./session-context.js"
+import { emitResultUsage } from "./result-usage.js"
 import type { ClaudeSession } from "./session.js"
 import {
   ensureObservedTurnStarted,
@@ -25,6 +24,39 @@ const RESUME_AFTER_INTERRUPTION_PROMPT =
   "did not complete and any background commands it started are gone. Continue the task " +
   "from where it left off, re-running whatever was interrupted."
 
+type ResultMessage = SDKMessage & { type: "result" }
+
+type RetryResolution = Extract<TurnResolution, { kind: "retry" }>
+
+type EndResolution = Extract<TurnResolution, { kind: "end" }>
+
+export const pushResumeAfterInterruptionPrompt = (session: ClaudeSession): void =>
+  pushHiddenUserMessage(session, RESUME_AFTER_INTERRUPTION_PROMPT)
+
+export const handleResult = (session: ClaudeSession, message: ResultMessage): void => {
+  const isTaskNotification = message.origin?.kind === "task-notification"
+  emitResultUsage(session, message)
+  if (ignoresTaskNotification(session, isTaskNotification)) return
+  if (!session.turnActive) void ensureObservedTurnStarted(session)
+
+  const assistantError = session.lastAssistantError
+  const resolution = classifyResult(session, message)
+  if (turnEndLoggingEnabled()) logTurnEnd(session, message, resolution)
+  clearTurnErrors(session)
+
+  if (resolution.kind === "continue") {
+    continueTruncatedTurn(session)
+    return
+  }
+  if (resolution.kind === "retry") {
+    retryTurn(session, resolution, assistantError)
+    return
+  }
+  if (promptForkedCommandReply(session, resolution)) return
+
+  endTurn(session, message, resolution, isTaskNotification)
+}
+
 const pushHiddenUserMessage = (session: ClaudeSession, content: string): void => {
   session.input.push({
     message: { content, role: "user" },
@@ -36,9 +68,6 @@ const pushHiddenUserMessage = (session: ClaudeSession, content: string): void =>
 
 const pushContinuePrompt = (session: ClaudeSession): void =>
   pushHiddenUserMessage(session, CONTINUE_PROMPT)
-
-export const pushResumeAfterInterruptionPrompt = (session: ClaudeSession): void =>
-  pushHiddenUserMessage(session, RESUME_AFTER_INTERRUPTION_PROMPT)
 
 const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
   if (delayMs <= 0) {
@@ -87,88 +116,56 @@ const logTurnEnd = (
   )
 }
 
-export const handleResult = (
-  session: ClaudeSession,
-  message: SDKMessage & { type: "result" }
-): void => {
-  const isTaskNotification = message.origin?.kind === "task-notification"
-  const raw = recordOf(message)
-  const usage = isRecord(raw.usage) ? raw.usage : {}
-  const token = (key: string): number | undefined =>
-    typeof usage[key] === "number" && Number.isFinite(usage[key]) ? usage[key] : undefined
-  const inputTokens = token("input_tokens")
-  const cachedInputTokens =
-    (token("cache_creation_input_tokens") ?? 0) + (token("cache_read_input_tokens") ?? 0)
-  const outputTokens = token("output_tokens")
-  const totalTokens =
-    inputTokens === undefined && outputTokens === undefined && cachedInputTokens === 0
-      ? undefined
-      : (inputTokens ?? 0) + cachedInputTokens + (outputTokens ?? 0)
-  const costAmount =
-    typeof raw.total_cost_usd === "number" && Number.isFinite(raw.total_cost_usd)
-      ? raw.total_cost_usd
-      : undefined
-  const contextUsed = session.latestContextUsage?.used
-  const contextSize = claudeContextWindowFrom(
-    raw.modelUsage,
-    session.latestContextUsage?.model,
-    session.currentModel
-  )
-  if (totalTokens !== undefined || costAmount !== undefined || contextUsed !== undefined) {
-    void session.emit({
-      kind: "session.updated",
-      payload: {
-        sessionUpdate: "usage_update",
-        ...(contextUsed === undefined ? {} : { used: contextUsed }),
-        ...(contextSize === undefined ? {} : { size: contextSize }),
-        ...(inputTokens === undefined ? {} : { inputTokens }),
-        ...(cachedInputTokens === 0 ? {} : { cachedInputTokens }),
-        ...(outputTokens === undefined ? {} : { outputTokens }),
-        ...(totalTokens === undefined ? {} : { totalTokens }),
-        ...(costAmount === undefined
-          ? {}
-          : { cost: { amount: costAmount, currency: "USD", kind: "reported" } })
-      },
-      subjectId: session.key
-    })
-  }
+const ignoresTaskNotification = (session: ClaudeSession, isTaskNotification: boolean): boolean =>
+  isTaskNotification && (!session.turnActive || session.initiatedBy === "user")
 
-  if (isTaskNotification && (!session.turnActive || session.initiatedBy === "user")) return
-  if (!session.turnActive) void ensureObservedTurnStarted(session)
+const turnEndLoggingEnabled = (): boolean =>
+  process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined
 
-  const assistantError = session.lastAssistantError
-  const resolution = classifyResult(session, message)
-  if (process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined) {
-    logTurnEnd(session, message, resolution)
-  }
+const clearTurnErrors = (session: ClaudeSession): void => {
   session.lastAssistantError = undefined
   session.lastUsageLimitText = undefined
   session.latestRateLimitInfo = undefined
+}
 
-  if (resolution.kind === "continue") {
-    session.truncationCount += 1
-    scheduleRecovery(session, 0)
-    return
-  }
-  if (resolution.kind === "retry") {
-    session.transientRetries += 1
-    emitRetrying(
-      session,
-      resolution.attempt,
-      MAX_TRANSIENT_RETRIES,
-      retryMessageForAssistantError(assistantError)
-    )
-    scheduleRecovery(session, resolution.delayMs)
-    return
-  }
-  if (session.forkedCommandReplyPending) {
-    session.forkedCommandReplyPending = false
-    if (resolution.stopReason === "end_turn" && resolution.stopDetail === undefined) {
-      pushHiddenUserMessage(session, FORKED_COMMAND_REPLY_PROMPT)
-      return
-    }
-  }
+const continueTruncatedTurn = (session: ClaudeSession): void => {
+  session.truncationCount += 1
+  scheduleRecovery(session, 0)
+}
 
+const retryTurn = (
+  session: ClaudeSession,
+  resolution: RetryResolution,
+  assistantError: string | undefined
+): void => {
+  session.transientRetries += 1
+  emitRetrying(
+    session,
+    resolution.attempt,
+    MAX_TRANSIENT_RETRIES,
+    retryMessageForAssistantError(assistantError)
+  )
+  scheduleRecovery(session, resolution.delayMs)
+}
+
+const promptForkedCommandReply = (session: ClaudeSession, resolution: EndResolution): boolean => {
+  if (!session.forkedCommandReplyPending) return false
+  session.forkedCommandReplyPending = false
+  if (!endedCleanly(resolution)) return false
+
+  pushHiddenUserMessage(session, FORKED_COMMAND_REPLY_PROMPT)
+  return true
+}
+
+const endedCleanly = (resolution: EndResolution): boolean =>
+  resolution.stopReason === "end_turn" && resolution.stopDetail === undefined
+
+const endTurn = (
+  session: ClaudeSession,
+  message: ResultMessage,
+  resolution: EndResolution,
+  isTaskNotification: boolean
+): void => {
   session.lastErrorText = undefined
   void cancelClaudePendingQuestions(session)
   settleForkedCommands(session)
