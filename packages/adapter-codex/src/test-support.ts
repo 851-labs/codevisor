@@ -58,6 +58,7 @@ export class FakeCodexClient implements CodexClient {
   private readonly requestWaiters: Array<{ method: string; resolve: () => void }> = []
   readonly notifications: Array<{ method: string; params: unknown }> = []
   private notificationHandler: ((method: string, params: unknown) => void) | undefined
+  private closeHandler: ((error: Error) => void) | undefined
   private requestHandler:
     | ((method: string, params: unknown, signal: AbortSignal) => Promise<unknown>)
     | undefined
@@ -213,7 +214,9 @@ export class FakeCodexClient implements CodexClient {
     this.requestHandler = handler
   }
 
-  onClose(): void {}
+  onClose(handler: (error: Error) => void): void {
+    this.closeHandler = handler
+  }
 
   close(): void {
     this.closed = true
@@ -221,6 +224,10 @@ export class FakeCodexClient implements CodexClient {
 
   emit(method: string, params: unknown): void {
     this.notificationHandler?.(method, params)
+  }
+
+  exit(error: Error): void {
+    this.closeHandler?.(error)
   }
 
   async serverRequest(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {

@@ -8,20 +8,15 @@ import {
 } from "@codevisor/agent-runtime"
 
 import type { CodexClient } from "./client.js"
-import { configuredMcpServerNames, NATIVE_AUTOMATION_MCP_SERVERS } from "./config-file.js"
 import { isRecord } from "./internal.js"
-import { CODEX_FAST_TIER, currentCodexModelFor, DEFAULT_CODEX_MODE } from "./models.js"
+import { codexModelsFrom } from "./model-list.js"
+import { currentCodexModelFor, DEFAULT_CODEX_MODE } from "./models.js"
 import { handleNotification } from "./notifications.js"
 import { cancelPendingQuestions, serverRequestResponse } from "./questions.js"
 import type { CodexSession } from "./session.js"
-import {
-  DISABLED_CODEX_PLUGIN,
-  NATIVE_CODEX_PLUGIN_SKILL_NAMES,
-  refreshCodexSkills
-} from "./skills.js"
+import { refreshCodexSkills } from "./skills.js"
+import { codexThreadConfig } from "./thread-config.js"
 import { CodexTitleGenerator } from "./title-generation.js"
-
-const GATEWAY_TOOL_TIMEOUT_SEC = 660
 
 export interface CodexStartSessionDeps {
   readonly connect: (
@@ -48,163 +43,122 @@ export const makeStartSession = ({
     toolGateway?: ToolGatewayConfig
   ): Promise<CodexSession> => {
     const client = await connect(definition, cwd, account, toolGateway)
-    const configuredServers =
-      toolGateway === undefined
-        ? undefined
-        : configuredMcpServerNames({ ...environment.env, ...account?.env }, readConfigFile)
-    const nativeAutomationDisables = NATIVE_AUTOMATION_MCP_SERVERS.filter(
-      (name) => configuredServers?.has(name) ?? false
-    )
-    const threadConfig = {
-      plugins: {
-        [DISABLED_CODEX_PLUGIN]: { enabled: false }
-      },
-      skills: {
-        bundled: { enabled: false },
-        config: NATIVE_CODEX_PLUGIN_SKILL_NAMES.map((name) => ({ name, enabled: false }))
-      },
-      "features.browser_use": false,
-      "features.browser_use_external": false,
-      "features.browser_use_full_cdp_access": false,
-      "features.computer_use": false,
-      "features.in_app_browser": false,
-      ...(toolGateway === undefined
-        ? {}
-        : {
-            mcp_servers: {
-              ...Object.fromEntries(
-                nativeAutomationDisables.map((name) => [name, { enabled: false }])
-              ),
-              [toolGateway.name]: {
-                url: toolGateway.url,
-                bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
-                default_tools_approval_mode: "approve",
-                tool_timeout_sec: GATEWAY_TOOL_TIMEOUT_SEC
-              }
-            }
-          })
-    }
-    let response: unknown
-    if (resumeThreadId === undefined) {
-      response = await client.request("thread/start", {
-        cwd,
-        config: threadConfig
-      })
-    } else {
-      response = await client.request("thread/resume", {
-        cwd,
-        threadId: resumeThreadId,
-        config: threadConfig
-      })
-    }
+    const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
+    const response: unknown = await openThread(client, cwd, resumeThreadId, config)
 
-    const threadId =
-      isRecord(response) && isRecord(response.thread) && typeof response.thread.id === "string"
-        ? response.thread.id
-        : undefined
+    const threadId = threadIdFrom(response)
     if (threadId === undefined) {
       client.close()
       throw new Error("codex app-server did not return a thread id")
     }
-    const session: CodexSession = {
-      activeTurnId: undefined,
-      asyncQuestion: undefined,
-      heldTurnId: undefined,
-      latestContext: undefined,
-      latestUsageLimits: undefined,
-      client,
-      collabRunTurns: new Map(),
-      collabThreads: new Map(),
-      collaborationEngaged: false,
-      currentEffort: undefined,
-      currentModeId: DEFAULT_CODEX_MODE,
-      currentModel: sanitizeModelValue(
-        isRecord(response) && typeof response.model === "string" ? response.model : ""
-      ),
-      currentSpeed: undefined,
-      cwd,
-      emit,
-      interruptRequested: false,
-      itemKinds: new Map(),
-      itemTitles: new Map(),
-      key: resumeThreadId ?? threadId,
-      lastHarnessTitle: undefined,
-      lastEmittedGoal: undefined,
-      lastGoalEmitAtMs: 0,
-      messagePhases: new Map(),
-      models: [],
-      skills: undefined,
-      pendingGoalSnapshot: undefined,
-      pendingPrompt: undefined,
-      pendingTurnError: undefined,
-      pendingQuestions: new Map(),
-      threadId
-    }
+
+    const session = newCodexSession({ client, cwd, emit, resumeThreadId, response, threadId })
     try {
       const modelList = await client.request("model/list", {})
-      const listed = isRecord(modelList) && Array.isArray(modelList.data) ? modelList.data : []
-      session.models = listed.flatMap((model: unknown) => {
-        if (!isRecord(model) || model.hidden === true) return []
-        const value = typeof model.model === "string" ? model.model : undefined
-        if (value === undefined) return []
-        const efforts = Array.isArray(model.supportedReasoningEfforts)
-          ? model.supportedReasoningEfforts.flatMap((option) =>
-              isRecord(option) && typeof option.reasoningEffort === "string"
-                ? [option.reasoningEffort]
-                : []
-            )
-          : []
-        const tiers = Array.isArray(model.serviceTiers)
-          ? model.serviceTiers.flatMap((tier) =>
-              isRecord(tier) && typeof tier.id === "string" ? [tier.id] : []
-            )
-          : []
-        return [
-          {
-            defaultEffort:
-              typeof model.defaultReasoningEffort === "string"
-                ? model.defaultReasoningEffort
-                : "medium",
-            defaultsToFast: model.defaultServiceTier === CODEX_FAST_TIER,
-            efforts,
-            name: typeof model.displayName === "string" ? model.displayName : value,
-            supportsFast: tiers.includes(CODEX_FAST_TIER),
-            value
-          }
-        ]
-      })
-      const current = currentCodexModelFor(session)
-      if (current !== undefined && session.currentEffort === undefined) {
-        session.currentEffort = current.defaultEffort
-      }
+      session.models = codexModelsFrom(modelList)
+      adoptDefaultEffort(session)
     } catch {
       session.models = []
     }
     await refreshCodexSkills(session, false)
-    client.onNotification((method, params) => {
-      handleNotification(session, method, params)
-    })
-    session.titleGenerator = new CodexTitleGenerator(
-      client,
-      threadId,
-      cwd,
-      resumeThreadId !== undefined
-    )
-    client.onRequest((method, params, signal) =>
-      serverRequestResponse(session, method, params, signal)
-    )
-    client.onClose((error) => {
-      session.titleGenerator?.close()
-      session.pendingPrompt?.resolve({ stopReason: "cancelled" })
-      session.pendingPrompt = undefined
-      cancelPendingQuestions(session)
-      void session.emit({
-        kind: "session.error",
-        payload: { message: error.message },
-        subjectId: session.key
-      })
-    })
+
+    attachToClient(session, resumeThreadId !== undefined)
     return session
   }
   return startSession
+}
+
+interface OpenedThread {
+  readonly client: CodexClient
+  readonly cwd: string
+  readonly emit: RuntimeEmit
+  readonly resumeThreadId: string | undefined
+  readonly response: unknown
+  readonly threadId: string
+}
+
+const openThread = (
+  client: CodexClient,
+  cwd: string,
+  resumeThreadId: string | undefined,
+  config: Record<string, unknown>
+): Promise<unknown> => {
+  if (resumeThreadId === undefined) return client.request("thread/start", { cwd, config })
+
+  return client.request("thread/resume", { cwd, threadId: resumeThreadId, config })
+}
+
+const threadIdFrom = (response: unknown): string | undefined =>
+  isRecord(response) && isRecord(response.thread) && typeof response.thread.id === "string"
+    ? response.thread.id
+    : undefined
+
+const newCodexSession = (thread: OpenedThread): CodexSession => ({
+  activeTurnId: undefined,
+  asyncQuestion: undefined,
+  heldTurnId: undefined,
+  latestContext: undefined,
+  latestUsageLimits: undefined,
+  client: thread.client,
+  collabRunTurns: new Map(),
+  collabThreads: new Map(),
+  collaborationEngaged: false,
+  currentEffort: undefined,
+  currentModeId: DEFAULT_CODEX_MODE,
+  currentModel: sanitizeModelValue(threadModel(thread.response)),
+  currentSpeed: undefined,
+  cwd: thread.cwd,
+  emit: thread.emit,
+  interruptRequested: false,
+  itemKinds: new Map(),
+  itemTitles: new Map(),
+  key: thread.resumeThreadId ?? thread.threadId,
+  lastHarnessTitle: undefined,
+  lastEmittedGoal: undefined,
+  lastGoalEmitAtMs: 0,
+  messagePhases: new Map(),
+  models: [],
+  skills: undefined,
+  pendingGoalSnapshot: undefined,
+  pendingPrompt: undefined,
+  pendingTurnError: undefined,
+  pendingQuestions: new Map(),
+  threadId: thread.threadId
+})
+
+const threadModel = (response: unknown): string =>
+  isRecord(response) && typeof response.model === "string" ? response.model : ""
+
+const adoptDefaultEffort = (session: CodexSession): void => {
+  const current = currentCodexModelFor(session)
+  if (current === undefined) return
+  if (session.currentEffort !== undefined) return
+
+  session.currentEffort = current.defaultEffort
+}
+
+const attachToClient = (session: CodexSession, resumed: boolean): void => {
+  const { client } = session
+  client.onNotification((method, params) => {
+    handleNotification(session, method, params)
+  })
+  session.titleGenerator = new CodexTitleGenerator(client, session.threadId, session.cwd, resumed)
+  client.onRequest((method, params, signal) =>
+    serverRequestResponse(session, method, params, signal)
+  )
+  client.onClose((error) => {
+    handleClientClosed(session, error)
+  })
+}
+
+const handleClientClosed = (session: CodexSession, error: Error): void => {
+  session.titleGenerator?.close()
+  session.pendingPrompt?.resolve({ stopReason: "cancelled" })
+  session.pendingPrompt = undefined
+  cancelPendingQuestions(session)
+  void session.emit({
+    kind: "session.error",
+    payload: { message: error.message },
+    subjectId: session.key
+  })
 }

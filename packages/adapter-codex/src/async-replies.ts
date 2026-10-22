@@ -2,9 +2,9 @@ import type { QuestionAnswer } from "@codevisor/agent-runtime"
 import type { QuestionAnswerEntry, QuestionSpec } from "@codevisor/api"
 
 import type { CodexInputItem } from "./attachments.js"
-import { completeNotificationTurn } from "./notifications.js"
 import { answerCodexQuestion, dismissAsyncQuestion, emitQuestionResolved } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import { completeNotificationTurn } from "./turn-notifications.js"
 import { startCodexTurn } from "./turn-start.js"
 
 export const answerQuestion = async (

@@ -157,4 +157,18 @@ describe("CodexProvider", () => {
 
     await expect(setup({ failResume: true, resume: "not-a-thread" })).rejects.toThrow()
   })
+
+  it("cancels the pending prompt and reports the error when the app-server exits", async () => {
+    const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
+    const prompt = run(created!.handle.prompt("hello"))
+    await turnRequested
+    client.exit(new Error("codex app-server exited with code 1"))
+    await expect(prompt).resolves.toMatchObject({ stopReason: "cancelled" })
+    expect(events.at(-1)).toEqual({
+      kind: "session.error",
+      payload: { message: "codex app-server exited with code 1" },
+      subjectId: "thread-new"
+    })
+  })
 })
