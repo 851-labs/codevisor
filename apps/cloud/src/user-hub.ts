@@ -1,11 +1,15 @@
 import {
+  type AppHello,
   CLOUD_PROTOCOL_VERSION,
   type CredentialCommand,
   decodeAppToHub,
   decodeMachineToHub,
   encodeCloudFrame,
+  type HubToApp,
+  type HubToMachine,
   isoTimestamp,
   MACHINE_PEERS_FEATURE,
+  type MachineHello,
   type CloudMachinePresence
 } from "@codevisor/api"
 import { DurableObject } from "cloudflare:workers"
@@ -40,6 +44,28 @@ export const CLOSE_SUPERSEDED = 4003
 export const CLOSE_DELIVERY_FAILED = 4004
 
 const MAX_FRAME_LENGTH = 64 * 1024
+const APP_UPDATE_HINT = "update Codevisor to use this relay"
+const MACHINE_UPDATE_HINT = "update the Codevisor server to use this relay"
+
+type AppHelloFrame = typeof AppHello.Type
+type MachineHelloFrame = typeof MachineHello.Type
+type TunnelWelcome = ReturnType<typeof hubTunnel.appHello>
+type MachineTunnelScope = ReturnType<typeof hubTunnel.machineScope>
+
+interface WelcomeHead {
+  t: "welcome"
+  protocol: number
+  connectionId: string
+}
+
+interface WelcomeMachines {
+  machines?: CloudMachinePresence[]
+}
+
+interface WelcomeResume {
+  resume: string
+  resumed?: true
+}
 
 export class UserHub extends DurableObject<CloudEnv> {
   #accountDeleted = false
@@ -168,41 +194,18 @@ export class UserHub extends DurableObject<CloudEnv> {
     message: string
   ): Promise<void> {
     const frame = decodeAppToHub(message)
-    if (frame.t === "ping") {
-      socket.send(encodeCloudFrame({ t: "pong" }))
-      return
-    }
+    if (frame.t === "ping") return answerPing(socket)
     if (frame.t !== "hello") return
-    if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
-      this.#net.error(socket, "unsupported-protocol", "update Codevisor to use this relay")
-      socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
-      return
-    }
+    if (this.#rejectsProtocol(socket, frame.protocol, APP_UPDATE_HINT)) return
     const { token, resumed } = await this.#adoptSession(attachment, "app", frame)
     if (this.#accountDeleted) return
-    attachment.deviceId = frame.device.deviceId
-    attachment.publicKey = frame.device.publicKey
+
+    adoptAppIdentity(attachment, frame)
     const tunnel = hubTunnel.appHello(this.ctx.storage.sql, this.#net, this.env, frame.device)
     this.#supersedeConnection(attachment.connectionId, socket)
-    attachment.helloDone = true
-    socket.serializeAttachment(attachment)
-    if (
-      !this.#net.send(
-        socket,
-        encodeCloudFrame({
-          t: "welcome",
-          protocol: CLOUD_PROTOCOL_VERSION,
-          connectionId: attachment.connectionId,
-          machines: this.listMachines(),
-          resume: token,
-          ...(resumed ? { resumed: true } : {}),
-          ...tunnel
-        })
-      )
-    ) {
-      this.#retireUndeliverable(socket)
-      return
-    }
+    completeHello(socket, attachment)
+    if (!this.#deliverWelcome(socket, this.#appWelcome(attachment, token, resumed, tunnel))) return
+
     if (resumed) this.#replayBuffers(socket, attachment.connectionId)
   }
 
@@ -212,26 +215,40 @@ export class UserHub extends DurableObject<CloudEnv> {
     message: string
   ): Promise<void> {
     const frame = decodeMachineToHub(message)
-    if (frame.t === "ping") {
-      socket.send(encodeCloudFrame({ t: "pong" }))
-      return
-    }
+    if (frame.t === "ping") return answerPing(socket)
     if (frame.t === "tunnel-addr") {
       return hubTunnel.addr(this.ctx.storage.sql, this.#net, attachment, frame.tunnel)
     }
     if (frame.t !== "hello") return
-    if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
-      this.#net.error(
-        socket,
-        "unsupported-protocol",
-        "update the Codevisor server to use this relay"
-      )
-      socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
-      return
-    }
+    if (this.#rejectsProtocol(socket, frame.protocol, MACHINE_UPDATE_HINT)) return
     const deviceId = attachment.deviceId!
     const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
     if (this.#accountDeleted) return
+
+    const scope = this.#registerMachineConnection(attachment, deviceId, frame)
+    this.#supersedeMachine(deviceId, socket)
+    completeHello(socket, attachment)
+    if (!this.#deliverWelcome(socket, this.#machineWelcome(attachment, token, resumed, scope))) {
+      return
+    }
+
+    hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
+    if (resumed) return this.#replayBuffers(socket, attachment.connectionId)
+    this.#announceFreshMachine(deviceId, attachment)
+  }
+
+  #rejectsProtocol(socket: WebSocket, protocol: number, updateHint: string): boolean {
+    if (protocol === CLOUD_PROTOCOL_VERSION) return false
+    this.#net.error(socket, "unsupported-protocol", updateHint)
+    socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
+    return true
+  }
+
+  #registerMachineConnection(
+    attachment: SocketAttachment,
+    deviceId: string,
+    frame: MachineHelloFrame
+  ): MachineTunnelScope {
     attachment.peerAware = frame.features?.includes(MACHINE_PEERS_FEATURE) === true
     const scope = hubTunnel.machineScope(this.env, frame.device)
     const sql = this.ctx.storage.sql
@@ -243,34 +260,46 @@ export class UserHub extends DurableObject<CloudEnv> {
     )
     attachment.tunnel = scope.tunnelMachine
     attachment.publicKey = frame.device.publicKey
-    for (const stale of this.#net.machine(deviceId)) {
-      if (stale !== socket) this.#supersede(stale, "superseded by a newer connection")
+    return scope
+  }
+
+  #appWelcome(
+    attachment: SocketAttachment,
+    token: string,
+    resumed: boolean,
+    tunnel: TunnelWelcome
+  ): HubToApp {
+    return {
+      ...welcomeHead(attachment.connectionId),
+      machines: this.listMachines(),
+      ...resumeFields(token, resumed),
+      ...tunnel
     }
-    attachment.helloDone = true
-    socket.serializeAttachment(attachment)
-    if (
-      !this.#net.send(
-        socket,
-        encodeCloudFrame({
-          t: "welcome",
-          protocol: CLOUD_PROTOCOL_VERSION,
-          connectionId: attachment.connectionId,
-          resume: token,
-          ...(resumed ? { resumed: true } : {}),
-          ...(attachment.peerAware ? { machines: this.listMachines() } : {}),
-          ...scope.welcome
-        })
-      )
-    ) {
-      this.#retireUndeliverable(socket)
-      return
+  }
+
+  #machineWelcome(
+    attachment: SocketAttachment,
+    token: string,
+    resumed: boolean,
+    scope: MachineTunnelScope
+  ): HubToMachine {
+    return {
+      ...welcomeHead(attachment.connectionId),
+      ...resumeFields(token, resumed),
+      ...this.#machinesForPeers(attachment.peerAware),
+      ...scope.welcome
     }
-    hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
-    if (resumed) {
-      this.#replayBuffers(socket, attachment.connectionId)
-      return
-    }
-    this.#announceFreshMachine(deviceId, attachment)
+  }
+
+  #machinesForPeers(peerAware: boolean | undefined): WelcomeMachines {
+    if (!peerAware) return {}
+    return { machines: this.listMachines() }
+  }
+
+  #deliverWelcome(socket: WebSocket, welcome: HubToApp | HubToMachine): boolean {
+    if (this.#net.send(socket, encodeCloudFrame(welcome))) return true
+    this.#retireUndeliverable(socket)
+    return false
   }
 
   #announceFreshMachine(deviceId: string, attachment: SocketAttachment): void {
@@ -336,6 +365,12 @@ export class UserHub extends DurableObject<CloudEnv> {
     return {
       ...this.#notices(),
       retire: (socket) => this.#retireUndeliverable(socket)
+    }
+  }
+
+  #supersedeMachine(deviceId: string, replacement: WebSocket): void {
+    for (const stale of this.#net.machine(deviceId)) {
+      if (stale !== replacement) this.#supersede(stale, "superseded by a newer connection")
     }
   }
 
@@ -408,6 +443,31 @@ export class UserHub extends DurableObject<CloudEnv> {
       await this.ctx.storage.setAlarm(deadline)
     }
   }
+}
+
+const welcomeHead = (connectionId: string): WelcomeHead => ({
+  t: "welcome",
+  protocol: CLOUD_PROTOCOL_VERSION,
+  connectionId
+})
+
+const resumeFields = (token: string, resumed: boolean): WelcomeResume => ({
+  resume: token,
+  ...(resumed ? { resumed: true as const } : {})
+})
+
+const answerPing = (socket: WebSocket): void => {
+  socket.send(encodeCloudFrame({ t: "pong" }))
+}
+
+const adoptAppIdentity = (attachment: SocketAttachment, frame: AppHelloFrame): void => {
+  attachment.deviceId = frame.device.deviceId
+  attachment.publicKey = frame.device.publicKey
+}
+
+const completeHello = (socket: WebSocket, attachment: SocketAttachment): void => {
+  attachment.helloDone = true
+  socket.serializeAttachment(attachment)
 }
 
 const markMachineSeenSql = "UPDATE machines SET last_seen_at = ? WHERE device_id = ?"
