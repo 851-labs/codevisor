@@ -8,6 +8,7 @@ on:
 permissions:
   actions: read
   contents: write
+  statuses: write
 
 concurrency:
   group: publish-alpha
@@ -138,6 +139,12 @@ jobs:
           curl --fail --silent --show-error https://updates.codevisor.dev/appcast-arm64.xml \
             --output "$RUNNER_TEMP/appcast-arm64.xml"
           node scripts/release/verify-appcast.mjs "$RUNNER_TEMP/appcast-arm64.xml" "$BUILD" alpha
+      - name: Mark the published commit
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SOURCE_SHA" \
+            -f context=publish/alpha -f state=success \
+            -f description="Alpha $VERSION ($BUILD) published" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" >/dev/null
 
   testflight:
     needs: [resolve, publish]

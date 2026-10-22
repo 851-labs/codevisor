@@ -67,3 +67,5 @@ const summary = [
 ].join("\n\n")
 console.log(summary)
 if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary)
+if (process.env.GITHUB_OUTPUT)
+  await appendFile(process.env.GITHUB_OUTPUT, `testflight_url=${appURL}\n`)

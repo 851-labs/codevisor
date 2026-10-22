@@ -18,6 +18,7 @@ on:
 permissions:
   actions: read
   contents: write
+  statuses: write
 
 concurrency:
   group: release-feeds
@@ -182,3 +183,9 @@ jobs:
             echo "GitHub Latest reports $latest_tag, expected $TAG." >&2
             exit 1
           }
+      - name: Mark the published commit
+        run: |
+          gh api "repos/$REPOSITORY/statuses/$SOURCE_SHA" \
+            -f context=publish/stable -f state=success \
+            -f description="Stable $VERSION published" \
+            -f target_url="$GITHUB_SERVER_URL/$REPOSITORY/releases/tag/$TAG" >/dev/null

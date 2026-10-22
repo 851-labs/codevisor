@@ -16,6 +16,7 @@ on:
 permissions:
   actions: read
   contents: read
+  statuses: write
 
 concurrency:
   group: ios-public-testflight-publication
@@ -54,6 +55,7 @@ jobs:
             --channel alpha --version "$VERSION" --commit "$SOURCE_SHA" \
             --output dist/ios-testflight/RELEASE_NOTES.md
       - name: Check or submit the build
+        id: promote
         env:
           VERSION: ${{ steps.alpha.outputs.version }}
           CODEVISOR_BUILD_NUMBER: ${{ steps.alpha.outputs.build }}
@@ -69,3 +71,15 @@ jobs:
           [[ "$CHECK_ONLY" == true ]] && check=(--check)
           node scripts/release/promote-ios-testflight.mjs "$VERSION" \
             dist/ios-testflight dist/ios-testflight/RELEASE_NOTES.md "${check[@]}"
+      - name: Mark the published commit
+        if: ${{ !inputs.check_only }}
+        env:
+          VERSION: ${{ steps.alpha.outputs.version }}
+          BUILD: ${{ steps.alpha.outputs.build }}
+          SOURCE_SHA: ${{ steps.alpha.outputs.source_sha }}
+          TESTFLIGHT_URL: ${{ steps.promote.outputs.testflight_url }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SOURCE_SHA" \
+            -f context=publish/beta -f state=success \
+            -f description="Beta $VERSION ($BUILD) sent to external TestFlight" \
+            -f target_url="$TESTFLIGHT_URL" >/dev/null
