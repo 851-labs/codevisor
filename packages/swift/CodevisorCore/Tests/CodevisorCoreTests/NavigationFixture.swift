@@ -63,7 +63,7 @@ extension ServerNavigationSnapshot {
       },
       workspaces: workspaces.map(WorkspaceSyncModel.serverWorkspace(from:)),
       panes: workspaces.flatMap { workspace in
-        WorkspaceSyncModel.allPanes(in: workspace).compactMap { pane in
+        workspace.allPanes.compactMap { pane in
           pane.kind.isDeviceLocal
             ? nil : ServerPaneMapping.record(from: pane, workspaceId: workspace.id, createdAt: workspace.createdAt)
         }

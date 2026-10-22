@@ -75,7 +75,7 @@ struct WorkspaceClosingTests {
       ServerPaneMapping.record(from: $0, workspaceId: workspace.id, createdAt: Date(timeIntervalSince1970: 0))
     }
 
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: records, protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: records, protectedLocalPaneIds: []).reconcile(&workspace)
 
     #expect(workspace.centerTabs.map(\.id) == [tabs[0].id, tabs[1].id])
     #expect(workspace.selectedCenterTabId == tabs[1].id)

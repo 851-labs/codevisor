@@ -381,10 +381,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
     guard !orphans.isEmpty else { return [] }
     for orphan in orphans {
-      WorkspaceSyncModel.removePane(id: orphan.id, from: &self)
+      WorkspacePaneReconciler.removePane(id: orphan.id, from: &self)
     }
-    WorkspaceSyncModel.pruneEmptyCenterTabs(in: &self)
-    WorkspaceSyncModel.ensureUsableLayout(&self)
+    WorkspacePaneReconciler.pruneEmptyCenterTabs(in: &self)
+    WorkspacePaneReconciler.ensureUsableLayout(&self)
     return orphans
   }
 

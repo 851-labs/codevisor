@@ -35,7 +35,7 @@ struct WorkspaceSyncPaneMappingTests {
       resourceId: sessionId.uuidString.lowercased(), createdAt: "2026-01-01T00:00:00.000Z"
     )
 
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [record], protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: [record], protectedLocalPaneIds: []).reconcile(&workspace)
 
     #expect(workspace.selectedCenterTabId == tabId)
     #expect(workspace.centerTree.allGroups.first?.id == leafId)

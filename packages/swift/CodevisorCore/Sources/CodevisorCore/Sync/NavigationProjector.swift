@@ -144,7 +144,7 @@ final class NavigationProjector {
       workspace.centerTabs = stored.tabs.isEmpty ? [WorkspaceTab.placeholder()] : stored.tabs
       workspace.selectedCenterTabId = stored.selectedTabId
     }
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: key.panes, protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: key.panes, protectedLocalPaneIds: []).reconcile(&workspace)
     let layout = DeviceLayout(workspace)
     if layout != stored { layouts.setLayout(layout, for: workspace.id) }
     return workspace

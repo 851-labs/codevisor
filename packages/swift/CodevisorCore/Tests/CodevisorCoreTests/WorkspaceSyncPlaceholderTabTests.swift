@@ -40,9 +40,9 @@ struct WorkspaceSyncPlaceholderTabTests {
     let placeholder = try #require(workspace.centerTabs.first)
     let sessionId = UUID()
 
-    WorkspaceSyncModel.reconcilePanes(
-      in: &workspace, records: [chatRecord(workspaceId: workspace.id, sessionId: sessionId)],
-      protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(
+      records: [chatRecord(workspaceId: workspace.id, sessionId: sessionId)], protectedLocalPaneIds: []
+    ).reconcile(&workspace)
 
     #expect(workspace.centerTabs.map(\.id) == [placeholder.id])
     #expect(workspace.selectedCenterTabId == placeholder.id)
@@ -58,17 +58,17 @@ struct WorkspaceSyncPlaceholderTabTests {
   func placeholdersRetireOnlyWhileNothingElseExists() throws {
     let sessionId = UUID()
     var filling = placeholderWorkspace(tabs: [.placeholder(), .placeholder()])
-    WorkspaceSyncModel.reconcilePanes(
-      in: &filling, records: [chatRecord(workspaceId: filling.id, sessionId: sessionId)],
-      protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(
+      records: [chatRecord(workspaceId: filling.id, sessionId: sessionId)], protectedLocalPaneIds: []
+    ).reconcile(&filling)
     #expect(filling.centerTabs.count == 1)
     #expect(filling.chatSessionIds == [sessionId])
 
     let chatTab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: sessionId, paneId: sessionId)))
     var chromeLike = placeholderWorkspace(tabs: [chatTab, .placeholder()])
-    WorkspaceSyncModel.reconcilePanes(
-      in: &chromeLike, records: [chatRecord(workspaceId: chromeLike.id, sessionId: sessionId)],
-      protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(
+      records: [chatRecord(workspaceId: chromeLike.id, sessionId: sessionId)], protectedLocalPaneIds: []
+    ).reconcile(&chromeLike)
     #expect(chromeLike.centerTabs.map(\.id) == [chatTab.id, chromeLike.centerTabs[1].id])
     #expect(chromeLike.centerTabs[1].isPlaceholder)
   }
@@ -78,12 +78,12 @@ struct WorkspaceSyncPlaceholderTabTests {
     var workspace = placeholderWorkspace()
     let before = workspace
 
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [], protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: [], protectedLocalPaneIds: []).reconcile(&workspace)
     #expect(workspace == before)
 
-    WorkspaceSyncModel.reconcilePanes(
-      in: &workspace, records: [legacyNewTabRecord(workspaceId: workspace.id)],
-      protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(
+      records: [legacyNewTabRecord(workspaceId: workspace.id)], protectedLocalPaneIds: []
+    ).reconcile(&workspace)
     #expect(workspace == before)
   }
 
@@ -94,13 +94,13 @@ struct WorkspaceSyncPlaceholderTabTests {
       WorkspaceTab(root: .leaf(.centerInitial(sessionId: sessionId, paneId: sessionId)))
     ])
 
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [], protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: [], protectedLocalPaneIds: []).reconcile(&workspace)
     #expect(workspace.centerTabs.count == 1)
     let placeholder = try #require(workspace.centerTabs.first)
     #expect(placeholder.isPlaceholder)
     #expect(workspace.selectedCenterTabId == placeholder.id)
 
-    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [], protectedLocalPaneIds: [])
+    WorkspacePaneReconciler(records: [], protectedLocalPaneIds: []).reconcile(&workspace)
     #expect(workspace.centerTabs.map(\.id) == [placeholder.id])
   }
 
