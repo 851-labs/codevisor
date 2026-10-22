@@ -15,9 +15,11 @@ public struct SessionAttentionFocus: Hashable, Sendable {
 @Observable
 public final class SessionAttentionCoordinator {
   @ObservationIgnored public var notificationDelivery: (any ChatNotificationDelivering)?
+  @ObservationIgnored public var announcementFilter: ((SessionAttentionFocus, Set<SessionAttentionFocus>) -> Bool)?
 
   private let projectList: ProjectListModel
   private var focusByOwner: [ObjectIdentifier: SessionAttentionFocus] = [:]
+  private var openByOwner: [ObjectIdentifier: SessionAttentionFocus] = [:]
   private var applicationActive = true
   private var manualUnreadHold: SessionAttentionFocus?
 
@@ -42,6 +44,14 @@ public final class SessionAttentionCoordinator {
       manualUnreadHold = nil
     }
     readFocusedSessionIfNeeded()
+  }
+
+  public var openSessions: Set<SessionAttentionFocus> {
+    Set(openByOwner.values)
+  }
+
+  public func updateOpenSession(owner: ObjectIdentifier, session: SessionAttentionFocus?) {
+    openByOwner[owner] = session
   }
 
   public func setApplicationActive(_ active: Bool) {
@@ -97,6 +107,7 @@ public final class SessionAttentionCoordinator {
         new: transition.new
       )
     else { return }
+    guard announces(transition, kind: kind) else { return }
     notificationDelivery?.deliver(
       ChatAttentionEvent(
         sessionId: transition.sessionId,
@@ -105,5 +116,15 @@ public final class SessionAttentionCoordinator {
         kind: kind,
         botMessage: kind == .finished ? transition.new.latestBotMessage : nil
       ))
+  }
+
+  private func announces(_ transition: SessionAttentionTransition, kind: ChatAttentionKind) -> Bool {
+    let session = SessionAttentionFocus(serverId: transition.serverId, sessionId: transition.sessionId)
+    let announces = announcementFilter?(session, openSessions) ?? true
+    let decision = announces ? "announce" : "mute"
+    Log.notifications.info(
+      "\(decision, privacy: .public) \(kind.rawValue, privacy: .public) for session \(session.sessionId.uuidString, privacy: .public)"
+    )
+    return announces
   }
 }

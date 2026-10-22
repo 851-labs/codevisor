@@ -16,5 +16,6 @@ public enum Log {
   public static let onboarding = Logger(subsystem: subsystem, category: "onboarding")
   public static let cloud = Logger(subsystem: subsystem, category: "cloud")
   public static let plugins = Logger(subsystem: subsystem, category: "plugins")
+  public static let notifications = Logger(subsystem: subsystem, category: "notifications")
   public static let surfaced = Logger(subsystem: subsystem, category: "surfaced")
 }

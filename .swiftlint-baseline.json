@@ -378,21 +378,6 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "location": {
-        "line": 19,
-        "file": "apps/macos/Codevisor/AppRuntime.swift",
-        "character": 18
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  private static func makeRuntime("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 64 lines",
       "location": {
         "line": 350,
@@ -2375,7 +2360,7 @@
       "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
       "location": {
-        "line": 142,
+        "line": 146,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Sidebar/SidebarRows.swift",
         "character": 17
       },

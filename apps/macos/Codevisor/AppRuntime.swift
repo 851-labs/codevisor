@@ -69,8 +69,7 @@ final class AppRuntime {
     AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
-    ChatNotificationManager.shared.configure(settings: environment.settings)
-    environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
+    ChatNotificationManager.shared.attach(to: environment)
     return (environment, sparkleUpdater)
   }
 

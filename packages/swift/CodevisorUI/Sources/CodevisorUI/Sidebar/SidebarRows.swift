@@ -91,6 +91,10 @@ public enum SidebarRows {
 
     public var groupID: String { Self.groupID(serverId: serverId, id: id) }
 
+    public func listsChildren(in expansion: Expansion) -> Bool {
+      expansion.bots && !expansion.collapsedGroupIDs.contains(groupID)
+    }
+
     public static func groupID(serverId: String, id: UUID) -> String { "bot:\(serverId)|\(id.uuidString)" }
   }
 
@@ -158,7 +162,7 @@ public enum SidebarRows {
         let childrenExpanded = !expansion.collapsedGroupIDs.contains(bot.groupID)
         let disclosure = !bot.children.isEmpty && expansion.bots ? childrenExpanded : nil
         rows.append(SidebarRow(.bot(bot, isExpanded: disclosure)))
-        for child in visible(bot.children, showing: expansion.bots && childrenExpanded) {
+        for child in visible(bot.children, showing: bot.listsChildren(in: expansion)) {
           rows.append(SidebarRow(.workspace(child, .bot(bot.id)), depth: 1))
         }
       }

@@ -93,9 +93,11 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     center.delegate = self
   }
 
-  func configure(settings: AppSettingsModel) {
-    settingsModel = settings
+  func attach(to environment: AppEnvironment) {
+    settingsModel = environment.settings
     center.delegate = self
+    environment.attentionCoordinator.notificationDelivery = self
+    SubagentAnnouncementFilter.install(on: environment)
   }
 
   func prepareAuthorizationIfNeeded() async {

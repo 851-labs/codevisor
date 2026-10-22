@@ -128,6 +128,37 @@ struct SessionAttentionCoordinatorTests {
     #expect(delivery.delivered.map(\.kind) == [.actionRequired, .actionRequired])
   }
 
+  @Test("The announcement filter sees every window's open chat and can mute an edge")
+  func announcementFilterGatesDelivery() async throws {
+    let (model, _, _) = try await makeModel()
+    let coordinator = SessionAttentionCoordinator(projectList: model)
+    let delivery = FakeNotificationDelivery()
+    coordinator.notificationDelivery = delivery
+    let muted = SessionAttentionFocus(serverId: "local", sessionId: UUID())
+    let focusedWindow = FakeNotificationDelivery()
+    let backgroundWindow = FakeNotificationDelivery()
+    coordinator.announcementFilter = { session, openSessions in session != muted || openSessions.contains(session) }
+    coordinator.updateFocus(
+      owner: ObjectIdentifier(focusedWindow), session: SessionAttentionFocus(serverId: "local", sessionId: UUID()))
+
+    func finish() {
+      model.onAttentionTransition?(
+        SessionAttentionTransition(
+          sessionId: muted.sessionId, serverId: muted.serverId,
+          old: summary(), new: summary(latest: 1, unread: 1), origin: .liveEvent))
+    }
+    finish()
+    #expect(delivery.delivered.isEmpty)
+
+    coordinator.updateOpenSession(owner: ObjectIdentifier(backgroundWindow), session: muted)
+    finish()
+    #expect(delivery.delivered.map(\.sessionId) == [muted.sessionId])
+
+    coordinator.updateOpenSession(owner: ObjectIdentifier(backgroundWindow), session: nil)
+    finish()
+    #expect(delivery.delivered.count == 1)
+  }
+
   @Test("Snapshot catch-ups and manual unread never ping")
   func quietOrigins() async throws {
     let (model, _, _) = try await makeModel()

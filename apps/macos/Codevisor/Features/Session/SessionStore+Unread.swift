@@ -53,6 +53,7 @@ extension SessionStore {
   }
 
   func publishFocus() {
+    environment.attentionCoordinator.updateOpenSession(owner: ObjectIdentifier(self), session: attentionFocus.session)
     environment.attentionCoordinator.updateFocus(
       owner: ObjectIdentifier(self),
       session: isWindowFocused ? attentionFocus.session : nil
