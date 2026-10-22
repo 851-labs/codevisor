@@ -1,3 +1,4 @@
+import type { AttachmentRef } from "@codevisor/api"
 import type Database from "better-sqlite3"
 
 import {
@@ -39,10 +40,7 @@ const steeredMessageOwner = (
 ): string | undefined => {
   const earlier = chatRoute(sqlite, sessionId, `steered:${itemId}`)
   if (earlier === undefined) return undefined
-  const owns =
-    sqlite
-      .prepare("select 1 from transcript_entries where item_id = ? and entry_key = ?")
-      .get(earlier, `message::${messageId}`) !== undefined
+  const owns = hasTranscriptEntry(sqlite, earlier, `message::${messageId}`)
   return owns ? earlier : steeredMessageOwner(sqlite, sessionId, earlier, messageId)
 }
 
@@ -69,10 +67,7 @@ const finalizeAssistantMessage = (
   upsertChatPart(sqlite, itemId, "text", markdown.slice(0, 24_000))
   const attachments = isAttachmentRefs(payload.attachments) ? payload.attachments : undefined
   sqlite
-    .prepare(
-      `update chat_items set attachments = ?, message_id = coalesce(?, message_id),
-           updated_at = ?, revision = revision + 1 where id = ?`
-    )
+    .prepare(chatItemSql.finalizeMessage)
     .run(
       serializeAttachments(attachments),
       typeof payload.messageId === "string" ? payload.messageId : null,
@@ -86,18 +81,9 @@ const existingRetryUser = (
   sqlite: Database.Database,
   sessionId: string,
   conversation: Conversation
-): { readonly id: string } | undefined => {
-  const existingUser =
-    conversation.role === "user" && conversation.messageId !== undefined
-      ? idRows.maybe(
-          sqlite
-            .prepare(
-              "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
-            )
-            .get(sessionId, conversation.messageId)
-        )
-      : undefined
-  return existingUser
+): string | undefined => {
+  if (conversation.role !== "user" || conversation.messageId === undefined) return undefined
+  return userItemForMessage(sqlite, sessionId, conversation.messageId)
 }
 
 const projectUserOrSystemConversation = (
@@ -113,7 +99,7 @@ const projectUserOrSystemConversation = (
       ? closeAssistantSection(sqlite, event, sessionId)
       : undefined
   const itemId =
-    existingUser?.id ??
+    existingUser ??
     createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
       text: conversation.text,
       ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
@@ -146,21 +132,14 @@ const continueTurnInNewSection = (
   sessionId: string,
   closedItem: string
 ): void => {
-  const turnId = turnIdRows.one(
-    sqlite.prepare("select turn_id from chat_items where id = ?").get(closedItem)
-  ).turn_id
-  sqlite.prepare("update chat_items set turn_id = null where id = ?").run(closedItem)
+  const turnId = chatItemTurnId(sqlite, closedItem)
+  sqlite.prepare(chatItemSql.clearTurnId).run(closedItem)
   const itemId = createChatItem(sqlite, sessionId, "assistant", event.created_at, {
     status: "streaming",
     startedAt: event.created_at,
     ...(turnId === null ? {} : { turnId })
   })
-  sqlite
-    .prepare(
-      `update chat_item_routes set item_id = ?
-         where session_id = ? and item_id = ? and route_key like 'turn:%'`
-    )
-    .run(itemId, sessionId, closedItem)
+  sqlite.prepare(moveTurnRoutesSql).run(itemId, sessionId, closedItem)
   setChatRoute(sqlite, sessionId, `steered:${itemId}`, closedItem)
 }
 
@@ -197,10 +176,7 @@ const projectAssistantIdentity = (
     conversation.messageId
   )
   sqlite
-    .prepare(
-      `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
-           revision = revision + 1 where id = ?`
-    )
+    .prepare(chatItemSql.identifyAssistant)
     .run(conversation.messageId ?? null, event.created_at, itemId)
   return itemId
 }
@@ -214,16 +190,9 @@ const projectPlanTiming = (
 ): void => {
   if (update === "plan_document" && typeof payload.markdown === "string") {
     upsertChatPart(sqlite, itemId, "plan", payload.markdown.slice(0, 24_000))
-    sqlite
-      .prepare("update chat_items set plan_proposed_at = ?, plan_resumed_at = null where id = ?")
-      .run(event.created_at, itemId)
+    sqlite.prepare(chatItemSql.proposePlan).run(event.created_at, itemId)
   } else if (update === "question_resolved") {
-    sqlite
-      .prepare(
-        `update chat_items set plan_resumed_at = ?
-                 where id = ? and plan_proposed_at is not null and plan_resumed_at is null`
-      )
-      .run(event.created_at, itemId)
+    sqlite.prepare(chatItemSql.resumePlan).run(event.created_at, itemId)
   }
 }
 
@@ -238,14 +207,9 @@ const appendCompletedImage = (
       ? jsonRecord(jsonRecord(payload.rawOutput)?.attachment)
       : undefined
   if (isAttachmentRef(image) && parent === undefined) {
-    const current = attachmentsRows.one(
-      sqlite.prepare("select attachments from chat_items where id = ?").get(itemId)
-    )
-    const attachments = [...(parseAttachments(current.attachments) ?? [])]
+    const attachments = [...(chatItemAttachments(sqlite, itemId) ?? [])]
     if (!attachments.some((file) => file.fileId === image.fileId)) attachments.push(image)
-    sqlite
-      .prepare("update chat_items set attachments = ? where id = ?")
-      .run(serializeAttachments(attachments), itemId)
+    sqlite.prepare(chatItemSql.setAttachments).run(serializeAttachments(attachments), itemId)
   }
 }
 
@@ -273,10 +237,7 @@ const projectWorkedDetail = (
       (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
       assistantItemForMessage(sqlite, sessionId, event.created_at, payload.messageId)
     sqlite
-      .prepare(
-        `update chat_items set has_details = max(has_details, ?), updated_at = ?,
-             revision = revision + 1 where id = ?`
-      )
+      .prepare(chatItemSql.markDetails)
       .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
     projectPlanTiming(sqlite, event, payload, update, itemId)
     if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
@@ -309,3 +270,48 @@ export const projectChatOutput = (
     }
   }
 }
+
+const hasTranscriptEntry = (sqlite: Database.Database, itemId: string, key: string): boolean =>
+  sqlite.prepare(transcriptEntryExistsSql).get(itemId, key) !== undefined
+
+const userItemForMessage = (
+  sqlite: Database.Database,
+  sessionId: string,
+  messageId: string
+): string | undefined =>
+  idRows.maybe(sqlite.prepare(chatItemSql.userByMessage).get(sessionId, messageId))?.id
+
+const chatItemTurnId = (sqlite: Database.Database, itemId: string): string | null =>
+  turnIdRows.one(sqlite.prepare(chatItemSql.turnId).get(itemId)).turn_id
+
+const chatItemAttachments = (
+  sqlite: Database.Database,
+  itemId: string
+): ReadonlyArray<AttachmentRef> | undefined =>
+  parseAttachments(
+    attachmentsRows.one(sqlite.prepare(chatItemSql.attachments).get(itemId)).attachments
+  )
+
+const chatItemSql = {
+  finalizeMessage: `update chat_items set attachments = ?, message_id = coalesce(?, message_id),
+           updated_at = ?, revision = revision + 1 where id = ?`,
+  userByMessage:
+    "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1",
+  turnId: "select turn_id from chat_items where id = ?",
+  clearTurnId: "update chat_items set turn_id = null where id = ?",
+  identifyAssistant: `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
+           revision = revision + 1 where id = ?`,
+  proposePlan: "update chat_items set plan_proposed_at = ?, plan_resumed_at = null where id = ?",
+  resumePlan: `update chat_items set plan_resumed_at = ?
+                 where id = ? and plan_proposed_at is not null and plan_resumed_at is null`,
+  attachments: "select attachments from chat_items where id = ?",
+  setAttachments: "update chat_items set attachments = ? where id = ?",
+  markDetails: `update chat_items set has_details = max(has_details, ?), updated_at = ?,
+             revision = revision + 1 where id = ?`
+}
+
+const transcriptEntryExistsSql =
+  "select 1 from transcript_entries where item_id = ? and entry_key = ?"
+
+const moveTurnRoutesSql = `update chat_item_routes set item_id = ?
+         where session_id = ? and item_id = ? and route_key like 'turn:%'`

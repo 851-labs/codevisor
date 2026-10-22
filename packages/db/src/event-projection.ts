@@ -21,11 +21,7 @@ const startAssistantTurn = (
 ): string => {
   const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
   const itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at, turnId)
-  sqlite
-    .prepare(
-      "update chat_items set started_at = coalesce(started_at, ?), updated_at = ? where id = ?"
-    )
-    .run(event.created_at, event.created_at, itemId)
+  sqlite.prepare(startAssistantTurnSql).run(event.created_at, event.created_at, itemId)
   return itemId
 }
 
@@ -36,20 +32,10 @@ const resolveTerminalAssistant = (
 ): string | undefined => {
   const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
   const currentItemId = chatState(sqlite, sessionId).current_item_id ?? undefined
-  const latestStreamingItem = (): string | undefined =>
-    idRows.maybe(
-      sqlite
-        .prepare(
-          `select id from chat_items
-             where session_id = ? and role = 'assistant' and status = 'streaming'
-             order by position desc limit 1`
-        )
-        .get(sessionId)
-    )?.id
   const itemId =
     (turnId === undefined ? undefined : chatRoute(sqlite, sessionId, `turn:${turnId}`)) ??
     currentItemId ??
-    latestStreamingItem()
+    latestStreamingAssistant(sqlite, sessionId)
   return itemId
 }
 
@@ -75,9 +61,7 @@ const completeTerminalAssistant = (
     payload.retryable === true,
     event.kind === "session.error"
   )
-  sqlite
-    .prepare("update session_chat_state set current_item_id = null where session_id = ?")
-    .run(sessionId)
+  sqlite.prepare(clearCurrentItemSql).run(sessionId)
 }
 
 const projectTerminalChat = (
@@ -115,9 +99,7 @@ export const projectChatEvent = (
   }
 
   if (itemId !== undefined) {
-    sqlite
-      .prepare("update session_events set chat_item_id = ? where session_id = ? and revision = ?")
-      .run(itemId, sessionId, event.revision)
+    sqlite.prepare(sessionEventSql.linkChatItem).run(itemId, sessionId, event.revision)
   }
 
   projectSessionEventState(sqlite, event, payload, sessionId)
@@ -131,22 +113,14 @@ export const insertSessionEvent = (
     readonly chat_item_id?: string | null
   }
 ): SessionEventRow => {
-  const revision = revisionRows.one(
-    sqlite
-      .prepare("update sessions set revision = revision + 1 where id = ? returning revision")
-      .get(row.session_id)
-  ).revision
+  const revision = nextSessionRevision(sqlite, row.session_id)
   const event: SessionEventRow = {
     ...row,
     revision,
     chat_item_id: row.chat_item_id ?? null
   }
   sqlite
-    .prepare(
-      `insert into session_events (
-        session_id, revision, global_event_id, server_id, kind, created_at, payload, chat_item_id
-      ) values (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
+    .prepare(sessionEventSql.insert)
     .run(
       event.session_id,
       event.revision,
@@ -158,4 +132,33 @@ export const insertSessionEvent = (
       event.chat_item_id
     )
   return event
+}
+
+const latestStreamingAssistant = (
+  sqlite: Database.Database,
+  sessionId: string
+): string | undefined =>
+  idRows.maybe(sqlite.prepare(latestStreamingAssistantSql).get(sessionId))?.id
+
+const nextSessionRevision = (sqlite: Database.Database, sessionId: string): number =>
+  revisionRows.one(sqlite.prepare(bumpSessionRevisionSql).get(sessionId)).revision
+
+const startAssistantTurnSql =
+  "update chat_items set started_at = coalesce(started_at, ?), updated_at = ? where id = ?"
+
+const latestStreamingAssistantSql = `select id from chat_items
+             where session_id = ? and role = 'assistant' and status = 'streaming'
+             order by position desc limit 1`
+
+const clearCurrentItemSql =
+  "update session_chat_state set current_item_id = null where session_id = ?"
+
+const bumpSessionRevisionSql =
+  "update sessions set revision = revision + 1 where id = ? returning revision"
+
+const sessionEventSql = {
+  linkChatItem: "update session_events set chat_item_id = ? where session_id = ? and revision = ?",
+  insert: `insert into session_events (
+        session_id, revision, global_event_id, server_id, kind, created_at, payload, chat_item_id
+      ) values (?, ?, ?, ?, ?, ?, ?, ?)`
 }

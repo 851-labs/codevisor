@@ -17,9 +17,7 @@ export { projectSessionSidebarState } from "./session-sidebar-state.js"
 export const ATTENTION_SETTLE_GRACE_MS = 12_000
 
 export const ensureSessionAttentionState = (sqlite: Database.Database, sessionId: string): void => {
-  sqlite
-    .prepare("insert into session_attention (session_id) values (?) on conflict do nothing")
-    .run(sessionId)
+  sqlite.prepare(attentionSql.ensure).run(sessionId)
 }
 
 const attentionRows = rowReader({
@@ -36,43 +34,47 @@ const attentionRows = rowReader({
 
 const backgroundTaskRows = rowReader({ background_tasks: text })
 
-const settleRows = rowReader({ session_id: text, settle_due_at: nullable(text) })
+const settleRows = rowReader({
+  session_id: text,
+  settle_due_at: nullable(text)
+})
 
 const settleDueRows = rowReader({ settle_due_at: nullable(text) })
 
-const modeRows = rowReader({ current_mode_id: nullable(text), harness_id: text })
+const modeRows = rowReader({
+  current_mode_id: nullable(text),
+  harness_id: text
+})
 
 const attentionRow = (sqlite: Database.Database, sessionId: string) =>
-  attentionRows.maybe(
-    sqlite.prepare("select * from session_attention where session_id = ?").get(sessionId)
-  )
+  attentionRows.maybe(sqlite.prepare(attentionSql.bySession).get(sessionId))
 
 const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>
   sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
 
 const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean => {
-  const session = backgroundTaskRows.maybe(
-    sqlite.prepare("select background_tasks from sessions where id = ?").get(sessionId)
-  )
+  const backgroundTasks = backgroundTasksJson(sqlite, sessionId)
   /* v8 ignore next */
-  if (session === undefined) return false
+  if (backgroundTasks === undefined) return false
   return (
-    backgroundTasksFromRaw(session.background_tasks).some(holdsInProgress) ||
+    backgroundTasksFromRaw(backgroundTasks).some(holdsInProgress) ||
     sessionHasActiveGoal(sqlite, sessionId)
   )
 }
 
 const sessionHasQueuedPrompts = (sqlite: Database.Database, sessionId: string): boolean =>
-  sqlite.prepare("select 1 from prompt_queue_items where session_id = ? limit 1").get(sessionId) !==
-  undefined
+  sqlite.prepare(queuedPromptSql).get(sessionId) !== undefined
 
 const bumpAttentionRevision = (sqlite: Database.Database, sessionId: string): void => {
-  sqlite
-    .prepare(
-      `update session_attention set attention_revision = attention_revision + 1,
-         pending_finish = 0, settle_due_at = null where session_id = ?`
-    )
-    .run(sessionId)
+  sqlite.prepare(attentionSql.bumpRevision).run(sessionId)
+}
+
+const clearSettleDue = (sqlite: Database.Database, sessionId: string): void => {
+  sqlite.prepare(attentionSql.clearSettleDue).run(sessionId)
+}
+
+const scheduleSettle = (sqlite: Database.Database, sessionId: string, dueAt: string): void => {
+  sqlite.prepare(attentionSql.scheduleSettle).run(dueAt, sessionId)
 }
 
 const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): boolean =>
@@ -90,19 +92,13 @@ const reevaluatePendingFinish = (
   const state = attentionRow(sqlite, sessionId)
   if (state === undefined || state.pending_finish !== 1 || state.turn_active === 1) return
   if (sessionIsHeld(sqlite, sessionId)) {
-    if (state.settle_due_at !== null) {
-      sqlite
-        .prepare("update session_attention set settle_due_at = null where session_id = ?")
-        .run(sessionId)
-    }
+    if (state.settle_due_at !== null) clearSettleDue(sqlite, sessionId)
     return
   }
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return
   if (state.settle_due_at === null) {
     const dueAt = new Date(Date.parse(now) + ATTENTION_SETTLE_GRACE_MS).toISOString()
-    sqlite
-      .prepare("update session_attention set settle_due_at = ? where session_id = ?")
-      .run(dueAt, sessionId)
+    scheduleSettle(sqlite, sessionId, dueAt)
     return
   }
   if (state.settle_due_at <= now) {
@@ -120,19 +116,13 @@ export const settleSessionAttention = (
     return { settled: false }
   }
   if (sessionIsHeld(sqlite, sessionId)) {
-    sqlite
-      .prepare("update session_attention set settle_due_at = null where session_id = ?")
-      .run(sessionId)
+    clearSettleDue(sqlite, sessionId)
     return { settled: false }
   }
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return { settled: false }
   const dueAt =
     state.settle_due_at ?? new Date(Date.parse(now) + ATTENTION_SETTLE_GRACE_MS).toISOString()
-  if (state.settle_due_at === null) {
-    sqlite
-      .prepare("update session_attention set settle_due_at = ? where session_id = ?")
-      .run(dueAt, sessionId)
-  }
+  if (state.settle_due_at === null) scheduleSettle(sqlite, sessionId, dueAt)
   if (dueAt > now) return { settled: false, nextDueAt: dueAt }
   bumpAttentionRevision(sqlite, sessionId)
   projectSessionSidebarState(sqlite, sessionId, now)
@@ -141,13 +131,12 @@ export const settleSessionAttention = (
 
 export const listPendingAttentionSettles = (
   sqlite: Database.Database
-): ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }> =>
+): ReadonlyArray<{
+  readonly sessionId: string
+  readonly dueAt: string | null
+}> =>
   settleRows
-    .all(
-      sqlite
-        .prepare("select session_id, settle_due_at from session_attention where pending_finish = 1")
-        .all()
-    )
+    .all(sqlite.prepare(attentionSql.pendingSettles).all())
     .map((row) => ({ sessionId: row.session_id, dueAt: row.settle_due_at }))
 
 export const attentionSettleDeadline = (
@@ -155,14 +144,7 @@ export const attentionSettleDeadline = (
   sessionId: string
 ): string | undefined => {
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return undefined
-  const row = settleDueRows.maybe(
-    sqlite
-      .prepare(
-        "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0"
-      )
-      .get(sessionId)
-  )
-  return row?.settle_due_at ?? undefined
+  return pendingSettleDueAt(sqlite, sessionId) ?? undefined
 }
 
 export const projectSessionAttention = (
@@ -192,13 +174,7 @@ const projectAttentionMode = (
   payload: JsonRecord
 ): void => {
   if (event.kind === "session.updated" && typeof payload.modeId === "string") {
-    sqlite
-      .prepare(
-        `update session_attention set current_mode_id = ?,
-           pending_plan_approval = case when ? = 'plan' then pending_plan_approval else 0 end
-         where session_id = ?`
-      )
-      .run(payload.modeId, payload.modeId, event.session_id)
+    sqlite.prepare(attentionSql.setMode).run(payload.modeId, payload.modeId, event.session_id)
   }
 }
 
@@ -214,12 +190,7 @@ const projectAttentionRuntime = (
       payload.runtimeState === "requires_action"
         ? payload.runtimeState
         : "idle"
-    sqlite
-      .prepare(
-        `update session_attention
-         set runtime_state = ?, has_runtime_state = 1 where session_id = ?`
-      )
-      .run(state, event.session_id)
+    sqlite.prepare(attentionSql.setRuntimeState).run(state, event.session_id)
   }
 }
 
@@ -230,11 +201,7 @@ const projectAttentionTurnStart = (
 ): void => {
   if (event.kind === "session.updated" && payload.turnState === "started") {
     sqlite
-      .prepare(
-        `update session_attention set turn_active = 1, settle_due_at = null,
-           errored = case when ? = 'user' then 0 else errored end
-         where session_id = ?`
-      )
+      .prepare(attentionSql.startTurn)
       .run(payload.initiatedBy === "agent" ? "agent" : "user", event.session_id)
   }
 }
@@ -248,12 +215,7 @@ const projectUserConversationAttention = (
     event.kind === "session.output" ? conversationEventPayload(payload) : undefined
   if (conversation?.role === "user") {
     sqlite
-      .prepare(
-        `update session_attention set pending_plan_approval = 0, errored = 0,
-           turn_active = case when ? then 1 else turn_active end,
-           settle_due_at = case when ? then null else settle_due_at end
-         where session_id = ?`
-      )
+      .prepare(attentionSql.userMessage)
       .run(
         payload.startsTurn === true ? 1 : 0,
         payload.startsTurn === true ? 1 : 0,
@@ -267,29 +229,10 @@ const completedTurnNeedsPlanApproval = (
   event: SessionEventRow,
   initiatedBy: "agent" | "user"
 ): boolean => {
-  const state = modeRows.one(
-    sqlite
-      .prepare(
-        `select sa.current_mode_id, s.harness_id
-         from session_attention sa join sessions s on s.id = sa.session_id
-         where sa.session_id = ?`
-      )
-      .get(event.session_id)
-  )
-  const completedTurnPlan = sqlite
-    .prepare(
-      `select 1 from session_events se
-         join chat_parts cp on cp.item_id = se.chat_item_id and cp.kind = 'plan'
-         where se.session_id = ? and se.revision = ?
-           and cp.text is not null and length(cp.text) > 0
-         limit 1`
-    )
-    .get(event.session_id, event.revision)
+  const mode = attentionMode(sqlite, event.session_id)
+  const proposedPlan = completedTurnHasPlan(sqlite, event)
   return (
-    initiatedBy === "user" &&
-    state.harness_id === "codex" &&
-    state.current_mode_id === "plan" &&
-    completedTurnPlan !== undefined
+    initiatedBy === "user" && mode.harnessId === "codex" && mode.modeId === "plan" && proposedPlan
   )
 }
 
@@ -301,38 +244,90 @@ const projectTerminalAttention = (
   if (isTurnEnd(event, payload)) {
     const initiatedBy = payload.initiatedBy === "agent" ? "agent" : "user"
     const failed = terminalAttentionError(event, payload)
-    sqlite
-      .prepare("update session_attention set turn_active = 0 where session_id = ?")
-      .run(event.session_id)
+    sqlite.prepare(attentionSql.endTurn).run(event.session_id)
 
     const needsPlanApproval = completedTurnNeedsPlanApproval(sqlite, event, initiatedBy)
 
     if (failed) {
-      sqlite
-        .prepare("update session_attention set errored = 1 where session_id = ?")
-        .run(event.session_id)
+      sqlite.prepare(attentionSql.markErrored).run(event.session_id)
       bumpAttentionRevision(sqlite, event.session_id)
     } else if (needsPlanApproval) {
-      sqlite
-        .prepare(
-          `update session_attention set pending_plan_approval = 1,
-             pending_finish = 0, settle_due_at = null where session_id = ?`
-        )
-        .run(event.session_id)
+      sqlite.prepare(attentionSql.awaitPlanApproval).run(event.session_id)
     } else if (sessionIsHeld(sqlite, event.session_id)) {
-      sqlite
-        .prepare(
-          "update session_attention set pending_finish = 1, settle_due_at = null where session_id = ?"
-        )
-        .run(event.session_id)
+      sqlite.prepare(attentionSql.holdFinish).run(event.session_id)
     } else if (sessionHasQueuedPrompts(sqlite, event.session_id)) {
-      sqlite
-        .prepare(
-          "update session_attention set pending_finish = 1, settle_due_at = ? where session_id = ?"
-        )
-        .run(event.created_at, event.session_id)
+      sqlite.prepare(attentionSql.queueFinish).run(event.created_at, event.session_id)
     } else {
       bumpAttentionRevision(sqlite, event.session_id)
     }
   }
 }
+
+interface AttentionMode {
+  readonly modeId: string | null
+  readonly harnessId: string
+}
+
+const backgroundTasksJson = (sqlite: Database.Database, sessionId: string): string | undefined =>
+  backgroundTaskRows.maybe(sqlite.prepare(backgroundTasksSql).get(sessionId))?.background_tasks
+
+const pendingSettleDueAt = (
+  sqlite: Database.Database,
+  sessionId: string
+): string | null | undefined =>
+  settleDueRows.maybe(sqlite.prepare(attentionSql.settleDeadline).get(sessionId))?.settle_due_at
+
+const attentionMode = (sqlite: Database.Database, sessionId: string): AttentionMode => {
+  const row = modeRows.one(sqlite.prepare(attentionModeSql).get(sessionId))
+  return { modeId: row.current_mode_id, harnessId: row.harness_id }
+}
+
+const completedTurnHasPlan = (sqlite: Database.Database, event: SessionEventRow): boolean =>
+  sqlite.prepare(completedTurnPlanSql).get(event.session_id, event.revision) !== undefined
+
+const attentionSql = {
+  ensure: "insert into session_attention (session_id) values (?) on conflict do nothing",
+  bySession: "select * from session_attention where session_id = ?",
+  bumpRevision: `update session_attention set attention_revision = attention_revision + 1,
+         pending_finish = 0, settle_due_at = null where session_id = ?`,
+  clearSettleDue: "update session_attention set settle_due_at = null where session_id = ?",
+  scheduleSettle: "update session_attention set settle_due_at = ? where session_id = ?",
+  pendingSettles:
+    "select session_id, settle_due_at from session_attention where pending_finish = 1",
+  settleDeadline:
+    "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0",
+  setMode: `update session_attention set current_mode_id = ?,
+           pending_plan_approval = case when ? = 'plan' then pending_plan_approval else 0 end
+         where session_id = ?`,
+  setRuntimeState: `update session_attention
+         set runtime_state = ?, has_runtime_state = 1 where session_id = ?`,
+  startTurn: `update session_attention set turn_active = 1, settle_due_at = null,
+           errored = case when ? = 'user' then 0 else errored end
+         where session_id = ?`,
+  userMessage: `update session_attention set pending_plan_approval = 0, errored = 0,
+           turn_active = case when ? then 1 else turn_active end,
+           settle_due_at = case when ? then null else settle_due_at end
+         where session_id = ?`,
+  endTurn: "update session_attention set turn_active = 0 where session_id = ?",
+  markErrored: "update session_attention set errored = 1 where session_id = ?",
+  awaitPlanApproval: `update session_attention set pending_plan_approval = 1,
+             pending_finish = 0, settle_due_at = null where session_id = ?`,
+  holdFinish:
+    "update session_attention set pending_finish = 1, settle_due_at = null where session_id = ?",
+  queueFinish:
+    "update session_attention set pending_finish = 1, settle_due_at = ? where session_id = ?"
+}
+
+const backgroundTasksSql = "select background_tasks from sessions where id = ?"
+
+const queuedPromptSql = "select 1 from prompt_queue_items where session_id = ? limit 1"
+
+const attentionModeSql = `select sa.current_mode_id, s.harness_id
+         from session_attention sa join sessions s on s.id = sa.session_id
+         where sa.session_id = ?`
+
+const completedTurnPlanSql = `select 1 from session_events se
+         join chat_parts cp on cp.item_id = se.chat_item_id and cp.kind = 'plan'
+         where se.session_id = ? and se.revision = ?
+           and cp.text is not null and length(cp.text) > 0
+         limit 1`
